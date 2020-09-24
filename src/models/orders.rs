@@ -3,7 +3,7 @@ use ethcontract::common::abi::encode;
 use ethcontract::web3::contract::tokens::Tokenizable;
 use ethcontract::web3::signing::keccak256;
 use ethcontract::web3::signing::recover;
-use ethcontract::web3::types::{Address, H160, H256, U256};
+use ethcontract::web3::types::{Address, Recovery, H160, H256, U256};
 use serde::{Deserialize, Serialize};
 use std::cmp::Ord;
 use std::cmp::Ordering;
@@ -45,8 +45,17 @@ impl Order {
     #[allow(dead_code)]
     pub fn validate_order(&self) -> Result<bool> {
         let message = self.get_digest()?;
-        let signature = encode(&[self.signature_r.into_token(), self.signature_s.into_token()]);
-        let owner = recover(&message, &signature, (self.signature_v - 27) as i32)?;
+        let recovery = Recovery::new(
+            message,
+            self.signature_v as u64,
+            self.signature_r,
+            self.signature_s,
+        );
+        let signature = match recovery.as_signature() {
+            Some(s) => s,
+            None => return Ok(false),
+        };
+        let owner = recover(&message, &signature.0, signature.1)?;
         return Ok(H160::from(owner).eq(&self.owner));
     }
     #[cfg(test)]
