@@ -13,8 +13,6 @@ use std::cmp::PartialOrd;
 pub struct Order {
     pub sell_amount: U256,
     pub buy_amount: U256,
-    pub current_sell_amount: U256,
-    pub current_buy_amount: U256,
     pub buy_token: Address,
     pub sell_token: Address,
     pub owner: Address,
@@ -26,7 +24,6 @@ pub struct Order {
 }
 
 impl Order {
-    #[allow(dead_code)]
     pub fn get_digest(&self) -> Result<[u8; 32]> {
         let domain_separator: H256 =
             "24a654ed47680d6a76f087ec92b3a0f0fe4c9c82c26bff3bb22dffe0f120c7f0"
@@ -42,7 +39,6 @@ impl Order {
             self.nonce.into_token(),
         ])))
     }
-    #[allow(dead_code)]
     pub fn validate_order(&self) -> Result<bool> {
         let message = self.get_digest()?;
         let recovery = Recovery::new(
@@ -63,8 +59,6 @@ impl Order {
         Order {
             sell_amount: U256::from_dec_str("1000000000000000000").unwrap(),
             buy_amount: U256::from_dec_str("900000000000000000").unwrap(),
-            current_sell_amount: U256::from_dec_str("1000000000000000000").unwrap(),
-            current_buy_amount: U256::from_dec_str("900000000000000000").unwrap(),
             sell_token: "A193E42526F1FEA8C99AF609dcEabf30C1c29fAA".parse().unwrap(),
             buy_token: "FDFEF9D10d929cB3905C71400ce6be1990EA0F34".parse().unwrap(),
             owner: "63FC2aD3d021a4D7e64323529a55a9442C444dA0".parse().unwrap(),
