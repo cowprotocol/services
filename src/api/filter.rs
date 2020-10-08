@@ -58,6 +58,7 @@ pub mod test_util {
             .method("GET")
             .reply(&filter)
             .await;
+        assert_eq!(result.status(), StatusCode::OK);
         let result_orderbook: SerializableOrderBook =
             serde_json::from_slice(result.body()).unwrap();
         let orderbook_orders = orderbook.orders.read().await;
