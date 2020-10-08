@@ -1,9 +1,9 @@
 pub mod filter;
 pub mod handler;
+
 use crate::models::OrderBook;
-use core::future::Future;
-use filter::get;
-use filter::post_order;
+use filter::{get, post_order};
+use std::future::Future;
 use warp::Filter;
 
 pub fn run_api(orderbook: OrderBook) -> impl Future<Output = ()> + 'static {

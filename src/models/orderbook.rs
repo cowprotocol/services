@@ -1,10 +1,8 @@
 use crate::models::Order;
 use anyhow::Result;
 use ethcontract::web3::types::Address;
-use serde::Deserialize;
-use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::Arc;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashMap, sync::Arc};
 use tokio::sync::RwLock;
 
 pub type OrderBookHashMap = HashMap<Address, HashMap<Address, Vec<Order>>>;

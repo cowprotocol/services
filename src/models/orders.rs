@@ -1,13 +1,14 @@
 use anyhow::Result;
-use ethcontract::common::abi::encode;
-use ethcontract::web3::contract::tokens::Tokenizable;
-use ethcontract::web3::signing::keccak256;
-use ethcontract::web3::signing::recover;
-use ethcontract::web3::types::{Address, Recovery, H256, U256};
+use ethcontract::{
+    common::abi::encode,
+    web3::{
+        contract::tokens::Tokenizable,
+        signing::{keccak256, recover},
+        types::{Address, Recovery, H256, U256},
+    },
+};
 use serde::{Deserialize, Serialize};
-use std::cmp::Ord;
-use std::cmp::Ordering;
-use std::cmp::PartialOrd;
+use std::cmp::{Ord, Ordering, PartialOrd};
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, Default)]
 pub struct Order {

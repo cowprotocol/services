@@ -1,6 +1,5 @@
 use super::handler::{add_order, get_orders};
-use crate::models::Order;
-use crate::models::OrderBook;
+use crate::models::{Order, OrderBook};
 use warp::Filter;
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
@@ -42,11 +41,9 @@ pub fn get(
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use crate::models::Order;
-    use crate::models::SerializableOrderBook;
+    use crate::models::{Order, SerializableOrderBook};
     use ethcontract::web3::types::U256;
-    use warp::http::StatusCode;
-    use warp::test::request;
+    use warp::{http::StatusCode, test::request};
 
     #[tokio::test]
     async fn test_rending_of_get_request() {
