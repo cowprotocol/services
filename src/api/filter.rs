@@ -18,10 +18,8 @@ fn with_orderbook(
 pub fn post_order(
     orderbook: OrderBook,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::post()
-        .and(warp::path("v1"))
-        .and(warp::path("orders"))
-        .and(warp::path::end())
+    warp::path!("v1" / "orders")
+        .and(warp::post())
         .and(json_body())
         .and(with_orderbook(orderbook))
         .and_then(add_order)
@@ -30,10 +28,8 @@ pub fn post_order(
 pub fn get(
     orderbook: OrderBook,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::get()
-        .and(warp::path("v1"))
-        .and(warp::path("orders"))
-        .and(warp::path::end())
+    warp::path!("v1" / "orders")
+        .and(warp::get())
         .and(with_orderbook(orderbook))
         .and_then(get_orders)
 }
