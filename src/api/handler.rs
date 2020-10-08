@@ -1,11 +1,9 @@
 use crate::models::{Order, OrderBook, SerializableOrderBook};
 use anyhow::Result;
+use std::convert::Infallible;
 use warp::http;
 
-pub async fn add_order(
-    order: Order,
-    orderbook: OrderBook,
-) -> Result<impl warp::Reply, warp::Rejection> {
+pub async fn add_order(order: Order, orderbook: OrderBook) -> Result<impl warp::Reply, Infallible> {
     if !order.validate_order().unwrap_or(false) {
         Ok(warp::reply::with_status(
             "Order does not have a valid signature",
@@ -27,7 +25,7 @@ pub async fn add_order(
     }
 }
 
-pub async fn get_orders(orderbook: OrderBook) -> Result<impl warp::Reply, warp::Rejection> {
+pub async fn get_orders(orderbook: OrderBook) -> Result<impl warp::Reply, Infallible> {
     let orderbook_struct = SerializableOrderBook::new(orderbook.orders.read().await.clone());
     Ok(warp::reply::json(&orderbook_struct))
 }
