@@ -92,7 +92,7 @@ impl PartialOrd for Order {
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use rustc_hex::FromHex;
+    use hex_literal::hex;
 
     #[test]
     fn test_validates_valid_order() {
@@ -120,11 +120,8 @@ pub mod test_util {
     #[test]
     fn test_get_digest() {
         let order = Order::new_valid_test_order();
-
         let result = order.get_digest();
-        let expected_result = "0e9aab5c9680276d90a87387b533197feb6ac7812fb80fa49de40fcd9bee8166";
-        let expected_bytes: Vec<u8> = expected_result.from_hex().unwrap();
-
-        assert_eq!(result.to_vec(), expected_bytes);
+        let expected = hex!("0e9aab5c9680276d90a87387b533197feb6ac7812fb80fa49de40fcd9bee8166");
+        assert_eq!(result.to_vec(), expected);
     }
 }
