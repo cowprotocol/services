@@ -24,12 +24,12 @@ pub struct Order {
 }
 
 impl Order {
-    pub fn get_digest(&self) -> Result<[u8; 32]> {
+    pub fn get_digest(&self) -> [u8; 32] {
         let domain_separator: H256 =
             "24a654ed47680d6a76f087ec92b3a0f0fe4c9c82c26bff3bb22dffe0f120c7f0"
                 .parse()
                 .unwrap();
-        Ok(keccak256(&encode(&[
+        keccak256(&encode(&[
             domain_separator.into_token(),
             self.sell_amount.into_token(),
             self.buy_amount.into_token(),
@@ -37,10 +37,10 @@ impl Order {
             self.buy_token.into_token(),
             self.owner.into_token(),
             self.nonce.into_token(),
-        ])))
+        ]))
     }
     pub fn validate_order(&self) -> Result<bool> {
-        let message = self.get_digest()?;
+        let message = self.get_digest();
         let recovery = Recovery::new(
             message,
             self.signature_v as u64,
@@ -120,7 +120,7 @@ pub mod test_util {
     fn test_get_digest() {
         let order = Order::new_valid_test_order();
 
-        let result = order.get_digest().unwrap();
+        let result = order.get_digest();
         let expected_result = "0e9aab5c9680276d90a87387b533197feb6ac7812fb80fa49de40fcd9bee8166";
         let expected_bytes: Vec<u8> = expected_result.from_hex().unwrap();
 
