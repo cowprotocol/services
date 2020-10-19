@@ -43,7 +43,7 @@ pub mod test_util {
 
     #[tokio::test]
     async fn test_rending_of_get_request() {
-        let orderbook = OrderBook::new();
+        let orderbook = OrderBook::default();
         let order = Order::new_valid_test_order();
         let orderbook_api = orderbook.clone();
         orderbook.add_order(order.clone()).await;
@@ -62,7 +62,7 @@ pub mod test_util {
     }
     #[tokio::test]
     async fn test_post_new_valid_order() {
-        let orderbook = OrderBook::new();
+        let orderbook = OrderBook::default();
         let filter = post_order(orderbook.clone());
         let order = Order::new_valid_test_order();
         let resp = request()
@@ -77,7 +77,7 @@ pub mod test_util {
     }
     #[tokio::test]
     async fn test_post_new_invalid_order() {
-        let orderbook = OrderBook::new();
+        let orderbook = OrderBook::default();
         let filter = post_order(orderbook.clone());
         let mut order = Order::new_valid_test_order();
         order.sell_amount += U256::one();
@@ -93,7 +93,7 @@ pub mod test_util {
     }
     #[tokio::test]
     async fn test_post_two_times_valid_order() {
-        let orderbook = OrderBook::new();
+        let orderbook = OrderBook::default();
         let filter = post_order(orderbook.clone());
         let order = Order::new_valid_test_order();
         warp::test::request()
