@@ -41,6 +41,7 @@ impl OrderBook {
         orders.insert(pos, order);
         true
     }
+    #[allow(dead_code)]
     pub async fn get_orders_for_tokens(&self, token_1: &Address, token_2: &Address) -> Vec<Order> {
         let current_orderbook = self.orders.read().await;
         let empty_hash_map: HashMap<Address, Vec<Order>> = HashMap::new();

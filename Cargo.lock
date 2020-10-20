@@ -796,19 +796,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "oba-services"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ethcontract",
- "hex-literal",
- "serde",
- "serde_json",
- "tokio",
- "warp",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -825,6 +812,19 @@ name = "opaque-debug"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "624a8340c38c1b80fd549087862da4ba43e08858af025b236e509b6649fc13d5"
+
+[[package]]
+name = "orderbook"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ethcontract",
+ "hex-literal",
+ "serde",
+ "serde_json",
+ "tokio",
+ "warp",
+]
 
 [[package]]
 name = "parity-scale-codec"
@@ -1299,6 +1299,15 @@ dependencies = [
  "libc",
  "redox_syscall",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "solver"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ethcontract",
+ "tokio",
 ]
 
 [[package]]
