@@ -1,0 +1,105 @@
+openapi: 3.0.3
+info:
+  version: 0.0.1
+  title: Order Book API
+servers:
+- url: http://localhost:8080
+  description: Local
+paths:
+  /api/v1/order:
+    post:
+      summary: Create a new order.
+      responses:
+        201:
+          description: Order has been accepted.
+      requestBody:
+        description: The order to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Order"
+  /api/v1/orders:
+    get:
+      summary: Get existing orders.
+      # TODO: Later we could add filters through the url query to only get orders matching specific tokens etc.
+      responses:
+        200:
+          description: existing orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+  /api/v1/nonce:
+    get:
+      summary: The nonce to pick for a new order.
+      description: The best nonce to pick depends on how much time there is left in the current settlement according to the operator. This time is token-pair specific which is why the sell and buy tokens must be supplied.
+      parameters:
+        - name: sellToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+        - name: buyToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+      responses:
+        200:
+          description: the nonce
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Nonce"
+components:
+  schemas:
+    Address:
+      description: Ethereum 40 byte address encoded as a hex.
+      type: string
+      example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    TokenAmount:
+      description: Amount of a token. uint112 encoded in decimal.
+      type: string
+      example: "1234567890"
+    Nonce:
+      description: Nonce of the batch in which the order is valid. uint32.
+      type: integer
+    Order:
+      type: object
+      properties:
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellAmount:
+          $ref: "#/components/schemas/TokenAmount"
+        sellToken:
+          $ref: "#/components/schemas/Address"
+        sellTokenTip:
+          $ref: "#/components/schemas/TokenAmount"
+        orderType:
+          description: Is this a buy order or sell order?
+          type: string
+          enum: [buy, sell]
+        fillType:
+          description: Is this a fill-or-kill order a partially fillable order?
+          type: string
+          enum: [fillkill, partial]
+        nonce:
+          $ref: "#/components/schemas/Nonce"
+        validTo:
+          description: Time offset in seconds from epoch until which the order is valid. uint32.
+          type: integer
+        signature_v:
+          description: 1 byte encoded as hex.
+          type: string
+          example: "0x00"
+        signature_r:
+          description: 32 bytes encoded as hex.
+          type: string
+          example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+        signature_s:
+          description: 32 bytes encoded as hex.
+          type: string
+          example: "0x0000000000000000000000000000000000000000000000000000000000000000"
