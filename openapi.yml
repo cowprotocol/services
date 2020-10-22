@@ -55,9 +55,9 @@ paths:
 components:
   schemas:
     Address:
-      description: Ethereum 40 byte address encoded as a hex.
+      description: Ethereum 40 byte address encoded as a hex without `0x` prefix.
       type: string
-      example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+      example: "6810e776880c02933d47db1b9fc05908e5386b96"
     TokenAmount:
       description: Amount of a token. uint112 encoded in decimal.
       type: string
@@ -86,15 +86,15 @@ components:
         fillType:
           description: Is this a fill-or-kill order a partially fillable order?
           type: string
-          enum: [fillkill, partial]
+          enum: [fillorkill, partial]
         nonce:
           $ref: "#/components/schemas/Nonce"
         validTo:
           description: Time offset in seconds from epoch until which the order is valid. uint32.
           type: integer
         signature:
-          description: 65 bytes encoded as hex. v + r + s from the spec.
-          example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+          description: 65 bytes encoded as hex without `0x` prefix. v + r + s from the spec.
+          example: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     OrderExtra:
       description: Extra order data that is returned to users when querying orders but not provided by users when creating orders.
       type: object

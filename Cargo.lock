@@ -123,6 +123,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
+name = "chrono"
+version = "0.4.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "670ad68c9088c2a963aaa298cb369688cf3f9465ce5e2d4ca10e6e0098a1ce73"
+dependencies = [
+ "num-integer",
+ "num-traits",
+ "serde",
+]
+
+[[package]]
 name = "cloudabi"
 version = "0.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -767,6 +778,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "model"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "hex",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "serde_with",
+]
+
+[[package]]
 name = "multipart"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -793,6 +816,25 @@ dependencies = [
  "cfg-if",
  "libc",
  "winapi 0.3.9",
+]
+
+[[package]]
+name = "num-integer"
+version = "0.1.43"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d59457e662d541ba17869cf51cf177c0b5f0cbf476c66bdc90bf1edac4f875b"
+dependencies = [
+ "autocfg 1.0.1",
+ "num-traits",
+]
+
+[[package]]
+name = "num-traits"
+version = "0.2.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac267bcc07f48ee5f8935ab0d24f316fb722d7a1292e2913f0cc196b29ffd611"
+dependencies = [
+ "autocfg 1.0.1",
 ]
 
 [[package]]
@@ -1250,6 +1292,15 @@ dependencies = [
  "itoa",
  "serde",
  "url",
+]
+
+[[package]]
+name = "serde_with"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bac272128fb3b1e98872dca27a05c18d8b78b9bd089d3edb7b5871501b50bce"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
