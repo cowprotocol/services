@@ -18,7 +18,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Order"
+              $ref: "#/components/schemas/OrderNew"
   /api/v1/orders:
     get:
       summary: Get existing orders.
@@ -31,7 +31,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Order"
+                  $ref: "#/components/schemas/OrderFull"
   /api/v1/nonce:
     get:
       summary: The nonce to pick for a new order.
@@ -65,7 +65,8 @@ components:
     Nonce:
       description: Nonce of the batch in which the order is valid. uint32.
       type: integer
-    Order:
+    OrderNew:
+      description: Data a user provides when creating a new order.
       type: object
       properties:
         buyToken:
@@ -91,15 +92,20 @@ components:
         validTo:
           description: Time offset in seconds from epoch until which the order is valid. uint32.
           type: integer
-        signature_v:
-          description: 1 byte encoded as hex.
+        signature:
+          description: 65 bytes encoded as hex. v + r + s from the spec.
+          example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    OrderExtra:
+      description: Extra order data that is returned to users when querying orders but not provided by users when creating orders.
+      type: object
+      properties:
+        creationTime:
+          description: Creation time of the order. Encoded as ISO 8601 UTC.
           type: string
-          example: "0x00"
-        signature_r:
-          description: 32 bytes encoded as hex.
-          type: string
-          example: "0x0000000000000000000000000000000000000000000000000000000000000000"
-        signature_s:
-          description: 32 bytes encoded as hex.
-          type: string
-          example: "0x0000000000000000000000000000000000000000000000000000000000000000"
+          example: "2020-10-22T07:57:18Z"
+        owner:
+          $ref: "#/components/schemas/Address"
+    OrderFull:
+      allOf:
+        - $ref: "#/components/schemas/OrderNew"
+        - $ref: "#/components/schemas/OrderExtra"
