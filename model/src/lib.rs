@@ -2,7 +2,7 @@
 //!
 //! This is in its own crate because we want to share this module between the orderbook and the solver.
 
-use chrono::{offset::Utc, DateTime};
+use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
 use std::fmt;
@@ -14,6 +14,12 @@ pub enum FillType {
     Partial,
 }
 
+impl Default for FillType {
+    fn default() -> Self {
+        Self::FillOrKill
+    }
+}
+
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderType {
@@ -21,7 +27,13 @@ pub enum OrderType {
     Sell,
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+impl Default for OrderType {
+    fn default() -> Self {
+        Self::Buy
+    }
+}
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default)]
 pub struct Signature {
     pub v: u8,
     pub r: H256,
@@ -29,9 +41,9 @@ pub struct Signature {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct UserProvided {
+pub struct UserOrder {
     #[serde(with = "h160_hex")]
     pub buy_token: H160,
     #[serde(with = "serde_with::rust::display_fromstr")]
@@ -54,12 +66,22 @@ pub struct UserProvided {
 /// Contains extra fields thats are populated by the orderbook.
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct Full {
+pub struct Order {
     pub creation_time: DateTime<Utc>,
     #[serde(with = "h160_hex")]
     pub owner: H160,
     #[serde(flatten)]
-    pub user_provided: UserProvided,
+    pub user_provided: UserOrder,
+}
+
+impl Default for Order {
+    fn default() -> Self {
+        Self {
+            creation_time: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+            owner: Default::default(),
+            user_provided: Default::default(),
+        }
+    }
 }
 
 impl Serialize for Signature {
@@ -180,10 +202,10 @@ mod tests {
           "validTo": 4294967295u32,
           "signature": "0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
         });
-        let expected = Full {
+        let expected = Order {
             creation_time: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
             owner: H160::from_low_u64_be(1),
-            user_provided: UserProvided {
+            user_provided: UserOrder {
                 buy_token: H160::from_low_u64_be(9),
                 buy_amount: 0,
                 sell_token: H160::from_low_u64_be(10),
@@ -206,7 +228,7 @@ mod tests {
                 },
             },
         };
-        let deserialized: Full = serde_json::from_value(value.clone()).unwrap();
+        let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_eq!(serialized, value);

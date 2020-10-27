@@ -1,12 +1,12 @@
-pub mod filter;
-pub mod handler;
+mod filter;
+mod handler;
 
-use crate::models::OrderBook;
-use filter::{get, post_order};
-use std::future::Future;
+use crate::orderbook::OrderBook;
+use std::sync::Arc;
 use warp::Filter;
 
-pub fn run_api(orderbook: OrderBook) -> impl Future<Output = ()> + 'static {
-    let routes = post_order(orderbook.clone()).or(get(orderbook));
-    warp::serve(routes).bind(([127, 0, 0, 1], 3030))
+pub fn handle_all_routes(
+    orderbook: Arc<OrderBook>,
+) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+    filter::create_order(orderbook.clone()).or(filter::get_orders(orderbook))
 }

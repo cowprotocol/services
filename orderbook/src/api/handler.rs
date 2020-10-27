@@ -1,31 +1,23 @@
-use crate::models::{Order, OrderBook, SerializableOrderBook};
-use anyhow::Result;
-use std::convert::Infallible;
-use warp::http;
+use crate::orderbook::{AddOrderError, OrderBook};
+use model::UserOrder;
+use std::{convert::Infallible, sync::Arc};
+use warp::http::StatusCode;
 
-pub async fn add_order(order: Order, orderbook: OrderBook) -> Result<impl warp::Reply, Infallible> {
-    if !order.validate_order().unwrap_or(false) {
-        Ok(warp::reply::with_status(
-            "Order does not have a valid signature",
-            http::StatusCode::BAD_REQUEST,
-        ))
-    } else {
-        let add_order_success = orderbook.add_order(order.clone()).await;
-        if add_order_success {
-            Ok(warp::reply::with_status(
-                "Added order to the orderbook",
-                http::StatusCode::CREATED,
-            ))
-        } else {
-            Ok(warp::reply::with_status(
-                "Did not add order to the orderbook, as it was already in the orderbook",
-                http::StatusCode::BAD_REQUEST,
-            ))
-        }
-    }
+pub async fn add_order(
+    orderbook: Arc<OrderBook>,
+    order: UserOrder,
+) -> Result<impl warp::Reply, Infallible> {
+    let (body, status_code) = match orderbook.add_order(order).await {
+        Ok(()) => ("ok", StatusCode::CREATED),
+        Err(AddOrderError::AlreadyExists) => ("already exists", StatusCode::BAD_REQUEST),
+        Err(AddOrderError::InvalidSignature) => ("invalid signature", StatusCode::BAD_REQUEST),
+        Err(AddOrderError::PastNonce) => ("nonce is in the past", StatusCode::BAD_REQUEST),
+        Err(AddOrderError::PastValidTo) => ("validTo is in the past", StatusCode::BAD_REQUEST),
+    };
+    Ok(warp::reply::with_status(body, status_code))
 }
 
-pub async fn get_orders(orderbook: OrderBook) -> Result<impl warp::Reply, Infallible> {
-    let orderbook_struct = SerializableOrderBook::new(orderbook.orders.read().await.clone());
-    Ok(warp::reply::json(&orderbook_struct))
+pub async fn get_orders(orderbook: Arc<OrderBook>) -> Result<impl warp::Reply, Infallible> {
+    let orders = orderbook.get_orders().await;
+    Ok(warp::reply::json(&orders))
 }
