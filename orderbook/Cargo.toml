@@ -8,7 +8,7 @@ anyhow = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 hex-literal = "0.3"
 model = { path = "../model" }
-primitive-types = { version = "0.7" }
+primitive-types = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "0.2", features =[ "macros"] }

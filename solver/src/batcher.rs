@@ -1,6 +1,5 @@
-use ethcontract::web3::types::Address;
+use primitive_types::H160 as Address;
 
-#[allow(dead_code)]
 fn get_token_pairs(tokens: &[Address]) -> impl Iterator<Item = (Address, Address)> + '_ {
     let len = tokens.len();
     (0..(len - 1)).flat_map(move |i| ((i + 1)..len).map(move |j| (tokens[i], tokens[j])))
