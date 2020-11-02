@@ -178,6 +178,28 @@ mod h160_hex {
     }
 }
 
+/// Erc20 token pair specified by two contract addresses.
+#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash, Ord, PartialOrd)]
+pub struct TokenPair(H160, H160);
+
+impl TokenPair {
+    /// Create a new token pair from two addresses.
+    /// The addresses must not be the equal.
+    pub fn new(token_a: H160, token_b: H160) -> Option<Self> {
+        match token_a.cmp(&token_b) {
+            std::cmp::Ordering::Less => Some(Self(token_a, token_b)),
+            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Greater => Some(Self(token_b, token_a)),
+        }
+    }
+
+    /// The first address is always the lower one.
+    /// The addresses are never equal.
+    pub fn get(&self) -> (H160, H160) {
+        (self.0, self.1)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -232,5 +254,22 @@ mod tests {
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_eq!(serialized, value);
+    }
+
+    #[test]
+    fn token_pair_is_sorted() {
+        let token_a = H160::from_low_u64_be(0);
+        let token_b = H160::from_low_u64_be(1);
+        let pair_0 = TokenPair::new(token_a, token_b).unwrap();
+        let pair_1 = TokenPair::new(token_b, token_a).unwrap();
+        assert_eq!(pair_0, pair_1);
+        assert_eq!(pair_0.get(), pair_1.get());
+        assert_eq!(pair_0.get().0, token_a);
+    }
+
+    #[test]
+    fn token_pair_cannot_be_equal() {
+        let token = H160::from_low_u64_be(1);
+        assert_eq!(TokenPair::new(token, token), None);
     }
 }
