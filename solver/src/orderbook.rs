@@ -2,12 +2,12 @@ use model::Order;
 use reqwest::{Client, Url};
 use std::time::Duration;
 
-struct OrderbookApi {
+pub struct OrderBookApi {
     base: Url,
     client: Client,
 }
 
-impl OrderbookApi {
+impl OrderBookApi {
     /// base: protocol and host of the url. example: `https://example.com`
     pub fn new(base: Url, request_timeout: Duration) -> Self {
         // Unwrap because we cannot handle client creation failing.
@@ -31,7 +31,7 @@ pub mod test_util {
     #[tokio::test]
     #[ignore]
     async fn real_orderbook() {
-        let api = OrderbookApi::new(
+        let api = OrderBookApi::new(
             Url::parse("http://localhost:8080").unwrap(),
             Duration::from_secs(10),
         );

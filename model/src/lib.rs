@@ -61,6 +61,12 @@ pub struct UserOrder {
     pub signature: Signature,
 }
 
+impl UserOrder {
+    pub fn token_pair(&self) -> Option<TokenPair> {
+        TokenPair::new(self.buy_token, self.sell_token)
+    }
+}
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields thats are populated by the orderbook.
