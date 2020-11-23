@@ -1,0 +1,33 @@
+[package]
+name = "contracts"
+version = "0.1.0"
+authors = ["Nicholas Rodrigues Lordello <nicholas.lordello@gnosis.pm>"]
+edition = "2018"
+
+[[bin]]
+name = "vendor"
+required-features = ["bin"]
+
+[features]
+default = []
+bin = [
+    "anyhow",
+    "env_logger",
+    "ethcontract-generate",
+    "log",
+    "serde_json",
+]
+
+[dependencies]
+ethcontract = { version = "0.9",  default-features = false }
+serde = "1.0"
+
+# [bin-dependencies]
+anyhow = { version = "1.0", optional = true }
+env_logger = { version = "0.8", optional = true }
+ethcontract-generate = { version = "0.9", optional = true }
+log = { version = "0.4", optional = true }
+serde_json = { version = "1.0", optional = true }
+
+[build-dependencies]
+ethcontract-generate = "0.9"
