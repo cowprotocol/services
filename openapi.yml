@@ -6,7 +6,7 @@ servers:
 - url: http://localhost:8080
   description: Local
 paths:
-  /api/v1/order:
+  /api/v1/orders:
     post:
       summary: Create a new order.
       responses:
@@ -32,26 +32,6 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/OrderFull"
-  /api/v1/nonce:
-    get:
-      summary: The nonce to pick for a new order.
-      description: The best nonce to pick depends on how much time there is left in the current settlement according to the operator. This time is token-pair specific which is why the sell and buy tokens must be supplied.
-      parameters:
-        - name: sellToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-        - name: buyToken
-          in: query
-          schema:
-            $ref: "#/components/schemas/Address"
-      responses:
-        200:
-          description: the nonce
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Nonce"
 components:
   schemas:
     Address:
@@ -59,39 +39,36 @@ components:
       type: string
       example: "6810e776880c02933d47db1b9fc05908e5386b96"
     TokenAmount:
-      description: Amount of a token. uint112 encoded in decimal.
+      description: Amount of a token. uint256 encoded in decimal.
       type: string
       example: "1234567890"
-    Nonce:
-      description: Nonce of the batch in which the order is valid. uint32.
-      type: integer
     OrderNew:
       description: Data a user provides when creating a new order.
       type: object
       properties:
-        buyToken:
-          $ref: "#/components/schemas/Address"
-        buyAmount:
-          $ref: "#/components/schemas/TokenAmount"
-        sellAmount:
-          $ref: "#/components/schemas/TokenAmount"
         sellToken:
           $ref: "#/components/schemas/Address"
-        sellTokenTip:
+        buyToken:
+          $ref: "#/components/schemas/Address"
+        sellAmount:
           $ref: "#/components/schemas/TokenAmount"
-        orderType:
-          description: Is this a buy order or sell order?
-          type: string
-          enum: [buy, sell]
-        fillType:
-          description: Is this a fill-or-kill order a partially fillable order?
-          type: string
-          enum: [fillorkill, partial]
-        nonce:
-          $ref: "#/components/schemas/Nonce"
+        buyAmount:
+          $ref: "#/components/schemas/TokenAmount"
         validTo:
           description: Time offset in seconds from epoch until which the order is valid. uint32.
           type: integer
+        appData:
+          description: Arbitrary identifier sent along with the order. Could be used to track the interface or other meta-aspects of the order. uint32.
+          type: integer
+        tip:
+          $ref: "#/components/schemas/TokenAmount"
+        orderKind:
+          description: Is this a buy order or sell order?
+          type: string
+          enum: [buy, sell]
+        partiallyFillable:
+          description: Is this a fill-or-kill order or a partially fillable order?
+          type: boolean
         signature:
           description: 65 bytes encoded as hex without `0x` prefix. v + r + s from the spec.
           example: "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
