@@ -13,8 +13,7 @@ pub trait SettlementContract {
 }
 
 #[async_trait]
-pub trait Ethereum {
-    async fn get_erc20_balance(&self, user: H160, token: H160) -> Result<u128>;
-    async fn is_spending_approved(&self, user: H160, token: H160, spender: H160) -> Result<bool>;
-    async fn get_uniswap_price(&self, token_pair: TokenPair) -> Result<f64>;
+pub trait ERC20 {
+    async fn balance_of(&self, owner: H160) -> Result<u128>;
+    async fn allowance(&self, owner: H160, spender: H160) -> Result<bool>;
 }

@@ -1,14 +1,10 @@
-#[allow(dead_code)]
+#![allow(dead_code)]
+
 mod batcher;
-#[allow(dead_code)]
 mod driver;
-#[allow(dead_code)]
 mod encoding;
-#[allow(dead_code)]
 mod ethereum;
-#[allow(dead_code)]
 mod orderbook;
-#[allow(dead_code)]
 mod settlement;
 
 #[tokio::main]
