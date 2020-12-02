@@ -127,6 +127,16 @@ mod tests {
     use primitive_types::H160;
 
     #[test]
+    fn rounded_up_division_() {
+        assert_eq!(rounded_up_division(4.into(), 2.into()), Some(2.into()));
+        assert_eq!(rounded_up_division(5.into(), 2.into()), Some(3.into()));
+        assert_eq!(rounded_up_division(6.into(), 2.into()), Some(3.into()));
+        assert_eq!(rounded_up_division(7.into(), 2.into()), Some(4.into()));
+        assert_eq!(rounded_up_division(7.into(), 1.into()), Some(7.into()));
+        assert_eq!(rounded_up_division(7.into(), 0.into()), None);
+    }
+
+    #[test]
     fn direct_match_exact() {
         let sell_a = UserOrder {
             sell_token: H160::from_low_u64_be(0),
