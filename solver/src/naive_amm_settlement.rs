@@ -1,5 +1,5 @@
 use crate::settlement::{Interaction, Settlement, Trade};
-use model::UserOrder;
+use model::{OrderKind, UserOrder};
 use primitive_types::U256;
 
 // Assume both orders are fill-or-kill sell orders and that sell/buy tokens match.
@@ -9,6 +9,10 @@ pub fn settle_two_fillkill_sell_orders(
     sell_a: &UserOrder,
     sell_b: &UserOrder,
 ) -> Option<Settlement> {
+    assert!(&[sell_a, sell_b]
+        .iter()
+        .all(|order| matches!(order.order_kind, OrderKind::Sell) && !order.partially_fillable));
+    assert!(sell_a.sell_token == sell_b.buy_token && sell_b.sell_token == sell_a.buy_token);
     // In a direct match the price and amount requirements and trivially fulfilled.
     let is_direct_match =
         sell_a.sell_amount >= sell_b.buy_amount && sell_b.sell_amount >= sell_a.buy_amount;
@@ -36,13 +40,10 @@ pub fn settle_two_fillkill_sell_orders(
 // Match two orders directly with their full sell amounts.
 fn direct_match(sell_a: &UserOrder, sell_b: &UserOrder) -> Settlement {
     Settlement {
-        clearing_prices: [
-            (sell_a.sell_token, sell_a.sell_amount),
-            (sell_b.sell_token, sell_b.sell_amount),
-        ]
-        .iter()
-        .copied()
-        .collect(),
+        clearing_prices: maplit::hashmap! {
+            sell_a.sell_token => sell_a.sell_amount,
+            sell_b.sell_token => sell_b.sell_amount,
+        },
         trades: vec![
             Trade {
                 order: *sell_a,
@@ -69,12 +70,12 @@ fn amm_match_(sell_a: &UserOrder, sell_b: &UserOrder) -> Option<Settlement> {
         (sell_b, sell_a)
     };
     // Unwrap because of the above explanation.
-    let bigger_sing_buy_amount = big.buy_amount.checked_sub(small.sell_amount).unwrap();
+    let big_missing_buy_amount = big.buy_amount.checked_sub(small.sell_amount).unwrap();
     // Because the smart contract enforces uniform prices we must pick one price that is accepted by
     // both orders. We know that there is price overlap so we could pick any price between the price
     // limits of the orders. We pick the price of the bigger order because it's sell token surplus
-    // will have to be traded with the amm and the bigger order always has a more lax amm price
-    // requirement of the bigger order's sell token than the smaller order.
+    // will have to be traded with the amm and in this trade it should suffice to receive as few
+    // tokens as possible (thus using least constraining price).
     // Because we picked the bigger order's price we must add an extra buy amount to the smaller
     // order so that it gets the same price.
     let small_buy_amount = rounded_up_division(
@@ -89,18 +90,13 @@ fn amm_match_(sell_a: &UserOrder, sell_b: &UserOrder) -> Option<Settlement> {
     }
 
     Some(Settlement {
-        clearing_prices: [
-            (big.sell_token, big.sell_amount),
-            (big.buy_token, big.buy_amount),
-        ]
-        .iter()
-        .copied()
-        .collect(),
+        clearing_prices: maplit::hashmap! {
+            big.sell_token => big.sell_amount,
+            big.buy_token => big.buy_amount,
+        },
         trades: vec![
             Trade {
                 order: *sell_a,
-                // TODO: or do we set this to 0 to save a tiny bit of gas because smart contract
-                // assumes correct sell amount anyway for fill-or-kill order.
                 executed_amount: sell_a.sell_amount,
             },
             Trade {
@@ -110,7 +106,7 @@ fn amm_match_(sell_a: &UserOrder, sell_b: &UserOrder) -> Option<Settlement> {
         ],
         interactions: vec![Interaction::AmmSwapExactTokensForTokens {
             amount_in: big_extra_sell_amount,
-            amount_out_min: bigger_sing_buy_amount,
+            amount_out_min: big_missing_buy_amount,
             token_in: big.sell_token,
             token_out: small.sell_token,
         }],
