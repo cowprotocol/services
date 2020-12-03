@@ -15,6 +15,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 
     generate_contract("IERC20");
+    generate_contract("IUniswapV2Router02");
 }
 
 fn generate_contract(name: &str) {
@@ -23,6 +24,7 @@ fn generate_contract(name: &str) {
 
     println!("cargo:rerun-if-changed={}", artifact.display());
     let builder = Builder::new(artifact)
+        .with_contract_name_override(Some(name))
         .with_visibility_modifier(Some("pub"))
         .add_event_derive("serde::Deserialize")
         .add_event_derive("serde::Serialize");
