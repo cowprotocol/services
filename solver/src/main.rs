@@ -4,7 +4,7 @@ mod batcher;
 mod driver;
 mod encoding;
 mod ethereum;
-mod naive_amm_settlement;
+mod naive_solver;
 mod orderbook;
 mod settlement;
 

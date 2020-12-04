@@ -34,7 +34,7 @@ pub fn settle_two_fillkill_sell_orders(
     if !have_price_overlap {
         return None;
     }
-    amm_match_(sell_a, sell_b)
+    amm_match(sell_a, sell_b)
 }
 
 // Match two orders directly with their full sell amounts.
@@ -59,7 +59,7 @@ fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Settlement {
 }
 
 // Match two orders with amm assuming that there is price overlap.
-fn amm_match_(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlement> {
+fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlement> {
     // Based on our assumptions we know that exactly one order is "bigger" than the other in the
     // sense that it a larger sell amount than the other order's buy amount.
     // It is not possible for both orders to be bigger because that would be a direct match which
