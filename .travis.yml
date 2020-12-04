@@ -1,4 +1,8 @@
-if: (branch = master) OR (type = pull_request) OR (tag IS present)
+branches:
+  only:
+    - main
+    - /^v\d+\.\d+(\.\d+)?(-\S*)?$/
+
 language: rust
 rust:
   - stable
