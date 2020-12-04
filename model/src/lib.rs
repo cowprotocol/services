@@ -2,8 +2,8 @@
 //!
 //! This is in its own crate because we want to share this module between the orderbook and the solver.
 
-mod h160_hexadecimal;
-mod u256_decimal;
+pub mod h160_hexadecimal;
+pub mod u256_decimal;
 
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use primitive_types::{H160, H256, U256};
