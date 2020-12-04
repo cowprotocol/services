@@ -45,7 +45,7 @@ pub struct UserOrder {
     pub valid_to: u32,
     pub app_data: u32,
     #[serde(with = "u256_decimal")]
-    pub tip: U256,
+    pub fee_amount: U256,
     pub order_kind: OrderKind,
     pub partially_fillable: bool,
     pub signature: Signature,
@@ -170,7 +170,7 @@ mod tests {
           "buyAmount": "0",
           "validTo": 4294967295u32,
           "appData": 0,
-          "tip": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+          "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
           "orderKind": "buy",
           "partiallyFillable": false,
           "signature": "0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
@@ -185,7 +185,7 @@ mod tests {
                 buy_amount: 0.into(),
                 valid_to: u32::MAX,
                 app_data: 0,
-                tip: U256::MAX,
+                fee_amount: U256::MAX,
                 order_kind: OrderKind::Buy,
                 partially_fillable: false,
                 signature: Signature {

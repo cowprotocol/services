@@ -17,7 +17,7 @@ pub fn encode_trade(
     order.buy_amount.to_big_endian(&mut result[34..66]);
     result[66..70].copy_from_slice(&order.valid_to.to_be_bytes());
     result[70..74].copy_from_slice(&order.app_data.to_be_bytes());
-    order.tip.to_big_endian(&mut result[74..106]);
+    order.fee_amount.to_big_endian(&mut result[74..106]);
     result[106] = encode_order_flags(order);
     executed_amount.to_big_endian(&mut result[107..139]);
     result[139] = order.signature.v;
@@ -58,7 +58,7 @@ mod tests {
             buy_amount: 5.into(),
             valid_to: 6,
             app_data: 7,
-            tip: 8.into(),
+            fee_amount: 8.into(),
             order_kind: OrderKind::Buy,
             partially_fillable: true,
             signature: Signature {

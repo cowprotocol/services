@@ -60,7 +60,7 @@ components:
         appData:
           description: Arbitrary identifier sent along with the order. Could be used to track the interface or other meta-aspects of the order. uint32.
           type: integer
-        tip:
+        feeAmount:
           $ref: "#/components/schemas/TokenAmount"
         orderKind:
           description: Is this a buy order or sell order?
