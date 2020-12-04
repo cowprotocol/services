@@ -3,7 +3,7 @@
 set -euo pipefail
 
 if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then
-    echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+    echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_NAME" --password-stdin
     # Build and tag image
     docker build -t $DOCKERHUB_PROJECT -f docker/Dockerfile .
     docker tag $DOCKERHUB_PROJECT gnosispm/$DOCKERHUB_PROJECT:$1

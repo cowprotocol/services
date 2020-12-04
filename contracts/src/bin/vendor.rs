@@ -19,6 +19,10 @@ const NPM_CONTRACTS: &[(&str, &str)] = &[
         "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Router02.json",
         "IUniswapV2Router02.json",
     ),
+    (
+        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.0/deployments/rinkeby/GPv2Settlement.json",
+        "GPv2Settlement.json",
+    ),
 ];
 
 fn main() {
