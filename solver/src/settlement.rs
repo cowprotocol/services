@@ -1,10 +1,10 @@
-use model::UserOrder;
+use model::OrderCreation;
 use primitive_types::{H160, U256};
 use std::collections::HashMap;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct Trade {
-    pub order: UserOrder,
+    pub order: OrderCreation,
     pub executed_amount: U256,
 }
 

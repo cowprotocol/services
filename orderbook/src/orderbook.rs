@@ -1,5 +1,6 @@
-use model::{Order, UserOrder};
-use primitive_types::H160;
+use model::{Order, OrderCreation, OrderMetaData, OrderUid};
+use primitive_types::{H160, H256};
+use std::convert::TryInto;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -24,10 +25,10 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    pub async fn add_order(&self, order: UserOrder) -> Result<(), AddOrderError> {
+    pub async fn add_order(&self, order: OrderCreation) -> Result<(), AddOrderError> {
         // TODO: Check order signature, nonce, valid_to.
         let mut orders = self.orders.write().await;
-        if orders.iter().any(|x| x.user_provided == order) {
+        if orders.iter().any(|x| x.order_creation == order) {
             return Err(AddOrderError::AlreadyExists);
         }
         let order = user_order_to_full_order(order).map_err(|_| AddOrderError::InvalidSignature)?;
@@ -40,9 +41,9 @@ impl OrderBook {
     }
 
     #[allow(dead_code)]
-    pub async fn remove_order(&self, order: &UserOrder) -> Result<(), RemoveOrderError> {
+    pub async fn remove_order(&self, order: &OrderCreation) -> Result<(), RemoveOrderError> {
         let mut orders = self.orders.write().await;
-        if let Some(index) = orders.iter().position(|x| x.user_provided == *order) {
+        if let Some(index) = orders.iter().position(|x| x.order_creation == *order) {
             orders.swap_remove(index);
             Ok(())
         } else {
@@ -52,12 +53,25 @@ impl OrderBook {
 }
 
 struct InvalidSignatureError {}
-fn user_order_to_full_order(user_order: UserOrder) -> Result<Order, InvalidSignatureError> {
-    // TODO: verify signature and extract owner
+fn user_order_to_full_order(user_order: OrderCreation) -> Result<Order, InvalidSignatureError> {
+    // TODO: verify signature and extract owner, get orderDigest, and do proper error handling
+    let owner = H160::zero();
+    let digest = H256::zero();
+    let valid_to = user_order.valid_to.to_be_bytes();
+    let uid = OrderUid(
+        [digest.as_bytes(), owner.as_bytes(), &valid_to]
+            .concat()
+            .try_into()
+            .unwrap(),
+    );
+
     Ok(Order {
-        creation_time: chrono::offset::Utc::now(),
-        owner: H160::zero(),
-        user_provided: user_order,
+        order_meta_data: OrderMetaData {
+            creation_date: chrono::offset::Utc::now(),
+            owner,
+            uid,
+        },
+        order_creation: user_order,
     })
 }
 
@@ -68,7 +82,7 @@ pub mod test_util {
     #[tokio::test]
     async fn cannot_add_order_twice() {
         let orderbook = OrderBook::default();
-        let order = UserOrder::default();
+        let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         assert_eq!(
@@ -80,7 +94,7 @@ pub mod test_util {
     #[tokio::test]
     async fn test_simple_removing_order() {
         let orderbook = OrderBook::default();
-        let order = UserOrder::default();
+        let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         orderbook.remove_order(&order).await.unwrap();

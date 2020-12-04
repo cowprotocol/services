@@ -1,11 +1,11 @@
-use model::{OrderKind, UserOrder};
+use model::{OrderCreation, OrderKind};
 use primitive_types::U256;
 
 const TRADE_STRIDE: usize = 204;
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
 pub fn encode_trade(
-    order: &UserOrder,
+    order: &OrderCreation,
     sell_token_index: u8,
     buy_token_index: u8,
     executed_amount: U256,
@@ -26,7 +26,7 @@ pub fn encode_trade(
     result
 }
 
-fn encode_order_flags(order: &UserOrder) -> u8 {
+fn encode_order_flags(order: &OrderCreation) -> u8 {
     let mut result = 0u8;
     if matches!(order.order_kind, OrderKind::Buy) {
         result |= 0b00000001;
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn encode_trade_() {
-        let order = UserOrder {
+        let order = OrderCreation {
             sell_token: H160::zero(),
             buy_token: H160::zero(),
             sell_amount: 4.into(),

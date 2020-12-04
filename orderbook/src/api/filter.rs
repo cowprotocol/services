@@ -1,6 +1,6 @@
 use super::handler;
 use crate::orderbook::OrderBook;
-use model::UserOrder;
+use model::OrderCreation;
 use std::sync::Arc;
 use warp::Filter;
 
@@ -12,7 +12,8 @@ fn with_orderbook(
     warp::any().map(move || orderbook.clone())
 }
 
-fn extract_user_order() -> impl Filter<Extract = (UserOrder,), Error = warp::Rejection> + Clone {
+fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = warp::Rejection> + Clone
+{
     // (rejecting huge payloads)...
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
 }
@@ -61,7 +62,7 @@ pub mod test_util {
     async fn get_orders_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_orders(orderbook.clone());
-        let order = UserOrder::default();
+        let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
         let response = request()
             .path("/api/v1/orders")
@@ -99,7 +100,7 @@ pub mod test_util {
     async fn create_order_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = create_order(orderbook.clone());
-        let order = UserOrder::default();
+        let order = OrderCreation::default();
         let post = || async {
             request()
                 .path("/api/v1/orders")

@@ -1,13 +1,13 @@
 use crate::settlement::{Interaction, Settlement, Trade};
-use model::{OrderKind, UserOrder};
+use model::{OrderCreation, OrderKind};
 use primitive_types::U256;
 
 // Assume both orders are fill-or-kill sell orders and that sell/buy tokens match.
 // Result is None if the orders are unmatchable, a direct match if that is possible, or a match
 // with a single amm interaction.
 pub fn settle_two_fillkill_sell_orders(
-    sell_a: &UserOrder,
-    sell_b: &UserOrder,
+    sell_a: &OrderCreation,
+    sell_b: &OrderCreation,
 ) -> Option<Settlement> {
     assert!(&[sell_a, sell_b]
         .iter()
@@ -38,7 +38,7 @@ pub fn settle_two_fillkill_sell_orders(
 }
 
 // Match two orders directly with their full sell amounts.
-fn direct_match(sell_a: &UserOrder, sell_b: &UserOrder) -> Settlement {
+fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Settlement {
     Settlement {
         clearing_prices: maplit::hashmap! {
             sell_a.sell_token => sell_a.sell_amount,
@@ -59,7 +59,7 @@ fn direct_match(sell_a: &UserOrder, sell_b: &UserOrder) -> Settlement {
 }
 
 // Match two orders with amm assuming that there is price overlap.
-fn amm_match_(sell_a: &UserOrder, sell_b: &UserOrder) -> Option<Settlement> {
+fn amm_match_(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlement> {
     // Based on our assumptions we know that exactly one order is "bigger" than the other in the
     // sense that it a larger sell amount than the other order's buy amount.
     // It is not possible for both orders to be bigger because that would be a direct match which
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn direct_match_exact() {
-        let sell_a = UserOrder {
+        let sell_a = OrderCreation {
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 5.into(),
@@ -147,7 +147,7 @@ mod tests {
             partially_fillable: false,
             ..Default::default()
         };
-        let sell_b = UserOrder {
+        let sell_b = OrderCreation {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 10.into(),
@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn direct_match_different_prices() {
-        let sell_a = UserOrder {
+        let sell_a = OrderCreation {
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
@@ -179,7 +179,7 @@ mod tests {
             partially_fillable: false,
             ..Default::default()
         };
-        let sell_b = UserOrder {
+        let sell_b = OrderCreation {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 15.into(),
@@ -202,7 +202,7 @@ mod tests {
     #[test]
     fn unmatchable_because_price() {
         // price of token a in b is at least 1
-        let sell_a = UserOrder {
+        let sell_a = OrderCreation {
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
@@ -212,7 +212,7 @@ mod tests {
             ..Default::default()
         };
         // price of token a in b is at most 0.5
-        let sell_b = UserOrder {
+        let sell_b = OrderCreation {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 1.into(),
@@ -227,7 +227,7 @@ mod tests {
 
     #[test]
     fn amm_match_same_price() {
-        let sell_a = UserOrder {
+        let sell_a = OrderCreation {
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
@@ -236,7 +236,7 @@ mod tests {
             partially_fillable: false,
             ..Default::default()
         };
-        let sell_b = UserOrder {
+        let sell_b = OrderCreation {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 6.into(),
@@ -267,7 +267,7 @@ mod tests {
     #[test]
     fn amm_match_different_price_picks_price_of_bigger_order() {
         // price of token a in b is at least 2
-        let sell_a = UserOrder {
+        let sell_a = OrderCreation {
             sell_token: H160::from_low_u64_be(0),
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
@@ -277,7 +277,7 @@ mod tests {
             ..Default::default()
         };
         // price of token a in b is at most 4
-        let sell_b = UserOrder {
+        let sell_b = OrderCreation {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 4.into(),

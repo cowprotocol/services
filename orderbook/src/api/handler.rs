@@ -1,7 +1,7 @@
 use crate::orderbook::{AddOrderError, OrderBook};
+
 use chrono::prelude::{DateTime, FixedOffset, Utc};
-use model::UserOrder;
-use model::{h160_hexadecimal, u256_decimal};
+use model::{h160_hexadecimal, u256_decimal, OrderCreation};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
@@ -29,7 +29,7 @@ pub struct FeeRequestBody {
 
 pub async fn add_order(
     orderbook: Arc<OrderBook>,
-    order: UserOrder,
+    order: OrderCreation,
 ) -> Result<impl warp::Reply, Infallible> {
     let (body, status_code) = match orderbook.add_order(order).await {
         Ok(()) => ("ok", StatusCode::CREATED),
