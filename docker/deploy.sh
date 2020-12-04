@@ -15,7 +15,7 @@ if [ "$TRAVIS_PULL_REQUEST" = "false" ]; then
       --output /dev/null \
       --write-out "%{http_code}" \
       -H "Content-Type: application/json" \
-      -d '{"push_data": {"tag": "'$1'" }}' \
+      -d '{"push_data": {"tag": "'$AUTODEPLOY_TAG'" }}' \
       -X POST \
       $AUTODEPLOY_URL
     fi
