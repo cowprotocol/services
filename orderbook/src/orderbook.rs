@@ -1,6 +1,5 @@
 use model::{Order, OrderCreation, OrderMetaData, OrderUid};
 use primitive_types::{H160, H256};
-use std::convert::TryInto;
 use tokio::sync::RwLock;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -57,13 +56,10 @@ fn user_order_to_full_order(user_order: OrderCreation) -> Result<Order, InvalidS
     // TODO: verify signature and extract owner, get orderDigest, and do proper error handling
     let owner = H160::zero();
     let digest = H256::zero();
-    let valid_to = user_order.valid_to.to_be_bytes();
-    let uid = OrderUid(
-        [digest.as_bytes(), owner.as_bytes(), &valid_to]
-            .concat()
-            .try_into()
-            .unwrap(),
-    );
+    let mut uid = OrderUid([0u8; 56]);
+    uid.0[0..32].copy_from_slice(digest.as_fixed_bytes());
+    uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
+    uid.0[52..56].copy_from_slice(&user_order.valid_to.to_be_bytes());
 
     Ok(Order {
         order_meta_data: OrderMetaData {
