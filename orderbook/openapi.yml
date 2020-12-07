@@ -19,7 +19,6 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/OrderNew"
-  /api/v1/orders:
     get:
       summary: Get existing orders.
       # TODO: Later we could add filters through the url query to only get orders matching specific tokens etc.
