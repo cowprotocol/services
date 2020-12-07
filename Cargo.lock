@@ -1767,11 +1767,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "contracts",
+ "futures 0.3.6",
+ "jsonrpc-core",
  "maplit",
  "model",
  "primitive-types",
  "reqwest",
+ "serde_json",
  "tokio",
+ "web3",
 ]
 
 [[package]]
