@@ -35,6 +35,7 @@ impl OrderBook {
         }
         let order = user_order_to_full_order(order).map_err(|_| AddOrderError::InvalidSignature)?;
         let uid = order.order_meta_data.uid;
+        tracing::debug!(?order, "adding order");
         orders.push(order);
         Ok(uid)
     }
