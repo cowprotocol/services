@@ -16,6 +16,7 @@ fn main() {
 
     generate_contract("IERC20");
     generate_contract("IUniswapV2Router02");
+    generate_contract("GPv2Settlement");
 }
 
 fn generate_contract(name: &str) {
