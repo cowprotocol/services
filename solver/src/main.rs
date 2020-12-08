@@ -10,6 +10,5 @@ mod settlement;
 
 #[tokio::main]
 async fn main() {
-    // TODO: create driver, call settle_if_needed every 10 seconds
     todo!("run driver")
 }

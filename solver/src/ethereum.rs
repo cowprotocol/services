@@ -9,7 +9,10 @@ use primitive_types::H160;
 #[async_trait]
 pub trait SettlementContract {
     async fn get_nonce(&self, token_pair: TokenPair) -> Result<u32>;
-    async fn settle(&self, settlement: Settlement) -> Result<()>;
+    // Call simulates the transaction.
+    async fn settle_call(&self, settlement: &Settlement) -> Result<()>;
+    // Send really executes the transaction.
+    async fn settle_send(&self, settlement: &Settlement) -> Result<()>;
 }
 
 #[async_trait]
