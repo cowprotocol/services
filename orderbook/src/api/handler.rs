@@ -52,7 +52,7 @@ pub async fn get_fee_info(sell_token: FeeRequestBody) -> Result<impl warp::Reply
         expiration_date: chrono::offset::Utc::now()
             + FixedOffset::east(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
         minimal_fee: U256::zero(),
-        fee_ratio: 10 as u32,
+        fee_ratio: 0 as u32,
     };
     Ok(warp::reply::json(&fee_info))
 }

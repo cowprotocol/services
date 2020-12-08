@@ -93,7 +93,7 @@ pub mod test_util {
         let body: handler::FeeInfo = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(body.minimal_fee, U256::zero());
-        assert_eq!(body.fee_ratio, 10);
+        assert_eq!(body.fee_ratio, 0);
         assert!(body.expiration_date.gt(&chrono::offset::Utc::now()))
     }
     #[tokio::test]
