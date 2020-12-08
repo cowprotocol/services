@@ -101,6 +101,7 @@ pub mod test_util {
         let orderbook = Arc::new(OrderBook::default());
         let filter = create_order(orderbook.clone());
         let order = OrderCreation::default();
+        let expected_uid = json!({"UID": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"});
         let post = || async {
             request()
                 .path("/api/v1/orders")
@@ -112,8 +113,16 @@ pub mod test_util {
         };
         let response = post().await;
         assert_eq!(response.status(), StatusCode::CREATED);
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+
+        assert_eq!(body, expected_uid);
         // Posting again should fail because order already exists.
         let response = post().await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        let expected_error =
+            json!({"errorType": "DuplicatedOrder", "description": "order already exists"});
+        assert_eq!(body, expected_error);
     }
 }

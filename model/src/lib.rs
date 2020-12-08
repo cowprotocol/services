@@ -4,7 +4,6 @@
 
 pub mod h160_hexadecimal;
 pub mod u256_decimal;
-
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use primitive_types::{H160, H256, U256};
 use serde::{de, Deserialize, Serialize};
@@ -55,6 +54,21 @@ pub struct OrderCreation {
 impl OrderCreation {
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
+    }
+    pub fn order_owner(&self) -> H160 {
+        // dummy implementation, waiting for Valentins PR
+        H160::zero()
+    }
+    pub fn order_digest(&self) -> H256 {
+        // dummy implementation, waiting for Valentins PR
+        H256::zero()
+    }
+    pub fn order_uid(&self) -> OrderUid {
+        let mut uid = OrderUid([0u8; 56]);
+        uid.0[0..32].copy_from_slice(self.order_digest().as_fixed_bytes());
+        uid.0[32..52].copy_from_slice(self.order_owner().as_fixed_bytes());
+        uid.0[52..56].copy_from_slice(&self.valid_to.to_be_bytes());
+        uid
     }
 }
 

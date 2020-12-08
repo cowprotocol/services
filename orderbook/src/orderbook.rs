@@ -1,15 +1,18 @@
-use model::{Order, OrderCreation, OrderMetaData, OrderUid};
-use primitive_types::{H160, H256};
+use model::{Order, OrderCreation, OrderMetaData};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderError {
-    AlreadyExists,
+    DuplicatedOrder,
     InvalidSignature,
     #[allow(dead_code)]
-    PastNonce,
+    Forbidden,
+    #[allow(dead_code)]
+    MissingOrderData,
     #[allow(dead_code)]
     PastValidTo,
+    #[allow(dead_code)]
+    InsufficientFunds,
 }
 
 #[derive(Debug)]
@@ -28,7 +31,7 @@ impl OrderBook {
         // TODO: Check order signature, nonce, valid_to.
         let mut orders = self.orders.write().await;
         if orders.iter().any(|x| x.order_creation == order) {
-            return Err(AddOrderError::AlreadyExists);
+            return Err(AddOrderError::DuplicatedOrder);
         }
         let order = user_order_to_full_order(order).map_err(|_| AddOrderError::InvalidSignature)?;
         orders.push(order);
@@ -53,19 +56,11 @@ impl OrderBook {
 
 struct InvalidSignatureError {}
 fn user_order_to_full_order(user_order: OrderCreation) -> Result<Order, InvalidSignatureError> {
-    // TODO: verify signature and extract owner, get orderDigest, and do proper error handling
-    let owner = H160::zero();
-    let digest = H256::zero();
-    let mut uid = OrderUid([0u8; 56]);
-    uid.0[0..32].copy_from_slice(digest.as_fixed_bytes());
-    uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
-    uid.0[52..56].copy_from_slice(&user_order.valid_to.to_be_bytes());
-
     Ok(Order {
         order_meta_data: OrderMetaData {
             creation_date: chrono::offset::Utc::now(),
-            owner,
-            uid,
+            owner: user_order.order_owner(),
+            uid: user_order.order_uid(),
         },
         order_creation: user_order,
     })
@@ -83,7 +78,7 @@ pub mod test_util {
         assert_eq!(orderbook.get_orders().await.len(), 1);
         assert_eq!(
             orderbook.add_order(order).await,
-            Err(AddOrderError::AlreadyExists)
+            Err(AddOrderError::DuplicatedOrder)
         );
     }
 
