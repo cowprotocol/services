@@ -1,4 +1,4 @@
-use model::{Order, OrderCreation, OrderMetaData};
+use model::{Order, OrderCreation, OrderMetaData, OrderUid};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -27,15 +27,16 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    pub async fn add_order(&self, order: OrderCreation) -> Result<(), AddOrderError> {
+    pub async fn add_order(&self, order: OrderCreation) -> Result<OrderUid, AddOrderError> {
         // TODO: Check order signature, nonce, valid_to.
         let mut orders = self.orders.write().await;
         if orders.iter().any(|x| x.order_creation == order) {
             return Err(AddOrderError::DuplicatedOrder);
         }
         let order = user_order_to_full_order(order).map_err(|_| AddOrderError::InvalidSignature)?;
+        let uid = order.order_meta_data.uid;
         orders.push(order);
-        Ok(())
+        Ok(uid)
     }
 
     pub async fn get_orders(&self) -> Vec<Order> {
@@ -54,13 +55,18 @@ impl OrderBook {
     }
 }
 
-struct InvalidSignatureError {}
+struct InvalidSignatureError;
 fn user_order_to_full_order(user_order: OrderCreation) -> Result<Order, InvalidSignatureError> {
+    // TODO: make domain separator configurable
+    let domain_separator = [0u8; 32];
+    let owner = user_order
+        .validate_signature(&domain_separator)
+        .ok_or(InvalidSignatureError)?;
     Ok(Order {
         order_meta_data: OrderMetaData {
             creation_date: chrono::offset::Utc::now(),
-            owner: user_order.order_owner(),
-            uid: user_order.order_uid(),
+            owner,
+            uid: user_order.uid(&owner),
         },
         order_creation: user_order,
     })
@@ -73,7 +79,8 @@ pub mod test_util {
     #[tokio::test]
     async fn cannot_add_order_twice() {
         let orderbook = OrderBook::default();
-        let order = OrderCreation::default();
+        let mut order = OrderCreation::default();
+        order.sign_self();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         assert_eq!(
@@ -85,7 +92,8 @@ pub mod test_util {
     #[tokio::test]
     async fn test_simple_removing_order() {
         let orderbook = OrderBook::default();
-        let order = OrderCreation::default();
+        let mut order = OrderCreation::default();
+        order.sign_self();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         orderbook.remove_order(&order).await.unwrap();

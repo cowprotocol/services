@@ -62,7 +62,8 @@ pub mod test_util {
     async fn get_orders_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_orders(orderbook.clone());
-        let order = OrderCreation::default();
+        let mut order = OrderCreation::default();
+        order.sign_self();
         orderbook.add_order(order).await.unwrap();
         let response = request()
             .path("/api/v1/orders")
@@ -74,6 +75,7 @@ pub mod test_util {
         let orderbook_orders = orderbook.get_orders().await;
         assert_eq!(response_orders, orderbook_orders);
     }
+
     #[tokio::test]
     async fn get_fee_info_() {
         let filter = get_fee_info();
@@ -96,12 +98,14 @@ pub mod test_util {
         assert_eq!(body.fee_ratio, 0);
         assert!(body.expiration_date.gt(&chrono::offset::Utc::now()))
     }
+
     #[tokio::test]
     async fn create_order_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = create_order(orderbook.clone());
-        let order = OrderCreation::default();
-        let expected_uid = json!({"UID": "0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"});
+        let mut order = OrderCreation::default();
+        order.sign_self();
+        let expected_uid = json!({"UID": "5ffa6cfc98b68d14b6546dda3e1d233d7f739e4941e71165c19489521a6038751a642f0e3c3af545e7acbd38b07251b3990914f100000000"});
         let post = || async {
             request()
                 .path("/api/v1/orders")

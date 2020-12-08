@@ -45,12 +45,7 @@ pub async fn add_order(
     order: OrderCreation,
 ) -> Result<impl warp::Reply, Infallible> {
     let (body, status_code) = match orderbook.add_order(order).await {
-        Ok(()) => (
-            warp::reply::json(&UidResponse {
-                uid: order.order_uid(),
-            }),
-            StatusCode::CREATED,
-        ),
+        Ok(uid) => (warp::reply::json(&UidResponse { uid }), StatusCode::CREATED),
         Err(err) => {
             let (error_type, description, status_code) = match err {
                 AddOrderError::DuplicatedOrder => (

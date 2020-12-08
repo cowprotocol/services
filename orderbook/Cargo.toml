@@ -6,7 +6,6 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-hex-literal = "0.3"
 model = { path = "../model" }
 primitive-types = "0.7"
 serde = { version = "1.0", features = ["derive"] }

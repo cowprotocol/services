@@ -5,10 +5,16 @@
 pub mod h160_hexadecimal;
 pub mod u256_decimal;
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
+use hex_literal::hex;
 use primitive_types::{H160, H256, U256};
+use secp256k1::{constants::SECRET_KEY_SIZE, SecretKey};
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::fmt;
+use web3::{
+    signing::{self, Key, SecretKeyRef},
+    types::Recovery,
+};
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -52,23 +58,94 @@ pub struct OrderCreation {
 }
 
 impl OrderCreation {
+    pub const ORDER_TYPE_HASH: [u8; 32] =
+        hex!("b71968fcf5e55b9c3370f2809d4078a4695be79dfa43e5aa1f2baa0a9b84f186");
+
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
     }
-    pub fn order_owner(&self) -> H160 {
-        // dummy implementation, waiting for Valentins PR
-        H160::zero()
+
+    pub fn order_digest(&self) -> [u8; 32] {
+        let mut hash_data = [0u8; 320];
+        hash_data[0..32].copy_from_slice(&Self::ORDER_TYPE_HASH);
+        // Some slots are not assigned (stay 0) because all values are extended to 256 bits.
+        hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
+        hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
+        self.sell_amount.to_big_endian(&mut hash_data[96..128]);
+        self.buy_amount.to_big_endian(&mut hash_data[128..160]);
+        hash_data[188..192].copy_from_slice(&self.valid_to.to_be_bytes());
+        hash_data[220..224].copy_from_slice(&self.app_data.to_be_bytes());
+        self.fee_amount.to_big_endian(&mut hash_data[224..256]);
+        hash_data[287] = match self.order_kind {
+            OrderKind::Sell => 0,
+            OrderKind::Buy => 1,
+        };
+        hash_data[319] = self.partially_fillable as u8;
+        signing::keccak256(&hash_data)
     }
-    pub fn order_digest(&self) -> H256 {
-        // dummy implementation, waiting for Valentins PR
-        H256::zero()
+
+    pub fn signing_digest_typed_data(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        let mut hash_data = [0u8; 66];
+        hash_data[0..2].copy_from_slice(&[0x19, 0x01]);
+        hash_data[2..34].copy_from_slice(domain_separator);
+        hash_data[34..66].copy_from_slice(&self.order_digest());
+        signing::keccak256(&hash_data)
     }
-    pub fn order_uid(&self) -> OrderUid {
+
+    pub fn signing_digest_message(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        let mut hash_data = [0u8; 92];
+        hash_data[0..28].copy_from_slice(b"\x19Ethereum Signed Message:\n64");
+        hash_data[28..60].copy_from_slice(domain_separator);
+        hash_data[60..92].copy_from_slice(&self.order_digest());
+        signing::keccak256(&hash_data)
+    }
+
+    pub fn signing_digest(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        if self.signature.v & 0x80 == 0 {
+            self.signing_digest_typed_data(domain_separator)
+        } else {
+            self.signing_digest_message(domain_separator)
+        }
+    }
+
+    // If signature is valid returns the owner.
+    pub fn validate_signature(&self, domain_separator: &[u8; 32]) -> Option<H160> {
+        let v = self.signature.v & 0x1f;
+        let message = self.signing_digest(domain_separator);
+        let recovery = Recovery::new(message, v as u64, self.signature.r, self.signature.s);
+        let (signature, recovery_id) = recovery.as_signature()?;
+        signing::recover(&message, &signature, recovery_id).ok()
+    }
+
+    pub fn uid(&self, owner: &H160) -> OrderUid {
         let mut uid = OrderUid([0u8; 56]);
-        uid.0[0..32].copy_from_slice(self.order_digest().as_fixed_bytes());
-        uid.0[32..52].copy_from_slice(self.order_owner().as_fixed_bytes());
+        uid.0[0..32].copy_from_slice(&self.order_digest());
+        uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
         uid.0[52..56].copy_from_slice(&self.valid_to.to_be_bytes());
         uid
+    }
+}
+
+// Intended to be used by tests that need signed orders.
+impl OrderCreation {
+    pub const TEST_DOMAIN_SEPARATOR: [u8; 32] = [0u8; 32];
+
+    pub fn sign_self_with(&mut self, domain_separator: &[u8; 32], key: SecretKeyRef) {
+        let message = self.signing_digest_message(domain_separator);
+        // Unwrap because the only error is for invalid messages which we don't create.
+        let signature = Key::sign(&key, &message, None).unwrap();
+        self.signature.v = signature.v as u8 | 0x80;
+        self.signature.r = signature.r;
+        self.signature.s = signature.s;
+    }
+
+    // Picks the test domain and an arbitrary secret key. Returns the corresponding address.
+    pub fn sign_self(&mut self) -> H160 {
+        let key = SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap();
+        let key_ref = SecretKeyRef::new(&key);
+        let address = web3::signing::Key::address(&key_ref);
+        self.sign_self_with(&Self::TEST_DOMAIN_SEPARATOR, key_ref);
+        address
     }
 }
 
@@ -292,5 +369,70 @@ mod tests {
     fn token_pair_cannot_be_equal() {
         let token = H160::from_low_u64_be(1);
         assert_eq!(TokenPair::new(token, token), None);
+    }
+
+    #[test]
+    fn signature_typed_data() {
+        // copied from a gp-v2-contracts test
+        let domain_separator =
+            hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
+        let order = OrderCreation {
+            sell_token: hex!("0101010101010101010101010101010101010101").into(),
+            buy_token: hex!("0202020202020202020202020202020202020202").into(),
+            sell_amount: hex!("0303030303030303030303030303030303030303030303030303030303030303")
+                .into(),
+            buy_amount: hex!("0404040404040404040404040404040404040404040404040404040404040404")
+                .into(),
+            valid_to: 84215045,
+            app_data: 101058054,
+            fee_amount: hex!("0707070707070707070707070707070707070707070707070707070707070707")
+                .into(),
+            order_kind: OrderKind::Buy,
+            partially_fillable: true,
+            signature: Signature {
+                v: 0x1b,
+                r: hex!("159bad4cdce8e9eeb34f4450941e6e512cd2ceaba2809f6928ad91ce58700064").into(),
+                s: hex!("4cd8e52110ca7d1ba7493828bb811969115aff9d8358a5071bd2e7d15c1362bd").into(),
+            },
+        };
+        let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
+        let owner = order.validate_signature(&domain_separator).unwrap();
+        assert_eq!(owner, expected_owner.into());
+    }
+
+    #[test]
+    fn signature_message() {
+        // copied from a gp-v2-contracts test
+        let domain_separator =
+            hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
+        let order = OrderCreation {
+            sell_token: hex!("0101010101010101010101010101010101010101").into(),
+            buy_token: hex!("0202020202020202020202020202020202020202").into(),
+            sell_amount: hex!("0246ddf97976680000").as_ref().into(),
+            buy_amount: hex!("b98bc829a6f90000").as_ref().into(),
+            valid_to: 4294967295,
+            app_data: 0,
+            fee_amount: hex!("0de0b6b3a7640000").as_ref().into(),
+            order_kind: OrderKind::Sell,
+            partially_fillable: false,
+            signature: Signature {
+                v: 0x1b | 0x80,
+                r: hex!("97be7a77d916c99b39d2909c5fde76a82f4fd49868b18d000d93de2c59061602").into(),
+                s: hex!("68f04221fd6ac0e8aebfb048cf6c75ca882cd20c6e06aec094c278f8e44c1759").into(),
+            },
+        };
+        let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
+        let owner = order.validate_signature(&domain_separator).unwrap();
+        assert_eq!(owner, expected_owner.into());
+    }
+
+    #[test]
+    fn sign_self() {
+        let mut order = OrderCreation::default();
+        let owner = order.sign_self();
+        assert_eq!(
+            order.validate_signature(&OrderCreation::TEST_DOMAIN_SEPARATOR),
+            Some(owner)
+        );
     }
 }

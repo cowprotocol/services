@@ -1037,9 +1037,12 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "hex",
+ "hex-literal",
  "primitive-types",
+ "secp256k1 0.17.2",
  "serde",
  "serde_json",
+ "web3",
 ]
 
 [[package]]
@@ -1165,7 +1168,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "hex-literal",
  "model",
  "primitive-types",
  "serde",
