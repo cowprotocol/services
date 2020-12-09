@@ -1,6 +1,7 @@
 use super::handler;
 use crate::orderbook::OrderBook;
 use model::OrderCreation;
+use primitive_types::H160;
 use std::sync::Arc;
 use warp::Filter;
 
@@ -18,16 +19,10 @@ fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = warp:
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
 }
 
-fn extract_sell_token(
-) -> impl Filter<Extract = (handler::FeeRequestBody,), Error = warp::Rejection> + Clone {
-    // (rejecting huge payloads)...
-    warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
-}
-
 pub fn create_order(
     orderbook: Arc<OrderBook>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "v1" / "orders")
+    warp::path!("orders")
         .and(warp::post())
         .and(with_orderbook(orderbook))
         .and(extract_user_order())
@@ -37,16 +32,15 @@ pub fn create_order(
 pub fn get_orders(
     orderbook: Arc<OrderBook>,
 ) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "v1" / "orders")
+    warp::path!("orders")
         .and(warp::get())
         .and(with_orderbook(orderbook))
         .and_then(handler::get_orders)
 }
 
 pub fn get_fee_info() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-    warp::path!("api" / "v1" / "fee")
+    warp::path!("fee" / H160)
         .and(warp::get())
-        .and(extract_sell_token())
         .and_then(handler::get_fee_info)
 }
 
@@ -65,11 +59,7 @@ pub mod test_util {
         let mut order = OrderCreation::default();
         order.sign_self();
         orderbook.add_order(order).await.unwrap();
-        let response = request()
-            .path("/api/v1/orders")
-            .method("GET")
-            .reply(&filter)
-            .await;
+        let response = request().path("/orders").method("GET").reply(&filter).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
         let orderbook_orders = orderbook.get_orders().await;
@@ -79,15 +69,12 @@ pub mod test_util {
     #[tokio::test]
     async fn get_fee_info_() {
         let filter = get_fee_info();
-        let json_post = json!({
-            "sellToken": "000000000000000000000000000000000000000a",
-        });
+        let sell_token = String::from("000000000000000000000000000000000000000a");
+        let path_string = format!("/fee/{}", sell_token);
         let post = || async {
             request()
-                .path("/api/v1/fee")
+                .path(&path_string)
                 .method("GET")
-                .header("content-type", "application/json")
-                .json(&json_post)
                 .reply(&filter)
                 .await
         };
@@ -108,7 +95,7 @@ pub mod test_util {
         let expected_uid = json!({"UID": "5ffa6cfc98b68d14b6546dda3e1d233d7f739e4941e71165c19489521a6038751a642f0e3c3af545e7acbd38b07251b3990914f100000000"});
         let post = || async {
             request()
-                .path("/api/v1/orders")
+                .path("/orders")
                 .method("POST")
                 .header("content-type", "application/json")
                 .json(&order)
