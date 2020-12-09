@@ -57,6 +57,7 @@ pub mod test_util {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_orders(orderbook.clone());
         let mut order = OrderCreation::default();
+        order.valid_to = u32::MAX;
         order.sign_self();
         orderbook.add_order(order).await.unwrap();
         let response = request().path("/orders").method("GET").reply(&filter).await;
@@ -91,8 +92,9 @@ pub mod test_util {
         let orderbook = Arc::new(OrderBook::default());
         let filter = create_order(orderbook.clone());
         let mut order = OrderCreation::default();
+        order.valid_to = u32::MAX;
         order.sign_self();
-        let expected_uid = json!({"UID": "5ffa6cfc98b68d14b6546dda3e1d233d7f739e4941e71165c19489521a6038751a642f0e3c3af545e7acbd38b07251b3990914f100000000"});
+        let expected_uid = json!({"UID": "98f26f9847f4e365ea530784ce5976f56ea2a67e9cde05fd16fca9a1fadbe5211a642f0e3c3af545e7acbd38b07251b3990914f1ffffffff"});
         let post = || async {
             request()
                 .path("/orders")
