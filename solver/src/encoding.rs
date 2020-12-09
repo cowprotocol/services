@@ -32,7 +32,7 @@ pub fn encode_trade(
 
 fn encode_order_flags(order: &OrderCreation) -> u8 {
     let mut result = 0u8;
-    if matches!(order.order_kind, OrderKind::Buy) {
+    if matches!(order.kind, OrderKind::Buy) {
         result |= 0b00000001;
     };
     if order.partially_fillable {
@@ -106,7 +106,7 @@ mod tests {
             valid_to: 6,
             app_data: 7,
             fee_amount: 8.into(),
-            order_kind: OrderKind::Buy,
+            kind: OrderKind::Buy,
             partially_fillable: true,
             signature: Signature {
                 v: 9,

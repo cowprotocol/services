@@ -44,7 +44,7 @@ fn organize_orders_by_token_pair(
 }
 
 fn usable_order(order: &OrderCreation) -> bool {
-    matches!(order.order_kind, OrderKind::Sell)
+    matches!(order.kind, OrderKind::Sell)
         && !order.sell_amount.is_zero()
         && !order.buy_amount.is_zero()
         && !order.partially_fillable
@@ -103,7 +103,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 sell_amount: 4.into(),
                 buy_amount: 9.into(),
-                order_kind: OrderKind::Sell,
+                kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
             },
@@ -112,7 +112,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(1),
                 sell_amount: 4.into(),
                 buy_amount: 8.into(),
-                order_kind: OrderKind::Sell,
+                kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
             },
@@ -121,7 +121,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(0),
                 sell_amount: 10.into(),
                 buy_amount: 11.into(),
-                order_kind: OrderKind::Sell,
+                kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
             },
@@ -130,7 +130,7 @@ mod tests {
                 buy_token: H160::from_low_u64_be(0),
                 sell_amount: 6.into(),
                 buy_amount: 2.into(),
-                order_kind: OrderKind::Sell,
+                kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
             },

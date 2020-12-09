@@ -52,7 +52,7 @@ pub struct OrderCreation {
     pub app_data: u32,
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
-    pub order_kind: OrderKind,
+    pub kind: OrderKind,
     pub partially_fillable: bool,
     pub signature: Signature,
 }
@@ -122,7 +122,7 @@ impl OrderCreation {
         hash_data[188..192].copy_from_slice(&self.valid_to.to_be_bytes());
         hash_data[220..224].copy_from_slice(&self.app_data.to_be_bytes());
         self.fee_amount.to_big_endian(&mut hash_data[224..256]);
-        hash_data[287] = match self.order_kind {
+        hash_data[287] = match self.kind {
             OrderKind::Sell => 0,
             OrderKind::Buy => 1,
         };
@@ -321,7 +321,7 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": 0,
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
-            "orderKind": "buy",
+            "kind": "buy",
             "partiallyFillable": false,
             "signature": "0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
         });
@@ -339,7 +339,7 @@ mod tests {
                 valid_to: u32::MAX,
                 app_data: 0,
                 fee_amount: U256::MAX,
-                order_kind: OrderKind::Buy,
+                kind: OrderKind::Buy,
                 partially_fillable: false,
                 signature: Signature {
                     v: 1,
@@ -394,7 +394,7 @@ mod tests {
             app_data: 101058054,
             fee_amount: hex!("0707070707070707070707070707070707070707070707070707070707070707")
                 .into(),
-            order_kind: OrderKind::Buy,
+            kind: OrderKind::Buy,
             partially_fillable: true,
             signature: Signature {
                 v: 0x1b,
@@ -419,7 +419,7 @@ mod tests {
             valid_to: 4294967295,
             app_data: 0,
             fee_amount: hex!("0de0b6b3a7640000").as_ref().into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             signature: Signature {
                 v: 0x1b | 0x80,

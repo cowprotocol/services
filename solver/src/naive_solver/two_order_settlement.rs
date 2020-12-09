@@ -11,7 +11,7 @@ pub fn settle_two_fillkill_sell_orders(
 ) -> Option<Settlement> {
     assert!(&[sell_a, sell_b]
         .iter()
-        .all(|order| matches!(order.order_kind, OrderKind::Sell) && !order.partially_fillable));
+        .all(|order| matches!(order.kind, OrderKind::Sell) && !order.partially_fillable));
     assert!(sell_a.sell_token == sell_b.buy_token && sell_b.sell_token == sell_a.buy_token);
     // In a direct match the price and amount requirements and trivially fulfilled.
     let is_direct_match =
@@ -143,7 +143,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 5.into(),
             buy_amount: 10.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -152,7 +152,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 10.into(),
             buy_amount: 5.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -175,7 +175,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
             buy_amount: 10.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -184,7 +184,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 15.into(),
             buy_amount: 5.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -207,7 +207,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
             buy_amount: 10.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -217,7 +217,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 1.into(),
             buy_amount: 2.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -232,7 +232,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
             buy_amount: 15.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -241,7 +241,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 6.into(),
             buy_amount: 4.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -272,7 +272,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             sell_amount: 10.into(),
             buy_amount: 20.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
@@ -282,7 +282,7 @@ mod tests {
             buy_token: H160::from_low_u64_be(0),
             sell_amount: 4.into(),
             buy_amount: 1.into(),
-            order_kind: OrderKind::Sell,
+            kind: OrderKind::Sell,
             partially_fillable: false,
             ..Default::default()
         };
