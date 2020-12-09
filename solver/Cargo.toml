@@ -15,4 +15,6 @@ primitive-types = "0.7"
 reqwest = { version = "0.10", features = ["json"] }
 serde_json = "1.0"
 tokio = { version = "0.2", features =[ "macros", "time"] }
+tracing = "0.1"
+tracing-setup = { path = "../tracing-setup" }
 web3 = { version = "0.13", default-features = false }

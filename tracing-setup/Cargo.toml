@@ -1,0 +1,8 @@
+[package]
+name = "tracing-setup"
+version = "0.1.0"
+edition = "2018"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = "0.2"

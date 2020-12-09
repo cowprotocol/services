@@ -10,5 +10,7 @@ mod settlement;
 
 #[tokio::main]
 async fn main() {
+    tracing_setup::initialize("WARN,solver=DEBUG");
+    tracing::info!("starting solver");
     todo!("run driver")
 }

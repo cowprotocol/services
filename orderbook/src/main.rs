@@ -17,7 +17,7 @@ pub async fn orderbook_maintenance(orderbook: Arc<OrderBook>) -> ! {
 }
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt::init();
+    tracing_setup::initialize("WARN,orderbook=DEBUG");
     let orderbook = Arc::new(OrderBook::default());
     let filter = api::handle_all_routes(orderbook.clone())
         .map(|reply| warp::reply::with_header(reply, "Access-Control-Allow-Origin", "*"));
