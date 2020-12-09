@@ -95,7 +95,9 @@ pub mod test_util {
         let mut order = OrderCreation::default();
         order.valid_to = u32::MAX;
         order.sign_self();
-        let expected_uid = json!({"UID": "98f26f9847f4e365ea530784ce5976f56ea2a67e9cde05fd16fca9a1fadbe5211a642f0e3c3af545e7acbd38b07251b3990914f1ffffffff"});
+        let expected_uid = json!(
+            "98f26f9847f4e365ea530784ce5976f56ea2a67e9cde05fd16fca9a1fadbe5211a642f0e3c3af545e7acbd38b07251b3990914f1ffffffff"
+        );
         let post = || async {
             request()
                 .path("/orders")
