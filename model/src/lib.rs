@@ -58,58 +58,15 @@ pub struct OrderCreation {
 }
 
 impl OrderCreation {
-    pub const ORDER_TYPE_HASH: [u8; 32] =
-        hex!("b71968fcf5e55b9c3370f2809d4078a4695be79dfa43e5aa1f2baa0a9b84f186");
-
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
     }
 
-    pub fn order_digest(&self) -> [u8; 32] {
-        let mut hash_data = [0u8; 320];
-        hash_data[0..32].copy_from_slice(&Self::ORDER_TYPE_HASH);
-        // Some slots are not assigned (stay 0) because all values are extended to 256 bits.
-        hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
-        hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
-        self.sell_amount.to_big_endian(&mut hash_data[96..128]);
-        self.buy_amount.to_big_endian(&mut hash_data[128..160]);
-        hash_data[188..192].copy_from_slice(&self.valid_to.to_be_bytes());
-        hash_data[220..224].copy_from_slice(&self.app_data.to_be_bytes());
-        self.fee_amount.to_big_endian(&mut hash_data[224..256]);
-        hash_data[287] = match self.order_kind {
-            OrderKind::Sell => 0,
-            OrderKind::Buy => 1,
-        };
-        hash_data[319] = self.partially_fillable as u8;
-        signing::keccak256(&hash_data)
-    }
-
-    pub fn signing_digest_typed_data(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
-        let mut hash_data = [0u8; 66];
-        hash_data[0..2].copy_from_slice(&[0x19, 0x01]);
-        hash_data[2..34].copy_from_slice(domain_separator);
-        hash_data[34..66].copy_from_slice(&self.order_digest());
-        signing::keccak256(&hash_data)
-    }
-
-    pub fn signing_digest_message(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
-        let mut hash_data = [0u8; 92];
-        hash_data[0..28].copy_from_slice(b"\x19Ethereum Signed Message:\n64");
-        hash_data[28..60].copy_from_slice(domain_separator);
-        hash_data[60..92].copy_from_slice(&self.order_digest());
-        signing::keccak256(&hash_data)
-    }
-
-    pub fn signing_digest(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
-        if self.signature.v & 0x80 == 0 {
-            self.signing_digest_typed_data(domain_separator)
-        } else {
-            self.signing_digest_message(domain_separator)
-        }
-    }
-
     // If signature is valid returns the owner.
     pub fn validate_signature(&self, domain_separator: &[u8; 32]) -> Option<H160> {
+        // The signature related functionality is defined by the smart contract:
+        // https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
+
         let v = self.signature.v & 0x1f;
         let message = self.signing_digest(domain_separator);
         let recovery = Recovery::new(message, v as u64, self.signature.r, self.signature.s);
@@ -146,6 +103,55 @@ impl OrderCreation {
         let address = web3::signing::Key::address(&key_ref);
         self.sign_self_with(&Self::TEST_DOMAIN_SEPARATOR, key_ref);
         address
+    }
+}
+
+// See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
+impl OrderCreation {
+    const ORDER_TYPE_HASH: [u8; 32] =
+        hex!("b71968fcf5e55b9c3370f2809d4078a4695be79dfa43e5aa1f2baa0a9b84f186");
+
+    fn order_digest(&self) -> [u8; 32] {
+        let mut hash_data = [0u8; 320];
+        hash_data[0..32].copy_from_slice(&Self::ORDER_TYPE_HASH);
+        // Some slots are not assigned (stay 0) because all values are extended to 256 bits.
+        hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
+        hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
+        self.sell_amount.to_big_endian(&mut hash_data[96..128]);
+        self.buy_amount.to_big_endian(&mut hash_data[128..160]);
+        hash_data[188..192].copy_from_slice(&self.valid_to.to_be_bytes());
+        hash_data[220..224].copy_from_slice(&self.app_data.to_be_bytes());
+        self.fee_amount.to_big_endian(&mut hash_data[224..256]);
+        hash_data[287] = match self.order_kind {
+            OrderKind::Sell => 0,
+            OrderKind::Buy => 1,
+        };
+        hash_data[319] = self.partially_fillable as u8;
+        signing::keccak256(&hash_data)
+    }
+
+    fn signing_digest_typed_data(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        let mut hash_data = [0u8; 66];
+        hash_data[0..2].copy_from_slice(&[0x19, 0x01]);
+        hash_data[2..34].copy_from_slice(domain_separator);
+        hash_data[34..66].copy_from_slice(&self.order_digest());
+        signing::keccak256(&hash_data)
+    }
+
+    fn signing_digest_message(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        let mut hash_data = [0u8; 92];
+        hash_data[0..28].copy_from_slice(b"\x19Ethereum Signed Message:\n64");
+        hash_data[28..60].copy_from_slice(domain_separator);
+        hash_data[60..92].copy_from_slice(&self.order_digest());
+        signing::keccak256(&hash_data)
+    }
+
+    fn signing_digest(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+        if self.signature.v & 0x80 == 0 {
+            self.signing_digest_typed_data(domain_separator)
+        } else {
+            self.signing_digest_message(domain_separator)
+        }
     }
 }
 
@@ -371,9 +377,10 @@ mod tests {
         assert_eq!(TokenPair::new(token, token), None);
     }
 
+    // these two signature tests have been created by printing the order and signature information
+    // from two of the tests in https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Encoding.test.ts .
     #[test]
     fn signature_typed_data() {
-        // copied from a gp-v2-contracts test
         let domain_separator =
             hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
         let order = OrderCreation {
@@ -402,7 +409,6 @@ mod tests {
 
     #[test]
     fn signature_message() {
-        // copied from a gp-v2-contracts test
         let domain_separator =
             hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
         let order = OrderCreation {
