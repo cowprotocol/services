@@ -21,7 +21,7 @@ fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = warp:
 
 pub fn create_order(
     orderbook: Arc<OrderBook>,
-) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("orders")
         .and(warp::post())
         .and(with_orderbook(orderbook))
@@ -31,14 +31,15 @@ pub fn create_order(
 
 pub fn get_orders(
     orderbook: Arc<OrderBook>,
-) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("orders")
         .and(warp::get())
         .and(with_orderbook(orderbook))
         .and_then(handler::get_orders)
 }
 
-pub fn get_fee_info() -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
+{
     warp::path!("fee" / H160)
         .and(warp::get())
         .and_then(handler::get_fee_info)
