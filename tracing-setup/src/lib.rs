@@ -13,6 +13,7 @@ pub fn initialize(env_filter: &str) {
     tracing_subscriber::fmt::fmt()
         .with_timer(ChronoUtc::with_format(String::from(time_format_string)))
         .with_env_filter(env_filter)
+        .with_ansi(atty::is(atty::Stream::Stdout))
         .init();
     set_panic_hook();
 }
