@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use contracts::IUniswapV2Router02;
+use contracts::UniswapV2Router02;
 use model::{OrderCreation, OrderKind};
 use primitive_types::{H160, U256};
 
@@ -48,7 +48,7 @@ fn encode_uniswap_call(
     token_out: H160,
     payout_to: H160,
 ) -> [u8; UNISWAP_INTERACTION_SIZE] {
-    let uniswap = IUniswapV2Router02::at(&dummy::dummy_web3(), H160::zero());
+    let uniswap = UniswapV2Router02::at(&dummy::dummy_web3(), H160::zero());
     let method = uniswap.swap_exact_tokens_for_tokens(
         amount_in,
         amount_out_min,
