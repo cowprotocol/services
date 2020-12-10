@@ -3,8 +3,18 @@ mod orderbook;
 
 use crate::orderbook::OrderBook;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
+use structopt::StructOpt;
 use tokio::task;
 use warp::Filter;
+
+#[derive(Debug, StructOpt)]
+struct Arguments {
+    #[structopt(flatten)]
+    shared: shared_arguments::Arguments,
+
+    #[structopt(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
+    bind_address: SocketAddr,
+}
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
 
@@ -17,7 +27,9 @@ pub async fn orderbook_maintenance(orderbook: Arc<OrderBook>) -> ! {
 }
 #[tokio::main]
 async fn main() {
-    tracing_setup::initialize("WARN,orderbook=DEBUG");
+    let args = Arguments::from_args();
+    tracing_setup::initialize(args.shared.log_filter.as_str());
+    tracing::info!("running order book with {:#?}", args);
     let orderbook = Arc::new(OrderBook::default());
     let filter = api::handle_all_routes(orderbook.clone())
         .map(|reply| warp::reply::with_header(reply, "Access-Control-Allow-Origin", "*"));

@@ -3,6 +3,7 @@ members = [
     "contracts",
     "model",
     "orderbook",
+    "shared-arguments",
     "solver",
     "tracing-setup",
 ]
