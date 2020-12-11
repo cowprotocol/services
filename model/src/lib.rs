@@ -162,9 +162,10 @@ pub struct OrderUid(pub [u8; 56]);
 
 impl Display for OrderUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut bytes = [0u8; 56 * 2];
+        let mut bytes = [0u8; 2 + 56 * 2];
+        bytes[..2].copy_from_slice(b"0x");
         // Unwrap because the length is always correct.
-        hex::encode_to_slice(&self.0, &mut bytes).unwrap();
+        hex::encode_to_slice(&self.0, &mut bytes[2..]).unwrap();
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)
@@ -197,9 +198,15 @@ impl<'de> Deserialize<'de> for OrderUid {
             where
                 E: de::Error,
             {
+                let s = s.strip_prefix("0x").ok_or_else(|| {
+                    de::Error::custom(format!(
+                        "{:?} can't be decoded as hex uid because it does not start with '0x'",
+                        s
+                    ))
+                })?;
                 let mut value = [0 as u8; 56];
                 hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
-                    de::Error::custom(format!("failed to decode {:?} as hex: {}", s, err))
+                    de::Error::custom(format!("failed to decode {:?} as hex uid: {}", s, err))
                 })?;
                 Ok(OrderUid(value))
             }
@@ -246,11 +253,12 @@ impl Serialize for Signature {
     where
         S: serde::Serializer,
     {
-        let mut bytes = [0u8; 65 * 2];
+        let mut bytes = [0u8; 2 + 65 * 2];
+        bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice([self.v], &mut bytes[..2]).unwrap();
-        hex::encode_to_slice(self.r, &mut bytes[2..66]).unwrap();
-        hex::encode_to_slice(self.s, &mut bytes[66..]).unwrap();
+        hex::encode_to_slice([self.v], &mut bytes[2..4]).unwrap();
+        hex::encode_to_slice(self.r, &mut bytes[4..68]).unwrap();
+        hex::encode_to_slice(self.s, &mut bytes[68..]).unwrap();
         // Hex encoding is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(str)
@@ -274,9 +282,18 @@ impl<'de> Deserialize<'de> for Signature {
             where
                 E: de::Error,
             {
+                let s = s.strip_prefix("0x").ok_or_else(|| {
+                    de::Error::custom(format!(
+                        "{:?} can't be decoded as hex signature because it does not start with '0x'",
+                        s
+                    ))
+                })?;
                 let mut bytes = [0u8; 65];
                 hex::decode_to_slice(s, &mut bytes).map_err(|err| {
-                    de::Error::custom(format!("failed to decode {:?} as hex: {}", s, err))
+                    de::Error::custom(format!(
+                        "failed to decode {:?} as hex signature: {}",
+                        s, err
+                    ))
                 })?;
                 Ok(Signature {
                     v: bytes[0],
@@ -324,10 +341,10 @@ mod tests {
         let value = json!(
         {
             "creationDate": "1970-01-01T00:00:03Z",
-            "owner": "0000000000000000000000000000000000000001",
-            "uid": "1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
-            "sellToken": "000000000000000000000000000000000000000a",
-            "buyToken": "0000000000000000000000000000000000000009",
+            "owner": "0x0000000000000000000000000000000000000001",
+            "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+            "sellToken": "0x000000000000000000000000000000000000000a",
+            "buyToken": "0x0000000000000000000000000000000000000009",
             "sellAmount": "1",
             "buyAmount": "0",
             "validTo": 4294967295u32,
@@ -335,7 +352,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "partiallyFillable": false,
-            "signature": "0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
+            "signature": "0x0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
         });
         let expected = Order {
             order_meta_data: OrderMetaData {
@@ -459,7 +476,7 @@ mod tests {
         let mut uid = OrderUid([0u8; 56]);
         uid.0[0] = 0x01;
         uid.0[55] = 0xff;
-        let expected = "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff";
+        let expected = "0x01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff";
         assert_eq!(uid.to_string(), expected);
         assert_eq!(format!("{}", uid), expected);
     }
