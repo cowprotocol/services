@@ -4,13 +4,14 @@
 
 pub mod h160_hexadecimal;
 pub mod u256_decimal;
+
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use hex_literal::hex;
 use primitive_types::{H160, H256, U256};
 use secp256k1::{constants::SECRET_KEY_SIZE, SecretKey};
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
-use std::fmt;
+use std::fmt::{self, Display};
 use web3::{
     signing::{self, Key, SecretKeyRef},
     types::Recovery,
@@ -159,12 +160,23 @@ impl OrderCreation {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct OrderUid(pub [u8; 56]);
 
+impl Display for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut bytes = [0u8; 56 * 2];
+        // Unwrap because the length is always correct.
+        hex::encode_to_slice(&self.0, &mut bytes).unwrap();
+        // Unwrap because the string is always valid utf8.
+        let str = std::str::from_utf8(&bytes).unwrap();
+        f.write_str(str)
+    }
+}
+
 impl Serialize for OrderUid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        serializer.serialize_str(&hex::encode(self.0.iter()))
+        serializer.serialize_str(self.to_string().as_str())
     }
 }
 
@@ -440,5 +452,15 @@ mod tests {
             order.validate_signature(&OrderCreation::TEST_DOMAIN_SEPARATOR),
             Some(owner)
         );
+    }
+
+    #[test]
+    fn uid_is_displayed_as_hex() {
+        let mut uid = OrderUid([0u8; 56]);
+        uid.0[0] = 0x01;
+        uid.0[55] = 0xff;
+        let expected = "01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff";
+        assert_eq!(uid.to_string(), expected);
+        assert_eq!(format!("{}", uid), expected);
     }
 }
