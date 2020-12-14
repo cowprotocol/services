@@ -1,8 +1,9 @@
 use super::handler;
 use crate::orderbook::OrderBook;
+use hex::{FromHex, FromHexError};
 use model::OrderCreation;
 use primitive_types::H160;
-use std::sync::Arc;
+use std::{str::FromStr, sync::Arc};
 use warp::Filter;
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
@@ -38,10 +39,21 @@ pub fn get_orders(
         .and_then(handler::get_orders)
 }
 
+/// Wraps H160 with FromStr that can handle a `0x` prefix.
+struct H160Wrapper(H160);
+impl FromStr for H160Wrapper {
+    type Err = FromHexError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        Ok(H160Wrapper(H160(FromHex::from_hex(s)?)))
+    }
+}
+
 pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 {
-    warp::path!("fee" / H160)
+    warp::path!("fee" / H160Wrapper)
         .and(warp::get())
+        .map(|token: H160Wrapper| token.0)
         .and_then(handler::get_fee_info)
 }
 
@@ -71,7 +83,7 @@ pub mod test_util {
     #[tokio::test]
     async fn get_fee_info_() {
         let filter = get_fee_info();
-        let sell_token = String::from("000000000000000000000000000000000000000a");
+        let sell_token = String::from("0x000000000000000000000000000000000000000a");
         let path_string = format!("/fee/{}", sell_token);
         let post = || async {
             request()
