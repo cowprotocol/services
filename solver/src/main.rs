@@ -7,6 +7,7 @@ mod naive_solver;
 mod orderbook;
 mod settlement;
 
+use ethcontract::{Http, Web3};
 use reqwest::Url;
 use std::time::Duration;
 use structopt::StructOpt;
@@ -33,6 +34,11 @@ async fn main() {
     let args = Arguments::from_args();
     tracing_setup::initialize(args.shared.log_filter.as_str());
     tracing::info!("running solver with {:#?}", args);
+    let http = Http::new(&args.shared.node_url).expect("Couldn't connect to HTTP");
+    let web3 = Web3::new(http);
+    contracts::GPv2Settlement::deployed(&web3)
+        .await
+        .expect("Couldn't load deployed settlement");
     let orderbook = orderbook::OrderBookApi::new(args.orderbook_url, args.orderbook_timeout);
     // TODO: start driver, for now just fetch orders as placeholder
     tracing::info!("fetching orders");

@@ -1,5 +1,6 @@
-use ethcontract_generate::Builder;
-use std::{env, fs, path::Path};
+use ethcontract_generate::{Address, Builder};
+use maplit::hashmap;
+use std::{collections::HashMap, env, fs, path::Path, str::FromStr};
 
 #[path = "src/paths.rs"]
 mod paths;
@@ -14,15 +15,18 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract("IERC20");
-    generate_contract("ERC20Mintable");
-    generate_contract("UniswapV2Router02");
-    generate_contract("UniswapV2Factory");
-    generate_contract("GPv2Settlement");
-    generate_contract("GPv2AllowListAuthentication");
+    generate_contract("IERC20", hashmap! {});
+    generate_contract("ERC20Mintable", hashmap! {});
+    generate_contract("UniswapV2Router02", hashmap! {});
+    generate_contract("UniswapV2Factory", hashmap! {});
+    generate_contract(
+        "GPv2Settlement",
+        hashmap! {4 => Address::from_str("58BC5137849d22cD586601adf1f3454FdF2fd0e2").unwrap()},
+    );
+    generate_contract("GPv2AllowListAuthentication", hashmap! {});
 }
 
-fn generate_contract(name: &str) {
+fn generate_contract(name: &str, deployment_overrides: HashMap<u32, Address>) {
     let artifact = paths::contract_artifacts_dir().join(format!("{}.json", name));
     let address_file = paths::contract_address_file(name);
     let dest = env::var("OUT_DIR").unwrap();
@@ -37,6 +41,10 @@ fn generate_contract(name: &str) {
     if let Ok(address) = fs::read_to_string(&address_file) {
         println!("cargo:rerun-if-changed={}", address_file.display());
         builder = builder.add_deployment_str(5777, address.trim());
+    }
+
+    for (network_id, address) in deployment_overrides.into_iter() {
+        builder = builder.add_deployment(network_id, address);
     }
 
     builder

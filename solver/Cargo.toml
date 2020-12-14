@@ -8,6 +8,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 contracts = { path = "../contracts" }
 futures = "0.3"
+ethcontract = "0.9"
 jsonrpc-core = "14.0"
 maplit = "1.0"
 model = { path = "../model" }

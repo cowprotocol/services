@@ -10,6 +10,9 @@ pub struct Arguments {
         default_value = "warn,orderbook=debug,solver=debug"
     )]
     pub log_filter: String,
+
+    #[structopt(long, env = "NODE_URL")]
+    pub node_url: String,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

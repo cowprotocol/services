@@ -39,3 +39,4 @@ tokio = { version = "0.2", optional = true, features = ["macros"] }
 
 [build-dependencies]
 ethcontract-generate = "0.9"
+maplit = "1.0"
