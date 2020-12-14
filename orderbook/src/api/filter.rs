@@ -51,7 +51,7 @@ impl FromStr for H160Wrapper {
 
 pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone
 {
-    warp::path!("fee" / H160Wrapper)
+    warp::path!("tokens" / H160Wrapper / "fee")
         .and(warp::get())
         .map(|token: H160Wrapper| token.0)
         .and_then(handler::get_fee_info)
@@ -84,7 +84,7 @@ pub mod test_util {
     async fn get_fee_info_() {
         let filter = get_fee_info();
         let sell_token = String::from("0x000000000000000000000000000000000000000a");
-        let path_string = format!("/fee/{}", sell_token);
+        let path_string = format!("/tokens/{}/fee", sell_token);
         let post = || async {
             request()
                 .path(&path_string)

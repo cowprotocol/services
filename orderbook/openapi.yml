@@ -98,7 +98,7 @@ paths:
           description: Order deleted
         404:
           description: Order was not found
-  /api/v1/fee/{sellToken}:
+  /api/v1/tokens/{sellToken}/fee:
     get:
       description: |
         The fee that is charged for placing an order.
