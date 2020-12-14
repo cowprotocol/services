@@ -3,7 +3,6 @@
 mod batcher;
 mod driver;
 mod encoding;
-mod ethereum;
 mod naive_solver;
 mod orderbook;
 mod settlement;

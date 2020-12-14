@@ -1,11 +1,13 @@
-use crate::{ethereum::SettlementContract, naive_solver, orderbook::OrderBookApi};
+use crate::{naive_solver, orderbook::OrderBookApi};
 use anyhow::{Context, Result};
-use std::{sync::Arc, time::Duration};
+use contracts::{GPv2Settlement, UniswapV2Router02};
+use std::time::Duration;
 
 const SETTLE_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct Driver {
-    contract: Arc<dyn SettlementContract>,
+    settlement_contract: GPv2Settlement,
+    uniswap_router: UniswapV2Router02,
     orderbook: OrderBookApi,
 }
 
@@ -32,16 +34,25 @@ impl Driver {
                 None => return Ok(()),
                 Some(settlement) => settlement,
             };
-        // TODO: encode settlement, check if we need to approve spending to uniswap
+        // TODO: check if we need to approve spending to uniswap
         // TODO: use retry transaction sending crate for updating gas prices
-        self.contract
-            .settle_call(&settlement)
-            .await
-            .context("settle call failed")?;
-        self.contract
-            .settle_send(&settlement)
-            .await
-            .context("settle send failed")?;
+        let settle = || {
+            self.settlement_contract.settle(
+                settlement.tokens(),
+                settlement.clearing_prices(),
+                settlement.fee_factor,
+                settlement
+                    .encode_trades()
+                    .expect("naive solver created invalid settlement"),
+                settlement.encode_interactions(
+                    &self.uniswap_router.address(),
+                    &self.settlement_contract.address(),
+                ),
+                Vec::new(),
+            )
+        };
+        settle().call().await.context("settle simulation failed")?;
+        settle().send().await.context("settle execution failed")?;
         Ok(())
     }
 }

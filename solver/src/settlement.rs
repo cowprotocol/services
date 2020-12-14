@@ -1,8 +1,9 @@
+use crate::encoding;
 use model::OrderCreation;
 use primitive_types::{H160, U256};
 use std::collections::HashMap;
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub order: OrderCreation,
     pub executed_amount: U256,
@@ -26,4 +27,91 @@ pub struct Settlement {
     pub trades: Vec<Trade>,
     pub interactions: Vec<Interaction>,
     pub order_refunds: Vec<()>,
+}
+
+impl Settlement {
+    pub fn tokens(&self) -> Vec<H160> {
+        self.clearing_prices.keys().copied().collect()
+    }
+
+    pub fn clearing_prices(&self) -> Vec<U256> {
+        self.clearing_prices.values().copied().collect()
+    }
+
+    // Returns None if a trade uses a token for which there is no price.
+    pub fn encode_trades(&self) -> Option<Vec<u8>> {
+        let mut token_index = HashMap::new();
+        for (i, token) in self.clearing_prices.keys().enumerate() {
+            token_index.insert(token, i as u8);
+        }
+        let mut bytes = Vec::with_capacity(encoding::TRADE_STRIDE * self.trades.len());
+        for trade in &self.trades {
+            let order = &trade.order;
+            let encoded = encoding::encode_trade(
+                &order,
+                *token_index.get(&order.sell_token)?,
+                *token_index.get(&order.buy_token)?,
+                &trade.executed_amount,
+            );
+            bytes.extend_from_slice(&encoded);
+        }
+        Some(bytes)
+    }
+
+    pub fn encode_interactions(&self, uniswap_router_address: &H160, payout_to: &H160) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        for interaction in &self.interactions {
+            match interaction {
+                Interaction::AmmSwapExactTokensForTokens {
+                    amount_in,
+                    amount_out_min,
+                    token_in,
+                    token_out,
+                } => bytes.extend_from_slice(&encoding::encode_uniswap_call(
+                    uniswap_router_address,
+                    &amount_in,
+                    &amount_out_min,
+                    &token_in,
+                    &token_out,
+                    payout_to,
+                )),
+            }
+        }
+        bytes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    pub fn encode_trades_finds_token_index() {
+        let token0 = H160::from_low_u64_be(0);
+        let token1 = H160::from_low_u64_be(1);
+        let order0 = OrderCreation {
+            sell_token: token0,
+            buy_token: token1,
+            ..Default::default()
+        };
+        let order1 = OrderCreation {
+            sell_token: token1,
+            buy_token: token0,
+            ..Default::default()
+        };
+        let trade0 = Trade {
+            order: order0,
+            ..Default::default()
+        };
+        let trade1 = Trade {
+            order: order1,
+            ..Default::default()
+        };
+        let settlement = Settlement {
+            clearing_prices: maplit::hashmap! {token0 => 0.into(), token1 => 0.into()},
+            trades: vec![trade0, trade1],
+            ..Default::default()
+        };
+        assert!(settlement.encode_trades().is_some());
+    }
 }
