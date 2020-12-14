@@ -1,19 +1,26 @@
 mod two_order_settlement;
 
+use self::two_order_settlement::TwoOrderSettlement;
 use crate::settlement::Settlement;
+use contracts::UniswapV2Router02;
 use model::{OrderCreation, OrderKind, TokenPair};
-use primitive_types::U512;
+use primitive_types::{H160, U512};
 use std::{cmp::Ordering, collections::HashMap};
 
-pub fn settle(orders: impl Iterator<Item = OrderCreation>) -> Option<Settlement> {
+pub fn settle(
+    orders: impl Iterator<Item = OrderCreation>,
+    uniswap: &UniswapV2Router02,
+    payout_to: &H160,
+) -> Option<Settlement> {
     let orders = organize_orders_by_token_pair(orders);
     // TODO: Settle multiple token pairs in one settlement.
     orders
         .into_iter()
         .find_map(|(_, orders)| settle_pair(orders))
+        .map(|settlement| settlement.into_settlement(uniswap.clone(), payout_to))
 }
 
-fn settle_pair(orders: TokenPairOrders) -> Option<Settlement> {
+fn settle_pair(orders: TokenPairOrders) -> Option<TwoOrderSettlement> {
     let most_lenient_a = orders.sell_token_0.into_iter().min_by(order_by_price)?;
     let most_lenient_b = orders.sell_token_1.into_iter().min_by(order_by_price)?;
     two_order_settlement::settle_two_fillkill_sell_orders(&most_lenient_a, &most_lenient_b)
@@ -62,6 +69,7 @@ fn order_by_price(a: &OrderCreation, b: &OrderCreation) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interactions::dummy_web3;
     use primitive_types::{H160, U256};
 
     fn order_with_amounts(sell_amount: U256, buy_amount: U256) -> OrderCreation {
@@ -136,7 +144,8 @@ mod tests {
             },
         ];
 
-        let settlement = settle(orders.into_iter()).unwrap();
+        let contract = UniswapV2Router02::at(&dummy_web3::dummy_web3(), H160::zero());
+        let settlement = settle(orders.into_iter(), &contract, &H160::zero()).unwrap();
         dbg!(&settlement);
         assert_eq!(settlement.trades.len(), 2);
         assert_eq!(settlement.interactions.len(), 1);

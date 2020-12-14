@@ -1,13 +1,10 @@
 use std::convert::TryInto;
 
-use contracts::UniswapV2Router02;
 use model::{OrderCreation, OrderKind};
-use primitive_types::{H160, U256};
+use primitive_types::U256;
 
 pub const TRADE_STRIDE: usize = 206;
-const INTERACTION_BASE_SIZE: usize = 20 + 3; // target address + data length
-const UNISWAP_DATA_SIZE: usize = 260;
-const UNISWAP_TOTAL_SIZE: usize = INTERACTION_BASE_SIZE + UNISWAP_DATA_SIZE;
+pub const INTERACTION_BASE_SIZE: usize = 20 + 3; // target address + data length
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
 pub fn encode_trade(
@@ -45,33 +42,8 @@ fn encode_order_flags(order: &OrderCreation) -> u8 {
     result
 }
 
-pub fn encode_uniswap_call(
-    target: &H160,
-    amount_in: &U256,
-    amount_out_min: &U256,
-    token_in: &H160,
-    token_out: &H160,
-    payout_to: &H160,
-) -> [u8; UNISWAP_TOTAL_SIZE] {
-    let uniswap = UniswapV2Router02::at(&dummy::dummy_web3(), H160::zero());
-    let method = uniswap.swap_exact_tokens_for_tokens(
-        *amount_in,
-        *amount_out_min,
-        vec![*token_in, *token_out],
-        *payout_to,
-        U256::MAX,
-    );
-    let data = method.tx.data.expect("call doesn't have calldata").0;
-    let mut result = [0u8; UNISWAP_TOTAL_SIZE];
-    result[..20].copy_from_slice(target.as_fixed_bytes());
-    // Unwrap because we know uniswap data size can be stored in 3 bytes.
-    result[20..23].copy_from_slice(&encode_interaction_data_length(UNISWAP_DATA_SIZE).unwrap());
-    result[23..].copy_from_slice(data.as_slice());
-    result
-}
-
 // None if length doesn't fit in 3 bytes.
-fn encode_interaction_data_length(length: usize) -> Option<[u8; 3]> {
+pub fn encode_interaction_data_length(length: usize) -> Option<[u8; 3]> {
     let bytes = length.to_be_bytes();
     let (left, right) = bytes.split_at(bytes.len() - 3);
     if left.iter().any(|byte| *byte != 0) {
@@ -82,37 +54,13 @@ fn encode_interaction_data_length(length: usize) -> Option<[u8; 3]> {
     Some(right.try_into().unwrap())
 }
 
-// To create an ethcontract instance we need to provide a web3 even though we never use it. This
-// module provides a dummy transport and web3.
-mod dummy {
-    use jsonrpc_core::Call as RpcCall;
-    use serde_json::Value;
-    use web3::{api::Web3, Transport};
-
-    #[derive(Clone, Debug)]
-    pub struct DummyTransport;
-    impl Transport for DummyTransport {
-        type Out = futures::future::Pending<web3::Result<Value>>;
-        fn prepare(&self, _method: &str, _params: Vec<Value>) -> (web3::RequestId, RpcCall) {
-            unimplemented!()
-        }
-        fn send(&self, _id: web3::RequestId, _request: RpcCall) -> Self::Out {
-            unimplemented!()
-        }
-    }
-
-    pub fn dummy_web3() -> Web3<DummyTransport> {
-        Web3::new(DummyTransport)
-    }
-}
-
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use model::Signature;
     use primitive_types::{H160, H256};
 
-    fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
+    pub fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];
         result[31] = u;
         result
@@ -150,39 +98,5 @@ mod tests {
         assert_eq!(encoded[141], 9);
         assert_eq!(encoded[142..174], u8_as_32_bytes_be(10));
         assert_eq!(encoded[174..206], u8_as_32_bytes_be(11));
-    }
-
-    #[test]
-    fn encode_uniswap_call_() {
-        let target = H160::from_low_u64_be(4);
-        let amount_in = 5;
-        let amount_out_min = 6;
-        let token_in = 7;
-        let token_out = 8;
-        let payout_to = 9;
-        let encoded = encode_uniswap_call(
-            &target,
-            &U256::from(amount_in),
-            &U256::from(amount_out_min),
-            &H160::from_low_u64_be(token_in as u64),
-            &H160::from_low_u64_be(token_out as u64),
-            &H160::from_low_u64_be(payout_to as u64),
-        );
-        assert_eq!(encoded[0..20], *target.as_fixed_bytes());
-        assert_eq!(encoded[20..23], [0, 1, 4]);
-        let call = &encoded[INTERACTION_BASE_SIZE..];
-        let signature = [0x38u8, 0xed, 0x17, 0x39];
-        let path_offset = 160;
-        let path_size = 2;
-        let deadline = [0xffu8; 32];
-        assert_eq!(call[0..4], signature);
-        assert_eq!(call[4..36], u8_as_32_bytes_be(amount_in));
-        assert_eq!(call[36..68], u8_as_32_bytes_be(amount_out_min));
-        assert_eq!(call[68..100], u8_as_32_bytes_be(path_offset));
-        assert_eq!(call[100..132], u8_as_32_bytes_be(payout_to));
-        assert_eq!(call[132..164], deadline);
-        assert_eq!(call[164..196], u8_as_32_bytes_be(path_size));
-        assert_eq!(call[196..228], u8_as_32_bytes_be(token_in));
-        assert_eq!(call[228..260], u8_as_32_bytes_be(token_out));
     }
 }

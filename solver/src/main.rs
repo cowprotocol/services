@@ -3,6 +3,7 @@
 mod batcher;
 mod driver;
 mod encoding;
+mod interactions;
 mod naive_solver;
 mod orderbook;
 mod settlement;

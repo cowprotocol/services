@@ -1,32 +1,33 @@
 use crate::encoding;
+use anyhow::Result;
 use model::OrderCreation;
 use primitive_types::{H160, U256};
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    io::{Cursor, Write},
+};
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub order: OrderCreation,
     pub executed_amount: U256,
     pub fee_discount: u16,
 }
 
-#[derive(Debug, Eq, PartialEq)]
-pub enum Interaction {
-    // https://uniswap.org/docs/v2/smart-contracts/router02/#swapexacttokensfortokens
-    AmmSwapExactTokensForTokens {
-        amount_in: U256,
-        amount_out_min: U256,
-        token_in: H160,
-        token_out: H160,
-    },
+pub trait Interaction: std::fmt::Debug {
+    // TODO: not sure if this should return a result.
+    // Write::write returns a result but we know we write to a vector in memory so we know it will
+    // never fail. Then the question becomes whether interactions should be allowed to fail encoding
+    // for other reasons.
+    fn encode(&self, writer: &mut dyn Write) -> Result<()>;
 }
 
-#[derive(Debug, Default, Eq, PartialEq)]
+#[derive(Debug, Default)]
 pub struct Settlement {
     pub clearing_prices: HashMap<H160, U256>,
     pub fee_factor: U256,
     pub trades: Vec<Trade>,
-    pub interactions: Vec<Interaction>,
+    pub interactions: Vec<Box<dyn Interaction>>,
     pub order_refunds: Vec<()>,
 }
 
@@ -60,26 +61,12 @@ impl Settlement {
         Some(bytes)
     }
 
-    pub fn encode_interactions(&self, uniswap_router_address: &H160, payout_to: &H160) -> Vec<u8> {
-        let mut bytes = Vec::new();
+    pub fn encode_interactions(&self) -> Result<Vec<u8>> {
+        let mut cursor = Cursor::new(Vec::new());
         for interaction in &self.interactions {
-            match interaction {
-                Interaction::AmmSwapExactTokensForTokens {
-                    amount_in,
-                    amount_out_min,
-                    token_in,
-                    token_out,
-                } => bytes.extend_from_slice(&encoding::encode_uniswap_call(
-                    uniswap_router_address,
-                    &amount_in,
-                    &amount_out_min,
-                    &token_in,
-                    &token_out,
-                    payout_to,
-                )),
-            }
+            interaction.encode(&mut cursor)?;
         }
-        bytes
+        Ok(cursor.into_inner())
     }
 }
 

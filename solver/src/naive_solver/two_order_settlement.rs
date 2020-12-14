@@ -1,6 +1,48 @@
-use crate::settlement::{Interaction, Settlement, Trade};
+use crate::{
+    interactions::UniswapInteraction,
+    settlement::{Interaction, Settlement, Trade},
+};
+use contracts::UniswapV2Router02;
 use model::{OrderCreation, OrderKind};
-use primitive_types::U256;
+use primitive_types::{H160, U256};
+use std::collections::HashMap;
+
+#[derive(Debug)]
+pub struct TwoOrderSettlement {
+    clearing_prices: HashMap<H160, U256>,
+    trades: [Trade; 2],
+    interaction: Option<AmmSwapExactTokensForTokens>,
+}
+
+impl TwoOrderSettlement {
+    pub fn into_settlement(self, uniswap: UniswapV2Router02, payout_to: &H160) -> Settlement {
+        let mut interactions = Vec::<Box<dyn Interaction>>::new();
+        if let Some(interaction) = self.interaction {
+            interactions.push(Box::new(UniswapInteraction {
+                contract: uniswap,
+                amount_in: interaction.amount_in,
+                amount_out_min: interaction.amount_out_min,
+                token_in: interaction.token_in,
+                token_out: interaction.token_out,
+                payout_to: *payout_to,
+            }));
+        }
+        Settlement {
+            clearing_prices: self.clearing_prices,
+            trades: self.trades.to_vec(),
+            interactions,
+            ..Default::default()
+        }
+    }
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct AmmSwapExactTokensForTokens {
+    amount_in: U256,
+    amount_out_min: U256,
+    token_in: H160,
+    token_out: H160,
+}
 
 // Assume both orders are fill-or-kill sell orders and that sell/buy tokens match.
 // Result is None if the orders are unmatchable, a direct match if that is possible, or a match
@@ -8,7 +50,7 @@ use primitive_types::U256;
 pub fn settle_two_fillkill_sell_orders(
     sell_a: &OrderCreation,
     sell_b: &OrderCreation,
-) -> Option<Settlement> {
+) -> Option<TwoOrderSettlement> {
     assert!(&[sell_a, sell_b]
         .iter()
         .all(|order| matches!(order.kind, OrderKind::Sell) && !order.partially_fillable));
@@ -38,13 +80,13 @@ pub fn settle_two_fillkill_sell_orders(
 }
 
 // Match two orders directly with their full sell amounts.
-fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Settlement {
-    Settlement {
+fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> TwoOrderSettlement {
+    TwoOrderSettlement {
         clearing_prices: maplit::hashmap! {
             sell_a.sell_token => sell_a.sell_amount,
             sell_b.sell_token => sell_b.sell_amount,
         },
-        trades: vec![
+        trades: [
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
@@ -56,12 +98,12 @@ fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Settlement {
                 fee_discount: 0,
             },
         ],
-        ..Default::default()
+        interaction: None,
     }
 }
 
 // Match two orders with amm assuming that there is price overlap.
-fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlement> {
+fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<TwoOrderSettlement> {
     // Based on our assumptions we know that exactly one order is "bigger" than the other in the
     // sense that it a larger sell amount than the other order's buy amount.
     // It is not possible for both orders to be bigger because that would be a direct match which
@@ -91,12 +133,12 @@ fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlemen
         return None;
     }
 
-    Some(Settlement {
+    Some(TwoOrderSettlement {
         clearing_prices: maplit::hashmap! {
             big.sell_token => big.sell_amount,
             big.buy_token => big.buy_amount,
         },
-        trades: vec![
+        trades: [
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
@@ -108,13 +150,12 @@ fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlemen
                 fee_discount: 0,
             },
         ],
-        interactions: vec![Interaction::AmmSwapExactTokensForTokens {
+        interaction: Some(AmmSwapExactTokensForTokens {
             amount_in: big_extra_sell_amount,
             amount_out_min: big_missing_buy_amount,
             token_in: big.sell_token,
             token_out: small.sell_token,
-        }],
-        ..Default::default()
+        }),
     })
 }
 
@@ -164,8 +205,7 @@ mod tests {
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
             assert_eq!(settlement.clearing_prices.len(), 2);
-            assert_eq!(settlement.trades.len(), 2);
-            assert!(settlement.interactions.is_empty());
+            assert!(settlement.interaction.is_none());
             let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
             assert_eq!(clearing_price_a * 2, clearing_price_b);
@@ -195,8 +235,7 @@ mod tests {
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
             assert_eq!(settlement.clearing_prices.len(), 2);
-            assert_eq!(settlement.trades.len(), 2);
-            assert!(settlement.interactions.is_empty());
+            assert!(settlement.interaction.is_none());
             let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
             assert_eq!(clearing_price_a * 3 / 2, clearing_price_b);
@@ -250,18 +289,17 @@ mod tests {
             ..Default::default()
         };
 
-        let expected_interactions = vec![Interaction::AmmSwapExactTokensForTokens {
+        let expected_interaction = Some(AmmSwapExactTokensForTokens {
             amount_in: 6.into(),
             amount_out_min: 9.into(),
             token_in: sell_a.sell_token,
             token_out: sell_a.buy_token,
-        }];
+        });
 
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
             assert_eq!(settlement.clearing_prices.len(), 2);
-            assert_eq!(settlement.trades.len(), 2);
-            assert_eq!(settlement.interactions, expected_interactions);
+            assert_eq!(settlement.interaction, expected_interaction);
             let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
             assert_eq!(clearing_price_a * 3 / 2, clearing_price_b);
@@ -291,18 +329,18 @@ mod tests {
             ..Default::default()
         };
 
-        let expected_interactions = vec![Interaction::AmmSwapExactTokensForTokens {
+        let expected_interaction = Some(AmmSwapExactTokensForTokens {
             amount_in: 8.into(),
             amount_out_min: 16.into(),
             token_in: sell_a.sell_token,
             token_out: sell_a.buy_token,
-        }];
+        });
 
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert_eq!(settlement.trades.len(), 2);
-            assert_eq!(settlement.interactions, expected_interactions);
+            assert_eq!(settlement.interaction, expected_interaction);
             let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
             assert_eq!(clearing_price_a * 2, clearing_price_b);
