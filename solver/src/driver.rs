@@ -40,7 +40,6 @@ impl Driver {
             self.settlement_contract.settle(
                 settlement.tokens(),
                 settlement.clearing_prices(),
-                settlement.fee_factor,
                 settlement
                     .encode_trades()
                     .expect("naive solver created invalid settlement"),
