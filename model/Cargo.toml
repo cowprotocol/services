@@ -11,6 +11,9 @@ primitive-types = { version = "0.7" }
 secp256k1 = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 web3 = { version = "0.13", default-features = false }
+lazy_static = "1.4"
+ethabi = "12.0"
+
 
 [dev-dependencies]
 serde_json = "1.0"

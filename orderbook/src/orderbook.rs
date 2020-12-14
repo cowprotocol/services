@@ -1,6 +1,6 @@
 use std::time::SystemTime;
 
-use model::{Order, OrderCreation, OrderMetaData, OrderUid};
+use model::{DomainSeparator, Order, OrderCreation, OrderMetaData, OrderUid};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -24,11 +24,19 @@ pub enum RemoveOrderError {
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
+    domain_separator: DomainSeparator,
     // TODO: Store more efficiently (for example HashMap) depending on functionality we need.
-    pub orders: RwLock<Vec<Order>>,
+    orders: RwLock<Vec<Order>>,
 }
 
 impl OrderBook {
+    pub fn new(domain_separator: DomainSeparator) -> Self {
+        Self {
+            domain_separator,
+            orders: RwLock::new(Vec::new()),
+        }
+    }
+
     pub async fn add_order(&self, order: OrderCreation) -> Result<OrderUid, AddOrderError> {
         if !has_future_valid_to(now_in_epoch_seconds(), &order) {
             return Err(AddOrderError::PastValidTo);
@@ -37,7 +45,7 @@ impl OrderBook {
         if orders.iter().any(|x| x.order_creation == order) {
             return Err(AddOrderError::DuplicatedOrder);
         }
-        let order = user_order_to_full_order(order).map_err(|_| AddOrderError::InvalidSignature)?;
+        let order = self.order_creation_to_order(order)?;
         let uid = order.order_meta_data.uid;
         tracing::debug!(?order, "adding order");
         orders.push(order);
@@ -69,6 +77,20 @@ impl OrderBook {
         let mut orders = self.orders.write().await;
         orders.retain(|order| has_future_valid_to(now_in_epoch_seconds, &order.order_creation));
     }
+
+    fn order_creation_to_order(&self, user_order: OrderCreation) -> Result<Order, AddOrderError> {
+        let owner = user_order
+            .validate_signature(&self.domain_separator)
+            .ok_or(AddOrderError::InvalidSignature)?;
+        Ok(Order {
+            order_meta_data: OrderMetaData {
+                creation_date: chrono::offset::Utc::now(),
+                owner,
+                uid: user_order.uid(&owner),
+            },
+            order_creation: user_order,
+        })
+    }
 }
 
 fn now_in_epoch_seconds() -> u64 {
@@ -80,23 +102,6 @@ fn now_in_epoch_seconds() -> u64 {
 
 fn has_future_valid_to(now_in_epoch_seconds: u64, order: &OrderCreation) -> bool {
     order.valid_to as u64 > now_in_epoch_seconds
-}
-
-struct InvalidSignatureError;
-fn user_order_to_full_order(user_order: OrderCreation) -> Result<Order, InvalidSignatureError> {
-    // TODO: make domain separator configurable
-    let domain_separator = [0u8; 32];
-    let owner = user_order
-        .validate_signature(&domain_separator)
-        .ok_or(InvalidSignatureError)?;
-    Ok(Order {
-        order_meta_data: OrderMetaData {
-            creation_date: chrono::offset::Utc::now(),
-            owner,
-            uid: user_order.uid(&owner),
-        },
-        order_creation: user_order,
-    })
 }
 
 #[cfg(test)]

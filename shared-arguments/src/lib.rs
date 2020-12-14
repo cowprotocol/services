@@ -1,5 +1,4 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
-
 use std::{num::ParseFloatError, time::Duration};
 use url::Url;
 

@@ -6,7 +6,10 @@ pub mod h160_hexadecimal;
 pub mod u256_decimal;
 
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
+use ethabi::{encode, Token};
+use hex::{FromHex, FromHexError};
 use hex_literal::hex;
+use lazy_static::lazy_static;
 use primitive_types::{H160, H256, U256};
 use secp256k1::{constants::SECRET_KEY_SIZE, SecretKey};
 use serde::{de, Deserialize, Serialize};
@@ -64,7 +67,7 @@ impl OrderCreation {
     }
 
     // If signature is valid returns the owner.
-    pub fn validate_signature(&self, domain_separator: &[u8; 32]) -> Option<H160> {
+    pub fn validate_signature(&self, domain_separator: &DomainSeparator) -> Option<H160> {
         // The signature related functionality is defined by the smart contract:
         // https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
 
@@ -86,9 +89,9 @@ impl OrderCreation {
 
 // Intended to be used by tests that need signed orders.
 impl OrderCreation {
-    pub const TEST_DOMAIN_SEPARATOR: [u8; 32] = [0u8; 32];
+    pub const TEST_DOMAIN_SEPARATOR: DomainSeparator = DomainSeparator([0u8; 32]);
 
-    pub fn sign_self_with(&mut self, domain_separator: &[u8; 32], key: SecretKeyRef) {
+    pub fn sign_self_with(&mut self, domain_separator: &DomainSeparator, key: SecretKeyRef) {
         let message = self.signing_digest_message(domain_separator);
         // Unwrap because the only error is for invalid messages which we don't create.
         let signature = Key::sign(&key, &message, None).unwrap();
@@ -131,23 +134,23 @@ impl OrderCreation {
         signing::keccak256(&hash_data)
     }
 
-    fn signing_digest_typed_data(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+    fn signing_digest_typed_data(&self, domain_separator: &DomainSeparator) -> [u8; 32] {
         let mut hash_data = [0u8; 66];
         hash_data[0..2].copy_from_slice(&[0x19, 0x01]);
-        hash_data[2..34].copy_from_slice(domain_separator);
+        hash_data[2..34].copy_from_slice(&domain_separator.0);
         hash_data[34..66].copy_from_slice(&self.order_digest());
         signing::keccak256(&hash_data)
     }
 
-    fn signing_digest_message(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+    fn signing_digest_message(&self, domain_separator: &DomainSeparator) -> [u8; 32] {
         let mut hash_data = [0u8; 92];
         hash_data[0..28].copy_from_slice(b"\x19Ethereum Signed Message:\n64");
-        hash_data[28..60].copy_from_slice(domain_separator);
+        hash_data[28..60].copy_from_slice(&domain_separator.0);
         hash_data[60..92].copy_from_slice(&self.order_digest());
         signing::keccak256(&hash_data)
     }
 
-    fn signing_digest(&self, domain_separator: &[u8; 32]) -> [u8; 32] {
+    fn signing_digest(&self, domain_separator: &DomainSeparator) -> [u8; 32] {
         if self.signature.v & 0x80 == 0 {
             self.signing_digest_typed_data(domain_separator)
         } else {
@@ -329,12 +332,73 @@ impl TokenPair {
     }
 }
 
+#[derive(Copy, Eq, PartialEq, Clone, Default)]
+pub struct DomainSeparator(pub [u8; 32]);
+
+impl std::str::FromStr for DomainSeparator {
+    type Err = FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Self(FromHex::from_hex(s)?))
+    }
+}
+
+impl std::fmt::Debug for DomainSeparator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut hex = [0u8; 64];
+        // Unwrap because we know the length is correct.
+        hex::encode_to_slice(self.0, &mut hex).unwrap();
+        // Unwrap because we know it is valid utf8.
+        f.write_str(std::str::from_utf8(&hex).unwrap())
+    }
+}
+
+impl DomainSeparator {
+    pub fn get_domain_separator(chain_id: u64, contract_address: H160) -> Self {
+        lazy_static! {
+            /// The EIP-712 domain name used for computing the domain separator.
+            static ref DOMAIN_NAME: [u8; 32] = signing::keccak256(b"Gnosis Protocol");
+
+            /// The EIP-712 domain version used for computing the domain separator.
+            static ref DOMAIN_VERSION: [u8; 32] = signing::keccak256(b"v2");
+
+            /// The EIP-712 domain type used computing the domain separator.
+            static ref DOMAIN_TYPE_HASH: [u8; 32] = signing::keccak256(
+                b"EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+            );
+        }
+        let abi_encode_string = encode(&[
+            Token::Uint((*DOMAIN_TYPE_HASH).into()),
+            Token::Uint((*DOMAIN_NAME).into()),
+            Token::Uint((*DOMAIN_VERSION).into()),
+            Token::Uint(chain_id.into()),
+            Token::Address(contract_address),
+        ]);
+
+        DomainSeparator(signing::keccak256(abi_encode_string.as_slice()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use chrono::NaiveDateTime;
+    use hex_literal::hex;
     use serde_json::json;
     use std::str::FromStr;
+
+    #[test]
+    fn domain_separator_rinkeby() {
+        let contract_address: H160 = hex!("91D6387ffbB74621625F39200d91a50386C9Ab15").into();
+        let chain_id: u64 = 4;
+        let domain_separator_rinkeby =
+            DomainSeparator::get_domain_separator(chain_id, contract_address);
+        // domain separator is taken from rinkeby deployment at address 91D6387ffbB74621625F39200d91a50386C9Ab15
+        let expected_domain_separator: DomainSeparator = DomainSeparator(hex!(
+            "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
+        ));
+        assert_eq!(domain_separator_rinkeby, expected_domain_separator);
+    }
 
     #[test]
     fn deserialization_and_back() {
@@ -410,8 +474,9 @@ mod tests {
     // from two of the tests in https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Encoding.test.ts .
     #[test]
     fn signature_typed_data() {
-        let domain_separator =
-            hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
+        let domain_separator = DomainSeparator(hex!(
+            "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
+        ));
         let order = OrderCreation {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
@@ -438,8 +503,9 @@ mod tests {
 
     #[test]
     fn signature_message() {
-        let domain_separator =
-            hex!("f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b");
+        let domain_separator = DomainSeparator(hex!(
+            "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
+        ));
         let order = OrderCreation {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
@@ -471,6 +537,10 @@ mod tests {
         );
     }
 
+    #[test]
+    fn domain_separator_does_not_panic_in_debug() {
+        println!("{:?}", DomainSeparator::default());
+    }
     #[test]
     fn uid_is_displayed_as_hex() {
         let mut uid = OrderUid([0u8; 56]);
