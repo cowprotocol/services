@@ -45,9 +45,8 @@ async fn main() {
     let orderbook = Arc::new(OrderBook::new(domain_separator));
     let filter = api::handle_all_routes(orderbook.clone())
         .map(|reply| warp::reply::with_header(reply, "Access-Control-Allow-Origin", "*"));
-    let address = SocketAddr::new([0, 0, 0, 0].into(), 8080);
-    tracing::info!(%address, "serving order book");
-    let serve_task = task::spawn(warp::serve(filter).bind(address));
+    tracing::info!("serving order book");
+    let serve_task = task::spawn(warp::serve(filter).bind(args.bind_address));
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),
