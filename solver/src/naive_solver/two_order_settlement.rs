@@ -48,10 +48,12 @@ fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Settlement {
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
+                fee_discount: 0,
             },
             Trade {
                 order: *sell_b,
                 executed_amount: sell_b.sell_amount,
+                fee_discount: 0,
             },
         ],
         ..Default::default()
@@ -98,10 +100,12 @@ fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<Settlemen
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
+                fee_discount: 0,
             },
             Trade {
                 order: *sell_b,
                 executed_amount: sell_b.sell_amount,
+                fee_discount: 0,
             },
         ],
         interactions: vec![Interaction::AmmSwapExactTokensForTokens {

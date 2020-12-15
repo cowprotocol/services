@@ -113,7 +113,14 @@ impl OrderCreation {
 // See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
 impl OrderCreation {
     const ORDER_TYPE_HASH: [u8; 32] =
-        hex!("b71968fcf5e55b9c3370f2809d4078a4695be79dfa43e5aa1f2baa0a9b84f186");
+        hex!("b2b38b9dcbdeb41f7ad71dea9aed79fb47f7bbc3436576fe994b43d5b16ecdec");
+
+    // keccak256("sell")
+    const ORDER_KIND_SELL: [u8; 32] =
+        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
+    // keccak256("buy")
+    const ORDER_KIND_BUY: [u8; 32] =
+        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
 
     fn order_digest(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 320];
@@ -126,10 +133,10 @@ impl OrderCreation {
         hash_data[188..192].copy_from_slice(&self.valid_to.to_be_bytes());
         hash_data[220..224].copy_from_slice(&self.app_data.to_be_bytes());
         self.fee_amount.to_big_endian(&mut hash_data[224..256]);
-        hash_data[287] = match self.kind {
-            OrderKind::Sell => 0,
-            OrderKind::Buy => 1,
-        };
+        hash_data[256..288].copy_from_slice(match self.kind {
+            OrderKind::Sell => &Self::ORDER_KIND_SELL,
+            OrderKind::Buy => &Self::ORDER_KIND_BUY,
+        });
         hash_data[319] = self.partially_fillable as u8;
         signing::keccak256(&hash_data)
     }
@@ -471,7 +478,8 @@ mod tests {
     }
 
     // these two signature tests have been created by printing the order and signature information
-    // from two of the tests in https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Encoding.test.ts .
+    // from the test `should recover signing address for all supported schemes` in
+    // https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Encoding.test.ts .
     #[test]
     fn signature_typed_data() {
         let domain_separator = DomainSeparator(hex!(
@@ -480,22 +488,20 @@ mod tests {
         let order = OrderCreation {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
-            sell_amount: hex!("0303030303030303030303030303030303030303030303030303030303030303")
-                .into(),
-            buy_amount: hex!("0404040404040404040404040404040404040404040404040404040404040404")
-                .into(),
-            valid_to: 84215045,
-            app_data: 101058054,
-            fee_amount: hex!("0707070707070707070707070707070707070707070707070707070707070707")
-                .into(),
-            kind: OrderKind::Buy,
-            partially_fillable: true,
+            sell_amount: hex!("0246ddf97976680000").as_ref().into(),
+            buy_amount: hex!("b98bc829a6f90000").as_ref().into(),
+            valid_to: 4294967295,
+            app_data: 0,
+            fee_amount: hex!("0de0b6b3a7640000").as_ref().into(),
+            kind: OrderKind::Sell,
+            partially_fillable: false,
             signature: Signature {
                 v: 0x1b,
-                r: hex!("159bad4cdce8e9eeb34f4450941e6e512cd2ceaba2809f6928ad91ce58700064").into(),
-                s: hex!("4cd8e52110ca7d1ba7493828bb811969115aff9d8358a5071bd2e7d15c1362bd").into(),
+                r: hex!("41c6a5841abbd04049aa0ec4290487c72d62adcd30054cb4df39988e1ef1a732").into(),
+                s: hex!("132ba700917828073a730044f1d8cf280d11faff0c2d43125d910fbf18222c1b").into(),
             },
         };
+
         let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let owner = order.validate_signature(&domain_separator).unwrap();
         assert_eq!(owner, expected_owner.into());
@@ -518,8 +524,8 @@ mod tests {
             partially_fillable: false,
             signature: Signature {
                 v: 0x1b | 0x80,
-                r: hex!("97be7a77d916c99b39d2909c5fde76a82f4fd49868b18d000d93de2c59061602").into(),
-                s: hex!("68f04221fd6ac0e8aebfb048cf6c75ca882cd20c6e06aec094c278f8e44c1759").into(),
+                r: hex!("2c807a9e4f7f72489636d30b33d72b246c6fb467ba203d954ccf2022763a8b21").into(),
+                s: hex!("2eb1863e76c37abb54df6695d54f3abc07db4ff7df57e4564a48aee137f358bd").into(),
             },
         };
         let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");

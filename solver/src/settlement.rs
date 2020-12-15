@@ -7,6 +7,7 @@ use std::collections::HashMap;
 pub struct Trade {
     pub order: OrderCreation,
     pub executed_amount: U256,
+    pub fee_discount: u16,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -52,6 +53,7 @@ impl Settlement {
                 *token_index.get(&order.sell_token)?,
                 *token_index.get(&order.buy_token)?,
                 &trade.executed_amount,
+                trade.fee_discount,
             );
             bytes.extend_from_slice(&encoded);
         }
