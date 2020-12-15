@@ -41,10 +41,12 @@ async fn main() {
     let chain_id = web3.eth().chain_id().await.expect("Could not get chainId");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id.as_u64(), settlement_contract.address());
-
     let orderbook = Arc::new(OrderBook::new(domain_separator));
-    let filter = api::handle_all_routes(orderbook.clone())
-        .map(|reply| warp::reply::with_header(reply, "Access-Control-Allow-Origin", "*"));
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
+        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+    let filter = api::handle_all_routes(orderbook.clone()).with(cors.build());
     tracing::info!("serving order book");
     let serve_task = task::spawn(warp::serve(filter).bind(args.bind_address));
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook));
