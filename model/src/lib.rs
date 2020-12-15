@@ -35,9 +35,9 @@ impl Default for OrderKind {
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default)]
 pub struct Signature {
-    pub v: u8,
     pub r: H256,
     pub s: H256,
+    pub v: u8,
 }
 
 /// An order as provided to the orderbook by the frontend.
@@ -259,9 +259,9 @@ impl Serialize for Signature {
         let mut bytes = [0u8; 2 + 65 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice([self.v], &mut bytes[2..4]).unwrap();
-        hex::encode_to_slice(self.r, &mut bytes[4..68]).unwrap();
-        hex::encode_to_slice(self.s, &mut bytes[68..]).unwrap();
+        hex::encode_to_slice(self.r, &mut bytes[2..66]).unwrap();
+        hex::encode_to_slice(self.s, &mut bytes[66..130]).unwrap();
+        hex::encode_to_slice([self.v], &mut bytes[130..132]).unwrap();
         // Hex encoding is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(str)
@@ -299,9 +299,9 @@ impl<'de> Deserialize<'de> for Signature {
                     ))
                 })?;
                 Ok(Signature {
-                    v: bytes[0],
-                    r: H256::from_slice(&bytes[1..33]),
-                    s: H256::from_slice(&bytes[33..]),
+                    r: H256::from_slice(&bytes[..32]),
+                    s: H256::from_slice(&bytes[32..64]),
+                    v: bytes[64],
                 })
             }
         }
@@ -416,7 +416,7 @@ mod tests {
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "partiallyFillable": false,
-            "signature": "0x0102000000000000000000000000000000000000000000000000000000000000030400000000000000000000000000000000000000000000000000000000000005",
+            "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
         });
         let expected = Order {
             order_meta_data: OrderMetaData {

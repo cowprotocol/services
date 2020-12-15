@@ -186,7 +186,7 @@ components:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
         signature:
-          description: 65 bytes encoded as hex with `0x` prefix. v + r + s from the spec.
+          description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
           example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     OrderMetaData:
       description: |
