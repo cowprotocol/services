@@ -167,7 +167,7 @@ impl OrderCreation {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl Display for OrderUid {
