@@ -141,8 +141,8 @@ fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<TwoOrderS
 
     Some(TwoOrderSettlement {
         clearing_prices: maplit::hashmap! {
-            big.sell_token => big.sell_amount,
-            big.buy_token => big.buy_amount,
+            big.sell_token => big.buy_amount,
+            big.buy_token => big.sell_amount,
         },
         trades: [
             Trade {
@@ -306,8 +306,8 @@ mod tests {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert_eq!(settlement.interaction, expected_interaction);
-            let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
-            let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_a = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_b = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             assert_eq!(clearing_price_a * 3 / 2, clearing_price_b);
         }
     }
@@ -347,8 +347,8 @@ mod tests {
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert_eq!(settlement.trades.len(), 2);
             assert_eq!(settlement.interaction, expected_interaction);
-            let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
-            let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_a = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_b = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             assert_eq!(clearing_price_a * 2, clearing_price_b);
         }
     }
