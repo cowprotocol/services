@@ -1,7 +1,7 @@
 use super::handler;
 use crate::orderbook::OrderBook;
 use hex::{FromHex, FromHexError};
-use model::OrderCreation;
+use model::{OrderCreation, OrderUid};
 use primitive_types::H160;
 use std::{str::FromStr, sync::Arc};
 use warp::Filter;
@@ -39,6 +39,14 @@ pub fn get_orders(
         .and_then(handler::get_orders)
 }
 
+pub fn get_order_by_uid(
+    orderbook: Arc<OrderBook>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path!("orders" / OrderUid)
+        .and(warp::get())
+        .and(with_orderbook(orderbook))
+        .and_then(handler::get_order_by_uid)
+}
 /// Wraps H160 with FromStr that can handle a `0x` prefix.
 struct H160Wrapper(H160);
 impl FromStr for H160Wrapper {
@@ -78,6 +86,37 @@ pub mod test_util {
         let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
         let orderbook_orders = orderbook.get_orders().await;
         assert_eq!(response_orders, orderbook_orders);
+    }
+
+    #[tokio::test]
+    async fn get_order_by_uid_() {
+        let orderbook = Arc::new(OrderBook::default());
+        let filter = get_order_by_uid(orderbook.clone());
+        let mut order_creation = OrderCreation::default();
+        order_creation.valid_to = u32::MAX;
+        order_creation.sign_self();
+        let uid = orderbook.add_order(order_creation).await.unwrap();
+        let response = request()
+            .path(&format!("/orders/{:}", uid))
+            .method("GET")
+            .reply(&filter)
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_orders: Order = serde_json::from_slice(response.body()).unwrap();
+        let orderbook_orders = orderbook.get_orders().await;
+        assert_eq!(response_orders, orderbook_orders[0]);
+    }
+    #[tokio::test]
+    async fn get_order_by_uid_for_non_existent_order_() {
+        let orderbook = Arc::new(OrderBook::default());
+        let filter = get_order_by_uid(orderbook.clone());
+        let uid = OrderUid([0 as u8; 56]);
+        let response = request()
+            .path(&format!("/orders/{:}", uid))
+            .method("GET")
+            .reply(&filter)
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 
     #[tokio::test]

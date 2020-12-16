@@ -15,6 +15,7 @@ use secp256k1::{constants::SECRET_KEY_SIZE, SecretKey};
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::fmt::{self, Display};
+use std::str::FromStr;
 use web3::{
     signing::{self, Key, SecretKeyRef},
     types::Recovery,
@@ -231,6 +232,16 @@ impl OrderCreation {
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct OrderUid(pub [u8; 56]);
+
+impl FromStr for OrderUid {
+    type Err = hex::FromHexError;
+    fn from_str(s: &str) -> Result<OrderUid, hex::FromHexError> {
+        let mut value = [0 as u8; 56];
+        let s_without_prefix = s.strip_prefix("0x").unwrap_or(s);
+        hex::decode_to_slice(s_without_prefix, value.as_mut())?;
+        Ok(OrderUid(value))
+    }
+}
 
 impl Display for OrderUid {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -609,6 +620,7 @@ mod tests {
     fn domain_separator_does_not_panic_in_debug() {
         println!("{:?}", DomainSeparator::default());
     }
+
     #[test]
     fn uid_is_displayed_as_hex() {
         let mut uid = OrderUid([0u8; 56]);

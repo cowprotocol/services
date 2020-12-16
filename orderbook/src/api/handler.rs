@@ -1,9 +1,10 @@
 use crate::orderbook::{AddOrderError, OrderBook};
 
 use chrono::prelude::{DateTime, FixedOffset, Utc};
-use model::{u256_decimal, OrderCreation};
+use model::{u256_decimal, OrderCreation, OrderUid};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     http::StatusCode,
@@ -81,6 +82,20 @@ pub async fn add_order(
 pub async fn get_orders(orderbook: Arc<OrderBook>) -> Result<impl warp::Reply, Infallible> {
     let orders = orderbook.get_orders().await;
     Ok(with_status(json(&orders), StatusCode::OK))
+}
+
+pub async fn get_order_by_uid(
+    uid: OrderUid,
+    orderbook: Arc<OrderBook>,
+) -> Result<impl warp::Reply, Infallible> {
+    if let Some(order) = orderbook.get_order(&uid).await {
+        Ok(with_status(json(&order), StatusCode::OK))
+    } else {
+        Ok(with_status(
+            json(&json!({ "description": "Order was not found"})),
+            StatusCode::NOT_FOUND,
+        ))
+    }
 }
 
 #[allow(unused_variables)]
