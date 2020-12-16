@@ -161,11 +161,7 @@ async fn test_with_ganache() {
         reqwest::Url::from_str(API_HOST).unwrap(),
         std::time::Duration::from_secs(10),
     );
-    let mut driver = solver::driver::Driver {
-        settlement_contract: gp_settlement,
-        uniswap_contract: uniswap_router,
-        orderbook: orderbook_api,
-    };
+    let mut driver = solver::driver::Driver::new(gp_settlement, uniswap_router, orderbook_api);
     driver.single_run().await.unwrap();
 
     // Check matching

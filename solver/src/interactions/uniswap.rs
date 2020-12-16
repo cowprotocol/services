@@ -34,7 +34,7 @@ impl Interaction for UniswapInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encoding::{tests::u8_as_32_bytes_be, INTERACTION_BASE_SIZE};
+    use crate::encoding::tests::u8_as_32_bytes_be;
     use crate::interactions::dummy_web3;
     use std::io::Cursor;
 
@@ -59,7 +59,7 @@ mod tests {
         let encoded = cursor.into_inner();
         assert_eq!(&encoded[0..20], contract.address().as_fixed_bytes());
         assert_eq!(encoded[20..23], [0, 1, 4]);
-        let call = &encoded[INTERACTION_BASE_SIZE..];
+        let call = &encoded[23..];
         let signature = [0x38u8, 0xed, 0x17, 0x39];
         let path_offset = 160;
         let path_size = 2;

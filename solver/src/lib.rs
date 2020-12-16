@@ -1,6 +1,3 @@
-#![allow(dead_code)]
-
-pub mod batcher;
 pub mod driver;
 pub mod encoding;
 pub mod interactions;

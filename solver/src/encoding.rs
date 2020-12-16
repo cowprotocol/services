@@ -4,7 +4,6 @@ use model::{OrderCreation, OrderKind};
 use primitive_types::U256;
 
 pub const TRADE_STRIDE: usize = 206;
-pub const INTERACTION_BASE_SIZE: usize = 20 + 3; // target address + data length
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
 pub fn encode_trade(

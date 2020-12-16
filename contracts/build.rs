@@ -17,7 +17,10 @@ fn main() {
 
     generate_contract("IERC20", hashmap! {});
     generate_contract("ERC20Mintable", hashmap! {});
-    generate_contract("UniswapV2Router02", hashmap! {});
+    generate_contract(
+        "UniswapV2Router02",
+        hashmap! {4 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap()},
+    );
     generate_contract("UniswapV2Factory", hashmap! {});
     generate_contract(
         "GPv2Settlement",
