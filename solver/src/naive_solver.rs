@@ -2,22 +2,22 @@ mod two_order_settlement;
 
 use self::two_order_settlement::TwoOrderSettlement;
 use crate::settlement::Settlement;
-use contracts::UniswapV2Router02;
+use contracts::{GPv2Settlement, UniswapV2Router02};
 use model::{OrderCreation, OrderKind, TokenPair};
-use primitive_types::{H160, U512};
+use primitive_types::U512;
 use std::{cmp::Ordering, collections::HashMap};
 
 pub fn settle(
     orders: impl Iterator<Item = OrderCreation>,
     uniswap: &UniswapV2Router02,
-    payout_to: &H160,
+    gpv2_settlement: &GPv2Settlement,
 ) -> Option<Settlement> {
     let orders = organize_orders_by_token_pair(orders);
     // TODO: Settle multiple token pairs in one settlement.
     orders
         .into_iter()
         .find_map(|(_, orders)| settle_pair(orders))
-        .map(|settlement| settlement.into_settlement(uniswap.clone(), payout_to))
+        .map(|settlement| settlement.into_settlement(uniswap.clone(), gpv2_settlement.clone()))
 }
 
 fn settle_pair(orders: TokenPairOrders) -> Option<TwoOrderSettlement> {
@@ -145,7 +145,8 @@ mod tests {
         ];
 
         let contract = UniswapV2Router02::at(&dummy_web3::dummy_web3(), H160::zero());
-        let settlement = settle(orders.into_iter(), &contract, &H160::zero()).unwrap();
+        let settlement = GPv2Settlement::at(&dummy_web3::dummy_web3(), H160::zero());
+        let settlement = settle(orders.into_iter(), &contract, &settlement).unwrap();
         dbg!(&settlement);
         assert_eq!(settlement.trades.len(), 2);
         assert_eq!(settlement.interactions.len(), 1);

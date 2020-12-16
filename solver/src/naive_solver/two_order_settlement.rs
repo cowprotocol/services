@@ -2,7 +2,7 @@ use crate::{
     interactions::UniswapInteraction,
     settlement::{Interaction, Settlement, Trade},
 };
-use contracts::UniswapV2Router02;
+use contracts::{GPv2Settlement, UniswapV2Router02};
 use model::{OrderCreation, OrderKind};
 use primitive_types::{H160, U256};
 use std::collections::HashMap;
@@ -15,16 +15,22 @@ pub struct TwoOrderSettlement {
 }
 
 impl TwoOrderSettlement {
-    pub fn into_settlement(self, uniswap: UniswapV2Router02, payout_to: &H160) -> Settlement {
+    pub fn into_settlement(
+        self,
+        uniswap: UniswapV2Router02,
+        gpv2_settlement: GPv2Settlement,
+    ) -> Settlement {
         let mut interactions = Vec::<Box<dyn Interaction>>::new();
         if let Some(interaction) = self.interaction {
             interactions.push(Box::new(UniswapInteraction {
                 contract: uniswap,
+                settlement: gpv2_settlement,
+                // TODO(fleupold) Only set allowance if we need to
+                set_allowance: true,
                 amount_in: interaction.amount_in,
                 amount_out_min: interaction.amount_out_min,
                 token_in: interaction.token_in,
                 token_out: interaction.token_out,
-                payout_to: *payout_to,
             }));
         }
         Settlement {
