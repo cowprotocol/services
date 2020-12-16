@@ -1,12 +1,9 @@
-mod api;
-mod orderbook;
-
-use crate::orderbook::OrderBook;
 use model::DomainSeparator;
+use orderbook::orderbook::OrderBook;
+use orderbook::serve_task;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
-use warp::Filter;
 
 #[derive(Debug, StructOpt)]
 struct Arguments {
@@ -42,13 +39,7 @@ async fn main() {
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id.as_u64(), settlement_contract.address());
     let orderbook = Arc::new(OrderBook::new(domain_separator));
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
-        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    let filter = api::handle_all_routes(orderbook.clone()).with(cors.build());
-    tracing::info!("serving order book");
-    let serve_task = task::spawn(warp::serve(filter).bind(args.bind_address));
+    let serve_task = serve_task(orderbook.clone(), args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),

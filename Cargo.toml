@@ -1,6 +1,16 @@
 [workspace]
 members = [
     "contracts",
+    "e2e",
+    "model",
+    "orderbook",
+    "shared-arguments",
+    "solver",
+    "tracing-setup",
+]
+
+default-members = [
+    "contracts",
     "model",
     "orderbook",
     "shared-arguments",

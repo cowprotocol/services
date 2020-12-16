@@ -3,6 +3,14 @@ name = "solver"
 version = "0.1.0"
 edition = "2018"
 
+[lib]
+name = "solver"
+path = "src/lib.rs"
+
+[[bin]]
+name = "solver"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"

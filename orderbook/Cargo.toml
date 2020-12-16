@@ -3,6 +3,14 @@ name = "orderbook"
 version = "0.1.0"
 edition = "2018"
 
+[lib]
+name = "orderbook"
+path = "src/lib.rs"
+
+[[bin]]
+name = "orderbook"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1.0"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }

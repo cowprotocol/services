@@ -6,9 +6,9 @@ use std::time::Duration;
 const SETTLE_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct Driver {
-    settlement_contract: GPv2Settlement,
-    uniswap_contract: UniswapV2Router02,
-    orderbook: OrderBookApi,
+    pub settlement_contract: GPv2Settlement,
+    pub uniswap_contract: UniswapV2Router02,
+    pub orderbook: OrderBookApi,
 }
 
 impl Driver {
@@ -23,7 +23,7 @@ impl Driver {
         }
     }
 
-    async fn single_run(&mut self) -> Result<()> {
+    pub async fn single_run(&mut self) -> Result<()> {
         let orders = self.orderbook.get_orders().await?;
         // TODO: order validity checks
         // Decide what is handled by orderbook service and what by us.
@@ -46,13 +46,15 @@ impl Driver {
             .encode_trades()
             .ok_or_else(|| anyhow!("trade encoding failed"))?;
         let settle = || {
-            self.settlement_contract.settle(
-                settlement.tokens(),
-                settlement.clearing_prices(),
-                encoded_trades.clone(),
-                encoded_interactions.clone(),
-                Vec::new(),
-            )
+            self.settlement_contract
+                .settle(
+                    settlement.tokens(),
+                    settlement.clearing_prices(),
+                    encoded_trades.clone(),
+                    encoded_interactions.clone(),
+                    Vec::new(),
+                )
+                .gas(8_000_000u32.into())
         };
         settle().call().await.context("settle simulation failed")?;
         settle().send().await.context("settle execution failed")?;

@@ -347,6 +347,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "134951f4028bdadb9b84baf4232681efbf277da25144b9b0ad65df75946c422b"
 
 [[package]]
+name = "e2e"
+version = "1.0.0"
+dependencies = [
+ "contracts",
+ "ethcontract",
+ "hex-literal",
+ "model",
+ "orderbook",
+ "reqwest",
+ "secp256k1 0.17.2",
+ "serde_json",
+ "solver",
+ "tokio",
+ "tracing-setup",
+ "web3",
+]
+
+[[package]]
 name = "either"
 version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

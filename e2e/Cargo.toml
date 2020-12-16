@@ -1,0 +1,19 @@
+[package]
+name = "e2e"
+version = "1.0.0"
+edition = "2018"
+
+[dev-dependencies]
+contracts = { path = "../contracts" }
+ethcontract = { version = "0.9",  default-features = false, features = ["http"] }
+hex-literal = "0.3"
+model = { path = "../model" }
+orderbook = { path = "../orderbook" }
+secp256k1 = "0.17"
+reqwest = "0.10"
+tokio = { version = "0.2", features =[ "macros"] }
+web3 = { version = "0.13", default-features = false }
+serde_json = "1.0"
+solver = { path = "../solver" }
+tracing-setup = { path = "../tracing-setup" }
+

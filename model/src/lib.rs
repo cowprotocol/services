@@ -61,6 +61,68 @@ pub struct OrderCreation {
     pub signature: Signature,
 }
 
+#[derive(Default)]
+pub struct OrderCreationBuilder {
+    order_creation: OrderCreation,
+}
+
+#[allow(dead_code)]
+impl OrderCreationBuilder {
+    pub fn with_sell_token(mut self, sell_token: H160) -> Self {
+        self.order_creation.sell_token = sell_token;
+        self
+    }
+
+    pub fn with_buy_token(mut self, buy_token: H160) -> Self {
+        self.order_creation.buy_token = buy_token;
+        self
+    }
+
+    pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
+        self.order_creation.sell_amount = sell_amount;
+        self
+    }
+
+    pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
+        self.order_creation.buy_amount = buy_amount;
+        self
+    }
+
+    pub fn with_valid_to(mut self, valid_to: u32) -> Self {
+        self.order_creation.valid_to = valid_to;
+        self
+    }
+
+    pub fn with_app_data(mut self, app_data: u32) -> Self {
+        self.order_creation.app_data = app_data;
+        self
+    }
+
+    pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
+        self.order_creation.fee_amount = fee_amount;
+        self
+    }
+
+    pub fn with_kind(mut self, kind: OrderKind) -> Self {
+        self.order_creation.kind = kind;
+        self
+    }
+
+    pub fn with_partially_fillable(mut self, partially_fillable: bool) -> Self {
+        self.order_creation.partially_fillable = partially_fillable;
+        self
+    }
+
+    pub fn sign_with(mut self, domain_separator: &DomainSeparator, key: SecretKeyRef) -> Self {
+        self.order_creation.sign_self_with(domain_separator, key);
+        self
+    }
+
+    pub fn build(self) -> OrderCreation {
+        self.order_creation
+    }
+}
+
 impl OrderCreation {
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
