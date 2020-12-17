@@ -89,8 +89,8 @@ pub fn settle_two_fillkill_sell_orders(
 fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> TwoOrderSettlement {
     TwoOrderSettlement {
         clearing_prices: maplit::hashmap! {
-            sell_a.sell_token => sell_a.sell_amount,
-            sell_b.sell_token => sell_b.sell_amount,
+            sell_a.sell_token => sell_b.sell_amount,
+            sell_b.sell_token => sell_a.sell_amount,
         },
         trades: [
             Trade {
@@ -177,6 +177,14 @@ mod tests {
     use model::OrderKind;
     use primitive_types::H160;
 
+    fn assert_respects_prices(settlement: &TwoOrderSettlement) {
+        for trade in settlement.trades.iter() {
+            let sell_price = settlement.clearing_prices[&trade.order.sell_token];
+            let buy_price = settlement.clearing_prices[&trade.order.buy_token];
+            assert!(trade.order.sell_amount * sell_price >= trade.order.buy_amount * buy_price);
+        }
+    }
+
     #[test]
     fn rounded_up_division_() {
         assert_eq!(rounded_up_division(4.into(), 2.into()), Some(2.into()));
@@ -210,10 +218,11 @@ mod tests {
         // shouldn't matter which order comes first
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
+            assert_respects_prices(&settlement);
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert!(settlement.interaction.is_none());
-            let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
-            let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_a = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_b = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             assert_eq!(clearing_price_a * 2, clearing_price_b);
         }
     }
@@ -240,10 +249,11 @@ mod tests {
         };
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
+            assert_respects_prices(&settlement);
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert!(settlement.interaction.is_none());
-            let clearing_price_a = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
-            let clearing_price_b = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_a = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
+            let clearing_price_b = *settlement.clearing_prices.get(&sell_a.sell_token).unwrap();
             assert_eq!(clearing_price_a * 3 / 2, clearing_price_b);
         }
     }
@@ -304,6 +314,7 @@ mod tests {
 
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
+            assert_respects_prices(&settlement);
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert_eq!(settlement.interaction, expected_interaction);
             let clearing_price_a = *settlement.clearing_prices.get(&sell_b.sell_token).unwrap();
@@ -344,6 +355,7 @@ mod tests {
 
         for order_pair in [(&sell_a, &sell_b), (&sell_b, &sell_a)].iter().copied() {
             let settlement = settle_two_fillkill_sell_orders(order_pair.0, order_pair.1).unwrap();
+            assert_respects_prices(&settlement);
             assert_eq!(settlement.clearing_prices.len(), 2);
             assert_eq!(settlement.trades.len(), 2);
             assert_eq!(settlement.interaction, expected_interaction);
