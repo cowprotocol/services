@@ -20,15 +20,19 @@ fn main() {
     generate_contract(
         "UniswapV2Router02",
         hashmap! {
-        1 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
-        4 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap()},
+            1 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
+            4 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
+            100 => Address::from_str("1C232F01118CB8B424793ae03F870aa7D0ac7f77").unwrap(),
+        },
     );
     generate_contract("UniswapV2Factory", hashmap! {});
     generate_contract(
         "GPv2Settlement",
         hashmap! {
-        1 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(),
-        4 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap()},
+            1 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(),
+            4 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(),
+            100 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(),
+        },
     );
     generate_contract("GPv2AllowListAuthentication", hashmap! {});
 }
