@@ -28,11 +28,11 @@ const NPM_CONTRACTS: &[(&str, &str)] = &[
         "UniswapV2Factory.json",
     ),
     (
-        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.8/deployments/rinkeby/GPv2Settlement.json",
+        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.10/deployments/rinkeby/GPv2Settlement.json",
         "GPv2Settlement.json",
     ),
     (
-        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.8/deployments/rinkeby/GPv2AllowListAuthentication.json",
+        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.10/deployments/rinkeby/GPv2AllowListAuthentication.json",
         "GPv2AllowListAuthentication.json",
     ),
 ];

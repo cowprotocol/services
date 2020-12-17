@@ -1957,6 +1957,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "futures 0.3.8",
+ "hex",
  "hex-literal",
  "jsonrpc-core",
  "maplit",

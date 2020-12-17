@@ -19,12 +19,16 @@ fn main() {
     generate_contract("ERC20Mintable", hashmap! {});
     generate_contract(
         "UniswapV2Router02",
-        hashmap! {4 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap()},
+        hashmap! {
+        1 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap(),
+        4 => Address::from_str("7a250d5630B4cF539739dF2C5dAcb4c659F2488D").unwrap()},
     );
     generate_contract("UniswapV2Factory", hashmap! {});
     generate_contract(
         "GPv2Settlement",
-        hashmap! {4 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap()},
+        hashmap! {
+        1 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(),
+        4 => Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap()},
     );
     generate_contract("GPv2AllowListAuthentication", hashmap! {});
 }

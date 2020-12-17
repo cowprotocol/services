@@ -24,6 +24,10 @@ struct Arguments {
     /// The private key used by the driver to sign transactions.
     #[structopt(short = "k", long, env = "PRIVATE_KEY", hide_env_values = true)]
     private_key: PrivateKey,
+
+    /// The factor by which the gas price estimate is multiplied (to ensure fast settlement)
+    #[structopt(long, env = "GAS_PRICE_FACTOR", default_value = "1.0")]
+    gas_price_factor: f64,
 }
 
 #[tokio::main]
@@ -44,9 +48,10 @@ async fn main() {
         .await
         .expect("Could not get chainId")
         .as_u64();
-    let settlement_contract = solver::get_settlement_contract(&web3, chain_id, args.private_key)
-        .await
-        .expect("couldn't load deployed settlement");
+    let settlement_contract =
+        solver::get_settlement_contract(&web3, chain_id, args.private_key, args.gas_price_factor)
+            .await
+            .expect("couldn't load deployed settlement");
     let orderbook =
         solver::orderbook::OrderBookApi::new(args.orderbook_url, args.orderbook_timeout);
     let mut driver = Driver::new(settlement_contract, uniswap_contract, orderbook);

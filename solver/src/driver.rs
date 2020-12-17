@@ -75,6 +75,10 @@ impl Driver {
                 )
                 .gas(8_000_000u32.into())
         };
+        tracing::info!(
+            "Settlement call: {}",
+            hex::encode(settle().tx.data.expect("data").0),
+        );
         settle().call().await.context("settle simulation failed")?;
         settle().send().await.context("settle execution failed")?;
         Ok(())
