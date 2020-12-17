@@ -19,7 +19,7 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 async fn test_with_ganache() {
-    tracing_setup::initialize("debug");
+    tracing_setup::initialize("warn,orderbook=debug,solver=debug");
     let http = Http::new(NODE_HOST).expect("transport failure");
     let web3 = Web3::new(http);
 
@@ -66,11 +66,11 @@ async fn test_with_ganache() {
 
     // Create & Mint tokens to trade
     let token_a = deploy_mintable_token().await;
-    tx!(solver, token_a.mint(solver.address(), to_wei(100)));
+    tx!(solver, token_a.mint(solver.address(), to_wei(100_000)));
     tx!(solver, token_a.mint(trader_a.address(), to_wei(100)));
 
     let token_b = deploy_mintable_token().await;
-    tx!(solver, token_b.mint(solver.address(), to_wei(100)));
+    tx!(solver, token_b.mint(solver.address(), to_wei(100_000)));
     tx!(solver, token_b.mint(trader_b.address(), to_wei(100)));
 
     // Create and fund Uniswap pool
@@ -80,19 +80,19 @@ async fn test_with_ganache() {
     );
     tx!(
         solver,
-        token_a.approve(uniswap_router.address(), to_wei(100))
+        token_a.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver,
-        token_b.approve(uniswap_router.address(), to_wei(100))
+        token_b.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver,
         uniswap_router.add_liquidity(
             token_a.address(),
             token_b.address(),
-            to_wei(100),
-            to_wei(100),
+            to_wei(100_000),
+            to_wei(100_000),
             0_u64.into(),
             0_u64.into(),
             solver.address(),
@@ -122,7 +122,7 @@ async fn test_with_ganache() {
         .with_sell_token(token_a.address())
         .with_sell_amount(to_wei(100))
         .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(90))
+        .with_buy_amount(to_wei(80))
         .with_valid_to(u32::max_value())
         .with_kind(OrderKind::Sell)
         .sign_with(
@@ -139,9 +139,9 @@ async fn test_with_ganache() {
 
     let order_b = OrderCreationBuilder::default()
         .with_sell_token(token_b.address())
-        .with_sell_amount(to_wei(100))
+        .with_sell_amount(to_wei(50))
         .with_buy_token(token_a.address())
-        .with_buy_amount(to_wei(90))
+        .with_buy_amount(to_wei(40))
         .with_valid_to(u32::max_value())
         .with_kind(OrderKind::Sell)
         .sign_with(
@@ -170,14 +170,14 @@ async fn test_with_ganache() {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, to_wei(100));
+    assert_eq!(balance, to_wei(80));
 
     let balance = token_a
         .balance_of(trader_b.address())
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, to_wei(100));
+    assert_eq!(balance, 62500000000000000000u128.into());
 }
 
 fn to_wei(base: u32) -> U256 {
