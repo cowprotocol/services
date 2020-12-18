@@ -3,10 +3,9 @@ on: [pull_request]
 jobs:
   rust:
     runs-on: ubuntu-latest
-    env:
-      CARGO_INCREMENTAL: 0
     steps:
       - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
       - run: |
           npm install ganache-cli
           node_modules/.bin/ganache-cli --networkId 5777 --gasLimit 10000000 --gasPrice 0&
