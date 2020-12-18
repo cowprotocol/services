@@ -1,0 +1,5 @@
+# https://docs.github.com/en/free-pro-team@latest/github/creating-cloning-and-archiving-repositories/about-code-owners
+# This automatically requests reviews from the team for non draft PRs and allows
+# us to enforce that PR approvals come from the team.
+* @Gnosis/gp-services
+
