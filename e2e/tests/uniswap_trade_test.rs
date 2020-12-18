@@ -1,7 +1,7 @@
 use contracts::{ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
 use ethcontract::prelude::{Account, Address, Http, PrivateKey, Web3, U256};
 use hex_literal::hex;
-use model::{DomainSeparator, OrderCreationBuilder, OrderKind};
+use model::{DomainSeparator, OrderBuilder, OrderKind};
 use orderbook::orderbook::OrderBook;
 use secp256k1::SecretKey;
 use serde_json::json;
@@ -118,7 +118,7 @@ async fn test_with_ganache() {
     );
     let client = reqwest::Client::new();
 
-    let order_a = OrderCreationBuilder::default()
+    let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
         .with_sell_amount(to_wei(100))
         .with_buy_token(token_b.address())
@@ -129,7 +129,8 @@ async fn test_with_ganache() {
             &domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
-        .build();
+        .build()
+        .order_creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .body(json!(order_a).to_string())
@@ -137,7 +138,7 @@ async fn test_with_ganache() {
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
-    let order_b = OrderCreationBuilder::default()
+    let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
         .with_sell_amount(to_wei(50))
         .with_buy_token(token_a.address())
@@ -148,7 +149,8 @@ async fn test_with_ganache() {
             &domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
         )
-        .build();
+        .build()
+        .order_creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .body(json!(order_b).to_string())

@@ -63,64 +63,69 @@ pub struct OrderCreation {
 }
 
 #[derive(Default)]
-pub struct OrderCreationBuilder {
-    order_creation: OrderCreation,
-}
+pub struct OrderBuilder(Order);
 
-#[allow(dead_code)]
-impl OrderCreationBuilder {
+impl OrderBuilder {
     pub fn with_sell_token(mut self, sell_token: H160) -> Self {
-        self.order_creation.sell_token = sell_token;
+        self.0.order_creation.sell_token = sell_token;
         self
     }
 
     pub fn with_buy_token(mut self, buy_token: H160) -> Self {
-        self.order_creation.buy_token = buy_token;
+        self.0.order_creation.buy_token = buy_token;
         self
     }
 
     pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
-        self.order_creation.sell_amount = sell_amount;
+        self.0.order_creation.sell_amount = sell_amount;
         self
     }
 
     pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
-        self.order_creation.buy_amount = buy_amount;
+        self.0.order_creation.buy_amount = buy_amount;
         self
     }
 
     pub fn with_valid_to(mut self, valid_to: u32) -> Self {
-        self.order_creation.valid_to = valid_to;
+        self.0.order_creation.valid_to = valid_to;
         self
     }
 
     pub fn with_app_data(mut self, app_data: u32) -> Self {
-        self.order_creation.app_data = app_data;
+        self.0.order_creation.app_data = app_data;
         self
     }
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
-        self.order_creation.fee_amount = fee_amount;
+        self.0.order_creation.fee_amount = fee_amount;
         self
     }
 
     pub fn with_kind(mut self, kind: OrderKind) -> Self {
-        self.order_creation.kind = kind;
+        self.0.order_creation.kind = kind;
         self
     }
 
     pub fn with_partially_fillable(mut self, partially_fillable: bool) -> Self {
-        self.order_creation.partially_fillable = partially_fillable;
+        self.0.order_creation.partially_fillable = partially_fillable;
         self
     }
 
+    pub fn with_creation_date(mut self, creation_date: DateTime<Utc>) -> Self {
+        self.0.order_meta_data.creation_date = creation_date;
+        self
+    }
+
+    /// Sets owner, uid, signature.
     pub fn sign_with(mut self, domain_separator: &DomainSeparator, key: SecretKeyRef) -> Self {
-        self.order_creation.sign_self_with(domain_separator, key);
+        self.0.order_meta_data.owner = key.address();
+        self.0.order_meta_data.uid = self.0.order_creation.uid(&key.address());
+        self.0.order_creation.sign_self_with(domain_separator, key);
         self
     }
 
-    pub fn build(self) -> OrderCreation {
-        self.order_creation
+    pub fn build(self) -> Order {
+        self.0
     }
 }
 
