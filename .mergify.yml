@@ -2,7 +2,8 @@ pull_request_rules:
   - name: Merge approved and green PRs with `merge when green` label
     conditions:
       - "#approved-reviews-by>=1"
-      - status-success=Travis CI - Pull Request
+      - check-success=rust
+      - check-success=openapi
       - base=main
       - label=merge when green
     actions:
