@@ -112,8 +112,9 @@ async fn test_with_ganache() {
             .await
             .expect("Couldn't query domain separator"),
     );
+    let orderbook = Arc::new(OrderBook::new(domain_separator));
     orderbook::serve_task(
-        Arc::new(OrderBook::new(domain_separator)),
+        orderbook.clone(),
         API_HOST[7..].parse().expect("Couldn't parse API address"),
     );
     let client = reqwest::Client::new();
@@ -163,7 +164,8 @@ async fn test_with_ganache() {
         reqwest::Url::from_str(API_HOST).unwrap(),
         std::time::Duration::from_secs(10),
     );
-    let mut driver = solver::driver::Driver::new(gp_settlement, uniswap_router, orderbook_api);
+    let mut driver =
+        solver::driver::Driver::new(gp_settlement.clone(), uniswap_router, orderbook_api);
     driver.single_run().await.unwrap();
 
     // Check matching
@@ -180,6 +182,19 @@ async fn test_with_ganache() {
         .await
         .expect("Couldn't fetch TokenA's balance");
     assert_eq!(balance, 62500000000000000000u128.into());
+
+    // Drive orderbook in order to check the removal of settled order_b
+    orderbook.run_maintenance(&gp_settlement).await;
+    let placement = client
+        .get(&format!(
+            "{}{}{}",
+            API_HOST,
+            ORDER_PLACEMENT_ENDPOINT,
+            order_b.uid(&trader_b.address())
+        ))
+        .send()
+        .await;
+    assert_eq!(placement.unwrap().status(), 404);
 }
 
 fn to_wei(base: u32) -> U256 {

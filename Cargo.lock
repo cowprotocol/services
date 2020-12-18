@@ -1254,6 +1254,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "contracts",
+ "futures 0.3.8",
  "hex",
  "model",
  "primitive-types",

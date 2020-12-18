@@ -1,3 +1,4 @@
+use contracts::GPv2Settlement;
 use model::DomainSeparator;
 use orderbook::orderbook::OrderBook;
 use orderbook::serve_task;
@@ -16,10 +17,13 @@ struct Arguments {
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
 
-pub async fn orderbook_maintenance(orderbook: Arc<OrderBook>) -> ! {
+pub async fn orderbook_maintenance(
+    orderbook: Arc<OrderBook>,
+    settlement_contract: GPv2Settlement,
+) -> ! {
     loop {
         tracing::debug!("running order book maintenance");
-        orderbook.run_maintenance().await;
+        orderbook.run_maintenance(&settlement_contract).await;
         tokio::time::delay_for(MAINTENANCE_INTERVAL).await;
     }
 }
@@ -32,7 +36,7 @@ async fn main() {
     let transport = web3::transports::Http::new(args.shared.node_url.as_str())
         .expect("transport creation failed");
     let web3 = web3::Web3::new(transport);
-    let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
+    let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
     let chain_id = web3.eth().chain_id().await.expect("Could not get chainId");
@@ -40,7 +44,7 @@ async fn main() {
         DomainSeparator::get_domain_separator(chain_id.as_u64(), settlement_contract.address());
     let orderbook = Arc::new(OrderBook::new(domain_separator));
     let serve_task = serve_task(orderbook.clone(), args.bind_address);
-    let maintenance_task = task::spawn(orderbook_maintenance(orderbook));
+    let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
