@@ -1,5 +1,10 @@
 name: pull request
-on: [pull_request]
+on:
+  pull_request:
+  # We require PRs to be up to date before merging so technically it is not needed run the rust job
+  # on main. However for the cache to be usable in PRs we do need the job on main.
+  push:
+    branches: [main]
 jobs:
   rust:
     runs-on: ubuntu-latest
