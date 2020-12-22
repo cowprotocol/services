@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-use model::{OrderCreation, OrderKind};
+use model::order::{OrderCreation, OrderKind};
 use primitive_types::U256;
 
 pub const TRADE_STRIDE: usize = 206;
