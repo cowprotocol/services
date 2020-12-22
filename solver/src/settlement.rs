@@ -1,6 +1,6 @@
 use crate::encoding;
 use anyhow::Result;
-use model::order::OrderCreation;
+use model::OrderCreation;
 use primitive_types::{H160, U256};
 use std::{
     collections::HashMap,

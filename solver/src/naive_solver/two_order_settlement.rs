@@ -3,7 +3,7 @@ use crate::{
     settlement::{Interaction, Settlement, Trade},
 };
 use contracts::{GPv2Settlement, UniswapV2Router02};
-use model::order::{OrderCreation, OrderKind};
+use model::{OrderCreation, OrderKind};
 use primitive_types::{H160, U256};
 use std::collections::HashMap;
 
@@ -174,7 +174,7 @@ fn rounded_up_division(dividend: U256, divisor: U256) -> Option<U256> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::order::OrderKind;
+    use model::OrderKind;
     use primitive_types::H160;
 
     fn assert_respects_prices(settlement: &TwoOrderSettlement) {

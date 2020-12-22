@@ -3,10 +3,7 @@ mod two_order_settlement;
 use self::two_order_settlement::TwoOrderSettlement;
 use crate::settlement::Settlement;
 use contracts::{GPv2Settlement, UniswapV2Router02};
-use model::{
-    order::{OrderCreation, OrderKind},
-    TokenPair,
-};
+use model::{OrderCreation, OrderKind, TokenPair};
 use primitive_types::U512;
 use std::{cmp::Ordering, collections::HashMap};
 
