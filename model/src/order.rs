@@ -4,7 +4,7 @@ use crate::{h160_hexadecimal, u256_decimal, DomainSeparator, Signature, TokenPai
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use hex_literal::hex;
 use primitive_types::{H160, U256};
-use secp256k1::{constants::SECRET_KEY_SIZE, SecretKey};
+use secp256k1::key::ONE_KEY;
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use std::fmt::{self, Display};
@@ -16,13 +16,36 @@ use web3::{
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields thats are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Default, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
     pub order_meta_data: OrderMetaData,
     #[serde(flatten)]
     pub order_creation: OrderCreation,
+}
+
+impl Default for Order {
+    fn default() -> Self {
+        Self::from_order_creation(OrderCreation::default(), &DomainSeparator::default()).unwrap()
+    }
+}
+
+impl Order {
+    pub fn from_order_creation(
+        order_creation: OrderCreation,
+        domain: &DomainSeparator,
+    ) -> Option<Self> {
+        let owner = order_creation.validate_signature(domain)?;
+        Some(Self {
+            order_meta_data: OrderMetaData {
+                creation_date: chrono::offset::Utc::now(),
+                owner,
+                uid: order_creation.uid(&owner),
+            },
+            order_creation,
+        })
+    }
 }
 
 #[derive(Default)]
@@ -83,7 +106,7 @@ impl OrderBuilder {
     pub fn sign_with(mut self, domain_separator: &DomainSeparator, key: SecretKeyRef) -> Self {
         self.0.order_meta_data.owner = key.address();
         self.0.order_meta_data.uid = self.0.order_creation.uid(&key.address());
-        self.0.order_creation.sign_self_with(domain_separator, key);
+        self.0.order_creation.sign_self_with(domain_separator, &key);
         self
     }
 
@@ -93,7 +116,7 @@ impl OrderBuilder {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     #[serde(with = "h160_hexadecimal")]
@@ -113,6 +136,26 @@ pub struct OrderCreation {
     pub signature: Signature,
 }
 
+impl Default for OrderCreation {
+    // Custom implementation to make sure the default order is valid
+    fn default() -> Self {
+        let mut result = Self {
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            valid_to: u32::MAX,
+            app_data: Default::default(),
+            fee_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: Default::default(),
+            signature: Default::default(),
+        };
+        result.sign_self_with(&DomainSeparator::default(), &SecretKeyRef::new(&ONE_KEY));
+        result
+    }
+}
+
 impl OrderCreation {
     pub fn token_pair(&self) -> Option<TokenPair> {
         TokenPair::new(self.buy_token, self.sell_token)
@@ -130,6 +173,15 @@ impl OrderCreation {
         signing::recover(&message, &signature, recovery_id).ok()
     }
 
+    fn sign_self_with(&mut self, domain_separator: &DomainSeparator, key: &SecretKeyRef) {
+        let message = self.signing_digest_message(domain_separator);
+        // Unwrap because the only error is for invalid messages which we don't create.
+        let signature = Key::sign(key, &message, None).unwrap();
+        self.signature.v = signature.v as u8 | 0x80;
+        self.signature.r = signature.r;
+        self.signature.s = signature.s;
+    }
+
     pub fn uid(&self, owner: &H160) -> OrderUid {
         let mut uid = OrderUid([0u8; 56]);
         uid.0[0..32].copy_from_slice(&self.order_digest());
@@ -140,27 +192,7 @@ impl OrderCreation {
 }
 
 // Intended to be used by tests that need signed orders.
-impl OrderCreation {
-    pub const TEST_DOMAIN_SEPARATOR: DomainSeparator = DomainSeparator([0u8; 32]);
-
-    pub fn sign_self_with(&mut self, domain_separator: &DomainSeparator, key: SecretKeyRef) {
-        let message = self.signing_digest_message(domain_separator);
-        // Unwrap because the only error is for invalid messages which we don't create.
-        let signature = Key::sign(&key, &message, None).unwrap();
-        self.signature.v = signature.v as u8 | 0x80;
-        self.signature.r = signature.r;
-        self.signature.s = signature.s;
-    }
-
-    // Picks the test domain and an arbitrary secret key. Returns the corresponding address.
-    pub fn sign_self(&mut self) -> H160 {
-        let key = SecretKey::from_slice(&[1u8; SECRET_KEY_SIZE]).unwrap();
-        let key_ref = SecretKeyRef::new(&key);
-        let address = web3::signing::Key::address(&key_ref);
-        self.sign_self_with(&Self::TEST_DOMAIN_SEPARATOR, key_ref);
-        address
-    }
-}
+impl OrderCreation {}
 
 // See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
 impl OrderCreation {
@@ -441,10 +473,11 @@ mod tests {
     #[test]
     fn sign_self() {
         let mut order = OrderCreation::default();
-        let owner = order.sign_self();
+        let key = SecretKeyRef::from(&ONE_KEY);
+        order.sign_self_with(&DomainSeparator::default(), &key);
         assert_eq!(
-            order.validate_signature(&OrderCreation::TEST_DOMAIN_SEPARATOR),
-            Some(owner)
+            order.validate_signature(&DomainSeparator::default()),
+            Some(key.address())
         );
     }
 

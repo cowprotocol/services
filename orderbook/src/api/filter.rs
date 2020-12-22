@@ -77,9 +77,7 @@ pub mod test_util {
     async fn get_orders_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_orders(orderbook.clone());
-        let mut order = OrderCreation::default();
-        order.valid_to = u32::MAX;
-        order.sign_self();
+        let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
         let response = request().path("/orders").method("GET").reply(&filter).await;
         assert_eq!(response.status(), StatusCode::OK);
@@ -92,9 +90,7 @@ pub mod test_util {
     async fn get_order_by_uid_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_order_by_uid(orderbook.clone());
-        let mut order_creation = OrderCreation::default();
-        order_creation.valid_to = u32::MAX;
-        order_creation.sign_self();
+        let order_creation = OrderCreation::default();
         let uid = orderbook.add_order(order_creation).await.unwrap();
         let response = request()
             .path(&format!("/orders/{:}", uid))
@@ -140,14 +136,12 @@ pub mod test_util {
     }
 
     #[tokio::test]
-    async fn create_order_() {
+    async fn create_order_route() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = create_order(orderbook.clone());
-        let mut order = OrderCreation::default();
-        order.valid_to = u32::MAX;
-        order.sign_self();
+        let order = OrderCreation::default();
         let expected_uid = json!(
-            "0xbd185ee633752c56b3eabec61259e8a65c765943665a2c17ad8b74a119e5f1ca1a642f0e3c3af545e7acbd38b07251b3990914f1ffffffff"
+            "0xbd185ee633752c56b3eabec61259e8a65c765943665a2c17ad8b74a119e5f1ca7e5f4552091a69125d5dfcb7b8c2659029395bdfffffffff"
         );
         let post = || async {
             request()

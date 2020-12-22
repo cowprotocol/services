@@ -1,7 +1,7 @@
 use contracts::GPv2Settlement;
 use futures::{future::join_all, join};
 use model::{
-    order::{Order, OrderCreation, OrderMetaData, OrderUid},
+    order::{Order, OrderCreation, OrderUid},
     DomainSeparator,
 };
 use primitive_types::U256;
@@ -136,17 +136,8 @@ impl OrderBook {
     }
 
     fn order_creation_to_order(&self, user_order: OrderCreation) -> Result<Order, AddOrderError> {
-        let owner = user_order
-            .validate_signature(&self.domain_separator)
-            .ok_or(AddOrderError::InvalidSignature)?;
-        Ok(Order {
-            order_meta_data: OrderMetaData {
-                creation_date: chrono::offset::Utc::now(),
-                owner,
-                uid: user_order.uid(&owner),
-            },
-            order_creation: user_order,
-        })
+        Order::from_order_creation(user_order, &self.domain_separator)
+            .ok_or(AddOrderError::InvalidSignature)
     }
 }
 
@@ -168,9 +159,7 @@ pub mod test_util {
     #[tokio::test]
     async fn cannot_add_order_twice() {
         let orderbook = OrderBook::default();
-        let mut order = OrderCreation::default();
-        order.valid_to = u32::MAX;
-        order.sign_self();
+        let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         assert_eq!(
@@ -182,11 +171,8 @@ pub mod test_util {
     #[tokio::test]
     async fn test_simple_removing_order() {
         let orderbook = OrderBook::default();
-        let mut order = OrderCreation::default();
-        order.valid_to = u32::MAX;
-        let owner = order.sign_self();
-        let uid = order.uid(&owner);
-        orderbook.add_order(order).await.unwrap();
+        let order = OrderCreation::default();
+        let uid = orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         orderbook.remove_order(&uid).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 0);
@@ -197,7 +183,6 @@ pub mod test_util {
         let orderbook = OrderBook::default();
         let mut order = OrderCreation::default();
         order.valid_to = u32::MAX - 10;
-        order.sign_self();
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         orderbook
