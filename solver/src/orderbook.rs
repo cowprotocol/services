@@ -1,4 +1,4 @@
-use model::Order;
+use model::order::Order;
 use reqwest::{Client, Url};
 use std::time::Duration;
 

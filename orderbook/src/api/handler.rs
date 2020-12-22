@@ -1,7 +1,10 @@
 use crate::orderbook::{AddOrderError, OrderBook};
 
 use chrono::prelude::{DateTime, FixedOffset, Utc};
-use model::{u256_decimal, OrderCreation, OrderUid};
+use model::{
+    order::{OrderCreation, OrderUid},
+    u256_decimal,
+};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use serde_json::json;

@@ -1,6 +1,9 @@
 use contracts::GPv2Settlement;
 use futures::{future::join_all, join};
-use model::{DomainSeparator, Order, OrderCreation, OrderMetaData, OrderUid};
+use model::{
+    order::{Order, OrderCreation, OrderMetaData, OrderUid},
+    DomainSeparator,
+};
 use primitive_types::U256;
 use std::{
     collections::{hash_map::Entry, HashMap},

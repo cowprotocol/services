@@ -1,7 +1,7 @@
 use super::handler;
 use crate::orderbook::OrderBook;
 use hex::{FromHex, FromHexError};
-use model::{OrderCreation, OrderUid};
+use model::order::{OrderCreation, OrderUid};
 use primitive_types::H160;
 use std::{str::FromStr, sync::Arc};
 use warp::Filter;
@@ -68,7 +68,7 @@ pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use model::Order;
+    use model::order::Order;
     use primitive_types::U256;
     use serde_json::json;
     use warp::{http::StatusCode, test::request};
