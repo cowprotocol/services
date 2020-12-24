@@ -196,7 +196,7 @@ impl OrderCreation {}
 
 // See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
 impl OrderCreation {
-    const ORDER_TYPE_HASH: [u8; 32] =
+    pub const ORDER_TYPE_HASH: [u8; 32] =
         hex!("b2b38b9dcbdeb41f7ad71dea9aed79fb47f7bbc3436576fe994b43d5b16ecdec");
 
     // keccak256("sell")
