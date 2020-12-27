@@ -1,6 +1,6 @@
-mod two_order_settlement;
+mod single_pair_settlement;
 
-use self::two_order_settlement::TwoOrderSettlement;
+use self::single_pair_settlement::SinglePairSettlement;
 use crate::settlement::Settlement;
 use contracts::{GPv2Settlement, UniswapV2Router02};
 use model::{
@@ -23,10 +23,10 @@ pub fn settle(
         .map(|settlement| settlement.into_settlement(uniswap.clone(), gpv2_settlement.clone()))
 }
 
-fn settle_pair(orders: TokenPairOrders) -> Option<TwoOrderSettlement> {
+fn settle_pair(orders: TokenPairOrders) -> Option<SinglePairSettlement> {
     let most_lenient_a = orders.sell_token_0.into_iter().min_by(order_by_price)?;
     let most_lenient_b = orders.sell_token_1.into_iter().min_by(order_by_price)?;
-    two_order_settlement::settle_two_fillkill_sell_orders(&most_lenient_a, &most_lenient_b)
+    single_pair_settlement::settle_two_fillkill_sell_orders(&most_lenient_a, &most_lenient_b)
 }
 
 #[derive(Debug, Default)]

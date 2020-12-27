@@ -8,13 +8,13 @@ use primitive_types::{H160, U256};
 use std::collections::HashMap;
 
 #[derive(Debug)]
-pub struct TwoOrderSettlement {
+pub struct SinglePairSettlement {
     clearing_prices: HashMap<H160, U256>,
-    trades: [Trade; 2],
+    trades: Vec<Trade>,
     interaction: Option<AmmSwapExactTokensForTokens>,
 }
 
-impl TwoOrderSettlement {
+impl SinglePairSettlement {
     pub fn into_settlement(
         self,
         uniswap: UniswapV2Router02,
@@ -35,7 +35,7 @@ impl TwoOrderSettlement {
         }
         Settlement {
             clearing_prices: self.clearing_prices,
-            trades: self.trades.to_vec(),
+            trades: self.trades,
             interactions,
             ..Default::default()
         }
@@ -56,7 +56,7 @@ struct AmmSwapExactTokensForTokens {
 pub fn settle_two_fillkill_sell_orders(
     sell_a: &OrderCreation,
     sell_b: &OrderCreation,
-) -> Option<TwoOrderSettlement> {
+) -> Option<SinglePairSettlement> {
     assert!(&[sell_a, sell_b]
         .iter()
         .all(|order| matches!(order.kind, OrderKind::Sell) && !order.partially_fillable));
@@ -86,13 +86,13 @@ pub fn settle_two_fillkill_sell_orders(
 }
 
 // Match two orders directly with their full sell amounts.
-fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> TwoOrderSettlement {
-    TwoOrderSettlement {
+fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> SinglePairSettlement {
+    SinglePairSettlement {
         clearing_prices: maplit::hashmap! {
             sell_a.sell_token => sell_b.sell_amount,
             sell_b.sell_token => sell_a.sell_amount,
         },
-        trades: [
+        trades: vec![
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
@@ -109,7 +109,7 @@ fn direct_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> TwoOrderSettl
 }
 
 // Match two orders with amm assuming that there is price overlap.
-fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<TwoOrderSettlement> {
+fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<SinglePairSettlement> {
     // Based on our assumptions we know that exactly one order is "bigger" than the other in the
     // sense that it a larger sell amount than the other order's buy amount.
     // It is not possible for both orders to be bigger because that would be a direct match which
@@ -139,12 +139,12 @@ fn amm_match(sell_a: &OrderCreation, sell_b: &OrderCreation) -> Option<TwoOrderS
         return None;
     }
 
-    Some(TwoOrderSettlement {
+    Some(SinglePairSettlement {
         clearing_prices: maplit::hashmap! {
             big.sell_token => big.buy_amount,
             big.buy_token => big.sell_amount,
         },
-        trades: [
+        trades: vec![
             Trade {
                 order: *sell_a,
                 executed_amount: sell_a.sell_amount,
@@ -177,7 +177,7 @@ mod tests {
     use model::order::OrderKind;
     use primitive_types::H160;
 
-    fn assert_respects_prices(settlement: &TwoOrderSettlement) {
+    fn assert_respects_prices(settlement: &SinglePairSettlement) {
         for trade in settlement.trades.iter() {
             let sell_price = settlement.clearing_prices[&trade.order.sell_token];
             let buy_price = settlement.clearing_prices[&trade.order.buy_token];
