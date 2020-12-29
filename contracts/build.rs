@@ -25,7 +25,15 @@ fn main() {
             100 => Address::from_str("1C232F01118CB8B424793ae03F870aa7D0ac7f77").unwrap(),
         },
     );
-    generate_contract("UniswapV2Factory", hashmap! {});
+    generate_contract(
+        "UniswapV2Factory",
+        hashmap! {
+            1 => Address::from_str("5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap(),
+            4 => Address::from_str("5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f").unwrap(),
+            100 => Address::from_str("A818b4F111Ccac7AA31D0BCc0806d64F2E0737D7").unwrap(),
+        },
+    );
+    generate_contract("UniswapV2Pair", hashmap! {});
     generate_contract(
         "GPv2Settlement",
         hashmap! {

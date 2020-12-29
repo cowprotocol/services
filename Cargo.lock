@@ -1977,12 +1977,14 @@ dependencies = [
  "model",
  "primitive-types",
  "reqwest",
+ "serde",
  "serde_json",
  "shared-arguments",
  "structopt",
  "tokio",
  "tracing",
  "tracing-setup",
+ "tracing-subscriber",
  "web3",
 ]
 

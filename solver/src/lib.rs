@@ -1,10 +1,12 @@
 pub mod driver;
 pub mod encoding;
+pub mod http_solver;
 pub mod interactions;
 pub mod naive_solver;
 pub mod orderbook;
 pub mod settlement;
 pub mod solver;
+pub mod uniswap;
 
 use anyhow::Result;
 use ethcontract::{contract::MethodDefaults, Account, GasPrice, Http, PrivateKey, Web3};
