@@ -167,8 +167,12 @@ async fn test_with_ganache() {
         reqwest::Url::from_str(API_HOST).unwrap(),
         std::time::Duration::from_secs(10),
     );
+    let solver = solver::naive_solver::NaiveSolver {
+        uniswap: uniswap_router,
+        gpv2_settlement: gp_settlement.clone(),
+    };
     let mut driver =
-        solver::driver::Driver::new(gp_settlement.clone(), uniswap_router, orderbook_api);
+        solver::driver::Driver::new(gp_settlement.clone(), orderbook_api, Box::new(solver));
     driver.single_run().await.unwrap();
 
     // Check matching

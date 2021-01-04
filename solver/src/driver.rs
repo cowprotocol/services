@@ -1,26 +1,26 @@
-use crate::{naive_solver, orderbook::OrderBookApi};
+use crate::{orderbook::OrderBookApi, solver::Solver};
 use anyhow::{anyhow, Context, Result};
-use contracts::{GPv2Settlement, UniswapV2Router02};
+use contracts::GPv2Settlement;
 use std::time::Duration;
 use tracing::info;
 
 const SETTLE_INTERVAL: Duration = Duration::from_secs(30);
 
 pub struct Driver {
-    pub settlement_contract: GPv2Settlement,
-    pub uniswap_contract: UniswapV2Router02,
-    pub orderbook: OrderBookApi,
+    settlement_contract: GPv2Settlement,
+    orderbook: OrderBookApi,
+    solver: Box<dyn Solver>,
 }
 
 impl Driver {
     pub fn new(
         settlement_contract: GPv2Settlement,
-        uniswap_contract: UniswapV2Router02,
         orderbook: OrderBookApi,
+        solver: Box<dyn Solver>,
     ) -> Self {
         Self {
             settlement_contract,
-            uniswap_contract,
+            solver,
             orderbook,
         }
     }
@@ -47,11 +47,7 @@ impl Driver {
         // Decide what is handled by orderbook service and what by us.
         // We likely want to at least mark orders we know we have settled so that we don't
         // attempt to settle them again when they are still in the orderbook.
-        let settlement = match naive_solver::settle(
-            orders.into_iter().map(|order| order.order_creation),
-            &self.uniswap_contract,
-            &self.settlement_contract,
-        ) {
+        let settlement = match self.solver.solve(orders).await? {
             None => return Ok(()),
             Some(settlement) => settlement,
         };

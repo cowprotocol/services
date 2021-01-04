@@ -1,7 +1,8 @@
 mod single_pair_settlement;
 
 use self::single_pair_settlement::SinglePairSettlement;
-use crate::settlement::Settlement;
+use crate::{settlement::Settlement, solver::Solver};
+use anyhow::Result;
 use contracts::{GPv2Settlement, UniswapV2Router02};
 use model::{
     order::{OrderCreation, OrderKind},
@@ -9,6 +10,22 @@ use model::{
 };
 use primitive_types::U512;
 use std::{cmp::Ordering, collections::HashMap};
+
+pub struct NaiveSolver {
+    pub uniswap: UniswapV2Router02,
+    pub gpv2_settlement: GPv2Settlement,
+}
+
+#[async_trait::async_trait]
+impl Solver for NaiveSolver {
+    async fn solve(&self, orders: Vec<model::order::Order>) -> Result<Option<Settlement>> {
+        Ok(settle(
+            orders.into_iter().map(|order| order.order_creation),
+            &self.uniswap,
+            &self.gpv2_settlement,
+        ))
+    }
+}
 
 pub fn settle(
     orders: impl Iterator<Item = OrderCreation>,

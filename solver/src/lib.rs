@@ -4,6 +4,7 @@ pub mod interactions;
 pub mod naive_solver;
 pub mod orderbook;
 pub mod settlement;
+pub mod solver;
 
 use anyhow::Result;
 use ethcontract::{contract::MethodDefaults, Account, GasPrice, Http, PrivateKey, Web3};
