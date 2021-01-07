@@ -106,7 +106,7 @@ pub mod test_util {
     async fn get_order_by_uid_for_non_existent_order_() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_order_by_uid(orderbook.clone());
-        let uid = OrderUid([0 as u8; 56]);
+        let uid = OrderUid([0u8; 56]);
         let response = request()
             .path(&format!("/orders/{:}", uid))
             .method("GET")

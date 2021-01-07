@@ -124,7 +124,7 @@ impl OrderBook {
             .filled_amount(uid.0.to_vec())
             .call()
             .await
-            .unwrap_or(U256::zero());
+            .unwrap_or_else(|_| U256::zero());
         // As a simplification the function is returning the uid,
         // if the order was already partially settled
         // or if it was canceled.
@@ -181,8 +181,10 @@ pub mod test_util {
     #[tokio::test]
     async fn removes_expired_orders() {
         let orderbook = OrderBook::default();
-        let mut order = OrderCreation::default();
-        order.valid_to = u32::MAX - 10;
+        let order = OrderCreation {
+            valid_to: u32::MAX - 10,
+            ..Default::default()
+        };
         orderbook.add_order(order).await.unwrap();
         assert_eq!(orderbook.get_orders().await.len(), 1);
         orderbook

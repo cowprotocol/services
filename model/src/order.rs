@@ -265,7 +265,7 @@ impl Default for OrderMetaData {
         Self {
             creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
             owner: Default::default(),
-            uid: OrderUid([0 as u8; 56]),
+            uid: OrderUid([0u8; 56]),
         }
     }
 }
@@ -277,7 +277,7 @@ pub struct OrderUid(pub [u8; 56]);
 impl FromStr for OrderUid {
     type Err = hex::FromHexError;
     fn from_str(s: &str) -> Result<OrderUid, hex::FromHexError> {
-        let mut value = [0 as u8; 56];
+        let mut value = [0u8; 56];
         let s_without_prefix = s.strip_prefix("0x").unwrap_or(s);
         hex::decode_to_slice(s_without_prefix, value.as_mut())?;
         Ok(OrderUid(value))
@@ -328,7 +328,7 @@ impl<'de> Deserialize<'de> for OrderUid {
                         s
                     ))
                 })?;
-                let mut value = [0 as u8; 56];
+                let mut value = [0u8; 56];
                 hex::decode_to_slice(s, value.as_mut()).map_err(|err| {
                     de::Error::custom(format!("failed to decode {:?} as hex uid: {}", s, err))
                 })?;
@@ -383,7 +383,7 @@ mod tests {
             order_meta_data: OrderMetaData {
                 creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
                 owner: H160::from_low_u64_be(1),
-                uid: OrderUid([17 as u8; 56]),
+                uid: OrderUid([17u8; 56]),
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),
