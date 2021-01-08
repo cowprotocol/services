@@ -1,5 +1,7 @@
+use super::{AddOrderResult, RemoveOrderResult, Storage};
+use anyhow::Result;
 use contracts::GPv2Settlement;
-use futures::{future::join_all, join};
+use futures::future;
 use model::{
     order::{Order, OrderCreation, OrderUid},
     DomainSeparator,
@@ -11,25 +13,6 @@ use std::{
 };
 use tokio::sync::RwLock;
 use tracing::info;
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum AddOrderError {
-    DuplicatedOrder,
-    InvalidSignature,
-    #[allow(dead_code)]
-    Forbidden,
-    #[allow(dead_code)]
-    MissingOrderData,
-    #[allow(dead_code)]
-    PastValidTo,
-    #[allow(dead_code)]
-    InsufficientFunds,
-}
-
-#[derive(Debug)]
-pub enum RemoveOrderError {
-    DoesNotExist,
-}
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
@@ -44,47 +27,6 @@ impl OrderBook {
             domain_separator,
             orders: RwLock::new(HashMap::new()),
         }
-    }
-
-    pub async fn add_order(&self, order: OrderCreation) -> Result<OrderUid, AddOrderError> {
-        if !has_future_valid_to(now_in_epoch_seconds(), &order) {
-            return Err(AddOrderError::PastValidTo);
-        }
-        let order = self.order_creation_to_order(order)?;
-        let uid = order.order_meta_data.uid;
-        let mut orders = self.orders.write().await;
-        match orders.entry(uid) {
-            Entry::Occupied(_) => return Err(AddOrderError::DuplicatedOrder),
-            Entry::Vacant(entry) => {
-                entry.insert(order);
-            }
-        }
-        Ok(uid)
-    }
-
-    pub async fn get_orders(&self) -> Vec<Order> {
-        self.orders.read().await.values().cloned().collect()
-    }
-
-    pub async fn get_order(&self, uid: &OrderUid) -> Option<Order> {
-        self.orders.read().await.get(uid).cloned()
-    }
-
-    #[allow(dead_code)]
-    pub async fn remove_order(&self, uid: &OrderUid) -> Result<(), RemoveOrderError> {
-        self.orders
-            .write()
-            .await
-            .remove(uid)
-            .map(|_| ())
-            .ok_or(RemoveOrderError::DoesNotExist)
-    }
-
-    // Run maintenance tasks like removing expired orders.
-    pub async fn run_maintenance(&self, settlement_contract: &GPv2Settlement) {
-        let remove_order_future = self.remove_expired_orders(now_in_epoch_seconds());
-        let remove_settled_orders_future = self.remove_settled_orders(settlement_contract);
-        join!(remove_order_future, remove_settled_orders_future);
     }
 
     async fn remove_expired_orders(&self, now_in_epoch_seconds: u64) {
@@ -111,7 +53,7 @@ impl OrderBook {
         let uid_futures = orders.iter().map(|(uid, _)| async move {
             self.has_uid_been_settled(*uid, settlement_contract).await
         });
-        let uid_pairs: Vec<Option<OrderUid>> = join_all(uid_futures).await;
+        let uid_pairs: Vec<Option<OrderUid>> = future::join_all(uid_futures).await;
         uid_pairs.iter().filter_map(|uid| *uid).collect()
     }
 
@@ -134,10 +76,52 @@ impl OrderBook {
             Some(uid)
         }
     }
+}
 
-    fn order_creation_to_order(&self, user_order: OrderCreation) -> Result<Order, AddOrderError> {
-        Order::from_order_creation(user_order, &self.domain_separator)
-            .ok_or(AddOrderError::InvalidSignature)
+#[async_trait::async_trait]
+impl Storage for OrderBook {
+    async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult> {
+        if !has_future_valid_to(now_in_epoch_seconds(), &order) {
+            return Ok(AddOrderResult::PastValidTo);
+        }
+        let order = match Order::from_order_creation(order, &self.domain_separator) {
+            Some(order) => order,
+            None => return Ok(AddOrderResult::InvalidSignature),
+        };
+        let uid = order.order_meta_data.uid;
+        let mut orders = self.orders.write().await;
+        match orders.entry(uid) {
+            Entry::Occupied(_) => return Ok(AddOrderResult::DuplicatedOrder),
+            Entry::Vacant(entry) => {
+                entry.insert(order);
+            }
+        }
+        Ok(AddOrderResult::Added(uid))
+    }
+
+    async fn get_orders(&self) -> Result<Vec<Order>> {
+        Ok(self.orders.read().await.values().cloned().collect())
+    }
+
+    async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
+        Ok(self.orders.read().await.get(uid).cloned())
+    }
+
+    #[allow(dead_code)]
+    async fn remove_order(&self, uid: &OrderUid) -> Result<RemoveOrderResult> {
+        let mut orders = self.orders.write().await;
+        Ok(match orders.remove(uid) {
+            Some(_) => RemoveOrderResult::Removed,
+            None => RemoveOrderResult::DoesNotExist,
+        })
+    }
+
+    // Run maintenance tasks like removing expired orders.
+    async fn run_maintenance(&self, settlement_contract: &GPv2Settlement) -> Result<()> {
+        let remove_order_future = self.remove_expired_orders(now_in_epoch_seconds());
+        let remove_settled_orders_future = self.remove_settled_orders(settlement_contract);
+        futures::join!(remove_order_future, remove_settled_orders_future);
+        Ok(())
     }
 }
 
@@ -161,10 +145,10 @@ pub mod test_util {
         let orderbook = OrderBook::default();
         let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.len(), 1);
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
         assert_eq!(
-            orderbook.add_order(order).await,
-            Err(AddOrderError::DuplicatedOrder)
+            orderbook.add_order(order).await.unwrap(),
+            AddOrderResult::DuplicatedOrder
         );
     }
 
@@ -172,10 +156,13 @@ pub mod test_util {
     async fn test_simple_removing_order() {
         let orderbook = OrderBook::default();
         let order = OrderCreation::default();
-        let uid = orderbook.add_order(order).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.len(), 1);
+        let uid = match orderbook.add_order(order).await.unwrap() {
+            AddOrderResult::Added(uid) => uid,
+            _ => panic!("unexpected result"),
+        };
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
         orderbook.remove_order(&uid).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.len(), 0);
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 0);
     }
 
     #[tokio::test]
@@ -186,12 +173,12 @@ pub mod test_util {
             ..Default::default()
         };
         orderbook.add_order(order).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.len(), 1);
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
         orderbook
             .remove_expired_orders((u32::MAX - 11) as u64)
             .await;
-        assert_eq!(orderbook.get_orders().await.len(), 1);
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
         orderbook.remove_expired_orders((u32::MAX - 9) as u64).await;
-        assert_eq!(orderbook.get_orders().await.len(), 0);
+        assert_eq!(orderbook.get_orders().await.unwrap().len(), 0);
     }
 }

@@ -1,5 +1,5 @@
 use super::handler;
-use crate::orderbook::OrderBook;
+use crate::storage::Storage;
 use hex::{FromHex, FromHexError};
 use model::order::{OrderCreation, OrderUid};
 use primitive_types::H160;
@@ -9,8 +9,8 @@ use warp::Filter;
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
 fn with_orderbook(
-    orderbook: Arc<OrderBook>,
-) -> impl Filter<Extract = (Arc<OrderBook>,), Error = std::convert::Infallible> + Clone {
+    orderbook: Arc<dyn Storage>,
+) -> impl Filter<Extract = (Arc<dyn Storage>,), Error = std::convert::Infallible> + Clone {
     warp::any().map(move || orderbook.clone())
 }
 
@@ -21,7 +21,7 @@ fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = warp:
 }
 
 pub fn create_order(
-    orderbook: Arc<OrderBook>,
+    orderbook: Arc<dyn Storage>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("orders")
         .and(warp::post())
@@ -31,7 +31,7 @@ pub fn create_order(
 }
 
 pub fn get_orders(
-    orderbook: Arc<OrderBook>,
+    orderbook: Arc<dyn Storage>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("orders")
         .and(warp::get())
@@ -40,7 +40,7 @@ pub fn get_orders(
 }
 
 pub fn get_order_by_uid(
-    orderbook: Arc<OrderBook>,
+    orderbook: Arc<dyn Storage>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
     warp::path!("orders" / OrderUid)
         .and(warp::get())
@@ -68,6 +68,7 @@ pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp
 #[cfg(test)]
 pub mod test_util {
     use super::*;
+    use crate::storage::{AddOrderResult, InMemoryOrderBook as OrderBook};
     use model::order::Order;
     use primitive_types::U256;
     use serde_json::json;
@@ -82,7 +83,7 @@ pub mod test_util {
         let response = request().path("/orders").method("GET").reply(&filter).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
-        let orderbook_orders = orderbook.get_orders().await;
+        let orderbook_orders = orderbook.get_orders().await.unwrap();
         assert_eq!(response_orders, orderbook_orders);
     }
 
@@ -91,7 +92,10 @@ pub mod test_util {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_order_by_uid(orderbook.clone());
         let order_creation = OrderCreation::default();
-        let uid = orderbook.add_order(order_creation).await.unwrap();
+        let uid = match orderbook.add_order(order_creation).await.unwrap() {
+            AddOrderResult::Added(uid) => uid,
+            _ => panic!("unexpected result"),
+        };
         let response = request()
             .path(&format!("/orders/{:}", uid))
             .method("GET")
@@ -99,7 +103,7 @@ pub mod test_util {
             .await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_orders: Order = serde_json::from_slice(response.body()).unwrap();
-        let orderbook_orders = orderbook.get_orders().await;
+        let orderbook_orders = orderbook.get_orders().await.unwrap();
         assert_eq!(response_orders, orderbook_orders[0]);
     }
     #[tokio::test]

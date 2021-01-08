@@ -1,7 +1,10 @@
 use contracts::GPv2Settlement;
 use model::DomainSeparator;
-use orderbook::orderbook::OrderBook;
-use orderbook::{serve_task, verify_deployed_contract_constants};
+use orderbook::{
+    serve_task,
+    storage::{InMemoryOrderBook, Storage},
+    verify_deployed_contract_constants,
+};
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
@@ -18,12 +21,14 @@ struct Arguments {
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
 
 pub async fn orderbook_maintenance(
-    orderbook: Arc<OrderBook>,
+    storage: Arc<dyn Storage>,
     settlement_contract: GPv2Settlement,
 ) -> ! {
     loop {
         tracing::debug!("running order book maintenance");
-        orderbook.run_maintenance(&settlement_contract).await;
+        if let Err(err) = storage.run_maintenance(&settlement_contract).await {
+            tracing::error!(?err, "maintenance error");
+        }
         tokio::time::delay_for(MAINTENANCE_INTERVAL).await;
     }
 }
@@ -50,7 +55,7 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let orderbook = Arc::new(OrderBook::new(domain_separator));
+    let orderbook = Arc::new(InMemoryOrderBook::new(domain_separator));
     let serve_task = serve_task(orderbook.clone(), args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {

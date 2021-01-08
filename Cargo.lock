@@ -1263,6 +1263,7 @@ name = "orderbook"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chrono",
  "contracts",
  "futures 0.3.8",
