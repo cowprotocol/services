@@ -28,4 +28,4 @@ tracing = "0.1"
 tracing-setup = { path = "../tracing-setup" }
 warp = "0.2"
 web3 = { version = "0.13", default-features = false, features = ["http-tls"] }
-futures = "0.3.8"
+futures = "0.3.9"
