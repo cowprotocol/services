@@ -25,6 +25,12 @@ jobs:
         working-directory: contracts
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
       - run: cargo test --locked --workspace --all-features
+      - run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres createuser $USER
+          sudo -u postgres createdb $USER
+          psql -f database/schema.sql
+          cargo test --locked --workspace --all-features postgres -- --ignored
   openapi:
     runs-on: ubuntu-latest
     steps:

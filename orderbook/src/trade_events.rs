@@ -7,7 +7,7 @@ use contracts::{
 use ethcontract::{errors::ExecutionError, Event, EventMetadata};
 use futures::{Stream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
-use std::{convert::TryInto, ops::RangeInclusive, sync::Arc};
+use std::{convert::TryInto, ops::RangeInclusive};
 use web3::{Transport, Web3};
 
 // We expect that there is never a reorg that changes more than the last n blocks.
@@ -18,7 +18,7 @@ const INSERT_TRADE_BATCH_SIZE: usize = 250;
 
 pub struct TradeEvents {
     contract: GPv2Settlement,
-    db: Arc<dyn Database>,
+    db: Database,
 }
 
 impl TradeEvents {
@@ -57,13 +57,13 @@ impl TradeEvents {
             let trades = trades.context("failed to get event")?;
             if !have_deleted_old_events {
                 self.db
-                    .replace_trades(*range.start(), &[])
+                    .replace_trades(*range.start(), trades)
                     .await
                     .context("failed to replace trades")?;
                 have_deleted_old_events = true;
             } else {
                 self.db
-                    .insert_trades(trades.as_slice())
+                    .insert_trades(trades)
                     .await
                     .context("failed to insert trades")?;
             }
@@ -77,7 +77,8 @@ impl TradeEvents {
             .db
             .block_number_of_most_recent_trade()
             .await
-            .context("failed to get last handle block")?;
+            .context("failed to get last handle block")?
+            .unwrap_or(0);
         let current_block = web3
             .eth()
             .block_number()

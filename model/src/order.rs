@@ -296,6 +296,12 @@ impl Display for OrderUid {
     }
 }
 
+impl Default for OrderUid {
+    fn default() -> Self {
+        Self([0u8; 56])
+    }
+}
+
 impl Serialize for OrderUid {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
