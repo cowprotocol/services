@@ -3,7 +3,7 @@ info:
   version: 0.0.1
   title: Order Book API
 servers:
-  - url: https://protocol.dev.gnosisdev.com
+  - url: https://protocol-mainnet.dev.gnosisdev.com
     description: Mainnet (Staging)
   - url: https://protocol-rinkeby.dev.gnosisdev.com
     description: Rinkeby (Staging)
