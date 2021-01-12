@@ -91,14 +91,34 @@ pub async fn add_order(
     Ok(with_status(body, status_code))
 }
 
-pub async fn get_orders(storage: Arc<dyn Storage>) -> Result<impl Reply, Infallible> {
-    Ok(match storage.get_orders().await {
-        Ok(orders) => with_status(json(&orders), StatusCode::OK),
+pub async fn get_orders(
+    storage: Arc<dyn Storage>,
+    owner: Option<H160>,
+    sell_token: Option<H160>,
+    buy_token: Option<H160>,
+) -> Result<impl warp::Reply, Infallible> {
+    let mut orders = match storage.get_orders().await {
+        Ok(orders) => orders,
         Err(err) => {
             tracing::error!(?err, "get_orders error");
-            with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+            return Ok(with_status(
+                internal_error(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
         }
-    })
+    };
+    orders.retain(|order| {
+        owner
+            .map(|owner| owner == order.order_meta_data.owner)
+            .unwrap_or(true)
+            && sell_token
+                .map(|token| token == order.order_creation.sell_token)
+                .unwrap_or(true)
+            && buy_token
+                .map(|token| token == order.order_creation.buy_token)
+                .unwrap_or(true)
+    });
+    Ok(with_status(json(&orders), StatusCode::OK))
 }
 
 pub async fn get_order_by_uid(

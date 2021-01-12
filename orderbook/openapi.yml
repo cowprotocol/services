@@ -43,19 +43,26 @@ paths:
               $ref: "#/components/schemas/OrderCreation"
     get:
       summary: Get existing orders.
+      description: |
+        The orders are optionally filtered by the owner, sell token, buy token. Each fitler can be
+        specified individually and is optional. So not specifying any returns all orders in the
+        system.
       parameters:
         - name: owner
           in: query
           schema:
             $ref: "#/components/schemas/Address"
+          required: false
         - name: sellToken
           in: query
           schema:
             $ref: "#/components/schemas/Address"
+          required: false
         - name: buyToken
           in: query
           schema:
             $ref: "#/components/schemas/Address"
+          required: false
       responses:
         200:
           description: existing orders

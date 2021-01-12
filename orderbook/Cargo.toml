@@ -15,9 +15,10 @@ path = "src/main.rs"
 anyhow = "1.0"
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
+contracts = { path = "../contracts" }
+futures = "0.3.9"
 hex = { version = "0.4", default-features = false }
 model = { path = "../model" }
-contracts = { path = "../contracts" }
 primitive-types = "0.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -28,4 +29,7 @@ tracing = "0.1"
 tracing-setup = { path = "../tracing-setup" }
 warp = "0.2"
 web3 = { version = "0.13", default-features = false, features = ["http-tls"] }
-futures = "0.3.9"
+
+[dev-dependencies]
+hex-literal = "0.3"
+secp256k1 = "0.17"

@@ -1,8 +1,12 @@
 use super::handler;
 use crate::storage::Storage;
 use hex::{FromHex, FromHexError};
-use model::order::{OrderCreation, OrderUid};
+use model::{
+    h160_hexadecimal,
+    order::{OrderCreation, OrderUid},
+};
 use primitive_types::H160;
+use serde::Deserialize;
 use std::{str::FromStr, sync::Arc};
 use warp::Filter;
 
@@ -33,10 +37,28 @@ pub fn create_order(
 pub fn get_orders(
     orderbook: Arc<dyn Storage>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Query {
+        owner: Option<H160Wrapper>,
+        sell_token: Option<H160Wrapper>,
+        buy_token: Option<H160Wrapper>,
+    }
+
+    let to_h160 = |option: Option<H160Wrapper>| option.map(|wrapper| wrapper.0);
+
     warp::path!("orders")
         .and(warp::get())
+        .and(warp::query::<Query>())
         .and(with_orderbook(orderbook))
-        .and_then(handler::get_orders)
+        .and_then(move |query: Query, orderbook| {
+            handler::get_orders(
+                orderbook,
+                to_h160(query.owner),
+                to_h160(query.sell_token),
+                to_h160(query.buy_token),
+            )
+        })
 }
 
 pub fn get_order_by_uid(
@@ -47,8 +69,11 @@ pub fn get_order_by_uid(
         .and(with_orderbook(orderbook))
         .and_then(handler::get_order_by_uid)
 }
-/// Wraps H160 with FromStr that can handle a `0x` prefix.
-struct H160Wrapper(H160);
+
+/// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct H160Wrapper(#[serde(with = "h160_hexadecimal")] H160);
 impl FromStr for H160Wrapper {
     type Err = FromHexError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -69,13 +94,17 @@ pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp
 pub mod test_util {
     use super::*;
     use crate::storage::{AddOrderResult, InMemoryOrderBook as OrderBook};
+    use hex_literal::hex;
     use model::order::Order;
+    use model::{order::OrderBuilder, DomainSeparator};
     use primitive_types::U256;
+    use secp256k1::SecretKey;
     use serde_json::json;
     use warp::{http::StatusCode, test::request};
+    use web3::signing::SecretKeyRef;
 
     #[tokio::test]
-    async fn get_orders_() {
+    async fn get_all_orders() {
         let orderbook = Arc::new(OrderBook::default());
         let filter = get_orders(orderbook.clone());
         let order = OrderCreation::default();
@@ -85,6 +114,64 @@ pub mod test_util {
         let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
         let orderbook_orders = orderbook.get_orders().await.unwrap();
         assert_eq!(response_orders, orderbook_orders);
+    }
+
+    #[tokio::test]
+    async fn get_filtered_orders() {
+        let domain_separator = DomainSeparator([0u8; 32]);
+        let owner_key = SecretKey::from_slice(&hex!(
+            "0000000000000000000000000000000000000000000000000000000000000001"
+        ))
+        .unwrap();
+        let sell = H160::from_slice(&hex!("0000000000000000000000000000000000000002"));
+        let buy = H160::from_slice(&hex!("0000000000000000000000000000000000000003"));
+        let orderbook = Arc::new(OrderBook::default());
+        let filter = get_orders(orderbook.clone());
+        let order = OrderBuilder::default()
+            .with_sell_token(sell)
+            .with_buy_token(buy)
+            .sign_with(&domain_separator, SecretKeyRef::from(&owner_key))
+            .build();
+        let owner = order.order_meta_data.owner;
+        orderbook.add_order(order.order_creation).await.unwrap();
+
+        let orders = move |path: String| {
+            let filter = filter.clone();
+            async move {
+                let response = request()
+                    .path(path.as_str())
+                    .method("GET")
+                    .reply(&filter)
+                    .await;
+                assert_eq!(response.status(), StatusCode::OK);
+                let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
+                response_orders.len()
+            }
+        };
+        let zero = H160::zero();
+        assert_eq!(orders("/orders".to_string()).await, 1);
+        assert_eq!(orders(format!("/orders?owner=0x{:x}", zero)).await, 0);
+        assert_eq!(orders(format!("/orders?sellToken=0x{:x}", zero)).await, 0);
+        assert_eq!(orders(format!("/orders?buyToken=0x{:x}", zero)).await, 0);
+        assert_eq!(orders(format!("/orders?owner=0x{:x}", owner)).await, 1);
+        assert_eq!(orders(format!("/orders?sellToken=0x{:x}", sell)).await, 1);
+        assert_eq!(orders(format!("/orders?buyToken=0x{:x}", buy)).await, 1);
+        assert_eq!(
+            orders(format!(
+                "/orders?owner=0x{:x}&sellToken=0x{:x}&buyToken=0x{:x}",
+                owner, sell, buy
+            ))
+            .await,
+            1
+        );
+        assert_eq!(
+            orders(format!(
+                "/orders?owner=0x{:x}&sellToken=0x{:x}&buyToken=0x{:x}",
+                owner, sell, zero
+            ))
+            .await,
+            0
+        );
     }
 
     #[tokio::test]
