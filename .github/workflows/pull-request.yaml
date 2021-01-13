@@ -6,14 +6,11 @@ on:
   push:
     branches: [main]
 jobs:
-  rust:
+  rust-misc:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: Swatinem/rust-cache@v1
-      - run: |
-          npm install ganache-cli
-          node_modules/.bin/ganache-cli --networkId 5777 --gasLimit 10000000 --gasPrice 0&
       - run: |
           rustup --version
           rustup show
@@ -21,10 +18,13 @@ jobs:
           cargo fmt --version
           cargo clippy --version
       - run: cargo fmt --all -- --check
-      - run: cargo run --bin deploy --features bin
-        working-directory: contracts
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
-      - run: cargo test --locked --workspace --all-features
+  rust-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: Swatinem/rust-cache@v1
+      - run: cargo test --locked --all-features
       - run: |
           sudo systemctl start postgresql.service
           sudo -u postgres createuser $USER
@@ -32,6 +32,12 @@ jobs:
           psql -f database/schema.sql
           # Postgres tests should not run in parallel because they use the same database.
           cargo test --locked --workspace --all-features --jobs 1 postgres -- --ignored --test-threads 1
+      - run: |
+          npm install ganache-cli
+          node_modules/.bin/ganache-cli --networkId 5777 --gasLimit 10000000 --gasPrice 0&
+      - run: cargo run --bin deploy --features bin
+        working-directory: contracts
+      - run: cargo test --locked --package e2e
   openapi:
     runs-on: ubuntu-latest
     steps:

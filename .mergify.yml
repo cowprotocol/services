@@ -2,7 +2,8 @@ pull_request_rules:
   - name: Merge approved and green PRs with `merge when green` label
     conditions:
       - "#approved-reviews-by>=1"
-      - check-success=rust
+      - check-success=rust-misc
+      - check-success=rust-test
       - check-success=openapi
       - base=main
       - label=merge when green
