@@ -2,18 +2,15 @@ mod multi_order_solver;
 mod single_pair_settlement;
 
 use self::single_pair_settlement::SinglePairSettlement;
-use crate::{settlement::Settlement, solver::Solver};
+use crate::{settlement::Settlement, solver::Solver, uniswap::Pool};
 use anyhow::Result;
-use contracts::{GPv2Settlement, UniswapV2Router02};
-use model::{
-    order::{OrderCreation, OrderKind},
-    TokenPair,
-};
-use primitive_types::U512;
-use std::{cmp::Ordering, collections::HashMap};
+use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
+use model::{order::OrderCreation, TokenPair};
+use std::collections::HashMap;
 
 pub struct NaiveSolver {
-    pub uniswap: UniswapV2Router02,
+    pub uniswap_router: UniswapV2Router02,
+    pub uniswap_factory: UniswapV2Factory,
     pub gpv2_settlement: GPv2Settlement,
 }
 
@@ -22,154 +19,60 @@ impl Solver for NaiveSolver {
     async fn solve(&self, orders: Vec<model::order::Order>) -> Result<Option<Settlement>> {
         Ok(settle(
             orders.into_iter().map(|order| order.order_creation),
-            &self.uniswap,
+            &self.uniswap_router,
+            &self.uniswap_factory,
             &self.gpv2_settlement,
-        ))
+        )
+        .await)
     }
 }
 
-pub fn settle(
+async fn settle(
     orders: impl Iterator<Item = OrderCreation>,
-    uniswap: &UniswapV2Router02,
+    uniswap_router: &UniswapV2Router02,
+    uniswap_factory: &UniswapV2Factory,
     gpv2_settlement: &GPv2Settlement,
 ) -> Option<Settlement> {
     let orders = organize_orders_by_token_pair(orders);
     // TODO: Settle multiple token pairs in one settlement.
-    orders
-        .into_iter()
-        .find_map(|(_, orders)| settle_pair(orders))
-        .map(|settlement| settlement.into_settlement(uniswap.clone(), gpv2_settlement.clone()))
+    for (pair, orders) in orders {
+        if let Some(settlement) = settle_pair(pair, orders, &uniswap_factory).await {
+            return Some(
+                settlement.into_settlement(uniswap_router.clone(), gpv2_settlement.clone()),
+            );
+        }
+    }
+    None
 }
 
-fn settle_pair(orders: TokenPairOrders) -> Option<SinglePairSettlement> {
-    let most_lenient_a = orders.sell_token_0.into_iter().min_by(order_by_price)?;
-    let most_lenient_b = orders.sell_token_1.into_iter().min_by(order_by_price)?;
-    single_pair_settlement::settle_two_fillkill_sell_orders(&most_lenient_a, &most_lenient_b)
-}
-
-#[derive(Debug, Default)]
-struct TokenPairOrders {
-    sell_token_0: Vec<OrderCreation>,
-    sell_token_1: Vec<OrderCreation>,
+async fn settle_pair(
+    pair: TokenPair,
+    orders: Vec<OrderCreation>,
+    factory: &UniswapV2Factory,
+) -> Option<SinglePairSettlement> {
+    let pool = match Pool::from_token_pair(factory, &pair).await {
+        Ok(pool) => pool,
+        Err(err) => {
+            tracing::warn!("Error getting AMM reserves: {}", err);
+            return None;
+        }
+    }?;
+    Some(multi_order_solver::solve(orders.into_iter(), &pool))
 }
 
 fn organize_orders_by_token_pair(
     orders: impl Iterator<Item = OrderCreation>,
-) -> HashMap<TokenPair, TokenPairOrders> {
-    let mut result = HashMap::<_, TokenPairOrders>::new();
+) -> HashMap<TokenPair, Vec<OrderCreation>> {
+    let mut result = HashMap::<_, Vec<OrderCreation>>::new();
     for (order, token_pair) in orders
         .filter(usable_order)
         .filter_map(|order| Some((order, order.token_pair()?)))
     {
-        let token_pair_orders = result.entry(token_pair).or_default();
-        if order.sell_token == token_pair.get().0 {
-            token_pair_orders.sell_token_0.push(order);
-        } else {
-            token_pair_orders.sell_token_1.push(order);
-        }
+        result.entry(token_pair).or_default().push(order);
     }
     result
 }
 
 fn usable_order(order: &OrderCreation) -> bool {
-    matches!(order.kind, OrderKind::Sell)
-        && !order.sell_amount.is_zero()
-        && !order.buy_amount.is_zero()
-        && !order.partially_fillable
-}
-
-fn order_by_price(a: &OrderCreation, b: &OrderCreation) -> Ordering {
-    // The natural ordering is `a.buy_amount / a.sell_amount < b.buy_amount / b.sell_amount`
-    // which we can transform to `a.buy_amount * b.sell_amount < b.buy_amount * b.sell_amount` to
-    // avoid division. Multiply in u512 to avoid overflow.
-    let left = U512::from(a.buy_amount) * U512::from(b.sell_amount);
-    let right = U512::from(b.buy_amount) * U512::from(a.sell_amount);
-    left.cmp(&right)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::interactions::dummy_web3;
-    use primitive_types::{H160, U256};
-
-    fn order_with_amounts(sell_amount: U256, buy_amount: U256) -> OrderCreation {
-        OrderCreation {
-            sell_amount,
-            buy_amount,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn order_by_price_() {
-        let right = &order_with_amounts(10.into(), 10.into());
-
-        let left = &order_with_amounts(10.into(), 10.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Equal);
-
-        let left = &order_with_amounts(9.into(), 9.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Equal);
-
-        let left = &order_with_amounts(9.into(), 10.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Greater);
-
-        let left = &order_with_amounts(10.into(), 11.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Greater);
-
-        let left = &order_with_amounts(10.into(), 9.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Less);
-
-        let left = &order_with_amounts(11.into(), 10.into());
-        assert_eq!(order_by_price(&left, &right), Ordering::Less);
-    }
-
-    #[test]
-    fn settle_finds_match() {
-        let orders = vec![
-            OrderCreation {
-                sell_token: H160::from_low_u64_be(0),
-                buy_token: H160::from_low_u64_be(1),
-                sell_amount: 4.into(),
-                buy_amount: 9.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                ..Default::default()
-            },
-            OrderCreation {
-                sell_token: H160::from_low_u64_be(0),
-                buy_token: H160::from_low_u64_be(1),
-                sell_amount: 4.into(),
-                buy_amount: 8.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                ..Default::default()
-            },
-            OrderCreation {
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(0),
-                sell_amount: 10.into(),
-                buy_amount: 11.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                ..Default::default()
-            },
-            OrderCreation {
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(0),
-                sell_amount: 6.into(),
-                buy_amount: 2.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                ..Default::default()
-            },
-        ];
-
-        let contract = UniswapV2Router02::at(&dummy_web3::dummy_web3(), H160::zero());
-        let settlement = GPv2Settlement::at(&dummy_web3::dummy_web3(), H160::zero());
-        let settlement = settle(orders.into_iter(), &contract, &settlement).unwrap();
-        dbg!(&settlement);
-        assert_eq!(settlement.trades.len(), 2);
-        assert_eq!(settlement.interactions.len(), 1);
-    }
+    !order.sell_amount.is_zero() && !order.buy_amount.is_zero()
 }

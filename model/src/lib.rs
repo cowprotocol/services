@@ -100,6 +100,12 @@ impl TokenPair {
     }
 }
 
+impl Default for TokenPair {
+    fn default() -> Self {
+        Self::new(H160::from_low_u64_be(0), H160::from_low_u64_be(1)).unwrap()
+    }
+}
+
 #[derive(Copy, Eq, PartialEq, Clone, Default)]
 pub struct DomainSeparator(pub [u8; 32]);
 

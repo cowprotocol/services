@@ -3,6 +3,7 @@ use contracts::{UniswapV2Factory, UniswapV2Pair};
 use model::TokenPair;
 use primitive_types::H160;
 
+#[derive(Debug)]
 pub struct Pool {
     pub address: H160,
     pub token_pair: TokenPair,
@@ -33,5 +34,15 @@ impl Pool {
             reserve0: reserves.0,
             reserve1: reserves.1,
         }))
+    }
+
+    pub fn get_reserve(&self, token_address: &H160) -> Option<u128> {
+        if self.token_pair.get().0 == *token_address {
+            Some(self.reserve0)
+        } else if self.token_pair.get().1 == *token_address {
+            Some(self.reserve1)
+        } else {
+            None
+        }
     }
 }

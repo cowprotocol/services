@@ -168,7 +168,8 @@ async fn test_with_ganache() {
         std::time::Duration::from_secs(10),
     );
     let solver = solver::naive_solver::NaiveSolver {
-        uniswap: uniswap_router,
+        uniswap_router,
+        uniswap_factory,
         gpv2_settlement: gp_settlement.clone(),
     };
     let mut driver =
@@ -181,14 +182,14 @@ async fn test_with_ganache() {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, to_wei(80));
+    assert_eq!(balance, U256::from(99_650_498_453_042_316_810u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, 62500000000000000000u128.into());
+    assert_eq!(balance, U256::from(50_175_363_672_226_073_522u128));
 
     // Drive orderbook in order to check the removal of settled order_b
     orderbook.run_maintenance(&gp_settlement).await.unwrap();

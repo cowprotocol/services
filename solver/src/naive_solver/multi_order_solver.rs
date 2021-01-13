@@ -1,14 +1,12 @@
-#![allow(dead_code)]
-
 use super::single_pair_settlement::{AmmSwapExactTokensForTokens, SinglePairSettlement};
-use crate::settlement::Trade;
+use crate::{settlement::Trade, uniswap::Pool};
 use anyhow::{anyhow, Result};
 use model::order::{OrderCreation, OrderKind};
 use num::{bigint::Sign, BigInt};
 use std::collections::HashMap;
 use web3::types::{Address, U256};
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 struct TokenContext {
     address: Address,
     reserve: U256,
@@ -33,9 +31,9 @@ impl TokenContext {
 ///
 pub fn solve(
     orders: impl Iterator<Item = OrderCreation> + Clone,
-    reserves: &HashMap<Address, U256>,
+    pool: &Pool,
 ) -> SinglePairSettlement {
-    let (context_a, context_b) = split_into_contexts(orders.clone(), reserves);
+    let (context_a, context_b) = split_into_contexts(orders.clone(), pool);
     if context_a.is_excess_after_fees(&context_b) {
         solve_with_uniswap(orders, &context_b, &context_a)
     } else if context_b.is_excess_after_fees(&context_a) {
@@ -94,7 +92,7 @@ fn solve_with_uniswap(
 
 fn split_into_contexts(
     orders: impl Iterator<Item = OrderCreation>,
-    reserves: &HashMap<Address, U256>,
+    pool: &Pool,
 ) -> (TokenContext, TokenContext) {
     let mut contexts = HashMap::new();
     for order in orders {
@@ -102,10 +100,12 @@ fn split_into_contexts(
             .entry(order.buy_token)
             .or_insert_with(|| TokenContext {
                 address: order.buy_token,
-                reserve: *reserves
-                    .get(&order.buy_token)
-                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.buy_token)),
-                ..Default::default()
+                reserve: pool
+                    .get_reserve(&order.buy_token)
+                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.buy_token))
+                    .into(),
+                buy_volume: U256::zero(),
+                sell_volume: U256::zero(),
             });
         if matches!(order.kind, OrderKind::Buy) {
             buy_context.buy_volume += order.buy_amount
@@ -115,10 +115,12 @@ fn split_into_contexts(
             .entry(order.sell_token)
             .or_insert_with(|| TokenContext {
                 address: order.sell_token,
-                reserve: *reserves
-                    .get(&order.sell_token)
-                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.sell_token)),
-                ..Default::default()
+                reserve: pool
+                    .get_reserve(&order.sell_token)
+                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.sell_token))
+                    .into(),
+                buy_volume: U256::zero(),
+                sell_volume: U256::zero(),
             });
         if matches!(order.kind, OrderKind::Sell) {
             sell_context.sell_volume += order.sell_amount
@@ -177,6 +179,8 @@ fn bigint_to_u256(input: &BigInt) -> Result<U256> {
 
 #[cfg(test)]
 mod tests {
+    use model::TokenPair;
+
     use super::*;
 
     fn to_wei(base: u128) -> U256 {
@@ -208,11 +212,13 @@ mod tests {
             },
         ];
 
-        let reserves = maplit::hashmap! {
-            token_a => to_wei(1000),
-            token_b => to_wei(1000)
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1000).as_u128(),
+            reserve1: to_wei(1000).as_u128(),
+            address: Default::default(),
         };
-        let result = solve(orders.clone().into_iter(), &reserves);
+        let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = result.interaction.unwrap();
@@ -261,11 +267,13 @@ mod tests {
             },
         ];
 
-        let reserves = maplit::hashmap! {
-            token_a => to_wei(1000),
-            token_b => to_wei(1000)
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1000).as_u128(),
+            reserve1: to_wei(1000).as_u128(),
+            address: Default::default(),
         };
-        let result = solve(orders.clone().into_iter(), &reserves);
+        let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = result.interaction.unwrap();
@@ -310,11 +318,13 @@ mod tests {
             },
         ];
 
-        let reserves = maplit::hashmap! {
-            token_a => to_wei(1000),
-            token_b => to_wei(1000)
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1000).as_u128(),
+            reserve1: to_wei(1000).as_u128(),
+            address: Default::default(),
         };
-        let result = solve(orders.clone().into_iter(), &reserves);
+        let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = result.interaction.unwrap();
@@ -363,11 +373,13 @@ mod tests {
             },
         ];
 
-        let reserves = maplit::hashmap! {
-            token_a => to_wei(1000),
-            token_b => to_wei(1000)
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1000).as_u128(),
+            reserve1: to_wei(1000).as_u128(),
+            address: Default::default(),
         };
-        let result = solve(orders.clone().into_iter(), &reserves);
+        let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = result.interaction.unwrap();
@@ -420,11 +432,13 @@ mod tests {
             },
         ];
 
-        let reserves = maplit::hashmap! {
-            token_a => to_wei(1_000_001),
-            token_b => to_wei(1_000_000)
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1_000_001).as_u128(),
+            reserve1: to_wei(1_000_000).as_u128(),
+            address: Default::default(),
         };
-        let result = solve(orders.into_iter(), &reserves);
+        let result = solve(orders.into_iter(), &pool);
         assert_eq!(result.interaction, None);
         assert_eq!(
             result.clearing_prices,

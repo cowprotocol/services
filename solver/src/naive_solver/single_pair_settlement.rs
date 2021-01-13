@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{
     interactions::UniswapInteraction,
     settlement::{Interaction, Settlement, Trade},
