@@ -2,6 +2,7 @@ pub mod api;
 pub mod database;
 pub mod storage;
 pub mod trade_events;
+pub mod u256_conversions;
 
 use crate::storage::Storage;
 use anyhow::{anyhow, Context as _, Result};

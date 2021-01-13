@@ -30,7 +30,8 @@ jobs:
           sudo -u postgres createuser $USER
           sudo -u postgres createdb $USER
           psql -f database/schema.sql
-          cargo test --locked --workspace --all-features postgres -- --ignored
+          # Postgres tests should not run in parallel because they use the same database.
+          cargo test --locked --workspace --all-features --jobs 1 postgres -- --ignored --test-threads 1
   openapi:
     runs-on: ubuntu-latest
     steps:

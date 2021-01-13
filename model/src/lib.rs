@@ -19,6 +19,25 @@ pub struct Signature {
     pub v: u8,
 }
 
+impl Signature {
+    /// r + s +v
+    pub fn to_bytes(&self) -> [u8; 65] {
+        let mut bytes = [0u8; 65];
+        bytes[..32].copy_from_slice(self.r.as_bytes());
+        bytes[32..64].copy_from_slice(self.s.as_bytes());
+        bytes[64] = self.v;
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8; 65]) -> Self {
+        Signature {
+            r: H256::from_slice(&bytes[..32]),
+            s: H256::from_slice(&bytes[32..64]),
+            v: bytes[64],
+        }
+    }
+}
+
 impl Serialize for Signature {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -27,9 +46,7 @@ impl Serialize for Signature {
         let mut bytes = [0u8; 2 + 65 * 2];
         bytes[..2].copy_from_slice(b"0x");
         // Can only fail if the buffer size does not match but we know it is correct.
-        hex::encode_to_slice(self.r, &mut bytes[2..66]).unwrap();
-        hex::encode_to_slice(self.s, &mut bytes[66..130]).unwrap();
-        hex::encode_to_slice([self.v], &mut bytes[130..132]).unwrap();
+        hex::encode_to_slice(&self.to_bytes(), &mut bytes[2..]).unwrap();
         // Hex encoding is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         serializer.serialize_str(str)
@@ -66,11 +83,7 @@ impl<'de> Deserialize<'de> for Signature {
                         s, err
                     ))
                 })?;
-                Ok(Signature {
-                    r: H256::from_slice(&bytes[..32]),
-                    s: H256::from_slice(&bytes[32..64]),
-                    v: bytes[64],
-                })
+                Ok(Signature::from_bytes(&bytes))
             }
         }
 

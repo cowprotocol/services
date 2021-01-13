@@ -122,6 +122,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "904dfeac50f3cdaba28fc6f57fdcddb75f49ed61346676a78c4ffe55877802fd"
 
 [[package]]
+name = "bigdecimal"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cc403c26e6b03005522e6e8053384c4e881dfe5b2bf041c0c2c49be33d64a539"
+dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1516,6 +1527,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bigdecimal",
  "chrono",
  "contracts",
  "ethcontract",
@@ -1523,6 +1535,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "model",
+ "num-bigint",
  "primitive-types",
  "secp256k1",
  "serde",
@@ -2228,9 +2241,11 @@ dependencies = [
  "ahash 0.6.2",
  "atoi",
  "base64 0.13.0",
+ "bigdecimal",
  "bitflags",
  "byteorder",
  "bytes 0.5.6",
+ "chrono",
  "crossbeam-channel",
  "crossbeam-queue",
  "crossbeam-utils",
@@ -2246,6 +2261,7 @@ dependencies = [
  "log",
  "md-5",
  "memchr",
+ "num-bigint",
  "once_cell",
  "parking_lot",
  "percent-encoding",

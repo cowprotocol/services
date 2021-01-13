@@ -1,9 +1,17 @@
+mod orders;
+mod trades;
+
+use crate::u256_conversions::*;
 use anyhow::{Context, Result};
 use futures::FutureExt;
 use model::order::OrderUid;
 use primitive_types::U256;
 use sqlx::{Connection, Executor, PgPool, Postgres, Transaction};
 use std::convert::TryInto;
+
+// TODO: There is remaining optimization potential by implementing sqlx encoding and decoding for
+// U256 directly instead of going through BigDecimal. This is not very important as this is fast
+// enough anyway.
 
 #[derive(Debug, Default)]
 pub struct Trade {
@@ -20,6 +28,8 @@ pub struct Trade {
 pub struct Database {
     pool: PgPool,
 }
+
+// The implementation is split up into the orders and trades modules.
 
 impl Database {
     pub fn new(uri: &str) -> Result<Self> {
@@ -77,6 +87,14 @@ impl Database {
             .await?;
         Ok(())
     }
+
+    #[cfg(test)]
+    /// Delete all data in the database.
+    async fn clear(&self) -> Result<()> {
+        self.pool.execute(sqlx::query("TRUNCATE orders;")).await?;
+        self.pool.execute(sqlx::query("TRUNCATE trades;")).await?;
+        Ok(())
+    }
 }
 
 async fn delete_trades(
@@ -94,7 +112,7 @@ async fn insert_trades(
     transaction: &mut Transaction<'_, Postgres>,
     trades: &[Trade],
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount) VALUES ($1, $2, $3, $4::numeric, $5::numeric, $6::numeric);";
+    const QUERY: &str = "INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount) VALUES ($1, $2, $3, $4, $5, $6);";
     for trade in trades {
         // TODO: there might be a more efficient way to do this like execute_many or COPY but my
         // tests show that even if we sleep during the transaction it does not block other
@@ -105,9 +123,9 @@ async fn insert_trades(
                     .bind(trade.block_number as i64)
                     .bind(trade.log_index as i64)
                     .bind(trade.order_uid.0.as_ref())
-                    .bind(trade.sell_amount.to_string())
-                    .bind(trade.buy_amount.to_string())
-                    .bind(trade.fee_amount.to_string()),
+                    .bind(u256_to_big_decimal(&trade.sell_amount))
+                    .bind(u256_to_big_decimal(&trade.buy_amount))
+                    .bind(u256_to_big_decimal(&trade.fee_amount)),
             )
             .await?;
     }
@@ -131,10 +149,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades() {
         let db = Database::new("postgresql://").unwrap();
-        db.pool
-            .execute(sqlx::query("TRUNCATE trades;"))
-            .await
-            .unwrap();
+        db.clear().await.unwrap();
         assert_eq!(db.block_number_of_most_recent_trade().await.unwrap(), None);
         db.insert_trades(vec![trade(0, 0), trade(0, 1)])
             .await
