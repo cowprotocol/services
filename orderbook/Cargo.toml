@@ -16,11 +16,11 @@ anyhow = "1.0"
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.9", default-features = false }
+ethcontract = { version = "0.10", default-features = false }
 futures = "0.3.9"
 hex = { version = "0.4", default-features = false }
 model = { path = "../model" }
-primitive-types = "0.7"
+primitive-types = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 shared-arguments = { path = "../shared-arguments" }
@@ -30,8 +30,8 @@ tokio = { version = "0.2", features =[ "macros", "time"] }
 tracing = "0.1"
 tracing-setup = { path = "../tracing-setup" }
 warp = "0.2"
-web3 = { version = "0.13", default-features = false, features = ["http-tls"] }
+web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 
 [dev-dependencies]
 hex-literal = "0.3"
-secp256k1 = "0.17"
+secp256k1 = "0.20"

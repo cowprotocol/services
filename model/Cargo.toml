@@ -7,12 +7,12 @@ edition = "2018"
 chrono = { version = "0.4", default-features = false, features = ["serde"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
-primitive-types = { version = "0.7" }
-secp256k1 = "0.17"
+primitive-types = { version = "0.8" }
+secp256k1 = "0.20"
 serde = { version = "1.0", features = ["derive"] }
-web3 = { version = "0.13", default-features = false }
+web3 = { version = "0.15", default-features = false }
 lazy_static = "1.4"
-ethabi = "12.0"
+ethabi = "13.0"
 
 
 [dev-dependencies]
