@@ -1,3 +1,4 @@
+mod multi_order_solver;
 mod single_pair_settlement;
 
 use self::single_pair_settlement::SinglePairSettlement;

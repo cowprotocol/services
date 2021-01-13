@@ -14,6 +14,20 @@ pub struct Trade {
     pub fee_discount: u16,
 }
 
+impl Trade {
+    pub fn fully_matched(order: OrderCreation) -> Self {
+        let executed_amount = match order.kind {
+            model::order::OrderKind::Buy => order.buy_amount,
+            model::order::OrderKind::Sell => order.sell_amount,
+        };
+        Self {
+            order,
+            executed_amount,
+            fee_discount: 0,
+        }
+    }
+}
+
 pub trait Interaction: std::fmt::Debug {
     // TODO: not sure if this should return a result.
     // Write::write returns a result but we know we write to a vector in memory so we know it will

@@ -9,9 +9,9 @@ use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct SinglePairSettlement {
-    clearing_prices: HashMap<H160, U256>,
-    trades: Vec<Trade>,
-    interaction: Option<AmmSwapExactTokensForTokens>,
+    pub clearing_prices: HashMap<H160, U256>,
+    pub trades: Vec<Trade>,
+    pub interaction: Option<AmmSwapExactTokensForTokens>,
 }
 
 impl SinglePairSettlement {
@@ -43,11 +43,11 @@ impl SinglePairSettlement {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-struct AmmSwapExactTokensForTokens {
-    amount_in: U256,
-    amount_out_min: U256,
-    token_in: H160,
-    token_out: H160,
+pub struct AmmSwapExactTokensForTokens {
+    pub amount_in: U256,
+    pub amount_out_min: U256,
+    pub token_in: H160,
+    pub token_out: H160,
 }
 
 // Assume both orders are fill-or-kill sell orders and that sell/buy tokens match.
