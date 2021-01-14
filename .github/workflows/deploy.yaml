@@ -15,4 +15,4 @@ jobs:
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
     steps:
       - uses: actions/checkout@v2
-      - run: docker/deploy.sh ${GITHUB_REF#refs/(tags|heads)/}
+      - run: docker/deploy.sh ${GITHUB_REF#refs/*/}
