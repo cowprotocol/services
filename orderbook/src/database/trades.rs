@@ -7,6 +7,8 @@ use primitive_types::U256;
 use sqlx::{Connection, Executor, Postgres, Transaction};
 use std::convert::TryInto;
 
+// TODO: invalidated orders
+
 #[derive(Debug, Default)]
 pub struct Trade {
     pub block_number: u64,

@@ -18,6 +18,7 @@ pub struct OrderFilter<'a> {
     pub owner: Option<&'a H160>,
     pub sell_token: Option<&'a H160>,
     pub buy_token: Option<&'a H160>,
+    pub exclude_fully_executed: bool,
 }
 
 #[derive(sqlx::Type)]
@@ -74,35 +75,39 @@ impl Database {
             .map(|_| ())
     }
 
-    // TODO: add filters: not_fully_executed
     pub fn orders<'a>(&'a self, filter: &'a OrderFilter) -> impl Stream<Item = Result<Order>> + 'a {
-        // TODO: adapt query to filter fully executed orders immediately
-
         // The `or`s in the `where` clause are there so that each filter is ignored when not set.
+        // We use a subquery instead of a `having` clause in the inner query because we would not be
+        // able to use the `sum_*` columns there.
         const QUERY: &str = "\
+        SELECT * FROM ( \
             SELECT \
                 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, \
                 o.buy_amount, o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, \
                 o.signature, \
-                COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
                 COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
+                COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
                 COALESCE(SUM(t.fee_amount), 0) AS sum_fee \
-            FROM orders o LEFT OUTER JOIN trades t ON o.uid = t.order_uid
+            FROM orders o LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
             WHERE \
                 o.valid_to >= $1 AND \
                 ($2 IS NULL OR o.owner = $2) AND \
                 ($3 IS NULL OR o.sell_token = $3) AND \
                 ($4 IS NULL OR o.buy_token = $4) \
-            GROUP BY o.uid;";
-        // To get only not fully executed orders we probably want to use something like
-        // `HAVING sum_sell < orders.sell_amount` but still need to find the best way to make this
-        // pick the correct column based on order type.
+            GROUP BY o.uid \
+        ) AS unfiltered \
+        WHERE
+            $5 OR CASE kind \
+                WHEN 'sell' THEN sum_sell < sell_amount \
+                WHEN 'buy' THEN sum_buy < buy_amount \
+            END;";
 
         sqlx::query_as(QUERY)
             .bind(filter.min_valid_to)
             .bind(filter.owner.map(|h160| h160.as_bytes()))
             .bind(filter.sell_token.map(|h160| h160.as_bytes()))
             .bind(filter.buy_token.map(|h160| h160.as_bytes()))
+            .bind(!filter.exclude_fully_executed)
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
@@ -186,10 +191,14 @@ impl OrdersQueryRow {
 
 #[cfg(test)]
 mod tests {
+    use crate::database::Trade;
+
     use super::*;
     use chrono::NaiveDateTime;
     use futures::StreamExt;
+    use num_bigint::BigUint;
     use primitive_types::U256;
+    use sqlx::Executor;
     use std::collections::HashSet;
 
     #[tokio::test]
@@ -352,5 +361,138 @@ mod tests {
             &orders[1..3],
         )
         .await;
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_filter_executed_orders() {
+        let db = Database::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order = Order {
+            order_meta_data: Default::default(),
+            order_creation: OrderCreation {
+                kind: OrderKind::Sell,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                ..Default::default()
+            },
+        };
+        db.insert_order(&order).await.unwrap();
+
+        let get_order = |exclude_fully_executed| {
+            let db = db.clone();
+            async move {
+                db.orders(&OrderFilter {
+                    exclude_fully_executed,
+                    ..Default::default()
+                })
+                .boxed()
+                .next()
+                .await
+            }
+        };
+
+        let order = get_order(true).await.unwrap().unwrap();
+        assert_eq!(
+            order.order_meta_data.executed_sell_amount,
+            BigUint::from(0u8)
+        );
+
+        db.insert_trades(vec![Trade {
+            block_number: 0,
+            log_index: 0,
+            order_uid: order.order_meta_data.uid,
+            sell_amount: 3.into(),
+            ..Default::default()
+        }])
+        .await
+        .unwrap();
+        let order = get_order(true).await.unwrap().unwrap();
+        assert_eq!(
+            order.order_meta_data.executed_sell_amount,
+            BigUint::from(3u8)
+        );
+
+        db.insert_trades(vec![Trade {
+            block_number: 1,
+            order_uid: order.order_meta_data.uid,
+            sell_amount: 6.into(),
+            ..Default::default()
+        }])
+        .await
+        .unwrap();
+        let order = get_order(true).await.unwrap().unwrap();
+        assert_eq!(
+            order.order_meta_data.executed_sell_amount,
+            BigUint::from(9u8),
+        );
+
+        // The order disappears because it is fully executed.
+        db.insert_trades(vec![Trade {
+            block_number: 2,
+            order_uid: order.order_meta_data.uid,
+            sell_amount: 1.into(),
+            ..Default::default()
+        }])
+        .await
+        .unwrap();
+        assert!(get_order(true).await.is_none());
+
+        // If we include fully executed orders it is there.
+        let order = get_order(false).await.unwrap().unwrap();
+        assert_eq!(
+            order.order_meta_data.executed_sell_amount,
+            BigUint::from(10u8)
+        );
+
+        // Change order type and see that is returned as not fully executed again.
+        let query = "UPDATE orders SET kind = 'buy';";
+        db.pool.execute(query).await.unwrap();
+        assert!(get_order(true).await.is_some());
+    }
+
+    // In the schema we set the type of executed amounts in individual events to a 78 decimal digit
+    // number. Summing over multiple events could overflow this because the smart contract only
+    // guarantees that the filled amount (which amount that is depends on order type) does not
+    // overflow a U256. This test shows that postgres does not error if this happens because
+    // inside the SUM the number can have more digits.
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_summed_executed_amount_does_not_overflow() {
+        let db = Database::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order = Order {
+            order_meta_data: Default::default(),
+            order_creation: OrderCreation {
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+        };
+        db.insert_order(&order).await.unwrap();
+
+        for i in 0..10 {
+            db.insert_trades(vec![Trade {
+                block_number: i,
+                order_uid: order.order_meta_data.uid,
+                sell_amount: U256::MAX,
+                ..Default::default()
+            }])
+            .await
+            .unwrap();
+        }
+
+        let order = db
+            .orders(&OrderFilter::default())
+            .boxed()
+            .next()
+            .await
+            .unwrap()
+            .unwrap();
+
+        let expected = u256_to_big_uint(&U256::MAX) * BigUint::from(10u8);
+        assert!(expected.to_string().len() > 78);
+        assert_eq!(order.order_meta_data.executed_sell_amount, expected);
     }
 }

@@ -6,15 +6,15 @@ use std::convert::TryInto;
 // TODO: It would be nice to avoid copying the underlying BigInt when converting BigDecimal to
 // anything else but the simple big_decimal.to_bigint makes a copy internally.
 
-pub fn u256_to_big_int(input: &U256) -> BigInt {
+pub fn u256_to_big_uint(input: &U256) -> BigUint {
     let mut bytes = [0; 32];
     input.to_big_endian(&mut bytes);
-    BigInt::from_bytes_be(Sign::Plus, &bytes)
+    BigUint::from_bytes_be(&bytes)
 }
 
 pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
-    let big_int = u256_to_big_int(u256);
-    BigDecimal::from(big_int)
+    let big_uint = u256_to_big_uint(u256);
+    BigDecimal::from(BigInt::from(big_uint))
 }
 
 pub fn bigint_to_u256(input: &BigInt) -> Option<U256> {
