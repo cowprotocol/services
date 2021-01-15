@@ -1,5 +1,5 @@
 use super::Database;
-use crate::u256_conversions::*;
+use crate::integer_conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
@@ -150,6 +150,12 @@ impl OrdersQueryRow {
                     .try_into()
                     .map_err(|_| anyhow!("order uid has wrong length"))?,
             ),
+            executed_buy_amount: big_decimal_to_big_uint(&self.sum_buy)
+                .ok_or_else(|| anyhow!("sum_buy is not an unsigned integer"))?,
+            executed_sell_amount: big_decimal_to_big_uint(&self.sum_sell)
+                .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?,
+            executed_fee_amount: big_decimal_to_big_uint(&self.sum_fee)
+                .ok_or_else(|| anyhow!("sum_fee is not an unsigned integer"))?,
         };
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,

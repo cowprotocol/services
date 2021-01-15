@@ -136,6 +136,10 @@ components:
       description: Ethereum 40 byte address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    BigUint:
+      description: A big unsigned integer encoded in decimal.
+      type: string
+      example: "1234567890"
     TokenAmount:
       description: Amount of a token. uint256 encoded in decimal.
       type: string
@@ -213,6 +217,15 @@ components:
           $ref: "#/components/schemas/Address"
         UID:
           $ref: "#/components/schemas/UID"
+        executedSellAmount:
+          description: "The total amount of sellToken that has been executed for this order."
+          $ref: "#/components/schemas/BigUint"
+        executedBuyAmount:
+          description: "The total amount of buyToken that has been executed for this order."
+          $ref: "#/components/schemas/BigUint"
+        executedFeeAmount:
+          description: "The total amount of fees that have been executed for this order."
+          $ref: "#/components/schemas/BigUint"
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"

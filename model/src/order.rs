@@ -3,6 +3,7 @@
 use crate::{h160_hexadecimal, u256_decimal, DomainSeparator, Signature, TokenPair};
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use hex_literal::hex;
+use num_bigint::BigUint;
 use primitive_types::{H160, U256};
 use secp256k1::key::ONE_KEY;
 use serde::{de, Deserialize, Serialize};
@@ -42,6 +43,7 @@ impl Order {
                 creation_date: chrono::offset::Utc::now(),
                 owner,
                 uid: order_creation.uid(&owner),
+                ..Default::default()
             },
             order_creation,
         })
@@ -251,13 +253,19 @@ impl OrderCreation {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[derive(Eq, PartialEq, Clone, Debug, Copy, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetaData {
     pub creation_date: DateTime<Utc>,
     #[serde(with = "h160_hexadecimal")]
     pub owner: H160,
     pub uid: OrderUid,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub executed_buy_amount: BigUint,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub executed_sell_amount: BigUint,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub executed_fee_amount: BigUint,
 }
 
 impl Default for OrderMetaData {
@@ -265,7 +273,10 @@ impl Default for OrderMetaData {
         Self {
             creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
             owner: Default::default(),
-            uid: OrderUid([0u8; 56]),
+            uid: Default::default(),
+            executed_buy_amount: Default::default(),
+            executed_sell_amount: Default::default(),
+            executed_fee_amount: Default::default(),
         }
     }
 }
@@ -374,6 +385,9 @@ mod tests {
             "creationDate": "1970-01-01T00:00:03Z",
             "owner": "0x0000000000000000000000000000000000000001",
             "uid": "0x1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111",
+            "executedBuyAmount": "3",
+            "executedSellAmount": "4",
+            "executedFeeAmount": "5",
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "sellAmount": "1",
@@ -390,6 +404,9 @@ mod tests {
                 creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
+                executed_buy_amount: BigUint::from_bytes_be(&[3]),
+                executed_sell_amount: BigUint::from_bytes_be(&[4]),
+                executed_fee_amount: BigUint::from_bytes_be(&[5]),
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),

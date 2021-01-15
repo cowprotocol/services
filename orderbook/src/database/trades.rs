@@ -1,5 +1,5 @@
 use super::Database;
-use crate::u256_conversions::*;
+use crate::integer_conversions::*;
 use anyhow::{Context, Result};
 use futures::FutureExt;
 use model::order::OrderUid;

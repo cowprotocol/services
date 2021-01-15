@@ -1,6 +1,10 @@
 use bigdecimal::BigDecimal;
-use num_bigint::{BigInt, Sign, ToBigInt};
+use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
 use primitive_types::U256;
+use std::convert::TryInto;
+
+// TODO: It would be nice to avoid copying the underlying BigInt when converting BigDecimal to
+// anything else but the simple big_decimal.to_bigint makes a copy internally.
 
 pub fn u256_to_big_int(input: &U256) -> BigInt {
     let mut bytes = [0; 32];
@@ -19,6 +23,10 @@ pub fn bigint_to_u256(input: &BigInt) -> Option<U256> {
         return None;
     }
     Some(U256::from_big_endian(&bytes))
+}
+
+pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
+    big_decimal.to_bigint()?.try_into().ok()
 }
 
 pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
