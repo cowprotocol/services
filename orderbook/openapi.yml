@@ -44,7 +44,7 @@ paths:
     get:
       summary: Get existing orders.
       description: |
-        The orders are optionally filtered by the owner, sell token, buy token. Each fitler can be
+        The orders are optionally filtered by the owner, sell token, buy token. Each filter can be
         specified individually and is optional. So not specifying any returns all orders in the
         system.
       parameters:

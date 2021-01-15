@@ -4,6 +4,7 @@ mod trades;
 use anyhow::Result;
 use sqlx::PgPool;
 
+pub use orders::OrderFilter;
 pub use trades::Trade;
 
 // TODO: There is remaining optimization potential by implementing sqlx encoding and decoding for

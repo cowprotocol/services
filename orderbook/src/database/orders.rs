@@ -11,6 +11,15 @@ use model::{
 use primitive_types::H160;
 use std::convert::TryInto;
 
+/// Any default value means that this field is unfiltered.
+#[derive(Default)]
+pub struct OrderFilter<'a> {
+    pub min_valid_to: u32,
+    pub owner: Option<&'a H160>,
+    pub sell_token: Option<&'a H160>,
+    pub buy_token: Option<&'a H160>,
+}
+
 #[derive(sqlx::Type)]
 #[sqlx(rename = "OrderKind")]
 #[sqlx(rename_all = "lowercase")]
@@ -65,9 +74,11 @@ impl Database {
             .map(|_| ())
     }
 
-    // TODO: add filters: not_fully_executed, owner, sell_token, buy_token
-    pub fn orders(&self, min_valid_to: u32) -> impl Stream<Item = Result<Order>> + '_ {
+    // TODO: add filters: not_fully_executed
+    pub fn orders<'a>(&'a self, filter: &'a OrderFilter) -> impl Stream<Item = Result<Order>> + 'a {
         // TODO: adapt query to filter fully executed orders immediately
+
+        // The `or`s in the `where` clause are there so that each filter is ignored when not set.
         const QUERY: &str = "\
             SELECT \
                 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, \
@@ -77,13 +88,21 @@ impl Database {
                 COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
                 COALESCE(SUM(t.fee_amount), 0) AS sum_fee \
             FROM orders o LEFT OUTER JOIN trades t ON o.uid = t.order_uid
-            WHERE o.valid_to >= $1 \
+            WHERE \
+                o.valid_to >= $1 AND \
+                ($2 IS NULL OR o.owner = $2) AND \
+                ($3 IS NULL OR o.sell_token = $3) AND \
+                ($4 IS NULL OR o.buy_token = $4) \
             GROUP BY o.uid;";
         // To get only not fully executed orders we probably want to use something like
         // `HAVING sum_sell < orders.sell_amount` but still need to find the best way to make this
         // pick the correct column based on order type.
+
         sqlx::query_as(QUERY)
-            .bind(min_valid_to)
+            .bind(filter.min_valid_to)
+            .bind(filter.owner.map(|h160| h160.as_bytes()))
+            .bind(filter.sell_token.map(|h160| h160.as_bytes()))
+            .bind(filter.buy_token.map(|h160| h160.as_bytes()))
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
@@ -165,6 +184,7 @@ mod tests {
     use chrono::NaiveDateTime;
     use futures::StreamExt;
     use primitive_types::U256;
+    use std::collections::HashSet;
 
     #[tokio::test]
     #[ignore]
@@ -181,7 +201,8 @@ mod tests {
     async fn postgres_order_roundtrip() {
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
-        assert!(db.orders(0).boxed().next().await.is_none());
+        let filter = OrderFilter::default();
+        assert!(db.orders(&filter).boxed().next().await.is_none());
         let order = Order {
             order_meta_data: OrderMetaData {
                 creation_date: DateTime::<Utc>::from_utc(
@@ -205,8 +226,125 @@ mod tests {
         };
         db.insert_order(&order).await.unwrap();
         assert_eq!(
-            db.orders(0).try_collect::<Vec<Order>>().await.unwrap(),
+            db.orders(&filter)
+                .try_collect::<Vec<Order>>()
+                .await
+                .unwrap(),
             vec![order]
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_filter_orders() {
+        let db = Database::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        let orders = vec![
+            Order {
+                order_meta_data: OrderMetaData {
+                    owner: H160::from_low_u64_be(0),
+                    uid: OrderUid([0u8; 56]),
+                    ..Default::default()
+                },
+                order_creation: OrderCreation {
+                    sell_token: H160::from_low_u64_be(1),
+                    buy_token: H160::from_low_u64_be(2),
+                    valid_to: 10,
+                    ..Default::default()
+                },
+            },
+            Order {
+                order_meta_data: OrderMetaData {
+                    owner: H160::from_low_u64_be(0),
+                    uid: OrderUid([1; 56]),
+                    ..Default::default()
+                },
+                order_creation: OrderCreation {
+                    sell_token: H160::from_low_u64_be(1),
+                    buy_token: H160::from_low_u64_be(3),
+                    valid_to: 11,
+                    ..Default::default()
+                },
+            },
+            Order {
+                order_meta_data: OrderMetaData {
+                    owner: H160::from_low_u64_be(2),
+                    uid: OrderUid([2u8; 56]),
+                    ..Default::default()
+                },
+                order_creation: OrderCreation {
+                    sell_token: H160::from_low_u64_be(1),
+                    buy_token: H160::from_low_u64_be(3),
+                    valid_to: 12,
+                    ..Default::default()
+                },
+            },
+        ];
+        for order in orders.iter() {
+            db.insert_order(order).await.unwrap();
+        }
+
+        async fn assert_orders(db: &Database, filter: &OrderFilter<'_>, expected: &[Order]) {
+            let filtered = db
+                .orders(&filter)
+                .try_collect::<HashSet<Order>>()
+                .await
+                .unwrap();
+            let expected = expected.iter().cloned().collect::<HashSet<_>>();
+            assert_eq!(filtered, expected);
+        }
+
+        let owner = H160::from_low_u64_be(0);
+        assert_orders(
+            &db,
+            &OrderFilter {
+                owner: Some(&owner),
+                ..Default::default()
+            },
+            &orders[0..2],
+        )
+        .await;
+
+        let sell_token = H160::from_low_u64_be(1);
+        assert_orders(
+            &db,
+            &OrderFilter {
+                sell_token: Some(&sell_token),
+                ..Default::default()
+            },
+            &orders[0..3],
+        )
+        .await;
+
+        let buy_token = H160::from_low_u64_be(3);
+        assert_orders(
+            &db,
+            &OrderFilter {
+                buy_token: Some(&buy_token),
+                ..Default::default()
+            },
+            &orders[1..3],
+        )
+        .await;
+
+        assert_orders(
+            &db,
+            &OrderFilter {
+                min_valid_to: 10,
+                ..Default::default()
+            },
+            &orders[0..3],
+        )
+        .await;
+
+        assert_orders(
+            &db,
+            &OrderFilter {
+                min_valid_to: 11,
+                ..Default::default()
+            },
+            &orders[1..3],
+        )
+        .await;
     }
 }

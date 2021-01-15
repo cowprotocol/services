@@ -16,7 +16,7 @@ use web3::{
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields thats are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
@@ -116,7 +116,7 @@ impl OrderBuilder {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     #[serde(with = "h160_hexadecimal")]
@@ -251,7 +251,7 @@ impl OrderCreation {
 }
 
 /// An order as provided to the orderbook by the frontend.
-#[derive(Eq, PartialEq, Clone, Debug, Copy, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Debug, Copy, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetaData {
     pub creation_date: DateTime<Utc>,
@@ -346,7 +346,7 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     Buy,

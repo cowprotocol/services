@@ -12,7 +12,7 @@ use serde::{de, Deserialize, Serialize};
 use std::fmt;
 use web3::signing;
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Default)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash)]
 pub struct Signature {
     pub r: H256,
     pub s: H256,
