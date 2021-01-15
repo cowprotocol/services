@@ -22,6 +22,53 @@ impl TokenContext {
                 * u256_to_bigint(&deficit.reserve)
                 * (u256_to_bigint(&self.sell_volume) - u256_to_bigint(&self.buy_volume))
     }
+
+    pub fn is_excess_before_fees(&self, deficit: &TokenContext) -> bool {
+        u256_to_bigint(&self.reserve)
+            * (u256_to_bigint(&deficit.sell_volume) - u256_to_bigint(&deficit.buy_volume))
+            < u256_to_bigint(&deficit.reserve)
+                * (u256_to_bigint(&self.sell_volume) - u256_to_bigint(&self.buy_volume))
+    }
+}
+
+pub fn solve(
+    orders: impl Iterator<Item = OrderCreation> + Clone,
+    pool: &Pool,
+) -> SinglePairSettlement {
+    let mut orders: Vec<OrderCreation> = orders.collect();
+    while !orders.is_empty() {
+        let (context_a, context_b) = split_into_contexts(orders.clone().into_iter(), pool);
+        let solution = solve_orders(orders.clone().into_iter(), &context_a, &context_b);
+        if is_valid_solution(&solution) {
+            return solution;
+        } else {
+            // remove order with worst limit price that is selling excess token (to make it less excessive) and try again
+            let excess_token = if context_a.is_excess_before_fees(&context_b) {
+                context_a.address
+            } else {
+                context_b.address
+            };
+            let order_to_remove = orders
+                .iter()
+                .enumerate()
+                .filter(|o| o.1.sell_token == excess_token)
+                .max_by(|lhs, rhs| {
+                    (lhs.1.buy_amount * rhs.1.sell_amount)
+                        .cmp(&(lhs.1.sell_amount * rhs.1.buy_amount))
+                });
+            match order_to_remove {
+                Some((index, _)) => orders.swap_remove(index),
+                None => break,
+            };
+        }
+    }
+
+    // At last we return the trivial solution which doesn't match any orders
+    SinglePairSettlement {
+        clearing_prices: HashMap::new(),
+        trades: Vec::new(),
+        interaction: None,
+    }
 }
 
 ///
@@ -29,11 +76,11 @@ impl TokenContext {
 /// Panics if orders are not already filtered for a specific token pair, or the reserve information
 /// for that pair is not available.
 ///
-pub fn solve(
+fn solve_orders(
     orders: impl Iterator<Item = OrderCreation> + Clone,
-    pool: &Pool,
+    context_a: &TokenContext,
+    context_b: &TokenContext,
 ) -> SinglePairSettlement {
-    let (context_a, context_b) = split_into_contexts(orders.clone(), pool);
     if context_a.is_excess_after_fees(&context_b) {
         solve_with_uniswap(orders, &context_b, &context_a)
     } else if context_b.is_excess_after_fees(&context_a) {
@@ -56,7 +103,6 @@ fn solve_without_uniswap(
             context_a.address => context_b.reserve,
             context_b.address => context_a.reserve,
         },
-        // TODO(fleupold) check that all orders comply with the computed price. Otherwise, remove the least favorable excess order and try again.
         trades: orders.into_iter().map(Trade::fully_matched).collect(),
         interaction: None,
     }
@@ -79,7 +125,6 @@ fn solve_with_uniswap(
         token_in: excess.address,
         token_out: shortage.address,
     });
-    // TODO(fleupold) check that all orders comply with the computed price. Otherwise, remove the least favorable excess order and try again.
     SinglePairSettlement {
         clearing_prices: maplit::hashmap! {
             shortage.address => uniswap_in,
@@ -158,6 +203,30 @@ fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> U256 {
 ///
 fn compute_uniswap_in(out: U256, shortage: &TokenContext, excess: &TokenContext) -> U256 {
     U256::from(1000) * out * excess.reserve / (U256::from(997) * (shortage.reserve - out)) + 1
+}
+
+///
+/// Returns true if for each trade the executed price is not smaller than the limit price
+/// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
+///
+fn is_valid_solution(solution: &SinglePairSettlement) -> bool {
+    for trade in solution.trades.iter() {
+        let order = trade.order;
+        let buy_token_price = solution
+            .clearing_prices
+            .get(&order.buy_token)
+            .expect("Solution should contain clearing price for buy token");
+        let sell_token_price = solution
+            .clearing_prices
+            .get(&order.sell_token)
+            .expect("Solution should contain clearing price for sell token");
+
+        if order.sell_amount * sell_token_price < order.buy_amount * buy_token_price {
+            return false;
+        }
+    }
+
+    true
 }
 
 fn u256_to_bigint(input: &U256) -> BigInt {
@@ -269,8 +338,8 @@ mod tests {
 
         let pool = Pool {
             token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1000).as_u128(),
-            reserve1: to_wei(1000).as_u128(),
+            reserve0: to_wei(1_000_000).as_u128(),
+            reserve1: to_wei(1_000_000).as_u128(),
             address: Default::default(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
@@ -424,7 +493,7 @@ mod tests {
             OrderCreation {
                 sell_token: token_b,
                 buy_token: token_a,
-                sell_amount: to_wei(1000),
+                sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
@@ -446,6 +515,207 @@ mod tests {
                 token_a => to_wei(1_000_000),
                 token_b => to_wei(1_000_001)
             }
+        );
+    }
+
+    #[test]
+    fn finds_solution_excluding_orders_whose_limit_price_is_not_satisfiable() {
+        let token_a = Address::from_low_u64_be(0);
+        let token_b = Address::from_low_u64_be(1);
+        let orders = vec![
+            // Unreasonable order a -> b
+            OrderCreation {
+                sell_token: token_a,
+                buy_token: token_b,
+                sell_amount: to_wei(1),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            // Reasonable order a -> b
+            OrderCreation {
+                sell_token: token_a,
+                buy_token: token_b,
+                sell_amount: to_wei(1000),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            // Reasonable order b -> a
+            OrderCreation {
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: to_wei(1000),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            // Unreasonable order b -> a
+            OrderCreation {
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: to_wei(2),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+        ];
+
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1_000_000).as_u128(),
+            reserve1: to_wei(1_000_000).as_u128(),
+            address: Default::default(),
+        };
+        let result = solve(orders.into_iter(), &pool);
+
+        assert_eq!(result.trades.len(), 2);
+        assert_eq!(is_valid_solution(&result), true);
+    }
+
+    #[test]
+    fn returns_empty_solution_if_orders_have_no_overlap() {
+        let token_a = Address::from_low_u64_be(0);
+        let token_b = Address::from_low_u64_be(1);
+        let orders = vec![
+            OrderCreation {
+                sell_token: token_a,
+                buy_token: token_b,
+                sell_amount: to_wei(900),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            OrderCreation {
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: to_wei(900),
+                buy_amount: to_wei(1000),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+        ];
+
+        let pool = Pool {
+            token_pair: TokenPair::new(token_a, token_b).unwrap(),
+            reserve0: to_wei(1_000_001).as_u128(),
+            reserve1: to_wei(1_000_000).as_u128(),
+            address: Default::default(),
+        };
+        let result = solve(orders.into_iter(), &pool);
+        assert_eq!(result.trades.len(), 0);
+    }
+
+    #[test]
+    fn test_is_valid_solution() {
+        let token_a = Address::from_low_u64_be(0);
+        let token_b = Address::from_low_u64_be(1);
+        let orders = vec![
+            OrderCreation {
+                sell_token: token_a,
+                buy_token: token_b,
+                sell_amount: to_wei(10),
+                buy_amount: to_wei(8),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+            OrderCreation {
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: to_wei(10),
+                buy_amount: to_wei(9),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                ..Default::default()
+            },
+        ];
+
+        // Price in the middle is ok
+        assert_eq!(
+            is_valid_solution(&SinglePairSettlement {
+                clearing_prices: maplit::hashmap! {
+                    token_a => to_wei(1),
+                    token_b => to_wei(1)
+                },
+                interaction: None,
+                trades: orders
+                    .clone()
+                    .into_iter()
+                    .map(Trade::fully_matched)
+                    .collect()
+            }),
+            true
+        );
+
+        // Price at the limit of first order is ok
+        assert_eq!(
+            is_valid_solution(&SinglePairSettlement {
+                clearing_prices: maplit::hashmap! {
+                    token_a => to_wei(8),
+                    token_b => to_wei(10)
+                },
+                interaction: None,
+                trades: orders
+                    .clone()
+                    .into_iter()
+                    .map(Trade::fully_matched)
+                    .collect()
+            }),
+            true
+        );
+
+        // Price at the limit of second order is ok
+        assert_eq!(
+            is_valid_solution(&SinglePairSettlement {
+                clearing_prices: maplit::hashmap! {
+                    token_a => to_wei(10),
+                    token_b => to_wei(9)
+                },
+                interaction: None,
+                trades: orders
+                    .clone()
+                    .into_iter()
+                    .map(Trade::fully_matched)
+                    .collect()
+            }),
+            true
+        );
+
+        // Price violating first order is not ok
+        assert_eq!(
+            is_valid_solution(&SinglePairSettlement {
+                clearing_prices: maplit::hashmap! {
+                    token_a => to_wei(7),
+                    token_b => to_wei(10)
+                },
+                interaction: None,
+                trades: orders
+                    .clone()
+                    .into_iter()
+                    .map(Trade::fully_matched)
+                    .collect()
+            }),
+            false
+        );
+
+        // Price violating second order is not ok
+        assert_eq!(
+            is_valid_solution(&SinglePairSettlement {
+                clearing_prices: maplit::hashmap! {
+                    token_a => to_wei(10),
+                    token_b => to_wei(8)
+                },
+                interaction: None,
+                trades: orders.into_iter().map(Trade::fully_matched).collect()
+            }),
+            false
         );
     }
 }
