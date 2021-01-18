@@ -1,4 +1,4 @@
-use super::Database;
+use super::*;
 use crate::integer_conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::BigDecimal;
@@ -404,13 +404,17 @@ mod tests {
             BigUint::from(0u8)
         );
 
-        db.insert_trades(vec![Trade {
-            block_number: 0,
-            log_index: 0,
-            order_uid: order.order_meta_data.uid,
-            sell_amount: 3.into(),
-            ..Default::default()
-        }])
+        db.insert_events(vec![(
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            Event::Trade(Trade {
+                order_uid: order.order_meta_data.uid,
+                sell_amount: 3.into(),
+                ..Default::default()
+            }),
+        )])
         .await
         .unwrap();
         let order = get_order(true).await.unwrap().unwrap();
@@ -419,12 +423,17 @@ mod tests {
             BigUint::from(3u8)
         );
 
-        db.insert_trades(vec![Trade {
-            block_number: 1,
-            order_uid: order.order_meta_data.uid,
-            sell_amount: 6.into(),
-            ..Default::default()
-        }])
+        db.insert_events(vec![(
+            EventIndex {
+                block_number: 1,
+                log_index: 0,
+            },
+            Event::Trade(Trade {
+                order_uid: order.order_meta_data.uid,
+                sell_amount: 6.into(),
+                ..Default::default()
+            }),
+        )])
         .await
         .unwrap();
         let order = get_order(true).await.unwrap().unwrap();
@@ -434,12 +443,17 @@ mod tests {
         );
 
         // The order disappears because it is fully executed.
-        db.insert_trades(vec![Trade {
-            block_number: 2,
-            order_uid: order.order_meta_data.uid,
-            sell_amount: 1.into(),
-            ..Default::default()
-        }])
+        db.insert_events(vec![(
+            EventIndex {
+                block_number: 2,
+                log_index: 0,
+            },
+            Event::Trade(Trade {
+                order_uid: order.order_meta_data.uid,
+                sell_amount: 1.into(),
+                ..Default::default()
+            }),
+        )])
         .await
         .unwrap();
         assert!(get_order(true).await.is_none());
@@ -478,12 +492,17 @@ mod tests {
         db.insert_order(&order).await.unwrap();
 
         for i in 0..10 {
-            db.insert_trades(vec![Trade {
-                block_number: i,
-                order_uid: order.order_meta_data.uid,
-                sell_amount: U256::MAX,
-                ..Default::default()
-            }])
+            db.insert_events(vec![(
+                EventIndex {
+                    block_number: i,
+                    log_index: 0,
+                },
+                Event::Trade(Trade {
+                    order_uid: order.order_meta_data.uid,
+                    sell_amount: U256::MAX,
+                    ..Default::default()
+                }),
+            )])
             .await
             .unwrap();
         }

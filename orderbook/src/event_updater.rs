@@ -1,10 +1,10 @@
-use crate::database::{Database, Trade as DbTrade};
+use crate::database::{Database, Event as DbEvent, EventIndex as DbEventIndex, Trade as DbTrade};
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::{
     g_pv_2_settlement::{event_data::Trade as ContractTrade, Event as ContractEvent},
     GPv2Settlement,
 };
-use ethcontract::{errors::ExecutionError, Event, EventMetadata};
+use ethcontract::{errors::ExecutionError, Event as EthcontractEvent, EventMetadata};
 use futures::{Stream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
 use std::{convert::TryInto, ops::RangeInclusive};
@@ -14,14 +14,14 @@ use web3::{Transport, Web3};
 const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // When we insert new trade events into the database we will insert at most this many in one
 // transaction.
-const INSERT_TRADE_BATCH_SIZE: usize = 250;
+const INSERT_EVENT_BATCH_SIZE: usize = 250;
 
-pub struct TradeEvents {
+pub struct EventUpdater {
     contract: GPv2Settlement,
     db: Database,
 }
 
-impl TradeEvents {
+impl EventUpdater {
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
         let range = self.event_block_range().await?;
@@ -29,7 +29,7 @@ impl TradeEvents {
             .past_events(&range)
             .await
             .context("failed to get past events")?
-            .ready_chunks(INSERT_TRADE_BATCH_SIZE)
+            .ready_chunks(INSERT_EVENT_BATCH_SIZE)
             .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
         futures::pin_mut!(events);
         // We intentionally do not go with the obvious approach of deleting old events first and
@@ -54,16 +54,16 @@ impl TradeEvents {
         // in one transaction.
         let mut have_deleted_old_events = false;
         while let Some(trades) = events.next().await {
-            let trades = trades.context("failed to get event")?;
+            let events = trades.context("failed to get event")?;
             if !have_deleted_old_events {
                 self.db
-                    .replace_trades(*range.start(), trades)
+                    .replace_events(*range.start(), events)
                     .await
                     .context("failed to replace trades")?;
                 have_deleted_old_events = true;
             } else {
                 self.db
-                    .insert_trades(trades)
+                    .insert_events(events)
                     .await
                     .context("failed to insert trades")?;
             }
@@ -73,12 +73,7 @@ impl TradeEvents {
 
     async fn event_block_range(&self) -> Result<RangeInclusive<u64>> {
         let web3 = self.web3();
-        let last_handled_block = self
-            .db
-            .block_number_of_most_recent_trade()
-            .await
-            .context("failed to get last handle block")?
-            .unwrap_or(0);
+        let last_handled_block = self.db.block_number_of_most_recent_event().await?;
         let current_block = web3
             .eth()
             .block_number()
@@ -104,7 +99,7 @@ impl TradeEvents {
     async fn past_events(
         &self,
         block_range: &RangeInclusive<u64>,
-    ) -> Result<impl Stream<Item = Result<DbTrade>>, ExecutionError> {
+    ) -> Result<impl Stream<Item = Result<(DbEventIndex, DbEvent)>>, ExecutionError> {
         Ok(self
             .contract
             .all_events()
@@ -114,22 +109,21 @@ impl TradeEvents {
             .query_paginated()
             .await?
             .map_err(Error::from)
-            .try_filter_map(|Event { data, meta }| async move {
+            .try_filter_map(|EthcontractEvent { data, meta }| async move {
+                let meta = match meta {
+                    Some(meta) => meta,
+                    None => return Err(anyhow!("event without metadata")),
+                };
                 Ok(match data {
-                    ContractEvent::Trade(trade) => Some((trade, meta)),
+                    ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)?),
+                    // TODO: when new contract version with this event is released:
+                    //ContractEvent::OrderInvalidated(event) => Some(convert_trade(&event, &meta)),
                 })
-            })
-            .and_then(|(trade, meta)| async move {
-                match meta {
-                    Some(meta) => Ok((trade, meta)),
-                    None => Err(anyhow!("event without metadata")),
-                }
-            })
-            .and_then(|(trade, meta)| async move { convert_trade(&trade, &meta) }))
+            }))
     }
 }
 
-fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<DbTrade> {
+fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(DbEventIndex, DbEvent)> {
     let order_uid = OrderUid(
         trade
             .order_uid
@@ -137,12 +131,15 @@ fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<DbTrade>
             .try_into()
             .context("trade event order_uid has wrong number of bytes")?,
     );
-    Ok(DbTrade {
+    let index = DbEventIndex {
         block_number: meta.block_number,
         log_index: meta.log_index as u64,
+    };
+    let event = DbTrade {
         order_uid,
         sell_amount: trade.sell_amount,
         buy_amount: trade.buy_amount,
         fee_amount: trade.fee_amount,
-    })
+    };
+    Ok((index, DbEvent::Trade(event)))
 }

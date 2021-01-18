@@ -1,8 +1,8 @@
 pub mod api;
 pub mod database;
+pub mod event_updater;
 pub mod integer_conversions;
 pub mod storage;
-pub mod trade_events;
 
 use crate::storage::Storage;
 use anyhow::{anyhow, Context as _, Result};

@@ -24,6 +24,7 @@ CREATE TABLE orders (
     signature bytea NOT NULL -- r + s + v
 );
 
+-- Trade events from the smart contract.
 CREATE TABLE trades (
     block_number bigint NOT NULL,
     log_index bigint NOT NULL,
@@ -35,6 +36,7 @@ CREATE TABLE trades (
     PRIMARY KEY (block_number, log_index)
 );
 
+-- OrderInvalidated events from the smart contract.
 CREATE TABLE invalidations (
     block_number bigint NOT NULL,
     log_index bigint NOT NULL,
@@ -53,5 +55,5 @@ CREATE INDEX order_valid_to ON orders USING BTREE (valid_to);
 -- Get all trades belonging to an order.
 CREATE INDEX trade_order_uid on trades USING BTREE (order_uid, block_number, log_index);
 
--- Get all trades belonging to an order.
+-- Get all invalidations belonging to an order.
 CREATE INDEX invalidations_order_uid on invalidations USING BTREE (order_uid, block_number, log_index);
