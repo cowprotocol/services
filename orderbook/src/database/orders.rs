@@ -19,6 +19,7 @@ pub struct OrderFilter<'a> {
     pub sell_token: Option<&'a H160>,
     pub buy_token: Option<&'a H160>,
     pub exclude_fully_executed: bool,
+    pub exclude_invalidated: bool,
 }
 
 #[derive(sqlx::Type)]
@@ -87,8 +88,12 @@ impl Database {
                 o.signature, \
                 COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
                 COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
-                COALESCE(SUM(t.fee_amount), 0) AS sum_fee \
-            FROM orders o LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
+                COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
+                COUNT(invalidations.*) > 0 AS invalidated \
+            FROM \
+                orders o \
+                LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
+                LEFT OUTER JOIN invalidations ON o.uid = invalidations.order_uid \
             WHERE \
                 o.valid_to >= $1 AND \
                 ($2 IS NULL OR o.owner = $2) AND \
@@ -97,10 +102,11 @@ impl Database {
             GROUP BY o.uid \
         ) AS unfiltered \
         WHERE
-            $5 OR CASE kind \
+            ($5 OR CASE kind \
                 WHEN 'sell' THEN sum_sell < sell_amount \
                 WHEN 'buy' THEN sum_buy < buy_amount \
-            END;";
+            END) AND \
+            ($6 OR NOT invalidated);";
 
         sqlx::query_as(QUERY)
             .bind(filter.min_valid_to)
@@ -108,6 +114,7 @@ impl Database {
             .bind(filter.sell_token.map(|h160| h160.as_bytes()))
             .bind(filter.buy_token.map(|h160| h160.as_bytes()))
             .bind(!filter.exclude_fully_executed)
+            .bind(!filter.exclude_invalidated)
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
@@ -129,13 +136,10 @@ struct OrdersQueryRow {
     kind: DbOrderKind,
     partially_fillable: bool,
     signature: Vec<u8>,
-    // TODO: add to OrderMetaData
-    #[allow(dead_code)]
     sum_sell: BigDecimal,
-    #[allow(dead_code)]
     sum_buy: BigDecimal,
-    #[allow(dead_code)]
     sum_fee: BigDecimal,
+    invalidated: bool,
 }
 
 fn h160_from_vec(vec: Vec<u8>) -> Result<H160> {
@@ -161,6 +165,7 @@ impl OrdersQueryRow {
                 .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?,
             executed_fee_amount: big_decimal_to_big_uint(&self.sum_fee)
                 .ok_or_else(|| anyhow!("sum_fee is not an unsigned integer"))?,
+            invalidated: self.invalidated,
         };
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,
@@ -251,7 +256,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_filter_orders() {
+    async fn postgres_filter_orders_by_address() {
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let orders = vec![
@@ -365,7 +370,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_filter_executed_orders() {
+    async fn postgres_filter_orders_by_fully_executed() {
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
@@ -494,5 +499,72 @@ mod tests {
         let expected = u256_to_big_uint(&U256::MAX) * BigUint::from(10u8);
         assert!(expected.to_string().len() > 78);
         assert_eq!(order.order_meta_data.executed_sell_amount, expected);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_filter_orders_by_invalidated() {
+        let db = Database::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        let uid = OrderUid([0u8; 56]);
+        let order = Order {
+            order_meta_data: OrderMetaData {
+                uid,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&order).await.unwrap();
+
+        let is_order_valid = || async {
+            db.orders(&OrderFilter {
+                exclude_invalidated: true,
+                ..Default::default()
+            })
+            .boxed()
+            .next()
+            .await
+            .transpose()
+            .unwrap()
+            .is_some()
+        };
+
+        assert!(is_order_valid().await);
+
+        // Invalidating a different order doesn't affect first order.
+        sqlx::query(
+            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
+        )
+        .bind(0i64)
+        .bind(0i64)
+        .bind([1u8; 56].as_ref())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        assert!(is_order_valid().await);
+
+        // But invalidating it does work
+        sqlx::query(
+            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
+        )
+        .bind(1i64)
+        .bind(0i64)
+        .bind([0u8; 56].as_ref())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        assert!(!is_order_valid().await);
+
+        // And we can invalidate it several times.
+        sqlx::query(
+            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
+        )
+        .bind(2i64)
+        .bind(0i64)
+        .bind([0u8; 56].as_ref())
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        assert!(!is_order_valid().await);
     }
 }

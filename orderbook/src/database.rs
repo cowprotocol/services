@@ -33,6 +33,9 @@ impl Database {
         use sqlx::Executor;
         self.pool.execute(sqlx::query("TRUNCATE orders;")).await?;
         self.pool.execute(sqlx::query("TRUNCATE trades;")).await?;
+        self.pool
+            .execute(sqlx::query("TRUNCATE invalidations;"))
+            .await?;
         Ok(())
     }
 }

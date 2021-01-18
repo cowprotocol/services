@@ -266,6 +266,7 @@ pub struct OrderMetaData {
     pub executed_sell_amount: BigUint,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_fee_amount: BigUint,
+    pub invalidated: bool,
 }
 
 impl Default for OrderMetaData {
@@ -277,6 +278,7 @@ impl Default for OrderMetaData {
             executed_buy_amount: Default::default(),
             executed_sell_amount: Default::default(),
             executed_fee_amount: Default::default(),
+            invalidated: Default::default(),
         }
     }
 }
@@ -388,6 +390,7 @@ mod tests {
             "executedBuyAmount": "3",
             "executedSellAmount": "4",
             "executedFeeAmount": "5",
+            "invalidated": true,
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
             "sellAmount": "1",
@@ -407,6 +410,7 @@ mod tests {
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
                 executed_sell_amount: BigUint::from_bytes_be(&[4]),
                 executed_fee_amount: BigUint::from_bytes_be(&[5]),
+                invalidated: true,
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),

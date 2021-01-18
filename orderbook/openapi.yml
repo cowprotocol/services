@@ -226,6 +226,9 @@ components:
         executedFeeAmount:
           description: "The total amount of fees that have been executed for this order."
           $ref: "#/components/schemas/BigUint"
+        invalidated:
+          description: Has this order been invalidated?
+          type: boolean
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"

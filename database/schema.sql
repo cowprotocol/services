@@ -35,6 +35,13 @@ CREATE TABLE trades (
     PRIMARY KEY (block_number, log_index)
 );
 
+CREATE TABLE invalidations (
+    block_number bigint NOT NULL,
+    log_index bigint NOT NULL,
+    order_uid bytea NOT NULL,
+    PRIMARY KEY (block_number, log_index)
+);
+
 -- Indexes for common operations that should be efficient.
 
 -- Get a specific user's orders.
@@ -45,3 +52,6 @@ CREATE INDEX order_valid_to ON orders USING BTREE (valid_to);
 
 -- Get all trades belonging to an order.
 CREATE INDEX trade_order_uid on trades USING BTREE (order_uid, block_number, log_index);
+
+-- Get all trades belonging to an order.
+CREATE INDEX invalidations_order_uid on invalidations USING BTREE (order_uid, block_number, log_index);
