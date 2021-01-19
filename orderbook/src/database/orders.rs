@@ -20,6 +20,7 @@ pub struct OrderFilter<'a> {
     pub buy_token: Option<&'a H160>,
     pub exclude_fully_executed: bool,
     pub exclude_invalidated: bool,
+    pub uid: Option<&'a OrderUid>,
 }
 
 #[derive(sqlx::Type)]
@@ -98,21 +99,23 @@ impl Database {
                 o.valid_to >= $1 AND \
                 ($2 IS NULL OR o.owner = $2) AND \
                 ($3 IS NULL OR o.sell_token = $3) AND \
-                ($4 IS NULL OR o.buy_token = $4) \
+                ($4 IS NULL OR o.buy_token = $4) AND \
+                ($5 IS NULL OR o.uid = $5) \
             GROUP BY o.uid \
         ) AS unfiltered \
         WHERE
-            ($5 OR CASE kind \
+            ($6 OR CASE kind \
                 WHEN 'sell' THEN sum_sell < sell_amount \
                 WHEN 'buy' THEN sum_buy < buy_amount \
             END) AND \
-            ($6 OR NOT invalidated);";
+            ($7 OR NOT invalidated);";
 
         sqlx::query_as(QUERY)
             .bind(filter.min_valid_to)
             .bind(filter.owner.map(|h160| h160.as_bytes()))
             .bind(filter.sell_token.map(|h160| h160.as_bytes()))
             .bind(filter.buy_token.map(|h160| h160.as_bytes()))
+            .bind(filter.uid.map(|uid| uid.0.as_ref()))
             .bind(!filter.exclude_fully_executed)
             .bind(!filter.exclude_invalidated)
             .fetch(&self.pool)
@@ -364,6 +367,16 @@ mod tests {
                 ..Default::default()
             },
             &orders[1..3],
+        )
+        .await;
+
+        assert_orders(
+            &db,
+            &OrderFilter {
+                uid: Some(&orders[0].order_meta_data.uid),
+                ..Default::default()
+            },
+            &orders[0..1],
         )
         .await;
     }

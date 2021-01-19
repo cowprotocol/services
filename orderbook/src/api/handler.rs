@@ -1,4 +1,7 @@
-use crate::storage::{AddOrderResult, Storage};
+use crate::{
+    database::OrderFilter,
+    storage::{AddOrderResult, Storage},
+};
 use anyhow::Result;
 use chrono::prelude::{DateTime, FixedOffset, Utc};
 use model::{
@@ -97,7 +100,13 @@ pub async fn get_orders(
     sell_token: Option<H160>,
     buy_token: Option<H160>,
 ) -> Result<impl warp::Reply, Infallible> {
-    let mut orders = match storage.get_orders().await {
+    let filter = OrderFilter {
+        owner: owner.as_ref(),
+        sell_token: sell_token.as_ref(),
+        buy_token: buy_token.as_ref(),
+        ..Default::default()
+    };
+    let orders = match storage.get_orders(&filter).await {
         Ok(orders) => orders,
         Err(err) => {
             tracing::error!(?err, "get_orders error");
@@ -107,17 +116,6 @@ pub async fn get_orders(
             ));
         }
     };
-    orders.retain(|order| {
-        owner
-            .map(|owner| owner == order.order_meta_data.owner)
-            .unwrap_or(true)
-            && sell_token
-                .map(|token| token == order.order_creation.sell_token)
-                .unwrap_or(true)
-            && buy_token
-                .map(|token| token == order.order_creation.buy_token)
-                .unwrap_or(true)
-    });
     Ok(with_status(json(&orders), StatusCode::OK))
 }
 
@@ -125,16 +123,26 @@ pub async fn get_order_by_uid(
     uid: OrderUid,
     storage: Arc<dyn Storage>,
 ) -> Result<impl Reply, Infallible> {
-    Ok(match storage.get_order(&uid).await {
-        Ok(Some(order)) => with_status(json(&order), StatusCode::OK),
-        Ok(None) => with_status(
+    let filter = OrderFilter {
+        uid: Some(&uid),
+        ..Default::default()
+    };
+    let orders = match storage.get_orders(&filter).await {
+        Ok(orders) => orders,
+        Err(err) => {
+            tracing::error!(?err, ?uid, "get_order error");
+            return Ok(with_status(
+                internal_error(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    Ok(match orders.first() {
+        Some(order) => with_status(json(&order), StatusCode::OK),
+        None => with_status(
             error("NotFound", "Order was not found"),
             StatusCode::NOT_FOUND,
         ),
-        Err(err) => {
-            tracing::error!(?err, ?uid, "get_order error");
-            with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
-        }
     })
 }
 

@@ -93,7 +93,10 @@ pub fn get_fee_info() -> impl Filter<Extract = (impl warp::Reply,), Error = warp
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use crate::storage::{AddOrderResult, InMemoryOrderBook as OrderBook};
+    use crate::{
+        database::OrderFilter,
+        storage::{AddOrderResult, InMemoryOrderBook as OrderBook},
+    };
     use hex_literal::hex;
     use model::order::Order;
     use model::{order::OrderBuilder, DomainSeparator};
@@ -112,7 +115,7 @@ pub mod test_util {
         let response = request().path("/orders").method("GET").reply(&filter).await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_orders: Vec<Order> = serde_json::from_slice(response.body()).unwrap();
-        let orderbook_orders = orderbook.get_orders().await.unwrap();
+        let orderbook_orders = orderbook.get_orders(&OrderFilter::default()).await.unwrap();
         assert_eq!(response_orders, orderbook_orders);
     }
 
@@ -190,7 +193,7 @@ pub mod test_util {
             .await;
         assert_eq!(response.status(), StatusCode::OK);
         let response_orders: Order = serde_json::from_slice(response.body()).unwrap();
-        let orderbook_orders = orderbook.get_orders().await.unwrap();
+        let orderbook_orders = orderbook.get_orders(&OrderFilter::default()).await.unwrap();
         assert_eq!(response_orders, orderbook_orders[0]);
     }
     #[tokio::test]

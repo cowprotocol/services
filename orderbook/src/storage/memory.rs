@@ -1,4 +1,4 @@
-use super::{AddOrderResult, RemoveOrderResult, Storage};
+use super::*;
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::future;
@@ -7,10 +7,7 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::U256;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    time::SystemTime,
-};
+use std::collections::{hash_map::Entry, HashMap};
 use tokio::sync::RwLock;
 use tracing::info;
 
@@ -99,12 +96,28 @@ impl Storage for OrderBook {
         Ok(AddOrderResult::Added(uid))
     }
 
-    async fn get_orders(&self) -> Result<Vec<Order>> {
-        Ok(self.orders.read().await.values().cloned().collect())
-    }
-
-    async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
-        Ok(self.orders.read().await.get(uid).cloned())
+    async fn get_orders(&self, filter: &OrderFilter<'_>) -> Result<Vec<Order>> {
+        Ok(self
+            .orders
+            .read()
+            .await
+            .values()
+            .filter(|order| {
+                filter
+                    .owner
+                    .map(|owner| *owner == order.order_meta_data.owner)
+                    .unwrap_or(true)
+                    && filter
+                        .sell_token
+                        .map(|token| *token == order.order_creation.sell_token)
+                        .unwrap_or(true)
+                    && filter
+                        .buy_token
+                        .map(|token| *token == order.order_creation.buy_token)
+                        .unwrap_or(true)
+            })
+            .cloned()
+            .collect())
     }
 
     #[allow(dead_code)]
@@ -125,17 +138,6 @@ impl Storage for OrderBook {
     }
 }
 
-fn now_in_epoch_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("now earlier than epoch")
-        .as_secs()
-}
-
-fn has_future_valid_to(now_in_epoch_seconds: u64, order: &OrderCreation) -> bool {
-    order.valid_to as u64 > now_in_epoch_seconds
-}
-
 #[cfg(test)]
 pub mod test_util {
     use super::*;
@@ -145,7 +147,14 @@ pub mod test_util {
         let orderbook = OrderBook::default();
         let order = OrderCreation::default();
         orderbook.add_order(order).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(
             orderbook.add_order(order).await.unwrap(),
             AddOrderResult::DuplicatedOrder
@@ -160,9 +169,23 @@ pub mod test_util {
             AddOrderResult::Added(uid) => uid,
             _ => panic!("unexpected result"),
         };
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         orderbook.remove_order(&uid).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 0);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
     }
 
     #[tokio::test]
@@ -173,12 +196,33 @@ pub mod test_util {
             ..Default::default()
         };
         orderbook.add_order(order).await.unwrap();
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         orderbook
             .remove_expired_orders((u32::MAX - 11) as u64)
             .await;
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 1);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
         orderbook.remove_expired_orders((u32::MAX - 9) as u64).await;
-        assert_eq!(orderbook.get_orders().await.unwrap().len(), 0);
+        assert_eq!(
+            orderbook
+                .get_orders(&OrderFilter::default())
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
     }
 }
