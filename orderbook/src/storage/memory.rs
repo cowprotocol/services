@@ -96,7 +96,7 @@ impl Storage for OrderBook {
         Ok(AddOrderResult::Added(uid))
     }
 
-    async fn get_orders(&self, filter: &OrderFilter<'_>) -> Result<Vec<Order>> {
+    async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
         Ok(self
             .orders
             .read()
@@ -105,15 +105,15 @@ impl Storage for OrderBook {
             .filter(|order| {
                 filter
                     .owner
-                    .map(|owner| *owner == order.order_meta_data.owner)
+                    .map(|owner| owner == order.order_meta_data.owner)
                     .unwrap_or(true)
                     && filter
                         .sell_token
-                        .map(|token| *token == order.order_creation.sell_token)
+                        .map(|token| token == order.order_creation.sell_token)
                         .unwrap_or(true)
                     && filter
                         .buy_token
-                        .map(|token| *token == order.order_creation.buy_token)
+                        .map(|token| token == order.order_creation.buy_token)
                         .unwrap_or(true)
             })
             .cloned()

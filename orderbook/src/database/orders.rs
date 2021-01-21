@@ -13,14 +13,14 @@ use std::convert::TryInto;
 
 /// Any default value means that this field is unfiltered.
 #[derive(Default)]
-pub struct OrderFilter<'a> {
+pub struct OrderFilter {
     pub min_valid_to: u32,
-    pub owner: Option<&'a H160>,
-    pub sell_token: Option<&'a H160>,
-    pub buy_token: Option<&'a H160>,
+    pub owner: Option<H160>,
+    pub sell_token: Option<H160>,
+    pub buy_token: Option<H160>,
     pub exclude_fully_executed: bool,
     pub exclude_invalidated: bool,
-    pub uid: Option<&'a OrderUid>,
+    pub uid: Option<OrderUid>,
 }
 
 #[derive(sqlx::Type)]
@@ -112,10 +112,10 @@ impl Database {
 
         sqlx::query_as(QUERY)
             .bind(filter.min_valid_to)
-            .bind(filter.owner.map(|h160| h160.as_bytes()))
-            .bind(filter.sell_token.map(|h160| h160.as_bytes()))
-            .bind(filter.buy_token.map(|h160| h160.as_bytes()))
-            .bind(filter.uid.map(|uid| uid.0.as_ref()))
+            .bind(filter.owner.as_ref().map(|h160| h160.as_bytes()))
+            .bind(filter.sell_token.as_ref().map(|h160| h160.as_bytes()))
+            .bind(filter.buy_token.as_ref().map(|h160| h160.as_bytes()))
+            .bind(filter.uid.as_ref().map(|uid| uid.0.as_ref()))
             .bind(!filter.exclude_fully_executed)
             .bind(!filter.exclude_invalidated)
             .fetch(&self.pool)
@@ -307,7 +307,7 @@ mod tests {
             db.insert_order(order).await.unwrap();
         }
 
-        async fn assert_orders(db: &Database, filter: &OrderFilter<'_>, expected: &[Order]) {
+        async fn assert_orders(db: &Database, filter: &OrderFilter, expected: &[Order]) {
             let filtered = db
                 .orders(&filter)
                 .try_collect::<HashSet<Order>>()
@@ -321,7 +321,7 @@ mod tests {
         assert_orders(
             &db,
             &OrderFilter {
-                owner: Some(&owner),
+                owner: Some(owner),
                 ..Default::default()
             },
             &orders[0..2],
@@ -332,7 +332,7 @@ mod tests {
         assert_orders(
             &db,
             &OrderFilter {
-                sell_token: Some(&sell_token),
+                sell_token: Some(sell_token),
                 ..Default::default()
             },
             &orders[0..3],
@@ -343,7 +343,7 @@ mod tests {
         assert_orders(
             &db,
             &OrderFilter {
-                buy_token: Some(&buy_token),
+                buy_token: Some(buy_token),
                 ..Default::default()
             },
             &orders[1..3],
@@ -373,7 +373,7 @@ mod tests {
         assert_orders(
             &db,
             &OrderFilter {
-                uid: Some(&orders[0].order_meta_data.uid),
+                uid: Some(orders[0].order_meta_data.uid),
                 ..Default::default()
             },
             &orders[0..1],

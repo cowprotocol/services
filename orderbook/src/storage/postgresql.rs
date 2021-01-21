@@ -40,7 +40,7 @@ impl Storage for OrderBook {
         todo!()
     }
 
-    async fn get_orders(&self, filter: &OrderFilter<'_>) -> Result<Vec<Order>> {
+    async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
         self.database.orders(filter).try_collect::<Vec<_>>().await
     }
 

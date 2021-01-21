@@ -1,3 +1,4 @@
+use super::{error, internal_error};
 use crate::{
     database::OrderFilter,
     storage::{AddOrderResult, Storage},
@@ -13,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     http::StatusCode,
-    reply::{json, with_status, Json},
+    reply::{json, with_status},
     Reply,
 };
 
@@ -27,27 +28,6 @@ pub struct FeeInfo {
     #[serde(with = "u256_decimal")]
     pub minimal_fee: U256,
     pub fee_ratio: u32,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Error<'a> {
-    error_type: &'a str,
-    description: &'a str,
-}
-
-fn error(error_type: &str, description: impl AsRef<str>) -> Json {
-    json(&Error {
-        error_type,
-        description: description.as_ref(),
-    })
-}
-
-fn internal_error() -> Json {
-    json(&Error {
-        error_type: "InternalServerError",
-        description: "",
-    })
 }
 
 pub async fn add_order(
@@ -94,37 +74,12 @@ pub async fn add_order(
     Ok(with_status(body, status_code))
 }
 
-pub async fn get_orders(
-    storage: Arc<dyn Storage>,
-    owner: Option<H160>,
-    sell_token: Option<H160>,
-    buy_token: Option<H160>,
-) -> Result<impl warp::Reply, Infallible> {
-    let filter = OrderFilter {
-        owner: owner.as_ref(),
-        sell_token: sell_token.as_ref(),
-        buy_token: buy_token.as_ref(),
-        ..Default::default()
-    };
-    let orders = match storage.get_orders(&filter).await {
-        Ok(orders) => orders,
-        Err(err) => {
-            tracing::error!(?err, "get_orders error");
-            return Ok(with_status(
-                internal_error(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
-    Ok(with_status(json(&orders), StatusCode::OK))
-}
-
 pub async fn get_order_by_uid(
     uid: OrderUid,
     storage: Arc<dyn Storage>,
 ) -> Result<impl Reply, Infallible> {
     let filter = OrderFilter {
-        uid: Some(&uid),
+        uid: Some(uid),
         ..Default::default()
     };
     let orders = match storage.get_orders(&filter).await {

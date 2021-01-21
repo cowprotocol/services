@@ -30,7 +30,7 @@ pub enum RemoveOrderResult {
 pub trait Storage: Send + Sync {
     async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult>;
     async fn remove_order(&self, uid: &OrderUid) -> Result<RemoveOrderResult>;
-    async fn get_orders(&self, filter: &OrderFilter<'_>) -> Result<Vec<Order>>;
+    async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
     async fn run_maintenance(&self, settlement_contract: &GPv2Settlement) -> Result<()>;
 }
 
