@@ -1,5 +1,4 @@
 mod filter;
-mod handler;
 
 use crate::storage::Storage;
 use serde::Serialize;

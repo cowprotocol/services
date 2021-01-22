@@ -1,5 +1,7 @@
-use super::handler;
-use crate::{database::OrderFilter, storage::Storage};
+use crate::{
+    database::OrderFilter,
+    storage::{AddOrderResult, Storage},
+};
 use anyhow::Result;
 use chrono::{DateTime, FixedOffset, Utc};
 use hex::{FromHex, FromHexError};
@@ -19,25 +21,69 @@ use warp::{
 
 const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
 
-fn with_orderbook(
-    orderbook: Arc<dyn Storage>,
-) -> impl Filter<Extract = (Arc<dyn Storage>,), Error = std::convert::Infallible> + Clone {
-    warp::any().map(move || orderbook.clone())
-}
-
 fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone {
     // (rejecting huge payloads)...
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
 }
 
+pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
+{
+    warp::path!("orders")
+        .and(warp::post())
+        .and(extract_user_order())
+}
+
+pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
+    let (body, status_code) = match result {
+        Ok(AddOrderResult::Added(uid)) => (warp::reply::json(&uid), StatusCode::CREATED),
+        Ok(AddOrderResult::DuplicatedOrder) => (
+            super::error("DuplicatedOrder", "order already exists"),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(AddOrderResult::InvalidSignature) => (
+            super::error("InvalidSignature", "invalid signature"),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(AddOrderResult::Forbidden) => (
+            super::error("Forbidden", "Forbidden, your account is deny-listed"),
+            StatusCode::FORBIDDEN,
+        ),
+        Ok(AddOrderResult::PastValidTo) => (
+            super::error("PastValidTo", "validTo is in the past"),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(AddOrderResult::MissingOrderData) => (
+            super::error(
+                "MissingOrderData",
+                "at least 1 field of orderCreation is missing, please check the field",
+            ),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(AddOrderResult::InsufficientFunds) => (
+            super::error(
+                "InsufficientFunds",
+                "order owner must have funds worth at least x in his account",
+            ),
+            StatusCode::BAD_REQUEST,
+        ),
+        Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
+    };
+    with_status(body, status_code)
+}
+
 pub fn create_order(
     orderbook: Arc<dyn Storage>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    warp::path!("orders")
-        .and(warp::post())
-        .and(with_orderbook(orderbook))
-        .and(extract_user_order())
-        .and_then(handler::add_order)
+    create_order_request().and_then(move |order| {
+        let orderbook = orderbook.clone();
+        async move {
+            let result = orderbook.add_order(order).await;
+            if let Err(err) = &result {
+                tracing::error!(?err, ?order, "add_order error");
+            }
+            Result::<_, Infallible>::Ok(create_order_response(result))
+        }
+    })
 }
 
 pub fn get_orders_request() -> impl Filter<Extract = (OrderFilter,), Error = Rejection> + Clone {
@@ -179,7 +225,6 @@ pub fn get_fee_info() -> impl Filter<Extract = (impl Reply,), Error = Rejection>
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use crate::storage::InMemoryOrderBook as OrderBook;
     use futures::StreamExt;
     use hex_literal::hex;
     use model::order::Order;
@@ -283,32 +328,37 @@ pub mod test_util {
     }
 
     #[tokio::test]
-    async fn create_order_route() {
-        let orderbook = Arc::new(OrderBook::default());
-        let filter = create_order(orderbook.clone());
+    async fn create_order_request_ok() {
+        let filter = create_order_request();
         let order = OrderCreation::default();
-        let expected_uid = json!(
-            "0xbd185ee633752c56b3eabec61259e8a65c765943665a2c17ad8b74a119e5f1ca7e5f4552091a69125d5dfcb7b8c2659029395bdfffffffff"
-        );
-        let post = || async {
-            request()
-                .path("/orders")
-                .method("POST")
-                .header("content-type", "application/json")
-                .json(&order)
-                .reply(&filter)
-                .await
-        };
-        let response = post().await;
+        let request = request()
+            .path("/orders")
+            .method("POST")
+            .header("content-type", "application/json")
+            .json(&order);
+        let result = request.filter(&filter).await.unwrap();
+        assert_eq!(result, order);
+    }
+
+    #[tokio::test]
+    async fn create_order_response_created() {
+        let uid = OrderUid([1u8; 56]);
+        let response = create_order_response(Ok(AddOrderResult::Added(uid))).into_response();
         assert_eq!(response.status(), StatusCode::CREATED);
-        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        let body = response_body(response).await;
+        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let expected= json!(
+            "0x0101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101"
+        );
+        assert_eq!(body, expected);
+    }
 
-        assert_eq!(body, expected_uid);
-        // Posting again should fail because order already exists.
-        let response = post().await;
+    #[tokio::test]
+    async fn create_order_response_duplicate() {
+        let response = create_order_response(Ok(AddOrderResult::DuplicatedOrder)).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-
-        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        let body = response_body(response).await;
+        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
         let expected_error =
             json!({"errorType": "DuplicatedOrder", "description": "order already exists"});
         assert_eq!(body, expected_error);
