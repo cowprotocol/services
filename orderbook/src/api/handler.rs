@@ -1,22 +1,12 @@
 use super::{error, internal_error};
-use crate::{
-    database::OrderFilter,
-    storage::{AddOrderResult, Storage},
-};
+use crate::storage::{AddOrderResult, Storage};
 use anyhow::Result;
 use chrono::prelude::{DateTime, FixedOffset, Utc};
-use model::{
-    order::{OrderCreation, OrderUid},
-    u256_decimal,
-};
+use model::{order::OrderCreation, u256_decimal};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
-use warp::{
-    http::StatusCode,
-    reply::{json, with_status},
-    Reply,
-};
+use warp::{http::StatusCode, reply::with_status, Reply};
 
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i32 = 3600;
 
@@ -72,33 +62,6 @@ pub async fn add_order(
         }
     };
     Ok(with_status(body, status_code))
-}
-
-pub async fn get_order_by_uid(
-    uid: OrderUid,
-    storage: Arc<dyn Storage>,
-) -> Result<impl Reply, Infallible> {
-    let filter = OrderFilter {
-        uid: Some(uid),
-        ..Default::default()
-    };
-    let orders = match storage.get_orders(&filter).await {
-        Ok(orders) => orders,
-        Err(err) => {
-            tracing::error!(?err, ?uid, "get_order error");
-            return Ok(with_status(
-                internal_error(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
-    Ok(match orders.first() {
-        Some(order) => with_status(json(&order), StatusCode::OK),
-        None => with_status(
-            error("NotFound", "Order was not found"),
-            StatusCode::NOT_FOUND,
-        ),
-    })
 }
 
 #[allow(unused_variables)]
