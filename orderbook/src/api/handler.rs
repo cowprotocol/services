@@ -1,24 +1,9 @@
 use super::{error, internal_error};
 use crate::storage::{AddOrderResult, Storage};
 use anyhow::Result;
-use chrono::prelude::{DateTime, FixedOffset, Utc};
-use model::{order::OrderCreation, u256_decimal};
-use primitive_types::{H160, U256};
-use serde::{Deserialize, Serialize};
+use model::order::OrderCreation;
 use std::{convert::Infallible, sync::Arc};
 use warp::{http::StatusCode, reply::with_status, Reply};
-
-const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i32 = 3600;
-
-/// Fee struct being returned on fee API requests
-#[derive(PartialEq, Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeeInfo {
-    pub expiration_date: DateTime<Utc>,
-    #[serde(with = "u256_decimal")]
-    pub minimal_fee: U256,
-    pub fee_ratio: u32,
-}
 
 pub async fn add_order(
     storage: Arc<dyn Storage>,
@@ -62,15 +47,4 @@ pub async fn add_order(
         }
     };
     Ok(with_status(body, status_code))
-}
-
-#[allow(unused_variables)]
-pub async fn get_fee_info(sell_token: H160) -> Result<impl Reply, Infallible> {
-    let fee_info = FeeInfo {
-        expiration_date: chrono::offset::Utc::now()
-            + FixedOffset::east(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
-        minimal_fee: U256::zero(),
-        fee_ratio: 0u32,
-    };
-    Ok(with_status(warp::reply::json(&fee_info), StatusCode::OK))
 }
