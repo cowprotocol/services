@@ -264,11 +264,11 @@ pub mod test_util {
     #[tokio::test]
     async fn get_fee_info_request_ok() {
         let filter = get_fee_info_request();
-        let token = String::from("0x0000000000000000000000000000000000000000");
+        let token = String::from("0x0000000000000000000000000000000000000001");
         let path_string = format!("/tokens/{}/fee", token);
         let request = request().path(&path_string).method("GET");
         let result = request.filter(&filter).await.unwrap();
-        assert_eq!(result, H160::zero());
+        assert_eq!(result, H160::from_low_u64_be(1));
     }
 
     #[tokio::test]
