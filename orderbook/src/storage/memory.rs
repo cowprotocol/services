@@ -1,11 +1,9 @@
 use super::*;
+use crate::orderbook::{has_future_valid_to, now_in_epoch_seconds};
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::future;
-use model::{
-    order::{Order, OrderCreation, OrderUid},
-    DomainSeparator,
-};
+use model::order::{Order, OrderUid};
 use primitive_types::U256;
 use std::collections::{hash_map::Entry, HashMap};
 use tokio::sync::RwLock;
@@ -13,19 +11,11 @@ use tracing::info;
 
 #[derive(Debug, Default)]
 pub struct OrderBook {
-    domain_separator: DomainSeparator,
     // TODO: Store more efficiently (for example HashMap) depending on functionality we need.
     orders: RwLock<HashMap<OrderUid, Order>>,
 }
 
 impl OrderBook {
-    pub fn new(domain_separator: DomainSeparator) -> Self {
-        Self {
-            domain_separator,
-            orders: RwLock::new(HashMap::new()),
-        }
-    }
-
     async fn remove_expired_orders(&self, now_in_epoch_seconds: u64) {
         // TODO: use the timestamp from the most recent block instead?
         let mut orders = self.orders.write().await;
@@ -77,14 +67,7 @@ impl OrderBook {
 
 #[async_trait::async_trait]
 impl Storage for OrderBook {
-    async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult> {
-        if !has_future_valid_to(now_in_epoch_seconds(), &order) {
-            return Ok(AddOrderResult::PastValidTo);
-        }
-        let order = match Order::from_order_creation(order, &self.domain_separator) {
-            Some(order) => order,
-            None => return Ok(AddOrderResult::InvalidSignature),
-        };
+    async fn add_order(&self, order: Order) -> Result<AddOrderResult> {
         let uid = order.order_meta_data.uid;
         let mut orders = self.orders.write().await;
         match orders.entry(uid) {
@@ -115,6 +98,10 @@ impl Storage for OrderBook {
                         .buy_token
                         .map(|token| token == order.order_creation.buy_token)
                         .unwrap_or(true)
+                    && filter
+                        .uid
+                        .map(|uid| uid == order.order_meta_data.uid)
+                        .unwrap_or(true)
             })
             .cloned()
             .collect())
@@ -134,19 +121,22 @@ impl Storage for OrderBook {
         let remove_order_future = self.remove_expired_orders(now_in_epoch_seconds());
         let remove_settled_orders_future = self.remove_settled_orders(settlement_contract);
         futures::join!(remove_order_future, remove_settled_orders_future);
+        println!("maintained");
         Ok(())
     }
 }
 
 #[cfg(test)]
 pub mod test_util {
+    use model::order::OrderCreation;
+
     use super::*;
 
     #[tokio::test]
     async fn cannot_add_order_twice() {
         let orderbook = OrderBook::default();
-        let order = OrderCreation::default();
-        orderbook.add_order(order).await.unwrap();
+        let order = Order::default();
+        orderbook.add_order(order.clone()).await.unwrap();
         assert_eq!(
             orderbook
                 .get_orders(&OrderFilter::default())
@@ -164,7 +154,7 @@ pub mod test_util {
     #[tokio::test]
     async fn test_simple_removing_order() {
         let orderbook = OrderBook::default();
-        let order = OrderCreation::default();
+        let order = Order::default();
         let uid = match orderbook.add_order(order).await.unwrap() {
             AddOrderResult::Added(uid) => uid,
             _ => panic!("unexpected result"),
@@ -191,8 +181,11 @@ pub mod test_util {
     #[tokio::test]
     async fn removes_expired_orders() {
         let orderbook = OrderBook::default();
-        let order = OrderCreation {
-            valid_to: u32::MAX - 10,
+        let order = Order {
+            order_creation: OrderCreation {
+                valid_to: u32::MAX - 10,
+                ..Default::default()
+            },
             ..Default::default()
         };
         orderbook.add_order(order).await.unwrap();

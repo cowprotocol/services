@@ -3,7 +3,7 @@ mod get_fee_info;
 mod get_order_by_uid;
 mod get_orders;
 
-use crate::storage::Storage;
+use crate::orderbook::Orderbook;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
 use primitive_types::H160;
@@ -15,7 +15,7 @@ use warp::{
 };
 
 pub fn handle_all_routes(
-    orderbook: Arc<dyn Storage>,
+    orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
     let order_creation = create_order::create_order(orderbook.clone());
     let order_getter = get_orders::get_orders(orderbook.clone());

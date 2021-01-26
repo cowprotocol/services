@@ -1,4 +1,5 @@
-use crate::{database::OrderFilter, storage::Storage};
+use crate::database::OrderFilter;
+use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::{Order, OrderUid};
 use std::{convert::Infallible, sync::Arc};
@@ -35,7 +36,7 @@ pub fn get_order_by_uid_response(result: Result<Vec<Order>>) -> impl Reply {
 }
 
 pub fn get_order_by_uid(
-    orderbook: Arc<dyn Storage>,
+    orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     get_order_by_uid_request().and_then(move |order_filter| {
         let orderbook = orderbook.clone();

@@ -3,35 +3,21 @@ use crate::database::{Database, OrderFilter};
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::TryStreamExt;
-use model::{
-    order::{Order, OrderCreation, OrderUid},
-    DomainSeparator,
-};
+use model::order::{Order, OrderUid};
 
 pub struct OrderBook {
-    domain_separator: DomainSeparator,
     database: Database,
 }
 
 impl OrderBook {
-    pub fn _new(domain_separator: DomainSeparator, database: Database) -> Self {
-        Self {
-            domain_separator,
-            database,
-        }
+    pub fn _new(database: Database) -> Self {
+        Self { database }
     }
 }
 
 #[async_trait::async_trait]
 impl Storage for OrderBook {
-    async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult> {
-        if !has_future_valid_to(now_in_epoch_seconds(), &order) {
-            return Ok(AddOrderResult::PastValidTo);
-        }
-        let order = match Order::from_order_creation(order, &self.domain_separator) {
-            Some(order) => order,
-            None => return Ok(AddOrderResult::InvalidSignature),
-        };
+    async fn add_order(&self, order: Order) -> Result<AddOrderResult> {
         self.database.insert_order(&order).await?;
         Ok(AddOrderResult::Added(order.order_meta_data.uid))
     }

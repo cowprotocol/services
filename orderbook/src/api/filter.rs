@@ -1,0 +1,274 @@
+use super::handler;
+use crate::{database::OrderFilter, orderbook::Orderbook};
+use anyhow::Result;
+use hex::{FromHex, FromHexError};
+use model::{
+    h160_hexadecimal,
+    order::{Order, OrderCreation, OrderUid},
+};
+use primitive_types::H160;
+use serde::Deserialize;
+use std::{convert::Infallible, str::FromStr, sync::Arc};
+use warp::{
+    http::StatusCode,
+    reply::{json, with_status},
+    Filter, Rejection, Reply,
+};
+
+const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
+
+fn with_orderbook(
+    orderbook: Arc<Orderbook>,
+) -> impl Filter<Extract = (Arc<Orderbook>,), Error = std::convert::Infallible> + Clone {
+    warp::any().map(move || orderbook.clone())
+}
+
+fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone {
+    // (rejecting huge payloads)...
+    warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
+}
+
+pub fn create_order(
+    orderbook: Arc<Orderbook>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path!("orders")
+        .and(warp::post())
+        .and(with_orderbook(orderbook))
+        .and(extract_user_order())
+        .and_then(handler::add_order)
+}
+
+pub fn get_orders_request() -> impl Filter<Extract = (OrderFilter,), Error = Rejection> + Clone {
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Query {
+        owner: Option<H160Wrapper>,
+        sell_token: Option<H160Wrapper>,
+        buy_token: Option<H160Wrapper>,
+    }
+
+    let to_h160 = |option: Option<H160Wrapper>| option.map(|wrapper| wrapper.0);
+
+    warp::path!("orders")
+        .and(warp::get())
+        .and(warp::query::<Query>())
+        .map(move |query: Query| OrderFilter {
+            owner: to_h160(query.owner),
+            sell_token: to_h160(query.sell_token),
+            buy_token: to_h160(query.buy_token),
+            exclude_fully_executed: true,
+            exclude_invalidated: true,
+            ..Default::default()
+        })
+}
+
+pub fn get_orders_response(result: Result<Vec<Order>>) -> impl Reply {
+    let orders = match result {
+        Ok(orders) => orders,
+        Err(err) => {
+            tracing::error!(?err, "get_orders error");
+            return Ok(with_status(
+                super::internal_error(),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ));
+        }
+    };
+    Ok(with_status(json(&orders), StatusCode::OK))
+}
+
+pub fn get_orders(
+    orderbook: Arc<Orderbook>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    get_orders_request().and_then(move |order_filter| {
+        let orderbook = orderbook.clone();
+        async move {
+            let result = orderbook.get_orders(&order_filter).await;
+            Result::<_, Infallible>::Ok(get_orders_response(result))
+        }
+    })
+}
+
+pub fn get_order_by_uid(
+    orderbook: Arc<Orderbook>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path!("orders" / OrderUid)
+        .and(warp::get())
+        .and(with_orderbook(orderbook))
+        .and_then(handler::get_order_by_uid)
+}
+
+/// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
+#[derive(Deserialize)]
+#[serde(transparent)]
+struct H160Wrapper(#[serde(with = "h160_hexadecimal")] H160);
+impl FromStr for H160Wrapper {
+    type Err = FromHexError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        Ok(H160Wrapper(H160(FromHex::from_hex(s)?)))
+    }
+}
+
+pub fn get_fee_info() -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path!("tokens" / H160Wrapper / "fee")
+        .and(warp::get())
+        .map(|token: H160Wrapper| token.0)
+        .and_then(handler::get_fee_info)
+}
+
+#[cfg(test)]
+pub mod test_util {
+    use super::*;
+    use crate::{
+        database::OrderFilter,
+        storage::{AddOrderResult, InMemoryOrderBook as OrderBook},
+    };
+    use futures::StreamExt;
+    use hex_literal::hex;
+    use model::{order::Order, DomainSeparator};
+    use primitive_types::U256;
+    use serde_json::json;
+    use warp::{
+        http::StatusCode,
+        hyper::{Body, Response},
+        test::{request, RequestBuilder},
+    };
+
+    async fn response_body(response: Response<Body>) -> Vec<u8> {
+        let mut body = response.into_body();
+        let mut result = Vec::new();
+        while let Some(bytes) = body.next().await {
+            result.extend_from_slice(bytes.unwrap().as_ref());
+        }
+        result
+    }
+
+    #[tokio::test]
+    async fn get_orders_request_ok() {
+        let order_filter = |request: RequestBuilder| async move {
+            let filter = get_orders_request();
+            request.method("GET").filter(&filter).await
+        };
+
+        let result = order_filter(request().path("/orders")).await.unwrap();
+        assert_eq!(result.owner, None);
+        assert_eq!(result.buy_token, None);
+        assert_eq!(result.sell_token, None);
+
+        let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
+        let sell = H160::from_slice(&hex!("0000000000000000000000000000000000000002"));
+        let buy = H160::from_slice(&hex!("0000000000000000000000000000000000000003"));
+        let path = format!(
+            "/orders?owner=0x{:x}&sellToken=0x{:x}&buyToken=0x{:x}",
+            owner, sell, buy
+        );
+        let request = request().path(path.as_str());
+        let result = order_filter(request).await.unwrap();
+        assert_eq!(result.owner, Some(owner));
+        assert_eq!(result.buy_token, Some(buy));
+        assert_eq!(result.sell_token, Some(sell));
+    }
+
+    #[tokio::test]
+    async fn get_orders_response_ok() {
+        let orders = vec![Order::default()];
+        let response = get_orders_response(Ok(orders.clone())).into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        let response_orders: Vec<Order> = serde_json::from_slice(body.as_slice()).unwrap();
+        assert_eq!(response_orders, orders);
+    }
+
+    #[tokio::test]
+    async fn get_order_by_uid_() {
+        let orderbook = Arc::new(Orderbook::new(
+            DomainSeparator::default(),
+            Box::new(OrderBook::default()),
+        ));
+        let filter = get_order_by_uid(orderbook.clone());
+        let order_creation = OrderCreation::default();
+        let uid = match orderbook.add_order(order_creation).await.unwrap() {
+            AddOrderResult::Added(uid) => uid,
+            _ => panic!("unexpected result"),
+        };
+        let response = request()
+            .path(&format!("/orders/{:}", uid))
+            .method("GET")
+            .reply(&filter)
+            .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let response_orders: Order = serde_json::from_slice(response.body()).unwrap();
+        let orderbook_orders = orderbook.get_orders(&OrderFilter::default()).await.unwrap();
+        assert_eq!(response_orders, orderbook_orders[0]);
+    }
+    #[tokio::test]
+    async fn get_order_by_uid_for_non_existent_order_() {
+        let orderbook = Arc::new(Orderbook::new(
+            DomainSeparator::default(),
+            Box::new(OrderBook::default()),
+        ));
+        let filter = get_order_by_uid(orderbook.clone());
+        let uid = OrderUid([0u8; 56]);
+        let response = request()
+            .path(&format!("/orders/{:}", uid))
+            .method("GET")
+            .reply(&filter)
+            .await;
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn get_fee_info_() {
+        let filter = get_fee_info();
+        let sell_token = String::from("0x000000000000000000000000000000000000000a");
+        let path_string = format!("/tokens/{}/fee", sell_token);
+        let post = || async {
+            request()
+                .path(&path_string)
+                .method("GET")
+                .reply(&filter)
+                .await
+        };
+        let response = post().await;
+        let body: handler::FeeInfo = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(body.minimal_fee, U256::zero());
+        assert_eq!(body.fee_ratio, 0);
+        assert!(body.expiration_date.gt(&chrono::offset::Utc::now()))
+    }
+
+    #[tokio::test]
+    async fn create_order_route() {
+        let orderbook = Arc::new(Orderbook::new(
+            DomainSeparator::default(),
+            Box::new(OrderBook::default()),
+        ));
+        let filter = create_order(orderbook.clone());
+        let order = OrderCreation::default();
+        let expected_uid = json!(
+            "0xbd185ee633752c56b3eabec61259e8a65c765943665a2c17ad8b74a119e5f1ca7e5f4552091a69125d5dfcb7b8c2659029395bdfffffffff"
+        );
+        let post = || async {
+            request()
+                .path("/orders")
+                .method("POST")
+                .header("content-type", "application/json")
+                .json(&order)
+                .reply(&filter)
+                .await
+        };
+        let response = post().await;
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+
+        assert_eq!(body, expected_uid);
+        // Posting again should fail because order already exists.
+        let response = post().await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let body: serde_json::Value = serde_json::from_slice(response.body()).unwrap();
+        let expected_error =
+            json!({"errorType": "DuplicatedOrder", "description": "order already exists"});
+        assert_eq!(body, expected_error);
+    }
+}

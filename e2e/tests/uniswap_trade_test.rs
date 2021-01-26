@@ -5,7 +5,7 @@ use model::{
     order::{OrderBuilder, OrderKind},
     DomainSeparator,
 };
-use orderbook::storage::{InMemoryOrderBook, Storage};
+use orderbook::{orderbook::Orderbook, storage::InMemoryOrderBook};
 use secp256k1::SecretKey;
 use serde_json::json;
 use std::{str::FromStr, sync::Arc};
@@ -115,7 +115,10 @@ async fn test_with_ganache() {
             .await
             .expect("Couldn't query domain separator"),
     );
-    let orderbook = Arc::new(InMemoryOrderBook::new(domain_separator));
+    let orderbook = Arc::new(Orderbook::new(
+        DomainSeparator::default(),
+        Box::new(InMemoryOrderBook::default()),
+    ));
     orderbook::serve_task(
         orderbook.clone(),
         API_HOST[7..].parse().expect("Couldn't parse API address"),

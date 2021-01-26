@@ -1,4 +1,6 @@
-use crate::storage::{AddOrderResult, Storage};
+use crate::orderbook::Orderbook;
+use crate::storage::AddOrderResult;
+
 use anyhow::Result;
 use model::order::OrderCreation;
 use std::{convert::Infallible, sync::Arc};
@@ -57,7 +59,7 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
 }
 
 pub fn create_order(
-    orderbook: Arc<dyn Storage>,
+    orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     create_order_request().and_then(move |order| {
         let orderbook = orderbook.clone();

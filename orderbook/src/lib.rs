@@ -2,9 +2,10 @@ pub mod api;
 pub mod database;
 pub mod event_updater;
 pub mod integer_conversions;
+pub mod orderbook;
 pub mod storage;
 
-use crate::storage::Storage;
+use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use model::DomainSeparator;
@@ -12,12 +13,12 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 use warp::Filter;
 
-pub fn serve_task(storage: Arc<dyn Storage>, address: SocketAddr) -> JoinHandle<()> {
+pub fn serve_task(orderbook: Arc<Orderbook>, address: SocketAddr) -> JoinHandle<()> {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    let filter = api::handle_all_routes(storage).with(cors);
+    let filter = api::handle_all_routes(orderbook).with(cors);
     tracing::info!(%address, "serving order book");
     task::spawn(warp::serve(filter).bind(address))
 }

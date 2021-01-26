@@ -1,5 +1,6 @@
 use super::H160Wrapper;
-use crate::{database::OrderFilter, storage::Storage};
+use crate::database::OrderFilter;
+use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::Order;
 use serde::Deserialize;
@@ -45,7 +46,7 @@ pub fn get_orders_response(result: Result<Vec<Order>>) -> impl Reply {
 }
 
 pub fn get_orders(
-    orderbook: Arc<dyn Storage>,
+    orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     get_orders_request().and_then(move |order_filter| {
         let orderbook = orderbook.clone();
