@@ -3,7 +3,7 @@ pull_request_rules:
     conditions:
       - "#approved-reviews-by>=1"
       - check-success=rust-misc
-      - check-success=rust-test
+      - check-success=rust-tests
       - check-success=openapi
       - base=main
       - label=merge when green
