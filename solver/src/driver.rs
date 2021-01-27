@@ -1,3 +1,4 @@
+use crate::liquidity::{uniswap::UniswapLiquidity, Liquidity};
 use crate::{orderbook::OrderBookApi, solver::Solver};
 use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
@@ -9,12 +10,14 @@ const SETTLE_INTERVAL: Duration = Duration::from_secs(30);
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
+    uniswap_liquidity: UniswapLiquidity,
     solver: Box<dyn Solver>,
 }
 
 impl Driver {
     pub fn new(
         settlement_contract: GPv2Settlement,
+        uniswap_liquidity: UniswapLiquidity,
         orderbook: OrderBookApi,
         solver: Box<dyn Solver>,
     ) -> Self {
@@ -22,6 +25,7 @@ impl Driver {
             settlement_contract,
             solver,
             orderbook,
+            uniswap_liquidity,
         }
     }
 
@@ -37,17 +41,30 @@ impl Driver {
 
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
-        let orders = self
+        let limit_orders = self
             .orderbook
-            .get_orders()
+            .get_liquidity()
             .await
             .context("failed to get orderbook")?;
-        tracing::debug!("got {} orders", orders.len());
+        tracing::debug!("got {} orders", limit_orders.len());
+
+        let amms = self
+            .uniswap_liquidity
+            .get_liquidity(limit_orders.iter())
+            .await
+            .context("failed to get uniswap pools")?;
+
+        let liquidity = limit_orders
+            .into_iter()
+            .map(Liquidity::Limit)
+            .chain(amms.into_iter().map(Liquidity::Amm))
+            .collect();
+
         // TODO: order validity checks
         // Decide what is handled by orderbook service and what by us.
         // We likely want to at least mark orders we know we have settled so that we don't
         // attempt to settle them again when they are still in the orderbook.
-        let settlement = match self.solver.solve(orders).await? {
+        let settlement = match self.solver.solve(liquidity).await? {
             None => return Ok(()),
             Some(settlement) => settlement,
         };

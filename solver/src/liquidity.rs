@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use model::{order::OrderKind, TokenPair};
 use num_rational::Rational;
 use primitive_types::{H160, U256};

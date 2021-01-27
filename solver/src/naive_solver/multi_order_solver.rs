@@ -1,7 +1,10 @@
-use super::single_pair_settlement::{AmmSwapExactTokensForTokens, SinglePairSettlement};
-use crate::{settlement::Trade, uniswap::Pool};
+use crate::{
+    liquidity,
+    settlement::{Interaction, Settlement, Trade},
+};
 use anyhow::{anyhow, Result};
-use model::order::{OrderCreation, OrderKind};
+use liquidity::{AmmOrder, LimitOrder};
+use model::order::OrderKind;
 use num::{bigint::Sign, BigInt};
 use std::collections::HashMap;
 use web3::types::{Address, U256};
@@ -14,6 +17,7 @@ struct TokenContext {
     sell_volume: U256,
 }
 
+// TODO use concrete fee from AMMOrder
 impl TokenContext {
     pub fn is_excess_after_fees(&self, deficit: &TokenContext) -> bool {
         1000 * u256_to_bigint(&self.reserve)
@@ -31,14 +35,11 @@ impl TokenContext {
     }
 }
 
-pub fn solve(
-    orders: impl Iterator<Item = OrderCreation> + Clone,
-    pool: &Pool,
-) -> SinglePairSettlement {
-    let mut orders: Vec<OrderCreation> = orders.collect();
+pub fn solve(orders: impl Iterator<Item = LimitOrder> + Clone, pool: &AmmOrder) -> Settlement {
+    let mut orders: Vec<LimitOrder> = orders.collect();
     while !orders.is_empty() {
         let (context_a, context_b) = split_into_contexts(orders.clone().into_iter(), pool);
-        let solution = solve_orders(orders.clone().into_iter(), &context_a, &context_b);
+        let solution = solve_orders(orders.clone().into_iter(), &pool, &context_a, &context_b);
         if is_valid_solution(&solution) {
             return solution;
         } else {
@@ -64,27 +65,29 @@ pub fn solve(
     }
 
     // At last we return the trivial solution which doesn't match any orders
-    SinglePairSettlement {
+    Settlement {
         clearing_prices: HashMap::new(),
         trades: Vec::new(),
-        interaction: None,
+        interactions: Vec::new(),
+        ..Default::default()
     }
 }
 
 ///
-/// Computes a settlement using orders of a single pair and the direct AMM between those tokens.
+/// Computes a settlement using orders of a single pair and the direct AMM between those tokens.get(.
 /// Panics if orders are not already filtered for a specific token pair, or the reserve information
 /// for that pair is not available.
 ///
 fn solve_orders(
-    orders: impl Iterator<Item = OrderCreation> + Clone,
+    orders: impl Iterator<Item = LimitOrder> + Clone,
+    pool: &AmmOrder,
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> SinglePairSettlement {
+) -> Settlement {
     if context_a.is_excess_after_fees(&context_b) {
-        solve_with_uniswap(orders, &context_b, &context_a)
+        solve_with_uniswap(orders, pool, &context_b, &context_a)
     } else if context_b.is_excess_after_fees(&context_a) {
-        solve_with_uniswap(orders, &context_a, &context_b)
+        solve_with_uniswap(orders, pool, &context_a, &context_b)
     } else {
         solve_without_uniswap(orders, &context_a, &context_b)
     }
@@ -94,17 +97,19 @@ fn solve_orders(
 /// Creates a solution using the current AMM spot price, without using any of its liquidity
 ///
 fn solve_without_uniswap(
-    orders: impl Iterator<Item = OrderCreation> + Clone,
+    orders: impl Iterator<Item = LimitOrder> + Clone,
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> SinglePairSettlement {
-    SinglePairSettlement {
+) -> Settlement {
+    let (trades, interactions) = fully_matched(orders);
+    Settlement {
         clearing_prices: maplit::hashmap! {
             context_a.address => context_b.reserve,
             context_b.address => context_a.reserve,
         },
-        trades: orders.into_iter().map(Trade::fully_matched).collect(),
-        interaction: None,
+        trades,
+        interactions,
+        ..Default::default()
     }
 }
 
@@ -113,31 +118,64 @@ fn solve_without_uniswap(
 /// The clearing price is the effective exchange rate used by the AMM interaction.
 ///
 fn solve_with_uniswap(
-    orders: impl Iterator<Item = OrderCreation> + Clone,
+    orders: impl Iterator<Item = LimitOrder> + Clone,
+    pool: &AmmOrder,
     shortage: &TokenContext,
     excess: &TokenContext,
-) -> SinglePairSettlement {
+) -> Settlement {
     let uniswap_out = compute_uniswap_out(&shortage, &excess);
     let uniswap_in = compute_uniswap_in(uniswap_out, &shortage, &excess);
-    let interaction = Some(AmmSwapExactTokensForTokens {
-        amount_in: uniswap_in,
-        amount_out_min: uniswap_out,
-        token_in: excess.address,
-        token_out: shortage.address,
-    });
-    SinglePairSettlement {
+
+    let (trades, mut interactions) = fully_matched(orders);
+    interactions.extend(pool.settlement_handling.settle(
+        (excess.address, uniswap_in),
+        (shortage.address, uniswap_out),
+    ));
+    Settlement {
         clearing_prices: maplit::hashmap! {
             shortage.address => uniswap_in,
             excess.address => uniswap_out,
         },
-        trades: orders.into_iter().map(Trade::fully_matched).collect(),
-        interaction,
+        trades,
+        interactions,
+        ..Default::default()
+    }
+}
+
+fn fully_matched(
+    orders: impl Iterator<Item = LimitOrder> + Clone,
+) -> (Vec<Trade>, Vec<Box<dyn Interaction>>) {
+    let mut trades = Vec::new();
+    let mut interactions = Vec::new();
+    for order in orders {
+        let executed_amount = match order.kind {
+            model::order::OrderKind::Buy => order.buy_amount,
+            model::order::OrderKind::Sell => order.sell_amount,
+        };
+        let (trade, trade_interactions) = order.settlement_handling.settle(executed_amount);
+        if let Some(trade) = trade {
+            trades.push(trade)
+        }
+        interactions.extend(trade_interactions);
+    }
+    (trades, interactions)
+}
+
+impl AmmOrder {
+    fn get_reserve(&self, token: &Address) -> Option<U256> {
+        if &self.tokens.get().0 == token {
+            Some(self.reserves.0.into())
+        } else if &self.tokens.get().1 == token {
+            Some(self.reserves.1.into())
+        } else {
+            None
+        }
     }
 }
 
 fn split_into_contexts(
-    orders: impl Iterator<Item = OrderCreation>,
-    pool: &Pool,
+    orders: impl Iterator<Item = LimitOrder>,
+    pool: &AmmOrder,
 ) -> (TokenContext, TokenContext) {
     let mut contexts = HashMap::new();
     for order in orders {
@@ -147,8 +185,7 @@ fn split_into_contexts(
                 address: order.buy_token,
                 reserve: pool
                     .get_reserve(&order.buy_token)
-                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.buy_token))
-                    .into(),
+                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.buy_token)),
                 buy_volume: U256::zero(),
                 sell_volume: U256::zero(),
             });
@@ -162,8 +199,7 @@ fn split_into_contexts(
                 address: order.sell_token,
                 reserve: pool
                     .get_reserve(&order.sell_token)
-                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.sell_token))
-                    .into(),
+                    .unwrap_or_else(|| panic!("No reserve for token {}", &order.sell_token)),
                 buy_volume: U256::zero(),
                 sell_volume: U256::zero(),
             });
@@ -209,7 +245,7 @@ fn compute_uniswap_in(out: U256, shortage: &TokenContext, excess: &TokenContext)
 /// Returns true if for each trade the executed price is not smaller than the limit price
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
-fn is_valid_solution(solution: &SinglePairSettlement) -> bool {
+fn is_valid_solution(solution: &Settlement) -> bool {
     for trade in solution.trades.iter() {
         let order = trade.order;
         let buy_token_price = solution
@@ -248,7 +284,12 @@ fn bigint_to_u256(input: &BigInt) -> Result<U256> {
 
 #[cfg(test)]
 mod tests {
-    use model::TokenPair;
+    use liquidity::{
+        AmmSettlementHandling, LimitOrderSettlementHandling, MockLimitOrderSettlementHandling,
+    };
+    use model::{order::OrderCreation, TokenPair};
+    use num::Rational;
+    use std::sync::{Arc, Mutex};
 
     use super::*;
 
@@ -256,46 +297,84 @@ mod tests {
         U256::from(base) * U256::from(10).pow(18.into())
     }
 
+    fn noop_limit_order_handling() -> Arc<dyn LimitOrderSettlementHandling> {
+        let mut limit_order_handling = MockLimitOrderSettlementHandling::new();
+        limit_order_handling
+            .expect_settle()
+            .returning(|_| (None, Vec::new()));
+        Arc::new(limit_order_handling)
+    }
+
+    #[derive(Clone, Copy)]
+    struct AmmSettlement {
+        token_in: Address,
+        token_out: Address,
+        amount_in: U256,
+        amount_out: U256,
+    }
+
+    #[derive(Default)]
+    struct AmmSettlementHandler {
+        settlement: Mutex<Option<AmmSettlement>>,
+    }
+
+    impl AmmSettlementHandling for AmmSettlementHandler {
+        fn settle(
+            &self,
+            input: (Address, U256),
+            output: (Address, U256),
+        ) -> Vec<Box<dyn Interaction>> {
+            self.settlement.lock().unwrap().replace(AmmSettlement {
+                token_in: input.0,
+                token_out: output.0,
+                amount_in: input.1,
+                amount_out: input.1,
+            });
+            Vec::new()
+        }
+    }
+
     #[test]
     fn finds_clearing_price_with_sell_orders_on_both_sides() {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_b,
                 buy_token: token_a,
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1000).as_u128(),
-            reserve1: to_wei(1000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = result.interaction.unwrap();
+        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy min_buy amounts
-        assert!(orders[0].sell_amount + interaction.amount_out_min >= orders[1].buy_amount);
+        assert!(orders[0].sell_amount + interaction.amount_out >= orders[1].buy_amount);
         assert!(orders[1].sell_amount - interaction.amount_in > orders[0].buy_amount);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy expected buy amounts given clearing price
@@ -308,7 +387,7 @@ mod tests {
         assert!(orders[1].sell_amount - interaction.amount_in >= expected_buy);
 
         let expected_buy = orders[1].sell_amount * price_b / price_a;
-        assert!(orders[0].sell_amount + interaction.amount_out_min >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.amount_out >= expected_buy);
     }
 
     #[test]
@@ -316,42 +395,43 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1_000_000).as_u128(),
-            reserve1: to_wei(1_000_000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = result.interaction.unwrap();
+        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
         assert_eq!(interaction.token_in, token_a);
         assert_eq!(interaction.token_out, token_b);
 
         // Make sure the sell amounts cover the uniswap in, and min buy amounts are covered by uniswap out
         assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.amount_in);
-        assert!(interaction.amount_out_min >= orders[0].buy_amount + orders[1].buy_amount);
+        assert!(interaction.amount_out >= orders[0].buy_amount + orders[1].buy_amount);
 
         // Make sure expected buy amounts (given prices) are also covered by uniswap out amounts
         let price_a = result.clearing_prices.get(&token_a).unwrap();
@@ -359,7 +439,7 @@ mod tests {
 
         let first_expected_buy = orders[0].sell_amount * price_a / price_b;
         let second_expected_buy = orders[1].sell_amount * price_a / price_b;
-        assert!(interaction.amount_out_min >= first_expected_buy + second_expected_buy);
+        assert!(interaction.amount_out >= first_expected_buy + second_expected_buy);
     }
 
     #[test]
@@ -367,41 +447,42 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_b,
                 buy_token: token_a,
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1000).as_u128(),
-            reserve1: to_wei(1000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = result.interaction.unwrap();
+        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
         // Make sure the buy amounts +/- uniswap interaction satisfy max_sell amounts
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out_min);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out);
         assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.amount_in);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
@@ -414,7 +495,7 @@ mod tests {
         assert!(orders[1].buy_amount - interaction.amount_in <= expected_sell);
 
         let expected_sell = orders[1].buy_amount * price_a / price_b;
-        assert!(orders[0].buy_amount + interaction.amount_out_min <= expected_sell);
+        assert!(orders[0].buy_amount + interaction.amount_out <= expected_sell);
     }
 
     #[test]
@@ -422,41 +503,42 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_b,
                 buy_token: token_a,
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1000).as_u128(),
-            reserve1: to_wei(1000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = result.interaction.unwrap();
+        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
         // Make sure the buy order's sell amount - uniswap interaction satisfies sell order's limit
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out_min);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out);
 
         // Make sure the sell order's buy amount + uniswap interaction satisfies buy order's limit
         assert!(orders[1].buy_amount + interaction.amount_in >= orders[0].sell_amount);
@@ -473,7 +555,7 @@ mod tests {
         // Multiplying sell_amount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
         // We should have at least as much to give (sell amount + uniswap out) as is expected by the buyer
         let expected_buy = orders[1].sell_amount * price_b / price_a;
-        assert!(orders[0].sell_amount + interaction.amount_out_min >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.amount_out >= expected_buy);
     }
 
     #[test]
@@ -481,34 +563,35 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_b,
                 buy_token: token_a,
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1_000_001).as_u128(),
-            reserve1: to_wei(1_000_000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.into_iter(), &pool);
-        assert_eq!(result.interaction, None);
+        assert!(amm_handler.settlement.lock().unwrap().is_none());
         assert_eq!(
             result.clearing_prices,
             maplit::hashmap! {
@@ -532,7 +615,8 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
-            },
+            }
+            .into(),
             // Reasonable order a -> b
             OrderCreation {
                 sell_token: token_a,
@@ -542,7 +626,8 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
-            },
+            }
+            .into(),
             // Reasonable order b -> a
             OrderCreation {
                 sell_token: token_b,
@@ -552,7 +637,8 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
-            },
+            }
+            .into(),
             // Unreasonable order b -> a
             OrderCreation {
                 sell_token: token_b,
@@ -562,14 +648,16 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 ..Default::default()
-            },
+            }
+            .into(),
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1_000_000).as_u128(),
-            reserve1: to_wei(1_000_000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler,
         };
         let result = solve(orders.into_iter(), &pool);
 
@@ -582,31 +670,32 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_a,
                 buy_token: token_b,
                 sell_amount: to_wei(900),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
-            OrderCreation {
+            LimitOrder {
                 sell_token: token_b,
                 buy_token: token_a,
                 sell_amount: to_wei(900),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                ..Default::default()
+                settlement_handling: noop_limit_order_handling(),
             },
         ];
 
-        let pool = Pool {
-            token_pair: TokenPair::new(token_a, token_b).unwrap(),
-            reserve0: to_wei(1_000_001).as_u128(),
-            reserve1: to_wei(1_000_000).as_u128(),
-            address: Default::default(),
+        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
+            fee: Rational::new(3, 1000),
+            settlement_handling: amm_handler,
         };
         let result = solve(orders.into_iter(), &pool);
         assert_eq!(result.trades.len(), 0);
@@ -639,81 +728,86 @@ mod tests {
 
         // Price in the middle is ok
         assert_eq!(
-            is_valid_solution(&SinglePairSettlement {
+            is_valid_solution(&Settlement {
                 clearing_prices: maplit::hashmap! {
                     token_a => to_wei(1),
                     token_b => to_wei(1)
                 },
-                interaction: None,
+                interactions: Vec::new(),
                 trades: orders
                     .clone()
                     .into_iter()
                     .map(Trade::fully_matched)
-                    .collect()
+                    .collect(),
+                ..Default::default()
             }),
             true
         );
 
         // Price at the limit of first order is ok
         assert_eq!(
-            is_valid_solution(&SinglePairSettlement {
+            is_valid_solution(&Settlement {
                 clearing_prices: maplit::hashmap! {
                     token_a => to_wei(8),
                     token_b => to_wei(10)
                 },
-                interaction: None,
+                interactions: Vec::new(),
                 trades: orders
                     .clone()
                     .into_iter()
                     .map(Trade::fully_matched)
-                    .collect()
+                    .collect(),
+                ..Default::default()
             }),
             true
         );
 
         // Price at the limit of second order is ok
         assert_eq!(
-            is_valid_solution(&SinglePairSettlement {
+            is_valid_solution(&Settlement {
                 clearing_prices: maplit::hashmap! {
                     token_a => to_wei(10),
                     token_b => to_wei(9)
                 },
-                interaction: None,
+                interactions: Vec::new(),
                 trades: orders
                     .clone()
                     .into_iter()
                     .map(Trade::fully_matched)
-                    .collect()
+                    .collect(),
+                ..Default::default()
             }),
             true
         );
 
         // Price violating first order is not ok
         assert_eq!(
-            is_valid_solution(&SinglePairSettlement {
+            is_valid_solution(&Settlement {
                 clearing_prices: maplit::hashmap! {
                     token_a => to_wei(7),
                     token_b => to_wei(10)
                 },
-                interaction: None,
+                interactions: Vec::new(),
                 trades: orders
                     .clone()
                     .into_iter()
                     .map(Trade::fully_matched)
-                    .collect()
+                    .collect(),
+                ..Default::default()
             }),
             false
         );
 
         // Price violating second order is not ok
         assert_eq!(
-            is_valid_solution(&SinglePairSettlement {
+            is_valid_solution(&Settlement {
                 clearing_prices: maplit::hashmap! {
                     token_a => to_wei(10),
                     token_b => to_wei(8)
                 },
-                interaction: None,
-                trades: orders.into_iter().map(Trade::fully_matched).collect()
+                interactions: Vec::new(),
+                trades: orders.into_iter().map(Trade::fully_matched).collect(),
+                ..Default::default()
             }),
             false
         );

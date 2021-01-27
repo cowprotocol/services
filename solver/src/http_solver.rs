@@ -1,14 +1,10 @@
-use crate::{settlement::Settlement, solver::Solver, uniswap};
+use crate::{liquidity::Liquidity, settlement::Settlement, solver::Solver};
 use anyhow::{Context, Result};
-use contracts::UniswapV2Factory;
-use model::{
-    order::{Order, OrderKind},
-    u256_decimal,
-};
+use model::{order::OrderKind, u256_decimal};
 use primitive_types::{H160, U256};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize, Serializer};
-use std::collections::{hash_map::Entry, HashMap, HashSet};
+use std::collections::{HashMap, HashSet};
 
 /// The configuration passed as url parameters to the solver.
 #[derive(Debug, Default)]
@@ -34,16 +30,10 @@ pub struct HttpSolver {
     client: Client,
     api_key: Option<String>,
     config: SolverConfig,
-    uniswap: UniswapV2Factory,
 }
 
 impl HttpSolver {
-    pub fn new(
-        base: Url,
-        api_key: Option<String>,
-        config: SolverConfig,
-        uniswap: UniswapV2Factory,
-    ) -> Self {
+    pub fn new(base: Url, api_key: Option<String>, config: SolverConfig) -> Self {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
         Self {
@@ -51,7 +41,6 @@ impl HttpSolver {
             client,
             api_key,
             config,
-            uniswap,
         }
     }
 
@@ -63,12 +52,16 @@ impl HttpSolver {
         format!("t{:x}", token)
     }
 
-    fn tokens(&self, orders: &[Order]) -> HashMap<String, TokenInfoModel> {
+    fn tokens(&self, orders: &[Liquidity]) -> HashMap<String, TokenInfoModel> {
         orders
             .iter()
-            .flat_map(|order| {
-                let order = order.order_creation;
-                std::iter::once(order.sell_token).chain(std::iter::once(order.buy_token))
+            .flat_map(|liquidity| match liquidity {
+                Liquidity::Limit(order) => {
+                    std::iter::once(order.sell_token).chain(std::iter::once(order.buy_token))
+                }
+                Liquidity::Amm(amm) => {
+                    std::iter::once(amm.tokens.get().0).chain(std::iter::once(amm.tokens.get().1))
+                }
             })
             .collect::<HashSet<_>>()
             .into_iter()
@@ -80,12 +73,15 @@ impl HttpSolver {
             .collect()
     }
 
-    fn orders(&self, orders: &[Order]) -> HashMap<String, OrderModel> {
+    fn orders(&self, orders: &[Liquidity]) -> HashMap<String, OrderModel> {
         orders
             .iter()
+            .filter_map(|liquidity| match liquidity {
+                Liquidity::Limit(order) => Some(order),
+                Liquidity::Amm(_) => None,
+            })
             .enumerate()
             .map(|(index, order)| {
-                let order = order.order_creation;
                 let order = OrderModel {
                     sell_token: self.token_to_string(&order.sell_token),
                     buy_token: self.token_to_string(&order.buy_token),
@@ -99,41 +95,31 @@ impl HttpSolver {
             .collect()
     }
 
-    async fn uniswaps(&self, orders: &[Order]) -> Result<HashMap<String, UniswapModel>> {
+    async fn uniswaps(&self, orders: &[Liquidity]) -> Result<HashMap<String, UniswapModel>> {
         // TODO: use a cache
-        // TODO: include every token with ETH pair in the pools
-        let mut uniswaps = HashMap::new();
-        for order in orders {
-            let pair = order.order_creation.token_pair().expect("invalid order");
-            let vacant = match uniswaps.entry(pair) {
-                Entry::Occupied(_) => continue,
-                Entry::Vacant(vacant) => vacant,
-            };
-            let pool = match uniswap::Pool::from_token_pair(&self.uniswap, &pair)
-                .await
-                .context("failed to get uniswap pool")?
-            {
-                None => continue,
-                Some(pool) => pool,
-            };
-            let uniswap = UniswapModel {
-                token1: self.token_to_string(&pool.token_pair.get().0),
-                token2: self.token_to_string(&pool.token_pair.get().1),
-                balance1: pool.reserve0,
-                balance2: pool.reserve1,
-                fee: 0.003,
-                mandatory: false,
-            };
-            vacant.insert(uniswap);
-        }
-        Ok(uniswaps
-            .into_iter()
+        Ok(orders
+            .iter()
+            .filter_map(|liquidity| match liquidity {
+                Liquidity::Limit(_) => None,
+                Liquidity::Amm(amm) => Some(amm),
+            })
             .enumerate()
-            .map(|(index, (_token_pair, uniswap))| (index.to_string(), uniswap))
+            .map(|(index, amm)| {
+                let uniswap = UniswapModel {
+                    token1: self.token_to_string(&amm.tokens.get().0),
+                    token2: self.token_to_string(&amm.tokens.get().1),
+                    balance1: amm.reserves.0,
+                    balance2: amm.reserves.1,
+                    // TODO use AMM fee
+                    fee: 0.003,
+                    mandatory: false,
+                };
+                (index.to_string(), uniswap)
+            })
             .collect())
     }
 
-    async fn create_body(&self, orders: &[Order]) -> Result<BatchAuctionModel> {
+    async fn create_body(&self, orders: &[Liquidity]) -> Result<BatchAuctionModel> {
         Ok(BatchAuctionModel {
             tokens: self.tokens(orders),
             orders: self.orders(orders),
@@ -146,7 +132,7 @@ impl HttpSolver {
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(&self, orders: Vec<Order>) -> Result<Option<Settlement>> {
+    async fn solve(&self, orders: Vec<Liquidity>) -> Result<Option<Settlement>> {
         let mut url = self.base.clone();
         url.set_path("/solve");
         self.config.add_to_query(&mut url);
@@ -233,7 +219,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use model::order::{OrderCreation, OrderMetaData};
+    use crate::liquidity::{LimitOrder, MockLimitOrderSettlementHandling};
+    use std::sync::Arc;
 
     use super::*;
 
@@ -244,10 +231,6 @@ mod tests {
         tracing_subscriber::fmt::fmt()
             .with_env_filter("debug")
             .init();
-        let node_url = "https://dev-openethereum.mainnet.gnosisdev.com";
-        let transport = web3::transports::Http::new(node_url).unwrap();
-        let web3 = web3::Web3::new(transport);
-        let uniswap = contracts::UniswapV2Factory::deployed(&web3).await.unwrap();
         let solver = HttpSolver::new(
             "http://localhost:8000".parse().unwrap(),
             None,
@@ -255,17 +238,16 @@ mod tests {
                 max_nr_exec_orders: 100,
                 time_limit: 100,
             },
-            uniswap,
         );
-        let orders = vec![Order {
-            order_meta_data: OrderMetaData::default(),
-            order_creation: OrderCreation {
-                sell_token: H160::from_low_u64_be(1),
-                buy_amount: 1.into(),
-                sell_amount: 1.into(),
-                ..Default::default()
-            },
-        }];
+        let orders = vec![Liquidity::Limit(LimitOrder {
+            buy_token: H160::zero(),
+            sell_token: H160::from_low_u64_be(1),
+            buy_amount: 1.into(),
+            sell_amount: 1.into(),
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            settlement_handling: Arc::new(MockLimitOrderSettlementHandling::new()),
+        })];
         solver.solve(orders).await.unwrap();
     }
 }

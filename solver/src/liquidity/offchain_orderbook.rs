@@ -9,7 +9,7 @@ use super::{LimitOrder, LimitOrderSettlementHandling};
 
 impl OrderBookApi {
     /// Returns a list of limit orders coming from the offchain orderbook API
-    async fn get_liquidity(&self) -> Result<Vec<LimitOrder>> {
+    pub async fn get_liquidity(&self) -> Result<Vec<LimitOrder>> {
         Ok(self
             .get_orders()
             .await

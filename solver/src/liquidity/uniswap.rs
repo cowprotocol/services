@@ -39,7 +39,7 @@ impl UniswapLiquidity {
     }
 
     /// Given a list of offchain orders returns the list of AMM liquidity to be considered
-    async fn get_liquidity(
+    pub async fn get_liquidity(
         &self,
         offchain_orders: impl Iterator<Item = &LimitOrder> + Send + Sync,
     ) -> Result<Vec<AmmOrder>> {
