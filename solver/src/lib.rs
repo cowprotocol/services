@@ -2,6 +2,7 @@ pub mod driver;
 pub mod encoding;
 pub mod http_solver;
 pub mod interactions;
+pub mod liquidity;
 pub mod naive_solver;
 pub mod orderbook;
 pub mod settlement;

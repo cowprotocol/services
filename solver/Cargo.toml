@@ -23,6 +23,7 @@ jsonrpc-core = "16.0"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.3"
+num-rational = "0.3"
 primitive-types = "0.8"
 reqwest = { version = "0.10", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
@@ -36,3 +37,4 @@ web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
+mockall = "0.9"
