@@ -26,9 +26,17 @@ impl Trade {
             fee_discount: 0,
         }
     }
+
+    pub fn matched(order: OrderCreation, executed_amount: U256) -> Self {
+        Self {
+            order,
+            executed_amount,
+            fee_discount: 0,
+        }
+    }
 }
 
-pub trait Interaction: std::fmt::Debug {
+pub trait Interaction: std::fmt::Debug + Send {
     // TODO: not sure if this should return a result.
     // Write::write returns a result but we know we write to a vector in memory so we know it will
     // never fail. Then the question becomes whether interactions should be allowed to fail encoding

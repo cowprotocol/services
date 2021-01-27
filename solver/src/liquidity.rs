@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use model::{order::OrderKind, TokenPair};
 use num_rational::Rational;
 use primitive_types::{H160, U256};
@@ -8,6 +10,9 @@ use std::sync::Arc;
 use mockall::automock;
 
 use crate::settlement;
+
+pub mod offchain_orderbook;
+pub mod uniswap;
 
 /// Defines the different types of liquidity our solvers support
 pub enum Liquidity {
