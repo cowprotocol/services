@@ -9,7 +9,7 @@ use orderbook::{orderbook::Orderbook, storage::InMemoryOrderBook};
 use secp256k1::SecretKey;
 use serde_json::json;
 use solver::liquidity::uniswap::UniswapLiquidity;
-use std::{str::FromStr, sync::Arc};
+use std::{str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
@@ -186,6 +186,8 @@ async fn test_with_ganache() {
         uniswap_liquidity,
         orderbook_api,
         Box::new(solver),
+        Box::new(web3),
+        Duration::from_secs(1),
     );
     driver.single_run().await.unwrap();
 

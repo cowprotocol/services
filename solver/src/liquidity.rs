@@ -1,5 +1,5 @@
 use model::{order::OrderKind, TokenPair};
-use num_rational::Rational;
+use num::rational::Rational;
 use primitive_types::{H160, U256};
 use settlement::{Interaction, Trade};
 use std::sync::Arc;

@@ -1,7 +1,12 @@
-use crate::liquidity::{uniswap::UniswapLiquidity, Liquidity};
-use crate::{orderbook::OrderBookApi, solver::Solver};
-use anyhow::{anyhow, Context, Result};
+use crate::{
+    liquidity::{uniswap::UniswapLiquidity, Liquidity},
+    orderbook::OrderBookApi,
+    settlement_submission,
+    solver::Solver,
+};
+use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
+use gas_estimation::GasPriceEstimating;
 use std::time::Duration;
 use tracing::info;
 
@@ -12,6 +17,8 @@ pub struct Driver {
     orderbook: OrderBookApi,
     uniswap_liquidity: UniswapLiquidity,
     solver: Box<dyn Solver>,
+    gas_price_estimator: Box<dyn GasPriceEstimating>,
+    target_confirm_time: Duration,
 }
 
 impl Driver {
@@ -20,12 +27,16 @@ impl Driver {
         uniswap_liquidity: UniswapLiquidity,
         orderbook: OrderBookApi,
         solver: Box<dyn Solver>,
+        gas_price_estimator: Box<dyn GasPriceEstimating>,
+        target_confirm_time: Duration,
     ) -> Self {
         Self {
             settlement_contract,
-            solver,
             orderbook,
             uniswap_liquidity,
+            solver,
+            gas_price_estimator,
+            target_confirm_time,
         }
     }
 
@@ -70,30 +81,14 @@ impl Driver {
         };
         info!("Computed {:?}", settlement);
         // TODO: check if we need to approve spending to uniswap
-        // TODO: use retry transaction sending crate for updating gas prices
-        let encoded_interactions = settlement
-            .encode_interactions()
-            .context("interaction encoding failed")?;
-        let encoded_trades = settlement
-            .encode_trades()
-            .ok_or_else(|| anyhow!("trade encoding failed"))?;
-        let settle = || {
-            self.settlement_contract
-                .settle(
-                    settlement.tokens(),
-                    settlement.clearing_prices(),
-                    encoded_trades.clone(),
-                    encoded_interactions.clone(),
-                    Vec::new(),
-                )
-                .gas(8_000_000u32.into())
-        };
-        tracing::info!(
-            "Settlement call: {}",
-            hex::encode(settle().tx.data.expect("data").0),
-        );
-        settle().call().await.context("settle simulation failed")?;
-        settle().send().await.context("settle execution failed")?;
+        settlement_submission::submit(
+            settlement,
+            &self.settlement_contract,
+            self.gas_price_estimator.as_ref(),
+            self.target_confirm_time,
+        )
+        .await
+        .context("failed to submit settlement")?;
         Ok(())
     }
 }

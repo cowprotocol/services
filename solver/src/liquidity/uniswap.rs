@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
 use model::TokenPair;
-use num_rational::Rational;
+use num::rational::Rational;
 use primitive_types::{H160, U256};
 use std::collections::{hash_map::Entry, HashMap};
 use std::sync::Arc;
