@@ -527,9 +527,9 @@ dependencies = [
  "reqwest",
  "secp256k1",
  "serde_json",
+ "shared",
  "solver",
  "tokio",
- "tracing-setup",
  "web3",
 ]
 
@@ -1657,12 +1657,11 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
- "shared-arguments",
+ "shared",
  "sqlx",
  "structopt",
  "tokio",
  "tracing",
- "tracing-setup",
  "warp",
  "web3",
 ]
@@ -2319,10 +2318,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "shared-arguments"
+name = "shared"
 version = "0.1.0"
 dependencies = [
+ "atty",
  "structopt",
+ "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -2370,11 +2372,10 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "shared-arguments",
+ "shared",
  "structopt",
  "tokio",
  "tracing",
- "tracing-setup",
  "tracing-subscriber",
  "web3",
 ]
@@ -2796,15 +2797,6 @@ checksum = "fb65ea441fbb84f9f6748fd496cf7f63ec9af5bca94dd86456978d055e8eb28b"
 dependencies = [
  "serde",
  "tracing-core",
-]
-
-[[package]]
-name = "tracing-setup"
-version = "0.1.0"
-dependencies = [
- "atty",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

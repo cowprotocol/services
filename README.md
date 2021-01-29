@@ -27,14 +27,13 @@ Several pieces of functionality are shared between the order book and the solver
 
 * `contract` provides ethcontract based smart contract bindings
 * `model` provides the serialization model for orders in the order book api
-* `shared-arguments` provides command line arguments
-* `tracing-setup` sets up logging
+* `shared` provides other shared functionality between solver and order book
 
 ## Testing
 
-Run unit tests with `cargo test`. 
-Some (by default ignored) tests require a locally running Postgres instance as seen on [CI](.github/workflows/pull-request.yaml). 
-More extensive end to end tests can be run with `cargo test -p e2e`. 
+Run unit tests with `cargo test`.
+Some (by default ignored) tests require a locally running Postgres instance as seen on [CI](.github/workflows/pull-request.yaml).
+More extensive end to end tests can be run with `cargo test -p e2e`.
 These require a locally running instance of ganache.
 
 A more extensive e2e test using ganache

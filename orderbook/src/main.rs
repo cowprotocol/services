@@ -11,7 +11,7 @@ use tokio::task;
 #[derive(Debug, StructOpt)]
 struct Arguments {
     #[structopt(flatten)]
-    shared: shared_arguments::Arguments,
+    shared: shared::arguments::Arguments,
 
     #[structopt(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
     bind_address: SocketAddr,
@@ -34,7 +34,7 @@ pub async fn orderbook_maintenance(
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
-    tracing_setup::initialize(args.shared.log_filter.as_str());
+    shared::tracing::initialize(args.shared.log_filter.as_str());
     tracing::info!("running order book with {:#?}", args);
 
     let transport = web3::transports::Http::new(args.shared.node_url.as_str())
