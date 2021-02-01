@@ -1,5 +1,4 @@
 mod multi_order_solver;
-mod single_pair_settlement;
 
 use crate::{
     liquidity::{AmmOrder, LimitOrder, Liquidity},
