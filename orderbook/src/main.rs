@@ -1,12 +1,15 @@
 use contracts::GPv2Settlement;
 use model::DomainSeparator;
 use orderbook::{
-    orderbook::Orderbook, serve_task, storage::InMemoryOrderBook,
+    orderbook::Orderbook,
+    serve_task,
+    storage::{self, InMemoryOrderBook, Storage},
     verify_deployed_contract_constants,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
+use url::Url;
 
 #[derive(Debug, StructOpt)]
 struct Arguments {
@@ -15,6 +18,10 @@ struct Arguments {
 
     #[structopt(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
     bind_address: SocketAddr,
+
+    /// Url of the Postgres database or None for the in memory order book.
+    #[structopt(long, env = "DB_URL")]
+    db_url: Option<Url>,
 }
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
@@ -54,8 +61,15 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let storage = InMemoryOrderBook::default();
-    let orderbook = Arc::new(Orderbook::new(domain_separator, Box::new(storage)));
+    let storage: Box<dyn Storage> = match args.db_url {
+        None => Box::new(InMemoryOrderBook::default()),
+        Some(url) => Box::new(
+            storage::postgres_orderbook(url)
+                .await
+                .expect("failed to connect to postgres"),
+        ),
+    };
+    let orderbook = Arc::new(Orderbook::new(domain_separator, storage));
     let serve_task = serve_task(orderbook.clone(), args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {

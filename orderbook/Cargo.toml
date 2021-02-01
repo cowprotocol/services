@@ -30,6 +30,7 @@ sqlx = { version = "0.4", default-features = false, features = ["bigdecimal", "c
 structopt = { version = "0.3" }
 tokio = { version = "0.2", features =["macros", "rt-threaded", "time"] }
 tracing = "0.1"
+url = "2.2"
 warp = "0.2"
 web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 
