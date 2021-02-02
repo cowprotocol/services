@@ -6,7 +6,7 @@ use model::{
     DomainSeparator,
 };
 use orderbook::{
-    account_balances::Web3BalanceFetcher, orderbook::Orderbook, storage::InMemoryOrderBook,
+    account_balances::Web3BalanceFetcher, database::Database, orderbook::Orderbook, storage,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
@@ -118,9 +118,12 @@ async fn test_with_ganache() {
             .await
             .expect("Couldn't query domain separator"),
     );
+    let db = Database::new("postgresql://").unwrap();
+    db.clear().await.unwrap();
+    let storage = storage::postgresql::OrderBook::new(db);
     let orderbook = Arc::new(Orderbook::new(
-        domain_separator,
-        Box::new(InMemoryOrderBook::default()),
+        DomainSeparator::default(),
+        Box::new(storage),
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
     ));
     orderbook::serve_task(

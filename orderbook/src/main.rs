@@ -1,10 +1,7 @@
 use contracts::GPv2Settlement;
 use model::DomainSeparator;
 use orderbook::{
-    account_balances::Web3BalanceFetcher,
-    orderbook::Orderbook,
-    serve_task,
-    storage::{self, InMemoryOrderBook, Storage},
+    account_balances::Web3BalanceFetcher, orderbook::Orderbook, serve_task, storage,
     verify_deployed_contract_constants,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
@@ -20,9 +17,9 @@ struct Arguments {
     #[structopt(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
     bind_address: SocketAddr,
 
-    /// Url of the Postgres database or None for the in memory order book.
-    #[structopt(long, env = "DB_URL")]
-    db_url: Option<Url>,
+    /// Url of the Postgres database. By default connects to locally running postgres.
+    #[structopt(long, env = "DB_URL", default_value = "postgresql://")]
+    db_url: Url,
 }
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
@@ -67,18 +64,13 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let storage: Box<dyn Storage> = match args.db_url {
-        None => Box::new(InMemoryOrderBook::default()),
-        Some(url) => Box::new(
-            storage::postgres_orderbook(settlement_contract.clone(), url)
-                .await
-                .expect("failed to connect to postgres"),
-        ),
-    };
+    let storage = storage::postgres_orderbook(args.db_url)
+        .await
+        .expect("failed to connect to postgres");
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        storage,
+        Box::new(storage),
         Box::new(balance_fetcher),
     ));
     let serve_task = serve_task(orderbook.clone(), args.bind_address);

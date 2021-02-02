@@ -26,9 +26,8 @@ impl Database {
         })
     }
 
-    #[cfg(test)]
-    /// Delete all data in the database.
-    async fn clear(&self) -> Result<()> {
+    /// Delete all data in the database. Only used by tests.
+    pub async fn clear(&self) -> Result<()> {
         use sqlx::Executor;
         self.pool.execute(sqlx::query("TRUNCATE orders;")).await?;
         self.pool.execute(sqlx::query("TRUNCATE trades;")).await?;
