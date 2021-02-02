@@ -10,6 +10,10 @@ use gas_estimation::GasPriceEstimating;
 use std::time::Duration;
 use tracing::info;
 
+// There is no economic viability calculation yet so we're using an arbitrary very high cap to
+// protect against a gas estimator giving bogus results that would drain all our funds.
+const GAS_PRICE_CAP: f64 = 500e9;
+
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
@@ -87,10 +91,11 @@ impl Driver {
         } else {
             // TODO: check if we need to approve spending to uniswap
             settlement_submission::submit(
-                settlement,
                 &self.settlement_contract,
                 self.gas_price_estimator.as_ref(),
                 self.target_confirm_time,
+                GAS_PRICE_CAP,
+                settlement,
             )
             .await
             .context("failed to submit settlement")?;

@@ -1,4 +1,4 @@
-use contracts::{ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
+use contracts::{ERC20Mintable, UniswapV2Factory, UniswapV2Router02};
 use ethcontract::{
     prelude::{Account, Address, Http, PrivateKey, Web3, U256},
     H160,
@@ -72,7 +72,8 @@ async fn test_with_ganache() {
     let uniswap_router = UniswapV2Router02::deployed(&web3)
         .await
         .expect("Failed to load deployed UniswapFactory");
-    let gp_settlement = GPv2Settlement::deployed(&web3)
+
+    let gp_settlement = solver::get_settlement_contract(&web3, solver.clone())
         .await
         .expect("Failed to load deployed GPv2Settlement");
     let gp_allowance = gp_settlement

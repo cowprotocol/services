@@ -1,5 +1,5 @@
 use contracts::WETH9;
-use ethcontract::PrivateKey;
+use ethcontract::{Account, PrivateKey};
 use reqwest::Url;
 use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, naive_solver::NaiveSolver};
 use std::time::Duration;
@@ -55,19 +55,20 @@ async fn main() {
     let transport = web3::transports::Http::new(args.shared.node_url.as_str())
         .expect("transport creation failed");
     let web3 = web3::Web3::new(transport);
-    let uniswap_router = contracts::UniswapV2Router02::deployed(&web3)
-        .await
-        .expect("couldn't load deployed uniswap router");
-    let uniswap_factory = contracts::UniswapV2Factory::deployed(&web3)
-        .await
-        .expect("couldn't load deployed uniswap router");
     let chain_id = web3
         .eth()
         .chain_id()
         .await
         .expect("Could not get chainId")
         .as_u64();
-    let settlement_contract = solver::get_settlement_contract(&web3, chain_id, args.private_key)
+    let uniswap_router = contracts::UniswapV2Router02::deployed(&web3)
+        .await
+        .expect("couldn't load deployed uniswap router");
+    let uniswap_factory = contracts::UniswapV2Factory::deployed(&web3)
+        .await
+        .expect("couldn't load deployed uniswap router");
+    let account = Account::Offline(args.private_key, Some(chain_id));
+    let settlement_contract = solver::get_settlement_contract(&web3, account)
         .await
         .expect("couldn't load deployed settlement");
     let native_token = WETH9::deployed(&web3)

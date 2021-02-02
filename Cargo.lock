@@ -2399,6 +2399,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "transaction-retry",
  "web3",
 ]
 
@@ -2841,6 +2842,15 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "transaction-retry"
+version = "0.1.0"
+source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.1.0#31b32869dbc773d62c11e91dac4d66aaa691faa2"
+dependencies = [
+ "async-trait",
+ "futures",
 ]
 
 [[package]]
