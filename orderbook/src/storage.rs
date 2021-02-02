@@ -39,6 +39,7 @@ pub enum RemoveOrderResult {
     DoesNotExist,
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait Storage: Send + Sync {
     async fn add_order(&self, order: Order) -> Result<AddOrderResult>;

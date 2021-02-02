@@ -1,6 +1,7 @@
 use contracts::GPv2Settlement;
 use model::DomainSeparator;
 use orderbook::{
+    account_balances::Web3BalanceFetcher,
     orderbook::Orderbook,
     serve_task,
     storage::{self, InMemoryOrderBook, Storage},
@@ -50,6 +51,11 @@ async fn main() {
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
+    let gp_allowance = settlement_contract
+        .allowance_manager()
+        .call()
+        .await
+        .expect("Couldn't get allowance manager address");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -69,7 +75,12 @@ async fn main() {
                 .expect("failed to connect to postgres"),
         ),
     };
-    let orderbook = Arc::new(Orderbook::new(domain_separator, storage));
+    let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
+    let orderbook = Arc::new(Orderbook::new(
+        domain_separator,
+        storage,
+        Box::new(balance_fetcher),
+    ));
     let serve_task = serve_task(orderbook.clone(), args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {

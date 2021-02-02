@@ -21,7 +21,7 @@ paths:
           content:
             application/json:
               schema:
-                  $ref: "#/components/schemas/UID"
+                $ref: "#/components/schemas/UID"
         400:
           description: Error during order validation
           content:
@@ -217,6 +217,10 @@ components:
           $ref: "#/components/schemas/Address"
         UID:
           $ref: "#/components/schemas/UID"
+        availableBalance:
+          description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance."
+          $ref: "#/components/schemas/TokenAmount"
+          nullable: true
         executedSellAmount:
           description: "The total amount of sellToken that has been executed for this order."
           $ref: "#/components/schemas/BigUint"
@@ -234,16 +238,22 @@ components:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
     UID:
-     description: |
-      Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
-      Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
-      and bytes 52..56 valid to,
-     type: string
+      description: |
+        Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
+        Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
+        and bytes 52..56 valid to,
+      type: string
     OrderPostError:
       type: object
       properties:
         errorType:
           type: string
-          enum: [ MissingOrderData, InvalidSignature, DuplicateOrder, InsufficientFunds]
+          enum:
+            [
+              MissingOrderData,
+              InvalidSignature,
+              DuplicateOrder,
+              InsufficientFunds,
+            ]
         description:
           type: string

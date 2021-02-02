@@ -1,6 +1,27 @@
 use primitive_types::U256;
 use serde::{de, Deserializer, Serializer};
+use serde_with::{DeserializeAs, SerializeAs};
 use std::fmt;
+
+pub struct DecimalU256;
+
+impl<'de> DeserializeAs<'de, U256> for DecimalU256 {
+    fn deserialize_as<D>(deserializer: D) -> Result<U256, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize(deserializer)
+    }
+}
+
+impl<'de> SerializeAs<U256> for DecimalU256 {
+    fn serialize_as<S>(source: &U256, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize(source, serializer)
+    }
+}
 
 pub fn serialize<S>(value: &U256, serializer: S) -> Result<S::Ok, S::Error>
 where
