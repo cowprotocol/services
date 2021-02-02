@@ -73,6 +73,13 @@ impl Orderbook {
                 .balance_fetcher
                 .get_balance(order.order_meta_data.owner, order.order_creation.sell_token);
         }
+        orders_without_balance.retain(|order| {
+            let balance = order.order_meta_data.available_balance.unwrap_or_default();
+            let has_sufficient_balance = !balance.is_zero()
+                && (order.order_creation.partially_fillable
+                    || balance >= order.order_creation.sell_amount);
+            !filter.exclude_insufficient_balance || has_sufficient_balance
+        });
         Ok(orders_without_balance)
     }
 
@@ -246,5 +253,58 @@ mod tests {
             orders[1].order_meta_data.available_balance,
             Some(another_balance)
         );
+    }
+
+    #[tokio::test]
+    async fn filters_insufficient_balances() {
+        let mut storage = MockStorage::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+
+        let orders = vec![
+            Order {
+                order_creation: OrderCreation {
+                    sell_amount: 100.into(),
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                order_creation: OrderCreation {
+                    sell_amount: 200.into(),
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+
+        let storage_orders = orders.clone();
+        storage
+            .expect_get_orders()
+            .return_once(|_| Ok(storage_orders));
+
+        balance_fetcher.expect_register_many().return_const(());
+        balance_fetcher
+            .expect_get_balance()
+            .with(always(), always())
+            .return_const(Some(50.into()));
+
+        let orderbook = Orderbook::new(
+            DomainSeparator::default(),
+            Box::new(storage),
+            Box::new(balance_fetcher),
+        );
+        let orders = orderbook
+            .get_orders(&OrderFilter {
+                exclude_insufficient_balance: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        // Only the partially fillable order is included
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].order_creation.partially_fillable, true);
     }
 }

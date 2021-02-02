@@ -20,6 +20,7 @@ pub struct OrderFilter {
     pub buy_token: Option<H160>,
     pub exclude_fully_executed: bool,
     pub exclude_invalidated: bool,
+    pub exclude_insufficient_balance: bool,
     pub uid: Option<OrderUid>,
 }
 

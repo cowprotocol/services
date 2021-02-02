@@ -119,7 +119,7 @@ async fn test_with_ganache() {
             .expect("Couldn't query domain separator"),
     );
     let orderbook = Arc::new(Orderbook::new(
-        DomainSeparator::default(),
+        domain_separator,
         Box::new(InMemoryOrderBook::default()),
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
     ));

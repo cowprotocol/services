@@ -27,6 +27,7 @@ pub fn get_orders_request() -> impl Filter<Extract = (OrderFilter,), Error = Rej
             buy_token: to_h160(query.buy_token),
             exclude_fully_executed: true,
             exclude_invalidated: true,
+            exclude_insufficient_balance: true,
             ..Default::default()
         })
 }
