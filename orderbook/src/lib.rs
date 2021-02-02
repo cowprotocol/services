@@ -1,3 +1,4 @@
+pub mod account_balances;
 pub mod api;
 pub mod database;
 pub mod event_updater;

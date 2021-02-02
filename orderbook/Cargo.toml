@@ -37,3 +37,4 @@ web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 [dev-dependencies]
 hex-literal = "0.3"
 secp256k1 = "0.20"
+mockall = "0.9"
