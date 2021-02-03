@@ -29,7 +29,7 @@ impl OrderBook {
             uids_to_be_removed
         );
         let mut orders = self.orders.write().await;
-        orders.retain(|uid, _| uids_to_be_removed.contains(uid));
+        orders.retain(|uid, _| !uids_to_be_removed.contains(uid));
     }
 
     async fn get_uids_of_settled_orders(
@@ -57,7 +57,7 @@ impl OrderBook {
         // As a simplification the function is returning the uid,
         // if the order was already partially settled
         // or if it was canceled.
-        if filled_amount.gt(&U256::zero()) {
+        if filled_amount.is_zero() {
             None
         } else {
             Some(uid)
@@ -121,7 +121,7 @@ impl Storage for OrderBook {
         let remove_order_future = self.remove_expired_orders(now_in_epoch_seconds());
         let remove_settled_orders_future = self.remove_settled_orders(settlement_contract);
         futures::join!(remove_order_future, remove_settled_orders_future);
-        println!("maintained");
+        tracing::info!("maintained");
         Ok(())
     }
 }

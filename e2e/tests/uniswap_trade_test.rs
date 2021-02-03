@@ -207,8 +207,12 @@ async fn test_with_ganache() {
 
     // Drive orderbook in order to check the removal of settled order_b
     orderbook.run_maintenance(&gp_settlement).await.unwrap();
+
     let orders = create_orderbook_api().get_orders().await.unwrap();
     assert!(orders.is_empty());
+
+    // Drive again to ensure we can continue solution finding
+    driver.single_run().await.unwrap();
 }
 
 fn to_wei(base: u32) -> U256 {
