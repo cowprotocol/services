@@ -4,11 +4,13 @@ use contracts::{
     g_pv_2_settlement::{event_data::Trade as ContractTrade, Event as ContractEvent},
     GPv2Settlement,
 };
-use ethcontract::{errors::ExecutionError, Event as EthcontractEvent, EventMetadata};
+use ethcontract::{
+    dyns::DynTransport, errors::ExecutionError, Event as EthcontractEvent, EventMetadata,
+};
 use futures::{Stream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
 use std::{convert::TryInto, ops::RangeInclusive};
-use web3::{Transport, Web3};
+use web3::Web3;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
 const MAX_REORG_BLOCK_COUNT: u64 = 25;
@@ -22,9 +24,14 @@ pub struct EventUpdater {
 }
 
 impl EventUpdater {
+    pub fn new(contract: GPv2Settlement, db: Database) -> Self {
+        Self { contract, db }
+    }
+
     /// Get new events from the contract and insert them into the database.
-    pub async fn update_events(&mut self) -> Result<()> {
+    pub async fn update_events(&self) -> Result<()> {
         let range = self.event_block_range().await?;
+        tracing::debug!("updating events in block range {:?}", range);
         let events = self
             .past_events(&range)
             .await
@@ -55,6 +62,7 @@ impl EventUpdater {
         let mut have_deleted_old_events = false;
         while let Some(trades) = events.next().await {
             let events = trades.context("failed to get event")?;
+            tracing::debug!("inserting {} new events", events.len());
             if !have_deleted_old_events {
                 self.db
                     .replace_events(*range.start(), events)
@@ -92,7 +100,7 @@ impl EventUpdater {
         Ok(from_block..=current_block)
     }
 
-    fn web3(&self) -> Web3<impl Transport> {
+    fn web3(&self) -> Web3<DynTransport> {
         self.contract.raw_instance().web3()
     }
 

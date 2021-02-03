@@ -70,7 +70,7 @@ async fn main() {
     let storage: Box<dyn Storage> = match args.db_url {
         None => Box::new(InMemoryOrderBook::default()),
         Some(url) => Box::new(
-            storage::postgres_orderbook(url)
+            storage::postgres_orderbook(settlement_contract.clone(), url)
                 .await
                 .expect("failed to connect to postgres"),
         ),

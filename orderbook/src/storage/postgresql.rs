@@ -1,17 +1,24 @@
 use super::*;
-use crate::database::{Database, OrderFilter};
-use anyhow::Result;
+use crate::{
+    database::{Database, OrderFilter},
+    event_updater::EventUpdater,
+};
+use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::TryStreamExt;
 use model::order::{Order, OrderUid};
 
 pub struct OrderBook {
     database: Database,
+    event_updater: EventUpdater,
 }
 
 impl OrderBook {
-    pub fn _new(database: Database) -> Self {
-        Self { database }
+    pub fn new(contract: GPv2Settlement, database: Database) -> Self {
+        Self {
+            database: database.clone(),
+            event_updater: EventUpdater::new(contract, database),
+        }
     }
 }
 
@@ -31,6 +38,9 @@ impl Storage for OrderBook {
     }
 
     async fn run_maintenance(&self, _settlement_contract: &GPv2Settlement) -> Result<()> {
-        Ok(())
+        self.event_updater
+            .update_events()
+            .await
+            .context("event updater failed")
     }
 }
