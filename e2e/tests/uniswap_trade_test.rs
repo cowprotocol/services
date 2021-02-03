@@ -10,7 +10,7 @@ use orderbook::{
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use solver::liquidity::uniswap::UniswapLiquidity;
+use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
@@ -170,10 +170,6 @@ async fn test_with_ganache() {
     assert_eq!(placement.unwrap().status(), 201);
 
     // Drive solution
-    let orderbook_api = solver::orderbook::OrderBookApi::new(
-        reqwest::Url::from_str(API_HOST).unwrap(),
-        std::time::Duration::from_secs(10),
-    );
     let uniswap_liquidity = UniswapLiquidity::new(
         uniswap_factory.clone(),
         uniswap_router.clone(),
@@ -187,7 +183,7 @@ async fn test_with_ganache() {
     let mut driver = solver::driver::Driver::new(
         gp_settlement.clone(),
         uniswap_liquidity,
-        orderbook_api,
+        create_orderbook_api(),
         Box::new(solver),
         Box::new(web3),
         Duration::from_secs(1),
@@ -211,18 +207,17 @@ async fn test_with_ganache() {
 
     // Drive orderbook in order to check the removal of settled order_b
     orderbook.run_maintenance(&gp_settlement).await.unwrap();
-    let placement = client
-        .get(&format!(
-            "{}{}{}",
-            API_HOST,
-            ORDER_PLACEMENT_ENDPOINT,
-            order_b.uid(&trader_b.address())
-        ))
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 404);
+    let orders = create_orderbook_api().get_orders().await.unwrap();
+    assert!(orders.is_empty());
 }
 
 fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::from(10).pow(18.into())
+}
+
+fn create_orderbook_api() -> OrderBookApi {
+    solver::orderbook::OrderBookApi::new(
+        reqwest::Url::from_str(API_HOST).unwrap(),
+        std::time::Duration::from_secs(10),
+    )
 }
