@@ -33,12 +33,41 @@ Several pieces of functionality are shared between the order book and the solver
 
 ## Testing
 
-Run unit tests with `cargo test`.
-Some (by default ignored) tests require a locally running Postgres instance as seen on [CI](.github/workflows/pull-request.yaml).
-More extensive end to end tests can be run with `cargo test -p e2e`.
-These require a locally running instance of ganache.
+Run unit tests: `cargo test`.
 
-A more extensive e2e test using ganache
+Some unit tests and the e2e tests require a local postgres setup. For some ways on how to start postgres see the next section. e2e tests additionally require ganache to be running.
+
+Run postgres unit tests: `cargo test --jobs 1 postgres -- --ignored --test-threads 1`
+
+Run e2e tests: `cargo test -p e2e -- --test-threads 1`.
+
+### Postgres
+
+The tests that require postgres connect to the default database of locally running postgres instance on the default port. There are several ways to set up postgres:
+
+```sh
+# Docker
+docker run -d -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=`whoami` -p 5432:5432 postgres
+
+# Service
+sudo systemctl start postgresql.service
+sudo -u postgres createuser $USER
+sudo -u postgres createdb $USER
+
+# Manual setup in local folder
+mkdir postgres && cd postgres
+initdb data # Arbitrary directory that stores the database
+# In data/postgresql.conf set unix_socket_directories to the absolute path to an arbitrary existing
+# and writable directory that postgres creates a temporary file in.
+# Run postgres
+postgres -D data
+# In another terminal, only for first time setup
+createdb -h localhost $USER
+
+# Finally for all methods to test that the server is reachable and to set the schema for the tests.
+psql -h localhost -f database/schema.sql
+```
+
 
 ## Running
 

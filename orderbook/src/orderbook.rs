@@ -95,27 +95,33 @@ pub fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> 
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::{account_balances::MockBalanceFetching, storage::MockStorage};
     use ethcontract::H160;
     use mockall::{
         predicate::{always, eq},
         Sequence,
     };
-    use model::{order::OrderCreation, DomainSeparator};
-
-    use super::*;
-    use crate::account_balances::MockBalanceFetching;
-    use crate::storage::{InMemoryOrderBook, MockStorage};
+    use model::{
+        order::{OrderBuilder, OrderCreation},
+        DomainSeparator,
+    };
 
     #[tokio::test]
     async fn watches_owners_sell_token_balance_for_added_orders() {
-        let storage = Box::new(InMemoryOrderBook::default());
+        let mut storage = MockStorage::new();
         let mut balance_fetcher = MockBalanceFetching::new();
 
         let sell_token = H160::from_low_u64_be(2);
-        let order = OrderCreation {
-            sell_token,
-            ..Default::default()
-        };
+        let order = OrderBuilder::default().with_sell_token(sell_token).build();
+
+        storage
+            .expect_add_order()
+            .returning(|_| Ok(AddOrderResult::Added(OrderUid::default())));
+        storage.expect_get_orders().return_once({
+            let order = order.clone();
+            move |_| Ok(vec![order])
+        });
 
         balance_fetcher
             .expect_register()
@@ -124,10 +130,10 @@ mod tests {
 
         let orderbook = Orderbook::new(
             DomainSeparator::default(),
-            storage,
+            Box::new(storage),
             Box::new(balance_fetcher),
         );
-        orderbook.add_order(order).await.unwrap();
+        orderbook.add_order(order.order_creation).await.unwrap();
     }
 
     #[tokio::test]

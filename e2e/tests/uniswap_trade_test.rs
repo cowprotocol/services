@@ -120,9 +120,9 @@ async fn test_with_ganache() {
     );
     let db = Database::new("postgresql://").unwrap();
     db.clear().await.unwrap();
-    let storage = storage::postgresql::OrderBook::new(db);
+    let storage = storage::postgresql::OrderBook::new(gp_settlement.clone(), db);
     let orderbook = Arc::new(Orderbook::new(
-        DomainSeparator::default(),
+        domain_separator,
         Box::new(storage),
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
     ));

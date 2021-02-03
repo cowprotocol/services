@@ -64,7 +64,7 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let storage = storage::postgres_orderbook(args.db_url)
+    let storage = storage::postgres_orderbook(settlement_contract.clone(), args.db_url)
         .await
         .expect("failed to connect to postgres");
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
