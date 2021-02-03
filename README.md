@@ -1,3 +1,5 @@
+![pull request](https://github.com/gnosis/gp-v2-services/workflows/pull%20request/badge.svg) ![deploy](https://github.com/gnosis/gp-v2-services/workflows/deploy/badge.svg)
+
 # gp-v2-services
 
 This repository contains backend code for [Gnosis Protocol V2](TODO high level gpv2 link) written in Rust.
