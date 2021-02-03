@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ethcontract::{batch::CallBatch, Http, Web3};
 use futures::future::{join3, join_all};
 use std::collections::HashMap;
@@ -89,10 +89,7 @@ impl Web3BalanceFetcher {
             })
             .collect::<Vec<_>>();
 
-        batch
-            .execute_all()
-            .await
-            .context("Batch call to fetch balances failed")?;
+        batch.execute_all(usize::MAX).await;
 
         let call_results = join_all(calls).await;
         let mut guard = self.balances.lock().expect("thread holding mutex panicked");

@@ -17,7 +17,7 @@ async-trait = "0.1"
 bigdecimal = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.10", default-features = false }
+ethcontract = { version = "0.11", default-features = false }
 futures = "0.3.12"
 hex = { version = "0.4", default-features = false }
 model = { path = "../model" }
