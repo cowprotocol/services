@@ -80,6 +80,9 @@ impl Driver {
             Some(settlement) => settlement,
         };
         info!("Computed {:?}", settlement);
+        if settlement.trades.is_empty() {
+            info!("Skipping empty settlement");
+        }
         // TODO: check if we need to approve spending to uniswap
         settlement_submission::submit(
             settlement,
