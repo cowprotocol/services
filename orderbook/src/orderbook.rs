@@ -46,38 +46,12 @@ impl Orderbook {
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
-        let mut orders_without_balance = self.storage.get_orders(filter).await?;
-
-        // Since order can come from storage after a cold start there is the possibility that they are not yet registered
-        // for balance updates. In this case we do it here.
-        let untracked = orders_without_balance
-            .iter()
-            .filter_map(|order| {
-                match self
-                    .balance_fetcher
-                    .get_balance(order.order_meta_data.owner, order.order_creation.sell_token)
-                {
-                    Some(_) => None,
-                    None => Some((order.order_meta_data.owner, order.order_creation.sell_token)),
-                }
-            })
-            .collect();
-        self.balance_fetcher.register_many(untracked).await;
-
-        // Enrich orders with balance information
-        for order in orders_without_balance.iter_mut() {
-            order.order_meta_data.available_balance = self
-                .balance_fetcher
-                .get_balance(order.order_meta_data.owner, order.order_creation.sell_token);
+        let mut orders = self.storage.get_orders(filter).await?;
+        set_order_balance(orders.as_mut_slice(), self.balance_fetcher.as_ref()).await;
+        if filter.exclude_insufficient_balance {
+            remove_orders_without_sufficient_balance(&mut orders);
         }
-        orders_without_balance.retain(|order| {
-            let balance = order.order_meta_data.available_balance.unwrap_or_default();
-            let has_sufficient_balance = !balance.is_zero()
-                && (order.order_creation.partially_fillable
-                    || balance >= order.order_creation.sell_amount);
-            !filter.exclude_insufficient_balance || has_sufficient_balance
-        });
-        Ok(orders_without_balance)
+        Ok(orders)
     }
 
     pub async fn run_maintenance(&self, settlement_contract: &GPv2Settlement) -> Result<()> {
@@ -89,73 +63,64 @@ impl Orderbook {
     }
 }
 
-pub fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> bool {
+fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> bool {
     order.valid_to > now_in_epoch_seconds
+}
+
+async fn set_order_balance(orders: &mut [Order], balance_fetcher: &dyn BalanceFetching) {
+    // Since order can come from storage after a cold start there is the possibility that they are not yet registered
+    // for balance updates. In this case we do it here.
+    let untracked = orders
+        .iter()
+        .filter_map(|order| {
+            match balance_fetcher
+                .get_balance(order.order_meta_data.owner, order.order_creation.sell_token)
+            {
+                Some(_) => None,
+                None => Some((order.order_meta_data.owner, order.order_creation.sell_token)),
+            }
+        })
+        .collect();
+    balance_fetcher.register_many(untracked).await;
+
+    // Enrich orders with balance information
+    for order in orders.iter_mut() {
+        order.order_meta_data.available_balance = balance_fetcher
+            .get_balance(order.order_meta_data.owner, order.order_creation.sell_token);
+    }
+}
+
+fn remove_orders_without_sufficient_balance(orders: &mut Vec<Order>) {
+    orders.retain(|order| {
+        let balance = order.order_meta_data.available_balance.unwrap_or_default();
+        !balance.is_zero()
+            && (order.order_creation.partially_fillable
+                || balance >= order.order_creation.sell_amount)
+    });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{account_balances::MockBalanceFetching, storage::MockStorage};
+    use crate::account_balances::MockBalanceFetching;
     use ethcontract::H160;
-    use mockall::{
-        predicate::{always, eq},
-        Sequence,
-    };
-    use model::{
-        order::{OrderBuilder, OrderCreation},
-        DomainSeparator,
-    };
-
-    #[tokio::test]
-    async fn watches_owners_sell_token_balance_for_added_orders() {
-        let mut storage = MockStorage::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-
-        let sell_token = H160::from_low_u64_be(2);
-        let order = OrderBuilder::default().with_sell_token(sell_token).build();
-
-        storage
-            .expect_add_order()
-            .returning(|_| Ok(AddOrderResult::Added(OrderUid::default())));
-        storage.expect_get_orders().return_once({
-            let order = order.clone();
-            move |_| Ok(vec![order])
-        });
-
-        balance_fetcher
-            .expect_register()
-            .with(always(), eq(sell_token))
-            .returning(|_, _| ());
-
-        let orderbook = Orderbook::new(
-            DomainSeparator::default(),
-            Box::new(storage),
-            Box::new(balance_fetcher),
-        );
-        orderbook.add_order(order.order_creation).await.unwrap();
-    }
+    use mockall::{predicate::eq, Sequence};
+    use model::order::{OrderCreation, OrderMetaData};
 
     #[tokio::test]
     async fn enriches_storage_orders_with_available_balance() {
-        let mut storage = MockStorage::new();
         let mut balance_fetcher = MockBalanceFetching::new();
 
         let sell_token = H160::from_low_u64_be(2);
         let balance = 100.into();
 
-        let orders = vec![Order {
+        let mut orders = vec![Order {
             order_creation: OrderCreation {
                 sell_token,
                 ..Default::default()
             },
             ..Default::default()
         }];
-
-        let storage_orders = orders.clone();
-        storage
-            .expect_get_orders()
-            .return_once(|_| Ok(storage_orders));
 
         balance_fetcher
             .expect_register_many()
@@ -166,18 +131,12 @@ mod tests {
             .with(eq(orders[0].order_meta_data.owner), eq(sell_token))
             .return_const(Some(balance));
 
-        let orderbook = Orderbook::new(
-            DomainSeparator::default(),
-            Box::new(storage),
-            Box::new(balance_fetcher),
-        );
-        let orders = orderbook.get_orders(&OrderFilter::default()).await.unwrap();
+        set_order_balance(orders.as_mut_slice(), &balance_fetcher).await;
         assert_eq!(orders[0].order_meta_data.available_balance, Some(balance));
     }
 
     #[tokio::test]
     async fn resgisters_untracked_balances_on_fetching() {
-        let mut storage = MockStorage::new();
         let mut balance_fetcher = MockBalanceFetching::new();
 
         let a_sell_token = H160::from_low_u64_be(2);
@@ -186,7 +145,7 @@ mod tests {
         let another_sell_token = H160::from_low_u64_be(3);
         let another_balance = 200.into();
 
-        let orders = vec![
+        let mut orders = vec![
             Order {
                 order_creation: OrderCreation {
                     sell_token: a_sell_token,
@@ -203,11 +162,6 @@ mod tests {
             },
         ];
         let owner = orders[0].order_meta_data.owner;
-
-        let storage_orders = orders.clone();
-        storage
-            .expect_get_orders()
-            .return_once(|_| Ok(storage_orders));
 
         balance_fetcher
             .expect_get_balance()
@@ -238,12 +192,7 @@ mod tests {
             .in_sequence(&mut seq)
             .return_const(Some(another_balance));
 
-        let orderbook = Orderbook::new(
-            DomainSeparator::default(),
-            Box::new(storage),
-            Box::new(balance_fetcher),
-        );
-        let orders = orderbook.get_orders(&OrderFilter::default()).await.unwrap();
+        set_order_balance(orders.as_mut_slice(), &balance_fetcher).await;
         assert_eq!(orders[0].order_meta_data.available_balance, Some(a_balance));
         assert_eq!(
             orders[1].order_meta_data.available_balance,
@@ -253,17 +202,17 @@ mod tests {
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
-        let mut storage = MockStorage::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-
-        let orders = vec![
+        let mut orders = vec![
             Order {
                 order_creation: OrderCreation {
                     sell_amount: 100.into(),
                     partially_fillable: true,
                     ..Default::default()
                 },
-                ..Default::default()
+                order_meta_data: OrderMetaData {
+                    available_balance: Some(50.into()),
+                    ..Default::default()
+                },
             },
             Order {
                 order_creation: OrderCreation {
@@ -271,33 +220,14 @@ mod tests {
                     partially_fillable: false,
                     ..Default::default()
                 },
-                ..Default::default()
+                order_meta_data: OrderMetaData {
+                    available_balance: Some(50.into()),
+                    ..Default::default()
+                },
             },
         ];
 
-        let storage_orders = orders.clone();
-        storage
-            .expect_get_orders()
-            .return_once(|_| Ok(storage_orders));
-
-        balance_fetcher.expect_register_many().return_const(());
-        balance_fetcher
-            .expect_get_balance()
-            .with(always(), always())
-            .return_const(Some(50.into()));
-
-        let orderbook = Orderbook::new(
-            DomainSeparator::default(),
-            Box::new(storage),
-            Box::new(balance_fetcher),
-        );
-        let orders = orderbook
-            .get_orders(&OrderFilter {
-                exclude_insufficient_balance: true,
-                ..Default::default()
-            })
-            .await
-            .unwrap();
+        remove_orders_without_sufficient_balance(&mut orders);
 
         // Only the partially fillable order is included
         assert_eq!(orders.len(), 1);
