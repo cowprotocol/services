@@ -1,10 +1,11 @@
 use super::*;
-use crate::orderbook::{has_future_valid_to, now_in_epoch_seconds};
+use crate::orderbook::has_future_valid_to;
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::future;
 use model::order::{Order, OrderUid};
 use primitive_types::U256;
+use shared::time::now_in_epoch_seconds;
 use std::collections::{hash_map::Entry, HashMap};
 use tokio::sync::RwLock;
 use tracing::info;
@@ -16,7 +17,7 @@ pub struct OrderBook {
 }
 
 impl OrderBook {
-    async fn remove_expired_orders(&self, now_in_epoch_seconds: u64) {
+    async fn remove_expired_orders(&self, now_in_epoch_seconds: u32) {
         // TODO: use the timestamp from the most recent block instead?
         let mut orders = self.orders.write().await;
         orders.retain(|_, order| has_future_valid_to(now_in_epoch_seconds, &order.order_creation));
@@ -197,9 +198,7 @@ pub mod test_util {
                 .len(),
             1
         );
-        orderbook
-            .remove_expired_orders((u32::MAX - 11) as u64)
-            .await;
+        orderbook.remove_expired_orders(u32::MAX - 11).await;
         assert_eq!(
             orderbook
                 .get_orders(&OrderFilter::default())
@@ -208,7 +207,7 @@ pub mod test_util {
                 .len(),
             1
         );
-        orderbook.remove_expired_orders((u32::MAX - 9) as u64).await;
+        orderbook.remove_expired_orders(u32::MAX - 9).await;
         assert_eq!(
             orderbook
                 .get_orders(&OrderFilter::default())

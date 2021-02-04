@@ -44,9 +44,9 @@ paths:
     get:
       summary: Get existing orders.
       description: |
-        The orders are optionally filtered by the owner, sell token, buy token. Each filter can be
-        specified individually and is optional. So not specifying any returns all orders in the
-        system.
+        By default all currently valid orders are returned. The set of returned orders can be
+        reduced by setting owner, sell token, buy token filters. It can be increased by disabling
+        different order validity exclusion criteria.
       parameters:
         - name: owner
           in: query
@@ -63,6 +63,31 @@ paths:
           schema:
             $ref: "#/components/schemas/Address"
           required: false
+        - name: includeFullyExecuted
+          in: query
+          description: Should fully executed orders be returned?
+          schema:
+            type: boolean
+            default: false
+        - name: includeInvalidated
+          in: query
+          description: Should orders that have been invalidated in the smart contract be returned?
+          schema:
+            type: boolean
+            default: false
+        - name: includeInsufficientBalance
+          in: query
+          description: Should fill or kill orders that are not sufficiently funded be included?
+          schema:
+            type: boolean
+            default: false
+        - name: minValidTo
+          in: query
+          description: |
+            Minimum valid_to timestamp for included orders.
+            The default is the current time.
+          schema:
+            type: integer
       responses:
         200:
           description: existing orders

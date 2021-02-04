@@ -1,9 +1,6 @@
-use std::time::SystemTime;
-
-use anyhow::Result;
-
 use crate::storage::{AddOrderResult, RemoveOrderResult, Storage};
 use crate::{account_balances::BalanceFetching, database::OrderFilter};
+use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::join;
 use model::{
@@ -31,7 +28,7 @@ impl Orderbook {
     }
 
     pub async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult> {
-        if !has_future_valid_to(now_in_epoch_seconds(), &order) {
+        if !has_future_valid_to(shared::time::now_in_epoch_seconds(), &order) {
             return Ok(AddOrderResult::PastValidTo);
         }
         let order = match Order::from_order_creation(order, &self.domain_separator) {
@@ -92,15 +89,8 @@ impl Orderbook {
     }
 }
 
-pub fn now_in_epoch_seconds() -> u64 {
-    SystemTime::now()
-        .duration_since(SystemTime::UNIX_EPOCH)
-        .expect("now earlier than epoch")
-        .as_secs()
-}
-
-pub fn has_future_valid_to(now_in_epoch_seconds: u64, order: &OrderCreation) -> bool {
-    order.valid_to as u64 > now_in_epoch_seconds
+pub fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> bool {
+    order.valid_to > now_in_epoch_seconds
 }
 
 #[cfg(test)]
