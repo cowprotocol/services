@@ -82,16 +82,17 @@ impl Driver {
         info!("Computed {:?}", settlement);
         if settlement.trades.is_empty() {
             info!("Skipping empty settlement");
+        } else {
+            // TODO: check if we need to approve spending to uniswap
+            settlement_submission::submit(
+                settlement,
+                &self.settlement_contract,
+                self.gas_price_estimator.as_ref(),
+                self.target_confirm_time,
+            )
+            .await
+            .context("failed to submit settlement")?;
         }
-        // TODO: check if we need to approve spending to uniswap
-        settlement_submission::submit(
-            settlement,
-            &self.settlement_contract,
-            self.gas_price_estimator.as_ref(),
-            self.target_confirm_time,
-        )
-        .await
-        .context("failed to submit settlement")?;
         Ok(())
     }
 }
