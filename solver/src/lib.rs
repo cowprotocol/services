@@ -9,7 +9,6 @@ pub mod orderbook;
 pub mod settlement;
 pub mod settlement_submission;
 pub mod solver;
-pub mod uniswap;
 
 use anyhow::Result;
 use ethcontract::{contract::MethodDefaults, Account, Http, PrivateKey, Web3};

@@ -85,6 +85,8 @@ async fn main() {
         uniswap_factory.clone(),
         uniswap_router.clone(),
         settlement_contract.clone(),
+        web3.clone(),
+        chain_id,
     );
     let solver = NaiveSolver {
         uniswap_router,
