@@ -1,28 +1,50 @@
-use crate::storage::{AddOrderResult, RemoveOrderResult, Storage};
-use crate::{account_balances::BalanceFetching, database::OrderFilter};
+use crate::database::Database;
+use crate::{
+    account_balances::BalanceFetching, database::OrderFilter, event_updater::EventUpdater,
+};
 use anyhow::Result;
 use contracts::GPv2Settlement;
-use futures::join;
+use futures::{join, TryStreamExt};
 use model::{
     order::{Order, OrderCreation, OrderUid},
     DomainSeparator,
 };
 
+#[derive(Debug, Eq, PartialEq)]
+pub enum AddOrderResult {
+    Added(OrderUid),
+    DuplicatedOrder,
+    InvalidSignature,
+    Forbidden,
+    MissingOrderData,
+    PastValidTo,
+    InsufficientFunds,
+}
+
+#[derive(Debug)]
+pub enum RemoveOrderResult {
+    Removed,
+    DoesNotExist,
+}
+
 pub struct Orderbook {
     domain_separator: DomainSeparator,
-    storage: Box<dyn Storage>,
+    database: Database,
+    event_updater: EventUpdater,
     balance_fetcher: Box<dyn BalanceFetching>,
 }
 
 impl Orderbook {
     pub fn new(
         domain_separator: DomainSeparator,
-        storage: Box<dyn Storage>,
+        database: Database,
+        event_updater: EventUpdater,
         balance_fetcher: Box<dyn BalanceFetching>,
     ) -> Self {
         Self {
             domain_separator,
-            storage,
+            database,
+            event_updater,
             balance_fetcher,
         }
     }
@@ -38,15 +60,16 @@ impl Orderbook {
         self.balance_fetcher
             .register(order.order_meta_data.owner, order.order_creation.sell_token)
             .await;
-        self.storage.add_order(order).await
+        self.database.insert_order(&order).await?;
+        Ok(AddOrderResult::Added(order.order_meta_data.uid))
     }
 
-    pub async fn remove_order(&self, uid: &OrderUid) -> Result<RemoveOrderResult> {
-        self.storage.remove_order(uid).await
+    pub async fn remove_order(&self, _uid: &OrderUid) -> Result<RemoveOrderResult> {
+        todo!()
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
-        let mut orders = self.storage.get_orders(filter).await?;
+        let mut orders = self.database.orders(filter).try_collect::<Vec<_>>().await?;
         set_order_balance(orders.as_mut_slice(), self.balance_fetcher.as_ref()).await;
         if filter.exclude_insufficient_balance {
             remove_orders_without_sufficient_balance(&mut orders);
@@ -54,9 +77,9 @@ impl Orderbook {
         Ok(orders)
     }
 
-    pub async fn run_maintenance(&self, settlement_contract: &GPv2Settlement) -> Result<()> {
+    pub async fn run_maintenance(&self, _settlement_contract: &GPv2Settlement) -> Result<()> {
         join!(
-            self.storage.run_maintenance(settlement_contract),
+            self.event_updater.update_events(),
             self.balance_fetcher.update()
         )
         .0

@@ -9,7 +9,8 @@ use model::{
     DomainSeparator,
 };
 use orderbook::{
-    account_balances::Web3BalanceFetcher, database::Database, orderbook::Orderbook, storage,
+    account_balances::Web3BalanceFetcher, database::Database, event_updater::EventUpdater,
+    orderbook::Orderbook,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
@@ -123,10 +124,11 @@ async fn test_with_ganache() {
     );
     let db = Database::new("postgresql://").unwrap();
     db.clear().await.unwrap();
-    let storage = storage::postgresql::OrderBook::new(gp_settlement.clone(), db);
+    let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone());
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        Box::new(storage),
+        db,
+        event_updater,
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
     ));
     orderbook::serve_task(

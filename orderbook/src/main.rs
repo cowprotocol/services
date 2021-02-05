@@ -1,8 +1,11 @@
 use contracts::GPv2Settlement;
-use model::DomainSeparator;
+use model::{order::OrderUid, DomainSeparator};
 use orderbook::{
-    account_balances::Web3BalanceFetcher, orderbook::Orderbook, serve_task, storage,
-    verify_deployed_contract_constants,
+    account_balances::Web3BalanceFetcher,
+    database::{Database, OrderFilter},
+    event_updater::EventUpdater,
+    orderbook::Orderbook,
+    serve_task, verify_deployed_contract_constants,
 };
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
@@ -64,19 +67,30 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let storage = storage::postgres_orderbook(settlement_contract.clone(), args.db_url)
-        .await
-        .expect("failed to connect to postgres");
+    let database = Database::new(args.db_url.as_str()).expect("failed to create database");
+    let event_updater = EventUpdater::new(settlement_contract.clone(), database.clone());
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        Box::new(storage),
+        database,
+        event_updater,
         Box::new(balance_fetcher),
     ));
+    check_database_connection(orderbook.as_ref()).await;
     let serve_task = serve_task(orderbook.clone(), args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
     };
+}
+
+async fn check_database_connection(orderbook: &Orderbook) {
+    orderbook
+        .get_orders(&OrderFilter {
+            uid: Some(OrderUid::default()),
+            ..Default::default()
+        })
+        .await
+        .expect("failed to connect to database");
 }

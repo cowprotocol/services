@@ -1,6 +1,4 @@
-use crate::orderbook::Orderbook;
-use crate::storage::AddOrderResult;
-
+use crate::orderbook::{AddOrderResult, Orderbook};
 use anyhow::Result;
 use model::order::OrderCreation;
 use std::{convert::Infallible, sync::Arc};
