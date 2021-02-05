@@ -1,3 +1,4 @@
+use contracts::WETH9;
 use ethcontract::PrivateKey;
 use reqwest::Url;
 use solver::{
@@ -79,12 +80,16 @@ async fn main() {
     let settlement_contract = solver::get_settlement_contract(&web3, chain_id, args.private_key)
         .await
         .expect("couldn't load deployed settlement");
+    let native_token = WETH9::deployed(&web3)
+        .await
+        .expect("couldn't load deployed native token");
     let orderbook_api =
         solver::orderbook::OrderBookApi::new(args.orderbook_url, args.orderbook_timeout);
     let uniswap_liquidity = UniswapLiquidity::new(
         uniswap_factory.clone(),
         uniswap_router.clone(),
         settlement_contract.clone(),
+        native_token.address(),
         web3.clone(),
         chain_id,
     );

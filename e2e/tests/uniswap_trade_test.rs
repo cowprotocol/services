@@ -1,5 +1,8 @@
 use contracts::{ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
-use ethcontract::prelude::{Account, Address, Http, PrivateKey, Web3, U256};
+use ethcontract::{
+    prelude::{Account, Address, Http, PrivateKey, Web3, U256},
+    H160,
+};
 use hex_literal::hex;
 use model::{
     order::{OrderBuilder, OrderKind},
@@ -177,6 +180,7 @@ async fn test_with_ganache() {
         uniswap_factory.clone(),
         uniswap_router.clone(),
         gp_settlement.clone(),
+        H160::default(),
         web3.clone(),
         1,
     );

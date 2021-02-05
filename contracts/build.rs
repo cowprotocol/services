@@ -43,6 +43,13 @@ fn main() {
         },
     );
     generate_contract("GPv2AllowListAuthentication", hashmap! {});
+    generate_contract(
+        "WETH9",
+        hashmap! {
+            // Rinkeby & Mainnet Addresses are part of the artefact
+            100 => (Address::from_str("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d").unwrap(), None),
+        },
+    );
 }
 
 fn generate_contract(

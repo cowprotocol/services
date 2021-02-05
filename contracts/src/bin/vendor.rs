@@ -39,6 +39,10 @@ const NPM_CONTRACTS: &[(&str, &str)] = &[
         "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.10/deployments/rinkeby/GPv2AllowListAuthentication.json",
         "GPv2AllowListAuthentication.json",
     ),
+    (
+        "canonical-weth@1.4.0/build/contracts/WETH9.json",
+        "WETH9.json",
+    ),
 ];
 
 fn main() {

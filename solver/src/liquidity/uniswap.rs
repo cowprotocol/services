@@ -26,6 +26,7 @@ pub struct UniswapLiquidity {
     inner: Arc<Inner>,
     web3: Web3<Http>,
     chain_id: u64,
+    native_token_wrapper: H160,
 }
 
 struct Inner {
@@ -39,6 +40,7 @@ impl UniswapLiquidity {
         factory: UniswapV2Factory,
         router: UniswapV2Router02,
         gpv2_settlement: GPv2Settlement,
+        native_token_wrapper: H160,
         web3: Web3<Http>,
         chain_id: u64,
     ) -> Self {
@@ -50,6 +52,7 @@ impl UniswapLiquidity {
             }),
             web3,
             chain_id,
+            native_token_wrapper,
         }
     }
 
@@ -58,14 +61,13 @@ impl UniswapLiquidity {
         &self,
         offchain_orders: impl Iterator<Item = &LimitOrder> + Send + Sync,
     ) -> Result<Vec<AmmOrder>> {
-        // TODO: include every token with ETH pair in the pools
         let mut pools = HashMap::new();
         let mut batch = CallBatch::new(self.web3.transport());
-        for order in offchain_orders {
-            let pair =
-                TokenPair::new(order.buy_token, order.sell_token).expect("buy token = sell token");
+
+        // Helper closure that enqueues the call to fetch the reserves for the token pair if it hasn't been fetched already
+        let mut get_reserves_if_not_yet_tracked = |pair| {
             let vacant = match pools.entry(pair) {
-                Entry::Occupied(_) => continue,
+                Entry::Occupied(_) => return,
                 Entry::Vacant(vacant) => vacant,
             };
             let uniswap_pair_address =
@@ -77,6 +79,20 @@ impl UniswapLiquidity {
 
             let future = pair_contract.get_reserves().batch_call(&mut batch);
             vacant.insert(future);
+        };
+
+        for order in offchain_orders {
+            get_reserves_if_not_yet_tracked(
+                TokenPair::new(order.buy_token, order.sell_token).expect("buy token = sell token"),
+            );
+
+            // Include every token with native token pair in the pools
+            if let Some(pair) = TokenPair::new(order.buy_token, self.native_token_wrapper) {
+                get_reserves_if_not_yet_tracked(pair);
+            }
+            if let Some(pair) = TokenPair::new(order.sell_token, self.native_token_wrapper) {
+                get_reserves_if_not_yet_tracked(pair);
+            }
         }
         batch.execute_all(MAX_BATCH_SIZE).await;
 
@@ -89,7 +105,7 @@ impl UniswapLiquidity {
                     fee: Rational::new_raw(3, 1000),
                     settlement_handling: self.inner.clone(),
                 })
-            }
+            };
         }
         Ok(result)
     }

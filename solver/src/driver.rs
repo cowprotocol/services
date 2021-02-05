@@ -64,6 +64,7 @@ impl Driver {
             .get_liquidity(limit_orders.iter())
             .await
             .context("failed to get uniswap pools")?;
+        tracing::debug!("got {} AMMs", amms.len());
 
         let liquidity = limit_orders
             .into_iter()
