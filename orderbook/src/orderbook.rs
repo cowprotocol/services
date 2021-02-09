@@ -118,7 +118,7 @@ fn remove_orders_without_sufficient_balance(orders: &mut Vec<Order>) {
         let balance = order.order_meta_data.available_balance.unwrap_or_default();
         !balance.is_zero()
             && (order.order_creation.partially_fillable
-                || balance >= order.order_creation.sell_amount)
+                || balance >= (order.order_creation.sell_amount + order.order_creation.fee_amount))
     });
 }
 
@@ -245,6 +245,19 @@ mod tests {
                 },
                 order_meta_data: OrderMetaData {
                     available_balance: Some(50.into()),
+                    ..Default::default()
+                },
+            },
+            // Fee + sell amount > balance
+            Order {
+                order_creation: OrderCreation {
+                    sell_amount: 200.into(),
+                    fee_amount: 20.into(),
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                order_meta_data: OrderMetaData {
+                    available_balance: Some(210.into()),
                     ..Default::default()
                 },
             },
