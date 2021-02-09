@@ -173,35 +173,50 @@ impl Solver for HttpSolver {
 
 #[cfg(test)]
 mod tests {
-    use crate::liquidity::{LimitOrder, MockLimitOrderSettlementHandling};
+    use super::*;
+    use crate::liquidity::{
+        AmmOrder, LimitOrder, MockAmmSettlementHandling, MockLimitOrderSettlementHandling,
+    };
+    use ::model::TokenPair;
+    use num::Rational;
     use std::sync::Arc;
 
-    use super::*;
-
     // cargo test real_solver -- --ignored --nocapture
+    // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer
     #[tokio::test]
     #[ignore]
     async fn real_solver() {
         tracing_subscriber::fmt::fmt()
-            .with_env_filter("debug")
+            .with_env_filter("solver=debug")
             .init();
+        let url = std::env::var("GP_V2_OPTIMIZER_URL")
+            .unwrap_or_else(|_| "http://localhost:8000".to_string());
         let solver = HttpSolver::new(
-            "http://localhost:8000".parse().unwrap(),
+            url.parse().unwrap(),
             None,
             SolverConfig {
                 max_nr_exec_orders: 100,
                 time_limit: 100,
             },
         );
-        let orders = vec![Liquidity::Limit(LimitOrder {
-            buy_token: H160::zero(),
-            sell_token: H160::from_low_u64_be(1),
-            buy_amount: 1.into(),
-            sell_amount: 1.into(),
-            kind: OrderKind::Sell,
-            partially_fillable: false,
-            settlement_handling: Arc::new(MockLimitOrderSettlementHandling::new()),
-        })];
-        solver.solve(orders).await.unwrap();
+        let orders = vec![
+            Liquidity::Limit(LimitOrder {
+                buy_token: H160::zero(),
+                sell_token: H160::from_low_u64_be(1),
+                buy_amount: 1.into(),
+                sell_amount: 2.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                settlement_handling: Arc::new(MockLimitOrderSettlementHandling::new()),
+            }),
+            Liquidity::Amm(AmmOrder {
+                tokens: TokenPair::new(H160::zero(), H160::from_low_u64_be(1)).unwrap(),
+                reserves: (100, 100),
+                fee: Rational::new(1, 1),
+                settlement_handling: Arc::new(MockAmmSettlementHandling::new()),
+            }),
+        ];
+        let settlement = solver.solve(orders).await.unwrap().unwrap();
+        dbg!(settlement);
     }
 }
