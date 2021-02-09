@@ -247,7 +247,10 @@ components:
           $ref: "#/components/schemas/TokenAmount"
           nullable: true
         executedSellAmount:
-          description: "The total amount of sellToken that has been executed for this order."
+          description: "The total amount of sellToken that has been executed for this order including fees."
+          $ref: "#/components/schemas/BigUint"
+        executedSellAmountBeforeFees:
+          description: "The total amount of sellToken that has been executed for this order without fees."
           $ref: "#/components/schemas/BigUint"
         executedBuyAmount:
           description: "The total amount of buyToken that has been executed for this order."

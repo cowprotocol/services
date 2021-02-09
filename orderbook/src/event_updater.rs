@@ -145,7 +145,7 @@ fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(DbEvent
     };
     let event = DbTrade {
         order_uid,
-        sell_amount: trade.sell_amount,
+        sell_amount_including_fee: trade.sell_amount,
         buy_amount: trade.buy_amount,
         fee_amount: trade.fee_amount,
     };

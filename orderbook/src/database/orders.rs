@@ -155,6 +155,12 @@ fn h160_from_vec(vec: Vec<u8>) -> Result<H160> {
 
 impl OrdersQueryRow {
     fn into_order(self) -> Result<Order> {
+        let executed_sell_amount = big_decimal_to_big_uint(&self.sum_sell)
+            .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?;
+        let executed_fee_amount = big_decimal_to_big_uint(&self.sum_fee)
+            .ok_or_else(|| anyhow!("sum_fee is not an unsigned integer"))?;
+        let executed_sell_amount_before_fees = &executed_sell_amount - &executed_fee_amount;
+
         let order_meta_data = OrderMetaData {
             creation_date: self.creation_timestamp,
             owner: h160_from_vec(self.owner)?,
@@ -166,10 +172,9 @@ impl OrdersQueryRow {
             available_balance: Default::default(),
             executed_buy_amount: big_decimal_to_big_uint(&self.sum_buy)
                 .ok_or_else(|| anyhow!("sum_buy is not an unsigned integer"))?,
-            executed_sell_amount: big_decimal_to_big_uint(&self.sum_sell)
-                .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?,
-            executed_fee_amount: big_decimal_to_big_uint(&self.sum_fee)
-                .ok_or_else(|| anyhow!("sum_fee is not an unsigned integer"))?,
+            executed_sell_amount,
+            executed_sell_amount_before_fees,
+            executed_fee_amount,
             invalidated: self.invalidated,
         };
         let order_creation = OrderCreation {
@@ -426,7 +431,7 @@ mod tests {
             },
             Event::Trade(Trade {
                 order_uid: order.order_meta_data.uid,
-                sell_amount: 3.into(),
+                sell_amount_including_fee: 3.into(),
                 ..Default::default()
             }),
         )])
@@ -445,7 +450,7 @@ mod tests {
             },
             Event::Trade(Trade {
                 order_uid: order.order_meta_data.uid,
-                sell_amount: 6.into(),
+                sell_amount_including_fee: 6.into(),
                 ..Default::default()
             }),
         )])
@@ -465,7 +470,7 @@ mod tests {
             },
             Event::Trade(Trade {
                 order_uid: order.order_meta_data.uid,
-                sell_amount: 1.into(),
+                sell_amount_including_fee: 1.into(),
                 ..Default::default()
             }),
         )])
@@ -514,7 +519,7 @@ mod tests {
                 },
                 Event::Trade(Trade {
                     order_uid: order.order_meta_data.uid,
-                    sell_amount: U256::MAX,
+                    sell_amount_including_fee: U256::MAX,
                     ..Default::default()
                 }),
             )])

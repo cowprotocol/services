@@ -22,7 +22,7 @@ pub enum Event {
 #[derive(Debug, Default)]
 pub struct Trade {
     pub order_uid: OrderUid,
-    pub sell_amount: U256,
+    pub sell_amount_including_fee: U256,
     pub buy_amount: U256,
     pub fee_amount: U256,
 }
@@ -148,7 +148,7 @@ async fn insert_trade(
                 .bind(index.block_number as i64)
                 .bind(index.log_index as i64)
                 .bind(event.order_uid.0.as_ref())
-                .bind(u256_to_big_decimal(&event.sell_amount))
+                .bind(u256_to_big_decimal(&event.sell_amount_including_fee))
                 .bind(u256_to_big_decimal(&event.buy_amount))
                 .bind(u256_to_big_decimal(&event.fee_amount)),
         )
