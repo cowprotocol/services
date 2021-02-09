@@ -2324,10 +2324,15 @@ name = "shared"
 version = "0.1.0"
 dependencies = [
  "atty",
+ "contracts",
+ "ethcontract",
+ "hex-literal",
+ "model",
  "structopt",
  "tracing",
  "tracing-subscriber",
  "url",
+ "web3",
 ]
 
 [[package]]
