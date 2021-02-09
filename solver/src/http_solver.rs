@@ -1,12 +1,23 @@
 mod model;
+mod settlement;
 
 use self::model::*;
-use crate::{liquidity::Liquidity, settlement::Settlement, solver::Solver};
+use crate::{
+    liquidity::{AmmOrder, LimitOrder, Liquidity},
+    settlement::Settlement,
+    solver::Solver,
+};
 use ::model::order::OrderKind;
 use anyhow::{ensure, Context, Result};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use std::collections::{HashMap, HashSet};
+
+// TODO: limit trading for tokens that don't have uniswap - fee pool
+// TODO: exclude partially fillable orders
+// TODO: find correct ordering for uniswap trades
+// TODO: special rounding for the prices we get from the solver?
+// TODO: make sure to give the solver disconnected token islands individually
 
 /// The configuration passed as url parameters to the solver.
 #[derive(Debug, Default)]
@@ -54,7 +65,8 @@ impl HttpSolver {
         format!("t{:x}", token)
     }
 
-    fn tokens(&self, orders: &[Liquidity]) -> HashMap<String, TokenInfoModel> {
+    // Maps string based token index from solver api
+    fn tokens(&self, orders: &[Liquidity]) -> HashMap<String, H160> {
         orders
             .iter()
             .flat_map(|liquidity| match liquidity {
@@ -67,15 +79,21 @@ impl HttpSolver {
             })
             .collect::<HashSet<_>>()
             .into_iter()
-            .map(|token| {
-                // TODO: gather real decimals and store them in a cache
-                let token_model = TokenInfoModel { decimals: 18 };
-                (self.token_to_string(&token), token_model)
-            })
+            .map(|token| (self.token_to_string(&token), token))
             .collect()
     }
 
-    fn orders(&self, orders: &[Liquidity]) -> HashMap<String, OrderModel> {
+    // Maps string based token index from solver api
+    fn token_models(&self, tokens: &HashMap<String, H160>) -> HashMap<String, TokenInfoModel> {
+        // TODO: gather real decimals and store them in a cache
+        tokens
+            .iter()
+            .map(|(index, _)| (index.clone(), TokenInfoModel { decimals: 18 }))
+            .collect()
+    }
+
+    // Maps string based order index from solver api
+    fn orders<'a>(&self, orders: &'a [Liquidity]) -> HashMap<String, &'a LimitOrder> {
         orders
             .iter()
             .filter_map(|liquidity| match liquidity {
@@ -83,6 +101,17 @@ impl HttpSolver {
                 Liquidity::Amm(_) => None,
             })
             .enumerate()
+            .map(|(index, order)| (index.to_string(), order))
+            .collect()
+    }
+
+    // Maps string based order index from solver api
+    fn order_models<'a>(
+        &self,
+        orders: &HashMap<String, &'a LimitOrder>,
+    ) -> HashMap<String, OrderModel> {
+        orders
+            .iter()
             .map(|(index, order)| {
                 let order = OrderModel {
                     sell_token: self.token_to_string(&order.sell_token),
@@ -92,20 +121,30 @@ impl HttpSolver {
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
                 };
-                (index.to_string(), order)
+                (index.clone(), order)
             })
             .collect()
     }
 
-    async fn uniswaps(&self, orders: &[Liquidity]) -> Result<HashMap<String, UniswapModel>> {
-        // TODO: use a cache
-        Ok(orders
+    // Maps string based amm index from solver api
+    fn amms<'a>(&self, orders: &'a [Liquidity]) -> HashMap<String, &'a AmmOrder> {
+        orders
             .iter()
             .filter_map(|liquidity| match liquidity {
                 Liquidity::Limit(_) => None,
                 Liquidity::Amm(amm) => Some(amm),
             })
             .enumerate()
+            .map(|(index, amm)| (index.to_string(), amm))
+            .collect()
+    }
+
+    // Maps string based amm index from solver api
+    fn amm_models<'a>(
+        &self,
+        amms: &HashMap<String, &'a AmmOrder>,
+    ) -> HashMap<String, UniswapModel> {
+        amms.iter()
             .map(|(index, amm)| {
                 let uniswap = UniswapModel {
                     token1: self.token_to_string(&amm.tokens.get().0),
@@ -116,19 +155,9 @@ impl HttpSolver {
                     fee: 0.003,
                     mandatory: false,
                 };
-                (index.to_string(), uniswap)
+                (index.clone(), uniswap)
             })
-            .collect())
-    }
-
-    async fn create_body(&self, orders: &[Liquidity]) -> Result<BatchAuctionModel> {
-        Ok(BatchAuctionModel {
-            tokens: self.tokens(orders),
-            orders: self.orders(orders),
-            uniswaps: self.uniswaps(orders).await?,
-            ref_token: self.token_to_string(&H160::zero()),
-            default_fee: 0.0,
-        })
+            .collect()
     }
 
     async fn send(&self, model: &BatchAuctionModel) -> Result<SettledBatchAuctionModel> {
@@ -164,10 +193,24 @@ impl HttpSolver {
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(&self, orders: Vec<Liquidity>) -> Result<Option<Settlement>> {
-        let body = self.create_body(orders.as_slice()).await?;
-        self.send(&body).await?;
-        Ok(None)
+    async fn solve(&self, liquidity: Vec<Liquidity>) -> Result<Option<Settlement>> {
+        let tokens = self.tokens(liquidity.as_slice());
+        let orders = self.orders(liquidity.as_slice());
+        let amms = self.amms(liquidity.as_slice());
+        let ref_token = match tokens.keys().next() {
+            Some(token) => token.clone(),
+            None => return Ok(None),
+        };
+        let model = BatchAuctionModel {
+            tokens: self.token_models(&tokens),
+            orders: self.order_models(&orders),
+            uniswaps: self.amm_models(&amms),
+            ref_token,
+            default_fee: 0.0,
+        };
+        let settled = self.send(&model).await?;
+        tracing::debug!("optimizer response {:?}", settled);
+        settlement::convert_settlement(&settled, &tokens, &orders, &amms).map(Some)
     }
 }
 
