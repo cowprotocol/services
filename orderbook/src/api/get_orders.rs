@@ -1,4 +1,5 @@
 use super::H160Wrapper;
+use crate::api::convert_get_orders_error_to_reply;
 use crate::database::OrderFilter;
 use crate::orderbook::Orderbook;
 use anyhow::Result;
@@ -49,17 +50,10 @@ pub fn get_orders_request() -> impl Filter<Extract = (OrderFilter,), Error = Rej
 }
 
 pub fn get_orders_response(result: Result<Vec<Order>>) -> impl Reply {
-    let orders = match result {
-        Ok(orders) => orders,
-        Err(err) => {
-            tracing::error!(?err, "get_orders error");
-            return Ok(reply::with_status(
-                super::internal_error(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
-        }
-    };
-    Ok(reply::with_status(reply::json(&orders), StatusCode::OK))
+    match result {
+        Ok(orders) => Ok(reply::with_status(reply::json(&orders), StatusCode::OK)),
+        Err(err) => Ok(convert_get_orders_error_to_reply(err)),
+    }
 }
 
 pub fn get_orders(

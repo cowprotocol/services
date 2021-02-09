@@ -1,3 +1,4 @@
+use crate::api::convert_get_orders_error_to_reply;
 use crate::database::OrderFilter;
 use crate::orderbook::Orderbook;
 use anyhow::Result;
@@ -19,11 +20,7 @@ pub fn get_order_by_uid_response(result: Result<Vec<Order>>) -> impl Reply {
     let orders = match result {
         Ok(orders) => orders,
         Err(err) => {
-            tracing::error!(?err, "get_orders error");
-            return Ok(reply::with_status(
-                super::internal_error(),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ));
+            return Ok(convert_get_orders_error_to_reply(err));
         }
     };
     Ok(match orders.first() {

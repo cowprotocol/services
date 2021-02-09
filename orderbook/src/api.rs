@@ -4,13 +4,15 @@ mod get_order_by_uid;
 mod get_orders;
 
 use crate::orderbook::Orderbook;
+use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
 use primitive_types::H160;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 use warp::{
-    reply::{json, Json},
+    hyper::StatusCode,
+    reply::{json, with_status, Json, WithStatus},
     Filter, Reply,
 };
 
@@ -48,6 +50,11 @@ fn internal_error() -> Json {
         error_type: "InternalServerError",
         description: "",
     })
+}
+
+pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {
+    tracing::error!(?err, "get_orders error");
+    with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
