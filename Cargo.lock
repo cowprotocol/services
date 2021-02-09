@@ -2387,6 +2387,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "serde_with",
  "shared",
  "structopt",
  "tokio",

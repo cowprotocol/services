@@ -1,9 +1,11 @@
+mod model;
+
+use self::model::*;
 use crate::{liquidity::Liquidity, settlement::Settlement, solver::Solver};
+use ::model::order::OrderKind;
 use anyhow::{Context, Result};
-use model::{order::OrderKind, u256_decimal};
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use reqwest::{Client, Url};
-use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 
 /// The configuration passed as url parameters to the solver.
@@ -153,68 +155,13 @@ impl Solver for HttpSolver {
             .bytes()
             .await
             .context("failed to get response body")?;
-        let _decoded: Solution =
+        let _decoded: SettledBatchAuctionModel =
             serde_json::from_slice(&body).with_context(|| match std::str::from_utf8(&body) {
                 Ok(body) => format!("failed to decode response body: {}", body),
                 Err(_) => format!("failed to decode response body: {:?}", body),
             })?;
         Ok(None)
     }
-}
-
-// types used in the solver http api
-
-#[derive(Debug, Default, Serialize)]
-struct BatchAuctionModel {
-    tokens: HashMap<String, TokenInfoModel>,
-    orders: HashMap<String, OrderModel>,
-    uniswaps: HashMap<String, UniswapModel>,
-    ref_token: String,
-    #[serde(serialize_with = "serialize_as_string")]
-    default_fee: f32,
-}
-
-#[derive(Debug, Deserialize)]
-struct Solution {
-    // TODO: wait for solution format to be documented
-}
-
-#[derive(Debug, Serialize)]
-struct OrderModel {
-    sell_token: String,
-    buy_token: String,
-    #[serde(with = "u256_decimal")]
-    sell_amount: U256,
-    #[serde(with = "u256_decimal")]
-    buy_amount: U256,
-    allow_partial_fill: bool,
-    is_sell_order: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct UniswapModel {
-    token1: String,
-    token2: String,
-    #[serde(serialize_with = "serialize_as_string")]
-    balance1: u128,
-    #[serde(serialize_with = "serialize_as_string")]
-    balance2: u128,
-    #[serde(serialize_with = "serialize_as_string")]
-    fee: f32,
-    mandatory: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct TokenInfoModel {
-    #[serde(serialize_with = "serialize_as_string")]
-    decimals: u32,
-}
-
-fn serialize_as_string<S>(t: &impl ToString, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: Serializer,
-{
-    serializer.serialize_str(t.to_string().as_str())
 }
 
 #[cfg(test)]
