@@ -90,7 +90,6 @@ fn set_prices(
             .trades
             .iter()
             .any(|trade| *token == trade.order.sell_token || *token == trade.order.buy_token);
-        dbg!(token, token_used_in_trade);
         if token_used_in_trade {
             ensure!(price.is_finite() && price > 0.0, "invalid price {}", price);
             let price = U256::from_f64_lossy(price);
@@ -151,7 +150,7 @@ mod tests {
                     },
                     ..Default::default()
                 }),
-                vec![],
+                vec![Box::new(NoopInteraction)],
             )
         });
         let limit_order = LimitOrder {
@@ -199,6 +198,6 @@ mod tests {
             hashmap! { t0 => 10.into(), t1 => 11.into() }
         );
         assert_eq!(settlement.trades.len(), 1);
-        assert_eq!(settlement.interactions.len(), 1);
+        assert_eq!(settlement.interactions.len(), 2);
     }
 }
