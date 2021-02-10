@@ -172,7 +172,7 @@ impl HttpSolver {
             request = request.header("X-API-KEY", header);
         }
         let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::debug!("request query {} body {}", query, body);
+        tracing::trace!("request query {} body {}", query, body);
         let request = request.body(body);
 
         let response = request.send().await.context("failed to send request")?;
@@ -181,13 +181,15 @@ impl HttpSolver {
             .text()
             .await
             .context("failed to decode response body")?;
-        tracing::debug!("response body {}", text);
+        tracing::trace!("response body {}", text);
         ensure!(
             status.is_success(),
-            "solver response is not success: status: {}",
-            status
+            "solver response is not success: status {} body {}",
+            status,
+            text
         );
-        serde_json::from_str(text.as_str()).context("failed to decode response json")
+        serde_json::from_str(text.as_str())
+            .with_context(|| format!("failed to decode response json, body {}", text))
     }
 }
 
@@ -209,7 +211,7 @@ impl Solver for HttpSolver {
             default_fee: 0.0,
         };
         let settled = self.send(&model).await?;
-        tracing::debug!("optimizer response {:?}", settled);
+        tracing::trace!("optimizer response {:?}", settled);
         settlement::convert_settlement(&settled, &tokens, &orders, &amms).map(Some)
     }
 }
@@ -230,7 +232,7 @@ mod tests {
     #[ignore]
     async fn real_solver() {
         tracing_subscriber::fmt::fmt()
-            .with_env_filter("solver=debug")
+            .with_env_filter("solver=trace")
             .init();
         let url = std::env::var("GP_V2_OPTIMIZER_URL")
             .unwrap_or_else(|_| "http://localhost:8000".to_string());
