@@ -3,9 +3,9 @@ mod model;
 use self::model::*;
 use crate::{liquidity::Liquidity, settlement::Settlement, solver::Solver};
 use ::model::order::OrderKind;
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use primitive_types::H160;
-use reqwest::{Client, Url};
+use reqwest::{header::HeaderValue, Client, Url};
 use std::collections::{HashMap, HashSet};
 
 /// The configuration passed as url parameters to the solver.
@@ -130,36 +130,43 @@ impl HttpSolver {
             default_fee: 0.0,
         })
     }
+
+    async fn send(&self, model: &BatchAuctionModel) -> Result<SettledBatchAuctionModel> {
+        let mut url = self.base.clone();
+        url.set_path("/solve");
+        self.config.add_to_query(&mut url);
+        let query = url.query().map(ToString::to_string).unwrap_or_default();
+        let mut request = self.client.post(url);
+        if let Some(api_key) = &self.api_key {
+            let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
+            header.set_sensitive(true);
+            request = request.header("X-API-KEY", header);
+        }
+        let body = serde_json::to_string(&model).context("failed to encode body")?;
+        tracing::debug!("request query {} body {}", query, body);
+        let request = request.body(body);
+
+        let response = request.send().await.context("failed to send request")?;
+        let status = response.status();
+        let text = response
+            .text()
+            .await
+            .context("failed to decode response body")?;
+        tracing::debug!("response body {}", text);
+        ensure!(
+            status.is_success(),
+            "solver response is not success: status: {}",
+            status
+        );
+        serde_json::from_str(text.as_str()).context("failed to decode response json")
+    }
 }
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
     async fn solve(&self, orders: Vec<Liquidity>) -> Result<Option<Settlement>> {
-        let mut url = self.base.clone();
-        url.set_path("/solve");
-        self.config.add_to_query(&mut url);
         let body = self.create_body(orders.as_slice()).await?;
-        let mut request = self.client.post(url);
-        if let Some(api_key) = &self.api_key {
-            request = request.header("X-API-KEY", api_key);
-        }
-        let request = request.json(&body);
-
-        let response = request
-            .send()
-            .await
-            .context("failed to send solver request")?
-            .error_for_status()
-            .context("solver response was unsuccessful")?;
-        let body = response
-            .bytes()
-            .await
-            .context("failed to get response body")?;
-        let _decoded: SettledBatchAuctionModel =
-            serde_json::from_slice(&body).with_context(|| match std::str::from_utf8(&body) {
-                Ok(body) => format!("failed to decode response body: {}", body),
-                Err(_) => format!("failed to decode response body: {:?}", body),
-            })?;
+        self.send(&body).await?;
         Ok(None)
     }
 }
