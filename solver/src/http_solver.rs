@@ -172,24 +172,27 @@ impl HttpSolver {
             request = request.header("X-API-KEY", header);
         }
         let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::trace!("request query {} body {}", query, body);
-        let request = request.body(body);
-
+        let request = request.body(body.clone());
         let response = request.send().await.context("failed to send request")?;
         let status = response.status();
         let text = response
             .text()
             .await
             .context("failed to decode response body")?;
-        tracing::trace!("response body {}", text);
+        let context = || {
+            format!(
+                "request query {}, request body {}, response body {}",
+                query, body, text
+            )
+        };
         ensure!(
             status.is_success(),
-            "solver response is not success: status {} body {}",
+            "solver response is not success: status {}, {}",
             status,
-            text
+            context()
         );
         serde_json::from_str(text.as_str())
-            .with_context(|| format!("failed to decode response json, body {}", text))
+            .with_context(|| format!("failed to decode response json, {}", context()))
     }
 }
 
@@ -211,7 +214,6 @@ impl Solver for HttpSolver {
             default_fee: 0.0,
         };
         let settled = self.send(&model).await?;
-        tracing::trace!("optimizer response {:?}", settled);
         settlement::convert_settlement(&settled, &tokens, &orders, &amms).map(Some)
     }
 }
