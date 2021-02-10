@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use contracts::{UniswapV2Factory, UniswapV2Pair};
 use ethcontract::{batch::CallBatch, Http, Web3, H160};
 use web3::signing::keccak256;
@@ -12,6 +14,12 @@ const HONEYSWAP_PAIR_INIT_CODE: [u8; 32] =
     hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93");
 const MAX_BATCH_SIZE: usize = 100;
 
+#[async_trait::async_trait]
+pub trait PoolFetching {
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool>;
+}
+
+#[derive(Clone)]
 pub struct Pool {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
@@ -23,10 +31,12 @@ pub struct PoolFetcher {
     pub chain_id: u64,
 }
 
-impl PoolFetcher {
-    pub async fn fetch(&self, token_pairs: impl Iterator<Item = TokenPair>) -> Vec<Pool> {
+#[async_trait::async_trait]
+impl PoolFetching for PoolFetcher {
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
         let mut batch = CallBatch::new(self.web3.transport());
         let futures = token_pairs
+            .into_iter()
             .map(|pair| {
                 let uniswap_pair_address =
                     pair_address(&pair, self.factory.address(), self.chain_id);

@@ -4,6 +4,7 @@ pub mod database;
 pub mod event_updater;
 pub mod integer_conversions;
 pub mod orderbook;
+pub mod price_estimate;
 
 use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};

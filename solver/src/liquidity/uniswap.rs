@@ -4,7 +4,7 @@ use ethcontract::{batch::CallBatch, Http, Web3};
 use model::TokenPair;
 use num::rational::Rational;
 use primitive_types::{H160, U256};
-use shared::uniswap_pool::PoolFetcher;
+use shared::uniswap_pool::{PoolFetcher, PoolFetching as _};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
@@ -77,7 +77,7 @@ impl UniswapLiquidity {
 
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(pools.into_iter()).await {
+        for pool in self.pool_fetcher.fetch(pools).await {
             tokens.insert(pool.tokens.get().0);
             tokens.insert(pool.tokens.get().1);
 

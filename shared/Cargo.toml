@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 atty = "0.2"
+async-trait = "0.1"
 contracts = { path = "../contracts" }
 ethcontract = { version = "0.11", default-features = false }
 hex-literal = "0.3"
