@@ -119,6 +119,24 @@ impl Default for TokenPair {
     }
 }
 
+impl IntoIterator for TokenPair {
+    type Item = H160;
+    type IntoIter = std::iter::Chain<std::iter::Once<H160>, std::iter::Once<H160>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(self.0).chain(std::iter::once(self.1))
+    }
+}
+
+impl<'a> IntoIterator for &'a TokenPair {
+    type Item = &'a H160;
+    type IntoIter = std::iter::Chain<std::iter::Once<&'a H160>, std::iter::Once<&'a H160>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        std::iter::once(&self.0).chain(std::iter::once(&self.1))
+    }
+}
+
 #[derive(Copy, Eq, PartialEq, Clone, Default)]
 pub struct DomainSeparator(pub [u8; 32]);
 
@@ -199,5 +217,22 @@ mod tests {
     fn token_pair_cannot_be_equal() {
         let token = H160::from_low_u64_be(1);
         assert_eq!(TokenPair::new(token, token), None);
+    }
+
+    #[test]
+    fn token_pair_iterator() {
+        let token_a = H160::from_low_u64_be(0);
+        let token_b = H160::from_low_u64_be(1);
+        let pair = TokenPair::new(token_a, token_b).unwrap();
+
+        let mut iter = (&pair).into_iter();
+        assert_eq!(iter.next(), Some(&token_a));
+        assert_eq!(iter.next(), Some(&token_b));
+        assert_eq!(iter.next(), None);
+
+        let mut iter = pair.into_iter();
+        assert_eq!(iter.next(), Some(token_a));
+        assert_eq!(iter.next(), Some(token_b));
+        assert_eq!(iter.next(), None);
     }
 }
