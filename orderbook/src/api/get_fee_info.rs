@@ -1,6 +1,6 @@
 use super::H160Wrapper;
 use anyhow::Result;
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{DateTime, Duration, Utc};
 use model::u256_decimal;
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
@@ -23,9 +23,9 @@ pub fn get_fee_info_request() -> impl Filter<Extract = (H160,), Error = Rejectio
 }
 
 pub fn get_fee_info_response() -> impl Reply {
-    const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i32 = 3600;
+    const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 3600;
     let fee_info = FeeInfo {
-        expiration_date: Utc::now() + FixedOffset::east(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
+        expiration_date: Utc::now() + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
         minimal_fee: U256::zero(),
         fee_ratio: 0u32,
     };

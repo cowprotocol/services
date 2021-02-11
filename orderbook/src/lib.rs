@@ -2,6 +2,7 @@ pub mod account_balances;
 pub mod api;
 pub mod database;
 pub mod event_updater;
+pub mod fee;
 pub mod integer_conversions;
 pub mod orderbook;
 pub mod price_estimate;

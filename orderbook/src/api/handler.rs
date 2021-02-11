@@ -102,7 +102,7 @@ pub async fn get_order_by_uid(
 pub async fn get_fee_info(sell_token: H160) -> Result<impl Reply, Infallible> {
     let fee_info = FeeInfo {
         expiration_date: chrono::offset::Utc::now()
-            + FixedOffset::east(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
+            + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC),
         minimal_fee: U256::zero(),
         fee_ratio: 0u32,
     };

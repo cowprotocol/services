@@ -15,7 +15,7 @@ const HONEYSWAP_PAIR_INIT_CODE: [u8; 32] =
 const MAX_BATCH_SIZE: usize = 100;
 
 #[async_trait::async_trait]
-pub trait PoolFetching {
+pub trait PoolFetching: Send + Sync {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool>;
 }
 

@@ -4,17 +4,21 @@ use model::TokenPair;
 use shared::uniswap_pool::PoolFetching;
 use std::iter::once;
 
-#[allow(dead_code)]
-struct UniswapPriceEstimator {
+#[async_trait::async_trait]
+pub trait PriceEstimating {
+    async fn estimate_price(&self, sell_token: H160, buy_token: H160) -> Result<f64>;
+}
+
+pub struct UniswapPriceEstimator {
     pool_fetcher: Box<dyn PoolFetching>,
 }
 
-impl UniswapPriceEstimator {
+#[async_trait::async_trait]
+impl PriceEstimating for UniswapPriceEstimator {
     // Estimates the price using the direct pool between sell and buy token. Price is given in
     // how much of sell_token needs to be sold for one buy_token.
     // Returns an error if no pool exists between sell and buy token.
-    #[allow(dead_code)]
-    pub async fn estimate_price(&self, sell_token: H160, buy_token: H160) -> Result<f64> {
+    async fn estimate_price(&self, sell_token: H160, buy_token: H160) -> Result<f64> {
         let pair = match TokenPair::new(sell_token, buy_token) {
             Some(pair) => pair,
             None => return Ok(1.0),
