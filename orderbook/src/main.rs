@@ -79,13 +79,6 @@ async fn main() {
     let database = Database::new(args.db_url.as_str()).expect("failed to create database");
     let event_updater = EventUpdater::new(settlement_contract.clone(), database.clone());
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
-    let orderbook = Arc::new(Orderbook::new(
-        domain_separator,
-        database,
-        event_updater,
-        Box::new(balance_fetcher),
-    ));
-    check_database_connection(orderbook.as_ref()).await;
 
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),
@@ -104,6 +97,15 @@ async fn main() {
         Box::new(gas_price_estimator),
         native_token.address(),
     ));
+
+    let orderbook = Arc::new(Orderbook::new(
+        domain_separator,
+        database,
+        event_updater,
+        Box::new(balance_fetcher),
+        fee_calcuator.clone(),
+    ));
+    check_database_connection(orderbook.as_ref()).await;
 
     let serve_task = serve_task(orderbook.clone(), fee_calcuator, args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
