@@ -30,7 +30,10 @@ impl UniswapPriceEstimator {
         } else {
             (pool.reserves.1, pool.reserves.0)
         };
-        ensure!(sell_reserve * buy_reserve != 0, "Pools with empty reserve");
+        ensure!(
+            sell_reserve != 0 && buy_reserve != 0,
+            "Pools with empty reserve"
+        );
         Ok((sell_reserve as f64) / (buy_reserve as f64))
     }
 }
