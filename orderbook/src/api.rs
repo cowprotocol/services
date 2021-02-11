@@ -3,7 +3,7 @@ mod get_fee_info;
 mod get_order_by_uid;
 mod get_orders;
 
-use crate::orderbook::Orderbook;
+use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
@@ -18,10 +18,11 @@ use warp::{
 
 pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
+    fee_calcuator: Arc<MinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
     let order_creation = create_order::create_order(orderbook.clone());
     let order_getter = get_orders::get_orders(orderbook.clone());
-    let fee_info = get_fee_info::get_fee_info();
+    let fee_info = get_fee_info::get_fee_info(fee_calcuator);
     let order_by_uid = get_order_by_uid::get_order_by_uid(orderbook);
     warp::path!("api" / "v1" / ..).and(
         order_creation

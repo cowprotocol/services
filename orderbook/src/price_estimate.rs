@@ -5,12 +5,18 @@ use shared::uniswap_pool::PoolFetching;
 use std::iter::once;
 
 #[async_trait::async_trait]
-pub trait PriceEstimating {
+pub trait PriceEstimating: Send + Sync {
     async fn estimate_price(&self, sell_token: H160, buy_token: H160) -> Result<f64>;
 }
 
 pub struct UniswapPriceEstimator {
     pool_fetcher: Box<dyn PoolFetching>,
+}
+
+impl UniswapPriceEstimator {
+    pub fn new(pool_fetcher: Box<dyn PoolFetching>) -> Self {
+        Self { pool_fetcher }
+    }
 }
 
 #[async_trait::async_trait]

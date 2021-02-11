@@ -1663,6 +1663,7 @@ dependencies = [
  "model",
  "num-bigint",
  "primitive-types",
+ "reqwest",
  "secp256k1",
  "serde",
  "serde_json",
@@ -2331,12 +2332,16 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "atty",
  "contracts",
  "ethcontract",
+ "gas-estimation",
  "hex-literal",
  "model",
+ "reqwest",
+ "serde",
  "structopt",
  "tracing",
  "tracing-subscriber",

@@ -1,12 +1,15 @@
-use contracts::GPv2Settlement;
+use contracts::{GPv2Settlement, UniswapV2Factory, WETH9};
 use model::{order::OrderUid, DomainSeparator};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{Database, OrderFilter},
     event_updater::EventUpdater,
+    fee::MinFeeCalculator,
     orderbook::Orderbook,
+    price_estimate::UniswapPriceEstimator,
     serve_task, verify_deployed_contract_constants,
 };
+use shared::uniswap_pool::PoolFetcher;
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
@@ -56,6 +59,12 @@ async fn main() {
         .call()
         .await
         .expect("Couldn't get allowance manager address");
+    let uniswap_factory = UniswapV2Factory::deployed(&web3)
+        .await
+        .expect("couldn't load deployed uniswap router");
+    let native_token = WETH9::deployed(&web3)
+        .await
+        .expect("couldn't load deployed native token");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -77,7 +86,26 @@ async fn main() {
         Box::new(balance_fetcher),
     ));
     check_database_connection(orderbook.as_ref()).await;
-    let serve_task = serve_task(orderbook.clone(), args.bind_address);
+
+    let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
+        &reqwest::Client::new(),
+        &web3,
+        args.shared.gas_estimators.as_slice(),
+    )
+    .await
+    .expect("failed to create gas price estimator");
+    let price_estimator = UniswapPriceEstimator::new(Box::new(PoolFetcher {
+        factory: uniswap_factory,
+        web3,
+        chain_id,
+    }));
+    let fee_calcuator = Arc::new(MinFeeCalculator::new(
+        Box::new(price_estimator),
+        Box::new(gas_price_estimator),
+        native_token.address(),
+    ));
+
+    let serve_task = serve_task(orderbook.clone(), fee_calcuator, args.bind_address);
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),

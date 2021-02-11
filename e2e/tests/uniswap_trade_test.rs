@@ -10,10 +10,11 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher, database::Database, event_updater::EventUpdater,
-    orderbook::Orderbook,
+    fee::MinFeeCalculator, orderbook::Orderbook, price_estimate::UniswapPriceEstimator,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
+use shared::uniswap_pool::PoolFetcher;
 use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -32,6 +33,12 @@ async fn test_with_ganache() {
     shared::tracing::initialize("warn,orderbook=debug,solver=debug");
     let http = Http::new(NODE_HOST).expect("transport failure");
     let web3 = Web3::new(http);
+    let chain_id = web3
+        .eth()
+        .chain_id()
+        .await
+        .expect("Could not get chainId")
+        .as_u64();
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver = Account::Local(accounts[0], None);
@@ -131,8 +138,19 @@ async fn test_with_ganache() {
         event_updater,
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
     ));
+    let price_estimator = UniswapPriceEstimator::new(Box::new(PoolFetcher {
+        factory: uniswap_factory.clone(),
+        web3: web3.clone(),
+        chain_id,
+    }));
+    let fee_calcuator = Arc::new(MinFeeCalculator::new(
+        Box::new(price_estimator),
+        Box::new(web3.clone()),
+        token_a.address(),
+    ));
     orderbook::serve_task(
         orderbook.clone(),
+        fee_calcuator,
         API_HOST[7..].parse().expect("Couldn't parse API address"),
     );
     let client = reqwest::Client::new();

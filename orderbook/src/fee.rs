@@ -16,7 +16,7 @@ pub struct MinFeeCalculator {
     native_token: H160,
     // TODO persist past measurements to shared storage
     measurements: Mutex<HashMap<H160, Vec<Measurement>>>,
-    now: Box<dyn Fn() -> DateTime<Utc>>,
+    now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
 }
 
 const GAS_PER_ORDER: f64 = 100_000.0;
@@ -41,12 +41,18 @@ impl MinFeeCalculator {
 impl MinFeeCalculator {
     // Returns the minimum amount of fee required to accept an order selling the specified token
     // and an expiry date for the estimate.
-    pub async fn min_fee(&self, token: H160) -> Result<Measurement> {
+    // Returns an error if there is some estimation error and Ok(None) if no information about the given
+    // token exists
+    pub async fn min_fee(&self, token: H160) -> Result<Option<Measurement>> {
         let gas_price = self.gas_estimator.estimate().await?;
-        let token_price = self
+        let token_price = match self
             .price_estimator
             .estimate_price(token, self.native_token)
-            .await?;
+            .await
+        {
+            Ok(price) => price,
+            Err(_) => return Ok(None),
+        };
 
         let min_fee = U256::from_f64_lossy(gas_price * token_price * GAS_PER_ORDER);
         let valid_until = (self.now)() + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
@@ -58,7 +64,7 @@ impl MinFeeCalculator {
             .entry(token)
             .or_default()
             .push(result);
-        Ok(result)
+        Ok(Some(result))
     }
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
@@ -77,7 +83,7 @@ impl MinFeeCalculator {
                 return true;
             }
         }
-        if let Ok((current_fee, _)) = self.min_fee(token).await {
+        if let Ok(Some((current_fee, _))) = self.min_fee(token).await {
             return fee >= current_fee;
         }
         false
@@ -87,8 +93,6 @@ impl MinFeeCalculator {
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
-    use std::cell::RefCell;
-    use std::rc::Rc;
     use std::sync::Arc;
 
     use super::*;
@@ -113,7 +117,7 @@ mod tests {
         fn new_for_test(
             gas_estimator: Box<dyn GasPriceEstimating>,
             price_estimator: Box<dyn PriceEstimating>,
-            now: Box<dyn Fn() -> DateTime<Utc>>,
+            now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
         ) -> Self {
             Self {
                 gas_estimator,
@@ -128,28 +132,28 @@ mod tests {
     #[tokio::test]
     async fn accepts_min_fee_if_validated_before_expiry() {
         let gas_price = Arc::new(Mutex::new(100.0));
-        let time = Rc::new(RefCell::new(Utc::now()));
+        let time = Arc::new(Mutex::new(Utc::now()));
 
         let gas_estimator = Box::new(FakeGasEstimator(gas_price.clone()));
         let price_estimator = Box::new(FakePriceEstimator(1.0));
         let time_copy = time.clone();
-        let now = move || *time_copy.borrow();
+        let now = move || *time_copy.lock().unwrap();
 
         let fee_estimator =
             MinFeeCalculator::new_for_test(gas_estimator, price_estimator, Box::new(now));
 
         let token = H160::from_low_u64_be(1);
-        let (fee, expiry) = fee_estimator.min_fee(token).await.unwrap();
+        let (fee, expiry) = fee_estimator.min_fee(token).await.unwrap().unwrap();
 
         // Gas price increase after measurement
         *gas_price.lock().unwrap() *= 2.0;
 
         // fee is valid before expiry
-        time.replace(expiry - Duration::seconds(10));
+        *time.lock().unwrap() = expiry - Duration::seconds(10);
         assert!(fee_estimator.is_valid_fee(token, fee).await);
 
         // fee is invalid after expiry
-        time.replace(expiry + Duration::seconds(10));
+        *time.lock().unwrap() = expiry + Duration::seconds(10);
         assert_eq!(fee_estimator.is_valid_fee(token, fee).await, false);
     }
 
@@ -164,7 +168,7 @@ mod tests {
             MinFeeCalculator::new_for_test(gas_estimator, price_estimator, Box::new(Utc::now));
 
         let token = H160::from_low_u64_be(1);
-        let (fee, _) = fee_estimator.min_fee(token).await.unwrap();
+        let (fee, _) = fee_estimator.min_fee(token).await.unwrap().unwrap();
 
         let lower_fee = fee - U256::one();
 

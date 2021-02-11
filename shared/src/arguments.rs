@@ -1,4 +1,5 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
+use crate::gas_price_estimation::GasEstimatorType;
 use std::{num::ParseFloatError, time::Duration};
 use url::Url;
 
@@ -23,6 +24,22 @@ pub struct Arguments {
             parse(try_from_str = duration_from_seconds),
         )]
     pub node_timeout: Duration,
+
+    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
+    /// fails. Individual estimators support different networks.
+    /// `EthGasStation`: supports mainnet.
+    /// `GasNow`: supports mainnet.
+    /// `GnosisSafe`: supports mainnet and rinkeby.
+    /// `Web3`: supports every network.
+    #[structopt(
+        long,
+        env = "GAS_ESTIMATORS",
+        default_value = "Web3",
+        possible_values = &GasEstimatorType::variants(),
+        case_insensitive = true,
+        use_delimiter = true
+    )]
+    pub gas_estimators: Vec<GasEstimatorType>,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

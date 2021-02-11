@@ -1,10 +1,7 @@
 use contracts::WETH9;
 use ethcontract::PrivateKey;
 use reqwest::Url;
-use solver::{
-    driver::Driver, gas_price_estimation::GasEstimatorType, liquidity::uniswap::UniswapLiquidity,
-    naive_solver::NaiveSolver,
-};
+use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, naive_solver::NaiveSolver};
 use std::time::Duration;
 use structopt::StructOpt;
 
@@ -29,22 +26,6 @@ struct Arguments {
     /// The private key used by the driver to sign transactions.
     #[structopt(short = "k", long, env = "PRIVATE_KEY", hide_env_values = true)]
     private_key: PrivateKey,
-
-    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators support different networks.
-    /// `EthGasStation`: supports mainnet.
-    /// `GasNow`: supports mainnet.
-    /// `GnosisSafe`: supports mainnet and rinkeby.
-    /// `Web3`: supports every network.
-    #[structopt(
-        long,
-        env = "GAS_ESTIMATORS",
-        default_value = "Web3",
-        possible_values = &GasEstimatorType::variants(),
-        case_insensitive = true,
-        use_delimiter = true
-    )]
-    gas_estimators: Vec<GasEstimatorType>,
 
     /// The target confirmation time for settlement transactions used to estimate gas price.
     #[structopt(
@@ -98,10 +79,10 @@ async fn main() {
         uniswap_factory,
         gpv2_settlement: settlement_contract.clone(),
     };
-    let gas_price_estimator = solver::gas_price_estimation::create_priority_estimator(
+    let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),
         &web3,
-        args.gas_estimators.as_slice(),
+        args.shared.gas_estimators.as_slice(),
     )
     .await
     .expect("failed to create gas price estimator");

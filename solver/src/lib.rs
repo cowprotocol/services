@@ -1,6 +1,5 @@
 pub mod driver;
 pub mod encoding;
-pub mod gas_price_estimation;
 pub mod http_solver;
 pub mod interactions;
 pub mod liquidity;

@@ -10,17 +10,22 @@ pub mod price_estimate;
 use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
+use fee::MinFeeCalculator;
 use model::DomainSeparator;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 use warp::Filter;
 
-pub fn serve_task(orderbook: Arc<Orderbook>, address: SocketAddr) -> JoinHandle<()> {
+pub fn serve_task(
+    orderbook: Arc<Orderbook>,
+    fee_calculator: Arc<MinFeeCalculator>,
+    address: SocketAddr,
+) -> JoinHandle<()> {
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    let filter = api::handle_all_routes(orderbook).with(cors);
+    let filter = api::handle_all_routes(orderbook, fee_calculator).with(cors);
     tracing::info!(%address, "serving order book");
     task::spawn(warp::serve(filter).bind(address))
 }
