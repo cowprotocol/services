@@ -1,4 +1,4 @@
-use super::model::{Price, SettledBatchAuctionModel};
+use super::model::*;
 use crate::{
     liquidity::{AmmOrder, LimitOrder},
     settlement::Settlement,
@@ -6,7 +6,10 @@ use crate::{
 use anyhow::{anyhow, ensure, Result};
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
-use std::collections::HashMap;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    iter,
+};
 
 // To send an instance to the solver we need to identify tokens and orders through strings. This
 // struct combines the created model and a mapping of those identifiers to their original value.
@@ -17,92 +20,172 @@ pub struct SettlementContext {
 }
 
 pub fn convert_settlement(
-    settled: &SettledBatchAuctionModel,
-    prepared: &SettlementContext,
+    settled: SettledBatchAuctionModel,
+    context: SettlementContext,
 ) -> Result<Settlement> {
-    let mut settlement = Settlement::default();
-    set_orders(settled, &prepared.limit_orders, &mut settlement)?;
-    set_amms(settled, &prepared.amm_orders, &mut settlement)?;
-    set_prices(settled, &prepared.tokens, &mut settlement)?;
-    Ok(settlement)
+    let intermediate = IntermediateSettlement::new(settled, context)?;
+    Ok(intermediate.into_settlement())
 }
 
-fn set_orders(
-    model: &SettledBatchAuctionModel,
-    orders: &HashMap<String, LimitOrder>,
-    settlement: &mut Settlement,
-) -> Result<()> {
-    for (index, model) in model.orders.iter() {
-        let order = orders
-            .get(index.as_str())
-            .ok_or_else(|| anyhow!("invalid order {}", index))?;
-        let executed_amount = match order.kind {
-            OrderKind::Buy => model.exec_buy_amount,
-            OrderKind::Sell => model.exec_sell_amount,
-        };
-        if executed_amount.is_zero() {
-            continue;
+// An intermediate representation between SettledBatchAuctionModel and Settlement useful for doing
+// the error checking up front and then working with a more convenient representation.
+struct IntermediateSettlement {
+    executed_limit_orders: Vec<ExecutedLimitOrder>,
+    executed_amms: Vec<ExecutedAmm>,
+    prices: HashMap<H160, U256>,
+}
+
+struct ExecutedLimitOrder {
+    order: LimitOrder,
+    executed_buy_amount: U256,
+    executed_sell_amount: U256,
+}
+
+impl ExecutedLimitOrder {
+    fn executed_amount(&self) -> U256 {
+        match self.order.kind {
+            OrderKind::Buy => self.executed_buy_amount,
+            OrderKind::Sell => self.executed_sell_amount,
         }
-        let (trade, interactions) = order.settlement_handling.settle(executed_amount);
-        if let Some(trade) = trade {
-            settlement.trades.push(trade);
-        }
-        settlement.interactions.extend(interactions);
     }
-    Ok(())
 }
 
-fn set_amms(
-    model: &SettledBatchAuctionModel,
-    amms: &HashMap<String, AmmOrder>,
-    settlement: &mut Settlement,
-) -> Result<()> {
-    for (index, model) in model.uniswaps.iter() {
-        let amm = amms
-            .get(index.as_str())
-            .ok_or_else(|| anyhow!("invalid amm {}", index))?;
-        let (input, output) =
-            if model.balance_update1.is_positive() && model.balance_update2.is_negative() {
+struct ExecutedAmm {
+    order: AmmOrder,
+    input: (H160, U256),
+    output: (H160, U256),
+}
+
+impl IntermediateSettlement {
+    fn new(settled: SettledBatchAuctionModel, context: SettlementContext) -> Result<Self> {
+        let executed_limit_orders = new_orders(context.limit_orders, settled.orders)?;
+        let executed_amms = new_amms(context.amm_orders, settled.uniswaps)?;
+        let prices = new_prices(
+            &context.tokens,
+            executed_limit_orders.as_slice(),
+            executed_amms.as_slice(),
+            settled.prices,
+        )?;
+        Ok(Self {
+            executed_limit_orders,
+            executed_amms,
+            prices,
+        })
+    }
+
+    fn into_settlement(self) -> Settlement {
+        let mut settlement = Settlement::default();
+        for order in self.executed_limit_orders.iter() {
+            let (trade, interactions) = order
+                .order
+                .settlement_handling
+                .settle(order.executed_amount());
+            if let Some(trade) = trade {
+                settlement.trades.push(trade);
+            }
+            settlement.interactions.extend(interactions);
+        }
+        for amm in self.executed_amms.iter() {
+            let interactions = amm.order.settlement_handling.settle(amm.input, amm.output);
+            settlement.interactions.extend(interactions);
+        }
+        settlement.clearing_prices = self.prices;
+        settlement
+    }
+}
+
+fn new_orders(
+    mut prepared_orders: HashMap<String, LimitOrder>,
+    settled_orders: HashMap<String, ExecutedOrderModel>,
+) -> Result<Vec<ExecutedLimitOrder>> {
+    settled_orders
+        .into_iter()
+        .filter(|(_, settled)| {
+            !(settled.exec_sell_amount.is_zero() && settled.exec_buy_amount.is_zero())
+        })
+        .map(|(index, settled)| {
+            let prepared = prepared_orders
+                .remove(index.as_str())
+                .ok_or_else(|| anyhow!("invalid order {}", index))?;
+            Ok(ExecutedLimitOrder {
+                order: prepared,
+                executed_buy_amount: settled.exec_buy_amount,
+                executed_sell_amount: settled.exec_sell_amount,
+            })
+        })
+        .collect()
+}
+
+fn new_amms(
+    mut prepared_orders: HashMap<String, AmmOrder>,
+    settled_orders: HashMap<String, UpdatedUniswapModel>,
+) -> Result<Vec<ExecutedAmm>> {
+    settled_orders
+        .into_iter()
+        .filter(|(_, settled)| !(settled.balance_update1 == 0 && settled.balance_update2 == 0))
+        .map(|(index, settled)| {
+            let prepared = prepared_orders
+                .remove(index.as_str())
+                .ok_or_else(|| anyhow!("invalid amm {}", index))?;
+            let tokens = prepared.tokens.get();
+            let updates = (settled.balance_update1, settled.balance_update2);
+            let (input, output) = if updates.0.is_positive() && updates.1.is_negative() {
                 (
-                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update1)),
-                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update2)),
+                    (tokens.0, i128_abs_to_u256(updates.0)),
+                    (tokens.1, i128_abs_to_u256(updates.1)),
                 )
-            } else if model.balance_update2.is_positive() && model.balance_update1.is_negative() {
+            } else if updates.1.is_positive() && updates.0.is_negative() {
                 (
-                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update2)),
-                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update1)),
+                    (tokens.1, i128_abs_to_u256(updates.1)),
+                    (tokens.0, i128_abs_to_u256(updates.0)),
                 )
-            } else if model.balance_update1 == 0 && model.balance_update2 == 0 {
-                continue;
             } else {
-                return Err(anyhow!("invalid uniswap update {:?}", model));
+                return Err(anyhow!("invalid uniswap update {:?}", settled));
             };
-        let interactions = amm.settlement_handling.settle(input, output);
-        settlement.interactions.extend(interactions);
-    }
-    Ok(())
+            Ok(ExecutedAmm {
+                order: prepared,
+                input,
+                output,
+            })
+        })
+        .collect()
 }
 
-fn set_prices(
-    model: &SettledBatchAuctionModel,
-    tokens: &HashMap<String, H160>,
-    settlement: &mut Settlement,
-) -> Result<()> {
-    for (index, &Price(price)) in model.prices.iter() {
-        let token = tokens
-            .get(index.as_str())
-            .ok_or_else(|| anyhow!("invalid token {}", index))?;
-        let token_used_in_trade = settlement
-            .trades
-            .iter()
-            .any(|trade| *token == trade.order.sell_token || *token == trade.order.buy_token);
-        if token_used_in_trade {
+fn new_prices(
+    prepared_tokens: &HashMap<String, H160>,
+    executed_limit_orders: &[ExecutedLimitOrder],
+    executed_amms: &[ExecutedAmm],
+    solver_prices: HashMap<String, Price>,
+) -> Result<HashMap<H160, U256>> {
+    // Remove the indirection over the token string index from the solver prices.
+    let solver_prices: HashMap<H160, Price> = solver_prices
+        .into_iter()
+        .map(|(index, price)| {
+            let token = prepared_tokens
+                .get(&index)
+                .ok_or_else(|| anyhow!("invalid token {}", index))?;
+            Ok((*token, price))
+        })
+        .collect::<Result<_>>()?;
+
+    let mut prices = HashMap::new();
+    let executed_tokens = executed_limit_orders
+        .iter()
+        .flat_map(|order| {
+            iter::once(&order.order.buy_token).chain(iter::once(&order.order.sell_token))
+        })
+        .chain(executed_amms.iter().flat_map(|amm| &amm.order.tokens));
+    for token in executed_tokens {
+        if let Entry::Vacant(entry) = prices.entry(*token) {
+            let price = solver_prices
+                .get(token)
+                .ok_or_else(|| anyhow!("invalid token {}", token))?
+                .0;
             ensure!(price.is_finite() && price > 0.0, "invalid price {}", price);
-            let price = U256::from_f64_lossy(price);
-            settlement.clearing_prices.insert(*token, price);
+            entry.insert(U256::from_f64_lossy(price));
         }
     }
-    Ok(())
+    Ok(prices)
 }
 
 fn i128_abs_to_u256(i: i128) -> U256 {
@@ -203,7 +286,7 @@ mod tests {
             limit_orders: orders,
             amm_orders: amms,
         };
-        let settlement = convert_settlement(&settled, &prepared).unwrap();
+        let settlement = convert_settlement(settled, prepared).unwrap();
         assert_eq!(
             settlement.clearing_prices,
             hashmap! { t0 => 10.into(), t1 => 11.into() }

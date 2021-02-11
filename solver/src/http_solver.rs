@@ -15,6 +15,7 @@ use std::collections::{HashMap, HashSet};
 
 // TODO: limit trading for tokens that don't have uniswap - fee pool
 // TODO: exclude partially fillable orders
+// TODO: set settlement.fee_factor
 // TODO: find correct ordering for uniswap trades
 // TODO: gather real token decimals and store them in a cache
 // TODO: special rounding for the prices we get from the solver?
@@ -217,7 +218,7 @@ impl Solver for HttpSolver {
         let (model, context) = self.prepare_model(liquidity);
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
-        settlement::convert_settlement(&settled, &context).map(Some)
+        settlement::convert_settlement(settled, context).map(Some)
     }
 }
 
