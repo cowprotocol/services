@@ -8,7 +8,6 @@ pub struct BatchAuctionModel {
     pub tokens: HashMap<String, TokenInfoModel>,
     pub orders: HashMap<String, OrderModel>,
     pub uniswaps: HashMap<String, UniswapModel>,
-    pub ref_token: String,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub default_fee: f64,
 }
@@ -65,7 +64,7 @@ pub struct ExecutedOrderModel {
 #[derive(Debug, Deserialize)]
 pub struct UpdatedUniswapModel {
     #[serde(with = "serde_with::rust::display_fromstr")]
-    pub balance_update_1: i128,
+    pub balance_update1: i128,
     #[serde(with = "serde_with::rust::display_fromstr")]
-    pub balance_update_2: i128,
+    pub balance_update2: i128,
 }

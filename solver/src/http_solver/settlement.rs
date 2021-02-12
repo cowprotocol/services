@@ -8,22 +8,28 @@ use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use std::collections::HashMap;
 
+// To send an instance to the solver we need to identify tokens and orders through strings. This
+// struct combines the created model and a mapping of those identifiers to their original value.
+pub struct SettlementContext {
+    pub tokens: HashMap<String, H160>,
+    pub limit_orders: HashMap<String, LimitOrder>,
+    pub amm_orders: HashMap<String, AmmOrder>,
+}
+
 pub fn convert_settlement(
-    model: &SettledBatchAuctionModel,
-    tokens: &HashMap<String, H160>,
-    orders: &HashMap<String, &LimitOrder>,
-    amms: &HashMap<String, &AmmOrder>,
+    settled: &SettledBatchAuctionModel,
+    prepared: &SettlementContext,
 ) -> Result<Settlement> {
     let mut settlement = Settlement::default();
-    set_orders(model, orders, &mut settlement)?;
-    set_amms(model, amms, &mut settlement)?;
-    set_prices(model, tokens, &mut settlement)?;
+    set_orders(settled, &prepared.limit_orders, &mut settlement)?;
+    set_amms(settled, &prepared.amm_orders, &mut settlement)?;
+    set_prices(settled, &prepared.tokens, &mut settlement)?;
     Ok(settlement)
 }
 
 fn set_orders(
     model: &SettledBatchAuctionModel,
-    orders: &HashMap<String, &LimitOrder>,
+    orders: &HashMap<String, LimitOrder>,
     settlement: &mut Settlement,
 ) -> Result<()> {
     for (index, model) in model.orders.iter() {
@@ -48,7 +54,7 @@ fn set_orders(
 
 fn set_amms(
     model: &SettledBatchAuctionModel,
-    amms: &HashMap<String, &AmmOrder>,
+    amms: &HashMap<String, AmmOrder>,
     settlement: &mut Settlement,
 ) -> Result<()> {
     for (index, model) in model.uniswaps.iter() {
@@ -56,17 +62,17 @@ fn set_amms(
             .get(index.as_str())
             .ok_or_else(|| anyhow!("invalid amm {}", index))?;
         let (input, output) =
-            if model.balance_update_1.is_positive() && model.balance_update_2.is_negative() {
+            if model.balance_update1.is_positive() && model.balance_update2.is_negative() {
                 (
-                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update_1)),
-                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update_2)),
+                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update1)),
+                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update2)),
                 )
-            } else if model.balance_update_2.is_positive() && model.balance_update_1.is_negative() {
+            } else if model.balance_update2.is_positive() && model.balance_update1.is_negative() {
                 (
-                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update_2)),
-                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update_1)),
+                    (amm.tokens.get().1, i128_abs_to_u256(model.balance_update2)),
+                    (amm.tokens.get().0, i128_abs_to_u256(model.balance_update1)),
                 )
-            } else if model.balance_update_1 == 0 && model.balance_update_2 == 0 {
+            } else if model.balance_update1 == 0 && model.balance_update2 == 0 {
                 continue;
             } else {
                 return Err(anyhow!("invalid uniswap update {:?}", model));
@@ -162,7 +168,7 @@ mod tests {
             partially_fillable: false,
             settlement_handling: Arc::new(limit_handling),
         };
-        let orders = hashmap! { "lo0".to_string() => &limit_order };
+        let orders = hashmap! { "lo0".to_string() => limit_order };
 
         let mut amm_handling = MockAmmSettlementHandling::new();
         amm_handling
@@ -175,24 +181,29 @@ mod tests {
             fee: 5.into(),
             settlement_handling: Arc::new(amm_handling),
         };
-        let amms = hashmap! { "amm0".to_string() => &amm_order };
+        let amms = hashmap! { "amm0".to_string() => amm_order };
 
         let executed_order = ExecutedOrderModel {
             exec_buy_amount: 6.into(),
             exec_sell_amount: 7.into(),
         };
         let updated_uniswap = UpdatedUniswapModel {
-            balance_update_1: 8,
-            balance_update_2: -9,
+            balance_update1: 8,
+            balance_update2: -9,
         };
-        let model = SettledBatchAuctionModel {
+        let settled = SettledBatchAuctionModel {
             orders: hashmap! { "lo0".to_string() => executed_order },
             uniswaps: hashmap! { "amm0".to_string() => updated_uniswap },
             ref_token: "t0".to_string(),
             prices: hashmap! { "t0".to_string() => Price(10.0), "t1".to_string() => Price(11.0) },
         };
 
-        let settlement = convert_settlement(&model, &tokens, &orders, &amms).unwrap();
+        let prepared = SettlementContext {
+            tokens,
+            limit_orders: orders,
+            amm_orders: amms,
+        };
+        let settlement = convert_settlement(&settled, &prepared).unwrap();
         assert_eq!(
             settlement.clearing_prices,
             hashmap! { t0 => 10.into(), t1 => 11.into() }
