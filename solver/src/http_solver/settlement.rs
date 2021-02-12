@@ -58,9 +58,10 @@ struct ExecutedAmm {
 
 impl IntermediateSettlement {
     fn new(settled: SettledBatchAuctionModel, context: SettlementContext) -> Result<Self> {
-        let executed_limit_orders = new_orders(context.limit_orders, settled.orders)?;
-        let executed_amms = new_amms(context.amm_orders, settled.uniswaps)?;
-        let prices = new_prices(
+        let executed_limit_orders =
+            match_prepared_and_settled_orders(context.limit_orders, settled.orders)?;
+        let executed_amms = match_prepared_and_settled_amms(context.amm_orders, settled.uniswaps)?;
+        let prices = match_settled_prices(
             &context.tokens,
             executed_limit_orders.as_slice(),
             executed_amms.as_slice(),
@@ -74,7 +75,13 @@ impl IntermediateSettlement {
     }
 
     fn into_settlement(self) -> Settlement {
-        let mut settlement = Settlement::default();
+        let mut settlement = Settlement {
+            clearing_prices: Default::default(),
+            fee_factor: Default::default(),
+            trades: Default::default(),
+            interactions: Default::default(),
+            order_refunds: Default::default(),
+        };
         for order in self.executed_limit_orders.iter() {
             let (trade, interactions) = order
                 .order
@@ -94,7 +101,7 @@ impl IntermediateSettlement {
     }
 }
 
-fn new_orders(
+fn match_prepared_and_settled_orders(
     mut prepared_orders: HashMap<String, LimitOrder>,
     settled_orders: HashMap<String, ExecutedOrderModel>,
 ) -> Result<Vec<ExecutedLimitOrder>> {
@@ -116,7 +123,7 @@ fn new_orders(
         .collect()
 }
 
-fn new_amms(
+fn match_prepared_and_settled_amms(
     mut prepared_orders: HashMap<String, AmmOrder>,
     settled_orders: HashMap<String, UpdatedUniswapModel>,
 ) -> Result<Vec<ExecutedAmm>> {
@@ -151,7 +158,7 @@ fn new_amms(
         .collect()
 }
 
-fn new_prices(
+fn match_settled_prices(
     prepared_tokens: &HashMap<String, H160>,
     executed_limit_orders: &[ExecutedLimitOrder],
     executed_amms: &[ExecutedAmm],
