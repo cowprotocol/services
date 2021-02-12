@@ -10,6 +10,7 @@ use model::{
     DomainSeparator,
 };
 use std::sync::Arc;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderResult {
@@ -32,7 +33,7 @@ pub enum RemoveOrderResult {
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     database: Database,
-    event_updater: EventUpdater,
+    event_updater: Mutex<EventUpdater>,
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<MinFeeCalculator>,
 }
@@ -48,7 +49,7 @@ impl Orderbook {
         Self {
             domain_separator,
             database,
-            event_updater,
+            event_updater: Mutex::new(event_updater),
             balance_fetcher,
             fee_validator,
         }
@@ -90,11 +91,8 @@ impl Orderbook {
     }
 
     pub async fn run_maintenance(&self, _settlement_contract: &GPv2Settlement) -> Result<()> {
-        join!(
-            self.event_updater.update_events(),
-            self.balance_fetcher.update()
-        )
-        .0
+        let update_events = async { self.event_updater.lock().await.update_events().await };
+        join!(update_events, self.balance_fetcher.update()).0
     }
 }
 

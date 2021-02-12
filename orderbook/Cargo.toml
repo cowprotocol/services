@@ -31,7 +31,7 @@ shared= { path = "../shared" }
 sqlx = { version = "0.4", default-features = false, features = ["bigdecimal", "chrono", "macros", "runtime-tokio-native-tls", "postgres"] }
 structopt = { version = "0.3" }
 reqwest = { version = "0.10", features = ["json"] }
-tokio = { version = "0.2", features =["macros", "rt-threaded", "time"] }
+tokio = { version = "0.2", features =["macros", "rt-threaded", "sync", "time"] }
 tracing = "0.1"
 url = "2.2"
 warp = "0.2"

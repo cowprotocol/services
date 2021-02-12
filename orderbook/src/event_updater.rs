@@ -21,15 +21,20 @@ const INSERT_EVENT_BATCH_SIZE: usize = 250;
 pub struct EventUpdater {
     contract: GPv2Settlement,
     db: Database,
+    last_handled_block: Option<u64>,
 }
 
 impl EventUpdater {
     pub fn new(contract: GPv2Settlement, db: Database) -> Self {
-        Self { contract, db }
+        Self {
+            contract,
+            db,
+            last_handled_block: None,
+        }
     }
 
     /// Get new events from the contract and insert them into the database.
-    pub async fn update_events(&self) -> Result<()> {
+    pub async fn update_events(&mut self) -> Result<()> {
         let range = self.event_block_range().await?;
         tracing::debug!("updating events in block range {:?}", range);
         let events = self
@@ -76,12 +81,19 @@ impl EventUpdater {
                     .context("failed to insert trades")?;
             }
         }
+        self.last_handled_block = Some(*range.end());
         Ok(())
     }
 
     async fn event_block_range(&self) -> Result<RangeInclusive<u64>> {
         let web3 = self.web3();
-        let last_handled_block = self.db.block_number_of_most_recent_event().await?;
+        // Instead of using only the most recent event block from the db we also store the last
+        // handled block in self so that during long times of no events we do not query needlessly
+        // large block ranges.
+        let last_handled_block = match self.last_handled_block {
+            Some(block) => block,
+            None => self.db.block_number_of_most_recent_event().await?,
+        };
         let current_block = web3
             .eth()
             .block_number()
@@ -113,7 +125,7 @@ impl EventUpdater {
             .all_events()
             .from_block((*block_range.start()).into())
             .to_block((*block_range.end()).into())
-            .block_page_size(1000)
+            .block_page_size(500)
             .query_paginated()
             .await?
             .map_err(Error::from)
