@@ -10,8 +10,6 @@ use gas_estimation::GasPriceEstimating;
 use std::time::Duration;
 use tracing::info;
 
-const SETTLE_INTERVAL: Duration = Duration::from_secs(30);
-
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
@@ -19,6 +17,7 @@ pub struct Driver {
     solver: Box<dyn Solver>,
     gas_price_estimator: Box<dyn GasPriceEstimating>,
     target_confirm_time: Duration,
+    settle_interval: Duration,
 }
 
 impl Driver {
@@ -29,6 +28,7 @@ impl Driver {
         solver: Box<dyn Solver>,
         gas_price_estimator: Box<dyn GasPriceEstimating>,
         target_confirm_time: Duration,
+        settle_interval: Duration,
     ) -> Self {
         Self {
             settlement_contract,
@@ -37,6 +37,7 @@ impl Driver {
             solver,
             gas_price_estimator,
             target_confirm_time,
+            settle_interval,
         }
     }
 
@@ -46,7 +47,7 @@ impl Driver {
                 Ok(()) => tracing::debug!("single run finished ok"),
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
-            tokio::time::delay_for(SETTLE_INTERVAL).await;
+            tokio::time::delay_for(self.settle_interval).await;
         }
     }
 

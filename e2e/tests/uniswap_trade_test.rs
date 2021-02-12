@@ -218,6 +218,7 @@ async fn test_with_ganache() {
         Box::new(solver),
         Box::new(web3),
         Duration::from_secs(1),
+        Duration::from_secs(30),
     );
     driver.single_run().await.unwrap();
 

@@ -35,6 +35,15 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     target_confirm_time: Duration,
+
+    /// Every how often we should execute the driver's run loop
+    #[structopt(
+        long,
+        env = "SETTLE_INTERVAL",
+        default_value = "30",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    settle_interval: Duration,
 }
 
 #[tokio::main]
@@ -93,6 +102,7 @@ async fn main() {
         Box::new(solver),
         Box::new(gas_price_estimator),
         args.target_confirm_time,
+        args.settle_interval,
     );
     driver.run_forever().await;
 }
