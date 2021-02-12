@@ -9,11 +9,9 @@ RUN cargo build --target x86_64-unknown-linux-musl --release
 FROM alpine:latest
 
 # Handle signal handlers properly
-RUN apk add --no-cache tini postgresql
+RUN apk add --no-cache tini
 COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/solver /usr/local/bin/solver
-
-COPY database /usr/database
 
 CMD echo "Specify binary - either solver or orderbook"
 ENTRYPOINT ["/sbin/tini", "--"]
