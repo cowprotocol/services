@@ -181,6 +181,21 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Trade"
+  /api/v1/solvable_orders:
+    get:
+      summary: Get solvable orders.
+      description: |
+        The set of orders that solvers should be solving right now. These orders are determined to
+        be valid at the time of the request.
+      responses:
+        200:
+          description: the orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
 components:
   schemas:
     Address:

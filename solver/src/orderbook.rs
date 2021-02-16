@@ -16,7 +16,7 @@ impl OrderBookApi {
     }
 
     pub async fn get_orders(&self) -> reqwest::Result<Vec<Order>> {
-        const PATH: &str = "/api/v1/orders";
+        const PATH: &str = "/api/v1/solvable_orders";
         let mut url = self.base.clone();
         url.set_path(PATH);
         self.client.get(url).send().await?.json().await

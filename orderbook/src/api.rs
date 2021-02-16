@@ -2,6 +2,7 @@ mod create_order;
 mod get_fee_info;
 mod get_order_by_uid;
 mod get_orders;
+mod get_solvable_orders;
 
 use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;
@@ -20,15 +21,17 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     fee_calcuator: Arc<MinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
-    let order_creation = create_order::create_order(orderbook.clone());
-    let order_getter = get_orders::get_orders(orderbook.clone());
+    let create_order = create_order::create_order(orderbook.clone());
+    let get_orders = get_orders::get_orders(orderbook.clone());
     let fee_info = get_fee_info::get_fee_info(fee_calcuator);
-    let order_by_uid = get_order_by_uid::get_order_by_uid(orderbook);
+    let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
+    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook);
     warp::path!("api" / "v1" / ..).and(
-        order_creation
-            .or(order_getter)
+        create_order
+            .or(get_orders)
             .or(fee_info)
-            .or(order_by_uid),
+            .or(get_order)
+            .or(get_solvable_orders),
     )
 }
 
