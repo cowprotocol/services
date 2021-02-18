@@ -24,36 +24,8 @@ CREATE TABLE orders (
     signature bytea NOT NULL -- r + s + v
 );
 
--- Trade events from the smart contract.
-CREATE TABLE trades (
-    block_number bigint NOT NULL,
-    log_index bigint NOT NULL,
-    -- Not foreign key because there can be trade events for orders we don't know.
-    order_uid bytea NOT NULL,
-    sell_amount numeric(78,0) NOT NULL,
-    buy_amount numeric(78,0) NOT NULL,
-    fee_amount numeric(78,0) NOT NULL,
-    PRIMARY KEY (block_number, log_index)
-);
-
--- OrderInvalidated events from the smart contract.
-CREATE TABLE invalidations (
-    block_number bigint NOT NULL,
-    log_index bigint NOT NULL,
-    order_uid bytea NOT NULL,
-    PRIMARY KEY (block_number, log_index)
-);
-
--- Indexes for common operations that should be efficient.
-
 -- Get a specific user's orders.
 CREATE INDEX order_owner ON orders USING HASH (owner);
 
 -- Get all valid orders.
 CREATE INDEX order_valid_to ON orders USING BTREE (valid_to);
-
--- Get all trades belonging to an order.
-CREATE INDEX trade_order_uid on trades USING BTREE (order_uid, block_number, log_index);
-
--- Get all invalidations belonging to an order.
-CREATE INDEX invalidations_order_uid on invalidations USING BTREE (order_uid, block_number, log_index);

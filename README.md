@@ -22,14 +22,13 @@ The `solver` crate is responsible for submitting on chain settlements based on t
 
 It implements a naive solver directly in Rust and can also interact with a more advanced, Gnosis internal, closed source solver.
 
-
 ## Other Crates
 
 Several pieces of functionality are shared between the order book and the solver. They live in other crates in the cargo workspace.
 
-* `contract` provides ethcontract based smart contract bindings
-* `model` provides the serialization model for orders in the order book api
-* `shared` provides other shared functionality between solver and order book
+- `contract` provides ethcontract based smart contract bindings
+- `model` provides the serialization model for orders in the order book api
+- `shared` provides other shared functionality between solver and order book
 
 ## Testing
 
@@ -65,11 +64,12 @@ postgres -D data
 createdb -h localhost $USER
 
 # Finally for all methods to test that the server is reachable and to set the schema for the tests.
-psql -h localhost -f database/schema.sql
+docker build --tag gp-v2-migrations -f docker/Dockerfile.migration .
+# If you are running postgres in locally, your URL is `localhost` instead of `host.docker.internal`
+docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql gp-v2-migrations migrate
 ```
-
 
 ## Running
 
-* `cargo run --bin orderbook -- --help`
-* `cargo run --bin solver -- --help`
+- `cargo run --bin orderbook -- --help`
+- `cargo run --bin solver -- --help`
