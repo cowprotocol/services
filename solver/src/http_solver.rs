@@ -13,13 +13,11 @@ use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use std::collections::{HashMap, HashSet};
 
-// TODO: limit trading for tokens that don't have uniswap - fee pool
 // TODO: exclude partially fillable orders
 // TODO: set settlement.fee_factor
 // TODO: find correct ordering for uniswap trades
 // TODO: gather real token decimals and store them in a cache
 // TODO: special rounding for the prices we get from the solver?
-// TODO: make sure to give the solver disconnected token islands individually
 
 /// The configuration passed as url parameters to the solver.
 #[derive(Debug, Default)]
@@ -154,9 +152,7 @@ impl HttpSolver {
         let tokens = self.map_tokens_for_solver(liquidity.as_slice());
         let mut orders = split_liquidity(liquidity);
         // For the solver to run correctly we need to be sure that there are no isolated islands of
-        // tokens without connection between them. As a simple solution that works most of the time
-        // we remove orders without a uniswap pool connection their sell token to the native token.
-        // Our fee estimation code also assumes such a pool exists.
+        // tokens without connection between them.
         remove_orders_without_native_connection(
             &mut orders.0,
             orders.1.as_slice(),
@@ -233,24 +229,35 @@ fn remove_orders_without_native_connection(
     amms: &[AmmOrder],
     native_token: &H160,
 ) {
-    let tokens_with_native_pools = amms
-        .iter()
-        .filter_map(|amm| {
-            let tokens = amm.tokens.get();
-            if tokens.0 == *native_token {
-                Some(tokens.1)
-            } else if tokens.1 == *native_token {
-                Some(tokens.0)
+    // Find all tokens that are connected through potentially multiple amm hops to the fee.
+    // TODO: Replace with a more optimal graph algorithm.
+    let mut amms = amms.iter().map(|amm| amm.tokens).collect::<HashSet<_>>();
+    let mut fee_connected_tokens = std::iter::once(*native_token).collect::<HashSet<_>>();
+    loop {
+        let mut added_token = false;
+        amms.retain(|token_pair| {
+            let tokens = token_pair.get();
+            if fee_connected_tokens.contains(&tokens.0) {
+                fee_connected_tokens.insert(tokens.1);
+                added_token = true;
+                false
+            } else if fee_connected_tokens.contains(&tokens.1) {
+                fee_connected_tokens.insert(tokens.0);
+                added_token = true;
+                false
             } else {
-                None
+                true
             }
-        })
-        .chain(std::iter::once(*native_token))
-        .collect::<HashSet<_>>();
+        });
+        if amms.is_empty() || !added_token {
+            break;
+        }
+    }
+    // Remove orders that are not connected.
     orders.retain(|order| {
         [order.buy_token, order.sell_token]
             .iter()
-            .any(|token| tokens_with_native_pools.contains(token))
+            .any(|token| fee_connected_tokens.contains(token))
     });
 }
 
@@ -336,35 +343,42 @@ mod tests {
             H160::from_low_u64_be(1),
             H160::from_low_u64_be(2),
             H160::from_low_u64_be(3),
+            H160::from_low_u64_be(4),
         ];
 
-        let amms = [AmmOrder {
-            tokens: TokenPair::new(native_token, tokens[0]).unwrap(),
-            reserves: (0, 0),
-            fee: 0.into(),
-            settlement_handling: amm_handling,
-        }];
+        let amms = [(native_token, tokens[0]), (tokens[0], tokens[1])]
+            .iter()
+            .map(|tokens| AmmOrder {
+                tokens: TokenPair::new(tokens.0, tokens.1).unwrap(),
+                reserves: (0, 0),
+                fee: 0.into(),
+                settlement_handling: amm_handling.clone(),
+            })
+            .collect::<Vec<_>>();
 
-        let make_order = |buy_token, sell_token| LimitOrder {
-            sell_token,
-            buy_token,
+        let mut orders = [
+            (native_token, tokens[0]),
+            (native_token, tokens[1]),
+            (tokens[0], tokens[1]),
+            (tokens[1], tokens[0]),
+            (tokens[1], tokens[2]),
+            (tokens[2], tokens[1]),
+            (tokens[2], tokens[3]),
+            (tokens[3], tokens[2]),
+        ]
+        .iter()
+        .map(|tokens| LimitOrder {
+            sell_token: tokens.0,
+            buy_token: tokens.1,
             sell_amount: Default::default(),
             buy_amount: Default::default(),
             kind: OrderKind::Sell,
             partially_fillable: Default::default(),
             settlement_handling: limit_handling.clone(),
-        };
-
-        let mut orders = vec![
-            make_order(native_token, tokens[0]),
-            make_order(native_token, tokens[1]),
-            make_order(tokens[0], tokens[1]),
-            make_order(tokens[1], tokens[0]),
-            make_order(tokens[1], tokens[2]),
-            make_order(tokens[2], tokens[1]),
-        ];
+        })
+        .collect::<Vec<_>>();
 
         remove_orders_without_native_connection(&mut orders, &amms, &native_token);
-        assert_eq!(orders.len(), 4);
+        assert_eq!(orders.len(), 6);
     }
 }
