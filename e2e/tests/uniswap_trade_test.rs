@@ -138,7 +138,7 @@ async fn test_with_ganache() {
         web3: web3.clone(),
         chain_id,
     }));
-    let fee_calcuator = Arc::new(MinFeeCalculator::new(
+    let fee_calculator = Arc::new(MinFeeCalculator::new(
         Box::new(price_estimator),
         Box::new(web3.clone()),
         token_a.address(),
@@ -148,12 +148,12 @@ async fn test_with_ganache() {
         db,
         event_updater,
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
-        fee_calcuator.clone(),
+        fee_calculator.clone(),
     ));
 
     orderbook::serve_task(
         orderbook.clone(),
-        fee_calcuator,
+        fee_calculator,
         API_HOST[7..].parse().expect("Couldn't parse API address"),
     );
     let client = reqwest::Client::new();

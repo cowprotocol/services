@@ -58,7 +58,7 @@ impl EventUpdater {
         //    wrong. In theory this could still happen if the last MAX_REORG_BLOCK_COUNT blocks had
         //    more than INSERT_TRADE_BATCH_SIZE trade events but this is unlikely.
         // There alternative solutions for 2. but this one is the most practical. For example, we
-        // could keep all reorgable events in this struct and only store ones that are older than
+        // could keep all reorg-able events in this struct and only store ones that are older than
         // MAX_REORG_BLOCK_COUNT in the database but then any code using trade events would have to
         // go through this class instead of being able to work with the database directly.
         // Or we could make the batch size unlimited but this runs into problems when we have not
