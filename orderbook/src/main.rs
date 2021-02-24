@@ -76,7 +76,8 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let database = Database::new(args.db_url.as_str()).expect("failed to create database");
+    let database =
+        Arc::new(Database::new(args.db_url.as_str()).expect("failed to create database"));
     let event_updater = EventUpdater::new(settlement_contract.clone(), database.clone());
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
 
@@ -100,14 +101,19 @@ async fn main() {
 
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        database,
+        database.clone(),
         event_updater,
         Box::new(balance_fetcher),
         fee_calculator.clone(),
     ));
     check_database_connection(orderbook.as_ref()).await;
 
-    let serve_task = serve_task(orderbook.clone(), fee_calculator, args.bind_address);
+    let serve_task = serve_task(
+        database.clone(),
+        orderbook.clone(),
+        fee_calculator,
+        args.bind_address,
+    );
     let maintenance_task = task::spawn(orderbook_maintenance(orderbook, settlement_contract));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),

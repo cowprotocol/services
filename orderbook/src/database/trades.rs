@@ -9,7 +9,7 @@ use model::trade::Trade;
 use std::convert::TryInto;
 
 /// Any default value means that this field is unfiltered.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq)]
 pub struct TradeFilter {
     pub owner: Option<H160>,
     pub order_uid: Option<OrderUid>,

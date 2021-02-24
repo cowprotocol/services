@@ -5,6 +5,7 @@ mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
 
+use crate::database::Database;
 use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
@@ -19,6 +20,7 @@ use warp::{
 };
 
 pub fn handle_all_routes(
+    database: Arc<Database>,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
@@ -27,12 +29,14 @@ pub fn handle_all_routes(
     let fee_info = get_fee_info::get_fee_info(fee_calculator);
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook);
+    let get_trades = get_trades::get_trades(database);
     warp::path!("api" / "v1" / ..).and(
         create_order
             .or(get_orders)
             .or(fee_info)
             .or(get_order)
-            .or(get_solvable_orders),
+            .or(get_solvable_orders)
+            .or(get_trades),
     )
 }
 
@@ -59,6 +63,11 @@ fn internal_error() -> Json {
 
 pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {
     tracing::error!(?err, "get_orders error");
+    with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+}
+
+pub fn convert_get_trades_error_to_reply(err: anyhowError) -> WithStatus<Json> {
+    tracing::error!(?err, "get_trades error");
     with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
 }
 

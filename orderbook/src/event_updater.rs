@@ -9,6 +9,7 @@ use ethcontract::{
 };
 use futures::{Stream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
+use std::sync::Arc;
 use std::{convert::TryInto, ops::RangeInclusive};
 use web3::Web3;
 
@@ -20,12 +21,12 @@ const INSERT_EVENT_BATCH_SIZE: usize = 250;
 
 pub struct EventUpdater {
     contract: GPv2Settlement,
-    db: Database,
+    db: Arc<Database>,
     last_handled_block: Option<u64>,
 }
 
 impl EventUpdater {
-    pub fn new(contract: GPv2Settlement, db: Database) -> Self {
+    pub fn new(contract: GPv2Settlement, db: Arc<Database>) -> Self {
         Self {
             contract,
             db,
