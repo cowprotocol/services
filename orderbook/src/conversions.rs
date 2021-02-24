@@ -1,8 +1,8 @@
+use anyhow::{anyhow, Result};
 use bigdecimal::BigDecimal;
 use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
-use primitive_types::U256;
+use primitive_types::{H160, U256};
 use std::convert::TryInto;
-
 // TODO: It would be nice to avoid copying the underlying BigInt when converting BigDecimal to
 // anything else but the simple big_decimal.to_bigint makes a copy internally.
 
@@ -35,4 +35,11 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
     }
     let big_int = big_decimal.to_bigint()?;
     bigint_to_u256(&big_int)
+}
+
+pub fn h160_from_vec(vec: Vec<u8>) -> Result<H160> {
+    let array: [u8; 20] = vec
+        .try_into()
+        .map_err(|_| anyhow!("h160 has wrong length"))?;
+    Ok(H160::from(array))
 }

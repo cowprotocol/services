@@ -3,6 +3,7 @@ mod get_fee_info;
 mod get_order_by_uid;
 mod get_orders;
 mod get_solvable_orders;
+mod get_trades;
 
 use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;

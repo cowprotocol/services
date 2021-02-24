@@ -21,7 +21,7 @@ use web3::{
 };
 /// An order that is returned when querying the orderbook.
 ///
-/// Contains extra fields thats are populated by the orderbook.
+/// Contains extra fields that are populated by the orderbook.
 #[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {

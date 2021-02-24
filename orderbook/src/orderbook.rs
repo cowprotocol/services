@@ -181,7 +181,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn resgisters_untracked_balances_on_fetching() {
+    async fn registers_untracked_balances_on_fetching() {
         let mut balance_fetcher = MockBalanceFetching::new();
 
         let a_sell_token = H160::from_low_u64_be(2);

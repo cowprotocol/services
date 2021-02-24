@@ -163,7 +163,7 @@ paths:
                 $ref: "#/components/schemas/FeeInformation"
         404:
           description: sellToken not existent
-  /api/v1/trades/:
+  /api/v1/trades:
     get:
       summary: Get existing Trades.
       description: |

@@ -1,5 +1,5 @@
 use super::Database;
-use crate::integer_conversions::*;
+use crate::conversions::*;
 use anyhow::{Context, Result};
 use ethcontract::U256;
 use futures::FutureExt;

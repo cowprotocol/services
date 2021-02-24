@@ -1,5 +1,5 @@
 use super::*;
-use crate::integer_conversions::*;
+use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
@@ -146,13 +146,6 @@ struct OrdersQueryRow {
     invalidated: bool,
 }
 
-fn h160_from_vec(vec: Vec<u8>) -> Result<H160> {
-    let array: [u8; 20] = vec
-        .try_into()
-        .map_err(|_| anyhow!("h160 has wrong length"))?;
-    Ok(H160::from(array))
-}
-
 impl OrdersQueryRow {
     fn into_order(self) -> Result<Order> {
         let executed_sell_amount = big_decimal_to_big_uint(&self.sum_sell)
@@ -206,7 +199,6 @@ impl OrdersQueryRow {
 
 #[cfg(test)]
 mod tests {
-    use crate::database::Trade;
 
     use super::*;
     use chrono::NaiveDateTime;
