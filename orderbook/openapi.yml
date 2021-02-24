@@ -118,20 +118,28 @@ paths:
         404:
           description: Order was not found
     delete:
-      summary: Deletes order from order service,
+      summary: Cancels order by marking it invalid with a timestamp.
       description: |
         The successful deletion might not prevent solvers from settling the order
         Authentication must be provided by signing the following message:
-        signTypedData({operation: "delete", orderUid: "0x.."})
       parameters:
         - in: path
           name: UID
           schema:
             $ref: "#/components/schemas/UID"
           required: true
+      requestBody:
+        description: "Signed OrderCancellation"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCancellation"
       responses:
         200:
           description: Order deleted
+        401:
+          description: Invalid signature
         404:
           description: Order was not found
   /api/v1/tokens/{sellToken}/fee:
@@ -266,9 +274,8 @@ components:
         partiallyFillable:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
-        signature:
-          description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
-          example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+        Signature:
+          $ref: "#/components/schemas/Signature"
     OrderMetaData:
       description: |
         Extra order data that is returned to users when querying orders
@@ -306,6 +313,14 @@ components:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
+    OrderCancellation:
+      description: |
+        EIP712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
+      type: object
+      properties:
+        signature:
+          description: "OrderCancellation signed by owner"
+          $ref: "#/components/schemas/Signature"
     Trade:
       description: |
         Trade data such as executed amounts, fees, order id and block number.
@@ -344,6 +359,9 @@ components:
         Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
         and bytes 52..56 valid to,
       type: string
+    Signature:
+      description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     OrderPostError:
       type: object
       properties:
@@ -355,6 +373,18 @@ components:
               InvalidSignature,
               DuplicateOrder,
               InsufficientFunds,
+            ]
+        description:
+          type: string
+    OrderCancellationError:
+      type: object
+      properties:
+        errorType:
+          type: string
+          enum:
+            [
+                InvalidSignature,
+                InvalidOrderUid,
             ]
         description:
           type: string
