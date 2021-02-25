@@ -132,7 +132,7 @@ async fn test_with_ganache() {
     );
     let db = Database::new("postgresql://").unwrap();
     db.clear().await.unwrap();
-    let event_updater = EventUpdater::new(gp_settlement.clone(), Arc::from(db.clone()));
+    let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone());
     let price_estimator = UniswapPriceEstimator::new(Box::new(PoolFetcher {
         factory: uniswap_factory.clone(),
         web3: web3.clone(),
@@ -145,14 +145,14 @@ async fn test_with_ganache() {
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        Arc::from(db.clone()),
+        db.clone(),
         event_updater,
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
         fee_calculator.clone(),
     ));
 
     orderbook::serve_task(
-        Arc::from(db.clone()),
+        db.clone(),
         orderbook.clone(),
         fee_calculator,
         API_HOST[7..].parse().expect("Couldn't parse API address"),

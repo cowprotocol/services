@@ -76,8 +76,7 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let database =
-        Arc::new(Database::new(args.db_url.as_str()).expect("failed to create database"));
+    let database = Database::new(args.db_url.as_str()).expect("failed to create database");
     let event_updater = EventUpdater::new(settlement_contract.clone(), database.clone());
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
 

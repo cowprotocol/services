@@ -20,7 +20,7 @@ use warp::{
 };
 
 pub fn handle_all_routes(
-    database: Arc<Database>,
+    database: Database,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {

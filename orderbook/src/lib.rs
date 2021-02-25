@@ -18,7 +18,7 @@ use tokio::{task, task::JoinHandle};
 use warp::Filter;
 
 pub fn serve_task(
-    database: Arc<Database>,
+    database: Database,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
     address: SocketAddr,
