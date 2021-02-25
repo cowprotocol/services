@@ -33,7 +33,11 @@ pub trait MinFeeStoring: Send + Sync {
 }
 
 const GAS_PER_ORDER: f64 = 100_000.0;
+
+// We use a longer validity internally for persistence to avoid writing a value to storage on every request
+// This way we can serve a previous estimate if the same token is queried again shortly after
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 60;
+const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
 
 impl MinFeeCalculator {
     pub fn new(
@@ -58,6 +62,31 @@ impl MinFeeCalculator {
     // Returns an error if there is some estimation error and Ok(None) if no information about the given
     // token exists
     pub async fn min_fee(&self, token: H160) -> Result<Option<Measurement>> {
+        let now = (self.now)();
+        let official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
+        let internal_valid_until = now + Duration::seconds(PERSISTED_VALIDITY_FOR_FEE_IN_SEC);
+
+        if let Ok(Some(past_fee)) = self
+            .measurements
+            .get_min_fee(token, official_valid_until)
+            .await
+        {
+            return Ok(Some((past_fee, official_valid_until)));
+        }
+
+        let min_fee = match self.compute_min_fee(token).await? {
+            Some(fee) => fee,
+            None => return Ok(None),
+        };
+
+        let _ = self
+            .measurements
+            .save_fee_measurement(token, internal_valid_until, min_fee)
+            .await;
+        Ok(Some((min_fee, official_valid_until)))
+    }
+
+    async fn compute_min_fee(&self, token: H160) -> Result<Option<U256>> {
         let gas_price = self.gas_estimator.estimate().await?;
         let token_price = match self
             .price_estimator
@@ -68,13 +97,9 @@ impl MinFeeCalculator {
             Err(_) => return Ok(None),
         };
 
-        let min_fee = U256::from_f64_lossy(gas_price * token_price * GAS_PER_ORDER);
-        let valid_until = (self.now)() + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
-        let _ = self
-            .measurements
-            .save_fee_measurement(token, valid_until, min_fee)
-            .await;
-        Ok(Some((min_fee, valid_until)))
+        Ok(Some(U256::from_f64_lossy(
+            gas_price * token_price * GAS_PER_ORDER,
+        )))
     }
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
@@ -84,7 +109,7 @@ impl MinFeeCalculator {
                 return true;
             }
         }
-        if let Ok(Some((current_fee, _))) = self.min_fee(token).await {
+        if let Ok(Some(current_fee)) = self.compute_min_fee(token).await {
             return fee >= current_fee;
         }
         false
@@ -182,8 +207,8 @@ mod tests {
         *time.lock().unwrap() = expiry - Duration::seconds(10);
         assert!(fee_estimator.is_valid_fee(token, fee).await);
 
-        // fee is invalid after expiry
-        *time.lock().unwrap() = expiry + Duration::seconds(10);
+        // fee is invalid for some uncached token
+        let token = H160::from_low_u64_be(2);
         assert_eq!(fee_estimator.is_valid_fee(token, fee).await, false);
     }
 
