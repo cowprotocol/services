@@ -133,6 +133,7 @@ async fn test_with_ganache() {
     let db = Database::new("postgresql://").unwrap();
     db.clear().await.unwrap();
     let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone());
+
     let price_estimator = UniswapPriceEstimator::new(Box::new(PoolFetcher {
         factory: uniswap_factory.clone(),
         web3: web3.clone(),
@@ -142,6 +143,7 @@ async fn test_with_ganache() {
         Box::new(price_estimator),
         Box::new(web3.clone()),
         token_a.address(),
+        db.clone(),
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
