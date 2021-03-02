@@ -284,54 +284,14 @@ fn bigint_to_u256(input: &BigInt) -> Result<U256> {
 
 #[cfg(test)]
 mod tests {
-    use liquidity::{
-        AmmSettlementHandling, LimitOrderSettlementHandling, MockLimitOrderSettlementHandling,
-    };
+    use liquidity::tests::{CapturingAmmSettlementHandler, CapturingLimitOrderSettlementHandler};
     use model::{order::OrderCreation, TokenPair};
     use num::Rational;
-    use std::sync::{Arc, Mutex};
 
     use super::*;
 
     fn to_wei(base: u128) -> U256 {
         U256::from(base) * U256::from(10).pow(18.into())
-    }
-
-    fn noop_limit_order_handling() -> Arc<dyn LimitOrderSettlementHandling> {
-        let mut limit_order_handling = MockLimitOrderSettlementHandling::new();
-        limit_order_handling
-            .expect_settle()
-            .returning(|_| (None, Vec::new()));
-        Arc::new(limit_order_handling)
-    }
-
-    #[derive(Clone, Copy)]
-    struct AmmSettlement {
-        token_in: Address,
-        token_out: Address,
-        amount_in: U256,
-        amount_out: U256,
-    }
-
-    #[derive(Default)]
-    struct AmmSettlementHandler {
-        settlement: Mutex<Option<AmmSettlement>>,
-    }
-
-    impl AmmSettlementHandling for AmmSettlementHandler {
-        fn settle(
-            &self,
-            input: (Address, U256),
-            output: (Address, U256),
-        ) -> Vec<Box<dyn Interaction>> {
-            self.settlement.lock().unwrap().replace(AmmSettlement {
-                token_in: input.0,
-                token_out: output.0,
-                amount_in: input.1,
-                amount_out: input.1,
-            });
-            Vec::new()
-        }
     }
 
     #[test]
@@ -346,7 +306,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_b,
@@ -355,11 +315,11 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -369,7 +329,7 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
+        let interaction = amm_handler.calls()[0];
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
@@ -402,7 +362,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_a,
@@ -411,11 +371,11 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
@@ -425,7 +385,7 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
+        let interaction = amm_handler.calls()[0];
         assert_eq!(interaction.token_in, token_a);
         assert_eq!(interaction.token_out, token_b);
 
@@ -454,7 +414,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_b,
@@ -463,11 +423,11 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -477,7 +437,7 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
+        let interaction = amm_handler.calls()[0];
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
@@ -510,7 +470,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_b,
@@ -519,11 +479,11 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -533,7 +493,7 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool);
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.settlement.lock().unwrap().unwrap();
+        let interaction = amm_handler.calls()[0];
         assert_eq!(interaction.token_in, token_b);
         assert_eq!(interaction.token_out, token_a);
 
@@ -570,7 +530,7 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_b,
@@ -579,11 +539,11 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
@@ -591,7 +551,7 @@ mod tests {
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.into_iter(), &pool);
-        assert!(amm_handler.settlement.lock().unwrap().is_none());
+        assert!(amm_handler.calls().is_empty());
         assert_eq!(
             result.clearing_prices,
             maplit::hashmap! {
@@ -652,7 +612,7 @@ mod tests {
             .into(),
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
@@ -677,7 +637,7 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
             LimitOrder {
                 sell_token: token_b,
@@ -686,11 +646,11 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: noop_limit_order_handling(),
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
             },
         ];
 
-        let amm_handler = Arc::new(AmmSettlementHandler::default());
+        let amm_handler = CapturingAmmSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
