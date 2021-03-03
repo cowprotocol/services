@@ -1,5 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::gas_price_estimation::GasEstimatorType;
+use ethcontract::H160;
 use std::{num::ParseFloatError, time::Duration};
 use url::Url;
 
@@ -40,6 +41,11 @@ pub struct Arguments {
         use_delimiter = true
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
+
+    /// Base tokens used for finding multi-hop paths between multiple AMMs
+    /// Should be the most liquid tokens of the given network.
+    #[structopt(long, env = "BASE_TOKENS")]
+    pub base_tokens: Vec<H160>,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

@@ -88,7 +88,7 @@ pub fn path_candidates(
     candidates
 }
 
-pub fn tokens_list_to_pair_list(token_list: &[H160]) -> Vec<TokenPair> {
+pub fn token_path_to_pair_path(token_list: &[H160]) -> Vec<TokenPair> {
     token_list
         .windows(2)
         .map(|window| {

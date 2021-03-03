@@ -1,13 +1,16 @@
 use anyhow::Result;
 use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, IERC20};
 use ethcontract::{batch::CallBatch, Http, Web3};
-use model::TokenPair;
 use primitive_types::{H160, U256};
-use shared::uniswap_pool::{PoolFetcher, PoolFetching as _};
+use shared::{
+    uniswap_pool::{PoolFetcher, PoolFetching as _},
+    uniswap_solver::{path_candidates, token_path_to_pair_path},
+};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 
 const MAX_BATCH_SIZE: usize = 100;
+pub const MAX_HOPS: usize = 2;
 
 use crate::interactions::UniswapInteraction;
 use crate::settlement::Interaction;
@@ -18,7 +21,7 @@ pub struct UniswapLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: PoolFetcher,
     web3: Web3<Http>,
-    native_token_wrapper: H160,
+    base_tokens: HashSet<H160>,
 }
 
 struct Inner {
@@ -33,7 +36,7 @@ impl UniswapLiquidity {
         factory: UniswapV2Factory,
         router: UniswapV2Router02,
         gpv2_settlement: GPv2Settlement,
-        native_token_wrapper: H160,
+        base_tokens: HashSet<H160>,
         web3: Web3<Http>,
         chain_id: u64,
     ) -> Self {
@@ -49,7 +52,7 @@ impl UniswapLiquidity {
                 web3,
                 chain_id,
             },
-            native_token_wrapper,
+            base_tokens,
         }
     }
 
@@ -61,17 +64,17 @@ impl UniswapLiquidity {
         let mut pools = HashSet::new();
 
         for order in offchain_orders {
-            pools.insert(
-                TokenPair::new(order.buy_token, order.sell_token).expect("buy token = sell token"),
+            let path_candidates = path_candidates(
+                order.sell_token,
+                order.buy_token,
+                &self.base_tokens,
+                MAX_HOPS,
             );
-
-            // Include every token with native token pair in the pools
-            if let Some(pair) = TokenPair::new(order.buy_token, self.native_token_wrapper) {
-                pools.insert(pair);
-            }
-            if let Some(pair) = TokenPair::new(order.sell_token, self.native_token_wrapper) {
-                pools.insert(pair);
-            }
+            pools.extend(
+                path_candidates
+                    .iter()
+                    .flat_map(|candidate| token_path_to_pair_path(&candidate).into_iter()),
+            );
         }
 
         let mut tokens = HashSet::new();

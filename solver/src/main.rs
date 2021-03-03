@@ -2,7 +2,8 @@ use contracts::WETH9;
 use ethcontract::{Account, PrivateKey};
 use reqwest::Url;
 use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, naive_solver::NaiveSolver};
-use std::time::Duration;
+use std::iter::FromIterator as _;
+use std::{collections::HashSet, time::Duration};
 use structopt::StructOpt;
 
 #[derive(Debug, StructOpt)]
@@ -76,11 +77,14 @@ async fn main() {
         .expect("couldn't load deployed native token");
     let orderbook_api =
         solver::orderbook::OrderBookApi::new(args.orderbook_url, args.orderbook_timeout);
+    let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
+    // We should always use the native token as a base token.
+    base_tokens.insert(native_token.address());
     let uniswap_liquidity = UniswapLiquidity::new(
         uniswap_factory.clone(),
         uniswap_router.clone(),
         settlement_contract.clone(),
-        native_token.address(),
+        base_tokens.clone(),
         web3.clone(),
         chain_id,
     );

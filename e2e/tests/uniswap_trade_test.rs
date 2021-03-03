@@ -1,8 +1,5 @@
 use contracts::{ERC20Mintable, UniswapV2Factory, UniswapV2Router02};
-use ethcontract::{
-    prelude::{Account, Address, Http, PrivateKey, Web3, U256},
-    H160,
-};
+use ethcontract::prelude::{Account, Address, Http, PrivateKey, Web3, U256};
 use hex_literal::hex;
 use model::{
     order::{OrderBuilder, OrderKind},
@@ -16,7 +13,7 @@ use secp256k1::SecretKey;
 use serde_json::json;
 use shared::uniswap_pool::PoolFetcher;
 use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
@@ -206,7 +203,7 @@ async fn test_with_ganache() {
         uniswap_factory.clone(),
         uniswap_router.clone(),
         gp_settlement.clone(),
-        H160::default(),
+        HashSet::new(),
         web3.clone(),
         1,
     );
