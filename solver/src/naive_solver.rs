@@ -6,15 +6,10 @@ use crate::{
     solver::Solver,
 };
 use anyhow::Result;
-use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02};
 use model::TokenPair;
 use std::collections::HashMap;
 
-pub struct NaiveSolver {
-    pub uniswap_router: UniswapV2Router02,
-    pub uniswap_factory: UniswapV2Factory,
-    pub gpv2_settlement: GPv2Settlement,
-}
+pub struct NaiveSolver;
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {

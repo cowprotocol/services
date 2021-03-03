@@ -207,11 +207,7 @@ async fn test_with_ganache() {
         web3.clone(),
         1,
     );
-    let solver = solver::naive_solver::NaiveSolver {
-        uniswap_router,
-        uniswap_factory,
-        gpv2_settlement: gp_settlement.clone(),
-    };
+    let solver = solver::naive_solver::NaiveSolver {};
     let mut driver = solver::driver::Driver::new(
         gp_settlement.clone(),
         uniswap_liquidity,

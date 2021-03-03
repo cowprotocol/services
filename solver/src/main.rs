@@ -1,7 +1,7 @@
 use contracts::WETH9;
 use ethcontract::{Account, PrivateKey};
 use reqwest::Url;
-use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, naive_solver::NaiveSolver};
+use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, solver::SolverType};
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, time::Duration};
 use structopt::StructOpt;
@@ -45,6 +45,16 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     settle_interval: Duration,
+
+    /// Which type of solver to use
+    #[structopt(
+        long,
+        env = "SOLVER_TYPE",
+        default_value = "Naive",
+        possible_values = &SolverType::variants(),
+        case_insensitive = true,
+    )]
+    solver_type: SolverType,
 }
 
 #[tokio::main]
@@ -88,11 +98,7 @@ async fn main() {
         web3.clone(),
         chain_id,
     );
-    let solver = NaiveSolver {
-        uniswap_router,
-        uniswap_factory,
-        gpv2_settlement: settlement_contract.clone(),
-    };
+    let solver = solver::solver::create(args.solver_type, base_tokens);
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),
         &web3,
@@ -104,7 +110,7 @@ async fn main() {
         settlement_contract,
         uniswap_liquidity,
         orderbook_api,
-        Box::new(solver),
+        solver,
         Box::new(gas_price_estimator),
         args.target_confirm_time,
         args.settle_interval,
