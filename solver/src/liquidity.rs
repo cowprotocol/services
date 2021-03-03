@@ -1,5 +1,5 @@
 use model::{order::OrderKind, TokenPair};
-use num::rational::Rational;
+use num::rational::Ratio;
 use primitive_types::{H160, U256};
 use settlement::{Interaction, Trade};
 use std::sync::Arc;
@@ -40,7 +40,7 @@ pub trait LimitOrderSettlementHandling: Send + Sync {
 pub struct AmmOrder {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
-    pub fee: Rational,
+    pub fee: Ratio<u32>,
     pub settlement_handling: Arc<dyn AmmSettlementHandling>,
 }
 

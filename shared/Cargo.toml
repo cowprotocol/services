@@ -13,6 +13,7 @@ futures = "0.3"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.0", features = ["web3_"] }
 hex-literal = "0.3"
 model = { path = "../model" }
+num = "0.3"
 primitive-types = { version = "0.8" }
 reqwest = { version = "0.10", features = ["json"] }
 serde = { version = "1.0" }

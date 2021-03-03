@@ -286,7 +286,7 @@ fn bigint_to_u256(input: &BigInt) -> Result<U256> {
 mod tests {
     use liquidity::tests::{CapturingAmmSettlementHandler, CapturingLimitOrderSettlementHandler};
     use model::{order::OrderCreation, TokenPair};
-    use num::Rational;
+    use num::rational::Ratio;
 
     use super::*;
 
@@ -323,7 +323,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
@@ -379,7 +379,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
@@ -431,7 +431,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
@@ -487,7 +487,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.clone().into_iter(), &pool);
@@ -547,7 +547,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
         let result = solve(orders.into_iter(), &pool);
@@ -616,7 +616,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
         let result = solve(orders.into_iter(), &pool);
@@ -654,7 +654,7 @@ mod tests {
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
-            fee: Rational::new(3, 1000),
+            fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
         let result = solve(orders.into_iter(), &pool);

@@ -68,10 +68,7 @@ mod tests {
     async fn estimate_price_on_direct_pair() {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
-        let pool = Pool {
-            tokens: TokenPair::new(token_a, token_b).unwrap(),
-            reserves: (100, 10),
-        };
+        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100, 10));
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
         let estimator = UniswapPriceEstimator { pool_fetcher };
@@ -104,10 +101,7 @@ mod tests {
     async fn return_error_if_invalid_reserves() {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
-        let pool = Pool {
-            tokens: TokenPair::new(token_a, token_b).unwrap(),
-            reserves: (0, 10),
-        };
+        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 10));
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
         let estimator = UniswapPriceEstimator { pool_fetcher };

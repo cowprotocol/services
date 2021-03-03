@@ -2,7 +2,6 @@ use anyhow::Result;
 use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, IERC20};
 use ethcontract::{batch::CallBatch, Http, Web3};
 use model::TokenPair;
-use num::rational::Rational;
 use primitive_types::{H160, U256};
 use shared::uniswap_pool::{PoolFetcher, PoolFetching as _};
 use std::collections::{HashMap, HashSet};
@@ -84,7 +83,7 @@ impl UniswapLiquidity {
             result.push(AmmOrder {
                 tokens: pool.tokens,
                 reserves: pool.reserves,
-                fee: Rational::new_raw(3, 1000),
+                fee: pool.fee,
                 settlement_handling: self.inner.clone(),
             })
         }

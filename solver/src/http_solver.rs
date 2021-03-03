@@ -278,7 +278,7 @@ mod tests {
         AmmOrder, LimitOrder, MockAmmSettlementHandling, MockLimitOrderSettlementHandling,
     };
     use ::model::TokenPair;
-    use num::Rational;
+    use num::rational::Ratio;
     use std::sync::Arc;
 
     // cargo test real_solver -- --ignored --nocapture
@@ -314,7 +314,7 @@ mod tests {
             Liquidity::Amm(AmmOrder {
                 tokens: TokenPair::new(H160::zero(), H160::from_low_u64_be(1)).unwrap(),
                 reserves: (base(100), base(100)),
-                fee: Rational::new(0, 1),
+                fee: Ratio::new(0, 1),
                 settlement_handling: Arc::new(MockAmmSettlementHandling::new()),
             }),
         ];
