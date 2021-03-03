@@ -2337,6 +2337,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "hex-literal",
+ "maplit",
  "model",
  "num",
  "primitive-types",
