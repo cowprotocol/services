@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Result;
 use model::TokenPair;
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt};
 
 pub struct NaiveSolver;
 
@@ -29,6 +29,12 @@ impl Solver for NaiveSolver {
             }
         }
         Ok(settle(limit_orders.into_iter(), uniswaps).await)
+    }
+}
+
+impl fmt::Display for NaiveSolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "NaiveSolver")
     }
 }
 

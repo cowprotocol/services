@@ -212,7 +212,7 @@ async fn test_with_ganache() {
         gp_settlement.clone(),
         uniswap_liquidity,
         create_orderbook_api(),
-        Box::new(solver),
+        vec![Box::new(solver)],
         Box::new(web3),
         Duration::from_secs(1),
         Duration::from_secs(30),

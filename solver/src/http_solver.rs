@@ -11,7 +11,10 @@ use ::model::order::OrderKind;
 use anyhow::{ensure, Context, Result};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 // TODO: exclude partially fillable orders
 // TODO: set settlement.fee_factor
@@ -268,6 +271,12 @@ impl Solver for HttpSolver {
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
         settlement::convert_settlement(settled, context).map(Some)
+    }
+}
+
+impl fmt::Display for HttpSolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "HTTPSolver")
     }
 }
 

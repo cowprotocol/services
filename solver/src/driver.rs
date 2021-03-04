@@ -1,13 +1,15 @@
 use crate::{
     liquidity::{uniswap::UniswapLiquidity, Liquidity},
     orderbook::OrderBookApi,
+    settlement::Settlement,
     settlement_submission,
     solver::Solver,
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
+use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
-use std::time::Duration;
+use std::{cmp::Reverse, time::Duration};
 use tracing::info;
 
 // There is no economic viability calculation yet so we're using an arbitrary very high cap to
@@ -18,7 +20,7 @@ pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
     uniswap_liquidity: UniswapLiquidity,
-    solver: Box<dyn Solver>,
+    solver: Vec<Box<dyn Solver>>,
     gas_price_estimator: Box<dyn GasPriceEstimating>,
     target_confirm_time: Duration,
     settle_interval: Duration,
@@ -29,7 +31,7 @@ impl Driver {
         settlement_contract: GPv2Settlement,
         uniswap_liquidity: UniswapLiquidity,
         orderbook: OrderBookApi,
-        solver: Box<dyn Solver>,
+        solver: Vec<Box<dyn Solver>>,
         gas_price_estimator: Box<dyn GasPriceEstimating>,
         target_confirm_time: Duration,
         settle_interval: Duration,
@@ -71,26 +73,39 @@ impl Driver {
             .context("failed to get uniswap pools")?;
         tracing::debug!("got {} AMMs", amms.len());
 
-        let liquidity = limit_orders
+        let liquidity: Vec<Liquidity> = limit_orders
             .into_iter()
             .map(Liquidity::Limit)
             .chain(amms.into_iter().map(Liquidity::Amm))
             .collect();
 
-        // TODO: order validity checks
-        // Decide what is handled by orderbook service and what by us.
-        // We likely want to at least mark orders we know we have settled so that we don't
-        // attempt to settle them again when they are still in the orderbook.
-        let settlement = match self.solver.solve(liquidity).await? {
-            None => return Ok(()),
-            Some(settlement) => settlement,
-        };
-        info!("Computed {:?}", settlement);
-        if settlement.trades.is_empty() {
-            info!("Skipping empty settlement");
-        } else {
-            // TODO: check if we need to approve spending to uniswap
-            settlement_submission::submit(
+        let mut settlements: Vec<(&Box<dyn Solver>, Settlement)> =
+            join_all(self.solver.iter().map(|solver| {
+                let liquidity = liquidity.clone();
+                async move { (solver, solver.solve(liquidity).await) }
+            }))
+            .await
+            .into_iter()
+            .filter_map(|(solver, settlement)| {
+                let settlement = settlement.ok()??;
+                info!(
+                    "{} found solution with objective value: {}",
+                    solver,
+                    settlement.objective_value()
+                );
+                Some((solver, settlement))
+            })
+            .collect();
+
+        // Sort by key in descending order
+        settlements.sort_by_key(|(_, settlement)| Reverse(settlement.objective_value()));
+        for (solver, settlement) in settlements {
+            info!("{} computed {:?}", solver, settlement);
+            if settlement.trades.is_empty() {
+                info!("Skipping empty settlement");
+                continue;
+            }
+            match settlement_submission::submit(
                 &self.settlement_contract,
                 self.gas_price_estimator.as_ref(),
                 self.target_confirm_time,
@@ -98,7 +113,16 @@ impl Driver {
                 settlement,
             )
             .await
-            .context("failed to submit settlement")?;
+            {
+                Ok(_) => {
+                    // TODO: order validity checks
+                    // Decide what is handled by orderbook service and what by us.
+                    // We likely want to at least mark orders we know we have settled so that we don't
+                    // attempt to settle them again when they are still in the orderbook.
+                    break;
+                }
+                Err(err) => tracing::error!("{} Failed to submit settlement: {}", solver, err),
+            }
         }
         Ok(())
     }

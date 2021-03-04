@@ -13,6 +13,7 @@ pub mod offchain_orderbook;
 pub mod uniswap;
 
 /// Defines the different types of liquidity our solvers support
+#[derive(Clone)]
 pub enum Liquidity {
     Limit(LimitOrder),
     Amm(AmmOrder),

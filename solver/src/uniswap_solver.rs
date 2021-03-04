@@ -8,7 +8,10 @@ use shared::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
     },
 };
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+};
 
 use crate::{
     liquidity::{uniswap::MAX_HOPS, AmmOrder, LimitOrder, Liquidity},
@@ -23,6 +26,12 @@ pub struct UniswapSolver {
 impl Solver for UniswapSolver {
     async fn solve(&self, liquidity: Vec<Liquidity>) -> Result<Option<Settlement>> {
         Ok(self.solve(liquidity))
+    }
+}
+
+impl fmt::Display for UniswapSolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "UniswapSolver")
     }
 }
 
