@@ -636,9 +636,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-generate"
-version = "0.11.1"
+version = "0.11.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa9bc413a324ad98a80a70bfe8b7dea0d3e85f1921fe4a0c3497bc21cf0f393b"
+checksum = "e873af91c340b0df60d2024d48e2ac0ca118f0fa7c293607fe7d2cfabad81a60"
 dependencies = [
  "Inflector",
  "anyhow",
