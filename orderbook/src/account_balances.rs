@@ -164,7 +164,6 @@ mod tests {
         let allowance_target = Account::Local(accounts[1], None);
 
         let token = ERC20Mintable::builder(&web3)
-            .gas(8_000_000u32.into())
             .deploy()
             .await
             .expect("MintableERC20 deployment failed");

@@ -54,15 +54,13 @@ pub fn settle_method_builder(
     contract: &GPv2Settlement,
     settlement: EncodedSettlement,
 ) -> DynMethodBuilder<Void> {
-    contract
-        .settle(
-            settlement.tokens,
-            settlement.clearing_prices,
-            settlement.encoded_trades,
-            settlement.encoded_interactions,
-            Vec::new(),
-        )
-        .gas(super::MAX_GAS.into())
+    contract.settle(
+        settlement.tokens,
+        settlement.clearing_prices,
+        settlement.encoded_trades,
+        settlement.encoded_interactions,
+        Vec::new(),
+    )
 }
 
 // We never send cancellations but we still need to have types that implement the traits.

@@ -44,7 +44,6 @@ async fn test_with_ganache() {
 
     let deploy_mintable_token = || async {
         ERC20Mintable::builder(&web3)
-            .gas(8_000_000u32.into())
             .deploy()
             .await
             .expect("MintableERC20 deployment failed")
@@ -55,7 +54,6 @@ async fn test_with_ganache() {
             const NAME: &str = stringify!($call);
             $call
                 .from($acc.clone())
-                .gas(8_000_000u32.into())
                 .send()
                 .await
                 .expect(&format!("{} failed", NAME))

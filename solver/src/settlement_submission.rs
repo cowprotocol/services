@@ -11,7 +11,6 @@ use primitive_types::{H160, U256};
 use std::time::Duration;
 use transaction_retry::RetryResult;
 
-const MAX_GAS: u32 = 8_000_000;
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.

@@ -42,7 +42,6 @@ async fn run() -> Result<()> {
 
                 log::debug!("deploying {}...", NAME);
                 let instance = $contract::builder(&web3 $(, $param)*)
-                    .gas(8_000_000_u32.into())
                     .deploy()
                     .await
                     .with_context(|| format!("failed to deploy {}", NAME))?;
