@@ -44,7 +44,7 @@ pub struct Arguments {
 
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
-    #[structopt(long, env = "BASE_TOKENS")]
+    #[structopt(long, env = "BASE_TOKENS", use_delimiter = true)]
     pub base_tokens: Vec<H160>,
 }
 
