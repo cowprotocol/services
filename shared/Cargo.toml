@@ -14,7 +14,7 @@ gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag 
 hex-literal = "0.3"
 maplit = "1.0"
 model = { path = "../model" }
-num = "0.3"
+num = "0.4"
 primitive-types = { version = "0.8" }
 reqwest = { version = "0.10", features = ["json"] }
 serde = { version = "1.0" }
