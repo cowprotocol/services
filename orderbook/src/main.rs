@@ -11,7 +11,9 @@ use orderbook::{
     serve_task, verify_deployed_contract_constants,
 };
 use shared::uniswap_pool::PoolFetcher;
-use std::{net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
+};
 use structopt::StructOpt;
 use tokio::task;
 use url::Url;
@@ -92,11 +94,18 @@ async fn main() {
     )
     .await
     .expect("failed to create gas price estimator");
-    let price_estimator = UniswapPriceEstimator::new(Box::new(PoolFetcher {
-        factory: uniswap_factory,
-        web3,
-        chain_id,
-    }));
+
+    let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
+    // We should always use the native token as a base token.
+    base_tokens.insert(native_token.address());
+    let price_estimator = UniswapPriceEstimator::new(
+        Box::new(PoolFetcher {
+            factory: uniswap_factory,
+            web3,
+            chain_id,
+        }),
+        base_tokens,
+    );
     let fee_calculator = Arc::new(MinFeeCalculator::new(
         Box::new(price_estimator),
         Box::new(gas_price_estimator),

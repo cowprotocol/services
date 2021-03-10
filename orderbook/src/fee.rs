@@ -88,18 +88,25 @@ impl MinFeeCalculator {
 
     async fn compute_min_fee(&self, token: H160) -> Result<Option<U256>> {
         let gas_price = self.gas_estimator.estimate().await?;
+        let fee_in_eth = gas_price * GAS_PER_ORDER;
         let token_price = match self
             .price_estimator
-            .estimate_price(token, self.native_token)
+            .estimate_price(
+                token,
+                self.native_token,
+                U256::from_f64_lossy(fee_in_eth),
+                model::order::OrderKind::Buy,
+            )
             .await
         {
             Ok(price) => price,
-            Err(_) => return Ok(None),
+            Err(err) => {
+                tracing::warn!("Failed to estimate sell token price: {}", err);
+                return Ok(None);
+            }
         };
 
-        Ok(Some(U256::from_f64_lossy(
-            gas_price * token_price * GAS_PER_ORDER,
-        )))
+        Ok(Some(U256::from_f64_lossy(fee_in_eth * token_price)))
     }
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
@@ -148,6 +155,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
+    use model::order::OrderKind;
     use std::sync::Arc;
 
     use super::*;
@@ -155,7 +163,7 @@ mod tests {
     struct FakePriceEstimator(f64);
     #[async_trait::async_trait]
     impl PriceEstimating for FakePriceEstimator {
-        async fn estimate_price(&self, _: H160, _: H160) -> Result<f64> {
+        async fn estimate_price(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<f64> {
             Ok(self.0)
         }
     }
