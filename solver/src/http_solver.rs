@@ -118,6 +118,12 @@ impl HttpSolver {
                     buy_amount: order.buy_amount,
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
+                    // TODO: map order fee and fixed cost
+                    fee: 0.0,
+                    cost: CostModel {
+                        amount: 0,
+                        token: self.token_to_string(&self.native_token),
+                    },
                 };
                 (index.clone(), order)
             })
@@ -141,6 +147,11 @@ impl HttpSolver {
                     balance1: amm.reserves.0,
                     balance2: amm.reserves.1,
                     fee: *amm.fee.numer() as f64 / *amm.fee.denom() as f64,
+                    // TODO: map uniswap fixed cost
+                    cost: CostModel {
+                        amount: 0,
+                        token: self.token_to_string(&self.native_token),
+                    },
                     mandatory: false,
                 };
                 (index.clone(), uniswap)
@@ -167,7 +178,6 @@ impl HttpSolver {
             tokens: self.token_models(&tokens),
             orders: self.order_models(&limit_orders),
             uniswaps: self.amm_models(&amm_orders),
-            default_fee: 0.0,
         };
         let context = SettlementContext {
             tokens,
@@ -338,6 +348,8 @@ mod tests {
         let uniswap = settled.uniswaps.values().next().unwrap();
         assert!(uniswap.balance_update1 < 0);
         assert_eq!(uniswap.balance_update2 as u128, base(2));
+        assert_eq!(uniswap.exec_plan.sequence, 0);
+        assert_eq!(uniswap.exec_plan.position, 0);
 
         assert_eq!(settled.prices.len(), 2);
     }

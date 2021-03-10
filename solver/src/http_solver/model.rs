@@ -8,8 +8,6 @@ pub struct BatchAuctionModel {
     pub tokens: HashMap<String, TokenInfoModel>,
     pub orders: HashMap<String, OrderModel>,
     pub uniswaps: HashMap<String, UniswapModel>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
-    pub default_fee: f64,
 }
 
 #[derive(Debug, Serialize)]
@@ -22,6 +20,8 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
+    pub fee: f64,
+    pub cost: CostModel,
 }
 
 #[derive(Debug, Serialize)]
@@ -34,12 +34,19 @@ pub struct UniswapModel {
     pub balance2: u128,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub fee: f64,
+    pub cost: CostModel,
     pub mandatory: bool,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TokenInfoModel {
     pub decimals: u32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct CostModel {
+    pub amount: u128,
+    pub token: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -67,4 +74,11 @@ pub struct UpdatedUniswapModel {
     pub balance_update1: i128,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub balance_update2: i128,
+    pub exec_plan: ExecutionPlanCoordinatesModel,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExecutionPlanCoordinatesModel {
+    pub sequence: u32,
+    pub position: u32,
 }
