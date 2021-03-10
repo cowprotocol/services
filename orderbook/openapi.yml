@@ -160,9 +160,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FeeInformation"
+                $ref: "#/components/schemas/LegacyFeeInformation"
         404:
-          description: sellToken not existent
+          description: sellToken non-existent
   /api/v1/trades:
     get:
       summary: Get existing Trades.
@@ -204,6 +204,42 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Order"
+  /api/v1/fee:
+    get:
+      description: |
+        The fee that is charged for placing an order.
+        The fee is described by a minimum fee - in order to cover the gas costs for onchain settling - and
+        a feeRatio charged to the users for using the service.
+      parameters:
+        - name: sellToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: buyToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: amount
+          in: query
+          schema:
+            $ref: "#/components/schemas/TokenAmount"
+          required: true
+        - name: kind
+          in: query
+          schema:
+            $ref: "#/components/schemas/OrderType"
+          required: true
+      responses:
+        200:
+          description: the fee
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeInformation"
+        404:
+          description: Token non-existent or not connected to native token
 components:
   schemas:
     Address:
@@ -219,6 +255,20 @@ components:
       type: string
       example: "1234567890"
     FeeInformation:
+      description: |
+        Provides the information to calculate the fees.
+      type: object
+      properties:
+        expirationDate:
+          description: |
+            Expiration date of the offered fee. Order service might not accept
+            the fee after this expiration date. Encoded as ISO 8601 UTC.
+          type: string
+          example: "2020-12-03T18:35:18.814523Z"
+        amount:
+          description: Absolute amount of fee charged per order in specified sellToken
+          $ref: "#/components/schemas/TokenAmount"
+    LegacyFeeInformation:
       description: |
         Provides the information to calculate the fees.
       type: object
@@ -381,10 +431,6 @@ components:
       properties:
         errorType:
           type: string
-          enum:
-            [
-                InvalidSignature,
-                InvalidOrderUid,
-            ]
+          enum: [InvalidSignature, InvalidOrderUid]
         description:
           type: string
