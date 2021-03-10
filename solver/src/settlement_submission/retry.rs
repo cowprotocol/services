@@ -34,6 +34,7 @@ impl TransactionResult for SettleResult {
 pub struct SettlementSender<'a> {
     pub contract: &'a GPv2Settlement,
     pub nonce: U256,
+    pub gas_limit: f64,
     pub settlement: EncodedSettlement,
 }
 #[async_trait::async_trait]
@@ -43,7 +44,8 @@ impl<'a> TransactionSending for SettlementSender<'a> {
         tracing::info!("submitting solution transaction at gas price {}", gas_price);
         let mut method = settle_method_builder(self.contract, self.settlement.clone())
             .nonce(self.nonce)
-            .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)));
+            .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)))
+            .gas(U256::from_f64_lossy(self.gas_limit));
         method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
         let result = method.send().await.map(|_| ());
         SettleResult(result)

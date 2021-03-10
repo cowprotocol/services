@@ -12,6 +12,7 @@ use std::time::Duration;
 use transaction_retry::RetryResult;
 
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
+const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.
 pub async fn submit(
@@ -28,14 +29,24 @@ pub async fn submit(
     // Check that a simulation of the transaction works before submitting it.
     simulate_settlement(&settlement, contract).await?;
 
+    // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time
+    let gas_limit = retry::settle_method_builder(contract, settlement.clone())
+        .tx
+        .estimate_gas()
+        .await
+        .context("failed to estimate gas")?
+        .to_f64_lossy()
+        * ESTIMATE_GAS_LIMIT_FACTOR;
+
     let settlement_sender = SettlementSender {
         contract,
         nonce,
+        gas_limit,
         settlement,
     };
     // We never cancel.
     let cancel_future = std::future::pending::<CancelSender>();
-    let stream = gas_price_stream(target_confirm_time, gas_price_cap, gas);
+    let stream = gas_price_stream(target_confirm_time, gas_price_cap, gas_limit, gas);
 
     match transaction_retry::retry(settlement_sender, cancel_future, stream).await {
         Some(RetryResult::Submitted(result)) => {
