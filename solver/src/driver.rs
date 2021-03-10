@@ -121,7 +121,7 @@ impl Driver {
                     // attempt to settle them again when they are still in the orderbook.
                     break;
                 }
-                Err(err) => tracing::error!("{} Failed to submit settlement: {}", solver, err),
+                Err(err) => tracing::error!("{} Failed to submit settlement: {:?}", solver, err),
             }
         }
         Ok(())
