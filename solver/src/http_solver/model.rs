@@ -77,7 +77,7 @@ pub struct UpdatedUniswapModel {
     pub exec_plan: ExecutionPlanCoordinatesModel,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
