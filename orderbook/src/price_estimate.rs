@@ -100,7 +100,9 @@ impl UniswapPriceEstimator {
             sell_token,
             buy_token,
             buy_amount,
-            |amount, path, pools| Reverse(estimate_sell_amount(amount, path, pools)),
+            |amount, path, pools| {
+                Reverse(estimate_sell_amount(amount, path, pools).unwrap_or_else(U256::max_value))
+            },
             estimate_sell_amount,
         )
         .await
@@ -271,5 +273,31 @@ mod tests {
             .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn price_estimate_containing_valid_and_invalid_paths() {
+        let token_a = H160::from_low_u64_be(1);
+        let token_b = H160::from_low_u64_be(2);
+
+        // The path via the base token does not exist (making it an invalid path)
+        let base_token = H160::from_low_u64_be(3);
+
+        let pool = Pool::uniswap(
+            TokenPair::new(token_a, token_b).unwrap(),
+            (10u128.pow(30), 10u128.pow(29)),
+        );
+
+        let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
+        let estimator = UniswapPriceEstimator::new(pool_fetcher, hashset!(base_token));
+
+        assert!(estimator
+            .estimate_price(token_a, token_b, 1.into(), OrderKind::Sell)
+            .await
+            .is_ok());
+        assert!(estimator
+            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .await
+            .is_ok());
     }
 }
