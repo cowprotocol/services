@@ -29,6 +29,10 @@ struct Arguments {
     /// Url of the Postgres database. By default connects to locally running postgres.
     #[structopt(long, env = "DB_URL", default_value = "postgresql://")]
     db_url: Url,
+
+    /// Skip syncing past events (useful for local deployments)
+    #[structopt(long)]
+    skip_event_sync: bool,
 }
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
@@ -84,7 +88,19 @@ async fn main() {
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
     let database = Database::new(args.db_url.as_str()).expect("failed to create database");
-    let event_updater = EventUpdater::new(settlement_contract.clone(), database.clone());
+
+    let sync_start = if args.skip_event_sync {
+        web3.eth()
+            .block_number()
+            .await
+            .map(|block| block.as_u64())
+            .ok()
+    } else {
+        None
+    };
+
+    let event_updater =
+        EventUpdater::new(settlement_contract.clone(), database.clone(), sync_start);
     let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
 
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(

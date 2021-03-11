@@ -127,7 +127,7 @@ async fn test_with_ganache() {
     );
     let db = Database::new("postgresql://").unwrap();
     db.clear().await.unwrap();
-    let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone());
+    let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone(), None);
 
     let price_estimator = UniswapPriceEstimator::new(
         Box::new(PoolFetcher {

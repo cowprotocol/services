@@ -25,11 +25,11 @@ pub struct EventUpdater {
 }
 
 impl EventUpdater {
-    pub fn new(contract: GPv2Settlement, db: Database) -> Self {
+    pub fn new(contract: GPv2Settlement, db: Database, start_sync_at_block: Option<u64>) -> Self {
         Self {
             contract,
             db,
-            last_handled_block: None,
+            last_handled_block: start_sync_at_block,
         }
     }
 
