@@ -5,6 +5,7 @@ edition = "2018"
 
 [dependencies]
 anyhow = "1.0"
+assert_approx_eq = "1.1"
 async-trait = "0.1"
 atty = "0.2"
 contracts = { path = "../contracts" }

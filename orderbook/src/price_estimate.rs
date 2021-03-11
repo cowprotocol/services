@@ -2,9 +2,11 @@ use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{order::OrderKind, TokenPair};
 use shared::{
+    conversions::big_rational_to_float,
     uniswap_pool::{Pool, PoolFetching},
     uniswap_solver::{
-        estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
+        estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
+        token_path_to_pair_path,
     },
 };
 use std::{
@@ -44,6 +46,7 @@ impl UniswapPriceEstimator {
 impl PriceEstimating for UniswapPriceEstimator {
     // Estimates the price between sell and buy token denominated in |sell token| per buy token.
     // Returns an error if no path exists between sell and buy token.
+    // Incorporates uniswap fee unless amount is 0 in which case it returns the best spot price.
     async fn estimate_price(
         &self,
         sell_token: H160,
@@ -54,7 +57,12 @@ impl PriceEstimating for UniswapPriceEstimator {
         if sell_token == buy_token {
             return Ok(1.0);
         }
-        let amount = U256::max(amount, U256::one());
+        if amount.is_zero() {
+            return self
+                .best_execution_spot_price(sell_token, buy_token)
+                .await
+                .map(|(_, price)| price);
+        }
 
         match kind {
             OrderKind::Buy => {
@@ -108,16 +116,38 @@ impl UniswapPriceEstimator {
         .await
     }
 
-    async fn best_execution<AmountFn, CompareFn, O>(
+    pub async fn best_execution_spot_price(
+        &self,
+        sell_token: H160,
+        buy_token: H160,
+    ) -> Result<(Vec<H160>, f64)> {
+        self.best_execution(
+            sell_token,
+            buy_token,
+            U256::zero(),
+            |_, path, pools| estimate_spot_price(path, pools),
+            |_, path, pools| estimate_spot_price(path, pools),
+        )
+        .await
+        .and_then(|(path, price)| {
+            Ok((
+                path,
+                big_rational_to_float(price)
+                    .ok_or_else(|| anyhow!("Cannot convert price ratio to float"))?,
+            ))
+        })
+    }
+
+    async fn best_execution<AmountFn, CompareFn, O, Amount>(
         &self,
         sell_token: H160,
         buy_token: H160,
         amount: U256,
         comparison: CompareFn,
         resulting_amount: AmountFn,
-    ) -> Result<(Vec<H160>, U256)>
+    ) -> Result<(Vec<H160>, Amount)>
     where
-        AmountFn: Fn(U256, &[H160], &HashMap<TokenPair, Pool>) -> Option<U256>,
+        AmountFn: Fn(U256, &[H160], &HashMap<TokenPair, Pool>) -> Option<Amount>,
         CompareFn: Fn(U256, &[H160], &HashMap<TokenPair, Pool>) -> O,
         O: Ord,
     {

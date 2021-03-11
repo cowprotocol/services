@@ -1,5 +1,6 @@
 use ethcontract::{H160, U256};
 use model::TokenPair;
+use num::BigRational;
 use std::collections::{HashMap, HashSet};
 
 use crate::uniswap_pool::Pool;
@@ -54,6 +55,25 @@ pub fn estimate_sell_amount(
         .map(|(amount, _)| amount)
 }
 
+pub fn estimate_spot_price(path: &[H160], pools: &HashMap<TokenPair, Pool>) -> Option<BigRational> {
+    let sell_token = path.first()?;
+    path.iter()
+        .skip(1)
+        .fold(
+            Some((BigRational::from_integer(1.into()), *sell_token)),
+            |previous, current| {
+                let previous = match previous {
+                    Some(previous) => previous,
+                    None => return None,
+                };
+                let pool = pools.get(&TokenPair::new(*current, previous.1)?)?;
+                let (price, token) = pool.get_spot_price(previous.1)?;
+                Some((previous.0 * price, token))
+            },
+        )
+        .map(|(amount, _)| amount)
+}
+
 // Returns possible paths from sell_token to buy token, given a list of potential intermediate base tokens
 // and a maximum number of intermediate steps.
 pub fn path_candidates(
@@ -100,6 +120,7 @@ pub fn token_path_to_pair_path(token_list: &[H160]) -> Vec<TokenPair> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversions::big_rational_to_float;
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
     use model::TokenPair;
@@ -235,5 +256,27 @@ mod tests {
         };
 
         assert_eq!(estimate_sell_amount(100.into(), &path, &pools), None);
+    }
+
+    #[test]
+    fn test_estimate_spot_price() {
+        let sell_token = H160::from_low_u64_be(1);
+        let intermediate = H160::from_low_u64_be(2);
+        let buy_token = H160::from_low_u64_be(3);
+
+        let path = vec![sell_token, intermediate, buy_token];
+        let pools = [
+            Pool::uniswap(TokenPair::new(path[0], path[1]).unwrap(), (100, 100)),
+            Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
+        ];
+        let pools = hashmap! {
+            pools[0].tokens => pools[0].clone(),
+            pools[1].tokens => pools[1].clone(),
+        };
+
+        assert_eq!(
+            big_rational_to_float(estimate_spot_price(&path, &pools).unwrap()),
+            Some(0.25)
+        );
     }
 }

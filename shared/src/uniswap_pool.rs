@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use contracts::{UniswapV2Factory, UniswapV2Pair};
 use ethcontract::{batch::CallBatch, Http, Web3, H160, U256};
-use num::rational::Ratio;
+use num::{rational::Ratio, BigInt, BigRational, Zero};
 use web3::signing::keccak256;
 
 use hex_literal::hex;
@@ -83,6 +83,30 @@ impl Pool {
             self.amount_in(amount_out, reserve_in, reserve_out)?,
             token_in,
         ))
+    }
+
+    // Given the base token returns the price (as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18)
+    // and quote token. E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD) the spot price is 125/100
+    pub fn get_spot_price(&self, base_token: H160) -> Option<(BigRational, H160)> {
+        let (reserve_base, reserve_quote, quote_token) = if base_token == self.tokens.get().0 {
+            (
+                BigInt::from(self.reserves.0),
+                BigInt::from(self.reserves.1),
+                self.tokens.get().1,
+            )
+        } else {
+            assert!(base_token == self.tokens.get().1, "Token not part of pool");
+            (
+                BigInt::from(self.reserves.1),
+                BigInt::from(self.reserves.0),
+                self.tokens.get().0,
+            )
+        };
+        if reserve_base == BigInt::zero() {
+            return None;
+        }
+
+        Some((BigRational::new(reserve_quote, reserve_base), quote_token))
     }
 
     fn amount_out(&self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> Option<U256> {
@@ -172,6 +196,8 @@ fn create2(address: H160, salt: &[u8; 32], init_hash: &[u8; 32]) -> H160 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conversions::big_rational_to_float;
+    use assert_approx_eq::assert_approx_eq;
 
     #[test]
     fn test_create2_mainnet() {
@@ -292,5 +318,28 @@ mod tests {
             pool.get_amount_in(buy_token, 10u128.pow(20).into()),
             Some((100_300_902_708_124_373_149u128.into(), sell_token))
         );
+    }
+
+    #[test]
+    fn test_spot_price() {
+        // Example from https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18
+        let token_a = H160::from_low_u64_be(1);
+        let token_b = H160::from_low_u64_be(2);
+
+        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100, 125));
+        assert_approx_eq!(
+            big_rational_to_float(pool.get_spot_price(token_a).unwrap().0).unwrap(),
+            1.25
+        );
+        assert_approx_eq!(
+            big_rational_to_float(pool.get_spot_price(token_b).unwrap().0).unwrap(),
+            0.8
+        );
+
+        assert_eq!(pool.get_spot_price(token_a).unwrap().1, token_b);
+        assert_eq!(pool.get_spot_price(token_b).unwrap().1, token_a);
+
+        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 0));
+        assert_eq!(pool.get_spot_price(token_a), None);
     }
 }
