@@ -7,10 +7,9 @@ use orderbook::{
     event_updater::EventUpdater,
     fee::MinFeeCalculator,
     orderbook::Orderbook,
-    price_estimate::UniswapPriceEstimator,
     serve_task, verify_deployed_contract_constants,
 };
-use shared::uniswap_pool::PoolFetcher;
+use shared::{price_estimate::UniswapPriceEstimator, uniswap_pool::PoolFetcher};
 use std::{
     collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
 };

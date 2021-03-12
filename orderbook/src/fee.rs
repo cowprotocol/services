@@ -5,8 +5,9 @@ use chrono::{DateTime, Duration, Utc};
 use primitive_types::{H160, U256};
 use std::sync::Mutex;
 
-use crate::{database::Database, price_estimate::PriceEstimating};
+use crate::database::Database;
 use gas_estimation::GasPriceEstimating;
+use shared::price_estimate::PriceEstimating;
 
 type Measurement = (U256, DateTime<Utc>);
 

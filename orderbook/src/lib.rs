@@ -5,7 +5,6 @@ pub mod database;
 pub mod event_updater;
 pub mod fee;
 pub mod orderbook;
-pub mod price_estimate;
 
 use crate::database::Database;
 use crate::orderbook::Orderbook;
