@@ -27,13 +27,13 @@ pub struct OrderFilter {
 #[derive(sqlx::Type)]
 #[sqlx(rename = "OrderKind")]
 #[sqlx(rename_all = "lowercase")]
-enum DbOrderKind {
+pub enum DbOrderKind {
     Buy,
     Sell,
 }
 
 impl DbOrderKind {
-    fn from(order_kind: OrderKind) -> Self {
+    pub fn from(order_kind: OrderKind) -> Self {
         match order_kind {
             OrderKind::Buy => Self::Buy,
             OrderKind::Sell => Self::Sell,

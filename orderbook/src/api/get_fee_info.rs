@@ -55,7 +55,9 @@ pub fn get_fee_info(
     get_fee_info_request().and_then(move |token| {
         let fee_calculator = fee_calculator.clone();
         async move {
-            Result::<_, Infallible>::Ok(get_fee_info_response(fee_calculator.min_fee(token).await))
+            Result::<_, Infallible>::Ok(get_fee_info_response(
+                fee_calculator.min_fee(token, None, None, None).await,
+            ))
         }
     })
 }
