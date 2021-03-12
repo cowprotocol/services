@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context as _, Result};
 use ethcontract::transport::DynTransport;
-use futures::Stream;
+use futures::{stream::FusedStream, Stream};
 use primitive_types::H256;
 use std::{
     future::Future,
@@ -28,9 +28,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The stream is clonable so that we only have to poll the node once while being able to share the
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
-pub fn current_block_stream(
-    web3: Web3<DynTransport>,
-) -> impl Stream<Item = Block> + Clone + Send + Unpin {
+pub fn current_block_stream(web3: Web3<DynTransport>) -> CurrentBlockStream {
     let (sender, receiver) = watch::channel(None);
 
     let update_future = async move {
@@ -62,22 +60,35 @@ pub fn current_block_stream(
     };
 
     tokio::task::spawn(update_future);
-    CurrentBlockStream { receiver }
+    CurrentBlockStream::new(receiver)
 }
 
 #[derive(Clone)]
-struct CurrentBlockStream {
+pub struct CurrentBlockStream {
     receiver: watch::Receiver<Option<Block>>,
+    is_terminated: bool,
 }
 
 impl CurrentBlockStream {
+    fn new(receiver: watch::Receiver<Option<Block>>) -> Self {
+        Self {
+            receiver,
+            is_terminated: false,
+        }
+    }
+
     async fn next(&mut self) -> Option<Block> {
         loop {
             // recv returns Option<Option<Block>>. If the outer option is None then the sender has
             // been dropped in which case the stream ends. If the inner option is None then this is
             // because we have fetched the initial default value so we loop and try again.
-            if let Some(block) = self.receiver.recv().await? {
-                return Some(block);
+            match self.receiver.recv().await {
+                Some(None) => (),
+                Some(Some(block)) => return Some(block),
+                None => {
+                    self.is_terminated = true;
+                    return None;
+                }
             }
         }
     }
@@ -93,6 +104,12 @@ impl Stream for CurrentBlockStream {
     }
 }
 
+impl FusedStream for CurrentBlockStream {
+    fn is_terminated(&self) -> bool {
+        self.is_terminated
+    }
+}
+
 async fn current_block(web3: &Web3<DynTransport>) -> Result<Block> {
     web3.eth()
         .block(BlockId::Number(BlockNumber::Latest))
@@ -104,7 +121,20 @@ async fn current_block(web3: &Web3<DynTransport>) -> Result<Block> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use futures::StreamExt;
+
+    #[tokio::test]
+    async fn stream_works() {
+        let (sender, receiver) = watch::channel(None);
+        let block = Block::default();
+        sender.broadcast(Some(block)).unwrap();
+        let mut stream = CurrentBlockStream::new(receiver);
+        assert!(!stream.is_terminated());
+        assert_eq!(stream.next().await, Some(Block::default()));
+        assert!(!stream.is_terminated());
+        std::mem::drop(sender);
+        assert_eq!(stream.next().await, None);
+        assert!(stream.is_terminated());
+    }
 
     // cargo test current_block -- --ignored --nocapture
     #[tokio::test]
