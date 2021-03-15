@@ -18,6 +18,7 @@ pub struct MinFeeCalculator {
     native_token: H160,
     measurements: Box<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
+    discount_factor: f64,
 }
 
 #[async_trait::async_trait]
@@ -58,6 +59,7 @@ impl MinFeeCalculator {
         gas_estimator: Box<dyn GasPriceEstimating>,
         native_token: H160,
         database: Database,
+        discount_factor: f64,
     ) -> Self {
         Self {
             price_estimator,
@@ -65,6 +67,7 @@ impl MinFeeCalculator {
             native_token,
             measurements: Box::new(database),
             now: Box::new(Utc::now),
+            discount_factor,
         }
     }
 }
@@ -125,10 +128,12 @@ impl MinFeeCalculator {
         let gas_price = self.gas_estimator.estimate().await?;
         let gas_amount =
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
+                // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
                 self.price_estimator
                     .estimate_gas(sell_token, buy_token, amount, kind)
                     .await?
                     .to_f64_lossy()
+                    * self.discount_factor
             } else {
                 GAS_PER_ORDER
             };
@@ -276,6 +281,7 @@ mod tests {
                 native_token: Default::default(),
                 measurements: Box::new(InMemoryFeeStore::default()),
                 now,
+                discount_factor: 1.0,
             }
         }
     }

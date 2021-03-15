@@ -32,6 +32,9 @@ struct Arguments {
     /// Skip syncing past events (useful for local deployments)
     #[structopt(long)]
     skip_event_sync: bool,
+
+    #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
+    fee_discount_factor: f64,
 }
 
 const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
@@ -126,6 +129,7 @@ async fn main() {
         Box::new(gas_price_estimator),
         native_token.address(),
         database.clone(),
+        args.fee_discount_factor,
     ));
 
     let orderbook = Arc::new(Orderbook::new(

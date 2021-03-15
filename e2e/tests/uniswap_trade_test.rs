@@ -142,6 +142,7 @@ async fn test_with_ganache() {
         Box::new(web3.clone()),
         token_a.address(),
         db.clone(),
+        1.0,
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
