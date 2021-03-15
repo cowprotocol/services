@@ -16,6 +16,7 @@ use serde_with::serde_as;
 use std::fmt::{self, Display};
 use std::str::FromStr;
 use web3::signing::{self, Key, SecretKeyRef};
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
@@ -180,17 +181,28 @@ impl OrderCreation {
 // Intended to be used by tests that need signed orders.
 impl OrderCreation {}
 
-// See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
 impl OrderCreation {
+    // See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
     pub const ORDER_TYPE_HASH: [u8; 32] =
         hex!("b2b38b9dcbdeb41f7ad71dea9aed79fb47f7bbc3436576fe994b43d5b16ecdec");
-
     // keccak256("sell")
     const ORDER_KIND_SELL: [u8; 32] =
         hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
     // keccak256("buy")
     const ORDER_KIND_BUY: [u8; 32] =
         hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
+}
+
+impl Default for OrderCancellation {
+    fn default() -> Self {
+        let mut result = Self {
+            order_uid: OrderUid::default(),
+            signature: Default::default(),
+        };
+        result.signature =
+            result.sign_self_with(&DomainSeparator::default(), &SecretKeyRef::new(&ONE_KEY));
+        result
+    }
 }
 
 impl EIP712Signing for OrderCreation {
@@ -210,6 +222,33 @@ impl EIP712Signing for OrderCreation {
             OrderKind::Buy => &Self::ORDER_KIND_BUY,
         });
         hash_data[319] = self.partially_fillable as u8;
+        signing::keccak256(&hash_data)
+    }
+
+    fn signature(&self) -> Signature {
+        self.signature
+    }
+}
+
+/// An order cancellation as provided to the orderbook by the frontend.
+#[serde_as]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+pub struct OrderCancellation {
+    pub order_uid: OrderUid,
+    pub signature: Signature,
+}
+
+impl OrderCancellation {
+    // keccak256("OrderCancellation(bytes orderUid)")
+    const ORDER_CANCELLATION_TYPE_HASH: [u8; 32] =
+        hex!("7b41b3a6e2b3cae020a3b2f9cdc997e0d420643957e7fea81747e984e47c88ec");
+}
+
+impl EIP712Signing for OrderCancellation {
+    fn digest(&self) -> [u8; 32] {
+        let mut hash_data = [0u8; 64];
+        hash_data[0..32].copy_from_slice(&Self::ORDER_CANCELLATION_TYPE_HASH);
+        hash_data[32..64].copy_from_slice(&signing::keccak256(&self.order_uid.0));
         signing::keccak256(&hash_data)
     }
 
@@ -424,7 +463,7 @@ mod tests {
     // from the test `should recover signing address for all supported schemes` in
     // https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Encoding.test.ts .
     #[test]
-    fn signature_typed_data() {
+    fn order_creation_signature_typed_data() {
         let domain_separator = DomainSeparator(hex!(
             "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
         ));
@@ -451,7 +490,7 @@ mod tests {
     }
 
     #[test]
-    fn signature_message() {
+    fn order_creation_signature_message() {
         let domain_separator = DomainSeparator(hex!(
             "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
         ));
@@ -473,6 +512,45 @@ mod tests {
         };
         let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
         let owner = order.validate_signature(&domain_separator).unwrap();
+        assert_eq!(owner, expected_owner.into());
+    }
+
+    // from the test `should recover signing address for all supported signing schemes` in
+    // https://github.com/gnosis/gp-v2-contracts/blob/main/test/sign.test.ts .
+    #[test]
+    fn order_cancellation_signature_typed_data() {
+        let domain_separator = DomainSeparator(hex!(
+            "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
+        ));
+        let cancellation = OrderCancellation {
+            order_uid: OrderUid([42u8; 56]),
+            signature: Signature {
+                v: 0x1b,
+                r: hex!("3691438f224f2ce0bd15bf803479a0c07cfadc11ec69de0ee95f0edf82c9285f").into(),
+                s: hex!("177006a7caeafe8214bd8f51ddb8b0c5a94158dc94c605d9af6c412f80575bf3").into(),
+            },
+        };
+
+        let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
+        let owner = cancellation.validate_signature(&domain_separator).unwrap();
+        assert_eq!(owner, expected_owner.into());
+    }
+
+    #[test]
+    fn order_cancellation_signature_message() {
+        let domain_separator = DomainSeparator(hex!(
+            "f8a1143d44c67470a791201b239ff6b0ecc8910aa9682bebd08145f5fd84722b"
+        ));
+        let cancellation = OrderCancellation {
+            order_uid: OrderUid([42u8; 56]),
+            signature: Signature {
+                v: 0x1b | 0x80,
+                r: hex!("25d9649894322a4d1740f1ff866719ab3e02f7a67fba10887531b13d80adc057").into(),
+                s: hex!("42f29400a7470bbae937200e1c02f31a5ff2e9db5b386c4a78abe8fec7a2fa1c").into(),
+            },
+        };
+        let expected_owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8");
+        let owner = cancellation.validate_signature(&domain_separator).unwrap();
         assert_eq!(owner, expected_owner.into());
     }
 
