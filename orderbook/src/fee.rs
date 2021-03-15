@@ -70,7 +70,7 @@ impl MinFeeCalculator {
 }
 
 impl MinFeeCalculator {
-    // Returns the minimum amount of fee required to accept an order selling the specified token
+    // Returns the minimum amount of fee required to accept an order selling the specified order
     // and an expiry date for the estimate.
     // Returns an error if there is some estimation error and Ok(None) if no information about the given
     // token exists

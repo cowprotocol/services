@@ -26,6 +26,7 @@ pub fn handle_all_routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
+    let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
     let fee_info = get_fee_info::get_fee_info(fee_calculator);
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook);
@@ -34,6 +35,7 @@ pub fn handle_all_routes(
         create_order
             .or(get_orders)
             .or(fee_info)
+            .or(legacy_fee_info)
             .or(get_order)
             .or(get_solvable_orders)
             .or(get_trades),
