@@ -20,6 +20,18 @@ pub struct Database {
     pool: PgPool,
 }
 
+#[derive(Debug)]
+pub enum InsertionError {
+    DuplicatedRecord,
+    DbError(sqlx::Error),
+}
+
+impl From<sqlx::Error> for InsertionError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::DbError(err)
+    }
+}
+
 // The implementation is split up into several modules which contain more public methods.
 
 impl Database {

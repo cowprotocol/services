@@ -1,7 +1,10 @@
 use crate::{
     account_balances::BalanceFetching, database::OrderFilter, event_updater::EventUpdater,
 };
-use crate::{database::Database, fee::MinFeeCalculator};
+use crate::{
+    database::{Database, InsertionError},
+    fee::MinFeeCalculator,
+};
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use futures::{join, TryStreamExt};
@@ -74,8 +77,11 @@ impl Orderbook {
         self.balance_fetcher
             .register(order.order_meta_data.owner, order.order_creation.sell_token)
             .await;
-        self.database.insert_order(&order).await?;
-        Ok(AddOrderResult::Added(order.order_meta_data.uid))
+        match self.database.insert_order(&order).await {
+            Ok(()) => Ok(AddOrderResult::Added(order.order_meta_data.uid)),
+            Err(InsertionError::DuplicatedRecord) => Ok(AddOrderResult::DuplicatedOrder),
+            Err(InsertionError::DbError(err)) => Err(err.into()),
+        }
     }
 
     pub async fn remove_order(&self, _uid: &OrderUid) -> Result<RemoveOrderResult> {

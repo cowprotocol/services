@@ -9,7 +9,7 @@ use model::{
     Signature,
 };
 use primitive_types::H160;
-use std::convert::TryInto;
+use std::{borrow::Cow, convert::TryInto};
 
 /// Any default value means that this field is unfiltered.
 #[derive(Default)]
@@ -49,9 +49,7 @@ impl DbOrderKind {
 }
 
 impl Database {
-    // TODO: Errors if order uid already exists. We might want to have different behavior like
-    // indicating this in the return value or simply allowing it to happen.
-    pub async fn insert_order(&self, order: &Order) -> Result<()> {
+    pub async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
         const QUERY: &str = "\
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, sell_amount, buy_amount, \
@@ -74,8 +72,15 @@ impl Database {
             .bind(order.order_creation.signature.to_bytes().as_ref())
             .execute(&self.pool)
             .await
-            .context("insert_order failed")
             .map(|_| ())
+            .map_err(|err| {
+                if let sqlx::Error::Database(db_err) = &err {
+                    if let Some(Cow::Borrowed("23505")) = db_err.code() {
+                        return InsertionError::DuplicatedRecord;
+                    }
+                }
+                InsertionError::DbError(err)
+            })
     }
 
     pub fn orders<'a>(&'a self, filter: &'a OrderFilter) -> impl Stream<Item = Result<Order>> + 'a {
@@ -215,7 +220,10 @@ mod tests {
         db.clear().await.unwrap();
         let order = Order::default();
         db.insert_order(&order).await.unwrap();
-        assert!(db.insert_order(&order).await.is_err());
+        match db.insert_order(&order).await {
+            Err(InsertionError::DuplicatedRecord) => (),
+            _ => panic!("Expecting DuplicatedRecord error"),
+        };
     }
 
     #[tokio::test]
