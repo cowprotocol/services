@@ -12,12 +12,35 @@ use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
 use std::fmt;
 use web3::signing;
+use web3::signing::{Key, SecretKeyRef};
+use web3::types::Recovery;
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Hash)]
 pub struct Signature {
     pub r: H256,
     pub s: H256,
     pub v: u8,
+}
+
+pub trait EIP712Signing {
+    fn digest(&self) -> [u8; 32];
+    fn signature(&self) -> Signature;
+
+    fn sign_self_with(&self, domain_separator: &DomainSeparator, key: &SecretKeyRef) -> Signature {
+        let message = Signature::signing_digest_message(domain_separator, &self.digest());
+        // Unwrap because the only error is for invalid messages which we don't create.
+        let signature = Key::sign(key, &message, None).unwrap();
+        Signature {
+            v: signature.v as u8 | 0x80,
+            r: signature.r,
+            s: signature.s,
+        }
+    }
+
+    // Returns public key (as an ethereum address - H160) if the signature is well-formed
+    fn validate_signature(&self, domain_separator: &DomainSeparator) -> Option<H160> {
+        self.signature().validate(domain_separator, &self.digest())
+    }
 }
 
 impl Signature {
@@ -36,6 +59,45 @@ impl Signature {
             s: H256::from_slice(&bytes[32..64]),
             v: bytes[64],
         }
+    }
+
+    fn signing_digest_typed_data(
+        domain_separator: &DomainSeparator,
+        digest: &[u8; 32],
+    ) -> [u8; 32] {
+        let mut hash_data = [0u8; 66];
+        hash_data[0..2].copy_from_slice(&[0x19, 0x01]);
+        hash_data[2..34].copy_from_slice(&domain_separator.0);
+        hash_data[34..66].copy_from_slice(digest);
+        signing::keccak256(&hash_data)
+    }
+
+    pub fn signing_digest_message(
+        domain_separator: &DomainSeparator,
+        digest: &[u8; 32],
+    ) -> [u8; 32] {
+        let mut hash_data = [0u8; 92];
+        hash_data[0..28].copy_from_slice(b"\x19Ethereum Signed Message:\n64");
+        hash_data[28..60].copy_from_slice(&domain_separator.0);
+        hash_data[60..92].copy_from_slice(digest);
+        signing::keccak256(&hash_data)
+    }
+
+    fn signing_digest(&self, domain_separator: &DomainSeparator, digest: &[u8; 32]) -> [u8; 32] {
+        // This is fallback for wallets that don't support EIP712
+        if self.v & 0x80 == 0 {
+            Signature::signing_digest_typed_data(domain_separator, digest)
+        } else {
+            Signature::signing_digest_message(domain_separator, digest)
+        }
+    }
+
+    pub fn validate(&self, domain_separator: &DomainSeparator, digest: &[u8; 32]) -> Option<H160> {
+        let v = self.v & 0x1f;
+        let message = self.signing_digest(domain_separator, digest);
+        let recovery = Recovery::new(message, v as u64, self.r, self.s);
+        let (signature, recovery_id) = recovery.as_signature()?;
+        signing::recover(&message, &signature, recovery_id).ok()
     }
 }
 
@@ -189,6 +251,7 @@ impl DomainSeparator {
 mod tests {
     use super::*;
     use hex_literal::hex;
+    use secp256k1::key::ONE_KEY;
 
     #[test]
     fn domain_separator_rinkeby() {
@@ -235,5 +298,40 @@ mod tests {
         assert_eq!(iter.next(), Some(token_a));
         assert_eq!(iter.next(), Some(token_b));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn self_sign_with() {
+        struct TestEIP712Structure {
+            signature: Signature,
+        }
+        impl Default for TestEIP712Structure {
+            fn default() -> Self {
+                let mut result = Self {
+                    signature: Default::default(),
+                };
+                result.signature = result
+                    .sign_self_with(&DomainSeparator::default(), &SecretKeyRef::new(&ONE_KEY));
+                result
+            }
+        }
+
+        impl EIP712Signing for TestEIP712Structure {
+            fn digest(&self) -> [u8; 32] {
+                [0u8; 32]
+            }
+
+            fn signature(&self) -> Signature {
+                self.signature
+            }
+        }
+
+        let test_struct = TestEIP712Structure::default();
+        let key = SecretKeyRef::from(&ONE_KEY);
+        test_struct.sign_self_with(&DomainSeparator::default(), &key);
+        assert_eq!(
+            test_struct.validate_signature(&DomainSeparator::default()),
+            Some(key.address())
+        );
     }
 }
