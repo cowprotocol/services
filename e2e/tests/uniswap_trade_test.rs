@@ -129,16 +129,16 @@ async fn test_with_ganache() {
     db.clear().await.unwrap();
     let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone(), None);
 
-    let price_estimator = UniswapPriceEstimator::new(
+    let price_estimator = Arc::new(UniswapPriceEstimator::new(
         Box::new(PoolFetcher {
             factory: uniswap_factory.clone(),
             web3: web3.clone(),
             chain_id,
         }),
         HashSet::new(),
-    );
+    ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(
-        Box::new(price_estimator),
+        price_estimator.clone(),
         Box::new(web3.clone()),
         token_a.address(),
         db.clone(),
@@ -214,6 +214,7 @@ async fn test_with_ganache() {
         gp_settlement.clone(),
         uniswap_liquidity,
         create_orderbook_api(),
+        price_estimator,
         vec![Box::new(solver)],
         Box::new(web3),
         Duration::from_secs(1),

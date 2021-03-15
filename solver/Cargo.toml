@@ -36,6 +36,7 @@ tokio = { version = "0.2", features =["macros", "rt-threaded", "time"] }
 tracing = "0.1"
 web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 itertools = "0.10"
+orderbook= { path = "../orderbook" }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"

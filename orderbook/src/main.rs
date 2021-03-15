@@ -116,16 +116,16 @@ async fn main() {
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token.address());
-    let price_estimator = UniswapPriceEstimator::new(
+    let price_estimator = Arc::new(UniswapPriceEstimator::new(
         Box::new(PoolFetcher {
             factory: uniswap_factory,
             web3,
             chain_id,
         }),
         base_tokens,
-    );
+    ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(
-        Box::new(price_estimator),
+        price_estimator,
         Box::new(gas_price_estimator),
         native_token.address(),
         database.clone(),

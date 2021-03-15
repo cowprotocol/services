@@ -9,17 +9,20 @@ use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
-use std::{cmp::Reverse, time::Duration};
+use shared::price_estimate::PriceEstimating;
+use std::{cmp::Reverse, sync::Arc, time::Duration};
 use tracing::info;
 
 // There is no economic viability calculation yet so we're using an arbitrary very high cap to
 // protect against a gas estimator giving bogus results that would drain all our funds.
 const GAS_PRICE_CAP: f64 = 500e9;
 
+#[allow(dead_code)]
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
     uniswap_liquidity: UniswapLiquidity,
+    price_estimator: Arc<dyn PriceEstimating>,
     solver: Vec<Box<dyn Solver>>,
     gas_price_estimator: Box<dyn GasPriceEstimating>,
     target_confirm_time: Duration,
@@ -27,10 +30,12 @@ pub struct Driver {
 }
 
 impl Driver {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         settlement_contract: GPv2Settlement,
         uniswap_liquidity: UniswapLiquidity,
         orderbook: OrderBookApi,
+        price_estimator: Arc<dyn PriceEstimating>,
         solver: Vec<Box<dyn Solver>>,
         gas_price_estimator: Box<dyn GasPriceEstimating>,
         target_confirm_time: Duration,
@@ -40,6 +45,7 @@ impl Driver {
             settlement_contract,
             orderbook,
             uniswap_liquidity,
+            price_estimator,
             solver,
             gas_price_estimator,
             target_confirm_time,
@@ -91,14 +97,16 @@ impl Driver {
                 info!(
                     "{} found solution with objective value: {}",
                     solver,
-                    settlement.objective_value()
+                    settlement.objective_value(/* estimated_prices*/)
                 );
                 Some((solver, settlement))
             })
             .collect();
 
         // Sort by key in descending order
-        settlements.sort_by_key(|(_, settlement)| Reverse(settlement.objective_value()));
+        settlements.sort_by_key(|(_, settlement)| {
+            Reverse(settlement.objective_value(/* estimated_prices*/))
+        });
         for (solver, settlement) in settlements {
             info!("{} computed {:?}", solver, settlement);
             if settlement.trades.is_empty() {
