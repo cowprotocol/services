@@ -1,4 +1,4 @@
-FROM clux/muslrust:stable as cargo-build
+FROM docker.io/clux/muslrust:stable as cargo-build
 WORKDIR /usr/src/oba-services
 
 # Copy and Build Code
@@ -13,7 +13,7 @@ RUN \
     cargo build --target x86_64-unknown-linux-musl --release
 
 # Extract Binary
-FROM alpine:latest
+FROM docker.io/alpine:latest
 
 # Handle signal handlers properly
 RUN apk add --no-cache tini
