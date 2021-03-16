@@ -1,21 +1,15 @@
+use crate::api::extract_payload;
 use crate::orderbook::{AddOrderResult, Orderbook};
 use anyhow::Result;
 use model::order::OrderCreation;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 
-const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
-
-fn extract_user_order() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone {
-    // (rejecting huge payloads)...
-    warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
-}
-
 pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
 {
     warp::path!("orders")
         .and(warp::post())
-        .and(extract_user_order())
+        .and(extract_payload())
 }
 
 pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {

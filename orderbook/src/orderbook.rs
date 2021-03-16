@@ -6,6 +6,7 @@ use crate::{
     fee::MinFeeCalculator,
 };
 use anyhow::Result;
+use chrono::Utc;
 use contracts::GPv2Settlement;
 use futures::{join, TryStreamExt};
 use model::order::OrderCancellation;
@@ -109,7 +110,7 @@ impl Orderbook {
                 if signer == order.order_meta_data.owner {
                     // order is already known to exist in DB at this point!
                     self.database
-                        .cancel_order(&order.order_meta_data.uid)
+                        .cancel_order(&order.order_meta_data.uid, Utc::now())
                         .await?;
                     Ok(OrderCancellationResult::Cancelled)
                 } else {

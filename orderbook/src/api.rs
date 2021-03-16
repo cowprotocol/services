@@ -1,3 +1,4 @@
+mod cancel_order;
 mod create_order;
 mod get_fee_info;
 mod get_order_by_uid;
@@ -11,12 +12,13 @@ use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
 use primitive_types::H160;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::{str::FromStr, sync::Arc};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
-    Filter, Reply,
+    Filter, Rejection, Reply,
 };
 
 pub fn handle_all_routes(
@@ -29,8 +31,9 @@ pub fn handle_all_routes(
     let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
     let fee_info = get_fee_info::get_fee_info(fee_calculator);
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
-    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook);
+    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
+    let cancel_order = cancel_order::cancel_order(orderbook);
     warp::path!("api" / "v1" / ..).and(
         create_order
             .or(get_orders)
@@ -38,7 +41,8 @@ pub fn handle_all_routes(
             .or(legacy_fee_info)
             .or(get_order)
             .or(get_solvable_orders)
-            .or(get_trades),
+            .or(get_trades)
+            .or(cancel_order),
     )
 }
 
@@ -93,4 +97,12 @@ async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -> Ve
         result.extend_from_slice(bytes.unwrap().as_ref());
     }
     result
+}
+
+const MAX_JSON_BODY_PAYLOAD: u64 = 1024 * 16;
+
+fn extract_payload<T: DeserializeOwned + Send>(
+) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+    // (rejecting huge payloads)...
+    warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
 }

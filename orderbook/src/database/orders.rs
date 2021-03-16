@@ -83,7 +83,7 @@ impl Database {
             })
     }
 
-    pub async fn cancel_order(&self, order_uid: &OrderUid) -> Result<()> {
+    pub async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
         // We do not overwrite previously cancelled orders,
         // but this query does allow the user to soft cancel
         // an order that has already been invalidated on-chain.
@@ -93,7 +93,7 @@ impl Database {
             WHERE uid = $2\
             AND cancellation_timestamp IS NULL;";
         sqlx::query(QUERY)
-            .bind(Utc::now())
+            .bind(now)
             .bind(order_uid.0.as_ref())
             .execute(&self.pool)
             .await
@@ -285,6 +285,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_cancel_order() {
+        #[derive(sqlx::FromRow, Debug, PartialEq)]
+        struct CancellationQueryRow {
+            cancellation_timestamp: DateTime<Utc>,
+        }
+
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let filter = OrderFilter::default();
@@ -298,15 +303,41 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(db_orders[0].order_meta_data.invalidated, false);
-        db.cancel_order(&order.order_meta_data.uid).await.unwrap();
+
+        let cancellation_time =
+            DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        db.cancel_order(&order.order_meta_data.uid, cancellation_time)
+            .await
+            .unwrap();
         let db_orders = db
             .orders(&filter)
             .try_collect::<Vec<Order>>()
             .await
             .unwrap();
         assert_eq!(db_orders[0].order_meta_data.invalidated, true);
-        // TODO - cancel twice and verify that first cancellation date isn't over written
-        // This will require querying the DB for the cancellation_date.
+
+        let query = "SELECT cancellation_timestamp FROM orders;";
+        let first_cancellation: CancellationQueryRow =
+            sqlx::query_as(query).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(cancellation_time, first_cancellation.cancellation_timestamp);
+
+        // Cancel again and verify that cancellation timestamp was not changed.
+        let irrelevant_time = DateTime::<Utc>::from_utc(
+            NaiveDateTime::from_timestamp(1234567890, 1_000_000_000),
+            Utc,
+        );
+
+        assert_ne!(
+            irrelevant_time, cancellation_time,
+            "Expected cancellation times to be different."
+        );
+
+        db.cancel_order(&order.order_meta_data.uid, irrelevant_time)
+            .await
+            .unwrap();
+        let second_cancellation: CancellationQueryRow =
+            sqlx::query_as(query).fetch_one(&db.pool).await.unwrap();
+        assert_eq!(first_cancellation, second_cancellation);
     }
 
     #[tokio::test]

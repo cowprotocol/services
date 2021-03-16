@@ -138,6 +138,8 @@ paths:
       responses:
         200:
           description: Order deleted
+        400:
+          description: Malformed signature
         401:
           description: Invalid signature
         404:
