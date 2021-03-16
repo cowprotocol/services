@@ -11,7 +11,11 @@ use orderbook::{
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use shared::{price_estimate::UniswapPriceEstimator, uniswap_pool::PoolFetcher};
+use shared::{
+    current_block::current_block_stream,
+    price_estimate::UniswapPriceEstimator,
+    uniswap_pool::{CachedPoolFetcher, PoolFetcher},
+};
 use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -129,12 +133,17 @@ async fn test_with_ganache() {
     db.clear().await.unwrap();
     let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone(), None);
 
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+    let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
+    let pool_fetcher = CachedPoolFetcher::new(
         Box::new(PoolFetcher {
             factory: uniswap_factory.clone(),
             web3: web3.clone(),
             chain_id,
         }),
+        current_block_stream,
+    );
+    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+        Box::new(pool_fetcher),
         HashSet::new(),
     ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(

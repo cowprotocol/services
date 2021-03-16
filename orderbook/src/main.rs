@@ -9,7 +9,11 @@ use orderbook::{
     orderbook::Orderbook,
     serve_task, verify_deployed_contract_constants,
 };
-use shared::{price_estimate::UniswapPriceEstimator, uniswap_pool::PoolFetcher};
+use shared::{
+    current_block::current_block_stream,
+    price_estimate::UniswapPriceEstimator,
+    uniswap_pool::{CachedPoolFetcher, PoolFetcher},
+};
 use std::{
     collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
 };
@@ -116,12 +120,18 @@ async fn main() {
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token.address());
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+
+    let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
+    let pool_fetcher = CachedPoolFetcher::new(
         Box::new(PoolFetcher {
             factory: uniswap_factory,
             web3,
             chain_id,
         }),
+        current_block_stream,
+    );
+    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+        Box::new(pool_fetcher),
         base_tokens,
     ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(

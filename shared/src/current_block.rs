@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Context as _, Result};
-use ethcontract::transport::DynTransport;
+use ethcontract::Http;
 use futures::{stream::FusedStream, Stream};
 use primitive_types::H256;
 use std::{
@@ -29,7 +29,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The stream is clonable so that we only have to poll the node once while being able to share the
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
-pub async fn current_block_stream(web3: Web3<DynTransport>) -> Result<CurrentBlockStream> {
+pub async fn current_block_stream(web3: Web3<Http>) -> Result<CurrentBlockStream> {
     let first_block = current_block(&web3).await?;
     let first_hash = first_block.hash.ok_or_else(|| anyhow!("missing hash"))?;
 
@@ -79,7 +79,7 @@ pub struct CurrentBlockStream {
 }
 
 impl CurrentBlockStream {
-    fn new(receiver: watch::Receiver<Block>, most_recent: Arc<Mutex<Block>>) -> Self {
+    pub fn new(receiver: watch::Receiver<Block>, most_recent: Arc<Mutex<Block>>) -> Self {
         Self {
             receiver,
             most_recent,
@@ -118,7 +118,7 @@ impl FusedStream for CurrentBlockStream {
     }
 }
 
-async fn current_block(web3: &Web3<DynTransport>) -> Result<Block> {
+async fn current_block(web3: &Web3<Http>) -> Result<Block> {
     web3.eth()
         .block(BlockId::Number(BlockNumber::Latest))
         .await
@@ -163,7 +163,7 @@ mod tests {
     async fn mainnet() {
         let node = "https://dev-openethereum.mainnet.gnosisdev.com";
         let transport = web3::transports::Http::new(node).unwrap();
-        let web3 = Web3::new(DynTransport::new(transport));
+        let web3 = Web3::new(transport);
         let mut stream = current_block_stream(web3).await.unwrap();
         for _ in 0..3 {
             let block = stream.next().await.unwrap();
