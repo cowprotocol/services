@@ -141,7 +141,8 @@ impl Inner {
             settlement: self.gpv2_settlement.clone(),
             set_allowance,
             amount_in: input.1,
-            amount_out_min: output.1,
+            // Apply fixed slippage tolerance in case balances change between solution finding and mining
+            amount_out_min: out_amount_with_slippage(output.1),
             token_in: input.0,
             token_out: output.0,
         }
@@ -149,9 +150,19 @@ impl Inner {
 }
 
 impl AmmSettlementHandling for Inner {
+    // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
     fn settle(&self, input: (H160, U256), output: (H160, U256)) -> Vec<Box<dyn Interaction>> {
         vec![Box::new(self._settle(input, output))]
     }
+}
+
+// Applies a 0.1 percent slippage to the provided out amount
+fn out_amount_with_slippage(amount_before_slippage: U256) -> U256 {
+    // If we overflow the multiplication we are dealing with very large numbers. In that case it's fine to first divide.
+    amount_before_slippage
+        .checked_mul(999.into())
+        .map(|v| v / U256::from(1000))
+        .unwrap_or_else(|| (amount_before_slippage / U256::from(1000)) * U256::from(999))
 }
 
 #[cfg(test)]
@@ -205,5 +216,19 @@ mod tests {
         let interaction =
             inner._settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
         assert_eq!(interaction.set_allowance, true);
+    }
+
+    #[test]
+    fn test_out_amount_with_slippage() {
+        assert_eq!(out_amount_with_slippage(0.into()), 0.into());
+        assert_eq!(out_amount_with_slippage(100.into()), 99.into());
+        assert_eq!(out_amount_with_slippage(10000.into()), 9990.into());
+        assert_eq!(
+            out_amount_with_slippage(U256::MAX),
+            U256::from_dec_str(
+                "115676297148078879228147414023679219945416714680974923475418126423905216509361"
+            )
+            .unwrap()
+        );
     }
 }
