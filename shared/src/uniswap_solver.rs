@@ -275,7 +275,7 @@ mod tests {
         };
 
         assert_eq!(
-            big_rational_to_float(estimate_spot_price(&path, &pools).unwrap()),
+            big_rational_to_float(&estimate_spot_price(&path, &pools).unwrap()),
             Some(0.25)
         );
     }

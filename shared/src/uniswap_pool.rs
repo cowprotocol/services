@@ -328,11 +328,11 @@ mod tests {
 
         let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100, 125));
         assert_approx_eq!(
-            big_rational_to_float(pool.get_spot_price(token_a).unwrap().0).unwrap(),
+            big_rational_to_float(&pool.get_spot_price(token_a).unwrap().0).unwrap(),
             1.25
         );
         assert_approx_eq!(
-            big_rational_to_float(pool.get_spot_price(token_b).unwrap().0).unwrap(),
+            big_rational_to_float(&pool.get_spot_price(token_b).unwrap().0).unwrap(),
             0.8
         );
 

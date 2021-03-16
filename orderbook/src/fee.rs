@@ -140,7 +140,7 @@ impl MinFeeCalculator {
         let fee_in_eth = gas_price * gas_amount;
         let token_price = match self
             .price_estimator
-            .estimate_price(
+            .estimate_price_as_f64(
                 sell_token,
                 self.native_token,
                 U256::from_f64_lossy(fee_in_eth),
@@ -245,15 +245,22 @@ impl MinFeeStoring for InMemoryFeeStore {
 mod tests {
     use chrono::Duration;
     use model::order::OrderKind;
+    use num::BigRational;
     use std::sync::Arc;
 
     use super::*;
 
-    struct FakePriceEstimator(f64);
+    struct FakePriceEstimator(BigRational);
     #[async_trait::async_trait]
     impl PriceEstimating for FakePriceEstimator {
-        async fn estimate_price(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<f64> {
-            Ok(self.0)
+        async fn estimate_price(
+            &self,
+            _: H160,
+            _: H160,
+            _: U256,
+            _: OrderKind,
+        ) -> Result<BigRational> {
+            Ok(self.0.clone())
         }
 
         async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
@@ -292,7 +299,7 @@ mod tests {
         let time = Arc::new(Mutex::new(Utc::now()));
 
         let gas_estimator = Box::new(FakeGasEstimator(gas_price.clone()));
-        let price_estimator = Arc::new(FakePriceEstimator(1.0));
+        let price_estimator = Arc::new(FakePriceEstimator(num::one()));
         let time_copy = time.clone();
         let now = move || *time_copy.lock().unwrap();
 
@@ -323,7 +330,7 @@ mod tests {
         let gas_price = Arc::new(Mutex::new(100.0));
 
         let gas_estimator = Box::new(FakeGasEstimator(gas_price.clone()));
-        let price_estimator = Arc::new(FakePriceEstimator(1.0));
+        let price_estimator = Arc::new(FakePriceEstimator(num::one()));
 
         let fee_estimator =
             MinFeeCalculator::new_for_test(gas_estimator, price_estimator, Box::new(Utc::now));

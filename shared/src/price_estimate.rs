@@ -1,4 +1,4 @@
-use crate::conversions::big_rational_to_float;
+use crate::conversions::U256Ext;
 use crate::uniswap_pool::{Pool, PoolFetching};
 use crate::uniswap_solver::{
     estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use futures::future::join_all;
 use model::{order::OrderKind, TokenPair};
-use num::BigRational;
+use num::{BigRational, ToPrimitive};
 use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
@@ -24,7 +24,7 @@ pub trait PriceEstimating: Send + Sync {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<f64>;
+    ) -> Result<BigRational>;
 
     // Returns the expected gas cost for this given trade
     async fn estimate_gas(
@@ -34,6 +34,43 @@ pub trait PriceEstimating: Send + Sync {
         amount: U256,
         kind: OrderKind,
     ) -> Result<U256>;
+
+    async fn estimate_price_as_f64(
+        &self,
+        sell_token: H160,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
+    ) -> Result<f64> {
+        self.estimate_price(sell_token, buy_token, amount, kind)
+            .await
+            .and_then(|price| {
+                price
+                    .to_f64()
+                    .ok_or_else(|| anyhow!("Cannot convert price ratio to float"))
+            })
+    }
+
+    // Returns a vector of (rational) prices for the given tokens denominated
+    // in denominator_token or an error in case there is an error computing any
+    // of the prices in the vector.
+    async fn estimate_prices(
+        &self,
+        tokens: &[H160],
+        denominator_token: H160,
+    ) -> Result<Vec<BigRational>> {
+        join_all(tokens.iter().map(|token| async move {
+            if *token != denominator_token {
+                self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
+                    .await
+            } else {
+                Ok(num::one())
+            }
+        }))
+        .await
+        .into_iter()
+        .collect()
+    }
 }
 
 pub struct UniswapPriceEstimator {
@@ -61,32 +98,39 @@ impl PriceEstimating for UniswapPriceEstimator {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<f64> {
+    ) -> Result<BigRational> {
         if sell_token == buy_token {
-            return Ok(1.0);
+            return Ok(num::one());
         }
         if amount.is_zero() {
             return self
                 .best_execution_spot_price(sell_token, buy_token)
                 .await
-                .and_then(|(_, price)| {
-                    big_rational_to_float(price)
-                        .ok_or_else(|| anyhow!("Cannot convert price ratio to float"))
-                });
+                .map(|(_, price)| price);
         }
-
         match kind {
             OrderKind::Buy => {
                 let (_, sell_amount) = self
                     .best_execution_buy_order(sell_token, buy_token, amount)
                     .await?;
-                Ok(sell_amount.to_f64_lossy() / amount.to_f64_lossy())
+                Ok(BigRational::new(
+                    sell_amount.to_big_int(),
+                    amount.to_big_int(),
+                ))
             }
             OrderKind::Sell => {
                 let (_, buy_amount) = self
                     .best_execution_sell_order(sell_token, buy_token, amount)
                     .await?;
-                Ok(amount.to_f64_lossy() / buy_amount.to_f64_lossy())
+                if buy_amount.is_zero() {
+                    return Err(anyhow!(
+                        "Attempt to create a rational with zero denominator."
+                    ));
+                }
+                Ok(BigRational::new(
+                    amount.to_big_int(),
+                    buy_amount.to_big_int(),
+                ))
             }
         }
     }
@@ -171,28 +215,6 @@ impl UniswapPriceEstimator {
         .await
     }
 
-    // Returns a vector of (rational) prices for the given tokens denominated
-    // in denominator_token or an error in case there is an error computing any
-    // of the prices in the vector.
-    pub async fn best_execution_spot_prices(
-        &self,
-        tokens: &[H160],
-        denominator_token: H160,
-    ) -> Result<Vec<BigRational>> {
-        join_all(tokens.iter().map(|token| async move {
-            if *token != denominator_token {
-                self.best_execution_spot_price(*token, denominator_token)
-                    .await
-                    .map(|t| t.1)
-            } else {
-                Ok(BigRational::from_integer(1.into()))
-            }
-        }))
-        .await
-        .into_iter()
-        .collect()
-    }
-
     async fn best_execution<AmountFn, CompareFn, O, Amount>(
         &self,
         sell_token: H160,
@@ -264,21 +286,21 @@ mod tests {
 
         assert_approx_eq!(
             estimator
-                .estimate_price(token_a, token_a, U256::exp10(18), OrderKind::Buy)
+                .estimate_price_as_f64(token_a, token_a, U256::exp10(18), OrderKind::Buy)
                 .await
                 .unwrap(),
             1.0
         );
         assert_approx_eq!(
             estimator
-                .estimate_price(token_a, token_a, U256::exp10(18), OrderKind::Sell)
+                .estimate_price_as_f64(token_a, token_a, U256::exp10(18), OrderKind::Sell)
                 .await
                 .unwrap(),
             1.0
         );
         assert_approx_eq!(
             estimator
-                .estimate_price(token_a, token_b, U256::exp10(18), OrderKind::Buy)
+                .estimate_price_as_f64(token_a, token_b, U256::exp10(18), OrderKind::Buy)
                 .await
                 .unwrap(),
             10.03,
@@ -286,7 +308,7 @@ mod tests {
         );
         assert_approx_eq!(
             estimator
-                .estimate_price(token_a, token_b, U256::exp10(18), OrderKind::Sell)
+                .estimate_price_as_f64(token_a, token_b, U256::exp10(18), OrderKind::Sell)
                 .await
                 .unwrap(),
             10.03,
@@ -294,7 +316,7 @@ mod tests {
         );
         assert_approx_eq!(
             estimator
-                .estimate_price(token_b, token_a, U256::exp10(18), OrderKind::Buy)
+                .estimate_price_as_f64(token_b, token_a, U256::exp10(18), OrderKind::Buy)
                 .await
                 .unwrap(),
             0.1003,
@@ -302,7 +324,7 @@ mod tests {
         );
         assert_approx_eq!(
             estimator
-                .estimate_price(token_b, token_a, U256::exp10(18), OrderKind::Sell)
+                .estimate_price_as_f64(token_b, token_a, U256::exp10(18), OrderKind::Sell)
                 .await
                 .unwrap(),
             0.1003,
@@ -333,7 +355,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn best_execution_spot_prices() {
+    async fn estimate_prices_with_zero_amount() {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
         let token_c = H160::from_low_u64_be(3);
@@ -351,7 +373,7 @@ mod tests {
             UniswapPriceEstimator::new(pool_fetcher, hashset!(token_a, token_b, token_c));
 
         let res = estimator
-            .best_execution_spot_prices(&[token_a, token_b, token_c], token_c)
+            .estimate_prices(&[token_a, token_b, token_c], token_c)
             .await;
         assert!(res.is_ok());
         let prices = res.unwrap();
@@ -405,11 +427,11 @@ mod tests {
         let estimator = UniswapPriceEstimator::new(pool_fetcher, hashset!(base_token));
 
         assert!(estimator
-            .estimate_price(token_a, token_b, 1.into(), OrderKind::Sell)
+            .estimate_price(token_a, token_b, 100.into(), OrderKind::Sell)
             .await
             .is_ok());
         assert!(estimator
-            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .estimate_price(token_a, token_b, 100.into(), OrderKind::Buy)
             .await
             .is_ok());
     }
