@@ -42,18 +42,21 @@ Run e2e tests: `cargo test -p e2e -- --test-threads 1`.
 
 ### Postgres
 
-The tests that require postgres connect to the default database of locally running postgres instance on the default port. There are several ways to set up postgres:
+The tests that require postgres connect to the default database of a locally running postgres instance on the default port. There are several ways to set up postgres:
+
+* Docker
+```sh
+docker run -d -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=`whoami` -p 5432:5432 docker.io/postgres
+```
+* Service
 
 ```sh
-# Docker
-docker run -d -e POSTGRES_HOST_AUTH_METHOD=trust -e POSTGRES_USER=`whoami` -p 5432:5432 postgres
-
-# Service
 sudo systemctl start postgresql.service
 sudo -u postgres createuser $USER
 sudo -u postgres createdb $USER
-
-# Manual setup in local folder
+```
+* Manual setup in local folder
+```sh
 mkdir postgres && cd postgres
 initdb data # Arbitrary directory that stores the database
 # In data/postgresql.conf set unix_socket_directories to the absolute path to an arbitrary existing
@@ -62,11 +65,26 @@ initdb data # Arbitrary directory that stores the database
 postgres -D data
 # In another terminal, only for first time setup
 createdb -h localhost $USER
+```
 
-# Finally for all methods to test that the server is reachable and to set the schema for the tests.
+At this point the database should be running and reachable. You can test connecting to it with
+
+```sh
+psql postgresql://localhost/
+```
+
+Finally we need to apply schema (set up in the `database` folder).
+
+* Docker
+```sh
 docker build --tag gp-v2-migrations -f docker/Dockerfile.migration .
 # If you are running postgres in locally, your URL is `localhost` instead of `host.docker.internal`
 docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql gp-v2-migrations migrate
+```
+If you're combining a local postgres installation with docker flyway you have to add to the above `--network host` and change `host.docker.internal` to `localhost`.
+* Using a [local flyway installation](https://flywaydb.org/documentation/usage/commandline/#download-and-installation)
+```sh
+flyway -user=$USER -password="" -locations="filesystem:database/sql/" -url=jdbc:postgresql:/// migrate
 ```
 
 ## Running
