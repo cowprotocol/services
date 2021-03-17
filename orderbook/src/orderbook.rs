@@ -14,8 +14,12 @@ use model::{
     order::{Order, OrderCreation, OrderUid},
     DomainSeparator, EIP712Signing,
 };
+use primitive_types::{H160, U256};
 use shared::time::now_in_epoch_seconds;
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
 #[derive(Debug, Eq, PartialEq)]
@@ -123,9 +127,17 @@ impl Orderbook {
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
         let mut orders = self.database.orders(filter).try_collect::<Vec<_>>().await?;
-        set_order_balance(orders.as_mut_slice(), self.balance_fetcher.as_ref()).await;
+        let balances =
+            track_and_get_balances(self.balance_fetcher.as_ref(), orders.as_slice()).await;
+        // The meaning of the available balance field is different depending on whether we return
+        // orders for the solver or the frontend. For the frontend (else case) balances are always
+        // actual balances but for the solver there is custom logic to decide which orders get
+        // prioritized when a user's balance is too small to cover all of their orders.
+        // We can hopefully resolve this when we have a custom struct for orders in the
+        // get_solver_orders route and a custom endpoint to query user balances for the frontend.
+        set_available_balances(orders.as_mut_slice(), &balances);
         if filter.exclude_insufficient_balance {
-            remove_orders_without_sufficient_balance(&mut orders);
+            orders = solvable_orders(orders, &balances);
         }
         Ok(orders)
     }
@@ -151,76 +163,95 @@ fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> bool
     order.valid_to > now_in_epoch_seconds
 }
 
-async fn set_order_balance(orders: &mut [Order], balance_fetcher: &dyn BalanceFetching) {
-    // Since order can come from storage after a cold start there is the possibility that they are not yet registered
-    // for balance updates. In this case we do it here.
-    let untracked = orders
-        .iter()
-        .filter_map(|order| {
-            match balance_fetcher
-                .get_balance(order.order_meta_data.owner, order.order_creation.sell_token)
-            {
-                Some(_) => None,
-                None => Some((order.order_meta_data.owner, order.order_creation.sell_token)),
+// Make sure the balance fetcher tracks all balances for user, sell token combinations in these
+// orders and returns said balances.
+async fn track_and_get_balances(
+    fetcher: &dyn BalanceFetching,
+    orders: &[Order],
+) -> HashMap<(H160, H160), U256> {
+    let mut balances = HashMap::<(H160, H160), U256>::new();
+    let mut untracked = HashSet::<(H160, H160)>::new();
+    for order in orders {
+        let key = (order.order_meta_data.owner, order.order_creation.sell_token);
+        match fetcher.get_balance(key.0, key.1) {
+            Some(balance) => {
+                balances.insert(key, balance);
             }
-        })
-        .collect();
-    balance_fetcher.register_many(untracked).await;
+            None => {
+                untracked.insert(key);
+            }
+        }
+    }
+    fetcher
+        .register_many(untracked.iter().cloned().collect())
+        .await;
+    balances.extend(untracked.into_iter().filter_map(|key| {
+        fetcher
+            .get_balance(key.0, key.1)
+            .map(|balance| (key, balance))
+    }));
+    balances
+}
 
-    // Enrich orders with balance information
+fn set_available_balances(orders: &mut [Order], balances: &HashMap<(H160, H160), U256>) {
     for order in orders.iter_mut() {
-        order.order_meta_data.available_balance = balance_fetcher
-            .get_balance(order.order_meta_data.owner, order.order_creation.sell_token);
+        let key = &(order.order_meta_data.owner, order.order_creation.sell_token);
+        order.order_meta_data.available_balance = balances.get(key).cloned();
     }
 }
 
-fn remove_orders_without_sufficient_balance(orders: &mut Vec<Order>) {
-    orders.retain(|order| {
-        let balance = order.order_meta_data.available_balance.unwrap_or_default();
-        !balance.is_zero()
-            && (order.order_creation.partially_fillable
-                || balance >= (order.order_creation.sell_amount + order.order_creation.fee_amount))
-    });
+// The order book has to make a choice for which orders to include when a user has multiple orders
+// selling the same token but not enough balance for all of them.
+// Assumes balance fetcher is already tracking all balances.
+fn solvable_orders(mut orders: Vec<Order>, balances: &HashMap<(H160, H160), U256>) -> Vec<Order> {
+    let mut orders_map = HashMap::<(H160, H160), Vec<Order>>::new();
+    orders.sort_by_key(|order| order.order_meta_data.creation_date);
+    for order in orders {
+        let key = (order.order_meta_data.owner, order.order_creation.sell_token);
+        orders_map.entry(key).or_default().push(order);
+    }
+
+    let mut result = Vec::new();
+    for (key, orders) in orders_map {
+        let mut remaining_balance = match balances.get(&key) {
+            Some(balance) => *balance,
+            None => continue,
+        };
+        for order in orders {
+            // TODO: This is overly pessimistic for partially filled orders where the needed balance
+            // is lower. For partially fillable orders that cannot be fully filled because of the
+            // balance we could also give them as much balance as possible instead of skipping. For
+            // that we first need a way to communicate this to the solver. We could repurpose
+            // availableBalance for this.
+            let needed_balance = match order
+                .order_creation
+                .sell_amount
+                .checked_add(order.order_creation.fee_amount)
+            {
+                Some(balance) => balance,
+                None => continue,
+            };
+            if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
+                remaining_balance = balance;
+                result.push(order);
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::account_balances::MockBalanceFetching;
+    use chrono::{DateTime, NaiveDateTime};
     use ethcontract::H160;
+    use maplit::hashmap;
     use mockall::{predicate::eq, Sequence};
     use model::order::{OrderCreation, OrderMetaData};
 
     #[tokio::test]
-    async fn enriches_storage_orders_with_available_balance() {
-        let mut balance_fetcher = MockBalanceFetching::new();
-
-        let sell_token = H160::from_low_u64_be(2);
-        let balance = 100.into();
-
-        let mut orders = vec![Order {
-            order_creation: OrderCreation {
-                sell_token,
-                ..Default::default()
-            },
-            ..Default::default()
-        }];
-
-        balance_fetcher
-            .expect_register_many()
-            .with(eq(vec![]))
-            .returning(|_| ());
-        balance_fetcher
-            .expect_get_balance()
-            .with(eq(orders[0].order_meta_data.owner), eq(sell_token))
-            .return_const(Some(balance));
-
-        set_order_balance(orders.as_mut_slice(), &balance_fetcher).await;
-        assert_eq!(orders[0].order_meta_data.available_balance, Some(balance));
-    }
-
-    #[tokio::test]
-    async fn registers_untracked_balances_on_fetching() {
+    async fn track_and_get_balances_() {
         let mut balance_fetcher = MockBalanceFetching::new();
 
         let a_sell_token = H160::from_low_u64_be(2);
@@ -229,7 +260,7 @@ mod tests {
         let another_sell_token = H160::from_low_u64_be(3);
         let another_balance = 200.into();
 
-        let mut orders = vec![
+        let orders = vec![
             Order {
                 order_creation: OrderCreation {
                     sell_token: a_sell_token,
@@ -276,58 +307,55 @@ mod tests {
             .in_sequence(&mut seq)
             .return_const(Some(another_balance));
 
-        set_order_balance(orders.as_mut_slice(), &balance_fetcher).await;
-        assert_eq!(orders[0].order_meta_data.available_balance, Some(a_balance));
+        let balances = track_and_get_balances(&balance_fetcher, orders.as_slice()).await;
         assert_eq!(
-            orders[1].order_meta_data.available_balance,
-            Some(another_balance)
+            balances,
+            hashmap! {
+                (owner, a_sell_token) => a_balance,
+                (owner, another_sell_token) => another_balance
+            }
         );
     }
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
+        let mut balance_fetcher = MockBalanceFetching::new();
+        balance_fetcher
+            .expect_get_balance()
+            .return_const(Some(10.into()));
+
         let mut orders = vec![
             Order {
                 order_creation: OrderCreation {
-                    sell_amount: 100.into(),
-                    partially_fillable: true,
+                    sell_amount: 3.into(),
+                    fee_amount: 3.into(),
                     ..Default::default()
                 },
                 order_meta_data: OrderMetaData {
-                    available_balance: Some(50.into()),
+                    creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
                     ..Default::default()
                 },
             },
             Order {
                 order_creation: OrderCreation {
-                    sell_amount: 200.into(),
-                    partially_fillable: false,
+                    sell_amount: 2.into(),
+                    fee_amount: 2.into(),
                     ..Default::default()
                 },
                 order_meta_data: OrderMetaData {
-                    available_balance: Some(50.into()),
-                    ..Default::default()
-                },
-            },
-            // Fee + sell amount > balance
-            Order {
-                order_creation: OrderCreation {
-                    sell_amount: 200.into(),
-                    fee_amount: 20.into(),
-                    partially_fillable: false,
-                    ..Default::default()
-                },
-                order_meta_data: OrderMetaData {
-                    available_balance: Some(210.into()),
+                    creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
                     ..Default::default()
                 },
             },
         ];
 
-        remove_orders_without_sufficient_balance(&mut orders);
-
-        // Only the partially fillable order is included
-        assert_eq!(orders.len(), 1);
-        assert_eq!(orders[0].order_creation.partially_fillable, true);
+        let balances = hashmap! {Default::default() => U256::from(9)};
+        let orders_ = solvable_orders(orders.clone(), &balances);
+        // First order has higher timestamp so it isn't picked.
+        assert_eq!(orders_, orders[1..]);
+        orders[1].order_meta_data.creation_date =
+            DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
+        let orders_ = solvable_orders(orders.clone(), &balances);
+        assert_eq!(orders_, orders[..1]);
     }
 }
