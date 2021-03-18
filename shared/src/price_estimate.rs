@@ -58,7 +58,7 @@ pub trait PriceEstimating: Send + Sync {
         &self,
         tokens: &[H160],
         denominator_token: H160,
-    ) -> Result<Vec<BigRational>> {
+    ) -> Vec<Result<BigRational>> {
         join_all(tokens.iter().map(|token| async move {
             if *token != denominator_token {
                 self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
@@ -68,8 +68,6 @@ pub trait PriceEstimating: Send + Sync {
             }
         }))
         .await
-        .into_iter()
-        .collect()
     }
 }
 
@@ -372,11 +370,12 @@ mod tests {
         let estimator =
             UniswapPriceEstimator::new(pool_fetcher, hashset!(token_a, token_b, token_c));
 
-        let res = estimator
+        let prices = estimator
             .estimate_prices(&[token_a, token_b, token_c], token_c)
-            .await;
-        assert!(res.is_ok());
-        let prices = res.unwrap();
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>>>()
+            .unwrap();
         assert!(prices[0] == BigRational::new(1.into(), 100.into()));
         assert!(prices[1] == BigRational::new(1.into(), 10.into()));
         assert!(prices[2] == BigRational::new(1.into(), 1.into()));

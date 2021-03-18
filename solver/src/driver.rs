@@ -11,7 +11,6 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use itertools::Itertools;
-use maplit::hashmap;
 use num::BigRational;
 use primitive_types::H160;
 use shared::price_estimate::PriceEstimating;
@@ -74,10 +73,7 @@ impl Driver {
     async fn collect_estimated_prices(
         &self,
         limit_orders: &[LimitOrder],
-    ) -> Result<HashMap<H160, BigRational>> {
-        if limit_orders.is_empty() {
-            return Ok(hashmap![]);
-        }
+    ) -> HashMap<H160, BigRational> {
         // Computes set of traded tokens (limit orders only).
         let tokens: Vec<H160> = limit_orders
             .iter()
@@ -94,20 +90,41 @@ impl Driver {
         let estimated_prices = self
             .price_estimator
             .estimate_prices(tokens.as_slice(), denominator_token)
-            .await
-            .context("failed estimating prices")?;
+            .await;
 
-        Ok(tokens.into_iter().zip(estimated_prices).collect())
+        tokens
+            .into_iter()
+            .zip(estimated_prices)
+            .filter_map(|(token, price)| match price {
+                Ok(price) => Some((token, price)),
+                Err(err) => {
+                    tracing::warn!("failed to estimate price for token {}: {:?}", token, err);
+                    None
+                }
+            })
+            .collect()
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
-        let limit_orders = self
+        let mut limit_orders = self
             .orderbook
             .get_liquidity()
             .await
             .context("failed to get orderbook")?;
         tracing::debug!("got {} orders", limit_orders.len());
+
+        let estimated_prices = self.collect_estimated_prices(&limit_orders).await;
+        let original_length = limit_orders.len();
+        limit_orders.retain(|lo| {
+            [lo.sell_token, lo.buy_token]
+                .iter()
+                .all(|token| estimated_prices.contains_key(token))
+        });
+        let removed_orders = original_length - limit_orders.len();
+        if removed_orders > 0 {
+            tracing::debug!("pruned {} orders", removed_orders);
+        }
 
         let amms = self
             .uniswap_liquidity
@@ -115,8 +132,6 @@ impl Driver {
             .await
             .context("failed to get uniswap pools")?;
         tracing::debug!("got {} AMMs", amms.len());
-
-        let estimated_prices = self.collect_estimated_prices(&limit_orders).await?;
 
         let liquidity: Vec<Liquidity> = limit_orders
             .into_iter()
