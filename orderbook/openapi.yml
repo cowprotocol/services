@@ -242,6 +242,40 @@ paths:
                 $ref: "#/components/schemas/FeeInformation"
         404:
           description: Token non-existent or not connected to native token
+  /api/v1/markets/{baseToken}-{quoteToken}/{kind}/{amount}:
+    get:
+      description: |
+        The estimated amount received for selling a `amount` of baseToken or the amount required to spend for buying `amount` of quote token.
+      parameters:
+        - name: baseToken
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+        - name: quoteToken
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+        - name: amount
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TokenAmount"
+        - name: kind
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/OrderType"
+      responses:
+        200:
+          description: the price denominated in quote token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AmountEstimate"
+        404:
+          description: Token non-existent or no valid price found
 components:
   schemas:
     Address:
@@ -373,6 +407,17 @@ components:
         signature:
           description: "OrderCancellation signed by owner"
           $ref: "#/components/schemas/Signature"
+    AmountEstimate:
+      description: |
+        Provides the information about an estimated price.
+      type: object
+      properties:
+        amount:
+          description: The estimated amount
+          $ref: "#/components/schemas/TokenAmount"
+        token:
+          description: "The token in which the amount is given"
+          $ref: "#/components/schemas/Address"
     Trade:
       description: |
         Trade data such as executed amounts, fees, order id and block number.
@@ -433,11 +478,6 @@ components:
       properties:
         errorType:
           type: string
-          enum:
-            [
-                InvalidSignature,
-                WrongOwner,
-                OrderNotFound,
-            ]
+          enum: [InvalidSignature, WrongOwner, OrderNotFound]
         description:
           type: string
