@@ -146,16 +146,21 @@ impl Driver {
             }))
             .await
             .into_iter()
-            .filter_map(|(solver, settlement)| {
-                let settlement = settlement.ok()??;
-                info!(
-                    "{} found solution with objective value: {}",
-                    solver,
-                    settlement.objective_value(&estimated_prices)
-                );
-                Some((solver, settlement))
+            .filter_map(|(solver, settlement)| match settlement {
+                Ok(settlement) => settlement.map(|settlement| (solver, settlement)),
+                Err(err) => {
+                    tracing::error!("solver {} error: {:?}", solver, err);
+                    None
+                }
             })
             .collect();
+        for (solver, settlement) in settlements.iter() {
+            info!(
+                "{} found solution with objective value: {}",
+                solver,
+                settlement.objective_value(&estimated_prices)
+            );
+        }
 
         // Sort by key in descending order
         settlements.sort_by_cached_key(|(_, settlement)| {
