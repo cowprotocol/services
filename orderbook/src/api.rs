@@ -1,6 +1,7 @@
 mod cancel_order;
 mod create_order;
 mod get_fee_info;
+mod get_markets;
 mod get_order_by_uid;
 mod get_orders;
 mod get_solvable_orders;
@@ -14,6 +15,7 @@ use model::h160_hexadecimal;
 use primitive_types::H160;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use shared::price_estimate::PriceEstimating;
 use std::{str::FromStr, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -25,6 +27,7 @@ pub fn handle_all_routes(
     database: Database,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
+    price_estimator: Arc<dyn PriceEstimating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
@@ -34,6 +37,7 @@ pub fn handle_all_routes(
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
     let cancel_order = cancel_order::cancel_order(orderbook);
+    let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
     warp::path!("api" / "v1" / ..).and(
         create_order
             .or(get_orders)
@@ -42,7 +46,8 @@ pub fn handle_all_routes(
             .or(get_order)
             .or(get_solvable_orders)
             .or(get_trades)
-            .or(cancel_order),
+            .or(cancel_order)
+            .or(get_amount_estimate),
     )
 }
 

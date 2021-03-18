@@ -166,6 +166,7 @@ async fn test_with_ganache() {
         db.clone(),
         orderbook.clone(),
         fee_calculator,
+        price_estimator.clone(),
         API_HOST[7..].parse().expect("Couldn't parse API address"),
     );
     let client = reqwest::Client::new();

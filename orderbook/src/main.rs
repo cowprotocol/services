@@ -135,7 +135,7 @@ async fn main() {
         base_tokens,
     ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(
-        price_estimator,
+        price_estimator.clone(),
         Box::new(gas_price_estimator),
         native_token.address(),
         database.clone(),
@@ -155,6 +155,7 @@ async fn main() {
         database.clone(),
         orderbook.clone(),
         fee_calculator,
+        price_estimator,
         args.bind_address,
     );
     let maintenance_task = task::spawn(orderbook_maintenance(
