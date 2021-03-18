@@ -9,6 +9,7 @@ pub mod settlement;
 pub mod settlement_submission;
 pub mod solver;
 pub mod uniswap_solver;
+mod util;
 
 use anyhow::Result;
 use ethcontract::{contract::MethodDefaults, Account, Http, Web3};

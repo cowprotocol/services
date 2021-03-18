@@ -146,10 +146,11 @@ async fn test_with_ganache() {
         Box::new(pool_fetcher),
         HashSet::new(),
     ));
+    let native_token = token_a.address();
     let fee_calculator = Arc::new(MinFeeCalculator::new(
         price_estimator.clone(),
         Box::new(web3.clone()),
-        token_a.address(),
+        native_token,
         db.clone(),
         1.0,
     ));
@@ -228,6 +229,7 @@ async fn test_with_ganache() {
         Box::new(web3),
         Duration::from_secs(1),
         Duration::from_secs(30),
+        native_token,
     );
     driver.single_run().await.unwrap();
 
