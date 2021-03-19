@@ -16,6 +16,10 @@ struct Arguments {
     #[structopt(long, env = "ORDERBOOK_URL", default_value = "http://localhost:8080")]
     orderbook_url: Url,
 
+    /// The API endpoint to call the mip solver
+    #[structopt(long, env = "MIP_SOLVER_URL", default_value = "http://localhost:8000")]
+    mip_solver_url: Url,
+
     /// The timeout for the API endpoint to fetch the orderbook
     #[structopt(
         long,
@@ -108,7 +112,12 @@ async fn main() {
         }),
         base_tokens.clone(),
     ));
-    let solver = solver::solver::create(args.solvers, base_tokens);
+    let solver = solver::solver::create(
+        args.solvers,
+        base_tokens,
+        native_token_contract.address(),
+        args.mip_solver_url,
+    );
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),
         &web3,
