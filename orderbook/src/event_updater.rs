@@ -5,7 +5,8 @@ use contracts::{
     GPv2Settlement,
 };
 use ethcontract::{
-    dyns::DynTransport, errors::ExecutionError, Event as EthcontractEvent, EventMetadata,
+    dyns::DynTransport, errors::ExecutionError, BlockNumber as Web3BlockNumber,
+    Event as EthcontractEvent, EventMetadata,
 };
 use futures::{Stream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
@@ -70,7 +71,7 @@ impl EventUpdater {
             tracing::debug!("inserting {} new events", events.len());
             if !have_deleted_old_events {
                 self.db
-                    .replace_events(*range.start(), events)
+                    .replace_events(range.start().to_u64(), events)
                     .await
                     .context("failed to replace trades")?;
                 have_deleted_old_events = true;
@@ -81,11 +82,11 @@ impl EventUpdater {
                     .context("failed to insert trades")?;
             }
         }
-        self.last_handled_block = Some(*range.end());
+        self.last_handled_block = Some(range.end().to_u64());
         Ok(())
     }
 
-    async fn event_block_range(&self) -> Result<RangeInclusive<u64>> {
+    async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
         let web3 = self.web3();
         // Instead of using only the most recent event block from the db we also store the last
         // handled block in self so that during long times of no events we do not query needlessly
@@ -109,7 +110,7 @@ impl EventUpdater {
                 current_block, MAX_REORG_BLOCK_COUNT, last_handled_block
             )
         );
-        Ok(from_block..=current_block)
+        Ok(BlockNumber::Specific(from_block)..=BlockNumber::Latest(current_block))
     }
 
     fn web3(&self) -> Web3<DynTransport> {
@@ -118,13 +119,13 @@ impl EventUpdater {
 
     async fn past_events(
         &self,
-        block_range: &RangeInclusive<u64>,
+        block_range: &RangeInclusive<BlockNumber>,
     ) -> Result<impl Stream<Item = Result<(DbEventIndex, DbEvent)>>, ExecutionError> {
         Ok(self
             .contract
             .all_events()
-            .from_block((*block_range.start()).into())
-            .to_block((*block_range.end()).into())
+            .from_block((*block_range.start()).block_number())
+            .to_block((*block_range.end()).block_number())
             .block_page_size(500)
             .query_paginated()
             .await?
@@ -162,4 +163,32 @@ fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(DbEvent
         fee_amount: trade.fee_amount,
     };
     Ok((index, DbEvent::Trade(event)))
+}
+
+// Helper type around the Web3BlockNumber that allows us to specify `BlockNumber::Latest` for range queries
+// while still storing concrete block numbers for latest internally. The issue with concrete block numbers for
+// range queries is that e.g. behind a load balancer node A might not yet have seen the block number another
+// node B considers to be Latest.
+// Given our reorg-tolerant query logic it's not a problem to store a concrete block number that is slightly
+// off from the actually used Latest block number.
+#[derive(Debug)]
+enum BlockNumber {
+    Specific(u64),
+    Latest(u64),
+}
+
+impl BlockNumber {
+    fn to_u64(&self) -> u64 {
+        match self {
+            BlockNumber::Specific(block) => *block,
+            BlockNumber::Latest(block) => *block,
+        }
+    }
+
+    fn block_number(&self) -> Web3BlockNumber {
+        match self {
+            BlockNumber::Specific(block) => Web3BlockNumber::from(*block),
+            BlockNumber::Latest(_) => Web3BlockNumber::Latest,
+        }
+    }
 }
