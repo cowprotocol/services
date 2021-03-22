@@ -151,7 +151,7 @@ impl HttpSolver {
                         amount: 0,
                         token: self.token_to_string(&self.native_token),
                     },
-                    mandatory: false,
+                    mandatory: true,
                 };
                 (index.clone(), uniswap)
             })
