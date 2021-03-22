@@ -242,13 +242,17 @@ impl UniswapPriceEstimator {
             .iter()
             .max_by_key(|path| comparison(amount, path, &pools))
             .ok_or(anyhow!(format!(
-                "No Uniswap path found between {:x} and {:x}",
+                "No Uniswap path found between {:#x} and {:#x}",
                 sell_token, buy_token
             )))?;
         Ok((
             best_path.clone(),
-            resulting_amount(amount, best_path, &pools)
-                .ok_or_else(|| anyhow!("no valid path found"))?,
+            resulting_amount(amount, best_path, &pools).ok_or_else(|| {
+                anyhow!(format!(
+                    "No valid path found between {:#x} and {:#x}",
+                    sell_token, buy_token
+                ))
+            })?,
         ))
     }
 }

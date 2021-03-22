@@ -129,11 +129,17 @@ impl MinFeeCalculator {
         let gas_amount =
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
                 // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
-                self.price_estimator
+                match self
+                    .price_estimator
                     .estimate_gas(sell_token, buy_token, amount, kind)
-                    .await?
-                    .to_f64_lossy()
-                    * self.discount_factor
+                    .await
+                {
+                    Ok(amount) => amount.to_f64_lossy() * self.discount_factor,
+                    Err(err) => {
+                        tracing::warn!("Failed to estimate gas amount: {}", err);
+                        return Ok(None);
+                    }
+                }
             } else {
                 GAS_PER_ORDER
             };

@@ -44,7 +44,7 @@ pub fn get_fee_info_response(result: Result<Option<(U256, DateTime<Utc>)>>) -> i
             Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
         }
         Ok(None) => Ok(reply::with_status(
-            super::error("NotFound", "Token was not found"),
+            super::error("NotFound", "Fee path for given Token pair was not found"),
             StatusCode::NOT_FOUND,
         )),
         Err(err) => {
