@@ -1,5 +1,5 @@
 use anyhow::Result;
-use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, IERC20};
+use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, ERC20};
 use ethcontract::{batch::CallBatch, Http, Web3};
 use primitive_types::{H160, U256};
 use shared::{
@@ -98,12 +98,11 @@ impl UniswapLiquidity {
         let mut batch = CallBatch::new(self.web3.transport());
         let results: Vec<_> = tokens
             .map(|token| {
-                let allowance = IERC20::at(&self.web3, token)
+                let allowance = ERC20::at(&self.web3, token)
                     .allowance(
                         self.inner.gpv2_settlement.address(),
                         self.inner.router.address(),
                     )
-                    .view()
                     .batch_call(&mut batch);
                 (token, allowance)
             })

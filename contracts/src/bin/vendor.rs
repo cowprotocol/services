@@ -12,8 +12,8 @@ use std::fs;
 // npm path and local file name
 const NPM_CONTRACTS: &[(&str, &str)] = &[
     (
-        "@openzeppelin/contracts@3.3.0/build/contracts/IERC20.json",
-        "IERC20.json",
+        "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",
+        "ERC20.json",
     ),
     (
         "@openzeppelin/contracts@2.5.0/build/contracts/ERC20Mintable.json",

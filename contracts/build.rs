@@ -15,7 +15,7 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
-    generate_contract("IERC20", hashmap! {});
+    generate_contract("ERC20", hashmap! {});
     generate_contract("ERC20Mintable", hashmap! {});
     generate_contract(
         "UniswapV2Router02",

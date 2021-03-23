@@ -4,7 +4,7 @@ use futures::future::{join3, join_all};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use contracts::IERC20;
+use contracts::ERC20;
 use primitive_types::{H160, U256};
 
 const MAX_BATCH_SIZE: usize = 100;
@@ -74,15 +74,13 @@ impl Web3BalanceFetcher {
         let calls = subscriptions
             .into_iter()
             .map(|subscription| {
-                let instance = IERC20::at(&self.web3, subscription.token);
+                let instance = ERC20::at(&self.web3, subscription.token);
                 join3(
                     instance
                         .balance_of(subscription.owner)
-                        .view()
                         .batch_call(&mut batch),
                     instance
                         .allowance(subscription.owner, self.allowance_manager)
-                        .view()
                         .batch_call(&mut batch),
                     std::future::ready(subscription),
                 )
