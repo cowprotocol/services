@@ -39,4 +39,5 @@ tokio = { version = "0.2", optional = true, features = ["macros"] }
 
 [build-dependencies]
 ethcontract-generate = "0.11"
+ethcontract = { version = "0.11",  default-features = false, features = ["http"] }
 maplit = "1.0"

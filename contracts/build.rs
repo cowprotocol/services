@@ -1,3 +1,4 @@
+use ethcontract::common::DeploymentInformation;
 use ethcontract_generate::{Address, Builder, TransactionHash};
 use maplit::hashmap;
 use std::{collections::HashMap, env, fs, path::Path, str::FromStr};
@@ -73,7 +74,11 @@ fn generate_contract(
     }
 
     for (network_id, (address, transaction_hash)) in deployment_overrides.into_iter() {
-        builder = builder.add_deployment(network_id, address, transaction_hash);
+        builder = builder.add_deployment(
+            network_id,
+            address,
+            transaction_hash.map(DeploymentInformation::TransactionHash),
+        );
     }
 
     builder
