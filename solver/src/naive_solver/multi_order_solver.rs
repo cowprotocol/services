@@ -6,8 +6,9 @@ use anyhow::{anyhow, Result};
 use liquidity::{AmmOrder, LimitOrder};
 use model::order::OrderKind;
 use num::{bigint::Sign, BigInt};
+use primitive_types::U256;
 use std::collections::HashMap;
-use web3::types::{Address, U256};
+use web3::types::Address;
 
 #[derive(Debug)]
 struct TokenContext {
@@ -35,13 +36,16 @@ impl TokenContext {
     }
 }
 
-pub fn solve(orders: impl Iterator<Item = LimitOrder> + Clone, pool: &AmmOrder) -> Settlement {
+pub fn solve(
+    orders: impl Iterator<Item = LimitOrder> + Clone,
+    pool: &AmmOrder,
+) -> Option<Settlement> {
     let mut orders: Vec<LimitOrder> = orders.collect();
     while !orders.is_empty() {
         let (context_a, context_b) = split_into_contexts(orders.clone().into_iter(), pool);
-        let solution = solve_orders(orders.clone().into_iter(), &pool, &context_a, &context_b);
+        let solution = solve_orders(orders.clone().into_iter(), &pool, &context_a, &context_b)?;
         if is_valid_solution(&solution) {
-            return solution;
+            return Some(solution);
         } else {
             // remove order with worst limit price that is selling excess token (to make it less excessive) and try again
             let excess_token = if context_a.is_excess_before_fees(&context_b) {
@@ -64,13 +68,7 @@ pub fn solve(orders: impl Iterator<Item = LimitOrder> + Clone, pool: &AmmOrder) 
         }
     }
 
-    // At last we return the trivial solution which doesn't match any orders
-    Settlement {
-        clearing_prices: HashMap::new(),
-        trades: Vec::new(),
-        interactions: Vec::new(),
-        ..Default::default()
-    }
+    None
 }
 
 ///
@@ -83,13 +81,13 @@ fn solve_orders(
     pool: &AmmOrder,
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> Settlement {
+) -> Option<Settlement> {
     if context_a.is_excess_after_fees(&context_b) {
         solve_with_uniswap(orders, pool, &context_b, &context_a)
     } else if context_b.is_excess_after_fees(&context_a) {
         solve_with_uniswap(orders, pool, &context_a, &context_b)
     } else {
-        solve_without_uniswap(orders, &context_a, &context_b)
+        Some(solve_without_uniswap(orders, &context_a, &context_b))
     }
 }
 
@@ -122,16 +120,16 @@ fn solve_with_uniswap(
     pool: &AmmOrder,
     shortage: &TokenContext,
     excess: &TokenContext,
-) -> Settlement {
+) -> Option<Settlement> {
     let uniswap_out = compute_uniswap_out(&shortage, &excess);
-    let uniswap_in = compute_uniswap_in(uniswap_out, &shortage, &excess);
+    let uniswap_in = compute_uniswap_in(uniswap_out, &shortage, &excess)?;
 
     let (trades, mut interactions) = fully_matched(orders);
     interactions.extend(pool.settlement_handling.settle(
         (excess.address, uniswap_in),
         (shortage.address, uniswap_out),
     ));
-    Settlement {
+    Some(Settlement {
         clearing_prices: maplit::hashmap! {
             shortage.address => uniswap_in,
             excess.address => uniswap_out,
@@ -139,7 +137,7 @@ fn solve_with_uniswap(
         trades,
         interactions,
         ..Default::default()
-    }
+    })
 }
 
 fn fully_matched(
@@ -237,8 +235,12 @@ fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> U256 {
 /// of tokens to be sent to the pool.
 /// Taken from: https://github.com/Uniswap/uniswap-v2-periphery/blob/4123f93278b60bcf617130629c69d4016f9e7584/contracts/libraries/UniswapV2Library.sol#L53
 ///
-fn compute_uniswap_in(out: U256, shortage: &TokenContext, excess: &TokenContext) -> U256 {
-    U256::from(1000) * out * excess.reserve / (U256::from(997) * (shortage.reserve - out)) + 1
+fn compute_uniswap_in(out: U256, shortage: &TokenContext, excess: &TokenContext) -> Option<U256> {
+    U256::from(1000)
+        .checked_mul(out)?
+        .checked_mul(excess.reserve)?
+        .checked_div(U256::from(997).checked_mul(shortage.reserve.checked_sub(out)?)?)?
+        .checked_add(U256::from(1))
 }
 
 ///
@@ -326,7 +328,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone().into_iter(), &pool);
+        let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0];
@@ -382,7 +384,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone().into_iter(), &pool);
+        let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0];
@@ -434,7 +436,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone().into_iter(), &pool);
+        let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0];
@@ -490,7 +492,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.clone().into_iter(), &pool);
+        let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
         let interaction = amm_handler.calls()[0];
@@ -550,7 +552,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler.clone(),
         };
-        let result = solve(orders.into_iter(), &pool);
+        let result = solve(orders.into_iter(), &pool).unwrap();
         assert!(amm_handler.calls().is_empty());
         assert_eq!(
             result.clearing_prices,
@@ -619,7 +621,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
-        let result = solve(orders.into_iter(), &pool);
+        let result = solve(orders.into_iter(), &pool).unwrap();
 
         assert_eq!(result.trades.len(), 2);
         assert_eq!(is_valid_solution(&result), true);
@@ -657,7 +659,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
-        let result = solve(orders.into_iter(), &pool);
+        let result = solve(orders.into_iter(), &pool).unwrap();
         assert_eq!(result.trades.len(), 0);
     }
 
@@ -771,5 +773,41 @@ mod tests {
             }),
             false
         );
+    }
+
+    #[test]
+    fn does_not_panic() {
+        let token_a = Address::from_low_u64_be(0);
+        let token_b = Address::from_low_u64_be(1);
+        let orders = vec![
+            LimitOrder {
+                sell_token: token_a,
+                buy_token: token_b,
+                sell_amount: U256::MAX,
+                buy_amount: 1.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+            },
+            LimitOrder {
+                sell_token: token_b,
+                buy_token: token_a,
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: false,
+                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+            },
+        ];
+
+        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let pool = AmmOrder {
+            tokens: TokenPair::new(token_a, token_b).unwrap(),
+            reserves: (u128::MAX, u128::MAX),
+            fee: Ratio::new(3, 1000),
+            settlement_handling: amm_handler,
+        };
+        // This line should not panic.
+        solve(orders.into_iter(), &pool);
     }
 }
