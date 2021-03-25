@@ -26,3 +26,4 @@ tracing-subscriber = "0.2"
 url = "2.2"
 web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 num-bigint = "0.3"
+mockall = "0.9"

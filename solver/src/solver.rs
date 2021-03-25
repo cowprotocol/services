@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display};
+use std::{collections::HashSet, fmt::Display, sync::Arc};
 
 use crate::{
     http_solver::{HttpSolver, SolverConfig},
@@ -10,6 +10,7 @@ use crate::{
 use anyhow::Result;
 use ethcontract::H160;
 use reqwest::Url;
+use shared::token_info::TokenInfoFetching;
 use structopt::clap::arg_enum;
 
 #[async_trait::async_trait]
@@ -31,6 +32,7 @@ pub fn create(
     base_tokens: HashSet<H160>,
     native_token: H160,
     mip_solver_url: Url,
+    token_info_fetcher: Arc<dyn TokenInfoFetching>,
 ) -> Vec<Box<dyn Solver>> {
     solvers
         .into_iter()
@@ -45,6 +47,7 @@ pub fn create(
                     time_limit: 30,
                 },
                 native_token,
+                &token_info_fetcher,
             )),
         })
         .collect()

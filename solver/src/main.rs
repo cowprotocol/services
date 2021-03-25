@@ -1,7 +1,11 @@
 use contracts::WETH9;
 use ethcontract::{Account, PrivateKey};
 use reqwest::Url;
-use shared::{price_estimate::UniswapPriceEstimator, uniswap_pool::PoolFetcher};
+use shared::{
+    price_estimate::UniswapPriceEstimator,
+    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    uniswap_pool::PoolFetcher,
+};
 use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, solver::SolverType};
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -112,11 +116,15 @@ async fn main() {
         }),
         base_tokens.clone(),
     ));
+    let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
+        web3: web3.clone(),
+    })));
     let solver = solver::solver::create(
         args.solvers,
         base_tokens,
         native_token_contract.address(),
         args.mip_solver_url,
+        token_info_fetcher,
     );
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),

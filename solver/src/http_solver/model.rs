@@ -40,7 +40,7 @@ pub struct UniswapModel {
 
 #[derive(Debug, Serialize)]
 pub struct TokenInfoModel {
-    pub decimals: u32,
+    pub decimals: Option<u32>,
 }
 
 #[derive(Debug, Serialize)]

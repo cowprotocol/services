@@ -2464,6 +2464,7 @@ dependencies = [
  "gas-estimation",
  "hex-literal",
  "maplit",
+ "mockall",
  "model",
  "num",
  "num-bigint 0.3.2",
