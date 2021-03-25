@@ -28,7 +28,7 @@ Several pieces of functionality are shared between the order book and the solver
 
 - `contract` provides ethcontract based smart contract bindings
 - `model` provides the serialization model for orders in the order book api
-- `shared` provides other shared functionality between solver and order book
+- `shared` provides other shared functionality between the solver and order book
 
 ## Testing
 
@@ -73,7 +73,7 @@ At this point the database should be running and reachable. You can test connect
 psql postgresql://localhost/
 ```
 
-Finally we need to apply schema (set up in the `database` folder).
+Finally, we need to apply the schema (set up in the `database` folder).
 
 * Docker
 ```sh

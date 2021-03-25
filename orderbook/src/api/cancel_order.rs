@@ -1,15 +1,26 @@
 use crate::api::extract_payload;
 use crate::orderbook::{OrderCancellationResult, Orderbook};
 use anyhow::Result;
-use model::order::OrderCancellation;
+use model::order::{OrderCancellation, OrderUid};
+use model::Signature;
+use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 
+#[derive(Deserialize, Serialize)]
+struct CancellationPayload {
+    signature: Signature,
+}
+
 pub fn cancel_order_request(
 ) -> impl Filter<Extract = (OrderCancellation,), Error = Rejection> + Clone {
-    warp::path!("orders")
+    warp::path!("orders" / OrderUid)
         .and(warp::delete())
         .and(extract_payload())
+        .map(|uid, payload: CancellationPayload| OrderCancellation {
+            order_uid: uid,
+            signature: payload.signature,
+        })
 }
 
 pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Reply {
@@ -59,11 +70,14 @@ mod tests {
     async fn cancel_order_request_ok() {
         let filter = cancel_order_request();
         let cancellation = OrderCancellation::default();
+
         let request = request()
-            .path("/orders")
+            .path(&format!("/orders/{:}", cancellation.order_uid))
             .method("DELETE")
             .header("content-type", "application/json")
-            .json(&cancellation);
+            .json(&CancellationPayload {
+                signature: cancellation.signature,
+            });
         let result = request.filter(&filter).await.unwrap();
         assert_eq!(result, cancellation);
     }

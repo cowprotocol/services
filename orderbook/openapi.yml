@@ -360,7 +360,7 @@ components:
         partiallyFillable:
           description: Is this a fill-or-kill order or a partially fillable order?
           type: boolean
-        Signature:
+        signature:
           $ref: "#/components/schemas/Signature"
     OrderMetaData:
       description: |
