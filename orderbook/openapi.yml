@@ -466,10 +466,12 @@ components:
           type: string
           enum:
             [
-              MissingOrderData,
-              InvalidSignature,
               DuplicateOrder,
+              InvalidSignature,
+              MissingOrderData,
+              PastValidTo,
               InsufficientFunds,
+              InsufficientFee,
             ]
         description:
           type: string
