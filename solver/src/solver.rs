@@ -23,7 +23,7 @@ arg_enum! {
     pub enum SolverType {
         Naive,
         UniswapBaseline,
-        MIP,
+        Mip,
     }
 }
 
@@ -39,7 +39,7 @@ pub fn create(
         .map(|solver_type| match solver_type {
             SolverType::Naive => Box::new(NaiveSolver {}) as Box<dyn Solver>,
             SolverType::UniswapBaseline => Box::new(UniswapSolver::new(base_tokens.clone())),
-            SolverType::MIP => Box::new(HttpSolver::new(
+            SolverType::Mip => Box::new(HttpSolver::new(
                 mip_solver_url.clone(),
                 None,
                 SolverConfig {

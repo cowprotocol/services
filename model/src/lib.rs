@@ -22,7 +22,7 @@ pub struct Signature {
     pub v: u8,
 }
 
-pub trait EIP712Signing {
+pub trait Eip712Signing {
     fn digest(&self) -> [u8; 32];
     fn signature(&self) -> Signature;
 
@@ -302,10 +302,10 @@ mod tests {
 
     #[test]
     fn self_sign_with() {
-        struct TestEIP712Structure {
+        struct TestEip712Structure {
             signature: Signature,
         }
-        impl Default for TestEIP712Structure {
+        impl Default for TestEip712Structure {
             fn default() -> Self {
                 let mut result = Self {
                     signature: Default::default(),
@@ -315,8 +315,7 @@ mod tests {
                 result
             }
         }
-
-        impl EIP712Signing for TestEIP712Structure {
+        impl Eip712Signing for TestEip712Structure {
             fn digest(&self) -> [u8; 32] {
                 [0u8; 32]
             }
@@ -326,7 +325,7 @@ mod tests {
             }
         }
 
-        let test_struct = TestEIP712Structure::default();
+        let test_struct = TestEip712Structure::default();
         let key = SecretKeyRef::from(&ONE_KEY);
         test_struct.sign_self_with(&DomainSeparator::default(), &key);
         assert_eq!(

@@ -3,7 +3,7 @@
 use crate::{
     h160_hexadecimal,
     u256_decimal::{self, DecimalU256},
-    DomainSeparator, EIP712Signing, Signature, TokenPair,
+    DomainSeparator, Eip712Signing, Signature, TokenPair,
 };
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use hex_literal::hex;
@@ -205,7 +205,7 @@ impl Default for OrderCancellation {
     }
 }
 
-impl EIP712Signing for OrderCreation {
+impl Eip712Signing for OrderCreation {
     fn digest(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 320];
         hash_data[0..32].copy_from_slice(&Self::ORDER_TYPE_HASH);
@@ -244,7 +244,7 @@ impl OrderCancellation {
         hex!("7b41b3a6e2b3cae020a3b2f9cdc997e0d420643957e7fea81747e984e47c88ec");
 }
 
-impl EIP712Signing for OrderCancellation {
+impl Eip712Signing for OrderCancellation {
     fn digest(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
         hash_data[0..32].copy_from_slice(&Self::ORDER_CANCELLATION_TYPE_HASH);

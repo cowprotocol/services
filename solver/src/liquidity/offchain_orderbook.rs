@@ -20,18 +20,18 @@ impl OrderBookApi {
     }
 }
 
-impl Into<LimitOrder> for OrderCreation {
-    fn into(self) -> LimitOrder {
+impl From<OrderCreation> for LimitOrder {
+    fn from(order: OrderCreation) -> Self {
         LimitOrder {
-            sell_token: self.sell_token,
+            sell_token: order.sell_token,
             // TODO handle ETH buy token address (0xe...e) by making the handler include an WETH.unwrap() interaction
-            buy_token: self.buy_token,
+            buy_token: order.buy_token,
             // TODO discount previously executed sell amount
-            sell_amount: self.sell_amount,
-            buy_amount: self.buy_amount,
-            kind: self.kind,
-            partially_fillable: self.partially_fillable,
-            settlement_handling: Arc::new(self),
+            sell_amount: order.sell_amount,
+            buy_amount: order.buy_amount,
+            kind: order.kind,
+            partially_fillable: order.partially_fillable,
+            settlement_handling: Arc::new(order),
         }
     }
 }

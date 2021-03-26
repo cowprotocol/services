@@ -12,7 +12,7 @@ use futures::{join, TryStreamExt};
 use model::order::OrderCancellation;
 use model::{
     order::{Order, OrderCreation, OrderUid},
-    DomainSeparator, EIP712Signing,
+    DomainSeparator, Eip712Signing,
 };
 use primitive_types::{H160, U256};
 use shared::time::now_in_epoch_seconds;
