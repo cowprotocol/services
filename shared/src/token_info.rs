@@ -47,7 +47,7 @@ impl TokenInfoFetching for TokenInfoFetcher {
             .iter()
             .zip(join_all(futures).await.into_iter())
             .map(|(address, decimals)| {
-                if (decimals.is_err()) {
+                if decimals.is_err() {
                     tracing::trace!("Failed to fetch token info for token {}", address);
                 }
                 (

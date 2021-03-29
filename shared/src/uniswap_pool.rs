@@ -246,8 +246,8 @@ impl PoolFetching for PoolFetcher {
                 // Note, that a positive rebase is not problematic as k would increase in this case giving the pool excess in the elastic token (an arbitrageur could
                 // benefit by withdrawing the excess from the pool without selling anything).
                 // We therefore exclude all pools where the pool's token balance of either token in the pair is less than the cached reserve.
-                if (U256::from(reserves.0) <= token0_balance
-                    && U256::from(reserves.1) <= token1_balance)
+                if U256::from(reserves.0) <= token0_balance
+                    && U256::from(reserves.1) <= token1_balance
                 {
                     results.push(Pool::uniswap(pair, (reserves.0, reserves.1)));
                 }
