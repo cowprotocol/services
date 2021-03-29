@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use contracts::{UniswapV2Factory, UniswapV2Pair};
+use contracts::{UniswapV2Factory, UniswapV2Pair, ERC20};
 use ethcontract::{batch::CallBatch, Http, Web3, H160, U256};
 use num::{rational::Ratio, BigInt, BigRational, Zero};
 use std::sync::Arc;
@@ -212,16 +212,45 @@ impl PoolFetching for PoolFetcher {
                 let pair_contract =
                     UniswapV2Pair::at(&self.factory.raw_instance().web3(), uniswap_pair_address);
 
-                (pair, pair_contract.get_reserves().batch_call(&mut batch))
+                // Fetch ERC20 token balances of the pools to sanity check with reserves
+                let token0 = ERC20::at(&self.factory.raw_instance().web3(), pair.get().0);
+                let token1 = ERC20::at(&self.factory.raw_instance().web3(), pair.get().1);
+
+                (
+                    pair,
+                    pair_contract.get_reserves().batch_call(&mut batch),
+                    token0
+                        .balance_of(uniswap_pair_address)
+                        .batch_call(&mut batch),
+                    token1
+                        .balance_of(uniswap_pair_address)
+                        .batch_call(&mut batch),
+                )
             })
             .collect::<Vec<_>>();
 
         batch.execute_all(MAX_BATCH_SIZE).await;
 
         let mut results = Vec::with_capacity(futures.len());
-        for (pair, future) in futures {
-            if let Ok(result) = future.await {
-                results.push(Pool::uniswap(pair, (result.0, result.1)));
+        for (pair, get_reserves, token0_balance, token1_balance) in futures {
+            let reserves = get_reserves.await;
+            let token0_balance = token0_balance.await;
+            let token1_balance = token1_balance.await;
+            if let (Ok(reserves), Ok(token0_balance), Ok(token1_balance)) =
+                (reserves, token0_balance, token1_balance)
+            {
+                // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the balance of their owners without any transfer or other interaction ("rebase").
+                // Such behavior can implicitly change the *k* in the pool's constant product formula. E.g. a pool with 10 USDC and 10 AMPL has k = 100. After a negative
+                // rebase the pool's AMPL balance may reduce to 9, thus k should be implicitly updated to 90 (figuratively speaking the pool is undercollateralized).
+                // Uniswap pools however only update their reserves upon swaps. Such an "out of sync" pool has numerical issues when computing the right clearing price.
+                // Note, that a positive rebase is not problematic as k would increase in this case giving the pool excess in the elastic token (an arbitrageur could
+                // benefit by withdrawing the excess from the pool without selling anything).
+                // We therefore exclude all pools where the pool's token balance of either token in the pair is less than the cached reserve.
+                if (U256::from(reserves.0) <= token0_balance
+                    && U256::from(reserves.1) <= token1_balance)
+                {
+                    results.push(Pool::uniswap(pair, (reserves.0, reserves.1)));
+                }
             }
         }
         results
