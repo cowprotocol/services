@@ -9,9 +9,14 @@ use crate::{
 };
 use ::model::order::OrderKind;
 use anyhow::{ensure, Context, Result};
+use futures::join;
+use num::{BigRational, ToPrimitive};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
-use shared::token_info::{TokenInfo, TokenInfoFetching};
+use shared::{
+    price_estimate::PriceEstimating,
+    token_info::{TokenInfo, TokenInfoFetching},
+};
 use std::{
     collections::{HashMap, HashSet},
     fmt,
@@ -49,6 +54,7 @@ pub struct HttpSolver {
     config: SolverConfig,
     native_token: H160,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
+    price_estimator: Arc<dyn PriceEstimating>,
 }
 
 impl HttpSolver {
@@ -58,6 +64,7 @@ impl HttpSolver {
         config: SolverConfig,
         native_token: H160,
         token_info_fetcher: &Arc<dyn TokenInfoFetching>,
+        price_estimator: &Arc<dyn PriceEstimating>,
     ) -> Self {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
@@ -68,6 +75,7 @@ impl HttpSolver {
             config,
             native_token,
             token_info_fetcher: token_info_fetcher.clone(),
+            price_estimator: price_estimator.clone(),
         }
     }
 
@@ -100,15 +108,21 @@ impl HttpSolver {
         &self,
         tokens: &HashMap<String, H160>,
         token_infos: &HashMap<H160, TokenInfo>,
+        price_estimates: &HashMap<H160, Result<BigRational>>,
     ) -> HashMap<String, TokenInfoModel> {
         tokens
             .iter()
             .map(|(index, address)| {
                 let token_info = token_infos[address];
+                let external_price = price_estimates[address]
+                    .as_ref()
+                    .ok()
+                    .and_then(|price| price.to_f64());
                 (
                     index.clone(),
                     TokenInfoModel {
                         decimals: token_info.decimals.map(|d| d as u32),
+                        external_price,
                     },
                 )
             })
@@ -185,10 +199,16 @@ impl HttpSolver {
         let tokens = self.map_tokens_for_solver(liquidity.as_slice());
 
         let addresses: Vec<H160> = tokens.values().into_iter().cloned().collect();
-        let token_infos = self
-            .token_info_fetcher
-            .get_token_infos(addresses.as_slice())
-            .await;
+
+        let (token_infos, price_estimates) = join!(
+            self.token_info_fetcher
+                .get_token_infos(addresses.as_slice()),
+            self.price_estimator
+                .estimate_prices(addresses.as_slice(), addresses[0]),
+        );
+
+        let price_estimates: HashMap<H160, Result<BigRational>> =
+            addresses.iter().cloned().zip(price_estimates).collect();
 
         let mut orders = split_liquidity(liquidity);
 
@@ -202,7 +222,9 @@ impl HttpSolver {
         let limit_orders = self.map_orders_for_solver(orders.0);
         let amm_orders = self.map_amms_for_solver(orders.1);
         let model = BatchAuctionModel {
-            tokens: self.token_models(&tokens, &token_infos).await,
+            tokens: self
+                .token_models(&tokens, &token_infos, &price_estimates)
+                .await,
             orders: self.order_models(&limit_orders),
             uniswaps: self.amm_models(&amm_orders),
         };
@@ -330,6 +352,7 @@ mod tests {
     use ::model::TokenPair;
     use maplit::hashmap;
     use num::rational::Ratio;
+    use shared::price_estimate::FakePriceEstimator;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
@@ -356,6 +379,8 @@ mod tests {
             });
         let mock_token_info_fetcher: Arc<dyn TokenInfoFetching> = Arc::new(mock_token_info_fetcher);
 
+        let mock_price_estimation: Arc<dyn PriceEstimating> =
+            Arc::new(FakePriceEstimator(num::one()));
         let solver = HttpSolver::new(
             url.parse().unwrap(),
             None,
@@ -365,6 +390,7 @@ mod tests {
             },
             H160::zero(),
             &mock_token_info_fetcher,
+            &mock_price_estimation,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![

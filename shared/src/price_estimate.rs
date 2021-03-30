@@ -13,6 +13,7 @@ use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
 };
+
 const MAX_HOPS: usize = 2;
 
 #[async_trait::async_trait]
@@ -254,6 +255,18 @@ impl UniswapPriceEstimator {
                 ))
             })?,
         ))
+    }
+}
+
+pub struct FakePriceEstimator(pub BigRational);
+#[async_trait::async_trait]
+impl PriceEstimating for FakePriceEstimator {
+    async fn estimate_price(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<BigRational> {
+        Ok(self.0.clone())
+    }
+
+    async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
+        Ok(100_000.into())
     }
 }
 

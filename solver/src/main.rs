@@ -125,6 +125,7 @@ async fn main() {
         native_token_contract.address(),
         args.mip_solver_url,
         token_info_fetcher,
+        price_estimator.clone(),
     );
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),

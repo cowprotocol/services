@@ -250,29 +250,10 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
-    use model::order::OrderKind;
-    use num::BigRational;
+    use shared::price_estimate::FakePriceEstimator;
     use std::sync::Arc;
 
     use super::*;
-
-    struct FakePriceEstimator(BigRational);
-    #[async_trait::async_trait]
-    impl PriceEstimating for FakePriceEstimator {
-        async fn estimate_price(
-            &self,
-            _: H160,
-            _: H160,
-            _: U256,
-            _: OrderKind,
-        ) -> Result<BigRational> {
-            Ok(self.0.clone())
-        }
-
-        async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
-            Ok(100_000.into())
-        }
-    }
 
     struct FakeGasEstimator(Arc<Mutex<f64>>);
     #[async_trait::async_trait]

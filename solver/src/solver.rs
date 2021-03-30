@@ -10,7 +10,7 @@ use crate::{
 use anyhow::Result;
 use ethcontract::H160;
 use reqwest::Url;
-use shared::token_info::TokenInfoFetching;
+use shared::{price_estimate::PriceEstimating, token_info::TokenInfoFetching};
 use structopt::clap::arg_enum;
 
 #[async_trait::async_trait]
@@ -33,6 +33,7 @@ pub fn create(
     native_token: H160,
     mip_solver_url: Url,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
+    price_estimator: Arc<dyn PriceEstimating>,
 ) -> Vec<Box<dyn Solver>> {
     solvers
         .into_iter()
@@ -48,6 +49,7 @@ pub fn create(
                 },
                 native_token,
                 &token_info_fetcher,
+                &price_estimator,
             )),
         })
         .collect()
