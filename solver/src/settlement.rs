@@ -140,6 +140,15 @@ impl Settlement {
                 .get(&trade.order.buy_token)
                 .expect("Solution with trade but without price for buy token");
 
+            if match trade.order.kind {
+                OrderKind::Sell => &buy_token_clearing_price,
+                OrderKind::Buy => &sell_token_clearing_price,
+            }
+            .is_zero()
+            {
+                return None;
+            }
+
             let surplus = &trade.surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
             let normalized_surplus = match trade.order.kind {
                 OrderKind::Sell => surplus * buy_token_external_price / buy_token_clearing_price,
@@ -384,6 +393,41 @@ mod tests {
             settlement0.objective_value(&external_prices)
                 < settlement1.objective_value(&external_prices)
         );
+    }
+
+    #[test]
+    fn test_computing_objective_value_with_zero_prices() {
+        // Test if passing a clearing price of zero to the objective value function does
+        // not panic.
+
+        let token0 = H160::from_low_u64_be(0);
+        let token1 = H160::from_low_u64_be(1);
+
+        let order = OrderCreation {
+            sell_token: token0,
+            buy_token: token1,
+            sell_amount: 10.into(),
+            buy_amount: 9.into(),
+            kind: OrderKind::Sell,
+            ..Default::default()
+        };
+
+        let trade = Trade {
+            order,
+            executed_amount: 10.into(),
+            ..Default::default()
+        };
+
+        let clearing_prices = maplit::hashmap! {token0 => 1.into(), token1 => 0.into()};
+
+        let settlement = Settlement {
+            clearing_prices,
+            trades: vec![trade],
+            ..Default::default()
+        };
+
+        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
+        settlement.objective_value(&external_prices);
     }
 
     #[test]
