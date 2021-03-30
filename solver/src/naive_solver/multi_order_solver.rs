@@ -4,9 +4,9 @@ use crate::{
 };
 use liquidity::{AmmOrder, LimitOrder};
 use model::order::OrderKind;
-use num::{BigInt, BigRational, Zero};
+use num::{BigInt, BigRational};
 use primitive_types::U256;
-use shared::conversions::{big_rational_to_u256, u256_to_big_int, U256Ext};
+use shared::conversions::{big_rational_to_u256, u256_to_big_int, RatioExt, U256Ext};
 use std::collections::HashMap;
 use web3::types::Address;
 
@@ -123,7 +123,7 @@ fn solve_with_uniswap(
     shortage: &TokenContext,
     excess: &TokenContext,
 ) -> Option<Settlement> {
-    let uniswap_out = compute_uniswap_out(&shortage, &excess);
+    let uniswap_out = compute_uniswap_out(&shortage, &excess)?;
     let uniswap_in = compute_uniswap_in(uniswap_out.clone(), &shortage, &excess);
 
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
@@ -222,7 +222,7 @@ fn split_into_contexts(
 /// The derivation of this formula is described in https://docs.google.com/document/d/1jS22wxbCqo88fGsqEMZgRQgiAcHlPqxoMw3CJTHst6c/edit
 /// It assumes GP fee (φ) to be 1 and Uniswap fee (Φ) to be 0.997
 ///
-fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> BigRational {
+fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> Option<BigRational> {
     let numerator_minuend = 997
         * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume))
         * u256_to_big_int(&shortage.reserve);
@@ -231,11 +231,7 @@ fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> BigRat
         * u256_to_big_int(&excess.reserve);
     let denominator: BigInt = 1000 * u256_to_big_int(&excess.reserve)
         + 997 * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume));
-    assert!(
-        !denominator.is_zero(),
-        "reserve values cannot be zero (it's impossible to fully drain a pool)"
-    );
-    BigRational::new(numerator_minuend - numerator_subtrahend, denominator)
+    BigRational::new_checked(numerator_minuend - numerator_subtrahend, denominator).ok()
 }
 
 ///
