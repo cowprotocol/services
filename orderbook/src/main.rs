@@ -1,5 +1,6 @@
 use chrono::offset::Utc;
 use contracts::{GPv2Settlement, UniswapV2Factory, WETH9};
+use futures::StreamExt;
 use model::{order::OrderUid, DomainSeparator};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
@@ -10,13 +11,11 @@ use orderbook::{
     serve_task, verify_deployed_contract_constants,
 };
 use shared::{
-    current_block::current_block_stream,
+    current_block::{current_block_stream, CurrentBlockStream},
     price_estimate::UniswapPriceEstimator,
     uniswap_pool::{CachedPoolFetcher, PoolFetcher},
 };
-use std::{
-    collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
-};
+use std::{collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc};
 use structopt::StructOpt;
 use tokio::task;
 use url::Url;
@@ -41,24 +40,28 @@ struct Arguments {
     fee_discount_factor: f64,
 }
 
-const MAINTENANCE_INTERVAL: Duration = Duration::from_secs(10);
-
 pub async fn orderbook_maintenance(
     storage: Arc<Orderbook>,
     database: Database,
     settlement_contract: GPv2Settlement,
+    mut current_block_stream: CurrentBlockStream,
 ) -> ! {
-    loop {
-        tracing::debug!("running maintenance");
+    while let Some(block) = current_block_stream.next().await {
+        tracing::debug!(
+            "running maintenance on block number {:?} hash {:?}",
+            block.number,
+            block.hash
+        );
         if let Err(err) = storage.run_maintenance(&settlement_contract).await {
             tracing::error!(?err, "orderbook maintenance error");
         }
         if let Err(err) = database.remove_expired_fee_measurements(Utc::now()).await {
             tracing::error!(?err, "fee measurement maintenance error");
         }
-        tokio::time::delay_for(MAINTENANCE_INTERVAL).await;
     }
+    unreachable!()
 }
+
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
@@ -128,7 +131,7 @@ async fn main() {
             web3,
             chain_id,
         }),
-        current_block_stream,
+        current_block_stream.clone(),
     );
     let price_estimator = Arc::new(UniswapPriceEstimator::new(
         Box::new(pool_fetcher),
@@ -162,6 +165,7 @@ async fn main() {
         orderbook,
         database,
         settlement_contract,
+        current_block_stream,
     ));
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),
