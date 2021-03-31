@@ -402,6 +402,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 settlement_handling: Arc::new(MockLimitOrderSettlementHandling::new()),
+                id: "0".to_string(),
             }),
             Liquidity::Amm(AmmOrder {
                 tokens: TokenPair::new(H160::zero(), H160::from_low_u64_be(1)).unwrap(),
@@ -469,6 +470,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: Default::default(),
             settlement_handling: limit_handling.clone(),
+            id: "0".to_string(),
         })
         .collect::<Vec<_>>();
 

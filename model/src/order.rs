@@ -296,7 +296,7 @@ impl Default for OrderMetaData {
 }
 
 // uid as 56 bytes: 32 for orderDigest, 20 for ownerAddress and 4 for validTo
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OrderUid(pub [u8; 56]);
 
 impl FromStr for OrderUid {
@@ -318,6 +318,12 @@ impl Display for OrderUid {
         // Unwrap because the string is always valid utf8.
         let str = std::str::from_utf8(&bytes).unwrap();
         f.write_str(str)
+    }
+}
+
+impl fmt::Debug for OrderUid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
     }
 }
 

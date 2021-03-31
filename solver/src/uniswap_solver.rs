@@ -213,6 +213,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 settlement_handling: order_handler[0].clone(),
+                id: "0".into(),
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -223,6 +224,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 partially_fillable: false,
                 settlement_handling: order_handler[1].clone(),
+                id: "1".into(),
             },
         ];
 
@@ -311,6 +313,7 @@ mod tests {
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 settlement_handling: order_handler[0].clone(),
+                id: "0".into(),
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -321,6 +324,7 @@ mod tests {
                 kind: OrderKind::Buy,
                 partially_fillable: false,
                 settlement_handling: order_handler[1].clone(),
+                id: "1".into(),
             },
         ];
 

@@ -1,7 +1,7 @@
 use crate::orderbook::OrderBookApi;
 use crate::settlement::{Interaction, Trade};
 use anyhow::{Context, Result};
-use model::order::OrderCreation;
+use model::order::{Order, OrderCreation};
 use primitive_types::U256;
 use std::sync::Arc;
 
@@ -15,23 +15,24 @@ impl OrderBookApi {
             .await
             .context("failed to get orderbook")?
             .into_iter()
-            .map(|order| order.order_creation.into())
+            .map(|order| order.into())
             .collect())
     }
 }
 
-impl From<OrderCreation> for LimitOrder {
-    fn from(order: OrderCreation) -> Self {
+impl From<Order> for LimitOrder {
+    fn from(order: Order) -> Self {
         LimitOrder {
-            sell_token: order.sell_token,
+            id: order.order_meta_data.uid.to_string(),
+            sell_token: order.order_creation.sell_token,
             // TODO handle ETH buy token address (0xe...e) by making the handler include an WETH.unwrap() interaction
-            buy_token: order.buy_token,
+            buy_token: order.order_creation.buy_token,
             // TODO discount previously executed sell amount
-            sell_amount: order.sell_amount,
-            buy_amount: order.buy_amount,
-            kind: order.kind,
-            partially_fillable: order.partially_fillable,
-            settlement_handling: Arc::new(order),
+            sell_amount: order.order_creation.sell_amount,
+            buy_amount: order.order_creation.buy_amount,
+            kind: order.order_creation.kind,
+            partially_fillable: order.order_creation.partially_fillable,
+            settlement_handling: Arc::new(order.order_creation),
         }
     }
 }

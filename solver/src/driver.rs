@@ -107,7 +107,7 @@ impl Driver {
 
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
-        let mut limit_orders = self
+        let limit_orders = self
             .orderbook
             .get_liquidity()
             .await
@@ -115,16 +115,29 @@ impl Driver {
         tracing::debug!("got {} orders", limit_orders.len());
 
         let estimated_prices = self.collect_estimated_prices(&limit_orders).await;
-        let original_length = limit_orders.len();
-        limit_orders.retain(|lo| {
-            [lo.sell_token, lo.buy_token]
-                .iter()
-                .all(|token| estimated_prices.contains_key(token))
-        });
-        let removed_orders = original_length - limit_orders.len();
-        if removed_orders > 0 {
-            tracing::debug!("pruned {} orders", removed_orders);
+        let (limit_orders, removed_orders): (Vec<_>, Vec<_>) =
+            limit_orders.into_iter().partition(|lo| {
+                [lo.sell_token, lo.buy_token]
+                    .iter()
+                    .all(|token| estimated_prices.contains_key(token))
+            });
+        if !removed_orders.is_empty() {
+            tracing::debug!(
+                "pruned {} orders: {:?}",
+                removed_orders.len(),
+                removed_orders
+                    .iter()
+                    .map(|order| &order.id)
+                    .collect::<Vec<_>>()
+            );
         }
+        tracing::debug!(
+            "Using orders: {:?}",
+            limit_orders
+                .iter()
+                .map(|order| &order.id)
+                .collect::<Vec<_>>()
+        );
 
         let amms = self
             .uniswap_liquidity

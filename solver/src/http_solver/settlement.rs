@@ -261,6 +261,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             settlement_handling: Arc::new(limit_handling),
+            id: "0".to_string(),
         };
         let orders = hashmap! { "lo0".to_string() => limit_order };
 
