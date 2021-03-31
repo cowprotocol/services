@@ -4,9 +4,9 @@ use crate::{
 };
 use liquidity::{AmmOrder, LimitOrder};
 use model::order::OrderKind;
-use num::{rational::Ratio, BigInt, BigRational, Zero};
+use num::{rational::Ratio, BigInt, BigRational};
 use primitive_types::U256;
-use shared::conversions::{big_rational_to_u256, u256_to_big_int, U256Ext};
+use shared::conversions::{big_rational_to_u256, u256_to_big_int, RatioExt, U256Ext};
 use std::collections::HashMap;
 use web3::types::Address;
 
@@ -123,7 +123,7 @@ fn solve_with_uniswap(
     shortage: &TokenContext,
     excess: &TokenContext,
 ) -> Option<Settlement> {
-    let uniswap_out = compute_uniswap_out(&shortage, &excess, pool.fee);
+    let uniswap_out = compute_uniswap_out(&shortage, &excess, pool.fee)?;
     let uniswap_in = compute_uniswap_in(uniswap_out.clone(), &shortage, &excess, pool.fee);
 
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
@@ -226,7 +226,7 @@ fn compute_uniswap_out(
     shortage: &TokenContext,
     excess: &TokenContext,
     amm_fee: Ratio<u32>,
-) -> BigRational {
+) -> Option<BigRational> {
     let numerator_minuend = (amm_fee.denom() - amm_fee.numer())
         * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume))
         * u256_to_big_int(&shortage.reserve);
@@ -236,11 +236,7 @@ fn compute_uniswap_out(
     let denominator: BigInt = amm_fee.denom() * u256_to_big_int(&excess.reserve)
         + (amm_fee.denom() - amm_fee.numer())
             * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume));
-    assert!(
-        !denominator.is_zero(),
-        "reserve values cannot be zero (it's impossible to fully drain a pool)"
-    );
-    BigRational::new(numerator_minuend - numerator_subtrahend, denominator)
+    BigRational::new_checked(numerator_minuend - numerator_subtrahend, denominator).ok()
 }
 
 ///

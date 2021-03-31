@@ -1,6 +1,6 @@
 use anyhow::{ensure, Result};
-use num::BigInt;
 use num::{bigint::Sign, Zero};
+use num::{rational::Ratio, BigInt};
 use num::{BigRational, ToPrimitive as _};
 use primitive_types::U256;
 
@@ -35,6 +35,20 @@ pub fn big_int_to_u256(input: &BigInt) -> Result<U256> {
 }
 
 // Convenience:
+
+pub trait RatioExt<T> {
+    fn new_checked(numerator: T, denominator: T) -> Result<Ratio<T>>;
+}
+
+impl<T: num::Integer + Clone> RatioExt<T> for Ratio<T> {
+    fn new_checked(numerator: T, denominator: T) -> Result<Ratio<T>> {
+        ensure!(
+            !denominator.is_zero(),
+            "Cannot create Ratio with 0 denominator"
+        );
+        Ok(Ratio::new(numerator, denominator))
+    }
+}
 
 pub trait U256Ext {
     fn to_big_int(&self) -> BigInt;
