@@ -16,7 +16,7 @@ use primitive_types::H160;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use shared::price_estimate::PriceEstimating;
-use std::{str::FromStr, sync::Arc};
+use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
@@ -28,7 +28,7 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
-) -> impl Filter<Extract = (impl Reply,), Error = warp::Rejection> + Clone {
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
     let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
@@ -38,17 +38,28 @@ pub fn handle_all_routes(
     let get_trades = get_trades::get_trades(database);
     let cancel_order = cancel_order::cancel_order(orderbook);
     let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
-    warp::path!("api" / "v1" / ..).and(
-        create_order
-            .or(get_orders)
-            .or(fee_info)
-            .or(legacy_fee_info)
-            .or(get_order)
-            .or(get_solvable_orders)
-            .or(get_trades)
-            .or(cancel_order)
-            .or(get_amount_estimate),
-    )
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
+        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+    warp::path!("api" / "v1" / ..)
+        .and(
+            create_order
+                .or(get_orders)
+                .or(fee_info)
+                .or(legacy_fee_info)
+                .or(get_order)
+                .or(get_solvable_orders)
+                .or(get_trades)
+                .or(cancel_order)
+                .or(get_amount_estimate),
+        )
+        .recover(handle_rejection)
+        .with(cors)
+}
+
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+    Ok(err.default_response())
 }
 
 #[derive(Serialize)]

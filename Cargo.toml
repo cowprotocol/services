@@ -15,3 +15,6 @@ default-members = [
     "shared",
     "solver",
 ]
+
+[patch.crates-io]
+warp = { git = 'https://github.com/vkgnosis/warp.git', rev = "c329629f1130c190c10fa1e8ec9fb63fc81e45b0" }
