@@ -58,6 +58,7 @@ pub fn handle_all_routes(
         .with(cors)
 }
 
+// We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     Ok(err.default_response())
 }
