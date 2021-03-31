@@ -4,7 +4,7 @@ use crate::{
 };
 use liquidity::{AmmOrder, LimitOrder};
 use model::order::OrderKind;
-use num::{BigInt, BigRational, Zero};
+use num::{rational::Ratio, BigInt, BigRational, Zero};
 use primitive_types::U256;
 use shared::conversions::{big_rational_to_u256, u256_to_big_int, U256Ext};
 use std::collections::HashMap;
@@ -18,12 +18,12 @@ struct TokenContext {
     sell_volume: U256,
 }
 
-// TODO use concrete fee from AMMOrder
 impl TokenContext {
-    pub fn is_excess_after_fees(&self, deficit: &TokenContext) -> bool {
-        1000 * u256_to_big_int(&self.reserve)
+    pub fn is_excess_after_fees(&self, deficit: &TokenContext, fee: Ratio<u32>) -> bool {
+        fee.denom()
+            * u256_to_big_int(&self.reserve)
             * (u256_to_big_int(&deficit.sell_volume) - u256_to_big_int(&deficit.buy_volume))
-            < 997
+            < (fee.denom() - fee.numer())
                 * u256_to_big_int(&deficit.reserve)
                 * (u256_to_big_int(&self.sell_volume) - u256_to_big_int(&self.buy_volume))
     }
@@ -84,9 +84,9 @@ fn solve_orders(
     context_a: &TokenContext,
     context_b: &TokenContext,
 ) -> Option<Settlement> {
-    if context_a.is_excess_after_fees(&context_b) {
+    if context_a.is_excess_after_fees(&context_b, pool.fee) {
         solve_with_uniswap(orders, pool, &context_b, &context_a)
-    } else if context_b.is_excess_after_fees(&context_a) {
+    } else if context_b.is_excess_after_fees(&context_a, pool.fee) {
         solve_with_uniswap(orders, pool, &context_a, &context_b)
     } else {
         Some(solve_without_uniswap(orders, &context_a, &context_b))
@@ -123,8 +123,8 @@ fn solve_with_uniswap(
     shortage: &TokenContext,
     excess: &TokenContext,
 ) -> Option<Settlement> {
-    let uniswap_out = compute_uniswap_out(&shortage, &excess);
-    let uniswap_in = compute_uniswap_in(uniswap_out.clone(), &shortage, &excess);
+    let uniswap_out = compute_uniswap_out(&shortage, &excess, pool.fee);
+    let uniswap_in = compute_uniswap_in(uniswap_out.clone(), &shortage, &excess, pool.fee);
 
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
     let uniswap_in = big_rational_to_u256(&uniswap_in).ok()?;
@@ -220,17 +220,22 @@ fn split_into_contexts(
 /// computes the exact out_amount required from Uniswap to perfectly match demand and supply at the effective Uniswap price (the one used for that in/out swap).
 ///
 /// The derivation of this formula is described in https://docs.google.com/document/d/1jS22wxbCqo88fGsqEMZgRQgiAcHlPqxoMw3CJTHst6c/edit
-/// It assumes GP fee (φ) to be 1 and Uniswap fee (Φ) to be 0.997
+/// It assumes GP fee (φ) to be 1
 ///
-fn compute_uniswap_out(shortage: &TokenContext, excess: &TokenContext) -> BigRational {
-    let numerator_minuend = 997
+fn compute_uniswap_out(
+    shortage: &TokenContext,
+    excess: &TokenContext,
+    amm_fee: Ratio<u32>,
+) -> BigRational {
+    let numerator_minuend = (amm_fee.denom() - amm_fee.numer())
         * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume))
         * u256_to_big_int(&shortage.reserve);
-    let numerator_subtrahend = 1000
+    let numerator_subtrahend = amm_fee.denom()
         * (u256_to_big_int(&shortage.sell_volume) - u256_to_big_int(&shortage.buy_volume))
         * u256_to_big_int(&excess.reserve);
-    let denominator: BigInt = 1000 * u256_to_big_int(&excess.reserve)
-        + 997 * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume));
+    let denominator: BigInt = amm_fee.denom() * u256_to_big_int(&excess.reserve)
+        + (amm_fee.denom() - amm_fee.numer())
+            * (u256_to_big_int(&excess.sell_volume) - u256_to_big_int(&excess.buy_volume));
     assert!(
         !denominator.is_zero(),
         "reserve values cannot be zero (it's impossible to fully drain a pool)"
@@ -248,9 +253,11 @@ fn compute_uniswap_in(
     out: BigRational,
     shortage: &TokenContext,
     excess: &TokenContext,
+    amm_fee: Ratio<u32>,
 ) -> BigRational {
-    BigRational::from_integer(1000.into()) * out.clone() * u256_to_big_int(&excess.reserve)
-        / (BigRational::from_integer(997.into()) * (shortage.reserve.to_big_rational() - out))
+    U256::from(*amm_fee.denom()).to_big_rational() * out.clone() * u256_to_big_int(&excess.reserve)
+        / (U256::from(amm_fee.denom() - amm_fee.numer()).to_big_rational()
+            * (shortage.reserve.to_big_rational() - out))
 }
 
 ///
