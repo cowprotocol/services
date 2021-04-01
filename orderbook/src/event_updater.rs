@@ -1,11 +1,14 @@
 use crate::database::{
-    Database, Event as DbEvent, EventIndex as DbEventIndex, Settlement as DbSettlement,
-    Trade as DbTrade,
+    Database, Event as DbEvent, EventIndex as DbEventIndex, Invalidation as DbInvalidation,
+    Settlement as DbSettlement, Trade as DbTrade,
 };
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::{
     g_pv_2_settlement::{
-        event_data::{Settlement as ContractSettlement, Trade as ContractTrade},
+        event_data::{
+            OrderInvalidated as ContractInvalidation, Settlement as ContractSettlement,
+            Trade as ContractTrade,
+        },
         Event as ContractEvent,
     },
     GPv2Settlement,
@@ -144,9 +147,11 @@ impl EventUpdater {
                 Ok(match data {
                     ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)?),
                     ContractEvent::Settlement(event) => Some(convert_settlement(&event, &meta)),
+                    ContractEvent::OrderInvalidated(event) => {
+                        Some(convert_invalidation(&event, &meta)?)
+                    }
                     // TODO: handle new events
                     ContractEvent::Interaction(_) => None,
-                    ContractEvent::OrderInvalidated(_) => None,
                     ContractEvent::PreSignature(_) => None,
                 })
             }))
@@ -179,6 +184,21 @@ fn convert_settlement(
         transaction_hash: meta.transaction_hash,
     };
     (event_meta_to_index(meta), DbEvent::Settlement(event))
+}
+
+fn convert_invalidation(
+    invalidation: &ContractInvalidation,
+    meta: &EventMetadata,
+) -> Result<(DbEventIndex, DbEvent)> {
+    let order_uid = OrderUid(
+        invalidation
+            .order_uid
+            .as_slice()
+            .try_into()
+            .context("invalidation event order_uid has wrong number of bytes")?,
+    );
+    let event = DbInvalidation { order_uid };
+    Ok((event_meta_to_index(meta), DbEvent::Invalidation(event)))
 }
 
 // Converts EventMetaData to DbEventIndex struct
