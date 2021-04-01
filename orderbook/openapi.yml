@@ -282,6 +282,9 @@ components:
       description: Ethereum 40 byte address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    AppData:
+      description: 32 bytes encoded as hex with `0x` prefix.
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000"
     BigUint:
       description: A big unsigned integer encoded in decimal.
       type: string
@@ -337,6 +340,12 @@ components:
         buyToken:
           description: "ERC20 token to be bought"
           $ref: "#/components/schemas/Address"
+        receiver:
+          description: |
+            An optional address to receive the proceeds of the trade instead of the
+            owner (i.e. the order signer).
+          $ref: "#/components/schemas/Address"
+          nullable: true
         sellAmount:
           description: "Amount of sellToken to be sold in atoms"
           $ref: "#/components/schemas/TokenAmount"
@@ -348,9 +357,10 @@ components:
           type: integer
         appData:
           description: |
-            Arbitrary identifier sent along with the order.
-            Could be used to track the interface or other meta-aspects of the order. uint32 encoded
-          type: integer
+            Arbitrary application specific data that can be added to an order. This can
+            also be used to ensure uniqueness between two orders with otherwise the
+            exact same parameters.
+          $ref: "#/components/schemas/AppData"
         feeAmount:
           description: "Fees: feeRatio * sellAmount + minimal_fee in atoms"
           $ref: "#/components/schemas/TokenAmount"
@@ -362,6 +372,8 @@ components:
           type: boolean
         signature:
           $ref: "#/components/schemas/Signature"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
     OrderMetaData:
       description: |
         Extra order data that is returned to users when querying orders
@@ -407,6 +419,8 @@ components:
         signature:
           description: "OrderCancellation signed by owner"
           $ref: "#/components/schemas/Signature"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
     AmountEstimate:
       description: |
         Provides the information about an estimated price.
@@ -459,6 +473,10 @@ components:
     Signature:
       description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
       example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    SigningScheme:
+      description: How was the order signed?
+      type: string
+      enum: [eip712, ethsign]
     OrderPostError:
       type: object
       properties:

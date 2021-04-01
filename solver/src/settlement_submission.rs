@@ -2,7 +2,10 @@ mod gas_price_stream;
 mod retry;
 
 use self::retry::{CancelSender, SettlementSender};
-use crate::settlement::Settlement;
+use crate::{
+    encoding::{EncodedInteraction, EncodedTrade},
+    settlement::Settlement,
+};
 use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
@@ -71,12 +74,12 @@ async fn transaction_count(contract: &GPv2Settlement) -> Result<U256> {
     Ok(count)
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct EncodedSettlement {
     tokens: Vec<H160>,
     clearing_prices: Vec<U256>,
-    encoded_trades: Vec<u8>,
-    encoded_interactions: Vec<u8>,
+    encoded_trades: Vec<EncodedTrade>,
+    encoded_interactions: [Vec<EncodedInteraction>; 3],
 }
 
 fn encode_settlement(settlement: &Settlement) -> Result<EncodedSettlement> {

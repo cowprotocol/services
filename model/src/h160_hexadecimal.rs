@@ -1,6 +1,27 @@
 use primitive_types::H160;
 use serde::{de, Deserializer, Serializer};
+use serde_with::{DeserializeAs, SerializeAs};
 use std::fmt;
+
+pub struct HexadecimalH160;
+
+impl<'de> DeserializeAs<'de, H160> for HexadecimalH160 {
+    fn deserialize_as<D>(deserializer: D) -> Result<H160, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize(deserializer)
+    }
+}
+
+impl<'de> SerializeAs<H160> for HexadecimalH160 {
+    fn serialize_as<S>(source: &H160, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize(source, serializer)
+    }
+}
 
 pub fn serialize<S>(value: &H160, serializer: S) -> Result<S::Ok, S::Error>
 where

@@ -76,13 +76,7 @@ impl IntermediateSettlement {
     }
 
     fn into_settlement(self) -> Settlement {
-        let mut settlement = Settlement {
-            clearing_prices: Default::default(),
-            fee_factor: Default::default(),
-            trades: Default::default(),
-            interactions: Default::default(),
-            order_refunds: Default::default(),
-        };
+        let mut settlement = Settlement::default();
         for order in self.executed_limit_orders.iter() {
             let (trade, interactions) = order
                 .order
@@ -91,11 +85,11 @@ impl IntermediateSettlement {
             if let Some(trade) = trade {
                 settlement.trades.push(trade);
             }
-            settlement.interactions.extend(interactions);
+            settlement.intra_interactions.extend(interactions);
         }
         for amm in self.executed_amms.iter() {
             let interactions = amm.order.settlement_handling.settle(amm.input, amm.output);
-            settlement.interactions.extend(interactions);
+            settlement.intra_interactions.extend(interactions);
         }
         settlement.clearing_prices = self.prices;
         settlement
@@ -214,6 +208,7 @@ fn i128_abs_to_u256(i: i128) -> U256 {
 mod tests {
     use super::*;
     use crate::{
+        encoding::EncodedInteraction,
         http_solver::model::{ExecutedOrderModel, UpdatedUniswapModel},
         liquidity::{MockAmmSettlementHandling, MockLimitOrderSettlementHandling},
         settlement::{Interaction, Trade},
@@ -226,8 +221,8 @@ mod tests {
     #[derive(Debug)]
     struct NoopInteraction;
     impl Interaction for NoopInteraction {
-        fn encode(&self, _writer: &mut dyn std::io::Write) -> Result<()> {
-            Ok(())
+        fn encode(&self) -> Vec<EncodedInteraction> {
+            Vec::new()
         }
     }
 
@@ -308,6 +303,6 @@ mod tests {
             hashmap! { t0 => 10.into(), t1 => 11.into() }
         );
         assert_eq!(settlement.trades.len(), 1);
-        assert_eq!(settlement.interactions.len(), 2);
+        assert_eq!(settlement.intra_interactions.len(), 2);
     }
 }

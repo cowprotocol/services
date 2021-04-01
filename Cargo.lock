@@ -601,6 +601,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "ethabi-fork-ethcontract"
+version = "13.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5d14eaa8f136afb1f48707d25d1aa0dff4ba587b94908af92f7c051b54e35bad"
+dependencies = [
+ "anyhow",
+ "ethereum-types",
+ "hex",
+ "serde",
+ "serde_json",
+ "sha3",
+ "thiserror",
+ "uint",
+]
+
+[[package]]
 name = "ethbloom"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -616,9 +632,9 @@ dependencies = [
 [[package]]
 name = "ethcontract"
 version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fb97736eac4862f3b857031d7c6d16993cef861b1fcd749418c030a6e0d56910"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
 dependencies = [
+ "arrayvec",
  "ethcontract-common",
  "futures",
  "futures-timer",
@@ -638,10 +654,9 @@ dependencies = [
 [[package]]
 name = "ethcontract-common"
 version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ba288926e9b709f63307388827fddacfa7a9be4f4656e6f95cf90eb56281550"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
 dependencies = [
- "ethabi",
+ "ethabi-fork-ethcontract",
  "hex",
  "serde",
  "serde_derive",
@@ -654,8 +669,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-generate"
 version = "0.11.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38a102068fa9ba6d14ad9a35933fab2977ec6d837fbe9a333564737b3c31b724"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
 dependencies = [
  "Inflector",
  "anyhow",

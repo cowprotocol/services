@@ -38,9 +38,9 @@ fn main() {
     generate_contract(
         "GPv2Settlement",
         hashmap! {
-            1 => (Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(), Some("4e20d94594f7ae340dadb18a9b7fa10e80f0a8dae2c72c27442cb015b9b205cf".parse().unwrap())),
-            4 => (Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(), Some("0xd1030e85508042a6762598935751d38c4acd537401e2f2980c8fba5261022691".parse().unwrap())),
-            100 => (Address::from_str("4E608b7Da83f8E9213F554BDAA77C72e125529d0").unwrap(), Some("0xa1f149073825dc0ea99ce00656a54b038b739a70309193e43c2e64935828fdaa".parse().unwrap())),
+            1 => (Address::from_str("0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf").unwrap(), Some("0x34b7f9a340e663df934fcc662b3ec5fcd7cd0c93d3c46f8ce612e94fff803909".parse().unwrap())),
+            4 => (Address::from_str("0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf").unwrap(), Some("0x52badda922fd91052e6682d125daa59dea3ce5c57add5a9d362bec2d6ccfd2b1".parse().unwrap())),
+            100 => (Address::from_str("0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf").unwrap(), Some("0x95bbefbca7162435eeb71bac6960aae4d7112abce87a51ad3952d7b7af0279e3".parse().unwrap())),
         },
     );
     generate_contract("GPv2AllowListAuthentication", hashmap! {});

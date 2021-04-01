@@ -3,7 +3,7 @@ use ethcontract::prelude::{Account, Address, Http, PrivateKey, Web3, U256};
 use hex_literal::hex;
 use model::{
     order::{OrderBuilder, OrderKind},
-    DomainSeparator,
+    DomainSeparator, SigningScheme,
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher, database::Database, event_updater::EventUpdater,
@@ -178,6 +178,7 @@ async fn test_with_ganache() {
         .with_buy_amount(to_wei(80))
         .with_valid_to(u32::max_value())
         .with_kind(OrderKind::Sell)
+        .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
             &domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
@@ -198,6 +199,7 @@ async fn test_with_ganache() {
         .with_buy_amount(to_wei(40))
         .with_valid_to(u32::max_value())
         .with_kind(OrderKind::Sell)
+        .with_signing_scheme(SigningScheme::EthSign)
         .sign_with(
             &domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),

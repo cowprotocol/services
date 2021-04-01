@@ -137,8 +137,11 @@ impl EventUpdater {
                 };
                 Ok(match data {
                     ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)?),
-                    // TODO: when new contract version with this event is released:
-                    //ContractEvent::OrderInvalidated(event) => Some(convert_trade(&event, &meta)),
+                    // TODO: handle new events
+                    ContractEvent::Interaction(_) => None,
+                    ContractEvent::OrderInvalidated(_) => None,
+                    ContractEvent::PreSignature(_) => None,
+                    ContractEvent::Settlement(_) => None,
                 })
             }))
     }

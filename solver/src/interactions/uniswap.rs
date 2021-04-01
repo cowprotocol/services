@@ -1,6 +1,4 @@
-use super::encode_interaction;
-use crate::settlement::Interaction;
-use anyhow::Result;
+use crate::{encoding::EncodedInteraction, settlement::Interaction};
 use contracts::{GPv2Settlement, UniswapV2Router02, ERC20};
 use primitive_types::{H160, U256};
 
@@ -16,27 +14,25 @@ pub struct UniswapInteraction {
 }
 
 impl Interaction for UniswapInteraction {
-    fn encode(&self, writer: &mut dyn std::io::Write) -> Result<()> {
-        self.encode_approve(writer)?;
-        self.encode_swap(writer)
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        let mut result = Vec::new();
+        if self.set_allowance {
+            result.push(self.encode_approve());
+        }
+        result.push(self.encode_swap());
+        result
     }
 }
 
 impl UniswapInteraction {
-    fn encode_approve(&self, writer: &mut dyn std::io::Write) -> Result<()> {
+    fn encode_approve(&self) -> EncodedInteraction {
         let token = ERC20::at(&self.web3(), self.token_in);
-        if self.set_allowance {
-            let method = token.approve(self.contract.address(), U256::MAX);
-            encode_interaction(
-                self.token_in,
-                method.tx.data.expect("no calldata").0,
-                writer,
-            )?;
-        }
-        Ok(())
+        let method = token.approve(self.contract.address(), U256::MAX);
+        let calldata = method.tx.data.expect("no calldata").0;
+        (self.token_in, 0.into(), calldata)
     }
 
-    fn encode_swap(&self, writer: &mut dyn std::io::Write) -> Result<()> {
+    fn encode_swap(&self) -> EncodedInteraction {
         let method = self.contract.swap_exact_tokens_for_tokens(
             self.amount_in,
             self.amount_out_min,
@@ -44,11 +40,8 @@ impl UniswapInteraction {
             self.settlement.address(),
             U256::MAX,
         );
-        encode_interaction(
-            self.contract.address(),
-            method.tx.data.expect("no calldata").0,
-            writer,
-        )
+        let calldata = method.tx.data.expect("no calldata").0;
+        (self.contract.address(), 0.into(), calldata)
     }
 
     fn web3(&self) -> web3::Web3<ethcontract::transport::DynTransport> {
@@ -59,10 +52,14 @@ impl UniswapInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::encoding::tests::u8_as_32_bytes_be;
     use crate::interactions::dummy_web3;
     use hex_literal::hex;
-    use std::io::Cursor;
+
+    fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
+        let mut result = [0u8; 32];
+        result[31] = u;
+        result
+    }
 
     #[test]
     fn encode_uniswap_call() {
@@ -85,26 +82,21 @@ mod tests {
             token_in,
             token_out: H160::from_low_u64_be(token_out as u64),
         };
-        let mut cursor = Cursor::new(Vec::new());
-        interaction.encode(&mut cursor).unwrap();
+        let interactions = interaction.encode();
 
         // Verify Approve
-        let mut approve_call = cursor.into_inner();
-        assert_eq!(&approve_call[0..20], token_in.as_fixed_bytes());
-        assert_eq!(approve_call[20..23], [0, 0, 68]); // length of calldata below
-
-        let call = &approve_call[23..];
+        let approve_call = &interactions[0];
+        assert_eq!(approve_call.0, token_in);
+        let call = &approve_call.2;
         let approve_signature = hex!("095ea7b3");
         assert_eq!(call[0..4], approve_signature);
         assert_eq!(&call[16..36], contract.address().as_fixed_bytes()); //spender
         assert_eq!(call[36..68], [0xffu8; 32]); // amount
 
         // Verify Swap
-        let swap_call = approve_call.split_off(91);
-        assert_eq!(&swap_call[0..20], contract.address().as_fixed_bytes());
-        assert_eq!(swap_call[20..23], [0, 1, 4]); // length of calldata below
-
-        let call = &swap_call[23..];
+        let swap_call = &interactions[1];
+        assert_eq!(swap_call.0, contract.address());
+        let call = &swap_call.2;
         let swap_signature = [0x38u8, 0xed, 0x17, 0x39];
         let path_offset = 160;
         let path_size = 2;

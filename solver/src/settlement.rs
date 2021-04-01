@@ -1,13 +1,10 @@
-use crate::encoding;
+use crate::encoding::{self, EncodedInteraction, EncodedTrade};
 use anyhow::Result;
 use model::order::{OrderCreation, OrderKind};
 use num::{BigRational, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext;
-use std::{
-    collections::HashMap,
-    io::{Cursor, Write},
-};
+use std::collections::HashMap;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
@@ -67,7 +64,7 @@ pub trait Interaction: std::fmt::Debug + Send {
     // Write::write returns a result but we know we write to a vector in memory so we know it will
     // never fail. Then the question becomes whether interactions should be allowed to fail encoding
     // for other reasons.
-    fn encode(&self, writer: &mut dyn Write) -> Result<()>;
+    fn encode(&self) -> Vec<EncodedInteraction>;
 }
 
 #[derive(Debug, Default)]
@@ -75,8 +72,9 @@ pub struct Settlement {
     pub clearing_prices: HashMap<H160, U256>,
     pub fee_factor: U256,
     pub trades: Vec<Trade>,
-    pub interactions: Vec<Box<dyn Interaction>>,
-    pub order_refunds: Vec<()>,
+    pub pre_interactions: Vec<Box<dyn Interaction>>,
+    pub intra_interactions: Vec<Box<dyn Interaction>>,
+    pub post_interactions: Vec<Box<dyn Interaction>>,
 }
 
 impl Settlement {
@@ -89,32 +87,36 @@ impl Settlement {
     }
 
     // Returns None if a trade uses a token for which there is no price.
-    pub fn encode_trades(&self) -> Option<Vec<u8>> {
+    pub fn encode_trades(&self) -> Option<Vec<EncodedTrade>> {
         let mut token_index = HashMap::new();
         for (i, token) in self.clearing_prices.keys().enumerate() {
-            token_index.insert(token, i as u8);
+            token_index.insert(token, i);
         }
-        let mut bytes = Vec::with_capacity(encoding::TRADE_STRIDE * self.trades.len());
-        for trade in &self.trades {
-            let order = &trade.order;
-            let encoded = encoding::encode_trade(
-                &order,
-                *token_index.get(&order.sell_token)?,
-                *token_index.get(&order.buy_token)?,
-                &trade.executed_amount,
-                trade.fee_discount,
-            );
-            bytes.extend_from_slice(&encoded);
-        }
-        Some(bytes)
+        self.trades
+            .iter()
+            .map(|trade| {
+                Some(encoding::encode_trade(
+                    &trade.order,
+                    *token_index.get(&trade.order.sell_token)?,
+                    *token_index.get(&trade.order.buy_token)?,
+                    &trade.executed_amount,
+                ))
+            })
+            .collect()
     }
 
-    pub fn encode_interactions(&self) -> Result<Vec<u8>> {
-        let mut cursor = Cursor::new(Vec::new());
-        for interaction in &self.interactions {
-            interaction.encode(&mut cursor)?;
-        }
-        Ok(cursor.into_inner())
+    pub fn encode_interactions(&self) -> Result<[Vec<EncodedInteraction>; 3]> {
+        let encode = |interactions: &[Box<dyn Interaction>]| {
+            interactions
+                .iter()
+                .flat_map(|interaction| interaction.encode())
+                .collect()
+        };
+        Ok([
+            encode(&self.pre_interactions),
+            encode(&self.intra_interactions),
+            encode(&self.post_interactions),
+        ])
     }
 
     fn total_surplus(

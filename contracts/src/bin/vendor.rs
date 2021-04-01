@@ -32,11 +32,13 @@ const NPM_CONTRACTS: &[(&str, &str)] = &[
         "UniswapV2Pair.json",
     ),
     (
-        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.10/deployments/rinkeby/GPv2Settlement.json",
+        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.15/deployments/rinkeby/GPv2Settlement.json",
         "GPv2Settlement.json",
     ),
+    // We use `_Implementation` because the use of a proxy contract (https://github.com/wighawag/hardhat-deploy/blob/52be3661d74a6ba873c8bb06510e29a43a4a39c1/solc_0.7/proxy/EIP173Proxy.sol#L18)
+    // makes deploying for the e2e test more cumbersome.
     (
-        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.10/deployments/rinkeby/GPv2AllowListAuthentication.json",
+        "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.15/deployments/rinkeby/GPv2AllowListAuthentication_Implementation.json",
         "GPv2AllowListAuthentication.json",
     ),
     (

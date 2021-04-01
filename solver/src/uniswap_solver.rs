@@ -166,8 +166,9 @@ impl Solution {
             },
             fee_factor: U256::zero(),
             trades: trade.into_iter().collect(),
-            interactions,
-            order_refunds: Vec::new(),
+            intra_interactions: interactions,
+            pre_interactions: Vec::new(),
+            post_interactions: Vec::new(),
         }
     }
 }

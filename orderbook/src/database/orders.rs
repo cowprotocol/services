@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use futures::{stream::TryStreamExt, Stream};
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderUid},
-    Signature,
+    Signature, SigningScheme,
 };
 use primitive_types::H160;
 use std::{borrow::Cow, convert::TryInto};
@@ -48,28 +48,57 @@ impl DbOrderKind {
     }
 }
 
+#[derive(sqlx::Type)]
+#[sqlx(rename = "SigningScheme")]
+#[sqlx(rename_all = "lowercase")]
+pub enum DbSigningScheme {
+    Eip712,
+    EthSign,
+}
+
+impl DbSigningScheme {
+    pub fn from(signing_scheme: SigningScheme) -> Self {
+        match signing_scheme {
+            SigningScheme::Eip712 => Self::Eip712,
+            SigningScheme::EthSign => Self::EthSign,
+        }
+    }
+
+    fn into(self) -> SigningScheme {
+        match self {
+            Self::Eip712 => SigningScheme::Eip712,
+            Self::EthSign => SigningScheme::EthSign,
+        }
+    }
+}
+
 impl Database {
     pub async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
         const QUERY: &str = "\
             INSERT INTO orders (
-                uid, owner, creation_timestamp, sell_token, buy_token, sell_amount, buy_amount, \
-                valid_to, app_data, fee_amount, kind, partially_fillable, signature) \
-            VALUES ( \
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13);";
+                uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
+                valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme) \
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);";
+        let receiver = order
+            .order_creation
+            .receiver
+            .map(|address| address.as_bytes().to_vec());
         sqlx::query(QUERY)
             .bind(order.order_meta_data.uid.0.as_ref())
             .bind(order.order_meta_data.owner.as_bytes())
             .bind(order.order_meta_data.creation_date)
             .bind(order.order_creation.sell_token.as_bytes())
             .bind(order.order_creation.buy_token.as_bytes())
+            .bind(receiver)
             .bind(u256_to_big_decimal(&order.order_creation.sell_amount))
             .bind(u256_to_big_decimal(&order.order_creation.buy_amount))
             .bind(order.order_creation.valid_to)
-            .bind(order.order_creation.app_data)
+            .bind(&order.order_creation.app_data[..])
             .bind(u256_to_big_decimal(&order.order_creation.fee_amount))
             .bind(DbOrderKind::from(order.order_creation.kind))
             .bind(order.order_creation.partially_fillable)
             .bind(order.order_creation.signature.to_bytes().as_ref())
+            .bind(DbSigningScheme::from(order.order_creation.signing_scheme))
             .execute(&self.pool)
             .await
             .map(|_| ())
@@ -110,7 +139,7 @@ impl Database {
             SELECT \
                 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, \
                 o.buy_amount, o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, \
-                o.signature, \
+                o.signature, o.receiver, o.signing_scheme, \
                 COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
                 COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
                 COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
@@ -158,7 +187,7 @@ struct OrdersQueryRow {
     sell_amount: BigDecimal,
     buy_amount: BigDecimal,
     valid_to: i64,
-    app_data: i64,
+    app_data: Vec<u8>,
     fee_amount: BigDecimal,
     kind: DbOrderKind,
     partially_fillable: bool,
@@ -167,6 +196,8 @@ struct OrdersQueryRow {
     sum_buy: BigDecimal,
     sum_fee: BigDecimal,
     invalidated: bool,
+    receiver: Option<Vec<u8>>,
+    signing_scheme: DbSigningScheme,
 }
 
 impl OrdersQueryRow {
@@ -196,12 +227,16 @@ impl OrdersQueryRow {
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,
             buy_token: h160_from_vec(self.buy_token)?,
+            receiver: self.receiver.map(h160_from_vec).transpose()?,
             sell_amount: big_decimal_to_u256(&self.sell_amount)
                 .ok_or_else(|| anyhow!("sell_amount is not U256"))?,
             buy_amount: big_decimal_to_u256(&self.buy_amount)
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             valid_to: self.valid_to.try_into().context("valid_to is not u32")?,
-            app_data: self.app_data.try_into().context("app_data is not u32")?,
+            app_data: self
+                .app_data
+                .try_into()
+                .map_err(|_| anyhow!("app_data is not [u8; 32]"))?,
             fee_amount: big_decimal_to_u256(&self.fee_amount)
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             kind: self.kind.into(),
@@ -212,6 +247,7 @@ impl OrdersQueryRow {
                     .try_into()
                     .map_err(|_| anyhow!("signature has wrong length"))?,
             ),
+            signing_scheme: self.signing_scheme.into(),
         };
         Ok(Order {
             order_meta_data,
@@ -248,38 +284,42 @@ mod tests {
     #[ignore]
     async fn postgres_order_roundtrip() {
         let db = Database::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
-        let filter = OrderFilter::default();
-        assert!(db.orders(&filter).boxed().next().await.is_none());
-        let order = Order {
-            order_meta_data: OrderMetaData {
-                creation_date: DateTime::<Utc>::from_utc(
-                    NaiveDateTime::from_timestamp(1234567890, 0),
-                    Utc,
-                ),
-                ..Default::default()
-            },
-            order_creation: OrderCreation {
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                sell_amount: 3.into(),
-                buy_amount: U256::MAX,
-                valid_to: u32::MAX,
-                app_data: 4,
-                fee_amount: 5.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: true,
-                signature: Default::default(),
-            },
-        };
-        db.insert_order(&order).await.unwrap();
-        assert_eq!(
-            db.orders(&filter)
-                .try_collect::<Vec<Order>>()
-                .await
-                .unwrap(),
-            vec![order]
-        );
+        for signing_scheme in &[SigningScheme::Eip712, SigningScheme::EthSign] {
+            db.clear().await.unwrap();
+            let filter = OrderFilter::default();
+            assert!(db.orders(&filter).boxed().next().await.is_none());
+            let order = Order {
+                order_meta_data: OrderMetaData {
+                    creation_date: DateTime::<Utc>::from_utc(
+                        NaiveDateTime::from_timestamp(1234567890, 0),
+                        Utc,
+                    ),
+                    ..Default::default()
+                },
+                order_creation: OrderCreation {
+                    sell_token: H160::from_low_u64_be(1),
+                    buy_token: H160::from_low_u64_be(2),
+                    receiver: Some(H160::from_low_u64_be(6)),
+                    sell_amount: 3.into(),
+                    buy_amount: U256::MAX,
+                    valid_to: u32::MAX,
+                    app_data: [4; 32],
+                    fee_amount: 5.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: true,
+                    signature: Default::default(),
+                    signing_scheme: *signing_scheme,
+                },
+            };
+            db.insert_order(&order).await.unwrap();
+            assert_eq!(
+                db.orders(&filter)
+                    .try_collect::<Vec<Order>>()
+                    .await
+                    .unwrap(),
+                vec![order]
+            );
+        }
     }
 
     #[tokio::test]

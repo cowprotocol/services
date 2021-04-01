@@ -12,7 +12,7 @@ use futures::{join, TryStreamExt};
 use model::order::OrderCancellation;
 use model::{
     order::{Order, OrderCreation, OrderUid},
-    DomainSeparator, Eip712Signing,
+    DomainSeparator,
 };
 use primitive_types::{H160, U256};
 use shared::time::now_in_epoch_seconds;
@@ -109,7 +109,7 @@ impl Orderbook {
             None => return Ok(OrderCancellationResult::OrderNotFound),
         };
 
-        match cancellation.validate_signature(&self.domain_separator) {
+        match cancellation.validate(&self.domain_separator) {
             Some(signer) => {
                 if signer == order.order_meta_data.owner {
                     // order is already known to exist in DB at this point!

@@ -64,7 +64,12 @@ async fn run() -> Result<()> {
     deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
 
     log::info!("deploying exchange contracts");
-    let gp_authentication = deploy!(GPv2AllowListAuthentication(accounts[0]));
+    let gp_authentication = deploy!(GPv2AllowListAuthentication);
+    gp_authentication
+        .initialize_manager(accounts[0])
+        .send()
+        .await
+        .expect("failed to initialize manager");
     gp_authentication
         .add_solver(accounts[0])
         .send()

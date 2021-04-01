@@ -7,7 +7,7 @@ use ethcontract::{
     jsonrpc::types::Error as RpcError,
     transaction::{confirm::ConfirmParams, ResolveCondition},
     web3::error::Error as Web3Error,
-    GasPrice, Void,
+    GasPrice,
 };
 use primitive_types::U256;
 use transaction_retry::{TransactionResult, TransactionSending};
@@ -55,13 +55,12 @@ impl<'a> TransactionSending for SettlementSender<'a> {
 pub fn settle_method_builder(
     contract: &GPv2Settlement,
     settlement: EncodedSettlement,
-) -> DynMethodBuilder<Void> {
+) -> DynMethodBuilder<()> {
     contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
         settlement.encoded_trades,
         settlement.encoded_interactions,
-        Vec::new(),
     )
 }
 
