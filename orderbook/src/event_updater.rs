@@ -1,7 +1,13 @@
-use crate::database::{Database, Event as DbEvent, EventIndex as DbEventIndex, Trade as DbTrade};
+use crate::database::{
+    Database, Event as DbEvent, EventIndex as DbEventIndex, Settlement as DbSettlement,
+    Trade as DbTrade,
+};
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::{
-    g_pv_2_settlement::{event_data::Trade as ContractTrade, Event as ContractEvent},
+    g_pv_2_settlement::{
+        event_data::{Settlement as ContractSettlement, Trade as ContractTrade},
+        Event as ContractEvent,
+    },
     GPv2Settlement,
 };
 use ethcontract::{
@@ -137,11 +143,11 @@ impl EventUpdater {
                 };
                 Ok(match data {
                     ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)?),
+                    ContractEvent::Settlement(event) => Some(convert_settlement(&event, &meta)),
                     // TODO: handle new events
                     ContractEvent::Interaction(_) => None,
                     ContractEvent::OrderInvalidated(_) => None,
                     ContractEvent::PreSignature(_) => None,
-                    ContractEvent::Settlement(_) => None,
                 })
             }))
     }
@@ -155,17 +161,32 @@ fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(DbEvent
             .try_into()
             .context("trade event order_uid has wrong number of bytes")?,
     );
-    let index = DbEventIndex {
-        block_number: meta.block_number,
-        log_index: meta.log_index as u64,
-    };
     let event = DbTrade {
         order_uid,
         sell_amount_including_fee: trade.sell_amount,
         buy_amount: trade.buy_amount,
         fee_amount: trade.fee_amount,
     };
-    Ok((index, DbEvent::Trade(event)))
+    Ok((event_meta_to_index(meta), DbEvent::Trade(event)))
+}
+
+fn convert_settlement(
+    settlement: &ContractSettlement,
+    meta: &EventMetadata,
+) -> (DbEventIndex, DbEvent) {
+    let event = DbSettlement {
+        solver: settlement.solver,
+        transaction_hash: meta.transaction_hash,
+    };
+    (event_meta_to_index(meta), DbEvent::Settlement(event))
+}
+
+// Converts EventMetaData to DbEventIndex struct
+fn event_meta_to_index(meta: &EventMetadata) -> DbEventIndex {
+    DbEventIndex {
+        block_number: meta.block_number,
+        log_index: meta.log_index as u64,
+    }
 }
 
 // Helper type around the Web3BlockNumber that allows us to specify `BlockNumber::Latest` for range queries

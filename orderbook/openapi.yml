@@ -278,8 +278,11 @@ paths:
           description: Token non-existent or no valid price found
 components:
   schemas:
+    TransactionHash:
+      description: 32 byte digest encoded as a hex with `0x` prefix.
+      example: "0xd51f28edffcaaa76be4a22f6375ad289272c037f3cc072345676e88d92ced8b5"
     Address:
-      description: Ethereum 40 byte address encoded as a hex with `0x` prefix.
+      description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
       type: string
       example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
     AppData:
@@ -464,6 +467,10 @@ components:
         buyAmount:
           description: "Total amount of buyToken received in this trade."
           $ref: "#/components/schemas/TokenAmount"
+        transactionHash:
+          description: "Hash of the corresponding settlement transaction containing the trade (if available)."
+          $ref: "#/components/schemas/TransactionHash"
+          nullable: true
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.

@@ -2,7 +2,7 @@
 
 use crate::order::OrderUid;
 use num_bigint::BigUint;
-use primitive_types::H160;
+use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
 
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash)]
@@ -21,6 +21,8 @@ pub struct Trade {
     pub owner: H160,
     pub buy_token: H160,
     pub sell_token: H160,
+    // Settlement Data
+    pub tx_hash: Option<H256>,
 }
 
 #[cfg(test)]
@@ -41,6 +43,7 @@ mod tests {
             "owner": "0x0000000000000000000000000000000000000001",
             "sellToken": "0x000000000000000000000000000000000000000a",
             "buyToken": "0x0000000000000000000000000000000000000009",
+            "txHash": "0x0000000000000000000000000000000000000000000000000000000000000040"
         });
         let expected = Trade {
             block_number: 1337u64,
@@ -52,6 +55,7 @@ mod tests {
             owner: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(9),
             sell_token: H160::from_low_u64_be(10),
+            tx_hash: Some(H256::from_low_u64_be(64)),
         };
 
         let deserialized: Trade = serde_json::from_value(value.clone()).unwrap();
