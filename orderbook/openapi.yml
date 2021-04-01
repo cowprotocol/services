@@ -310,6 +310,9 @@ components:
         amount:
           description: Absolute amount of fee charged per order in specified sellToken
           $ref: "#/components/schemas/TokenAmount"
+      required:
+        - expirationDate
+        - amount
     LegacyFeeInformation:
       description: |
         Provides the information to calculate the fees.
@@ -329,6 +332,10 @@ components:
           example: 10
           type: number
           format: int32
+      required:
+        - expirationDate
+        - minimalFee
+        - feeRatio
     OrderType:
       description: Is this a buy order or sell order?
       type: string
@@ -377,6 +384,18 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
+      required:
+        - sellToken
+        - buyToken
+        - sellAmount
+        - buyAmount
+        - validTo
+        - appData
+        - feeAmount
+        - kind
+        - partiallyFillable
+        - signature
+        - signingScheme
     OrderMetaData:
       description: |
         Extra order data that is returned to users when querying orders
@@ -410,6 +429,15 @@ components:
         invalidated:
           description: Has this order been invalidated?
           type: boolean
+      required:
+        - creationTime
+        - owner
+        - UID
+        - executedSellAmount
+        - executedSellAmountBeforeFees
+        - executedBuyAmount
+        - executedFeeAmount
+        - invalidated
     Order:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
@@ -424,6 +452,9 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
+      required:
+        - signature
+        - signingScheme
     AmountEstimate:
       description: |
         Provides the information about an estimated price.
@@ -471,6 +502,17 @@ components:
           description: "Hash of the corresponding settlement transaction containing the trade (if available)."
           $ref: "#/components/schemas/TransactionHash"
           nullable: true
+      required:
+        - blockNumber
+        - logIndex
+        - orderUid
+        - owner
+        - sellToken
+        - buyToken
+        - sellAmount
+        - sellAmountBeforeFees
+        - buyAmount
+        - transactionHash
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
@@ -500,6 +542,9 @@ components:
             ]
         description:
           type: string
+      required:
+        - errorType
+        - description
     OrderCancellationError:
       type: object
       properties:
@@ -508,3 +553,6 @@ components:
           enum: [InvalidSignature, WrongOwner, OrderNotFound]
         description:
           type: string
+      required:
+        - errorType
+        - description
