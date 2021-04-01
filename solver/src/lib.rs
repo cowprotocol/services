@@ -12,10 +12,11 @@ pub mod uniswap_solver;
 mod util;
 
 use anyhow::Result;
-use ethcontract::{contract::MethodDefaults, Account, Http, Web3};
+use ethcontract::{contract::MethodDefaults, Account};
+use shared::Web3;
 
 pub async fn get_settlement_contract(
-    web3: &Web3<Http>,
+    web3: &Web3,
     account: Account,
 ) -> Result<contracts::GPv2Settlement> {
     let mut settlement_contract = contracts::GPv2Settlement::deployed(&web3).await?;

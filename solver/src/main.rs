@@ -4,6 +4,7 @@ use reqwest::Url;
 use shared::{
     price_estimate::UniswapPriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    transport::LoggingTransport,
     uniswap_pool::PoolFetcher,
 };
 use solver::{driver::Driver, liquidity::uniswap::UniswapLiquidity, solver::SolverType};
@@ -73,8 +74,10 @@ async fn main() {
     shared::tracing::initialize(args.shared.log_filter.as_str());
     tracing::info!("running solver with {:#?}", args);
     // TODO: custom transport that allows setting timeout
-    let transport = web3::transports::Http::new(args.shared.node_url.as_str())
-        .expect("transport creation failed");
+    let transport = LoggingTransport::new(
+        web3::transports::Http::new(args.shared.node_url.as_str())
+            .expect("transport creation failed"),
+    );
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
         .eth()

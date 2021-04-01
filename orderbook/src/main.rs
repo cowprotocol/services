@@ -13,6 +13,7 @@ use orderbook::{
 use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     price_estimate::UniswapPriceEstimator,
+    transport::LoggingTransport,
     uniswap_pool::{CachedPoolFetcher, PoolFetcher},
 };
 use std::{collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc};
@@ -68,8 +69,10 @@ async fn main() {
     shared::tracing::initialize(args.shared.log_filter.as_str());
     tracing::info!("running order book with {:#?}", args);
 
-    let transport = web3::transports::Http::new(args.shared.node_url.as_str())
-        .expect("transport creation failed");
+    let transport = LoggingTransport::new(
+        web3::transports::Http::new(args.shared.node_url.as_str())
+            .expect("transport creation failed"),
+    );
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await

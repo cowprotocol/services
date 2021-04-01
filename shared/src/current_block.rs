@@ -1,5 +1,6 @@
+use crate::Web3;
 use anyhow::{anyhow, Context as _, Result};
-use ethcontract::Http;
+
 use futures::{stream::FusedStream, Stream};
 use primitive_types::H256;
 use std::{
@@ -10,10 +11,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::watch;
-use web3::{
-    types::{BlockId, BlockNumber},
-    Web3,
-};
+use web3::types::{BlockId, BlockNumber};
 
 pub type Block = web3::types::Block<H256>;
 
@@ -29,7 +27,7 @@ const POLL_INTERVAL: Duration = Duration::from_secs(1);
 /// The stream is clonable so that we only have to poll the node once while being able to share the
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
-pub async fn current_block_stream(web3: Web3<Http>) -> Result<CurrentBlockStream> {
+pub async fn current_block_stream(web3: Web3) -> Result<CurrentBlockStream> {
     let first_block = current_block(&web3).await?;
     let first_hash = first_block.hash.ok_or_else(|| anyhow!("missing hash"))?;
 
@@ -118,7 +116,7 @@ impl FusedStream for CurrentBlockStream {
     }
 }
 
-async fn current_block(web3: &Web3<Http>) -> Result<Block> {
+async fn current_block(web3: &Web3) -> Result<Block> {
     web3.eth()
         .block(BlockId::Number(BlockNumber::Latest))
         .await
@@ -128,6 +126,8 @@ async fn current_block(web3: &Web3<Http>) -> Result<Block> {
 
 #[cfg(test)]
 mod tests {
+    use crate::transport::LoggingTransport;
+
     use super::*;
     use futures::FutureExt;
     use primitive_types::H256;
@@ -162,7 +162,7 @@ mod tests {
     #[ignore]
     async fn mainnet() {
         let node = "https://dev-openethereum.mainnet.gnosisdev.com";
-        let transport = web3::transports::Http::new(node).unwrap();
+        let transport = LoggingTransport::new(web3::transports::Http::new(node).unwrap());
         let web3 = Web3::new(transport);
         let mut stream = current_block_stream(web3).await.unwrap();
         for _ in 0..3 {

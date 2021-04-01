@@ -1,10 +1,11 @@
 use anyhow::Result;
 use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, ERC20};
-use ethcontract::{batch::CallBatch, Http, Web3};
+use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
     uniswap_pool::{PoolFetcher, PoolFetching as _},
     uniswap_solver::{path_candidates, token_path_to_pair_path},
+    Web3,
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
@@ -20,7 +21,7 @@ use super::{AmmOrder, AmmSettlementHandling, LimitOrder};
 pub struct UniswapLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: PoolFetcher,
-    web3: Web3<Http>,
+    web3: Web3,
     base_tokens: HashSet<H160>,
 }
 
@@ -37,7 +38,7 @@ impl UniswapLiquidity {
         router: UniswapV2Router02,
         gpv2_settlement: GPv2Settlement,
         base_tokens: HashSet<H160>,
-        web3: Web3<Http>,
+        web3: Web3,
         chain_id: u64,
     ) -> Self {
         Self {

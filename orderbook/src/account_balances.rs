@@ -1,11 +1,12 @@
 use anyhow::Result;
-use ethcontract::{batch::CallBatch, Http, Web3};
+use ethcontract::batch::CallBatch;
 use futures::future::{join3, join_all};
 use std::collections::HashMap;
 use std::sync::Mutex;
 
 use contracts::ERC20;
 use primitive_types::{H160, U256};
+use shared::Web3;
 
 const MAX_BATCH_SIZE: usize = 100;
 
@@ -27,7 +28,7 @@ pub trait BalanceFetching: Send + Sync {
 }
 
 pub struct Web3BalanceFetcher {
-    web3: Web3<Http>,
+    web3: Web3,
     allowance_manager: H160,
     // Mapping of address, token to balance, allowance
     balances: Mutex<HashMap<SubscriptionKey, SubscriptionValue>>,
@@ -46,7 +47,7 @@ struct SubscriptionValue {
 }
 
 impl Web3BalanceFetcher {
-    pub fn new(web3: Web3<Http>, allowance_manager: H160) -> Self {
+    pub fn new(web3: Web3, allowance_manager: H160) -> Self {
         Self {
             web3,
             allowance_manager,
@@ -148,12 +149,14 @@ impl BalanceFetching for Web3BalanceFetcher {
 mod tests {
     use super::*;
     use contracts::ERC20Mintable;
-    use ethcontract::prelude::Account;
+    use ethcontract::{prelude::Account, Http};
+    use shared::transport::LoggingTransport;
 
     #[tokio::test]
     #[ignore]
     async fn watch_testnet_balance() {
-        let http = Http::new("http://127.0.0.1:8545").expect("transport failure");
+        let http =
+            LoggingTransport::new(Http::new("http://127.0.0.1:8545").expect("transport failure"));
         let web3 = Web3::new(http);
 
         let accounts: Vec<H160> = web3.eth().accounts().await.expect("get accounts failed");

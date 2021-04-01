@@ -1,7 +1,8 @@
 use std::collections::{HashMap, HashSet};
 
+use crate::Web3;
 use contracts::{UniswapV2Factory, UniswapV2Pair, ERC20};
-use ethcontract::{batch::CallBatch, Http, Web3, H160, U256};
+use ethcontract::{batch::CallBatch, H160, U256};
 use num::{rational::Ratio, BigInt, BigRational, Zero};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -196,7 +197,7 @@ impl PoolFetching for CachedPoolFetcher {
 
 pub struct PoolFetcher {
     pub factory: UniswapV2Factory,
-    pub web3: Web3<Http>,
+    pub web3: Web3,
     pub chain_id: u64,
 }
 

@@ -14,6 +14,7 @@ use serde_json::json;
 use shared::{
     current_block::current_block_stream,
     price_estimate::UniswapPriceEstimator,
+    transport::LoggingTransport,
     uniswap_pool::{CachedPoolFetcher, PoolFetcher},
 };
 use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
@@ -32,7 +33,7 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 #[tokio::test]
 async fn test_with_ganache() {
     shared::tracing::initialize("warn,orderbook=debug,solver=debug");
-    let http = Http::new(NODE_HOST).expect("transport failure");
+    let http = LoggingTransport::new(Http::new(NODE_HOST).expect("transport failure"));
     let web3 = Web3::new(http);
     let chain_id = web3
         .eth()

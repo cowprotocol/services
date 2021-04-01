@@ -1,3 +1,4 @@
+use crate::Web3;
 use anyhow::{anyhow, Context, Result};
 use gas_estimation::{
     EthGasStation, GasNowGasStation, GasPriceEstimating, GnosisSafeGasStation,
@@ -5,7 +6,6 @@ use gas_estimation::{
 };
 use serde::de::DeserializeOwned;
 use structopt::clap::arg_enum;
-use web3::Web3;
 
 arg_enum! {
     #[derive(Debug)]
@@ -38,7 +38,7 @@ impl Transport for Client {
 
 pub async fn create_priority_estimator(
     client: &reqwest::Client,
-    web3: &Web3<web3::transports::Http>,
+    web3: &Web3,
     estimator_types: &[GasEstimatorType],
 ) -> Result<impl GasPriceEstimating> {
     let client = Client(client.clone());

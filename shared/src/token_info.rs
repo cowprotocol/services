@@ -1,6 +1,7 @@
+use crate::Web3;
 use async_trait::async_trait;
 use contracts::ERC20;
-use ethcontract::{batch::CallBatch, Http, Web3, H160};
+use ethcontract::{batch::CallBatch, H160};
 use futures::future::join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -17,7 +18,7 @@ pub struct TokenInfo {
 }
 
 pub struct TokenInfoFetcher {
-    pub web3: Web3<Http>,
+    pub web3: Web3,
 }
 
 #[automock]
