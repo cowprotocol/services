@@ -9,7 +9,7 @@ pub struct Arguments {
     #[structopt(
         long,
         env = "LOG_FILTER",
-        default_value = "warn,orderbook=debug,solver=debug,shared=debug"
+        default_value = "warn,orderbook=debug,solver=debug,shared=debug,shared::transport=info"
     )]
     pub log_filter: String,
 
