@@ -144,6 +144,7 @@ pub struct OrderCreation {
     pub sell_token: H160,
     #[serde(with = "h160_hexadecimal")]
     pub buy_token: H160,
+    #[serde(default)]
     #[serde_as(as = "Option<HexadecimalH160>")]
     pub receiver: Option<H160>,
     #[serde(with = "u256_decimal")]
