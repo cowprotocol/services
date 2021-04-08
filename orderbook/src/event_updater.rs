@@ -26,7 +26,7 @@ use web3::Web3;
 const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // When we insert new trade events into the database we will insert at most this many in one
 // transaction.
-const INSERT_EVENT_BATCH_SIZE: usize = 250;
+const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
 pub struct EventUpdater {
     contract: GPv2Settlement,
