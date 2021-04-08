@@ -162,6 +162,13 @@ pub struct OrderCreation {
     pub signing_scheme: SigningScheme,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+pub struct OrderCreationPayload {
+    #[serde(flatten)]
+    pub order_creation: OrderCreation,
+    pub from: Option<H160>,
+}
+
 impl Default for OrderCreation {
     // Custom implementation to make sure the default order is valid
     fn default() -> Self {

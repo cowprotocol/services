@@ -384,6 +384,9 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
+        from:
+          $ref: "#/components/schemas/Address"
+          nullable: true
       required:
         - sellToken
         - buyToken
@@ -539,6 +542,7 @@ components:
               PastValidTo,
               InsufficientFunds,
               InsufficientFee,
+              WrongOwner,
             ]
         description:
           type: string

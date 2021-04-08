@@ -9,7 +9,7 @@ use anyhow::Result;
 use chrono::Utc;
 use contracts::GPv2Settlement;
 use futures::{join, TryStreamExt};
-use model::order::OrderCancellation;
+use model::order::{OrderCancellation, OrderCreationPayload};
 use model::{
     order::{Order, OrderCreation, OrderUid},
     DomainSeparator,
@@ -25,6 +25,7 @@ use tokio::sync::Mutex;
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderResult {
     Added(OrderUid),
+    WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
     Forbidden,
@@ -67,7 +68,8 @@ impl Orderbook {
         }
     }
 
-    pub async fn add_order(&self, order: OrderCreation) -> Result<AddOrderResult> {
+    pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
+        let order = payload.order_creation;
         if !has_future_valid_to(shared::time::now_in_epoch_seconds(), &order) {
             return Ok(AddOrderResult::PastValidTo);
         }
@@ -82,6 +84,9 @@ impl Orderbook {
             Some(order) => order,
             None => return Ok(AddOrderResult::InvalidSignature),
         };
+        if matches!(payload.from, Some(from) if from != order.order_meta_data.owner) {
+            return Ok(AddOrderResult::WrongOwner(order.order_meta_data.owner));
+        }
         self.balance_fetcher
             .register(order.order_meta_data.owner, order.order_creation.sell_token)
             .await;
