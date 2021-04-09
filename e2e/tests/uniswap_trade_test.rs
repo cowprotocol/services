@@ -234,6 +234,7 @@ async fn test_with_ganache() {
         Duration::from_secs(1),
         Duration::from_secs(30),
         native_token,
+        Duration::from_secs(0),
     );
     driver.single_run().await.unwrap();
 

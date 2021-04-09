@@ -51,7 +51,7 @@ struct Arguments {
     #[structopt(
         long,
         env = "SETTLE_INTERVAL",
-        default_value = "30",
+        default_value = "10",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     settle_interval: Duration,
@@ -66,6 +66,17 @@ struct Arguments {
         use_delimiter = true,
     )]
     solvers: Vec<SolverType>,
+
+    /// A settlement must contain at least one order older than this duration for it to be applied.
+    /// Larger values delay individual settlements more but have a higher coincidence of wants
+    /// chance.
+    #[structopt(
+        long,
+        env = "MIN_ORDER_AGE",
+        default_value = "60",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    min_order_age: Duration,
 }
 
 #[tokio::main]
@@ -147,6 +158,7 @@ async fn main() {
         args.target_confirm_time,
         args.settle_interval,
         native_token_contract.address(),
+        args.min_order_age,
     );
     driver.run_forever().await;
 }
