@@ -4,6 +4,7 @@ pub mod conversions;
 pub mod database;
 pub mod event_updater;
 pub mod fee;
+pub mod metrics;
 pub mod orderbook;
 
 use crate::database::Database;
@@ -11,8 +12,13 @@ use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use fee::MinFeeCalculator;
+use metrics::Metrics;
 use model::DomainSeparator;
-use shared::price_estimate::PriceEstimating;
+use prometheus::Registry;
+use shared::{
+    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
+    price_estimate::PriceEstimating,
+};
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 
@@ -23,9 +29,22 @@ pub fn serve_task(
     price_estimator: Arc<dyn PriceEstimating>,
     address: SocketAddr,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(database, orderbook, fee_calculator, price_estimator);
+    let registry = Registry::default();
+    let metrics = Arc::new(Metrics::new(&registry));
+    let filter = api::handle_all_routes(
+        database,
+        orderbook,
+        fee_calculator,
+        price_estimator,
+        metrics,
+    );
+    let mut metrics_address = address;
     tracing::info!(%address, "serving order book");
-    task::spawn(warp::serve(filter).bind(address))
+    task::spawn(warp::serve(filter).bind(address));
+
+    tracing::info!(%metrics_address, "serving metrics");
+    metrics_address.set_port(DEFAULT_METRICS_PORT);
+    serve_metrics(registry, metrics_address)
 }
 
 /**

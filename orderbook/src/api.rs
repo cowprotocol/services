@@ -7,7 +7,8 @@ mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
 
-use crate::database::Database;
+use crate::metrics::{end_request, LabelledReply, Metrics};
+use crate::{database::Database, metrics::start_request};
 use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
@@ -20,7 +21,7 @@ use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
-    Filter, Rejection, Reply,
+    wrap_fn, Filter, Rejection, Reply,
 };
 
 pub fn handle_all_routes(
@@ -28,6 +29,7 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<MinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
+    metrics: Arc<Metrics>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
@@ -42,18 +44,27 @@ pub fn handle_all_routes(
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    warp::path!("api" / "v1" / ..)
-        .and(
-            create_order
-                .or(get_orders)
-                .or(fee_info)
-                .or(legacy_fee_info)
-                .or(get_order)
-                .or(get_solvable_orders)
-                .or(get_trades)
-                .or(cancel_order)
-                .or(get_amount_estimate),
-        )
+    let routes_with_labels = warp::path!("api" / "v1" / ..).and(
+        (create_order.map(|reply| LabelledReply::new(reply, "create_order")))
+            .or(get_orders.map(|reply| LabelledReply::new(reply, "get_orders")))
+            .unify()
+            .or(fee_info.map(|reply| LabelledReply::new(reply, "fee_info")))
+            .unify()
+            .or(legacy_fee_info.map(|reply| LabelledReply::new(reply, "legacy_fee_info")))
+            .unify()
+            .or(get_order.map(|reply| LabelledReply::new(reply, "get_order")))
+            .unify()
+            .or(get_solvable_orders.map(|reply| LabelledReply::new(reply, "get_solvable_orders")))
+            .unify()
+            .or(get_trades.map(|reply| LabelledReply::new(reply, "get_trades")))
+            .unify()
+            .or(cancel_order.map(|reply| LabelledReply::new(reply, "cancel_order")))
+            .unify()
+            .or(get_amount_estimate.map(|reply| LabelledReply::new(reply, "get_amount_estimate")))
+            .unify(),
+    );
+    routes_with_labels
+        .with(wrap_fn(|f| wrap_metrics(f, metrics.clone())))
         .recover(handle_rejection)
         .with(cors)
 }
@@ -61,6 +72,19 @@ pub fn handle_all_routes(
 // We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     Ok(err.default_response())
+}
+
+fn wrap_metrics<F>(
+    filter: F,
+    metrics: Arc<Metrics>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
+where
+    F: Filter<Extract = (LabelledReply,), Error = Rejection> + Clone + Send + Sync + 'static,
+{
+    warp::any()
+        .and(start_request())
+        .and(filter)
+        .map(move |timer, reply| end_request(metrics.clone(), timer, reply))
 }
 
 #[derive(Serialize)]

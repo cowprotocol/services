@@ -1724,6 +1724,7 @@ dependencies = [
  "num",
  "num-bigint 0.3.2",
  "primitive-types",
+ "prometheus",
  "reqwest",
  "secp256k1",
  "serde",
