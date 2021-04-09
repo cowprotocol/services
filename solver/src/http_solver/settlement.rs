@@ -215,7 +215,10 @@ mod tests {
     };
     use maplit::hashmap;
     use mockall::predicate::eq;
-    use model::{order::OrderCreation, TokenPair};
+    use model::{
+        order::{Order, OrderCreation},
+        TokenPair,
+    };
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -236,11 +239,14 @@ mod tests {
         limit_handling.expect_settle().returning(move |_| {
             (
                 Some(Trade {
-                    order: OrderCreation {
-                        sell_token: t0,
-                        buy_token: t1,
-                        sell_amount: 1.into(),
-                        buy_amount: 2.into(),
+                    order: Order {
+                        order_creation: OrderCreation {
+                            sell_token: t0,
+                            buy_token: t1,
+                            sell_amount: 1.into(),
+                            buy_amount: 2.into(),
+                            ..Default::default()
+                        },
                         ..Default::default()
                     },
                     ..Default::default()

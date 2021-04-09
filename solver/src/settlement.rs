@@ -1,23 +1,23 @@
 use crate::encoding::{self, EncodedInteraction, EncodedTrade};
 use anyhow::Result;
-use model::order::{OrderCreation, OrderKind};
+use model::order::{Order, OrderKind};
 use num::{BigRational, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext;
 use std::collections::HashMap;
 
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
-    pub order: OrderCreation,
+    pub order: Order,
     pub executed_amount: U256,
     pub fee_discount: u16,
 }
 
 impl Trade {
-    pub fn fully_matched(order: OrderCreation) -> Self {
-        let executed_amount = match order.kind {
-            model::order::OrderKind::Buy => order.buy_amount,
-            model::order::OrderKind::Sell => order.sell_amount,
+    pub fn fully_matched(order: Order) -> Self {
+        let executed_amount = match order.order_creation.kind {
+            model::order::OrderKind::Buy => order.order_creation.buy_amount,
+            model::order::OrderKind::Sell => order.order_creation.sell_amount,
         };
         Self {
             order,
@@ -26,7 +26,7 @@ impl Trade {
         }
     }
 
-    pub fn matched(order: OrderCreation, executed_amount: U256) -> Self {
+    pub fn matched(order: Order, executed_amount: U256) -> Self {
         Self {
             order,
             executed_amount,
@@ -40,19 +40,19 @@ impl Trade {
         sell_token_price: &BigRational,
         buy_token_price: &BigRational,
     ) -> Option<BigRational> {
-        match self.order.kind {
+        match self.order.order_creation.kind {
             model::order::OrderKind::Buy => buy_order_surplus(
                 sell_token_price,
                 buy_token_price,
-                &self.order.sell_amount.to_big_rational(),
-                &self.order.buy_amount.to_big_rational(),
+                &self.order.order_creation.sell_amount.to_big_rational(),
+                &self.order.order_creation.buy_amount.to_big_rational(),
                 &self.executed_amount.to_big_rational(),
             ),
             model::order::OrderKind::Sell => sell_order_surplus(
                 sell_token_price,
                 buy_token_price,
-                &self.order.sell_amount.to_big_rational(),
-                &self.order.buy_amount.to_big_rational(),
+                &self.order.order_creation.sell_amount.to_big_rational(),
+                &self.order.order_creation.buy_amount.to_big_rational(),
                 &self.executed_amount.to_big_rational(),
             ),
         }
@@ -96,9 +96,9 @@ impl Settlement {
             .iter()
             .map(|trade| {
                 Some(encoding::encode_trade(
-                    &trade.order,
-                    *token_index.get(&trade.order.sell_token)?,
-                    *token_index.get(&trade.order.buy_token)?,
+                    &trade.order.order_creation,
+                    *token_index.get(&trade.order.order_creation.sell_token)?,
+                    *token_index.get(&trade.order.order_creation.buy_token)?,
                     &trade.executed_amount,
                 ))
             })
@@ -126,23 +126,23 @@ impl Settlement {
         self.trades.iter().fold(Some(num::zero()), |acc, trade| {
             let sell_token_clearing_price = self
                 .clearing_prices
-                .get(&trade.order.sell_token)
+                .get(&trade.order.order_creation.sell_token)
                 .expect("Solution with trade but without price for sell token")
                 .to_big_rational();
             let buy_token_clearing_price = self
                 .clearing_prices
-                .get(&trade.order.buy_token)
+                .get(&trade.order.order_creation.buy_token)
                 .expect("Solution with trade but without price for buy token")
                 .to_big_rational();
 
             let sell_token_external_price = normalizing_prices
-                .get(&trade.order.sell_token)
+                .get(&trade.order.order_creation.sell_token)
                 .expect("Solution with trade but without price for sell token");
             let buy_token_external_price = normalizing_prices
-                .get(&trade.order.buy_token)
+                .get(&trade.order.order_creation.buy_token)
                 .expect("Solution with trade but without price for buy token");
 
-            if match trade.order.kind {
+            if match trade.order.order_creation.kind {
                 OrderKind::Sell => &buy_token_clearing_price,
                 OrderKind::Buy => &sell_token_clearing_price,
             }
@@ -152,7 +152,7 @@ impl Settlement {
             }
 
             let surplus = &trade.surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
-            let normalized_surplus = match trade.order.kind {
+            let normalized_surplus = match trade.order.order_creation.kind {
                 OrderKind::Sell => surplus * buy_token_external_price / buy_token_clearing_price,
                 OrderKind::Buy => surplus * sell_token_external_price / sell_token_clearing_price,
             };
@@ -218,21 +218,27 @@ fn sell_order_surplus(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::order::OrderKind;
+    use model::order::{OrderCreation, OrderKind};
     use num::FromPrimitive;
 
     #[test]
     pub fn encode_trades_finds_token_index() {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
-        let order0 = OrderCreation {
-            sell_token: token0,
-            buy_token: token1,
+        let order0 = Order {
+            order_creation: OrderCreation {
+                sell_token: token0,
+                buy_token: token1,
+                ..Default::default()
+            },
             ..Default::default()
         };
-        let order1 = OrderCreation {
-            sell_token: token1,
-            buy_token: token0,
+        let order1 = Order {
+            order_creation: OrderCreation {
+                sell_token: token1,
+                buy_token: token0,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let trade0 = Trade {
@@ -261,30 +267,36 @@ mod tests {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
 
-        let order0 = OrderCreation {
-            sell_token: token0,
-            buy_token: token1,
-            sell_amount: 10.into(),
-            buy_amount: 9.into(),
-            kind: OrderKind::Sell,
+        let order0 = Order {
+            order_creation: OrderCreation {
+                sell_token: token0,
+                buy_token: token1,
+                sell_amount: 10.into(),
+                buy_amount: 9.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
             ..Default::default()
         };
-        let order1 = OrderCreation {
-            sell_token: token1,
-            buy_token: token0,
-            sell_amount: 10.into(),
-            buy_amount: 9.into(),
-            kind: OrderKind::Sell,
+        let order1 = Order {
+            order_creation: OrderCreation {
+                sell_token: token1,
+                buy_token: token0,
+                sell_amount: 10.into(),
+                buy_amount: 9.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
             ..Default::default()
         };
 
         let trade0 = Trade {
-            order: order0,
+            order: order0.clone(),
             executed_amount: 10.into(),
             ..Default::default()
         };
         let trade1 = Trade {
-            order: order1,
+            order: order1.clone(),
             executed_amount: 10.into(),
             ..Default::default()
         };
@@ -296,7 +308,7 @@ mod tests {
 
         let settlement0 = Settlement {
             clearing_prices: clearing_prices0,
-            trades: vec![trade0, trade1],
+            trades: vec![trade0.clone(), trade1.clone()],
             ..Default::default()
         };
 
@@ -321,12 +333,12 @@ mod tests {
         // Case where external price vector influences ranking:
 
         let trade0 = Trade {
-            order: order0,
+            order: order0.clone(),
             executed_amount: 10.into(),
             ..Default::default()
         };
         let trade1 = Trade {
-            order: order1,
+            order: order1.clone(),
             executed_amount: 9.into(),
             ..Default::default()
         };
@@ -405,12 +417,15 @@ mod tests {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
 
-        let order = OrderCreation {
-            sell_token: token0,
-            buy_token: token1,
-            sell_amount: 10.into(),
-            buy_amount: 9.into(),
-            kind: OrderKind::Sell,
+        let order = Order {
+            order_creation: OrderCreation {
+                sell_token: token0,
+                buy_token: token1,
+                sell_amount: 10.into(),
+                buy_amount: 9.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
             ..Default::default()
         };
 

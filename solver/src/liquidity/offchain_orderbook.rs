@@ -1,7 +1,7 @@
 use crate::orderbook::OrderBookApi;
 use crate::settlement::{Interaction, Trade};
 use anyhow::{Context, Result};
-use model::order::{Order, OrderCreation};
+use model::order::Order;
 use primitive_types::U256;
 use std::sync::Arc;
 
@@ -32,13 +32,16 @@ impl From<Order> for LimitOrder {
             buy_amount: order.order_creation.buy_amount,
             kind: order.order_creation.kind,
             partially_fillable: order.order_creation.partially_fillable,
-            settlement_handling: Arc::new(order.order_creation),
+            settlement_handling: Arc::new(order),
         }
     }
 }
 
-impl LimitOrderSettlementHandling for OrderCreation {
+impl LimitOrderSettlementHandling for Order {
     fn settle(&self, executed_amount: U256) -> (Option<Trade>, Vec<Box<dyn Interaction>>) {
-        (Some(Trade::matched(*self, executed_amount)), Vec::new())
+        (
+            Some(Trade::matched(self.clone(), executed_amount)),
+            Vec::new(),
+        )
     }
 }

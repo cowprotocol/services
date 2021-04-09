@@ -262,7 +262,7 @@ fn compute_uniswap_in(
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
     for trade in solution.trades.iter() {
-        let order = trade.order;
+        let order = trade.order.order_creation;
         let buy_token_price = solution
             .clearing_prices
             .get(&order.buy_token)
@@ -691,22 +691,28 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            OrderCreation {
-                sell_token: token_a,
-                buy_token: token_b,
-                sell_amount: to_wei(10),
-                buy_amount: to_wei(8),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_a,
+                    buy_token: token_b,
+                    sell_amount: to_wei(10),
+                    buy_amount: to_wei(8),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
-            OrderCreation {
-                sell_token: token_b,
-                buy_token: token_a,
-                sell_amount: to_wei(10),
-                buy_amount: to_wei(9),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_b,
+                    buy_token: token_a,
+                    sell_amount: to_wei(10),
+                    buy_amount: to_wei(9),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
         ];
