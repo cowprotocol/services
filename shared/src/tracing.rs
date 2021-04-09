@@ -8,7 +8,7 @@ use tracing_subscriber::fmt::time::ChronoUtc;
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
 pub fn initialize(env_filter: &str) {
-    // This is what kibana uses to separate mutli line log messages.
+    // This is what kibana uses to separate multi line log messages.
     let time_format_string = "%Y-%m-%dT%H:%M:%S%.3fZ";
     tracing_subscriber::fmt::fmt()
         .with_timer(ChronoUtc::with_format(String::from(time_format_string)))

@@ -393,9 +393,9 @@ mod tests {
             .into_iter()
             .collect::<Result<Vec<_>>>()
             .unwrap();
-        assert!(prices[0] == BigRational::new(1.into(), 100.into()));
-        assert!(prices[1] == BigRational::new(1.into(), 10.into()));
-        assert!(prices[2] == BigRational::new(1.into(), 1.into()));
+        assert_eq!(prices[0], BigRational::new(1.into(), 100.into()));
+        assert_eq!(prices[1], BigRational::new(1.into(), 10.into()));
+        assert_eq!(prices[2], BigRational::new(1.into(), 1.into()));
     }
 
     #[tokio::test]

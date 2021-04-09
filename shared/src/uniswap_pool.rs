@@ -20,6 +20,10 @@ const HONEYSWAP_PAIR_INIT_CODE: [u8; 32] =
     hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93");
 const MAX_BATCH_SIZE: usize = 100;
 
+/// This type denotes `(reserve_a, reserve_b, token_b)` where
+/// `reserve_a` refers to the reserve of the excluded token.
+type RelativeReserves = (U256, U256, H160);
+
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool>;
@@ -44,22 +48,7 @@ impl Pool {
     /// Given an input amount and token, returns the maximum output amount and address of the other asset.
     /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow)
     pub fn get_amount_out(&self, token_in: H160, amount_in: U256) -> Option<(U256, H160)> {
-        // https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol#L43
-        let (reserve_in, reserve_out, token_out) = if token_in == self.tokens.get().0 {
-            (
-                U256::from(self.reserves.0),
-                U256::from(self.reserves.1),
-                self.tokens.get().1,
-            )
-        } else {
-            assert!(token_in == self.tokens.get().1, "Token not part of pool");
-            (
-                U256::from(self.reserves.1),
-                U256::from(self.reserves.0),
-                self.tokens.get().0,
-            )
-        };
-
+        let (reserve_in, reserve_out, token_out) = self.get_relative_reserves(token_in);
         Some((
             self.amount_out(amount_in, reserve_in, reserve_out)?,
             token_out,
@@ -69,25 +58,35 @@ impl Pool {
     /// Given an output amount and token, returns a required input amount and address of the other asset.
     /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow, reserve too small)
     pub fn get_amount_in(&self, token_out: H160, amount_out: U256) -> Option<(U256, H160)> {
+        let (reserve_out, reserve_in, token_in) = self.get_relative_reserves(token_out);
+        Some((
+            self.amount_in(amount_out, reserve_in, reserve_out)?,
+            token_in,
+        ))
+    }
+
+    /// Given one of the pool's two tokens, returns a tuple containing the `RelativeReserves`
+    /// along with the opposite token. That is, the elements returned are (respectively)
+    /// - the pool's reserve of token provided
+    /// - the reserve of the other token
+    /// - the pool's other token
+    /// This is essentially a helper method for shuffling values in `get_amount_in` and `get_amount_out`
+    fn get_relative_reserves(&self, token: H160) -> RelativeReserves {
         // https://github.com/Uniswap/uniswap-v2-periphery/blob/master/contracts/libraries/UniswapV2Library.sol#L53
-        let (reserve_out, reserve_in, token_in) = if token_out == self.tokens.get().0 {
+        if token == self.tokens.get().0 {
             (
                 U256::from(self.reserves.0),
                 U256::from(self.reserves.1),
                 self.tokens.get().1,
             )
         } else {
-            assert!(token_out == self.tokens.get().1, "Token not part of pool");
+            assert_eq!(token, self.tokens.get().1, "Token not part of pool");
             (
                 U256::from(self.reserves.1),
                 U256::from(self.reserves.0),
                 self.tokens.get().0,
             )
-        };
-        Some((
-            self.amount_in(amount_out, reserve_in, reserve_out)?,
-            token_in,
-        ))
+        }
     }
 
     // Given the base token returns the price (as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18)
@@ -100,7 +99,7 @@ impl Pool {
                 self.tokens.get().1,
             )
         } else {
-            assert!(base_token == self.tokens.get().1, "Token not part of pool");
+            assert_eq!(base_token, self.tokens.get().1, "Token not part of pool");
             (
                 BigInt::from(self.reserves.1),
                 BigInt::from(self.reserves.0),

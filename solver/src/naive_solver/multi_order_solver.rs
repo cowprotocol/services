@@ -210,7 +210,7 @@ fn split_into_contexts(
             sell_context.sell_volume += order.sell_amount
         }
     }
-    assert!(contexts.len() == 2, "Orders contain more than two tokens");
+    assert_eq!(contexts.len(), 2, "Orders contain more than two tokens");
     let mut contexts = contexts.drain().map(|(_, v)| v);
     (contexts.next().unwrap(), contexts.next().unwrap())
 }

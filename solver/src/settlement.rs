@@ -319,15 +319,15 @@ mod tests {
         };
 
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
-        assert!(
-            settlement0.objective_value(&external_prices)
-                == settlement1.objective_value(&external_prices)
+        assert_eq!(
+            settlement0.objective_value(&external_prices),
+            settlement1.objective_value(&external_prices)
         );
 
         let external_prices = maplit::hashmap! {token0 => r(2), token1 => r(1)};
-        assert!(
-            settlement0.objective_value(&external_prices)
-                == settlement1.objective_value(&external_prices)
+        assert_eq!(
+            settlement0.objective_value(&external_prices),
+            settlement1.objective_value(&external_prices)
         );
 
         // Case where external price vector influences ranking:
@@ -378,9 +378,9 @@ mod tests {
 
         // If the external prices of the two tokens is the same, then both settlements are symmetric.
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
-        assert!(
-            settlement0.objective_value(&external_prices)
-                == settlement1.objective_value(&external_prices)
+        assert_eq!(
+            settlement0.objective_value(&external_prices),
+            settlement1.objective_value(&external_prices)
         );
 
         // If the external price of the first token is higher, then the first settlement is preferred.

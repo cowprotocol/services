@@ -17,14 +17,14 @@ pub type Block = web3::types::Block<H256>;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
 
-/// Creates a clonable stream that yields the current block whenever it changes.
+/// Creates a cloneable stream that yields the current block whenever it changes.
 ///
 /// The stream is not guaranteed to yield *every* block individually without gaps but it does yield
 /// the newest block whenever it changes. In practice this means that if the node changes the
 /// current block in quick succession we might only observe the last block, skipping some blocks in
 /// between.
 ///
-/// The stream is clonable so that we only have to poll the node once while being able to share the
+/// The stream is cloneable so that we only have to poll the node once while being able to share the
 /// result with several consumers. Calling this function again would create a new poller so it is
 /// preferable to clone an existing stream instead.
 pub async fn current_block_stream(web3: Web3) -> Result<CurrentBlockStream> {
