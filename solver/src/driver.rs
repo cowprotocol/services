@@ -1,4 +1,4 @@
-use crate::chain;
+use crate::{chain, metrics::SolverMetrics};
 use crate::{
     liquidity::{uniswap::UniswapLiquidity, LimitOrder, Liquidity},
     orderbook::OrderBookApi,
@@ -14,7 +14,12 @@ use itertools::Itertools;
 use num::BigRational;
 use primitive_types::H160;
 use shared::price_estimate::PriceEstimating;
-use std::{cmp::Reverse, collections::HashMap, sync::Arc, time::Duration};
+use std::collections::HashMap;
+use std::{
+    cmp::Reverse,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 // There is no economic viability calculation yet so we're using an arbitrary very high cap to
 // protect against a gas estimator giving bogus results that would drain all our funds.
@@ -31,8 +36,8 @@ pub struct Driver {
     settle_interval: Duration,
     native_token: H160,
     min_order_age: Duration,
+    metrics: Arc<dyn SolverMetrics>,
 }
-
 impl Driver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -46,11 +51,12 @@ impl Driver {
         settle_interval: Duration,
         native_token: H160,
         min_order_age: Duration,
+        metrics: Arc<dyn SolverMetrics>,
     ) -> Self {
         Self {
             settlement_contract,
-            orderbook,
             uniswap_liquidity,
+            orderbook,
             price_estimator,
             solver,
             gas_price_estimator,
@@ -58,6 +64,7 @@ impl Driver {
             settle_interval,
             native_token,
             min_order_age,
+            metrics,
         }
     }
 
@@ -153,10 +160,19 @@ impl Driver {
             .chain(amms.into_iter().map(Liquidity::Amm))
             .collect();
 
-        let mut settlements: Vec<(&Box<dyn Solver>, Settlement)> =
+        self.metrics.liquidity_fetched(&liquidity);
+
+        let mut settlements: Vec<(String, Settlement)> =
             join_all(self.solver.iter().map(|solver| {
                 let liquidity = liquidity.clone();
-                async move { (solver, solver.solve(liquidity).await) }
+                let metrics = &self.metrics;
+                async move {
+                    let label = format!("{}", solver);
+                    let start_time = Instant::now();
+                    let settlement = solver.solve(liquidity).await;
+                    metrics.settlement_computed(&label, start_time);
+                    (label, settlement)
+                }
             }))
             .await
             .into_iter()
@@ -205,6 +221,7 @@ impl Driver {
                 continue;
             }
 
+            let trades = settlement.trades.clone();
             match settlement_submission::submit(
                 &self.settlement_contract,
                 self.gas_price_estimator.as_ref(),
@@ -219,6 +236,9 @@ impl Driver {
                     // Decide what is handled by orderbook service and what by us.
                     // We likely want to at least mark orders we know we have settled so that we don't
                     // attempt to settle them again when they are still in the orderbook.
+                    trades
+                        .iter()
+                        .for_each(|trade| self.metrics.order_settled(&trade.order));
                     break;
                 }
                 Err(err) => tracing::error!("{} Failed to submit settlement: {:?}", solver, err),

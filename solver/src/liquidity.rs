@@ -3,6 +3,7 @@ use num::rational::Ratio;
 use primitive_types::{H160, U256};
 use settlement::{Interaction, Trade};
 use std::sync::Arc;
+use strum_macros::{AsStaticStr, EnumVariantNames};
 
 #[cfg(test)]
 use mockall::automock;
@@ -13,7 +14,7 @@ pub mod offchain_orderbook;
 pub mod uniswap;
 
 /// Defines the different types of liquidity our solvers support
-#[derive(Clone)]
+#[derive(Clone, AsStaticStr, EnumVariantNames)]
 pub enum Liquidity {
     Limit(LimitOrder),
     Amm(AmmOrder),
