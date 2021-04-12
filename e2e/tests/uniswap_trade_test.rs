@@ -17,7 +17,7 @@ use shared::{
     transport::LoggingTransport,
     uniswap_pool::{CachedPoolFetcher, PoolFetcher},
 };
-use solver::{liquidity::uniswap::UniswapLiquidity, orderbook::OrderBookApi};
+use solver::{liquidity::uniswap::UniswapLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi};
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
@@ -235,6 +235,7 @@ async fn test_with_ganache() {
         Duration::from_secs(30),
         native_token,
         Duration::from_secs(0),
+        Arc::new(NoopMetrics::default()),
     );
     driver.single_run().await.unwrap();
 
