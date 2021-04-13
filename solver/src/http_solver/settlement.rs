@@ -125,7 +125,6 @@ fn match_prepared_and_settled_amms(
     settled_orders
         .into_iter()
         .filter(|(_, settled)| !(settled.balance_update1 == 0 && settled.balance_update2 == 0))
-        // .sorted_by_key(|su| {&su.1.exec_plan})  // How to make this work?
         .sorted_by(|a, b| a.1.exec_plan.cmp(&b.1.exec_plan))
         .map(|(index, settled)| {
             let prepared = prepared_orders
@@ -146,7 +145,6 @@ fn match_prepared_and_settled_amms(
             } else {
                 return Err(anyhow!("invalid uniswap update {:?}", settled));
             };
-            // TODO: handle execution plan.
             Ok(ExecutedAmm {
                 order: prepared,
                 input,
