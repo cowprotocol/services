@@ -21,6 +21,7 @@ pub struct OrderFilter {
     pub exclude_fully_executed: bool,
     pub exclude_invalidated: bool,
     pub exclude_insufficient_balance: bool,
+    pub exclude_unsupported_tokens: bool,
     pub uid: Option<OrderUid>,
 }
 

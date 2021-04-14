@@ -410,9 +410,6 @@ mod tests {
         )
         .await;
         assert_trades(&db, &TradeFilter::default(), &[trade_a, trade_b]).await;
-
-        // TODO - drop orders and make last assertion again.
-        // Then remove test postgres_trades_with_same_settlement_no_orders
     }
 
     #[tokio::test]

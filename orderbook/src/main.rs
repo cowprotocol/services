@@ -10,6 +10,7 @@ use orderbook::{
     orderbook::Orderbook,
     serve_task, verify_deployed_contract_constants,
 };
+use shared::uniswap_pool::FilteredPoolFetcher;
 use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     price_estimate::UniswapPriceEstimator,
@@ -123,12 +124,20 @@ async fn main() {
     .await
     .expect("failed to create gas price estimator");
 
+    let unsupported_tokens = HashSet::from_iter(args.shared.unsupported_tokens);
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token.address());
+    assert!(
+        unsupported_tokens
+            .intersection(&base_tokens)
+            .collect::<HashSet<_>>()
+            .is_empty(),
+        "Base tokens include at least one unsupported token!"
+    );
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
-    let pool_fetcher = CachedPoolFetcher::new(
+    let cached_pool_fetcher = CachedPoolFetcher::new(
         Box::new(PoolFetcher {
             factory: uniswap_factory,
             web3,
@@ -136,6 +145,8 @@ async fn main() {
         }),
         current_block_stream.clone(),
     );
+    let pool_fetcher =
+        FilteredPoolFetcher::new(Box::new(cached_pool_fetcher), unsupported_tokens.clone());
     let price_estimator = Arc::new(UniswapPriceEstimator::new(
         Box::new(pool_fetcher),
         base_tokens,
@@ -154,6 +165,7 @@ async fn main() {
         event_updater,
         Box::new(balance_fetcher),
         fee_calculator.clone(),
+        unsupported_tokens,
     ));
     check_database_connection(orderbook.as_ref()).await;
 

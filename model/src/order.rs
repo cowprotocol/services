@@ -14,6 +14,7 @@ use secp256k1::key::ONE_KEY;
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use serde_with::serde_as;
+use std::collections::HashSet;
 use std::fmt::{self, Display};
 use std::str::FromStr;
 use web3::signing::{self, Key, SecretKeyRef};
@@ -55,6 +56,10 @@ impl Order {
             },
             order_creation,
         })
+    }
+    pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
+        token_list.contains(&self.order_creation.buy_token)
+            || token_list.contains(&self.order_creation.sell_token)
     }
 }
 
@@ -428,6 +433,7 @@ mod tests {
     use super::*;
     use chrono::NaiveDateTime;
     use hex_literal::hex;
+    use maplit::hashset;
     use primitive_types::H256;
     use secp256k1::{PublicKey, Secp256k1, SecretKey};
     use serde_json::json;
@@ -586,6 +592,24 @@ mod tests {
         let expected = "0x01000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000ff";
         assert_eq!(uid.to_string(), expected);
         assert_eq!(format!("{}", uid), expected);
+    }
+
+    #[test]
+    fn order_contains_token_from() {
+        let order = Order::default();
+        assert_eq!(
+            order.contains_token_from(&hashset!(order.order_creation.sell_token)),
+            true
+        );
+        assert_eq!(
+            order.contains_token_from(&hashset!(order.order_creation.buy_token)),
+            true
+        );
+        assert_eq!(order.contains_token_from(&HashSet::new()), false);
+        let other_token = H160::from_low_u64_be(1);
+        assert_ne!(other_token, order.order_creation.sell_token);
+        assert_ne!(other_token, order.order_creation.buy_token);
+        assert_eq!(order.contains_token_from(&hashset!(other_token)), false);
     }
 
     pub fn h160_from_public_key(key: PublicKey) -> H160 {

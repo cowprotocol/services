@@ -46,6 +46,10 @@ pub struct Arguments {
     /// Should be the most liquid tokens of the given network.
     #[structopt(long, env = "BASE_TOKENS", use_delimiter = true)]
     pub base_tokens: Vec<H160>,
+
+    /// List of token addresses to be ignored throughout service
+    #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
+    pub unsupported_tokens: Vec<H160>,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

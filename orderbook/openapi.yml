@@ -87,6 +87,12 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: includeUnsupportedTokens
+          in: query
+          description: Should the orders containing unsupported tokens be included?
+          schema:
+            type: boolean
+            default: false
         - name: minValidTo
           in: query
           description: |
@@ -548,6 +554,7 @@ components:
               PastValidTo,
               InsufficientFunds,
               InsufficientFee,
+              UnsupportedToken,
               WrongOwner,
             ]
         description:

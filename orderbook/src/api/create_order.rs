@@ -15,6 +15,10 @@ pub fn create_order_request(
 pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
     let (body, status_code) = match result {
         Ok(AddOrderResult::Added(uid)) => (warp::reply::json(&uid), StatusCode::CREATED),
+        Ok(AddOrderResult::UnsupportedToken(token)) => (
+            super::error("UnsupportedToken", format!("Token address {}", token)),
+            StatusCode::BAD_REQUEST,
+        ),
         Ok(AddOrderResult::WrongOwner(owner)) => (
             super::error(
                 "WrongOwner",

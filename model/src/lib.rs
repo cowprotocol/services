@@ -171,6 +171,11 @@ impl TokenPair {
         }
     }
 
+    /// Used to determine if `token` is among the pair.
+    pub fn contains(&self, token: &H160) -> bool {
+        self.0 == *token || self.1 == *token
+    }
+
     /// The first address is always the lower one.
     /// The addresses are never equal.
     pub fn get(&self) -> (H160, H160) {

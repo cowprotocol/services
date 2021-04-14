@@ -1481,6 +1481,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "lazy_static",
+ "maplit",
  "num-bigint 0.3.2",
  "primitive-types",
  "secp256k1",

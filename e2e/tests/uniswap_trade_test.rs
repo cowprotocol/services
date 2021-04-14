@@ -161,6 +161,7 @@ async fn test_with_ganache() {
         event_updater,
         Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
         fee_calculator.clone(),
+        HashSet::new(),
     ));
 
     orderbook::serve_task(

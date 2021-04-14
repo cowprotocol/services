@@ -277,13 +277,17 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::uniswap_pool::{Pool, PoolFetching};
+    use crate::uniswap_pool::{FilteredPoolFetcher, Pool, PoolFetching};
 
     struct FakePoolFetcher(Vec<Pool>);
     #[async_trait::async_trait]
     impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, _: HashSet<TokenPair>) -> Vec<Pool> {
-            self.0.clone()
+        async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+            self.0
+                .clone()
+                .into_iter()
+                .filter(|pool| token_pairs.contains(&pool.tokens))
+                .collect()
         }
     }
 
@@ -409,6 +413,42 @@ mod tests {
             .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
             .await
             .is_err());
+    }
+
+    #[tokio::test]
+    async fn return_error_if_token_denied() {
+        let token_a = H160::from_low_u64_be(1);
+        let token_b = H160::from_low_u64_be(2);
+        let pool_ab = Pool::uniswap(
+            TokenPair::new(token_a, token_b).unwrap(),
+            (10u128.pow(30), 10u128.pow(29)),
+        );
+        let pool_fetcher =
+            FilteredPoolFetcher::new(Box::new(FakePoolFetcher(vec![pool_ab])), hashset!(token_a));
+        let estimator = UniswapPriceEstimator::new(Box::new(pool_fetcher), hashset!());
+
+        let result = estimator
+            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            format!(
+                "No valid path found between {:#x} and {:#x}",
+                token_a, token_b
+            ),
+            result.to_string()
+        );
+        let result = estimator
+            .estimate_price(token_b, token_a, 1.into(), OrderKind::Buy)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            format!(
+                "No valid path found between {:#x} and {:#x}",
+                token_b, token_a
+            ),
+            result.to_string()
+        );
     }
 
     #[tokio::test]
