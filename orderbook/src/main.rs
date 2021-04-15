@@ -114,7 +114,8 @@ async fn main() {
 
     let event_updater =
         EventUpdater::new(settlement_contract.clone(), database.clone(), sync_start);
-    let balance_fetcher = Web3BalanceFetcher::new(web3.clone(), gp_allowance);
+    let balance_fetcher =
+        Web3BalanceFetcher::new(web3.clone(), gp_allowance, settlement_contract.address());
 
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),

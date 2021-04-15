@@ -22,6 +22,7 @@ ethcontract = { version = "0.11", default-features = false }
 futures = "0.3.14"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.0", features = ["web3_"] }
 hex = { version = "0.4", default-features = false }
+hex-literal = "0.3"
 maplit = "1.0"
 model = { path = "../model" }
 num-bigint = "0.3"
@@ -42,6 +43,5 @@ web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 num = "0.4"
 
 [dev-dependencies]
-hex-literal = "0.3"
 secp256k1 = "0.20"
 mockall = "0.9"

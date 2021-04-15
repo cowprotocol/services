@@ -163,7 +163,11 @@ async fn test_with_ganache() {
         domain_separator,
         db.clone(),
         event_updater,
-        Box::new(Web3BalanceFetcher::new(web3.clone(), gp_allowance)),
+        Box::new(Web3BalanceFetcher::new(
+            web3.clone(),
+            gp_allowance,
+            gp_settlement.address(),
+        )),
         fee_calculator.clone(),
         HashSet::new(),
     ));

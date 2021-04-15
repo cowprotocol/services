@@ -1,12 +1,11 @@
 use anyhow::Result;
+use contracts::ERC20;
 use ethcontract::batch::CallBatch;
 use futures::future::{join3, join_all};
-use std::collections::HashMap;
-use std::sync::Mutex;
-
-use contracts::ERC20;
 use primitive_types::{H160, U256};
 use shared::Web3;
+use std::{collections::HashMap, sync::Mutex};
+use web3::types::{BlockId, BlockNumber, CallRequest};
 
 const MAX_BATCH_SIZE: usize = 100;
 
@@ -25,11 +24,19 @@ pub trait BalanceFetching: Send + Sync {
 
     // Called periodically to perform potential updates on registered balances
     async fn update(&self);
+
+    // Check if the allowance manager would be able to call transfer_from with these parameters.
+    // This is useful for tokens that are not consistent about their internal checks and what they
+    // report as balance and allowance. By checking whether the actual transfer would suceed we can
+    // be more certain (but still not 100%) that the balance really is available to the settlement
+    // contract.
+    async fn can_transfer(&self, token: H160, from: H160, amount: U256) -> bool;
 }
 
 pub struct Web3BalanceFetcher {
     web3: Web3,
     allowance_manager: H160,
+    settlement_contract: H160,
     // Mapping of address, token to balance, allowance
     balances: Mutex<HashMap<SubscriptionKey, SubscriptionValue>>,
 }
@@ -47,10 +54,11 @@ struct SubscriptionValue {
 }
 
 impl Web3BalanceFetcher {
-    pub fn new(web3: Web3, allowance_manager: H160) -> Self {
+    pub fn new(web3: Web3, allowance_manager: H160, settlement_contract: H160) -> Self {
         Self {
             web3,
             allowance_manager,
+            settlement_contract,
             balances: Default::default(),
         }
     }
@@ -143,6 +151,34 @@ impl BalanceFetching for Web3BalanceFetcher {
         };
         let _ = self._register_many(subscriptions.into_iter()).await;
     }
+
+    async fn can_transfer(&self, token: H160, from: H160, amount: U256) -> bool {
+        let instance = ERC20::at(&self.web3, token);
+        let calldata = instance
+            .transfer_from(from, self.settlement_contract, amount)
+            .tx
+            .data
+            .unwrap();
+        let call_request = CallRequest {
+            from: Some(self.allowance_manager),
+            to: Some(token),
+            data: Some(calldata),
+            ..Default::default()
+        };
+        let block = Some(BlockId::Number(BlockNumber::Latest));
+        let response = self.web3.eth().call(call_request, block).await;
+        response
+            .map(|bytes| is_empty_or_truthy(bytes.0.as_slice()))
+            .unwrap_or(false)
+    }
+}
+
+fn is_empty_or_truthy(bytes: &[u8]) -> bool {
+    match bytes.len() {
+        0 => true,
+        32 => bytes.iter().any(|byte| *byte > 0),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -150,7 +186,45 @@ mod tests {
     use super::*;
     use contracts::ERC20Mintable;
     use ethcontract::{prelude::Account, Http};
+    use hex_literal::hex;
     use shared::transport::LoggingTransport;
+
+    #[tokio::test]
+    #[ignore]
+    async fn rinkeby_can_transfer() {
+        let http = LoggingTransport::new(
+            Http::new("https://dev-openethereum.rinkeby.gnosisdev.com/").unwrap(),
+        );
+        let web3 = Web3::new(http);
+        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let allowance = settlement.allowance_manager().call().await.unwrap();
+        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
+        let owner = H160(hex!("52DF85E9De71aa1C210873bcF37EC46d36c99dc2"));
+        let token = H160(hex!("5592ec0cfb4dbc12d3ab100b257153436a1f0fea"));
+
+        let result = fetcher.can_transfer(token, owner, 1000.into()).await;
+        assert!(result);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn mainnet_cannot_transfer() {
+        let http = LoggingTransport::new(
+            Http::new("https://dev-openethereum.mainnet.gnosisdev.com/").unwrap(),
+        );
+        let web3 = Web3::new(http);
+        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let allowance = settlement.allowance_manager().call().await.unwrap();
+        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
+        let owner = H160(hex!("c978f4364c03a00352e8c7d9619b42e26b6424ab"));
+        let token = H160(hex!("c12d1c73ee7dc3615ba4e37e4abfdbddfa38907e"));
+
+        // The owner has balance and approval but still the transfer fails.
+        fetcher.register(owner, token).await;
+        assert!(fetcher.get_balance(owner, token).unwrap() >= U256::from(1000));
+        let result = fetcher.can_transfer(token, owner, 1000.into()).await;
+        assert!(!result);
+    }
 
     #[tokio::test]
     #[ignore]
@@ -169,7 +243,8 @@ mod tests {
             .await
             .expect("MintableERC20 deployment failed");
 
-        let fetcher = Web3BalanceFetcher::new(web3, allowance_target.address());
+        let fetcher =
+            Web3BalanceFetcher::new(web3, allowance_target.address(), H160::from_low_u64_be(1));
 
         // Not available until registered
         assert_eq!(fetcher.get_balance(trader.address(), token.address()), None,);
