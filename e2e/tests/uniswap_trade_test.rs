@@ -1,5 +1,8 @@
-use contracts::{ERC20Mintable, UniswapV2Factory, UniswapV2Router02};
-use ethcontract::prelude::{Account, Address, Http, PrivateKey, Web3, U256};
+use contracts::{ERC20Mintable, UniswapV2Factory, UniswapV2Router02, WETH9};
+use ethcontract::{
+    prelude::{Account, Address, Http, PrivateKey, U256},
+    H160,
+};
 use hex_literal::hex;
 use model::{
     order::{OrderBuilder, OrderKind},
@@ -16,6 +19,7 @@ use shared::{
     price_estimate::UniswapPriceEstimator,
     transport::LoggingTransport,
     uniswap_pool::{CachedPoolFetcher, PoolFetcher},
+    Web3,
 };
 use solver::{liquidity::uniswap::UniswapLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi};
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
@@ -228,10 +232,10 @@ async fn test_with_ganache() {
     let mut driver = solver::driver::Driver::new(
         gp_settlement.clone(),
         uniswap_liquidity,
-        create_orderbook_api(),
+        create_orderbook_api(&web3),
         price_estimator,
         vec![Box::new(solver)],
-        Box::new(web3),
+        Box::new(web3.clone()),
         Duration::from_secs(1),
         Duration::from_secs(30),
         native_token,
@@ -258,7 +262,7 @@ async fn test_with_ganache() {
     // Drive orderbook in order to check the removal of settled order_b
     orderbook.run_maintenance(&gp_settlement).await.unwrap();
 
-    let orders = create_orderbook_api().get_orders().await.unwrap();
+    let orders = create_orderbook_api(&web3).get_orders().await.unwrap();
     assert!(orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
@@ -269,9 +273,11 @@ fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::from(10).pow(18.into())
 }
 
-fn create_orderbook_api() -> OrderBookApi {
+fn create_orderbook_api(web3: &Web3) -> OrderBookApi {
+    let native_token = WETH9::at(web3, H160([0x42; 20]));
     solver::orderbook::OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         std::time::Duration::from_secs(10),
+        native_token,
     )
 }

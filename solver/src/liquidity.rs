@@ -7,6 +7,8 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 
 #[cfg(test)]
 use mockall::automock;
+#[cfg(test)]
+use model::order::Order;
 
 use crate::settlement;
 
@@ -31,6 +33,18 @@ pub struct LimitOrder {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub settlement_handling: Arc<dyn LimitOrderSettlementHandling>,
+}
+
+#[cfg(test)]
+impl From<Order> for LimitOrder {
+    fn from(order: Order) -> Self {
+        use self::offchain_orderbook::normalize_limit_order;
+        use crate::interactions::dummy_web3;
+        use contracts::WETH9;
+
+        let native_token = WETH9::at(&dummy_web3::dummy_web3(), H160([0x42; 20]));
+        normalize_limit_order(order, native_token)
+    }
 }
 
 /// Specifies how a limit order fulfillment translates into Trade and Interactions for the settlement
