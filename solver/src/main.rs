@@ -77,7 +77,7 @@ struct Arguments {
     #[structopt(
         long,
         env = "MIN_ORDER_AGE",
-        default_value = "60",
+        default_value = "30",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     min_order_age: Duration,
