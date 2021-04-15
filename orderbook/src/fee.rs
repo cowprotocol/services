@@ -250,18 +250,11 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 mod tests {
     use chrono::Duration;
+    use shared::gas_price_estimation::FakeGasPriceEstimator;
     use shared::price_estimate::FakePriceEstimator;
     use std::sync::Arc;
 
     use super::*;
-
-    struct FakeGasEstimator(Arc<Mutex<f64>>);
-    #[async_trait::async_trait]
-    impl GasPriceEstimating for FakeGasEstimator {
-        async fn estimate_with_limits(&self, _: f64, _: std::time::Duration) -> Result<f64> {
-            Ok(*self.0.lock().unwrap())
-        }
-    }
 
     impl MinFeeCalculator {
         fn new_for_test(
@@ -285,13 +278,13 @@ mod tests {
         let gas_price = Arc::new(Mutex::new(100.0));
         let time = Arc::new(Mutex::new(Utc::now()));
 
-        let gas_estimator = Box::new(FakeGasEstimator(gas_price.clone()));
+        let gas_price_estimator = Box::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
         let time_copy = time.clone();
         let now = move || *time_copy.lock().unwrap();
 
         let fee_estimator =
-            MinFeeCalculator::new_for_test(gas_estimator, price_estimator, Box::new(now));
+            MinFeeCalculator::new_for_test(gas_price_estimator, price_estimator, Box::new(now));
 
         let token = H160::from_low_u64_be(1);
         let (fee, expiry) = fee_estimator
@@ -316,11 +309,14 @@ mod tests {
     async fn accepts_fee_if_higher_than_current_min_fee() {
         let gas_price = Arc::new(Mutex::new(100.0));
 
-        let gas_estimator = Box::new(FakeGasEstimator(gas_price.clone()));
+        let gas_price_estimator = Box::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
 
-        let fee_estimator =
-            MinFeeCalculator::new_for_test(gas_estimator, price_estimator, Box::new(Utc::now));
+        let fee_estimator = MinFeeCalculator::new_for_test(
+            gas_price_estimator,
+            price_estimator,
+            Box::new(Utc::now),
+        );
 
         let token = H160::from_low_u64_be(1);
         let (fee, _) = fee_estimator

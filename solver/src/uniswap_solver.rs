@@ -24,7 +24,11 @@ pub struct UniswapSolver {
 
 #[async_trait::async_trait]
 impl Solver for UniswapSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>) -> Result<Option<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        _gas_price: f64,
+    ) -> Result<Option<Settlement>> {
         Ok(self.solve(liquidity))
     }
 }

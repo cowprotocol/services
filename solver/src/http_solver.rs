@@ -23,9 +23,13 @@ use std::{
     sync::Arc,
 };
 
+// Estimates from multivariate linear regression here:
+// https://docs.google.com/spreadsheets/d/13UeUQ9DA4bHlcy9-i8d4nSLlCxSfjcXpTelvXYzyJzQ/edit?usp=sharing
+const GAS_PER_ORDER: u128 = 66315;
+const GAS_PER_UNISWAP: u128 = 94696;
+
 // TODO: exclude partially fillable orders
 // TODO: set settlement.fee_factor
-// TODO: gather real token decimals and store them in a cache
 // TODO: special rounding for the prices we get from the solver?
 
 /// The configuration passed as url parameters to the solver.
@@ -63,8 +67,8 @@ impl HttpSolver {
         api_key: Option<String>,
         config: SolverConfig,
         native_token: H160,
-        token_info_fetcher: &Arc<dyn TokenInfoFetching>,
-        price_estimator: &Arc<dyn PriceEstimating>,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
+        price_estimator: Arc<dyn PriceEstimating>,
     ) -> Self {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
@@ -74,8 +78,8 @@ impl HttpSolver {
             api_key,
             config,
             native_token,
-            token_info_fetcher: token_info_fetcher.clone(),
-            price_estimator: price_estimator.clone(),
+            token_info_fetcher,
+            price_estimator,
         }
     }
 
@@ -137,7 +141,12 @@ impl HttpSolver {
             .collect()
     }
 
-    fn order_models(&self, orders: &HashMap<String, LimitOrder>) -> HashMap<String, OrderModel> {
+    async fn order_models(
+        &self,
+        orders: &HashMap<String, LimitOrder>,
+        gas_price: f64,
+    ) -> HashMap<String, OrderModel> {
+        let order_cost = self.order_cost(gas_price).await;
         orders
             .iter()
             .map(|(index, order)| {
@@ -151,7 +160,7 @@ impl HttpSolver {
                     // TODO: map order fee and fixed cost
                     fee: 0.0,
                     cost: CostModel {
-                        amount: 0,
+                        amount: order_cost,
                         token: self.token_to_string(&self.native_token),
                     },
                 };
@@ -168,7 +177,12 @@ impl HttpSolver {
             .collect()
     }
 
-    fn amm_models(&self, amms: &HashMap<String, AmmOrder>) -> HashMap<String, UniswapModel> {
+    async fn amm_models(
+        &self,
+        amms: &HashMap<String, AmmOrder>,
+        gas_price: f64,
+    ) -> HashMap<String, UniswapModel> {
+        let uniswap_cost = self.uniswap_cost(gas_price).await;
         amms.iter()
             .map(|(index, amm)| {
                 let uniswap = UniswapModel {
@@ -177,9 +191,8 @@ impl HttpSolver {
                     balance1: amm.reserves.0,
                     balance2: amm.reserves.1,
                     fee: *amm.fee.numer() as f64 / *amm.fee.denom() as f64,
-                    // TODO: map uniswap fixed cost
                     cost: CostModel {
-                        amount: 0,
+                        amount: uniswap_cost,
                         token: self.token_to_string(&self.native_token),
                     },
                     mandatory: true,
@@ -192,6 +205,7 @@ impl HttpSolver {
     async fn prepare_model(
         &self,
         liquidity: Vec<Liquidity>,
+        gas_price: f64,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         // To send an instance to the solver we need to identify tokens and orders through strings.
         // In order to map back and forth we store the original tokens, orders and the models for
@@ -221,12 +235,15 @@ impl HttpSolver {
         );
         let limit_orders = self.map_orders_for_solver(orders.0);
         let amm_orders = self.map_amms_for_solver(orders.1);
+        let token_models = self
+            .token_models(&tokens, &token_infos, &price_estimates)
+            .await;
+        let order_models = self.order_models(&limit_orders, gas_price).await;
+        let uniswap_models = self.amm_models(&amm_orders, gas_price).await;
         let model = BatchAuctionModel {
-            tokens: self
-                .token_models(&tokens, &token_infos, &price_estimates)
-                .await,
-            orders: self.order_models(&limit_orders),
-            uniswaps: self.amm_models(&amm_orders),
+            tokens: token_models,
+            orders: order_models,
+            uniswaps: uniswap_models,
         };
         let context = SettlementContext {
             tokens,
@@ -271,6 +288,14 @@ impl HttpSolver {
         );
         serde_json::from_str(text.as_str())
             .with_context(|| format!("failed to decode response json, {}", context()))
+    }
+
+    async fn order_cost(&self, gas_price: f64) -> u128 {
+        gas_price as u128 * GAS_PER_ORDER
+    }
+
+    async fn uniswap_cost(&self, gas_price: f64) -> u128 {
+        gas_price as u128 * GAS_PER_UNISWAP
     }
 }
 
@@ -325,12 +350,12 @@ fn remove_orders_without_native_connection(
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>) -> Result<Option<Settlement>> {
+    async fn solve(&self, liquidity: Vec<Liquidity>, gas_price: f64) -> Result<Option<Settlement>> {
         let has_limit_orders = liquidity.iter().any(|l| matches!(l, Liquidity::Limit(_)));
         if !has_limit_orders {
             return Ok(None);
         };
-        let (model, context) = self.prepare_model(liquidity).await?;
+        let (model, context) = self.prepare_model(liquidity, gas_price).await?;
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
         settlement::convert_settlement(settled, context).map(Some)
@@ -381,6 +406,9 @@ mod tests {
 
         let mock_price_estimation: Arc<dyn PriceEstimating> =
             Arc::new(FakePriceEstimator(num::one()));
+
+        let gas_price = 100.;
+
         let solver = HttpSolver::new(
             url.parse().unwrap(),
             None,
@@ -389,8 +417,8 @@ mod tests {
                 time_limit: 100,
             },
             H160::zero(),
-            &mock_token_info_fetcher,
-            &mock_price_estimation,
+            mock_token_info_fetcher,
+            mock_price_estimation,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![
@@ -411,7 +439,7 @@ mod tests {
                 settlement_handling: Arc::new(MockAmmSettlementHandling::new()),
             }),
         ];
-        let (model, _context) = solver.prepare_model(orders).await.unwrap();
+        let (model, _context) = solver.prepare_model(orders, gas_price).await.unwrap();
         let settled = solver.send(&model).await.unwrap();
         dbg!(&settled);
 

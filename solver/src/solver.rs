@@ -15,7 +15,7 @@ use structopt::clap::arg_enum;
 
 #[async_trait::async_trait]
 pub trait Solver: Display {
-    async fn solve(&self, orders: Vec<Liquidity>) -> Result<Option<Settlement>>;
+    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Option<Settlement>>;
 }
 
 arg_enum! {
@@ -48,8 +48,8 @@ pub fn create(
                     time_limit: 30,
                 },
                 native_token,
-                &token_info_fetcher,
-                &price_estimator,
+                token_info_fetcher.clone(),
+                price_estimator.clone(),
             )),
         })
         .collect()

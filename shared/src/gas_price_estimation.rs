@@ -5,6 +5,7 @@ use gas_estimation::{
     PriorityGasPriceEstimating, Transport,
 };
 use serde::de::DeserializeOwned;
+use std::sync::{Arc, Mutex};
 use structopt::clap::arg_enum;
 
 arg_enum! {
@@ -69,4 +70,12 @@ pub async fn create_priority_estimator(
 
 fn is_mainnet(network_id: &str) -> bool {
     network_id == "1"
+}
+
+pub struct FakeGasPriceEstimator(pub Arc<Mutex<f64>>);
+#[async_trait::async_trait]
+impl GasPriceEstimating for FakeGasPriceEstimator {
+    async fn estimate_with_limits(&self, _: f64, _: std::time::Duration) -> Result<f64> {
+        Ok(*self.0.lock().unwrap())
+    }
 }

@@ -13,7 +13,11 @@ pub struct NaiveSolver;
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>) -> Result<Option<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        _gas_price: f64,
+    ) -> Result<Option<Settlement>> {
         let mut limit_orders = Vec::new();
         let mut uniswaps = HashMap::new();
         for liquidity in liquidity {
