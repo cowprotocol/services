@@ -10,14 +10,9 @@ pub fn gas_price_stream(
     gas_price_cap: f64,
     gas_limit: f64,
     estimator: &dyn GasPriceEstimating,
-    initial_gas_price: Option<f64>,
 ) -> impl Stream<Item = f64> + '_ {
     let stream = stream::unfold(true, move |first_call| async move {
-        if first_call {
-            if let Some(initial_gas_price) = initial_gas_price {
-                return Some((Ok(initial_gas_price), false));
-            }
-        } else {
+        if !first_call {
             tokio::time::delay_for(GAS_PRICE_REFRESH_INTERVAL).await;
         }
         let estimate = estimator
