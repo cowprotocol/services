@@ -1,5 +1,5 @@
 use crate::conversions::U256Ext;
-use crate::uniswap_pool::{Pool, PoolFetching};
+use crate::pool_fetching::{Pool, PoolFetching};
 use crate::uniswap_solver::{
     estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
     token_path_to_pair_path,
@@ -277,7 +277,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
-    use crate::uniswap_pool::{FilteredPoolFetcher, Pool, PoolFetching};
+    use crate::pool_fetching::{FilteredPoolFetcher, Pool, PoolFetching};
 
     struct FakePoolFetcher(Vec<Pool>);
     #[async_trait::async_trait]

@@ -11,10 +11,11 @@ use orderbook::{
     serve_task, verify_deployed_contract_constants,
 };
 use shared::{
+    amm_pair_provider::UniswapPairProvider,
     current_block::{current_block_stream, CurrentBlockStream},
+    pool_fetching::{CachedPoolFetcher, FilteredPoolFetcher, PoolFetcher},
     price_estimate::UniswapPriceEstimator,
     transport::LoggingTransport,
-    uniswap_pool::{CachedPoolFetcher, FilteredPoolFetcher, PoolFetcher, UniswapPairProvider},
 };
 use std::{collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc};
 use structopt::StructOpt;

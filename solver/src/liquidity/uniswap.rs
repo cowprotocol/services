@@ -3,7 +3,7 @@ use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
-    uniswap_pool::{PoolFetcher, PoolFetching as _},
+    pool_fetching::{PoolFetcher, PoolFetching as _},
     uniswap_solver::{path_candidates, token_path_to_pair_path},
     Web3,
 };
@@ -17,7 +17,7 @@ use crate::interactions::UniswapInteraction;
 use crate::settlement::SettlementEncoder;
 
 use super::{AmmOrder, AmmOrderExecution, LimitOrder, SettlementHandling};
-use shared::uniswap_pool::AmmPairProvider;
+use shared::amm_pair_provider::AmmPairProvider;
 
 pub struct UniswapLiquidity {
     inner: Arc<Inner>,

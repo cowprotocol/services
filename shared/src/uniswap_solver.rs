@@ -3,7 +3,7 @@ use model::TokenPair;
 use num::BigRational;
 use std::collections::{HashMap, HashSet};
 
-use crate::uniswap_pool::Pool;
+use crate::pool_fetching::Pool;
 
 type PathCandidate = Vec<H160>;
 

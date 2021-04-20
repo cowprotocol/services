@@ -3,11 +3,12 @@ use ethcontract::{Account, PrivateKey};
 use prometheus::Registry;
 use reqwest::Url;
 use shared::{
+    amm_pair_provider::UniswapPairProvider,
     metrics::serve_metrics,
+    pool_fetching::PoolFetcher,
     price_estimate::UniswapPriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     transport::LoggingTransport,
-    uniswap_pool::{PoolFetcher, UniswapPairProvider},
 };
 use solver::{
     driver::Driver, liquidity::uniswap::UniswapLiquidity, metrics::Metrics, solver::SolverType,

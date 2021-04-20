@@ -3,7 +3,7 @@ use ethcontract::{H160, U256};
 use maplit::hashmap;
 use model::TokenPair;
 use shared::{
-    uniswap_pool::Pool,
+    pool_fetching::Pool,
     uniswap_solver::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
     },
