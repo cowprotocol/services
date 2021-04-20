@@ -15,10 +15,28 @@ use crate::current_block::{Block, CurrentBlockStream};
 
 const UNISWAP_PAIR_INIT_CODE: [u8; 32] =
     hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f");
-
 const HONEYSWAP_PAIR_INIT_CODE: [u8; 32] =
     hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93");
 const MAX_BATCH_SIZE: usize = 100;
+
+pub trait AmmPairProvider: Send + Sync + 'static {
+    fn pair_address(&self, pair: &TokenPair) -> H160;
+}
+
+pub struct UniswapPairProvider {
+    pub factory: UniswapV2Factory,
+    pub chain_id: u64,
+}
+
+impl AmmPairProvider for UniswapPairProvider {
+    fn pair_address(&self, pair: &TokenPair) -> H160 {
+        let init_hash = match self.chain_id {
+            100 => HONEYSWAP_PAIR_INIT_CODE,
+            _ => UNISWAP_PAIR_INIT_CODE,
+        };
+        pair_address(pair, self.factory.address(), init_hash)
+    }
+}
 
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
 /// `reserve_a` refers to the reserve of the excluded token.
@@ -220,9 +238,8 @@ impl PoolFetching for CachedPoolFetcher {
 }
 
 pub struct PoolFetcher {
-    pub factory: UniswapV2Factory,
+    pub pair_provider: Arc<dyn AmmPairProvider>,
     pub web3: Web3,
-    pub chain_id: u64,
 }
 
 #[async_trait::async_trait]
@@ -232,14 +249,12 @@ impl PoolFetching for PoolFetcher {
         let futures = token_pairs
             .into_iter()
             .map(|pair| {
-                let uniswap_pair_address =
-                    pair_address(&pair, self.factory.address(), self.chain_id);
-                let pair_contract =
-                    UniswapV2Pair::at(&self.factory.raw_instance().web3(), uniswap_pair_address);
+                let uniswap_pair_address = self.pair_provider.pair_address(&pair);
+                let pair_contract = UniswapV2Pair::at(&self.web3, uniswap_pair_address);
 
                 // Fetch ERC20 token balances of the pools to sanity check with reserves
-                let token0 = ERC20::at(&self.factory.raw_instance().web3(), pair.get().0);
-                let token1 = ERC20::at(&self.factory.raw_instance().web3(), pair.get().1);
+                let token0 = ERC20::at(&self.web3, pair.get().0);
+                let token1 = ERC20::at(&self.web3, pair.get().1);
 
                 (
                     pair,
@@ -282,17 +297,13 @@ impl PoolFetching for PoolFetcher {
     }
 }
 
-fn pair_address(pair: &TokenPair, factory: H160, chain_id: u64) -> H160 {
+fn pair_address(pair: &TokenPair, factory_address: H160, init_hash: [u8; 32]) -> H160 {
     // https://uniswap.org/docs/v2/javascript-SDK/getting-pair-addresses/
     let mut packed = [0u8; 40];
     packed[0..20].copy_from_slice(pair.get().0.as_fixed_bytes());
     packed[20..40].copy_from_slice(pair.get().1.as_fixed_bytes());
     let salt = keccak256(&packed);
-    let init_hash = match chain_id {
-        100 => HONEYSWAP_PAIR_INIT_CODE,
-        _ => UNISWAP_PAIR_INIT_CODE,
-    };
-    create2(factory, &salt, &init_hash)
+    create2(factory_address, &salt, &init_hash)
 }
 
 fn create2(address: H160, salt: &[u8; 32], init_hash: &[u8; 32]) -> H160 {
@@ -323,7 +334,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            pair_address(&pair, mainnet_factory, 1),
+            pair_address(&pair, mainnet_factory, UNISWAP_PAIR_INIT_CODE),
             H160::from_slice(&hex!("3e8468f66d30fc99f745481d4b383f89861702c6"))
         );
     }
@@ -338,7 +349,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            pair_address(&pair, mainnet_factory, 100),
+            pair_address(&pair, mainnet_factory, HONEYSWAP_PAIR_INIT_CODE),
             H160::from_slice(&hex!("4505b262dc053998c10685dc5f9098af8ae5c8ad"))
         );
     }

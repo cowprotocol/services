@@ -1,10 +1,10 @@
 use crate::{encoding::EncodedInteraction, settlement::Interaction};
-use contracts::{GPv2Settlement, UniswapV2Router02, ERC20};
+use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use primitive_types::{H160, U256};
 
 #[derive(Debug)]
 pub struct UniswapInteraction {
-    pub contract: UniswapV2Router02,
+    pub router: IUniswapLikeRouter,
     pub settlement: GPv2Settlement,
     pub set_allowance: bool,
     pub amount_in: U256,
@@ -27,13 +27,13 @@ impl Interaction for UniswapInteraction {
 impl UniswapInteraction {
     fn encode_approve(&self) -> EncodedInteraction {
         let token = ERC20::at(&self.web3(), self.token_in);
-        let method = token.approve(self.contract.address(), U256::MAX);
+        let method = token.approve(self.router.address(), U256::MAX);
         let calldata = method.tx.data.expect("no calldata").0;
         (self.token_in, 0.into(), calldata)
     }
 
     fn encode_swap(&self) -> EncodedInteraction {
-        let method = self.contract.swap_exact_tokens_for_tokens(
+        let method = self.router.swap_exact_tokens_for_tokens(
             self.amount_in,
             self.amount_out_min,
             vec![self.token_in, self.token_out],
@@ -41,11 +41,11 @@ impl UniswapInteraction {
             U256::MAX,
         );
         let calldata = method.tx.data.expect("no calldata").0;
-        (self.contract.address(), 0.into(), calldata)
+        (self.router.address(), 0.into(), calldata)
     }
 
     fn web3(&self) -> web3::Web3<ethcontract::transport::DynTransport> {
-        self.contract.raw_instance().web3()
+        self.settlement.raw_instance().web3()
     }
 }
 
@@ -53,6 +53,7 @@ impl UniswapInteraction {
 mod tests {
     use super::*;
     use crate::interactions::dummy_web3;
+    use contracts::IUniswapLikeRouter;
     use hex_literal::hex;
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
@@ -68,13 +69,13 @@ mod tests {
         let token_in = H160::from_low_u64_be(7);
         let token_out = 8;
         let payout_to = 9u8;
-        let contract = UniswapV2Router02::at(&dummy_web3::dummy_web3(), H160::from_low_u64_be(4));
+        let router = IUniswapLikeRouter::at(&dummy_web3::dummy_web3(), H160::from_low_u64_be(4));
         let settlement = GPv2Settlement::at(
             &dummy_web3::dummy_web3(),
             H160::from_low_u64_be(payout_to as u64),
         );
         let interaction = UniswapInteraction {
-            contract: contract.clone(),
+            router: router.clone(),
             settlement,
             set_allowance: true,
             amount_in: amount_in.into(),
@@ -90,12 +91,12 @@ mod tests {
         let call = &approve_call.2;
         let approve_signature = hex!("095ea7b3");
         assert_eq!(call[0..4], approve_signature);
-        assert_eq!(&call[16..36], contract.address().as_fixed_bytes()); //spender
+        assert_eq!(&call[16..36], router.address().as_fixed_bytes()); //spender
         assert_eq!(call[36..68], [0xffu8; 32]); // amount
 
         // Verify Swap
         let swap_call = &interactions[1];
-        assert_eq!(swap_call.0, contract.address());
+        assert_eq!(swap_call.0, router.address());
         let call = &swap_call.2;
         let swap_signature = [0x38u8, 0xed, 0x17, 0x39];
         let path_offset = 160;

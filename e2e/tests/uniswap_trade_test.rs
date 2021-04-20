@@ -1,4 +1,4 @@
-use contracts::{ERC20Mintable, UniswapV2Factory, UniswapV2Router02, WETH9};
+use contracts::{ERC20Mintable, IUniswapLikeRouter, UniswapV2Factory, UniswapV2Router02, WETH9};
 use ethcontract::{
     prelude::{Account, Address, Http, PrivateKey, U256},
     H160,
@@ -18,7 +18,7 @@ use shared::{
     current_block::current_block_stream,
     price_estimate::UniswapPriceEstimator,
     transport::LoggingTransport,
-    uniswap_pool::{CachedPoolFetcher, PoolFetcher},
+    uniswap_pool::{CachedPoolFetcher, PoolFetcher, UniswapPairProvider},
     Web3,
 };
 use solver::{liquidity::uniswap::UniswapLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi};
@@ -139,11 +139,14 @@ async fn test_with_ganache() {
     let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone(), None);
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
+    let pair_provider = Arc::new(UniswapPairProvider {
+        factory: uniswap_factory.clone(),
+        chain_id,
+    });
     let pool_fetcher = CachedPoolFetcher::new(
         Box::new(PoolFetcher {
-            factory: uniswap_factory.clone(),
+            pair_provider,
             web3: web3.clone(),
-            chain_id,
         }),
         current_block_stream,
     );
@@ -222,15 +225,18 @@ async fn test_with_ganache() {
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
+    let pair_provider = Arc::new(UniswapPairProvider {
+        factory: uniswap_factory.clone(),
+        chain_id,
+    });
 
     // Drive solution
     let uniswap_liquidity = UniswapLiquidity::new(
-        uniswap_factory.clone(),
-        uniswap_router.clone(),
+        IUniswapLikeRouter::at(&web3, uniswap_router.address()),
+        pair_provider.clone(),
         gp_settlement.clone(),
         HashSet::new(),
         web3.clone(),
-        1,
     );
     let solver = solver::naive_solver::NaiveSolver {};
     let mut driver = solver::driver::Driver::new(

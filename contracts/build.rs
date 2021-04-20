@@ -8,7 +8,7 @@ mod paths;
 
 fn main() {
     // NOTE: This is a workaround for `rerun-if-changed` directives for
-    // non-existant files cause the crate's build unit to get flagged for a
+    // non-existent files cause the crate's build unit to get flagged for a
     // rebuild if any files in the workspace change.
     //
     // See:
@@ -35,6 +35,8 @@ fn main() {
         },
     );
     generate_contract("UniswapV2Pair", hashmap! {});
+    // This is done to have a common interface for Sushiswap, Uniswap & Honeyswap
+    generate_contract("IUniswapLikeRouter", hashmap! {});
     generate_contract(
         "GPv2Settlement",
         hashmap! {

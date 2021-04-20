@@ -1,5 +1,5 @@
 use anyhow::Result;
-use contracts::{GPv2Settlement, UniswapV2Factory, UniswapV2Router02, ERC20};
+use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
@@ -17,6 +17,7 @@ use crate::interactions::UniswapInteraction;
 use crate::settlement::SettlementEncoder;
 
 use super::{AmmOrder, AmmOrderExecution, LimitOrder, SettlementHandling};
+use shared::uniswap_pool::AmmPairProvider;
 
 pub struct UniswapLiquidity {
     inner: Arc<Inner>,
@@ -26,7 +27,7 @@ pub struct UniswapLiquidity {
 }
 
 struct Inner {
-    router: UniswapV2Router02,
+    router: IUniswapLikeRouter,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement contract
     allowances: Mutex<HashMap<H160, U256>>,
@@ -34,12 +35,11 @@ struct Inner {
 
 impl UniswapLiquidity {
     pub fn new(
-        factory: UniswapV2Factory,
-        router: UniswapV2Router02,
+        router: IUniswapLikeRouter,
+        pair_provider: Arc<dyn AmmPairProvider>,
         gpv2_settlement: GPv2Settlement,
         base_tokens: HashSet<H160>,
         web3: Web3,
-        chain_id: u64,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -49,9 +49,8 @@ impl UniswapLiquidity {
             }),
             web3: web3.clone(),
             pool_fetcher: PoolFetcher {
-                factory,
+                pair_provider,
                 web3,
-                chain_id,
             },
             base_tokens,
         }
@@ -137,7 +136,7 @@ impl Inner {
             < input.1;
 
         UniswapInteraction {
-            contract: self.router.clone(),
+            router: self.router.clone(),
             settlement: self.gpv2_settlement.clone(),
             set_allowance,
             amount_in: input.1,
@@ -175,7 +174,7 @@ mod tests {
         fn new(allowances: HashMap<H160, U256>) -> Self {
             let web3 = dummy_web3::dummy_web3();
             Self {
-                router: UniswapV2Router02::at(&web3, H160::zero()),
+                router: IUniswapLikeRouter::at(&web3, H160::zero()),
                 gpv2_settlement: GPv2Settlement::at(&web3, H160::zero()),
                 allowances: Mutex::new(allowances),
             }
