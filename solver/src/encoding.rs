@@ -61,3 +61,11 @@ pub type EncodedInteraction = (
     U256,    // value
     Vec<u8>, // callData
 );
+
+#[derive(Clone, Debug)]
+pub struct EncodedSettlement {
+    pub tokens: Vec<H160>,
+    pub clearing_prices: Vec<U256>,
+    pub trades: Vec<EncodedTrade>,
+    pub interactions: [Vec<EncodedInteraction>; 3],
+}

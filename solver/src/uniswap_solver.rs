@@ -14,7 +14,7 @@ use std::{
 };
 
 use crate::{
-    liquidity::{uniswap::MAX_HOPS, AmmOrder, LimitOrder, Liquidity},
+    liquidity::{uniswap::MAX_HOPS, AmmOrder, AmmOrderExecution, LimitOrder, Liquidity},
     settlement::Settlement,
     solver::Solver,
 };
@@ -29,7 +29,7 @@ impl Solver for UniswapSolver {
         liquidity: Vec<Liquidity>,
         _gas_price: f64,
     ) -> Result<Option<Settlement>> {
-        Ok(self.solve(liquidity))
+        self.solve(liquidity).transpose()
     }
 }
 
@@ -44,7 +44,7 @@ impl UniswapSolver {
         Self { base_tokens }
     }
 
-    fn solve(&self, liquidity: Vec<Liquidity>) -> Option<Settlement> {
+    fn solve(&self, liquidity: Vec<Liquidity>) -> Option<Result<Settlement>> {
         let amm_map = liquidity
             .iter()
             .filter_map(|liquidity| match liquidity {
@@ -127,6 +127,11 @@ impl UniswapSolver {
             executed_buy_amount,
         })
     }
+
+    #[cfg(test)]
+    fn must_solve(&self, liquidity: Vec<Liquidity>) -> Settlement {
+        self.solve(liquidity).unwrap().unwrap()
+    }
 }
 
 struct Solution {
@@ -140,13 +145,13 @@ impl Solution {
         self,
         order: &LimitOrder,
         amm_map: HashMap<TokenPair, AmmOrder>,
-    ) -> Settlement {
-        //fully matched
-        let matched_amount = match order.kind {
-            model::order::OrderKind::Buy => order.buy_amount,
-            model::order::OrderKind::Sell => order.sell_amount,
-        };
-        let (trade, mut interactions) = order.settlement_handling.settle(matched_amount);
+    ) -> Result<Settlement> {
+        let mut settlement = Settlement::new(hashmap! {
+            order.sell_token => self.executed_buy_amount,
+            order.buy_token => self.executed_sell_amount,
+        });
+
+        settlement.with_liquidity(order, order.full_excution_amount())?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
         for pool in self.path {
@@ -156,24 +161,18 @@ impl Solution {
             let amm = amm_map
                 .get(&pool.tokens)
                 .expect("Path was found so AMM must exist");
-            interactions.extend(
-                amm.settlement_handling
-                    .settle((sell_token, sell_amount), (buy_token, buy_amount)),
-            );
+            settlement.with_liquidity(
+                amm,
+                AmmOrderExecution {
+                    input: (sell_token, sell_amount),
+                    output: (buy_token, buy_amount),
+                },
+            )?;
             sell_amount = buy_amount;
             sell_token = buy_token;
         }
-        Settlement {
-            clearing_prices: hashmap! {
-                order.sell_token => self.executed_buy_amount,
-                order.buy_token => self.executed_sell_amount,
-            },
-            fee_factor: U256::zero(),
-            trades: trade.into_iter().collect(),
-            intra_interactions: interactions,
-            pre_interactions: Vec::new(),
-            post_interactions: Vec::new(),
-        }
+
+        Ok(settlement)
     }
 }
 
@@ -192,10 +191,7 @@ mod tests {
     use num::rational::Ratio;
 
     use crate::liquidity::{
-        tests::{
-            AmmSettlement, CapturingAmmSettlementHandler, CapturingLimitOrderSettlementHandler,
-        },
-        AmmOrder, LimitOrder,
+        tests::CapturingSettlementHandler, AmmOrder, AmmOrderExecution, LimitOrder,
     };
 
     use super::*;
@@ -206,8 +202,8 @@ mod tests {
         let native_token = H160::from_low_u64_be(3);
 
         let order_handler = vec![
-            CapturingLimitOrderSettlementHandler::arc(),
-            CapturingLimitOrderSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
         ];
         let orders = vec![
             LimitOrder {
@@ -234,9 +230,9 @@ mod tests {
         ];
 
         let amm_handler = vec![
-            CapturingAmmSettlementHandler::arc(),
-            CapturingAmmSettlementHandler::arc(),
-            CapturingAmmSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
         ];
         let amms = vec![
             AmmOrder {
@@ -264,10 +260,10 @@ mod tests {
         liquidity.extend(amms.iter().cloned().map(Liquidity::Amm));
 
         let solver = UniswapSolver::new(hashset! { native_token});
-        let result = solver.solve(liquidity).unwrap();
+        let result = solver.must_solve(liquidity);
         assert_eq!(
-            result.clearing_prices,
-            hashmap! {
+            result.clearing_prices(),
+            &hashmap! {
                 sell_token => 97_459.into(),
                 buy_token => 100_000.into(),
             }
@@ -281,20 +277,16 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmSettlement {
-                amount_in: 100_000.into(),
-                amount_out: 98_715.into(),
-                token_in: sell_token,
-                token_out: native_token,
+            AmmOrderExecution {
+                input: (sell_token, 100_000.into()),
+                output: (native_token, 98_715.into()),
             }
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmSettlement {
-                amount_in: 98_715.into(),
-                amount_out: 97_459.into(),
-                token_in: native_token,
-                token_out: buy_token,
+            AmmOrderExecution {
+                input: (native_token, 98_715.into()),
+                output: (buy_token, 97_459.into()),
             }
         );
     }
@@ -306,8 +298,8 @@ mod tests {
         let native_token = H160::from_low_u64_be(3);
 
         let order_handler = vec![
-            CapturingLimitOrderSettlementHandler::arc(),
-            CapturingLimitOrderSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
         ];
         let orders = vec![
             LimitOrder {
@@ -334,9 +326,9 @@ mod tests {
         ];
 
         let amm_handler = vec![
-            CapturingAmmSettlementHandler::arc(),
-            CapturingAmmSettlementHandler::arc(),
-            CapturingAmmSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
+            CapturingSettlementHandler::arc(),
         ];
         let amms = vec![
             AmmOrder {
@@ -364,10 +356,10 @@ mod tests {
         liquidity.extend(amms.iter().cloned().map(Liquidity::Amm));
 
         let solver = UniswapSolver::new(hashset! { native_token});
-        let result = solver.solve(liquidity).unwrap();
+        let result = solver.must_solve(liquidity);
         assert_eq!(
-            result.clearing_prices,
-            hashmap! {
+            result.clearing_prices(),
+            &hashmap! {
                 sell_token => 100_000.into(),
                 buy_token => 102_660.into(),
             }
@@ -381,20 +373,16 @@ mod tests {
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
-            AmmSettlement {
-                amount_in: 102_660.into(),
-                amount_out: 101_315.into(),
-                token_in: sell_token,
-                token_out: native_token,
+            AmmOrderExecution {
+                input: (sell_token, 102_660.into()),
+                output: (native_token, 101_315.into()),
             }
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
-            AmmSettlement {
-                amount_in: 101_315.into(),
-                amount_out: 100_000.into(),
-                token_in: native_token,
-                token_out: buy_token,
+            AmmOrderExecution {
+                input: (native_token, 101_315.into()),
+                output: (buy_token, 100_000.into()),
             }
         );
     }

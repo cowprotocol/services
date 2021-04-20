@@ -1,16 +1,13 @@
+use crate::settlement::SettlementEncoder;
+use anyhow::Result;
 use model::{order::OrderKind, TokenPair};
 use num::rational::Ratio;
 use primitive_types::{H160, U256};
-use settlement::{Interaction, Trade};
 use std::sync::Arc;
 use strum_macros::{AsStaticStr, EnumVariantNames};
 
 #[cfg(test)]
-use mockall::automock;
-#[cfg(test)]
 use model::order::Order;
-
-use crate::settlement;
 
 pub mod offchain_orderbook;
 pub mod uniswap;
@@ -21,6 +18,24 @@ pub enum Liquidity {
     Limit(LimitOrder),
     Amm(AmmOrder),
 }
+
+/// A trait associating some liquidity model to how it is executed and encoded
+/// in a settlement (through a `SettlementHandling` reference). This allows
+/// different liquidity types to be modeled the same way.
+pub trait Settleable {
+    type Execution;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self>;
+}
+
+/// Specifies how a liquidity exectution gets encoded into a settlement.
+pub trait SettlementHandling<L>: Send + Sync
+where
+    L: Settleable,
+{
+    fn encode(&self, execution: L::Execution, encoder: &mut SettlementEncoder) -> Result<()>;
+}
+
 /// Basic limit sell and buy orders
 #[derive(Clone)]
 pub struct LimitOrder {
@@ -32,7 +47,25 @@ pub struct LimitOrder {
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub settlement_handling: Arc<dyn LimitOrderSettlementHandling>,
+    pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl LimitOrder {
+    /// Returns the full execution amount for the specified limit order.
+    pub fn full_excution_amount(&self) -> U256 {
+        match self.kind {
+            OrderKind::Sell => self.sell_amount,
+            OrderKind::Buy => self.buy_amount,
+        }
+    }
+}
+
+impl Settleable for LimitOrder {
+    type Execution = U256;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
+        &*self.settlement_handling
+    }
 }
 
 #[cfg(test)]
@@ -47,89 +80,105 @@ impl From<Order> for LimitOrder {
     }
 }
 
-/// Specifies how a limit order fulfillment translates into Trade and Interactions for the settlement
-#[cfg_attr(test, automock)]
-pub trait LimitOrderSettlementHandling: Send + Sync {
-    fn settle(&self, executed_amount: U256) -> (Option<Trade>, Vec<Box<dyn Interaction>>);
-}
-
 /// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
 pub struct AmmOrder {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
-    pub settlement_handling: Arc<dyn AmmSettlementHandling>,
+    pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
-/// Specifies how a AMM order fulfillment translates into Interactions for the settlement
-#[cfg_attr(test, automock)]
-pub trait AmmSettlementHandling: Send + Sync {
-    fn settle(&self, input: (H160, U256), output: (H160, U256)) -> Vec<Box<dyn Interaction>>;
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AmmOrderExecution {
+    pub input: (H160, U256),
+    pub output: (H160, U256),
+}
+
+impl Settleable for AmmOrder {
+    type Execution = AmmOrderExecution;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
+        &*self.settlement_handling
+    }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use ethcontract::Address;
     use std::sync::Mutex;
 
-    #[derive(Default)]
-    pub struct CapturingLimitOrderSettlementHandler {
-        #[allow(clippy::type_complexity)]
-        pub calls: Mutex<Vec<U256>>,
+    pub struct CapturingSettlementHandler<L>
+    where
+        L: Settleable,
+    {
+        pub calls: Mutex<Vec<L::Execution>>,
     }
 
-    impl CapturingLimitOrderSettlementHandler {
+    // Manual implementation seems to be needed as `derive(Default)` adds an
+    // uneeded `L::Execution: Default` type bound.
+    impl<L> Default for CapturingSettlementHandler<L>
+    where
+        L: Settleable,
+    {
+        fn default() -> Self {
+            Self {
+                calls: Default::default(),
+            }
+        }
+    }
+
+    impl<L> CapturingSettlementHandler<L>
+    where
+        L: Settleable,
+        L::Execution: Clone,
+    {
         pub fn arc() -> Arc<Self> {
             Arc::new(Default::default())
         }
 
-        pub fn calls(&self) -> Vec<U256> {
+        pub fn calls(&self) -> Vec<L::Execution> {
             self.calls.lock().unwrap().clone()
         }
     }
 
-    impl LimitOrderSettlementHandling for CapturingLimitOrderSettlementHandler {
-        fn settle(&self, executed_amount: U256) -> (Option<Trade>, Vec<Box<dyn Interaction>>) {
-            self.calls.lock().unwrap().push(executed_amount);
-            (None, Vec::new())
+    impl<L> SettlementHandling<L> for CapturingSettlementHandler<L>
+    where
+        L: Settleable,
+        L::Execution: Send + Sync,
+    {
+        fn encode(&self, execution: L::Execution, _: &mut SettlementEncoder) -> Result<()> {
+            self.calls.lock().unwrap().push(execution);
+            Ok(())
         }
     }
 
-    #[derive(Default)]
-    pub struct CapturingAmmSettlementHandler {
-        #[allow(clippy::type_complexity)]
-        pub calls: Mutex<Vec<AmmSettlement>>,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq)]
-    pub struct AmmSettlement {
-        pub token_in: Address,
-        pub token_out: Address,
-        pub amount_in: U256,
-        pub amount_out: U256,
-    }
-
-    impl CapturingAmmSettlementHandler {
-        pub fn arc() -> Arc<Self> {
-            Arc::new(Default::default())
+    #[test]
+    fn limit_order_full_execution_amounts() {
+        fn simple_limit_order(
+            kind: OrderKind,
+            sell_amount: impl Into<U256>,
+            buy_amount: impl Into<U256>,
+        ) -> LimitOrder {
+            LimitOrder {
+                id: Default::default(),
+                sell_token: Default::default(),
+                buy_token: Default::default(),
+                sell_amount: sell_amount.into(),
+                buy_amount: buy_amount.into(),
+                kind,
+                partially_fillable: Default::default(),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            }
         }
 
-        pub fn calls(&self) -> Vec<AmmSettlement> {
-            self.calls.lock().unwrap().clone()
-        }
-    }
-
-    impl AmmSettlementHandling for CapturingAmmSettlementHandler {
-        fn settle(&self, input: (H160, U256), output: (H160, U256)) -> Vec<Box<dyn Interaction>> {
-            self.calls.lock().unwrap().push(AmmSettlement {
-                token_in: input.0,
-                token_out: output.0,
-                amount_in: input.1,
-                amount_out: output.1,
-            });
-            Vec::new()
-        }
+        assert_eq!(
+            simple_limit_order(OrderKind::Sell, 1, 2).full_excution_amount(),
+            1.into(),
+        );
+        assert_eq!(
+            simple_limit_order(OrderKind::Buy, 1, 2).full_excution_amount(),
+            2.into(),
+        );
     }
 }

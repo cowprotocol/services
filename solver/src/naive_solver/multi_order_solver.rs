@@ -1,8 +1,6 @@
-use crate::{
-    liquidity,
-    settlement::{Interaction, Settlement, Trade},
-};
-use liquidity::{AmmOrder, LimitOrder};
+use crate::{liquidity, settlement::Settlement};
+use anyhow::Result;
+use liquidity::{AmmOrder, AmmOrderExecution, LimitOrder};
 use model::order::OrderKind;
 use num::{rational::Ratio, BigInt, BigRational};
 use primitive_types::U256;
@@ -89,7 +87,7 @@ fn solve_orders(
     } else if context_b.is_excess_after_fees(&context_a, pool.fee) {
         solve_with_uniswap(orders, pool, &context_a, &context_b)
     } else {
-        Some(solve_without_uniswap(orders, &context_a, &context_b))
+        solve_without_uniswap(orders, &context_a, &context_b).ok()
     }
 }
 
@@ -100,17 +98,16 @@ fn solve_without_uniswap(
     orders: impl Iterator<Item = LimitOrder> + Clone,
     context_a: &TokenContext,
     context_b: &TokenContext,
-) -> Settlement {
-    let (trades, interactions) = fully_matched(orders);
-    Settlement {
-        clearing_prices: maplit::hashmap! {
-            context_a.address => context_b.reserve,
-            context_b.address => context_a.reserve,
-        },
-        trades,
-        intra_interactions: interactions,
-        ..Default::default()
+) -> Result<Settlement> {
+    let mut settlement = Settlement::new(maplit::hashmap! {
+        context_a.address => context_b.reserve,
+        context_b.address => context_a.reserve,
+    });
+    for order in orders {
+        settlement.with_liquidity(&order, order.full_excution_amount())?;
     }
+
+    Ok(settlement)
 }
 
 ///
@@ -129,39 +126,27 @@ fn solve_with_uniswap(
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
     let uniswap_in = big_rational_to_u256(&uniswap_in).ok()?;
 
-    let (trades, mut interactions) = fully_matched(orders);
-    interactions.extend(pool.settlement_handling.settle(
-        (excess.address, uniswap_in),
-        (shortage.address, uniswap_out),
-    ));
-    Some(Settlement {
-        clearing_prices: maplit::hashmap! {
-            shortage.address => uniswap_in,
-            excess.address => uniswap_out,
-        },
-        trades,
-        intra_interactions: interactions,
-        ..Default::default()
-    })
-}
-
-fn fully_matched(
-    orders: impl Iterator<Item = LimitOrder> + Clone,
-) -> (Vec<Trade>, Vec<Box<dyn Interaction>>) {
-    let mut trades = Vec::new();
-    let mut interactions = Vec::new();
+    let mut settlement = Settlement::new(maplit::hashmap! {
+        shortage.address => uniswap_in,
+        excess.address => uniswap_out,
+    });
     for order in orders {
-        let executed_amount = match order.kind {
-            model::order::OrderKind::Buy => order.buy_amount,
-            model::order::OrderKind::Sell => order.sell_amount,
-        };
-        let (trade, trade_interactions) = order.settlement_handling.settle(executed_amount);
-        if let Some(trade) = trade {
-            trades.push(trade)
-        }
-        interactions.extend(trade_interactions);
+        settlement
+            .with_liquidity(&order, order.full_excution_amount())
+            .ok()?;
     }
-    (trades, interactions)
+
+    settlement
+        .with_liquidity(
+            pool,
+            AmmOrderExecution {
+                input: (excess.address, uniswap_in),
+                output: (shortage.address, uniswap_out),
+            },
+        )
+        .ok()?;
+
+    Some(settlement)
 }
 
 impl AmmOrder {
@@ -261,15 +246,13 @@ fn compute_uniswap_in(
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
-    for trade in solution.trades.iter() {
+    for trade in solution.trades().iter() {
         let order = trade.order.order_creation;
         let buy_token_price = solution
-            .clearing_prices
-            .get(&order.buy_token)
+            .clearing_price(order.buy_token)
             .expect("Solution should contain clearing price for buy token");
         let sell_token_price = solution
-            .clearing_prices
-            .get(&order.sell_token)
+            .clearing_price(order.sell_token)
             .expect("Solution should contain clearing price for sell token");
 
         if order.sell_amount * sell_token_price < order.buy_amount * buy_token_price {
@@ -282,7 +265,7 @@ fn is_valid_solution(solution: &Settlement) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use liquidity::tests::{CapturingAmmSettlementHandler, CapturingLimitOrderSettlementHandler};
+    use liquidity::tests::CapturingSettlementHandler;
     use model::{
         order::{Order, OrderCreation},
         TokenPair,
@@ -307,7 +290,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -317,12 +300,12 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -332,25 +315,25 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.calls()[0];
-        assert_eq!(interaction.token_in, token_b);
-        assert_eq!(interaction.token_out, token_a);
+        let interaction = amm_handler.calls()[0].clone();
+        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.output.0, token_a);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy min_buy amounts
-        assert!(orders[0].sell_amount + interaction.amount_out >= orders[1].buy_amount);
-        assert!(orders[1].sell_amount - interaction.amount_in > orders[0].buy_amount);
+        assert!(orders[0].sell_amount + interaction.output.1 >= orders[1].buy_amount);
+        assert!(orders[1].sell_amount - interaction.input.1 > orders[0].buy_amount);
 
         // Make sure the sell amounts +/- uniswap interaction satisfy expected buy amounts given clearing price
-        let price_a = result.clearing_prices.get(&token_a).unwrap();
-        let price_b = result.clearing_prices.get(&token_b).unwrap();
+        let price_a = result.clearing_price(token_a).unwrap();
+        let price_b = result.clearing_price(token_b).unwrap();
 
         // Multiplying sellAmount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
         // We should have at least as much to give (sell amount +/- uniswap) as is expected by the buyer
         let expected_buy = orders[0].sell_amount * price_a / price_b;
-        assert!(orders[1].sell_amount - interaction.amount_in >= expected_buy);
+        assert!(orders[1].sell_amount - interaction.input.1 >= expected_buy);
 
         let expected_buy = orders[1].sell_amount * price_b / price_a;
-        assert!(orders[0].sell_amount + interaction.amount_out >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.input.1 >= expected_buy);
     }
 
     #[test]
@@ -365,7 +348,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -375,12 +358,12 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
@@ -390,21 +373,21 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.calls()[0];
-        assert_eq!(interaction.token_in, token_a);
-        assert_eq!(interaction.token_out, token_b);
+        let interaction = amm_handler.calls()[0].clone();
+        assert_eq!(interaction.input.0, token_a);
+        assert_eq!(interaction.output.0, token_b);
 
         // Make sure the sell amounts cover the uniswap in, and min buy amounts are covered by uniswap out
-        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.amount_in);
-        assert!(interaction.amount_out >= orders[0].buy_amount + orders[1].buy_amount);
+        assert!(orders[0].sell_amount + orders[1].sell_amount >= interaction.input.1);
+        assert!(interaction.output.1 >= orders[0].buy_amount + orders[1].buy_amount);
 
         // Make sure expected buy amounts (given prices) are also covered by uniswap out amounts
-        let price_a = result.clearing_prices.get(&token_a).unwrap();
-        let price_b = result.clearing_prices.get(&token_b).unwrap();
+        let price_a = result.clearing_price(token_a).unwrap();
+        let price_b = result.clearing_price(token_b).unwrap();
 
         let first_expected_buy = orders[0].sell_amount * price_a / price_b;
         let second_expected_buy = orders[1].sell_amount * price_a / price_b;
-        assert!(interaction.amount_out >= first_expected_buy + second_expected_buy);
+        assert!(interaction.output.1 >= first_expected_buy + second_expected_buy);
     }
 
     #[test]
@@ -419,7 +402,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -429,12 +412,12 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -444,25 +427,25 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.calls()[0];
-        assert_eq!(interaction.token_in, token_b);
-        assert_eq!(interaction.token_out, token_a);
+        let interaction = amm_handler.calls()[0].clone();
+        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.output.0, token_a);
 
         // Make sure the buy amounts +/- uniswap interaction satisfy max_sell amounts
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out);
-        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.amount_in);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
+        assert!(orders[1].sell_amount >= orders[0].buy_amount + interaction.input.1);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
-        let price_a = result.clearing_prices.get(&token_a).unwrap();
-        let price_b = result.clearing_prices.get(&token_b).unwrap();
+        let price_a = result.clearing_price(token_a).unwrap();
+        let price_b = result.clearing_price(token_b).unwrap();
 
         // Multiplying buyAmount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
         // The seller should expect to sell at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.amount_in <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input.1 <= expected_sell);
 
         let expected_sell = orders[1].buy_amount * price_a / price_b;
-        assert!(orders[0].buy_amount + interaction.amount_out <= expected_sell);
+        assert!(orders[0].buy_amount + interaction.output.1 <= expected_sell);
     }
 
     #[test]
@@ -477,7 +460,7 @@ mod tests {
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -487,12 +470,12 @@ mod tests {
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
@@ -502,29 +485,29 @@ mod tests {
         let result = solve(orders.clone().into_iter(), &pool).unwrap();
 
         // Make sure the uniswap interaction is using the correct direction
-        let interaction = amm_handler.calls()[0];
-        assert_eq!(interaction.token_in, token_b);
-        assert_eq!(interaction.token_out, token_a);
+        let interaction = amm_handler.calls()[0].clone();
+        assert_eq!(interaction.input.0, token_b);
+        assert_eq!(interaction.output.0, token_a);
 
         // Make sure the buy order's sell amount - uniswap interaction satisfies sell order's limit
-        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.amount_out);
+        assert!(orders[0].sell_amount >= orders[1].buy_amount - interaction.output.1);
 
         // Make sure the sell order's buy amount + uniswap interaction satisfies buy order's limit
-        assert!(orders[1].buy_amount + interaction.amount_in >= orders[0].sell_amount);
+        assert!(orders[1].buy_amount + interaction.input.1 >= orders[0].sell_amount);
 
         // Make sure buy sell amounts +/- uniswap interaction satisfy expected sell amounts given clearing price
-        let price_a = result.clearing_prices.get(&token_a).unwrap();
-        let price_b = result.clearing_prices.get(&token_b).unwrap();
+        let price_a = result.clearing_price(token_a).unwrap();
+        let price_b = result.clearing_price(token_b).unwrap();
 
         // Multiplying buy_amount with priceB, gives us sell value in "$", divided by priceA gives us value in sell token
         // The seller should expect to sell at least as much as we require for the buyer + uniswap.
         let expected_sell = orders[0].buy_amount * price_b / price_a;
-        assert!(orders[1].buy_amount - interaction.amount_in <= expected_sell);
+        assert!(orders[1].buy_amount - interaction.input.1 <= expected_sell);
 
         // Multiplying sell_amount with priceA, gives us sell value in "$", divided by priceB gives us value in buy token
         // We should have at least as much to give (sell amount + uniswap out) as is expected by the buyer
         let expected_buy = orders[1].sell_amount * price_b / price_a;
-        assert!(orders[0].sell_amount + interaction.amount_out >= expected_buy);
+        assert!(orders[0].sell_amount + interaction.output.1 >= expected_buy);
     }
 
     #[test]
@@ -539,7 +522,7 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -549,12 +532,12 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
@@ -564,8 +547,8 @@ mod tests {
         let result = solve(orders.into_iter(), &pool).unwrap();
         assert!(amm_handler.calls().is_empty());
         assert_eq!(
-            result.clearing_prices,
-            maplit::hashmap! {
+            result.clearing_prices(),
+            &maplit::hashmap! {
                 token_a => to_wei(1_000_000),
                 token_b => to_wei(1_000_001)
             }
@@ -635,7 +618,7 @@ mod tests {
             .into(),
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
@@ -644,7 +627,7 @@ mod tests {
         };
         let result = solve(orders.into_iter(), &pool).unwrap();
 
-        assert_eq!(result.trades.len(), 2);
+        assert_eq!(result.trades().len(), 2);
         assert_eq!(is_valid_solution(&result), true);
     }
 
@@ -660,7 +643,7 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             },
             LimitOrder {
@@ -670,12 +653,12 @@ mod tests {
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
@@ -683,7 +666,7 @@ mod tests {
             settlement_handling: amm_handler,
         };
         let result = solve(orders.into_iter(), &pool).unwrap();
-        assert_eq!(result.trades.len(), 0);
+        assert_eq!(result.trades().len(), 0);
     }
 
     #[test]
@@ -717,84 +700,59 @@ mod tests {
             },
         ];
 
+        let settlement_with_prices = |prices: HashMap<Address, U256>| {
+            let mut settlement = Settlement::new(prices);
+            for order in orders.iter().cloned() {
+                let limit_order = LimitOrder::from(order);
+                settlement
+                    .with_liquidity(&limit_order, limit_order.full_excution_amount())
+                    .unwrap();
+            }
+            settlement
+        };
+
         // Price in the middle is ok
         assert_eq!(
-            is_valid_solution(&Settlement {
-                clearing_prices: maplit::hashmap! {
-                    token_a => to_wei(1),
-                    token_b => to_wei(1)
-                },
-                trades: orders
-                    .clone()
-                    .into_iter()
-                    .map(Trade::fully_matched)
-                    .collect(),
-                ..Default::default()
-            }),
+            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+                token_a => to_wei(1),
+                token_b => to_wei(1)
+            })),
             true
         );
 
         // Price at the limit of first order is ok
         assert_eq!(
-            is_valid_solution(&Settlement {
-                clearing_prices: maplit::hashmap! {
-                    token_a => to_wei(8),
-                    token_b => to_wei(10)
-                },
-                trades: orders
-                    .clone()
-                    .into_iter()
-                    .map(Trade::fully_matched)
-                    .collect(),
-                ..Default::default()
-            }),
+            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+                token_a => to_wei(8),
+                token_b => to_wei(10)
+            })),
             true
         );
 
         // Price at the limit of second order is ok
         assert_eq!(
-            is_valid_solution(&Settlement {
-                clearing_prices: maplit::hashmap! {
-                    token_a => to_wei(10),
-                    token_b => to_wei(9)
-                },
-                trades: orders
-                    .clone()
-                    .into_iter()
-                    .map(Trade::fully_matched)
-                    .collect(),
-                ..Default::default()
-            }),
+            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+                token_a => to_wei(10),
+                token_b => to_wei(9)
+            })),
             true
         );
 
         // Price violating first order is not ok
         assert_eq!(
-            is_valid_solution(&Settlement {
-                clearing_prices: maplit::hashmap! {
-                    token_a => to_wei(7),
-                    token_b => to_wei(10)
-                },
-                trades: orders
-                    .clone()
-                    .into_iter()
-                    .map(Trade::fully_matched)
-                    .collect(),
-                ..Default::default()
-            }),
+            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+                token_a => to_wei(7),
+                token_b => to_wei(10)
+            })),
             false
         );
 
         // Price violating second order is not ok
         assert_eq!(
-            is_valid_solution(&Settlement {
-                clearing_prices: maplit::hashmap! {
-                    token_a => to_wei(10),
-                    token_b => to_wei(8)
-                },
-                trades: orders.into_iter().map(Trade::fully_matched).collect(),
-                ..Default::default()
-            }),
+            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+                token_a => to_wei(10),
+                token_b => to_wei(8)
+            })),
             false
         );
     }
@@ -811,7 +769,7 @@ mod tests {
                 buy_amount: 1.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".into(),
             },
             LimitOrder {
@@ -821,12 +779,12 @@ mod tests {
                 buy_amount: 1.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: CapturingLimitOrderSettlementHandler::arc(),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".into(),
             },
         ];
 
-        let amm_handler = CapturingAmmSettlementHandler::arc();
+        let amm_handler = CapturingSettlementHandler::arc();
         let pool = AmmOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (u128::MAX, u128::MAX),
@@ -874,7 +832,7 @@ mod tests {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (25000075, 2500007500),
             fee: Ratio::new(3, 1000),
-            settlement_handling: CapturingAmmSettlementHandler::arc(),
+            settlement_handling: CapturingSettlementHandler::arc(),
         };
 
         // The first order by itself should not be matchable.
@@ -882,6 +840,6 @@ mod tests {
 
         // Only the second order should match
         let result = solve(orders.into_iter(), &pool).unwrap();
-        assert_eq!(result.trades.len(), 1);
+        assert_eq!(result.trades().len(), 1);
     }
 }

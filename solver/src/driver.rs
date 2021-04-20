@@ -208,7 +208,7 @@ impl Driver {
         for (solver, settlement) in settlements {
             tracing::info!("{} computed {:?}", solver, settlement);
 
-            if settlement.trades.is_empty() {
+            if settlement.trades().is_empty() {
                 tracing::info!("Skipping empty settlement");
                 continue;
             }
@@ -217,7 +217,7 @@ impl Driver {
             // be settled once they have been in the order book for longer. This makes coincidence
             // of wants more likely.
             let should_be_settled_immediately = settlement
-                .trades
+                .trades()
                 .iter()
                 .any(|trade| trade.order.order_meta_data.creation_date <= settle_orders_older_than);
             if !should_be_settled_immediately {
@@ -228,7 +228,7 @@ impl Driver {
                 continue;
             }
 
-            let trades = settlement.trades.clone();
+            let trades = settlement.trades().to_vec();
             match settlement_submission::submit(
                 &self.settlement_contract,
                 self.gas_price_estimator.as_ref(),

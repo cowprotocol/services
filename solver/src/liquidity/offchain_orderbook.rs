@@ -1,12 +1,12 @@
 use crate::orderbook::OrderBookApi;
-use crate::settlement::{Interaction, Trade};
+use crate::settlement::SettlementEncoder;
 use anyhow::{Context, Result};
 use contracts::WETH9;
 use model::order::Order;
 use primitive_types::U256;
 use std::sync::Arc;
 
-use super::{LimitOrder, LimitOrderSettlementHandling};
+use super::{LimitOrder, SettlementHandling};
 
 impl OrderBookApi {
     /// Returns a list of limit orders coming from the offchain orderbook API
@@ -21,7 +21,7 @@ impl OrderBookApi {
     }
 }
 
-struct OrderSettlementHandling {
+struct OrderSettlementHandler {
     #[allow(dead_code)]
     native_token: WETH9,
     order: Order,
@@ -38,18 +38,15 @@ pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
         buy_amount: order.order_creation.buy_amount,
         kind: order.order_creation.kind,
         partially_fillable: order.order_creation.partially_fillable,
-        settlement_handling: Arc::new(OrderSettlementHandling {
+        settlement_handling: Arc::new(OrderSettlementHandler {
             order,
             native_token,
         }),
     }
 }
 
-impl LimitOrderSettlementHandling for OrderSettlementHandling {
-    fn settle(&self, executed_amount: U256) -> (Option<Trade>, Vec<Box<dyn Interaction>>) {
-        (
-            Some(Trade::matched(self.order.clone(), executed_amount)),
-            Vec::new(),
-        )
+impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
+    fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
+        encoder.add_trade(self.order.clone(), executed_amount)
     }
 }

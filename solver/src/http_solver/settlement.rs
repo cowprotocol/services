@@ -1,6 +1,6 @@
 use super::model::*;
 use crate::{
-    liquidity::{AmmOrder, LimitOrder},
+    liquidity::{AmmOrder, AmmOrderExecution, LimitOrder},
     settlement::Settlement,
 };
 use anyhow::{anyhow, ensure, Result};
@@ -25,7 +25,7 @@ pub fn convert_settlement(
     context: SettlementContext,
 ) -> Result<Settlement> {
     let intermediate = IntermediateSettlement::new(settled, context)?;
-    Ok(intermediate.into_settlement())
+    intermediate.into_settlement()
 }
 
 // An intermediate representation between SettledBatchAuctionModel and Settlement useful for doing
@@ -75,24 +75,22 @@ impl IntermediateSettlement {
         })
     }
 
-    fn into_settlement(self) -> Settlement {
-        let mut settlement = Settlement::default();
+    fn into_settlement(self) -> Result<Settlement> {
+        let mut settlement = Settlement::new(self.prices);
         for order in self.executed_limit_orders.iter() {
-            let (trade, interactions) = order
-                .order
-                .settlement_handling
-                .settle(order.executed_amount());
-            if let Some(trade) = trade {
-                settlement.trades.push(trade);
-            }
-            settlement.intra_interactions.extend(interactions);
+            settlement.with_liquidity(&order.order, order.executed_amount())?;
         }
         for amm in self.executed_amms.iter() {
-            let interactions = amm.order.settlement_handling.settle(amm.input, amm.output);
-            settlement.intra_interactions.extend(interactions);
+            settlement.with_liquidity(
+                &amm.order,
+                AmmOrderExecution {
+                    input: amm.input,
+                    output: amm.output,
+                },
+            )?;
         }
-        settlement.clearing_prices = self.prices;
-        settlement
+
+        Ok(settlement)
     }
 }
 
@@ -208,16 +206,11 @@ mod tests {
     use crate::{
         encoding::EncodedInteraction,
         http_solver::model::{ExecutedOrderModel, UpdatedUniswapModel},
-        liquidity::{MockAmmSettlementHandling, MockLimitOrderSettlementHandling},
-        settlement::{Interaction, Trade},
+        liquidity::tests::CapturingSettlementHandler,
+        settlement::Interaction,
     };
     use maplit::hashmap;
-    use mockall::predicate::eq;
-    use model::{
-        order::{Order, OrderCreation},
-        TokenPair,
-    };
-    use std::sync::Arc;
+    use model::TokenPair;
 
     #[derive(Debug)]
     struct NoopInteraction;
@@ -233,25 +226,7 @@ mod tests {
         let t1 = H160::from_low_u64_be(1);
         let tokens = hashmap! { "t0".to_string() => t0, "t1".to_string() => t1 };
 
-        let mut limit_handling = MockLimitOrderSettlementHandling::new();
-        limit_handling.expect_settle().returning(move |_| {
-            (
-                Some(Trade {
-                    order: Order {
-                        order_creation: OrderCreation {
-                            sell_token: t0,
-                            buy_token: t1,
-                            sell_amount: 1.into(),
-                            buy_amount: 2.into(),
-                            ..Default::default()
-                        },
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                }),
-                vec![Box::new(NoopInteraction)],
-            )
-        });
+        let limit_handler = CapturingSettlementHandler::arc();
         let limit_order = LimitOrder {
             sell_token: t0,
             buy_token: t1,
@@ -259,21 +234,17 @@ mod tests {
             buy_amount: 2.into(),
             kind: OrderKind::Sell,
             partially_fillable: false,
-            settlement_handling: Arc::new(limit_handling),
+            settlement_handling: limit_handler.clone(),
             id: "0".to_string(),
         };
         let orders = hashmap! { "lo0".to_string() => limit_order };
 
-        let mut amm_handling = MockAmmSettlementHandling::new();
-        amm_handling
-            .expect_settle()
-            .with(eq((t0, 8.into())), eq((t1, 9.into())))
-            .returning(|_, _| vec![Box::new(NoopInteraction)]);
+        let amm_handler = CapturingSettlementHandler::arc();
         let amm_order = AmmOrder {
             tokens: TokenPair::new(t0, t1).unwrap(),
             reserves: (3, 4),
             fee: 5.into(),
-            settlement_handling: Arc::new(amm_handling),
+            settlement_handling: amm_handler.clone(),
         };
         let amms = hashmap! { "amm0".to_string() => amm_order };
 
@@ -303,10 +274,17 @@ mod tests {
         };
         let settlement = convert_settlement(settled, prepared).unwrap();
         assert_eq!(
-            settlement.clearing_prices,
-            hashmap! { t0 => 10.into(), t1 => 11.into() }
+            settlement.clearing_prices(),
+            &hashmap! { t0 => 10.into(), t1 => 11.into() }
         );
-        assert_eq!(settlement.trades.len(), 1);
-        assert_eq!(settlement.intra_interactions.len(), 2);
+
+        assert_eq!(limit_handler.calls(), vec![7.into()]);
+        assert_eq!(
+            amm_handler.calls(),
+            vec![AmmOrderExecution {
+                input: (t0, 8.into()),
+                output: (t1, 9.into()),
+            }]
+        );
     }
 }

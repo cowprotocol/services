@@ -371,9 +371,7 @@ impl fmt::Display for HttpSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{
-        AmmOrder, LimitOrder, MockAmmSettlementHandling, MockLimitOrderSettlementHandling,
-    };
+    use crate::liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder};
     use ::model::TokenPair;
     use maplit::hashmap;
     use num::rational::Ratio;
@@ -429,14 +427,14 @@ mod tests {
                 sell_amount: base(2).into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                settlement_handling: Arc::new(MockLimitOrderSettlementHandling::new()),
+                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             }),
             Liquidity::Amm(AmmOrder {
                 tokens: TokenPair::new(H160::zero(), H160::from_low_u64_be(1)).unwrap(),
                 reserves: (base(100), base(100)),
                 fee: Ratio::new(0, 1),
-                settlement_handling: Arc::new(MockAmmSettlementHandling::new()),
+                settlement_handling: CapturingSettlementHandler::arc(),
             }),
         ];
         let (model, _context) = solver.prepare_model(orders, gas_price).await.unwrap();
@@ -458,8 +456,8 @@ mod tests {
 
     #[test]
     fn remove_orders_without_native_connection_() {
-        let limit_handling = Arc::new(MockLimitOrderSettlementHandling::new());
-        let amm_handling = Arc::new(MockAmmSettlementHandling::new());
+        let limit_handling = CapturingSettlementHandler::arc();
+        let amm_handling = CapturingSettlementHandler::arc();
 
         let native_token = H160::from_low_u64_be(0);
         let tokens = [

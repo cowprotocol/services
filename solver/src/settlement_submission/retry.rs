@@ -59,8 +59,8 @@ pub fn settle_method_builder(
     contract.settle(
         settlement.tokens,
         settlement.clearing_prices,
-        settlement.encoded_trades,
-        settlement.encoded_interactions,
+        settlement.trades,
+        settlement.interactions,
     )
 }
 

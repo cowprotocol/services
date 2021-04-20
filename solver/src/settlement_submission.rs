@@ -2,11 +2,8 @@ mod gas_price_stream;
 mod retry;
 
 use self::retry::{CancelSender, SettlementSender};
-use crate::{
-    encoding::{EncodedInteraction, EncodedTrade},
-    settlement::Settlement,
-};
-use anyhow::{anyhow, Context, Result};
+use crate::{encoding::EncodedSettlement, settlement::Settlement};
+use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     dyns::DynTransport,
@@ -16,7 +13,7 @@ use ethcontract::{
 };
 use gas_estimation::GasPriceEstimating;
 use gas_price_stream::gas_price_stream;
-use primitive_types::{H160, U256};
+use primitive_types::U256;
 use std::time::Duration;
 use transaction_retry::RetryResult;
 
@@ -34,7 +31,7 @@ pub async fn submit(
     let nonce = transaction_count(contract)
         .await
         .context("failed to get transaction_count")?;
-    let settlement = encode_settlement(&settlement)?;
+    let settlement = settlement.into();
     // Check that a simulation of the transaction works before submitting it.
     simulate_settlement(&settlement, contract).await?;
 
@@ -72,27 +69,6 @@ async fn transaction_count(contract: &GPv2Settlement) -> Result<U256> {
     let web3 = contract.raw_instance().web3();
     let count = web3.eth().transaction_count(address, None).await?;
     Ok(count)
-}
-
-#[derive(Debug, Clone)]
-pub struct EncodedSettlement {
-    tokens: Vec<H160>,
-    clearing_prices: Vec<U256>,
-    encoded_trades: Vec<EncodedTrade>,
-    encoded_interactions: [Vec<EncodedInteraction>; 3],
-}
-
-fn encode_settlement(settlement: &Settlement) -> Result<EncodedSettlement> {
-    Ok(EncodedSettlement {
-        tokens: settlement.tokens(),
-        clearing_prices: settlement.clearing_prices(),
-        encoded_interactions: settlement
-            .encode_interactions()
-            .context("interaction encoding failed")?,
-        encoded_trades: settlement
-            .encode_trades()
-            .ok_or_else(|| anyhow!("trade encoding failed"))?,
-    })
 }
 
 // Simulate the settlement using a web3 `call`.
