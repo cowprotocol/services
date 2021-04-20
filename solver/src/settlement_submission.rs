@@ -3,7 +3,7 @@ mod retry;
 
 use self::retry::{CancelSender, SettlementSender};
 use crate::{encoding::EncodedSettlement, settlement::Settlement};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     dyns::DynTransport,
@@ -17,7 +17,6 @@ use gas_price_stream::gas_price_stream;
 use primitive_types::{H160, U256};
 use std::time::Duration;
 use transaction_retry::RetryResult;
-use web3::types::{BlockId, BlockNumber};
 
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -161,13 +160,10 @@ async fn recover_gas_price_from_pending_transaction(
     address: &H160,
     nonce: U256,
 ) -> Result<Option<U256>> {
-    let block = web3
-        .eth()
-        .block_with_txs(BlockId::Number(BlockNumber::Pending))
-        .await?
-        .ok_or_else(|| anyhow!("empty block"))?;
-    let transaction = block
-        .transactions
+    let transactions = crate::pending_transactions::pending_transactions(web3.transport())
+        .await
+        .context("pending_transactions failed")?;
+    let transaction = transactions
         .iter()
         .find(|transaction| transaction.from == *address && transaction.nonce == nonce);
     Ok(transaction.map(|transaction| transaction.gas_price))
