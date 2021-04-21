@@ -11,7 +11,7 @@ use shared::{
     transport::LoggingTransport,
 };
 use solver::{
-    driver::Driver, liquidity::uniswap::UniswapLiquidity, metrics::Metrics, solver::SolverType,
+    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity, metrics::Metrics, solver::SolverType,
 };
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -139,7 +139,7 @@ async fn main() {
         factory: uniswap_factory,
         chain_id,
     });
-    let uniswap_liquidity = UniswapLiquidity::new(
+    let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         uniswap_pair_provider.clone(),
         settlement_contract.clone(),

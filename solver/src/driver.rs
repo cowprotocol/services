@@ -1,6 +1,6 @@
 use crate::{chain, metrics::SolverMetrics};
 use crate::{
-    liquidity::{uniswap::UniswapLiquidity, LimitOrder, Liquidity},
+    liquidity::{uniswap::UniswapLikeLiquidity, LimitOrder, Liquidity},
     orderbook::OrderBookApi,
     settlement::Settlement,
     settlement_submission,
@@ -28,7 +28,7 @@ const GAS_PRICE_CAP: f64 = 500e9;
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     orderbook: OrderBookApi,
-    uniswap_liquidity: UniswapLiquidity,
+    uniswap_liquidity: UniswapLikeLiquidity,
     price_estimator: Arc<dyn PriceEstimating>,
     solver: Vec<Box<dyn Solver>>,
     gas_price_estimator: Box<dyn GasPriceEstimating>,
@@ -42,7 +42,7 @@ impl Driver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         settlement_contract: GPv2Settlement,
-        uniswap_liquidity: UniswapLiquidity,
+        uniswap_liquidity: UniswapLikeLiquidity,
         orderbook: OrderBookApi,
         price_estimator: Arc<dyn PriceEstimating>,
         solver: Vec<Box<dyn Solver>>,

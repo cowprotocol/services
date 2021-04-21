@@ -38,6 +38,23 @@ fn main() {
     // This is done to have a common interface for Sushiswap, Uniswap & Honeyswap
     generate_contract("IUniswapLikeRouter", hashmap! {});
     generate_contract(
+        "SushiswapV2Router02",
+        hashmap! {
+            1 => (Address::from_str("d9e1cE17f2641f24aE83637ab66a2cca9C378B9F").unwrap(), None),
+            4 => (Address::from_str("1b02dA8Cb0d097eB8D57A175b88c7D8b47997506").unwrap(), None),
+            100 => (Address::from_str("1b02dA8Cb0d097eB8D57A175b88c7D8b47997506").unwrap(), None),
+        },
+    );
+    generate_contract(
+        "SushiswapV2Factory",
+        hashmap! {
+            1 => (Address::from_str("C0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac").unwrap(), None),
+            4 => (Address::from_str("c35DADB65012eC5796536bD9864eD8773aBc74C4").unwrap(), None),
+            100 => (Address::from_str("c35DADB65012eC5796536bD9864eD8773aBc74C4").unwrap(), None),
+        },
+    );
+    generate_contract("SushiswapV2Pair", hashmap! {});
+    generate_contract(
         "GPv2Settlement",
         hashmap! {
             1 => (Address::from_str("0x3328f5f2cEcAF00a2443082B657CedEAf70bfAEf").unwrap(), Some("0x34b7f9a340e663df934fcc662b3ec5fcd7cd0c93d3c46f8ce612e94fff803909".parse().unwrap())),

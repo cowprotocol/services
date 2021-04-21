@@ -19,7 +19,7 @@ use crate::settlement::SettlementEncoder;
 use super::{AmmOrder, AmmOrderExecution, LimitOrder, SettlementHandling};
 use shared::amm_pair_provider::AmmPairProvider;
 
-pub struct UniswapLiquidity {
+pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: PoolFetcher,
     web3: Web3,
@@ -33,7 +33,7 @@ struct Inner {
     allowances: Mutex<HashMap<H160, U256>>,
 }
 
-impl UniswapLiquidity {
+impl UniswapLikeLiquidity {
     pub fn new(
         router: IUniswapLikeRouter,
         pair_provider: Arc<dyn AmmPairProvider>,

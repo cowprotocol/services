@@ -22,7 +22,9 @@ use shared::{
     transport::LoggingTransport,
     Web3,
 };
-use solver::{liquidity::uniswap::UniswapLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi};
+use solver::{
+    liquidity::uniswap::UniswapLikeLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi,
+};
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
@@ -232,7 +234,7 @@ async fn test_with_ganache() {
     });
 
     // Drive solution
-    let uniswap_liquidity = UniswapLiquidity::new(
+    let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         pair_provider.clone(),
         gp_settlement.clone(),
