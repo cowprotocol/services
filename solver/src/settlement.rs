@@ -1,5 +1,6 @@
 use crate::{
     encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
+    interactions::UnwrapWethInteraction,
     liquidity::Settleable,
 };
 use anyhow::{anyhow, Result};
@@ -7,7 +8,7 @@ use model::order::{Order, OrderKind};
 use num::{BigRational, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext;
-use std::collections::HashMap;
+use std::{collections::HashMap, iter};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
@@ -62,6 +63,13 @@ pub trait Interaction: std::fmt::Debug + Send {
     fn encode(&self) -> Vec<EncodedInteraction>;
 }
 
+#[cfg(test)]
+impl Interaction for EncodedInteraction {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        vec![self.clone()]
+    }
+}
+
 /// An intermediate settlement representation that can be incrementally
 /// constructed.
 ///
@@ -76,6 +84,7 @@ pub struct SettlementEncoder {
     clearing_prices: HashMap<H160, U256>,
     trades: Vec<Trade>,
     execution_plan: Vec<Box<dyn Interaction>>,
+    unwraps: Vec<UnwrapWethInteraction>,
 }
 
 impl SettlementEncoder {
@@ -100,6 +109,7 @@ impl SettlementEncoder {
             clearing_prices,
             trades: Vec::new(),
             execution_plan: Vec::new(),
+            unwraps: Vec::new(),
         }
     }
 
@@ -122,6 +132,18 @@ impl SettlementEncoder {
 
     pub fn append_to_execution_plan(&mut self, interaction: impl Interaction + 'static) {
         self.execution_plan.push(Box::new(interaction));
+    }
+
+    pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {
+        for existing_unwrap in self.unwraps.iter_mut() {
+            if existing_unwrap.merge(&unwrap).is_ok() {
+                return;
+            }
+        }
+
+        // If the native token unwrap can't be merged with any existing ones,
+        // just add it to the vector.
+        self.unwraps.push(unwrap);
     }
 
     fn token_index(&self, token: H160) -> Option<usize> {
@@ -191,9 +213,13 @@ impl SettlementEncoder {
                 .collect(),
             interactions: [
                 Vec::new(),
-                self.execution_plan
-                    .iter()
-                    .flat_map(|interaction| interaction.encode())
+                iter::empty()
+                    .chain(
+                        self.execution_plan
+                            .iter()
+                            .flat_map(|interaction| interaction.encode()),
+                    )
+                    .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
                     .collect(),
                 Vec::new(),
             ],
@@ -305,6 +331,7 @@ fn sell_order_surplus(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interactions::dummy_web3;
     use model::order::{OrderCreation, OrderKind};
     use num::FromPrimitive;
 
@@ -616,6 +643,70 @@ mod tests {
         assert_eq!(
             buy_order_surplus(&r(100), &r(200), &r(60), &r(20), &r(20)),
             Some(r(2000))
+        );
+    }
+
+    #[test]
+    fn settlement_merges_unwraps_for_same_token() {
+        let weth = dummy_web3::dummy_weth([0x42; 20]);
+
+        let mut encoder = SettlementEncoder::new(HashMap::new());
+        encoder.add_unwrap(UnwrapWethInteraction {
+            weth: weth.clone(),
+            amount: 1.into(),
+        });
+        encoder.add_unwrap(UnwrapWethInteraction {
+            weth: weth.clone(),
+            amount: 2.into(),
+        });
+
+        assert_eq!(
+            encoder.finish().interactions[1],
+            UnwrapWethInteraction {
+                weth,
+                amount: 3.into(),
+            }
+            .encode(),
+        );
+    }
+
+    #[test]
+    fn settlement_encoder_appends_unwraps_for_different_tokens() {
+        let mut encoder = SettlementEncoder::new(HashMap::new());
+        encoder.add_unwrap(UnwrapWethInteraction {
+            weth: dummy_web3::dummy_weth([0x01; 20]),
+            amount: 1.into(),
+        });
+        encoder.add_unwrap(UnwrapWethInteraction {
+            weth: dummy_web3::dummy_weth([0x02; 20]),
+            amount: 2.into(),
+        });
+
+        assert_eq!(
+            encoder
+                .unwraps
+                .iter()
+                .map(|unwrap| (unwrap.weth.address().0, unwrap.amount.as_u64()))
+                .collect::<Vec<_>>(),
+            vec![([0x01; 20], 1), ([0x02; 20], 2)],
+        );
+    }
+
+    #[test]
+    fn settlement_unwraps_after_execution_plan() {
+        let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Vec::new());
+        let unwrap = UnwrapWethInteraction {
+            weth: dummy_web3::dummy_weth([0x01; 20]),
+            amount: 1.into(),
+        };
+
+        let mut encoder = SettlementEncoder::new(HashMap::new());
+        encoder.add_unwrap(unwrap.clone());
+        encoder.append_to_execution_plan(interaction.clone());
+
+        assert_eq!(
+            encoder.finish().interactions[1],
+            [interaction.encode(), unwrap.encode()].concat(),
         );
     }
 }
