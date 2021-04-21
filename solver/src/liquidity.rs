@@ -52,7 +52,7 @@ pub struct LimitOrder {
 
 impl LimitOrder {
     /// Returns the full execution amount for the specified limit order.
-    pub fn full_excution_amount(&self) -> U256 {
+    pub fn full_execution_amount(&self) -> U256 {
         match self.kind {
             OrderKind::Sell => self.sell_amount,
             OrderKind::Buy => self.buy_amount,
@@ -173,11 +173,11 @@ pub mod tests {
         }
 
         assert_eq!(
-            simple_limit_order(OrderKind::Sell, 1, 2).full_excution_amount(),
+            simple_limit_order(OrderKind::Sell, 1, 2).full_execution_amount(),
             1.into(),
         );
         assert_eq!(
-            simple_limit_order(OrderKind::Buy, 1, 2).full_excution_amount(),
+            simple_limit_order(OrderKind::Buy, 1, 2).full_execution_amount(),
             2.into(),
         );
     }

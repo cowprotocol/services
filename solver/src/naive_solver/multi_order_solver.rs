@@ -104,7 +104,7 @@ fn solve_without_uniswap(
         context_b.address => context_a.reserve,
     });
     for order in orders {
-        settlement.with_liquidity(&order, order.full_excution_amount())?;
+        settlement.with_liquidity(&order, order.full_execution_amount())?;
     }
 
     Ok(settlement)
@@ -132,7 +132,7 @@ fn solve_with_uniswap(
     });
     for order in orders {
         settlement
-            .with_liquidity(&order, order.full_excution_amount())
+            .with_liquidity(&order, order.full_execution_amount())
             .ok()?;
     }
 
@@ -705,7 +705,7 @@ mod tests {
             for order in orders.iter().cloned() {
                 let limit_order = LimitOrder::from(order);
                 settlement
-                    .with_liquidity(&limit_order, limit_order.full_excution_amount())
+                    .with_liquidity(&limit_order, limit_order.full_execution_amount())
                     .unwrap();
             }
             settlement

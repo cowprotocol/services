@@ -151,7 +151,7 @@ impl Solution {
             order.buy_token => self.executed_sell_amount,
         });
 
-        settlement.with_liquidity(order, order.full_excution_amount())?;
+        settlement.with_liquidity(order, order.full_execution_amount())?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
         for pool in self.path {
