@@ -45,13 +45,7 @@ impl UniswapSolver {
     }
 
     fn solve(&self, liquidity: Vec<Liquidity>) -> Option<Result<Settlement>> {
-        let amm_map = liquidity
-            .iter()
-            .filter_map(|liquidity| match liquidity {
-                Liquidity::Limit(_) => None,
-                Liquidity::Amm(amm_order) => Some((amm_order.tokens, amm_order.clone())),
-            })
-            .collect::<HashMap<_, _>>();
+        let amm_map = extract_deepest_amm_liquidity(&liquidity);
 
         let pool_map = amm_map
             .iter()
@@ -182,6 +176,22 @@ fn amm_to_pool(amm: &AmmOrder) -> Pool {
         reserves: amm.reserves,
         fee: amm.fee,
     }
+}
+
+pub fn extract_deepest_amm_liquidity(liquidity: &[Liquidity]) -> HashMap<TokenPair, AmmOrder> {
+    let mut result = HashMap::new();
+    for liquidity in liquidity {
+        match liquidity {
+            Liquidity::Amm(order) => {
+                let deepest_so_far = result.entry(order.tokens).or_insert_with(|| order.clone());
+                if deepest_so_far.constant_product() < order.constant_product() {
+                    result.insert(order.tokens, order.clone());
+                }
+            }
+            _ => continue,
+        }
+    }
+    result
 }
 
 #[cfg(test)]
@@ -384,6 +394,50 @@ mod tests {
                 input: (native_token, 101_315.into()),
                 output: (buy_token, 100_000.into()),
             }
+        );
+    }
+
+    #[test]
+    fn test_extract_deepest_amm_liquidity() {
+        let token_pair =
+            TokenPair::new(H160::from_low_u64_be(0), H160::from_low_u64_be(1)).unwrap();
+        let unrelated_token_pair =
+            TokenPair::new(H160::from_low_u64_be(2), H160::from_low_u64_be(3)).unwrap();
+        let handler = CapturingSettlementHandler::arc();
+        let liquidity = vec![
+            // Deep pool
+            AmmOrder {
+                tokens: token_pair,
+                reserves: (10_000_000, 10_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: handler.clone(),
+            },
+            // Shallow pool
+            AmmOrder {
+                tokens: token_pair,
+                reserves: (100, 100),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: handler.clone(),
+            },
+            // unrelated pool
+            AmmOrder {
+                tokens: unrelated_token_pair,
+                reserves: (10_000_000, 10_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: handler,
+            },
+        ];
+        let result = extract_deepest_amm_liquidity(
+            &liquidity
+                .iter()
+                .cloned()
+                .map(Liquidity::Amm)
+                .collect::<Vec<_>>(),
+        );
+        assert_eq!(result[&token_pair].reserves, liquidity[0].reserves);
+        assert_eq!(
+            result[&unrelated_token_pair].reserves,
+            liquidity[2].reserves
         );
     }
 }

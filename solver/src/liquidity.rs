@@ -95,6 +95,12 @@ pub struct AmmOrderExecution {
     pub output: (H160, U256),
 }
 
+impl AmmOrder {
+    pub fn constant_product(&self) -> U256 {
+        U256::from(self.reserves.0) * U256::from(self.reserves.1)
+    }
+}
+
 impl Settleable for AmmOrder {
     type Execution = AmmOrderExecution;
 
