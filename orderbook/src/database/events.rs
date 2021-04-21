@@ -137,8 +137,12 @@ async fn insert_invalidation(
     index: &EventIndex,
     event: &Invalidation,
 ) -> Result<(), sqlx::Error> {
+    // We use ON CONFLICT so that multiple updates running at the same do not error because of
+    // events already existing. This can happen when multiple orderbook apis run in HPA.
+    // See #444 .
     const QUERY: &str =
-        "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3);";
+        "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3) \
+         ON CONFLICT DO NOTHING;";
     transaction
         .execute(
             sqlx::query(QUERY)
@@ -155,7 +159,9 @@ async fn insert_trade(
     index: &EventIndex,
     event: &Trade,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount) VALUES ($1, $2, $3, $4, $5, $6);";
+    const QUERY: &str = "\
+        INSERT INTO trades (block_number, log_index, order_uid, sell_amount, buy_amount, fee_amount) VALUES ($1, $2, $3, $4, $5, $6) \
+        ON CONFLICT DO NOTHING;";
     transaction
         .execute(
             sqlx::query(QUERY)
@@ -176,7 +182,8 @@ async fn insert_settlement(
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4)";
+        INSERT INTO settlements (tx_hash, block_number, log_index, solver) VALUES ($1, $2, $3, $4) \
+        ON CONFLICT DO NOTHING;";
     transaction
         .execute(
             sqlx::query(QUERY)
@@ -257,5 +264,42 @@ mod tests {
 
         db.replace_events(1, vec![]).await.unwrap();
         assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_repeated_event_insert_ignored() {
+        let db = Database::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        for _ in 0..2 {
+            db.insert_events(vec![(
+                EventIndex {
+                    block_number: 2,
+                    log_index: 0,
+                },
+                Event::Trade(Default::default()),
+            )])
+            .await
+            .unwrap();
+            db.insert_events(vec![(
+                EventIndex {
+                    block_number: 2,
+                    log_index: 1,
+                },
+                Event::Invalidation(Default::default()),
+            )])
+            .await
+            .unwrap();
+            db.insert_events(vec![(
+                EventIndex {
+                    block_number: 2,
+                    log_index: 2,
+                },
+                Event::Settlement(Default::default()),
+            )])
+            .await
+            .unwrap();
+        }
+        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 2);
     }
 }
