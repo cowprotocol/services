@@ -11,7 +11,8 @@ use shared::{
     transport::LoggingTransport,
 };
 use solver::{
-    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity, metrics::Metrics, solver::SolverType,
+    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
+    liquidity_collector::LiquidityCollector, metrics::Metrics, solver::SolverType,
 };
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -171,10 +172,13 @@ async fn main() {
         token_info_fetcher,
         price_estimator.clone(),
     );
-    let mut driver = Driver::new(
-        settlement_contract,
+    let liquidity_collector = LiquidityCollector {
         uniswap_liquidity,
         orderbook_api,
+    };
+    let mut driver = Driver::new(
+        settlement_contract,
+        liquidity_collector,
         price_estimator,
         solver,
         Box::new(gas_price_estimator),

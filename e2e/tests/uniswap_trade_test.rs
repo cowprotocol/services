@@ -23,7 +23,8 @@ use shared::{
     Web3,
 };
 use solver::{
-    liquidity::uniswap::UniswapLikeLiquidity, metrics::NoopMetrics, orderbook::OrderBookApi,
+    liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
+    metrics::NoopMetrics, orderbook::OrderBookApi,
 };
 use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -242,10 +243,13 @@ async fn test_with_ganache() {
         web3.clone(),
     );
     let solver = solver::naive_solver::NaiveSolver {};
+    let liquidity_collector = LiquidityCollector {
+        uniswap_liquidity,
+        orderbook_api: create_orderbook_api(&web3),
+    };
     let mut driver = solver::driver::Driver::new(
         gp_settlement.clone(),
-        uniswap_liquidity,
-        create_orderbook_api(&web3),
+        liquidity_collector,
         price_estimator,
         vec![Box::new(solver)],
         Box::new(web3.clone()),

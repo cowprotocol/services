@@ -13,7 +13,7 @@ pub mod offchain_orderbook;
 pub mod uniswap;
 
 /// Defines the different types of liquidity our solvers support
-#[derive(Clone, AsStaticStr, EnumVariantNames)]
+#[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
 pub enum Liquidity {
     Limit(LimitOrder),
     Amm(AmmOrder),
@@ -48,6 +48,12 @@ pub struct LimitOrder {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl std::fmt::Debug for LimitOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Limit Order {}", self.id)
+    }
 }
 
 impl LimitOrder {
@@ -87,6 +93,12 @@ pub struct AmmOrder {
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl std::fmt::Debug for AmmOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AMM {:?}", self.tokens)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
