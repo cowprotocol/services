@@ -1,10 +1,10 @@
 mod multi_order_solver;
 
 use crate::{
+    baseline_solver::extract_deepest_amm_liquidity,
     liquidity::{AmmOrder, LimitOrder, Liquidity},
     settlement::Settlement,
     solver::Solver,
-    uniswap_solver::extract_deepest_amm_liquidity,
 };
 use anyhow::Result;
 use model::TokenPair;

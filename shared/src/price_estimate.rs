@@ -1,9 +1,9 @@
-use crate::conversions::U256Ext;
-use crate::pool_fetching::{Pool, PoolFetching};
-use crate::uniswap_solver::{
+use crate::baseline_solver::{
     estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
     token_path_to_pair_path,
 };
+use crate::conversions::U256Ext;
+use crate::pool_fetching::{Pool, PoolFetching};
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use futures::future::join_all;

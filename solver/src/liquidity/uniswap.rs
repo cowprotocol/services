@@ -3,8 +3,8 @@ use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
+    baseline_solver::{path_candidates, token_path_to_pair_path},
     pool_fetching::{PoolFetcher, PoolFetching as _},
-    uniswap_solver::{path_candidates, token_path_to_pair_path},
     Web3,
 };
 use std::collections::{HashMap, HashSet};

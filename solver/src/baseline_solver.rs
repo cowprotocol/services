@@ -3,10 +3,10 @@ use ethcontract::{H160, U256};
 use maplit::hashmap;
 use model::TokenPair;
 use shared::{
-    pool_fetching::Pool,
-    uniswap_solver::{
+    baseline_solver::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
     },
+    pool_fetching::Pool,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -18,12 +18,12 @@ use crate::{
     settlement::Settlement,
     solver::Solver,
 };
-pub struct UniswapSolver {
+pub struct BaselineSolver {
     base_tokens: HashSet<H160>,
 }
 
 #[async_trait::async_trait]
-impl Solver for UniswapSolver {
+impl Solver for BaselineSolver {
     async fn solve(
         &self,
         liquidity: Vec<Liquidity>,
@@ -33,13 +33,13 @@ impl Solver for UniswapSolver {
     }
 }
 
-impl fmt::Display for UniswapSolver {
+impl fmt::Display for BaselineSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "UniswapSolver")
+        write!(f, "BaselineSolver")
     }
 }
 
-impl UniswapSolver {
+impl BaselineSolver {
     pub fn new(base_tokens: HashSet<H160>) -> Self {
         Self { base_tokens }
     }
@@ -269,7 +269,7 @@ mod tests {
         let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
         liquidity.extend(amms.iter().cloned().map(Liquidity::Amm));
 
-        let solver = UniswapSolver::new(hashset! { native_token});
+        let solver = BaselineSolver::new(hashset! { native_token});
         let result = solver.must_solve(liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -365,7 +365,7 @@ mod tests {
         let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
         liquidity.extend(amms.iter().cloned().map(Liquidity::Amm));
 
-        let solver = UniswapSolver::new(hashset! { native_token});
+        let solver = BaselineSolver::new(hashset! { native_token});
         let result = solver.must_solve(liquidity);
         assert_eq!(
             result.clearing_prices(),

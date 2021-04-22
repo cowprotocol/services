@@ -1,3 +1,4 @@
+pub mod baseline_solver;
 pub mod driver;
 pub mod encoding;
 pub mod http_solver;
@@ -11,7 +12,6 @@ pub mod pending_transactions;
 pub mod settlement;
 pub mod settlement_submission;
 pub mod solver;
-pub mod uniswap_solver;
 mod util;
 
 use anyhow::Result;
