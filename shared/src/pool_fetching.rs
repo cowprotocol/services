@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 
-use crate::Web3;
+use crate::{baseline_solver::BaselineSolvable, Web3};
 use contracts::{UniswapV2Pair, ERC20};
 use ethcontract::{batch::CallBatch, H160, U256};
 use model::TokenPair;
@@ -157,6 +157,31 @@ impl Pool {
             .checked_sub(amount_out)?
             .checked_mul(U256::from(self.fee.denom().checked_sub(*self.fee.numer())?))?;
         numerator.checked_div(denominator)?.checked_add(1.into())
+    }
+}
+
+impl BaselineSolvable for Pool {
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+        self.get_amount_in(out_token, out_amount)
+            .map(|(in_amount, token)| {
+                assert_eq!(token, in_token);
+                in_amount
+            })
+    }
+
+    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+        self.get_amount_out(in_token, in_amount)
+            .map(|(out_amount, token)| {
+                assert_eq!(token, out_token);
+                out_amount
+            })
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        self.get_spot_price(base_token).map(|(price, token)| {
+            assert_eq!(token, quote_token);
+            price
+        })
     }
 }
 

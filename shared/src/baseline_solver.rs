@@ -1,18 +1,31 @@
+//! Module containing basic path-finding logic to get quotes/routes for the best onchain liquidity.
+
 use ethcontract::{H160, U256};
 use model::TokenPair;
 use num::BigRational;
 use std::collections::{HashMap, HashSet};
 
-use crate::pool_fetching::Pool;
-
 type PathCandidate = Vec<H160>;
+
+pub trait BaselineSolvable {
+    // Given the desired output token, the amount and token input, return the expected amount of output token.
+    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256>;
+
+    // Given the input token, the amount and token we want output, return the required amount of input token that needs to be provided.
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256>;
+
+    // Returns the current price as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18.
+    // E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD), the spot price is 125/100.
+    // Implementation may assume no amount is actually being traded, e.g. no fee incurs
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational>;
+}
 
 // Given a path and sell amount (first token of the path) estimates the buy amount (last token of the path).
 // Returns None if the path is invalid or pool information doesn't exist.
 pub fn estimate_buy_amount(
     sell_amount: U256,
     path: &[H160],
-    pools: &HashMap<TokenPair, Pool>,
+    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
 ) -> Option<U256> {
     let sell_token = path.first()?;
     path.iter()
@@ -23,8 +36,10 @@ pub fn estimate_buy_amount(
                 None => return None,
             };
 
-            match pools.get(&TokenPair::new(*current, previous.1)?) {
-                Some(pool) => pool.get_amount_out(previous.1, previous.0),
+            match liquidity.get(&TokenPair::new(*current, previous.1)?) {
+                Some(liquidity) => liquidity
+                    .get_amount_out(*current, previous.0, previous.1)
+                    .map(|amount| (amount, *current)),
                 None => None,
             }
         })
@@ -36,7 +51,7 @@ pub fn estimate_buy_amount(
 pub fn estimate_sell_amount(
     buy_amount: U256,
     path: &[H160],
-    pools: &HashMap<TokenPair, Pool>,
+    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
 ) -> Option<U256> {
     let buy_token = path.last()?;
     path.iter()
@@ -47,15 +62,20 @@ pub fn estimate_sell_amount(
                 Some(previous) => previous,
                 None => return None,
             };
-            match pools.get(&TokenPair::new(*current, previous.1)?) {
-                Some(pool) => pool.get_amount_in(previous.1, previous.0),
+            match liquidity.get(&TokenPair::new(*current, previous.1)?) {
+                Some(liquidity) => liquidity
+                    .get_amount_in(*current, previous.0, previous.1)
+                    .map(|amount| (amount, *current)),
                 None => None,
             }
         })
         .map(|(amount, _)| amount)
 }
 
-pub fn estimate_spot_price(path: &[H160], pools: &HashMap<TokenPair, Pool>) -> Option<BigRational> {
+pub fn estimate_spot_price(
+    path: &[H160],
+    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
+) -> Option<BigRational> {
     let sell_token = path.first()?;
     path.iter()
         .skip(1)
@@ -66,9 +86,9 @@ pub fn estimate_spot_price(path: &[H160], pools: &HashMap<TokenPair, Pool>) -> O
                     Some(previous) => previous,
                     None => return None,
                 };
-                let pool = pools.get(&TokenPair::new(*current, previous.1)?)?;
-                let (price, token) = pool.get_spot_price(previous.1)?;
-                Some((previous.0 * price, token))
+                let liquidity = liquidity.get(&TokenPair::new(*current, previous.1)?)?;
+                let price = liquidity.get_spot_price(previous.1, *current)?;
+                Some((previous.0 * price, *current))
             },
         )
         .map(|(amount, _)| amount)
@@ -121,6 +141,7 @@ pub fn token_path_to_pair_path(token_list: &[H160]) -> Vec<TokenPair> {
 mod tests {
     use super::*;
     use crate::conversions::big_rational_to_float;
+    use crate::pool_fetching::Pool;
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
     use model::TokenPair;
