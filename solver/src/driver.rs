@@ -1,4 +1,9 @@
-use crate::{liquidity::Liquidity, settlement::Settlement, settlement_submission, solver::Solver};
+use crate::{
+    liquidity::{offchain_orderbook::BUY_ETH_ADDRESS, Liquidity},
+    settlement::Settlement,
+    settlement_submission,
+    solver::Solver,
+};
 use crate::{liquidity_collector::LiquidityCollector, metrics::SolverMetrics};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -68,47 +73,13 @@ impl Driver {
         }
     }
 
-    async fn collect_estimated_prices(
-        &self,
-        liquidity: &[Liquidity],
-    ) -> HashMap<H160, BigRational> {
-        // Computes set of traded tokens (limit orders only).
-        let mut tokens = HashSet::new();
-        for liquid in liquidity {
-            if let Liquidity::Limit(limit_order) = liquid {
-                tokens.insert(limit_order.sell_token);
-                tokens.insert(limit_order.buy_token);
-            }
-        }
-        let tokens = tokens.drain().collect::<Vec<_>>();
-
-        // For ranking purposes it doesn't matter how the external price vector is scaled,
-        // but native_token is used here anyway for better logging/debugging.
-        let denominator_token: H160 = self.native_token;
-
-        let estimated_prices = self
-            .price_estimator
-            .estimate_prices(&tokens, denominator_token)
-            .await;
-
-        tokens
-            .into_iter()
-            .zip(estimated_prices)
-            .filter_map(|(token, price)| match price {
-                Ok(price) => Some((token, price)),
-                Err(err) => {
-                    tracing::warn!("failed to estimate price for token {}: {:?}", token, err);
-                    None
-                }
-            })
-            .collect()
-    }
-
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
         let liquidity = self.liquidity_collector.get_liquidity().await?;
 
-        let estimated_prices = self.collect_estimated_prices(&liquidity).await;
+        let estimated_prices =
+            collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &liquidity)
+                .await;
         // Filter limit orders for which we don't have price estimates as they cannot be considered for the objective criterion
         let (liquidity, removed_orders): (Vec<_>, Vec<_>) =
             liquidity
@@ -221,5 +192,135 @@ impl Driver {
             }
         }
         Ok(())
+    }
+}
+
+pub async fn collect_estimated_prices(
+    price_estimator: &dyn PriceEstimating,
+    native_token: H160,
+    liquidity: &[Liquidity],
+) -> HashMap<H160, BigRational> {
+    // Computes set of traded tokens (limit orders only).
+    let mut tokens = HashSet::new();
+    for liquid in liquidity {
+        if let Liquidity::Limit(limit_order) = liquid {
+            tokens.insert(limit_order.sell_token);
+            tokens.insert(limit_order.buy_token);
+        }
+    }
+    let tokens = tokens.drain().collect::<Vec<_>>();
+
+    // For ranking purposes it doesn't matter how the external price vector is scaled,
+    // but native_token is used here anyway for better logging/debugging.
+    let denominator_token: H160 = native_token;
+
+    let estimated_prices = price_estimator
+        .estimate_prices(&tokens, denominator_token)
+        .await;
+
+    let mut prices: HashMap<_, _> = tokens
+        .into_iter()
+        .zip(estimated_prices)
+        .filter_map(|(token, price)| match price {
+            Ok(price) => Some((token, price)),
+            Err(err) => {
+                tracing::warn!("failed to estimate price for token {}: {:?}", token, err);
+                None
+            }
+        })
+        .collect();
+
+    // If the wrapped native token is in the price list (e.g. WETH), so should be the placeholder for its native counterpart
+    if let Some(price) = prices.get(&native_token).cloned() {
+        prices.insert(BUY_ETH_ADDRESS, price);
+    }
+    prices
+}
+
+#[cfg(test)]
+mod tests {
+    use shared::price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator};
+
+    use super::*;
+    use crate::liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder};
+    use model::{order::OrderKind, TokenPair};
+    use num::rational::Ratio;
+
+    #[tokio::test]
+    async fn collect_estimated_prices_adds_prices_for_buy_and_sell_token_of_limit_orders() {
+        let price_estimator = FakePriceEstimator(BigRational::from_float(1.0).unwrap());
+
+        let native_token = H160::zero();
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        let liquidity = vec![
+            Liquidity::Limit(LimitOrder {
+                sell_amount: 100_000.into(),
+                buy_amount: 100_000.into(),
+                sell_token,
+                buy_token,
+                kind: OrderKind::Buy,
+                partially_fillable: false,
+                settlement_handling: CapturingSettlementHandler::arc(),
+                id: "0".into(),
+            }),
+            Liquidity::Amm(AmmOrder {
+                tokens: TokenPair::new(buy_token, native_token).unwrap(),
+                reserves: (1_000_000, 1_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            }),
+        ];
+        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        assert_eq!(prices.len(), 2);
+        assert!(prices.contains_key(&sell_token));
+        assert!(prices.contains_key(&buy_token));
+    }
+
+    #[tokio::test]
+    async fn collect_estimated_prices_skips_token_for_which_estimate_fails() {
+        let price_estimator = FailingPriceEstimator();
+
+        let native_token = H160::zero();
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        let liquidity = vec![Liquidity::Limit(LimitOrder {
+            sell_amount: 100_000.into(),
+            buy_amount: 100_000.into(),
+            sell_token,
+            buy_token,
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+            id: "0".into(),
+        })];
+        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        assert_eq!(prices.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn collect_estimated_prices_adds_native_token_if_wrapped_is_traded() {
+        let price_estimator = FakePriceEstimator(BigRational::from_float(1.0).unwrap());
+
+        let native_token = H160::zero();
+        let sell_token = H160::from_low_u64_be(1);
+
+        let liquidity = vec![Liquidity::Limit(LimitOrder {
+            sell_amount: 100_000.into(),
+            buy_amount: 100_000.into(),
+            sell_token,
+            buy_token: native_token,
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+            id: "0".into(),
+        })];
+        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        assert_eq!(prices.len(), 3);
+        assert!(prices.contains_key(&sell_token));
+        assert!(prices.contains_key(&native_token));
+        assert!(prices.contains_key(&BUY_ETH_ADDRESS));
     }
 }

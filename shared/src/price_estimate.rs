@@ -258,15 +258,43 @@ impl UniswapPriceEstimator {
     }
 }
 
-pub struct FakePriceEstimator(pub BigRational);
-#[async_trait::async_trait]
-impl PriceEstimating for FakePriceEstimator {
-    async fn estimate_price(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<BigRational> {
-        Ok(self.0.clone())
+pub mod mocks {
+    use super::*;
+
+    pub struct FakePriceEstimator(pub BigRational);
+    #[async_trait::async_trait]
+    impl PriceEstimating for FakePriceEstimator {
+        async fn estimate_price(
+            &self,
+            _: H160,
+            _: H160,
+            _: U256,
+            _: OrderKind,
+        ) -> Result<BigRational> {
+            Ok(self.0.clone())
+        }
+
+        async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
+            Ok(100_000.into())
+        }
     }
 
-    async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
-        Ok(100_000.into())
+    pub struct FailingPriceEstimator();
+    #[async_trait::async_trait]
+    impl PriceEstimating for FailingPriceEstimator {
+        async fn estimate_price(
+            &self,
+            _: H160,
+            _: H160,
+            _: U256,
+            _: OrderKind,
+        ) -> Result<BigRational> {
+            Err(anyhow!("error"))
+        }
+
+        async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
+            Err(anyhow!("error"))
+        }
     }
 }
 

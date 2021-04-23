@@ -251,7 +251,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 mod tests {
     use chrono::Duration;
     use shared::gas_price_estimation::FakeGasPriceEstimator;
-    use shared::price_estimate::FakePriceEstimator;
+    use shared::price_estimate::mocks::FakePriceEstimator;
     use std::sync::Arc;
 
     use super::*;

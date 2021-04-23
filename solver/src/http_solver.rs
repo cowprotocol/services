@@ -375,7 +375,7 @@ mod tests {
     use ::model::TokenPair;
     use maplit::hashmap;
     use num::rational::Ratio;
-    use shared::price_estimate::FakePriceEstimator;
+    use shared::price_estimate::mocks::FakePriceEstimator;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
