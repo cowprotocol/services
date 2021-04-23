@@ -78,6 +78,11 @@ impl Interaction for EncodedInteraction {
 /// Additionally, the fact that the settlement is kept in an intermediate
 /// representation allows the encoder to potentially perform gas optimizations
 /// (e.g. collapsing two interactions into one equivalent one).
+///
+/// If any of the encoder methods fail, then the encoder is assumed to be in a
+/// bad state and should be discarded. There is an issue to fix this at a type
+/// level:
+/// <https://github.com/gnosis/gp-v2-services/issues/501>
 #[derive(Debug)]
 pub struct SettlementEncoder {
     tokens: Vec<H160>,
@@ -111,6 +116,10 @@ impl SettlementEncoder {
             execution_plan: Vec::new(),
             unwraps: Vec::new(),
         }
+    }
+
+    pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
+        &self.clearing_prices
     }
 
     pub fn add_trade(&mut self, order: Order, executed_amount: U256) -> Result<()> {
@@ -366,12 +375,36 @@ fn sell_order_surplus(
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::*;
     use crate::interactions::dummy_web3;
+    use crate::liquidity::SettlementHandling;
     use maplit::hashmap;
     use model::order::{OrderCreation, OrderKind};
     use num::FromPrimitive;
+
+    pub fn assert_settlement_encoded_with<L, S>(
+        prices: HashMap<H160, U256>,
+        handler: S,
+        execution: L::Execution,
+        exec: impl FnOnce(&mut SettlementEncoder),
+    ) where
+        L: Settleable,
+        S: SettlementHandling<L>,
+    {
+        let actual_settlement = {
+            let mut encoder = SettlementEncoder::new(prices.clone());
+            handler.encode(execution, &mut encoder).unwrap();
+            encoder.finish()
+        };
+        let expected_settlement = {
+            let mut encoder = SettlementEncoder::new(prices);
+            exec(&mut encoder);
+            encoder.finish()
+        };
+
+        assert_eq!(actual_settlement, expected_settlement);
+    }
 
     #[test]
     pub fn encode_trades_finds_token_index() {
