@@ -7,6 +7,7 @@ pub mod liquidity;
 pub mod liquidity_collector;
 pub mod metrics;
 pub mod naive_solver;
+pub mod oneinch_solver;
 pub mod orderbook;
 pub mod pending_transactions;
 pub mod settlement;
