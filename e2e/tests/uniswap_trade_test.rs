@@ -79,8 +79,7 @@ async fn test_with_ganache() {
         .expect("Failed to load deployed UniswapFactory");
     let uniswap_router = UniswapV2Router02::deployed(&web3)
         .await
-        .expect("Failed to load deployed UniswapFactory");
-
+        .expect("Failed to load deployed UniswapRouter");
     let gp_settlement = solver::get_settlement_contract(&web3, solver.clone())
         .await
         .expect("Failed to load deployed GPv2Settlement");
@@ -229,7 +228,7 @@ async fn test_with_ganache() {
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
-    let pair_provider = Arc::new(UniswapPairProvider {
+    let uniswap_pair_provider = Arc::new(UniswapPairProvider {
         factory: uniswap_factory.clone(),
         chain_id,
     });
@@ -237,14 +236,14 @@ async fn test_with_ganache() {
     // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        pair_provider.clone(),
+        uniswap_pair_provider.clone(),
         gp_settlement.clone(),
         HashSet::new(),
         web3.clone(),
     );
     let solver = solver::naive_solver::NaiveSolver {};
     let liquidity_collector = LiquidityCollector {
-        uniswap_liquidity,
+        uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3),
     };
     let mut driver = solver::driver::Driver::new(

@@ -1,7 +1,8 @@
 use contracts::{IUniswapLikeRouter, WETH9};
-use ethcontract::{Account, PrivateKey};
+use ethcontract::{Account, PrivateKey, H160};
 use prometheus::Registry;
 use reqwest::Url;
+use shared::amm_pair_provider::SushiswapPairProvider;
 use shared::{
     amm_pair_provider::UniswapPairProvider,
     metrics::serve_metrics,
@@ -11,12 +12,16 @@ use shared::{
     transport::LoggingTransport,
 };
 use solver::{
-    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector, metrics::Metrics, solver::SolverType,
+    driver::Driver,
+    liquidity::uniswap::UniswapLikeLiquidity,
+    liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
+    solver::{AmmSources, SolverType},
 };
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use structopt::StructOpt;
+use web3::transports::Http;
 
 #[derive(Debug, StructOpt)]
 struct Arguments {
@@ -92,6 +97,17 @@ struct Arguments {
         case_insensitive = true
     )]
     metrics_port: u16,
+
+    /// Which AMM sources to use. Multiple sources are supported alone or simultaneously
+    #[structopt(
+    long,
+        env = "AMM_SOURCES",
+        default_value = "Uniswap,Sushiswap",
+        possible_values = &AmmSources::variants(),
+        case_insensitive = true,
+        use_delimiter = true
+    )]
+    pub amm_sources: Vec<AmmSources>,
 }
 
 #[tokio::main]
@@ -115,12 +131,6 @@ async fn main() {
         .await
         .expect("Could not get chainId")
         .as_u64();
-    let uniswap_router = contracts::UniswapV2Router02::deployed(&web3)
-        .await
-        .expect("couldn't load deployed uniswap router");
-    let uniswap_factory = contracts::UniswapV2Factory::deployed(&web3)
-        .await
-        .expect("couldn't load deployed uniswap router");
     let account = Account::Offline(args.private_key, Some(chain_id));
     let settlement_contract = solver::get_settlement_contract(&web3, account)
         .await
@@ -136,24 +146,7 @@ async fn main() {
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token_contract.address());
-    let uniswap_pair_provider = Arc::new(UniswapPairProvider {
-        factory: uniswap_factory,
-        chain_id,
-    });
-    let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        uniswap_pair_provider.clone(),
-        settlement_contract.clone(),
-        base_tokens.clone(),
-        web3.clone(),
-    );
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
-        Box::new(PoolFetcher {
-            pair_provider: uniswap_pair_provider,
-            web3: web3.clone(),
-        }),
-        base_tokens.clone(),
-    ));
+
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -164,6 +157,28 @@ async fn main() {
     )
     .await
     .expect("failed to create gas price estimator");
+
+    // TODO - Currently we use only Uniswap for price estimation.
+    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+        Box::new(PoolFetcher {
+            pair_provider: Arc::new(UniswapPairProvider {
+                factory: contracts::UniswapV2Factory::deployed(&web3)
+                    .await
+                    .expect("couldn't load deployed uniswap router"),
+                chain_id,
+            }),
+            web3: web3.clone(),
+        }),
+        base_tokens.clone(),
+    ));
+    let uniswap_like_liquidity = build_amm_artifacts(
+        args.amm_sources,
+        chain_id,
+        settlement_contract.clone(),
+        base_tokens.clone(),
+        web3,
+    )
+    .await;
     let solver = solver::solver::create(
         args.solvers,
         base_tokens,
@@ -173,7 +188,7 @@ async fn main() {
         price_estimator.clone(),
     );
     let liquidity_collector = LiquidityCollector {
-        uniswap_liquidity,
+        uniswap_like_liquidity,
         orderbook_api,
     };
     let mut driver = Driver::new(
@@ -191,4 +206,51 @@ async fn main() {
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await;
+}
+
+async fn build_amm_artifacts(
+    sources: Vec<AmmSources>,
+    chain_id: u64,
+    settlement_contract: contracts::GPv2Settlement,
+    base_tokens: HashSet<H160>,
+    web3: web3::Web3<LoggingTransport<Http>>,
+) -> Vec<UniswapLikeLiquidity> {
+    let mut res = vec![];
+    for source in sources {
+        match source {
+            AmmSources::Uniswap => {
+                let router = contracts::UniswapV2Router02::deployed(&web3)
+                    .await
+                    .expect("couldn't load deployed uniswap router");
+                let factory = contracts::UniswapV2Factory::deployed(&web3)
+                    .await
+                    .expect("couldn't load deployed uniswap router");
+                let pair_provider = Arc::new(UniswapPairProvider { factory, chain_id });
+                res.push(UniswapLikeLiquidity::new(
+                    IUniswapLikeRouter::at(&web3, router.address()),
+                    pair_provider.clone(),
+                    settlement_contract.clone(),
+                    base_tokens.clone(),
+                    web3.clone(),
+                ));
+            }
+            AmmSources::Sushiswap => {
+                let router = contracts::SushiswapV2Router02::deployed(&web3)
+                    .await
+                    .expect("couldn't load deployed sushiswap router");
+                let factory = contracts::SushiswapV2Factory::deployed(&web3)
+                    .await
+                    .expect("couldn't load deployed sushiswap router");
+                let pair_provider = Arc::new(SushiswapPairProvider { factory });
+                res.push(UniswapLikeLiquidity::new(
+                    IUniswapLikeRouter::at(&web3, router.address()),
+                    pair_provider.clone(),
+                    settlement_contract.clone(),
+                    base_tokens.clone(),
+                    web3.clone(),
+                ));
+            }
+        }
+    }
+    res
 }
