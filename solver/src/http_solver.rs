@@ -358,6 +358,9 @@ impl Solver for HttpSolver {
         let (model, context) = self.prepare_model(liquidity, gas_price).await?;
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
+        if !settled.has_execution_plan() {
+            return Ok(None);
+        }
         settlement::convert_settlement(settled, context).map(Some)
     }
 }
@@ -448,8 +451,9 @@ mod tests {
         let uniswap = settled.uniswaps.values().next().unwrap();
         assert!(uniswap.balance_update1 < 0);
         assert_eq!(uniswap.balance_update2 as u128, base(2));
-        assert_eq!(uniswap.exec_plan.sequence, 0);
-        assert_eq!(uniswap.exec_plan.position, 0);
+        assert!(uniswap.exec_plan.is_some());
+        assert_eq!(uniswap.exec_plan.as_ref().unwrap().sequence, 0);
+        assert_eq!(uniswap.exec_plan.as_ref().unwrap().position, 0);
 
         assert_eq!(settled.prices.len(), 2);
     }

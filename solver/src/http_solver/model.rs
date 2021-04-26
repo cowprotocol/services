@@ -58,6 +58,15 @@ pub struct SettledBatchAuctionModel {
     pub prices: HashMap<String, Price>,
 }
 
+impl SettledBatchAuctionModel {
+    pub fn has_execution_plan(&self) -> bool {
+        self.uniswaps
+            .values()
+            .into_iter()
+            .all(|u| u.exec_plan.is_some())
+    }
+}
+
 #[derive(Debug, Deserialize)]
 pub struct Price(#[serde(with = "serde_with::rust::display_fromstr")] pub f64);
 
@@ -75,7 +84,7 @@ pub struct UpdatedUniswapModel {
     pub balance_update1: i128,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub balance_update2: i128,
-    pub exec_plan: ExecutionPlanCoordinatesModel,
+    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
