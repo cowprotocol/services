@@ -350,18 +350,18 @@ fn remove_orders_without_native_connection(
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>, gas_price: f64) -> Result<Option<Settlement>> {
+    async fn solve(&self, liquidity: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>> {
         let has_limit_orders = liquidity.iter().any(|l| matches!(l, Liquidity::Limit(_)));
         if !has_limit_orders {
-            return Ok(None);
+            return Ok(Vec::new());
         };
         let (model, context) = self.prepare_model(liquidity, gas_price).await?;
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
-            return Ok(None);
+            return Ok(Vec::new());
         }
-        settlement::convert_settlement(settled, context).map(Some)
+        settlement::convert_settlement(settled, context).map(|settlement| vec![settlement])
     }
 }
 

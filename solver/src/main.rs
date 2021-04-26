@@ -176,7 +176,7 @@ async fn main() {
         chain_id,
         settlement_contract.clone(),
         base_tokens.clone(),
-        web3,
+        web3.clone(),
     )
     .await;
     let solver = solver::solver::create(
@@ -202,6 +202,7 @@ async fn main() {
         native_token_contract.address(),
         args.min_order_age,
         metrics,
+        web3,
     );
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());

@@ -8,6 +8,7 @@ use shared::conversions::U256Ext;
 use std::{
     collections::{hash_map::Entry, HashMap},
     iter,
+    sync::Arc,
 };
 
 /// An intermediate settlement representation that can be incrementally
@@ -18,7 +19,7 @@ use std::{
 /// Additionally, the fact that the settlement is kept in an intermediate
 /// representation allows the encoder to potentially perform gas optimizations
 /// (e.g. collapsing two interactions into one equivalent one).
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SettlementEncoder {
     // Make sure to update the `merge` method when adding new fields.
 
@@ -27,7 +28,10 @@ pub struct SettlementEncoder {
     clearing_prices: HashMap<H160, U256>,
     // Invariant: Every trade's buy and sell token has an entry in clearing_prices.
     trades: Vec<Trade>,
-    execution_plan: Vec<Box<dyn Interaction>>,
+    // This is an Arc so that this struct is Clone. Cannot require `Interaction: Clone` because it
+    // would make the trait not be object safe which prevents using it through `dyn`.
+    // TODO: Can we fix this in a better way?
+    execution_plan: Vec<Arc<dyn Interaction>>,
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
@@ -91,7 +95,7 @@ impl SettlementEncoder {
     }
 
     pub fn append_to_execution_plan(&mut self, interaction: impl Interaction + 'static) {
-        self.execution_plan.push(Box::new(interaction));
+        self.execution_plan.push(Arc::new(interaction));
     }
 
     pub fn add_unwrap(&mut self, unwrap: UnwrapWethInteraction) {

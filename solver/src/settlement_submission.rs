@@ -1,16 +1,11 @@
 mod gas_price_stream;
-mod retry;
+pub mod retry;
 
 use self::retry::{CancelSender, SettlementSender};
 use crate::{encoding::EncodedSettlement, settlement::Settlement};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{
-    dyns::DynTransport,
-    errors::{ExecutionError, MethodError},
-    transaction::TransactionBuilder,
-    Web3,
-};
+use ethcontract::{dyns::DynTransport, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use gas_price_stream::gas_price_stream;
@@ -29,9 +24,7 @@ pub async fn submit(
     gas_price_cap: f64,
     settlement: Settlement,
 ) -> Result<()> {
-    let settlement = settlement.into();
-    // Check that a simulation of the transaction works before submitting it.
-    simulate_settlement(&settlement, contract).await?;
+    let settlement: EncodedSettlement = settlement.into();
 
     let nonce = transaction_count(contract)
         .await
@@ -104,55 +97,6 @@ async fn transaction_count(contract: &GPv2Settlement) -> Result<U256> {
     let web3 = contract.raw_instance().web3();
     let count = web3.eth().transaction_count(address, None).await?;
     Ok(count)
-}
-
-// Simulate the settlement using a web3 `call`.
-async fn simulate_settlement(
-    settlement: &EncodedSettlement,
-    contract: &GPv2Settlement,
-) -> Result<()> {
-    let method = retry::settle_method_builder(contract, settlement.clone());
-    let tx = method.tx.clone();
-    let result = method.call().await;
-    match &result {
-        Ok(_) => Ok(()),
-        Err(err) => {
-            let context = if is_smart_contract_error(err) {
-                let tenderly_link = tenderly_link(&contract.raw_instance().web3(), tx)
-                    .await
-                    .unwrap_or_else(|err| {
-                        format!("Unable to create simulation link due to: {}", err)
-                    });
-                format!("Settle simulation failed. Link: {}", tenderly_link)
-            } else {
-                "Settle simulation failed.".into()
-            };
-            result.map(|_| ()).context(context)
-        }
-    }
-}
-
-fn is_smart_contract_error(error: &MethodError) -> bool {
-    matches!(error.inner, ExecutionError::Failure(_))
-        || matches!(error.inner, ExecutionError::Revert(_))
-        || matches!(error.inner, ExecutionError::InvalidOpcode)
-}
-
-// Creates a simulation link in the gp-v2 tenderly workspace
-async fn tenderly_link(
-    web3: &Web3<DynTransport>,
-    tx: TransactionBuilder<DynTransport>,
-) -> Result<String> {
-    let current_block = web3.eth().block_number().await?;
-    let network_id = web3.net().version().await?;
-    Ok(format!(
-        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&rawFunctionInput=0x{}&network={}",
-        current_block,
-        tx.from.unwrap().address(),
-        tx.to.unwrap(),
-        hex::encode(tx.data.unwrap().0),
-        network_id
-    ))
 }
 
 async fn recover_gas_price_from_pending_transaction(

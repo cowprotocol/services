@@ -3,7 +3,7 @@ use crate::{
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
     settlement::Settlement,
-    settlement_submission,
+    settlement_simulation, settlement_submission,
     solver::Solver,
 };
 use anyhow::{Context, Result};
@@ -12,7 +12,7 @@ use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use num::BigRational;
 use primitive_types::H160;
-use shared::price_estimate::PriceEstimating;
+use shared::{price_estimate::PriceEstimating, Web3};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -34,6 +34,7 @@ pub struct Driver {
     native_token: H160,
     min_order_age: Duration,
     metrics: Arc<dyn SolverMetrics>,
+    web3: Web3,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -48,6 +49,7 @@ impl Driver {
         native_token: H160,
         min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
+        web3: Web3,
     ) -> Self {
         Self {
             settlement_contract,
@@ -60,6 +62,7 @@ impl Driver {
             native_token,
             min_order_age,
             metrics,
+            web3,
         }
     }
 
@@ -78,7 +81,7 @@ impl Driver {
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         prices: &HashMap<H160, BigRational>,
-    ) -> Vec<SolverSettlement> {
+    ) -> Vec<SolverWithSettlements> {
         join_all(self.solver.iter().enumerate().map(|(index, solver)| {
             let liquidity = liquidity.clone();
             let metrics = &self.metrics;
@@ -91,70 +94,92 @@ impl Driver {
         }))
         .await
         .into_iter()
-        .filter_map(|(index, settlement)| {
-            let settlement = match settlement {
-                Ok(settlement) => settlement,
+        .filter_map(|(index, settlements)| {
+            let mut settlements = match settlements {
+                Ok(settlements) => settlements,
                 Err(err) => {
                     tracing::error!("solver {} error: {:?}", self.solver[index].to_string(), err);
                     return None;
                 }
-            }?;
-            if settlement.trades().is_empty() {
-                return None;
-            }
-            let objective_value = settlement.objective_value(prices);
-            Some(SolverSettlement {
-                index,
-                settlement,
-                objective_value,
-            })
+            };
+            settlements.retain(|settlement| !settlement.trades().is_empty());
+            let settlements = settlements
+                .into_iter()
+                .map(|settlement| {
+                    let objective_value = settlement.objective_value(prices);
+                    RatedSettlement {
+                        settlement,
+                        objective_value,
+                    }
+                })
+                .collect();
+            Some(SolverWithSettlements { index, settlements })
         })
+        .filter(|settlement| !settlement.settlements.is_empty())
         .collect()
     }
 
-    // Go through the settlements in order until the first success.
-    async fn submit_settlements(&self, settlements: Vec<SolverSettlement>) {
+    async fn submit_settlement(&self, settlement: RatedSettlement) {
+        let trades = settlement.settlement.trades().to_vec();
+        match settlement_submission::submit(
+            &self.settlement_contract,
+            self.gas_price_estimator.as_ref(),
+            self.target_confirm_time,
+            GAS_PRICE_CAP,
+            settlement.settlement,
+        )
+        .await
+        {
+            Ok(_) => {
+                trades
+                    .iter()
+                    .for_each(|trade| self.metrics.order_settled(&trade.order));
+            }
+            Err(err) => tracing::error!("Failed to submit settlement: {:?}", err,),
+        }
+    }
+
+    fn filter_settlements_without_old_orders(&self, settlements: &mut Vec<RatedSettlement>) {
         let settle_orders_older_than =
             chrono::offset::Utc::now() - chrono::Duration::from_std(self.min_order_age).unwrap();
-        for settlement in settlements {
-            // If all orders are younger than self.min_order_age skip settlement. Orders will still
-            // be settled once they have been in the order book for longer. This makes coincidence
-            // of wants more likely.
-            let should_be_settled_immediately =
-                settlement.settlement.trades().iter().any(|trade| {
-                    trade.order.order_meta_data.creation_date <= settle_orders_older_than
-                });
-            if !should_be_settled_immediately {
-                tracing::info!(
-                    "Skipping settlement because no trade is older than {}s",
-                    self.min_order_age.as_secs()
-                );
-                continue;
-            }
+        settlements.retain(|settlement| {
+            settlement
+                .settlement
+                .trades()
+                .iter()
+                .any(|trade| trade.order.order_meta_data.creation_date <= settle_orders_older_than)
+        });
+    }
 
-            let trades = settlement.settlement.trades().to_vec();
-            match settlement_submission::submit(
-                &self.settlement_contract,
-                self.gas_price_estimator.as_ref(),
-                self.target_confirm_time,
-                GAS_PRICE_CAP,
-                settlement.settlement,
-            )
-            .await
-            {
-                Ok(_) => {
-                    trades
-                        .iter()
-                        .for_each(|trade| self.metrics.order_settled(&trade.order));
-                    break;
+    // Returns only settlements for which simulation succeeded.
+    async fn simulate_settlements(
+        &self,
+        settlements: Vec<RatedSettlement>,
+    ) -> Result<Vec<RatedSettlement>> {
+        let simulations = settlement_simulation::simulate_settlements(
+            settlements
+                .iter()
+                .map(|settlement| settlement.settlement.clone().into()),
+            &self.settlement_contract,
+            &self.web3,
+        )
+        .await
+        .context("failed to simulate settlements")?;
+        Ok(settlements
+            .into_iter()
+            .zip(simulations)
+            .filter_map(|(settlement, simulation)| match simulation {
+                Ok(()) => Some(settlement),
+                Err(err) => {
+                    tracing::error!(
+                        "simulation of settlement failed\nsettlement: {:?}\n error:{:?}",
+                        settlement.settlement,
+                        err
+                    );
+                    None
                 }
-                Err(err) => tracing::error!(
-                    "{} Failed to submit settlement: {:?}",
-                    self.solver[settlement.index],
-                    err,
-                ),
-            }
-        }
+            })
+            .collect())
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
@@ -174,23 +199,34 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {}", gas_price);
 
-        let mut settlements = self
+        let settlements = self
             .run_solvers(liquidity, gas_price, &estimated_prices)
             .await;
-        // Sort by key in descending order. Reversed by doing b.cmp(a) instead of a.cmp(b).
-        settlements.sort_unstable_by(|a, b| b.objective_value.cmp(&a.objective_value));
-
-        for settlement in settlements.iter() {
-            tracing::info!(
-                "solver {} found solution with objective value {}: {:?}",
-                self.solver[settlement.index],
-                settlement.objective_value,
-                settlement.settlement,
-            );
+        for settlements in settlements.iter() {
+            for settlement in settlements.settlements.iter() {
+                tracing::debug!(
+                    "solver {} found solution with objective value {}: {:?}",
+                    self.solver[settlements.index],
+                    settlement.objective_value,
+                    settlement.settlement,
+                );
+            }
         }
 
-        self.submit_settlements(settlements).await;
+        let mut settlements = settlements
+            .into_iter()
+            .flat_map(|settlements| settlements.settlements.into_iter())
+            .collect::<Vec<_>>();
 
+        self.filter_settlements_without_old_orders(&mut settlements);
+        let settlements = self.simulate_settlements(settlements).await?;
+
+        if let Some(settlement) = settlements
+            .into_iter()
+            .max_by(|a, b| a.objective_value.cmp(&b.objective_value))
+        {
+            self.submit_settlement(settlement).await;
+        }
         Ok(())
     }
 }
@@ -261,9 +297,15 @@ fn liquidity_with_price(
     liquidity
 }
 
-struct SolverSettlement {
+// A single solver produces multiple settlements
+struct SolverWithSettlements {
     // Index in the Driver::solver vector
     index: usize,
+    settlements: Vec<RatedSettlement>,
+}
+
+// Each individual settlement has an objective value.
+struct RatedSettlement {
     settlement: Settlement,
     objective_value: BigRational,
 }

@@ -11,6 +11,7 @@ pub mod oneinch_solver;
 pub mod orderbook;
 pub mod pending_transactions;
 pub mod settlement;
+pub mod settlement_simulation;
 pub mod settlement_submission;
 pub mod solver;
 mod util;

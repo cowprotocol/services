@@ -15,7 +15,9 @@ use structopt::clap::arg_enum;
 
 #[async_trait::async_trait]
 pub trait Solver: Display {
-    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Option<Settlement>>;
+    // The returned settlements should be independent (for example not reusing the same user
+    // order) so that they can be merged by the driver at its leisure.
+    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>>;
 }
 
 arg_enum! {

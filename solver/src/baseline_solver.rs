@@ -24,12 +24,8 @@ pub struct BaselineSolver {
 
 #[async_trait::async_trait]
 impl Solver for BaselineSolver {
-    async fn solve(
-        &self,
-        liquidity: Vec<Liquidity>,
-        _gas_price: f64,
-    ) -> Result<Option<Settlement>> {
-        Ok(self.solve(liquidity).into_iter().next())
+    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
+        Ok(self.solve(liquidity))
     }
 }
 

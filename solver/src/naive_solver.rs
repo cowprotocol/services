@@ -14,11 +14,7 @@ pub struct NaiveSolver;
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {
-    async fn solve(
-        &self,
-        liquidity: Vec<Liquidity>,
-        _gas_price: f64,
-    ) -> Result<Option<Settlement>> {
+    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         let limit_orders = liquidity
             .into_iter()
@@ -26,7 +22,7 @@ impl Solver for NaiveSolver {
                 Liquidity::Limit(order) => Some(order),
                 _ => None,
             });
-        Ok(settle(limit_orders, uniswaps).await.into_iter().next())
+        Ok(settle(limit_orders, uniswaps).await)
     }
 }
 

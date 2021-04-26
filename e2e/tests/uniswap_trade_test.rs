@@ -257,6 +257,7 @@ async fn test_with_ganache() {
         native_token,
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
+        web3.clone(),
     );
     driver.single_run().await.unwrap();
 
