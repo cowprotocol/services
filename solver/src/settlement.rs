@@ -73,6 +73,17 @@ impl Interaction for EncodedInteraction {
     }
 }
 
+#[cfg(test)]
+#[derive(Debug)]
+pub struct NoopInteraction;
+
+#[cfg(test)]
+impl Interaction for NoopInteraction {
+    fn encode(&self) -> Vec<EncodedInteraction> {
+        Vec::new()
+    }
+}
+
 #[derive(Debug)]
 pub struct Settlement {
     encoder: SettlementEncoder,
@@ -122,6 +133,12 @@ impl Settlement {
                 num::zero()
             }
         }
+    }
+
+    /// See SettlementEncoder::merge
+    pub fn merge(self, other: Self) -> Result<Self> {
+        let merged = self.encoder.merge(other.encoder)?;
+        Ok(Self { encoder: merged })
     }
 }
 

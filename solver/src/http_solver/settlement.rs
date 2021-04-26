@@ -204,21 +204,11 @@ fn i128_abs_to_u256(i: i128) -> U256 {
 mod tests {
     use super::*;
     use crate::{
-        encoding::EncodedInteraction,
         http_solver::model::{ExecutedOrderModel, UpdatedUniswapModel},
         liquidity::tests::CapturingSettlementHandler,
-        settlement::Interaction,
     };
     use maplit::hashmap;
     use model::TokenPair;
-
-    #[derive(Debug)]
-    struct NoopInteraction;
-    impl Interaction for NoopInteraction {
-        fn encode(&self) -> Vec<EncodedInteraction> {
-            Vec::new()
-        }
-    }
 
     #[test]
     fn convert_settlement_() {

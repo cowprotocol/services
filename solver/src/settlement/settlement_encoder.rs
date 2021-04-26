@@ -5,7 +5,10 @@ use model::order::{Order, OrderKind};
 use num::{BigRational, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext;
-use std::{collections::HashMap, iter};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    iter,
+};
 
 /// An intermediate settlement representation that can be incrementally
 /// constructed.
@@ -17,8 +20,12 @@ use std::{collections::HashMap, iter};
 /// (e.g. collapsing two interactions into one equivalent one).
 #[derive(Debug)]
 pub struct SettlementEncoder {
+    // Make sure to update the `merge` method when adding new fields.
+
+    // Invariant: tokens is all keys in clearing_prices sorted.
     tokens: Vec<H160>,
     clearing_prices: HashMap<H160, U256>,
+    // Invariant: Every trade's buy and sell token has an entry in clearing_prices.
     trades: Vec<Trade>,
     execution_plan: Vec<Box<dyn Interaction>>,
     unwraps: Vec<UnwrapWethInteraction>,
@@ -65,6 +72,7 @@ impl SettlementEncoder {
         &self.trades
     }
 
+    // Fails if any used token doesn't have a price.
     pub fn add_trade(&mut self, order: Order, executed_amount: U256) -> Result<()> {
         let sell_token_index = self
             .token_index(order.order_creation.sell_token)
@@ -122,6 +130,13 @@ impl SettlementEncoder {
 
         // Now the tokens array is no longer sorted, so fix that, and make sure
         // to re-compute trade token indices as they may have changed.
+        self.sort_tokens_and_update_indices();
+
+        Ok(())
+    }
+
+    // Sort self.tokens and update all token indices in self.trades.
+    fn sort_tokens_and_update_indices(&mut self) {
         self.tokens.sort();
         for i in 0..self.trades.len() {
             self.trades[i].sell_token_index = self
@@ -131,8 +146,6 @@ impl SettlementEncoder {
                 .token_index(self.trades[i].order.order_creation.buy_token)
                 .expect("missing buy token for exisiting trade");
         }
-
-        Ok(())
     }
 
     fn token_index(&self, token: H160) -> Option<usize> {
@@ -214,14 +227,51 @@ impl SettlementEncoder {
             ],
         }
     }
+
+    // Merge other into self so that the result contains both settlements.
+    // Fails if the settlements cannot be merged for example because the same limit order is used in
+    // both or the same token has different clearing prices.
+    pub fn merge(mut self, mut other: Self) -> Result<Self> {
+        for (key, value) in other.clearing_prices {
+            match self.clearing_prices.entry(key) {
+                Entry::Occupied(entry) => ensure!(*entry.get() == value, "different price"),
+                Entry::Vacant(entry) => {
+                    entry.insert(value);
+                    self.tokens.push(key);
+                }
+            }
+        }
+
+        for other_trade in other.trades.iter() {
+            ensure!(
+                self.trades
+                    .iter()
+                    .all(|self_trade| self_trade.order.order_meta_data.uid
+                        != other_trade.order.order_meta_data.uid),
+                "duplicate trade"
+            );
+        }
+        self.trades.append(&mut other.trades);
+        self.sort_tokens_and_update_indices();
+
+        self.execution_plan.append(&mut other.execution_plan);
+
+        for unwrap in other.unwraps {
+            self.add_unwrap(unwrap);
+        }
+
+        Ok(self)
+    }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{encoding::EncodedInteraction, interactions::dummy_web3};
+    use crate::{
+        encoding::EncodedInteraction, interactions::dummy_web3, settlement::NoopInteraction,
+    };
     use maplit::hashmap;
-    use model::order::OrderCreation;
+    use model::order::{OrderBuilder, OrderCreation};
 
     #[test]
     pub fn encode_trades_finds_token_index() {
@@ -372,5 +422,68 @@ pub mod tests {
             token_b => 2.into(),
         });
         assert!(encoder.add_token_equivalency(token_a, token_b).is_err());
+    }
+
+    fn token(number: u64) -> H160 {
+        H160::from_low_u64_be(number)
+    }
+
+    #[test]
+    fn merge_ok() {
+        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
+        let mut encoder0 = SettlementEncoder::new(prices);
+        let mut order13 = OrderBuilder::default()
+            .with_sell_token(token(1))
+            .with_buy_token(token(3))
+            .build();
+        order13.order_meta_data.uid.0[0] = 0;
+        encoder0.add_trade(order13, 13.into()).unwrap();
+        encoder0.append_to_execution_plan(NoopInteraction {});
+
+        let prices = hashmap! { token(2) => 2.into(), token(4) => 4.into() };
+        let mut encoder1 = SettlementEncoder::new(prices);
+        let mut order24 = OrderBuilder::default()
+            .with_sell_token(token(2))
+            .with_buy_token(token(4))
+            .build();
+        order24.order_meta_data.uid.0[0] = 1;
+        encoder1.add_trade(order24, 24.into()).unwrap();
+        encoder1.append_to_execution_plan(NoopInteraction {});
+
+        let merged = encoder0.merge(encoder1).unwrap();
+        let prices = hashmap! {
+            token(1) => 1.into(), token(3) => 3.into(),
+            token(2) => 2.into(), token(4) => 4.into(),
+        };
+        assert_eq!(merged.clearing_prices, prices);
+        assert_eq!(merged.tokens, [token(1), token(2), token(3), token(4)]);
+        assert_eq!(merged.trades.len(), 2);
+        assert_eq!(merged.execution_plan.len(), 2);
+    }
+
+    #[test]
+    fn merge_fails_because_price_is_different() {
+        let prices = hashmap! { token(1) => 1.into() };
+        let encoder0 = SettlementEncoder::new(prices);
+        let prices = hashmap! { token(1) => 2.into() };
+        let encoder1 = SettlementEncoder::new(prices);
+        assert!(encoder0.merge(encoder1).is_err());
+    }
+
+    #[test]
+    fn merge_fails_because_trade_used_twice() {
+        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
+        let order13 = OrderBuilder::default()
+            .with_sell_token(token(1))
+            .with_buy_token(token(3))
+            .build();
+
+        let mut encoder0 = SettlementEncoder::new(prices.clone());
+        encoder0.add_trade(order13.clone(), 13.into()).unwrap();
+
+        let mut encoder1 = SettlementEncoder::new(prices);
+        encoder1.add_trade(order13, 24.into()).unwrap();
+
+        assert!(encoder0.merge(encoder1).is_err());
     }
 }
