@@ -15,6 +15,7 @@ pub async fn simulate_settlements(
     settlements: impl Iterator<Item = EncodedSettlement>,
     contract: &GPv2Settlement,
     web3: &Web3,
+    network_id: &str,
 ) -> Result<Vec<Result<()>>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
@@ -28,16 +29,14 @@ pub async fn simulate_settlements(
 
     // TODO: It would be nice to add this to the underlying web3 batch transport call used for the
     // simulations.
-    let ((), current_block, network_id) = futures::join!(
+    let ((), current_block) = futures::join!(
         batch.execute_all(SIMULATE_BATCH_SIZE),
         web3.eth().block_number(),
-        web3.net().version()
     );
 
     let current_block = current_block
         .context("failed to get current block")?
         .as_u64();
-    let network_id = network_id.context("failed to get network_id")?;
 
     Ok(futures
         .into_iter()
@@ -48,7 +47,7 @@ pub async fn simulate_settlements(
                 .map(|_| ())
                 .context(tenderly_link(
                     current_block,
-                    network_id.as_str(),
+                    network_id,
                     transaction_builder,
                 ))
         })

@@ -35,6 +35,7 @@ pub struct Driver {
     min_order_age: Duration,
     metrics: Arc<dyn SolverMetrics>,
     web3: Web3,
+    network_id: String,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -50,6 +51,7 @@ impl Driver {
         min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
+        network_id: String,
     ) -> Self {
         Self {
             settlement_contract,
@@ -63,6 +65,7 @@ impl Driver {
             min_order_age,
             metrics,
             web3,
+            network_id,
         }
     }
 
@@ -162,6 +165,7 @@ impl Driver {
                 .map(|settlement| settlement.settlement.clone().into()),
             &self.settlement_contract,
             &self.web3,
+            &self.network_id,
         )
         .await
         .context("failed to simulate settlements")?;

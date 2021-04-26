@@ -246,6 +246,7 @@ async fn test_with_ganache() {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3),
     };
+    let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
         gp_settlement.clone(),
         liquidity_collector,
@@ -258,6 +259,7 @@ async fn test_with_ganache() {
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
+        network_id,
     );
     driver.single_run().await.unwrap();
 
