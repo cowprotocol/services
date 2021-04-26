@@ -66,6 +66,8 @@ pub struct SwapQuery {
     pub from_address: H160,
     /// Limit of price slippage you are willing to accept.
     pub slippage: Slippage,
+    /// Flag to disable checks of the required quantities.
+    pub disable_estimate: Option<bool>,
 }
 
 impl SwapQuery {
@@ -87,6 +89,11 @@ impl SwapQuery {
             .append_pair("amount", &self.amount.to_string())
             .append_pair("fromAddress", &addr2str(self.from_address))
             .append_pair("slippage", &self.slippage.to_string());
+
+        if let Some(disable_estimate) = self.disable_estimate {
+            url.query_pairs_mut()
+                .append_pair("disableEstimate", &disable_estimate.to_string());
+        }
 
         url
     }
@@ -238,6 +245,7 @@ mod tests {
             amount: 1_000_000_000_000_000_000u128.into(),
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
+            disable_estimate: None,
         }
         .into_url(&base_url);
 
@@ -249,6 +257,31 @@ mod tests {
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
                 &slippage=0.5",
+        );
+    }
+
+    #[test]
+    fn swap_query_serialization_options_parameters() {
+        let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
+        let url = SwapQuery {
+            from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+            amount: 1_000_000_000_000_000_000u128.into(),
+            from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+            slippage: Slippage::basis_points(50).unwrap(),
+            disable_estimate: Some(true),
+        }
+        .into_url(&base_url);
+
+        assert_eq!(
+            url.as_str(),
+            "https://api.1inch.exchange/v3.0/1/swap\
+                ?fromTokenAddress=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
+                &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
+                &amount=1000000000000000000\
+                &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
+                &slippage=0.5\
+                &disableEstimate=true",
         );
     }
 
@@ -359,6 +392,24 @@ mod tests {
                 amount: 1_000_000_000_000_000_000u128.into(),
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
                 slippage: Slippage::basis_points(50).unwrap(),
+                disable_estimate: None,
+            })
+            .await
+            .unwrap();
+        println!("{:#?}", swap);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn oneinch_swap_without_amount_checks() {
+        let swap = OneInchClient::default()
+            .get_swap(SwapQuery {
+                from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                amount: 1_000_000_000_000_000_000u128.into(),
+                from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
+                slippage: Slippage::basis_points(50).unwrap(),
+                disable_estimate: Some(true),
             })
             .await
             .unwrap();
