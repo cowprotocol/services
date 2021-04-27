@@ -29,7 +29,7 @@ impl Solver for BaselineSolver {
         liquidity: Vec<Liquidity>,
         _gas_price: f64,
     ) -> Result<Option<Settlement>> {
-        self.solve(liquidity).transpose()
+        Ok(self.solve(liquidity).into_iter().next())
     }
 }
 
@@ -44,13 +44,17 @@ impl BaselineSolver {
         Self { base_tokens }
     }
 
-    fn solve(&self, liquidity: Vec<Liquidity>) -> Option<Result<Settlement>> {
+    fn solve(&self, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
         let amm_map = extract_deepest_amm_liquidity(&liquidity);
 
         let pool_map = amm_map
             .iter()
             .map(|(key, value)| (*key, amm_to_pool(value)))
             .collect();
+
+        // We assume that individual settlements do not move the amm pools significantly when
+        // returning multiple settlemnts.
+        let mut settlements = Vec::new();
 
         // Return a solution for the first settle-able user order
         for liquidity in liquidity {
@@ -68,10 +72,16 @@ impl BaselineSolver {
             if solution.executed_buy_amount >= user_order.buy_amount
                 && solution.executed_sell_amount <= user_order.sell_amount
             {
-                return Some(solution.into_settlement(&user_order, amm_map));
+                match solution.into_settlement(&user_order, &amm_map) {
+                    Ok(settlement) => settlements.push(settlement),
+                    Err(err) => {
+                        tracing::error!("baseline_solver failed to create settlement: {:?}", err)
+                    }
+                }
             }
         }
-        None
+
+        settlements
     }
 
     fn settle_order(
@@ -124,7 +134,7 @@ impl BaselineSolver {
 
     #[cfg(test)]
     fn must_solve(&self, liquidity: Vec<Liquidity>) -> Settlement {
-        self.solve(liquidity).unwrap().unwrap()
+        self.solve(liquidity).into_iter().next().unwrap()
     }
 }
 
@@ -138,7 +148,7 @@ impl Solution {
     fn into_settlement(
         self,
         order: &LimitOrder,
-        amm_map: HashMap<TokenPair, AmmOrder>,
+        amm_map: &HashMap<TokenPair, AmmOrder>,
     ) -> Result<Settlement> {
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => self.executed_buy_amount,
