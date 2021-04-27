@@ -19,7 +19,6 @@ use shared::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    fmt,
     sync::Arc,
 };
 
@@ -363,11 +362,9 @@ impl Solver for HttpSolver {
         }
         settlement::convert_settlement(settled, context).map(|settlement| vec![settlement])
     }
-}
 
-impl fmt::Display for HttpSolver {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "HTTPSolver")
+    fn name(&self) -> &'static str {
+        "HTTPSolver"
     }
 }
 

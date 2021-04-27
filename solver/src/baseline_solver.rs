@@ -8,10 +8,7 @@ use shared::{
     },
     pool_fetching::Pool,
 };
-use std::{
-    collections::{HashMap, HashSet},
-    fmt,
-};
+use std::collections::{HashMap, HashSet};
 
 use crate::{
     liquidity::{uniswap::MAX_HOPS, AmmOrder, AmmOrderExecution, LimitOrder, Liquidity},
@@ -27,11 +24,9 @@ impl Solver for BaselineSolver {
     async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
         Ok(self.solve(liquidity))
     }
-}
 
-impl fmt::Display for BaselineSolver {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "BaselineSolver")
+    fn name(&self) -> &'static str {
+        "BaselineSolver"
     }
 }
 

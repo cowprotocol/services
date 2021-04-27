@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display, sync::Arc};
+use std::{collections::HashSet, sync::Arc};
 
 use crate::{
     baseline_solver::BaselineSolver,
@@ -14,10 +14,13 @@ use shared::{price_estimate::PriceEstimating, token_info::TokenInfoFetching};
 use structopt::clap::arg_enum;
 
 #[async_trait::async_trait]
-pub trait Solver: Display {
+pub trait Solver {
     // The returned settlements should be independent (for example not reusing the same user
     // order) so that they can be merged by the driver at its leisure.
     async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>>;
+
+    // Displayable name of the solver.
+    fn name(&self) -> &'static str;
 }
 
 arg_enum! {

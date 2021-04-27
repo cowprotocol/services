@@ -91,7 +91,7 @@ impl Driver {
             async move {
                 let start_time = Instant::now();
                 let settlement = solver.solve(liquidity, gas_price).await;
-                metrics.settlement_computed(solver.to_string().as_str(), start_time);
+                metrics.settlement_computed(solver.name(), start_time);
                 (index, settlement)
             }
         }))
@@ -101,7 +101,7 @@ impl Driver {
             let mut settlements = match settlements {
                 Ok(settlements) => settlements,
                 Err(err) => {
-                    tracing::error!("solver {} error: {:?}", self.solver[index].to_string(), err);
+                    tracing::error!("solver {} error: {:?}", self.solver[index].name(), err);
                     return None;
                 }
             };
@@ -210,7 +210,7 @@ impl Driver {
             for settlement in settlements.settlements.iter() {
                 tracing::debug!(
                     "solver {} found solution with objective value {}: {:?}",
-                    self.solver[settlements.index],
+                    self.solver[settlements.index].name(),
                     settlement.objective_value,
                     settlement.settlement,
                 );
