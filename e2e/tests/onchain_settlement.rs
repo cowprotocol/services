@@ -262,6 +262,7 @@ async fn onchain_settlement(web3: Web3) {
         Arc::new(NoopMetrics::default()),
         web3.clone(),
         network_id,
+        1,
     );
     driver.single_run().await.unwrap();
 

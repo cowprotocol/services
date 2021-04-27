@@ -108,6 +108,10 @@ struct Arguments {
         use_delimiter = true
     )]
     pub amm_sources: Vec<AmmSources>,
+
+    /// The port at which we serve our metrics
+    #[structopt(long, env = "MAX_MERGED_SETTLEMENTS", default_value = "5")]
+    max_merged_settlements: usize,
 }
 
 #[tokio::main]
@@ -209,6 +213,7 @@ async fn main() {
         metrics,
         web3,
         network_id,
+        args.max_merged_settlements,
     );
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());

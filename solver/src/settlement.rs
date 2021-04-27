@@ -107,6 +107,12 @@ impl Settlement {
             .encode(execution, &mut self.encoder)
     }
 
+    #[cfg(test)]
+    pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
+        let encoder = SettlementEncoder::with_trades(clearing_prices, trades);
+        Self { encoder }
+    }
+
     /// Returns the clearing prices map.
     pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
         self.encoder.clearing_prices()
