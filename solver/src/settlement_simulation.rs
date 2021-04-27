@@ -69,3 +69,48 @@ pub fn tenderly_link(
         network_id
     )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ethcontract::{Account, PrivateKey};
+    use shared::transport::LoggingTransport;
+
+    // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn mainnet() {
+        // Create some bogus settlements to see that the simulation returns an error.
+        let node = "https://dev-openethereum.mainnet.gnosisdev.com";
+        let transport = LoggingTransport::new(web3::transports::Http::new(node).unwrap());
+        let web3 = Web3::new(transport);
+        let network_id = web3.net().version().await.unwrap();
+        let mut contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        contract.defaults_mut().from = Some(Account::Offline(
+            PrivateKey::from_raw([1; 32]).unwrap(),
+            None,
+        ));
+        let settlements = vec![
+            EncodedSettlement {
+                tokens: Default::default(),
+                clearing_prices: Default::default(),
+                trades: vec![crate::encoding::encode_trade(
+                    &Default::default(),
+                    0,
+                    0,
+                    &0.into(),
+                )],
+                interactions: Default::default(),
+            },
+            EncodedSettlement::default(),
+        ];
+        let result = simulate_settlements(
+            settlements.into_iter(),
+            &contract,
+            &web3,
+            network_id.as_str(),
+        )
+        .await;
+        let _ = dbg!(result);
+    }
+}
