@@ -1,3 +1,4 @@
+use super::Erc20ApproveInteraction;
 use crate::{encoding::EncodedInteraction, settlement::Interaction};
 use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use primitive_types::{H160, U256};
@@ -27,9 +28,12 @@ impl Interaction for UniswapInteraction {
 impl UniswapInteraction {
     fn encode_approve(&self) -> EncodedInteraction {
         let token = ERC20::at(&self.web3(), self.token_in);
-        let method = token.approve(self.router.address(), U256::MAX);
-        let calldata = method.tx.data.expect("no calldata").0;
-        (self.token_in, 0.into(), calldata)
+        Erc20ApproveInteraction {
+            token,
+            spender: self.router.address(),
+            amount: U256::MAX,
+        }
+        .as_encoded()
     }
 
     fn encode_swap(&self) -> EncodedInteraction {
