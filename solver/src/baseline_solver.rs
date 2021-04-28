@@ -40,7 +40,7 @@ impl BaselineSolver {
 
         let pool_map = amm_map
             .iter()
-            .map(|(key, value)| (*key, amm_to_pool(value)))
+            .map(|(key, value)| (*key, vec![amm_to_pool(value)]))
             .collect();
 
         // We assume that individual settlements do not move the amm pools significantly when
@@ -78,7 +78,7 @@ impl BaselineSolver {
     fn settle_order(
         &self,
         order: &LimitOrder,
-        pools: &HashMap<TokenPair, Pool>,
+        pools: &HashMap<TokenPair, Vec<Pool>>,
     ) -> Option<Solution> {
         let candidates = path_candidates(
             order.sell_token,
@@ -86,25 +86,30 @@ impl BaselineSolver {
             &self.base_tokens,
             MAX_HOPS,
         );
+
         let (best, executed_sell_amount, executed_buy_amount) = match order.kind {
             model::order::OrderKind::Buy => {
-                let path = candidates
-                    .iter()
-                    .min_by_key(|path| estimate_sell_amount(order.buy_amount, path, &pools))?;
+                let path = candidates.iter().min_by_key(|path| {
+                    estimate_sell_amount(order.buy_amount, path, &pools)
+                        .map(|estimate| estimate.value)
+                })?;
                 (
                     path,
-                    estimate_sell_amount(order.buy_amount, path, &pools)?,
+                    estimate_sell_amount(order.buy_amount, path, &pools)
+                        .map(|estimate| estimate.value)?,
                     order.buy_amount,
                 )
             }
             model::order::OrderKind::Sell => {
-                let path = candidates
-                    .iter()
-                    .max_by_key(|path| estimate_buy_amount(order.sell_amount, path, &pools))?;
+                let path = candidates.iter().max_by_key(|path| {
+                    estimate_buy_amount(order.sell_amount, path, &pools)
+                        .map(|estimate| estimate.value)
+                })?;
                 (
                     path,
                     order.sell_amount,
-                    estimate_buy_amount(order.sell_amount, path, &pools)?,
+                    estimate_buy_amount(order.sell_amount, path, &pools)
+                        .map(|estimate| estimate.value)?,
                 )
             }
         };
@@ -115,6 +120,8 @@ impl BaselineSolver {
                     pools
                         .get(pair)
                         .expect("Path was found so pool must exist")
+                        .first()
+                        .expect("We insert one pool per token pair")
                         .clone()
                 })
                 .collect(),

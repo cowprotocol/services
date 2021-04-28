@@ -175,8 +175,12 @@ impl UniswapPriceEstimator {
             sell_token,
             buy_token,
             sell_amount,
-            estimate_buy_amount,
-            estimate_buy_amount,
+            |amount, path, pools| {
+                estimate_buy_amount(amount, path, pools).map(|estimate| estimate.value)
+            },
+            |amount, path, pools| {
+                estimate_buy_amount(amount, path, pools).map(|estimate| estimate.value)
+            },
         )
         .await
     }
@@ -192,9 +196,15 @@ impl UniswapPriceEstimator {
             buy_token,
             buy_amount,
             |amount, path, pools| {
-                Reverse(estimate_sell_amount(amount, path, pools).unwrap_or_else(U256::max_value))
+                Reverse(
+                    estimate_sell_amount(amount, path, pools)
+                        .map(|estimate| estimate.value)
+                        .unwrap_or_else(U256::max_value),
+                )
             },
-            estimate_sell_amount,
+            |amount, path, pools| {
+                estimate_sell_amount(amount, path, pools).map(|estimate| estimate.value)
+            },
         )
         .await
     }
@@ -208,8 +218,8 @@ impl UniswapPriceEstimator {
             sell_token,
             buy_token,
             U256::zero(),
-            |_, path, pools| estimate_spot_price(path, pools),
-            |_, path, pools| estimate_spot_price(path, pools),
+            |_, path, pools| estimate_spot_price(path, pools).map(|estimate| estimate.value),
+            |_, path, pools| estimate_spot_price(path, pools).map(|estimate| estimate.value),
         )
         .await
     }
@@ -223,8 +233,8 @@ impl UniswapPriceEstimator {
         resulting_amount: AmountFn,
     ) -> Result<(Vec<H160>, Amount)>
     where
-        AmountFn: Fn(U256, &[H160], &HashMap<TokenPair, Pool>) -> Option<Amount>,
-        CompareFn: Fn(U256, &[H160], &HashMap<TokenPair, Pool>) -> O,
+        AmountFn: Fn(U256, &[H160], &HashMap<TokenPair, Vec<Pool>>) -> Option<Amount>,
+        CompareFn: Fn(U256, &[H160], &HashMap<TokenPair, Vec<Pool>>) -> O,
         O: Ord,
     {
         let path_candidates = path_candidates(sell_token, buy_token, &self.base_tokens, MAX_HOPS);
@@ -237,7 +247,7 @@ impl UniswapPriceEstimator {
             .fetch(all_pairs)
             .await
             .into_iter()
-            .map(|pool| (pool.tokens, pool))
+            .map(|pool| (pool.tokens, vec![pool]))
             .collect();
         let best_path = path_candidates
             .iter()

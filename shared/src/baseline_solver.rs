@@ -20,78 +20,113 @@ pub trait BaselineSolvable {
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational>;
 }
 
-// Given a path and sell amount (first token of the path) estimates the buy amount (last token of the path).
+pub struct Estimate<'a, V, L> {
+    // The result amount of the estimate
+    pub value: V,
+    // The liquidity path used to derive at that estimate
+    pub path: Vec<&'a L>,
+}
+
+// Given a path and sell amount (first token of the path) estimates the buy amount (last token of the path) and
+// the path of liquidity that yields this result
 // Returns None if the path is invalid or pool information doesn't exist.
-pub fn estimate_buy_amount(
+pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
     sell_amount: U256,
     path: &[H160],
-    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
-) -> Option<U256> {
-    let sell_token = path.first()?;
-    path.iter()
-        .skip(1)
-        .fold(Some((sell_amount, *sell_token)), |previous, current| {
-            let previous = match previous {
-                Some(previous) => previous,
-                None => return None,
-            };
-
-            match liquidity.get(&TokenPair::new(*current, previous.1)?) {
-                Some(liquidity) => liquidity
-                    .get_amount_out(*current, previous.0, previous.1)
-                    .map(|amount| (amount, *current)),
-                None => None,
-            }
-        })
-        .map(|(amount, _)| amount)
-}
-
-// Given a path and buy amount (last token of the path) estimates the sell amount (first token of the path).
-// Returns None if the path is invalid or pool information doesn't exist.
-pub fn estimate_sell_amount(
-    buy_amount: U256,
-    path: &[H160],
-    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
-) -> Option<U256> {
-    let buy_token = path.last()?;
-    path.iter()
-        .rev()
-        .skip(1)
-        .fold(Some((buy_amount, *buy_token)), |previous, current| {
-            let previous = match previous {
-                Some(previous) => previous,
-                None => return None,
-            };
-            match liquidity.get(&TokenPair::new(*current, previous.1)?) {
-                Some(liquidity) => liquidity
-                    .get_amount_in(*current, previous.0, previous.1)
-                    .map(|amount| (amount, *current)),
-                None => None,
-            }
-        })
-        .map(|(amount, _)| amount)
-}
-
-pub fn estimate_spot_price(
-    path: &[H160],
-    liquidity: &HashMap<TokenPair, impl BaselineSolvable>,
-) -> Option<BigRational> {
+    liquidity: &'a HashMap<TokenPair, Vec<L>>,
+) -> Option<Estimate<'a, U256, L>> {
     let sell_token = path.first()?;
     path.iter()
         .skip(1)
         .fold(
-            Some((BigRational::from_integer(1.into()), *sell_token)),
+            Some((sell_amount, *sell_token, Vec::new())),
             |previous, current| {
-                let previous = match previous {
-                    Some(previous) => previous,
-                    None => return None,
-                };
-                let liquidity = liquidity.get(&TokenPair::new(*current, previous.1)?)?;
-                let price = liquidity.get_spot_price(previous.1, *current)?;
-                Some((previous.0 * price, *current))
+                let (amount, previous, mut path) = previous?;
+                let (best_liquidity, amount) = liquidity
+                    .get(&TokenPair::new(*current, previous)?)?
+                    .iter()
+                    .map(|liquidity| {
+                        (
+                            liquidity,
+                            liquidity.get_amount_out(*current, amount, previous),
+                        )
+                    })
+                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(&amount_b))?;
+                path.push(best_liquidity);
+                Some((amount?, *current, path))
             },
         )
-        .map(|(amount, _)| amount)
+        .map(|(amount, _, liquidity)| Estimate {
+            value: amount,
+            path: liquidity,
+        })
+}
+
+// Given a path and buy amount (last token of the path) estimates the sell amount (first token of the path) and
+// the path of liquidity that yields this result
+// Returns None if the path is invalid or pool information doesn't exist.
+pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
+    buy_amount: U256,
+    path: &[H160],
+    liquidity: &'a HashMap<TokenPair, Vec<L>>,
+) -> Option<Estimate<'a, U256, L>> {
+    let buy_token = path.last()?;
+    path.iter()
+        .rev()
+        .skip(1)
+        .fold(
+            Some((buy_amount, *buy_token, Vec::new())),
+            |previous, current| {
+                let (amount, previous, mut path) = previous?;
+                let (best_liquidity, amount) = liquidity
+                    .get(&TokenPair::new(*current, previous)?)?
+                    .iter()
+                    .map(|liquidity| {
+                        (
+                            liquidity,
+                            liquidity.get_amount_in(*current, amount, previous),
+                        )
+                    })
+                    .min_by(|(_, amount_a), (_, amount_b)| {
+                        amount_a
+                            .unwrap_or_else(U256::max_value)
+                            .cmp(&amount_b.unwrap_or_else(U256::max_value))
+                    })?;
+                path.push(best_liquidity);
+                Some((amount?, *current, path))
+            },
+        )
+        .map(|(amount, _, liquidity)| Estimate {
+            value: amount,
+            // Since we reversed the path originally, we need to re-reverse it here.
+            path: liquidity.into_iter().rev().collect(),
+        })
+}
+
+pub fn estimate_spot_price<'a, L: BaselineSolvable>(
+    path: &[H160],
+    liquidity: &'a HashMap<TokenPair, Vec<L>>,
+) -> Option<Estimate<'a, BigRational, L>> {
+    let sell_token = path.first()?;
+    path.iter()
+        .skip(1)
+        .fold(
+            Some((BigRational::from_integer(1.into()), *sell_token, Vec::new())),
+            |previous, current| {
+                let (price_so_far, previous, mut path) = previous?;
+                let (best_liquidity, price) = liquidity
+                    .get(&TokenPair::new(*current, previous)?)?
+                    .iter()
+                    .map(|liquidity| (liquidity, liquidity.get_spot_price(previous, *current)))
+                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(&amount_b))?;
+                path.push(best_liquidity);
+                Some((price_so_far * price?, *current, path))
+            },
+        )
+        .map(|(amount, _, liquidity)| Estimate {
+            value: amount,
+            path: liquidity,
+        })
 }
 
 // Returns possible paths from sell_token to buy token, given a list of potential intermediate base tokens
@@ -226,11 +261,11 @@ mod tests {
             (100, 100),
         )];
         let pools = hashmap! {
-            pools[0].tokens => pools[0].clone(),
+            pools[0].tokens => vec![pools[0].clone()],
         };
 
-        assert_eq!(estimate_buy_amount(1.into(), &path, &pools), None);
-        assert_eq!(estimate_sell_amount(1.into(), &path, &pools), None);
+        assert!(estimate_buy_amount(1.into(), &path, &pools).is_none());
+        assert!(estimate_sell_amount(1.into(), &path, &pools).is_none());
     }
 
     #[test]
@@ -245,18 +280,20 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => pools[0].clone(),
-            pools[1].tokens => pools[1].clone(),
+            pools[0].tokens => vec![pools[0].clone()],
+            pools[1].tokens => vec![pools[1].clone()],
         };
 
         assert_eq!(
-            estimate_buy_amount(10.into(), &path, &pools),
-            Some(2.into())
+            estimate_buy_amount(10.into(), &path, &pools).unwrap().value,
+            2.into()
         );
 
         assert_eq!(
-            estimate_sell_amount(10.into(), &path, &pools),
-            Some(105.into())
+            estimate_sell_amount(10.into(), &path, &pools)
+                .unwrap()
+                .value,
+            105.into()
         );
     }
 
@@ -272,11 +309,11 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => pools[0].clone(),
-            pools[1].tokens => pools[1].clone(),
+            pools[0].tokens => vec![pools[0].clone()],
+            pools[1].tokens => vec![pools[1].clone()],
         };
 
-        assert_eq!(estimate_sell_amount(100.into(), &path, &pools), None);
+        assert!(estimate_sell_amount(100.into(), &path, &pools).is_none());
     }
 
     #[test]
@@ -291,13 +328,94 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => pools[0].clone(),
-            pools[1].tokens => pools[1].clone(),
+            pools[0].tokens => vec![pools[0].clone()],
+            pools[1].tokens => vec![pools[1].clone()]
         };
 
         assert_eq!(
-            big_rational_to_float(&estimate_spot_price(&path, &pools).unwrap()),
+            big_rational_to_float(&estimate_spot_price(&path, &pools).unwrap().value),
             Some(0.25)
         );
+    }
+
+    #[test]
+    fn test_estimate_amount_multiple_pools() {
+        let sell_token = H160::from_low_u64_be(1);
+        let intermediate = H160::from_low_u64_be(2);
+        let buy_token = H160::from_low_u64_be(3);
+
+        let mut path = vec![sell_token, intermediate, buy_token];
+        let first_pair = TokenPair::new(path[0], path[1]).unwrap();
+        let second_pair = TokenPair::new(path[1], path[2]).unwrap();
+
+        let first_hop_high_price = Pool::uniswap(first_pair, (101_000, 100_000));
+        let first_hop_low_price = Pool::uniswap(first_pair, (100_000, 101_000));
+        let second_hop_high_slippage = Pool::uniswap(second_pair, (200_000, 50_000));
+        let second_hop_low_slippage = Pool::uniswap(second_pair, (200_000_000, 50_000_000));
+        let pools = hashmap! {
+            first_pair => vec![first_hop_high_price.clone(), first_hop_low_price.clone()],
+            second_pair => vec![second_hop_high_slippage, second_hop_low_slippage.clone()],
+        };
+
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(
+            buy_estimate.path,
+            [&first_hop_low_price, &second_hop_low_slippage]
+        );
+
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(
+            sell_estimate.path,
+            [&first_hop_low_price, &second_hop_low_slippage]
+        );
+
+        let spot_price = estimate_spot_price(&path, &pools).unwrap();
+        assert_eq!(
+            spot_price.path,
+            [&first_hop_low_price, &second_hop_low_slippage]
+        );
+
+        // For the reverse path we now expect to use the higher price for the first hop, but still low slippage for the second
+        path.reverse();
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(
+            buy_estimate.path,
+            [&second_hop_low_slippage, &first_hop_high_price]
+        );
+
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(
+            sell_estimate.path,
+            [&second_hop_low_slippage, &first_hop_high_price]
+        );
+
+        let spot_price = estimate_spot_price(&path, &pools).unwrap();
+        assert_eq!(
+            spot_price.path,
+            [&second_hop_low_slippage, &first_hop_high_price]
+        );
+    }
+
+    #[test]
+    fn test_estimate_amount_invalid_pool() {
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+        let pair = TokenPair::new(sell_token, buy_token).unwrap();
+
+        let path = vec![sell_token, buy_token];
+        let valid_pool = Pool::uniswap(pair, (100_000, 100_000));
+        let invalid_pool = Pool::uniswap(pair, (0, 0));
+        let pools = hashmap! {
+            pair => vec![valid_pool.clone(), invalid_pool],
+        };
+
+        let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(buy_estimate.path, [&valid_pool]);
+
+        let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
+        assert_eq!(sell_estimate.path, [&valid_pool]);
+
+        let spot_price = estimate_spot_price(&path, &pools).unwrap();
+        assert_eq!(spot_price.path, [&valid_pool]);
     }
 }
