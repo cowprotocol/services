@@ -274,6 +274,7 @@ pub mod tests {
     use crate::{
         encoding::EncodedInteraction, interactions::dummy_web3, settlement::NoopInteraction,
     };
+    use dummy_web3::dummy_web3;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderCreation};
 
@@ -434,6 +435,9 @@ pub mod tests {
 
     #[test]
     fn merge_ok() {
+        let web3 = dummy_web3();
+        let weth = contracts::WETH9::at(&web3, H160::zero());
+
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder0 = SettlementEncoder::new(prices);
         let mut order13 = OrderBuilder::default()
@@ -443,6 +447,10 @@ pub mod tests {
         order13.order_meta_data.uid.0[0] = 0;
         encoder0.add_trade(order13, 13.into()).unwrap();
         encoder0.append_to_execution_plan(NoopInteraction {});
+        encoder0.add_unwrap(UnwrapWethInteraction {
+            weth: weth.clone(),
+            amount: 1.into(),
+        });
 
         let prices = hashmap! { token(2) => 2.into(), token(4) => 4.into() };
         let mut encoder1 = SettlementEncoder::new(prices);
@@ -453,6 +461,10 @@ pub mod tests {
         order24.order_meta_data.uid.0[0] = 1;
         encoder1.add_trade(order24, 24.into()).unwrap();
         encoder1.append_to_execution_plan(NoopInteraction {});
+        encoder1.add_unwrap(UnwrapWethInteraction {
+            weth,
+            amount: 2.into(),
+        });
 
         let merged = encoder0.merge(encoder1).unwrap();
         let prices = hashmap! {
@@ -463,6 +475,7 @@ pub mod tests {
         assert_eq!(merged.tokens, [token(1), token(2), token(3), token(4)]);
         assert_eq!(merged.trades.len(), 2);
         assert_eq!(merged.execution_plan.len(), 2);
+        assert_eq!(merged.unwraps[0].amount, 3.into());
     }
 
     #[test]
