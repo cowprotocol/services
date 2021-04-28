@@ -521,6 +521,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "hex-literal",
+ "lazy_static",
  "model",
  "orderbook",
  "reqwest",

@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 contracts = { path = "../contracts" }
 ethcontract = { version = "0.11",  default-features = false, features = ["http"] }
 hex-literal = "0.3"
+lazy_static = "1.4"
 model = { path = "../model" }
 orderbook = { path = "../orderbook" }
 reqwest = "0.10"
