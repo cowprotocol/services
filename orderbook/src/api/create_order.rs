@@ -41,8 +41,11 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             super::error("Forbidden", "Forbidden, your account is deny-listed"),
             StatusCode::FORBIDDEN,
         ),
-        Ok(AddOrderResult::PastValidTo) => (
-            super::error("PastValidTo", "validTo is in the past"),
+        Ok(AddOrderResult::InsufficientValidTo) => (
+            super::error(
+                "InsufficientValidTo",
+                "validTo is not far enough in the future",
+            ),
             StatusCode::BAD_REQUEST,
         ),
         Ok(AddOrderResult::MissingOrderData) => (

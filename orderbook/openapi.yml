@@ -551,7 +551,7 @@ components:
               DuplicateOrder,
               InvalidSignature,
               MissingOrderData,
-              PastValidTo,
+              InsufficientValidTo,
               InsufficientFunds,
               InsufficientFee,
               UnsupportedToken,

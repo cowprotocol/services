@@ -178,6 +178,7 @@ async fn onchain_settlement(web3: Web3) {
         )),
         fee_calculator.clone(),
         HashSet::new(),
+        Duration::from_secs(120),
     ));
 
     orderbook::serve_task(
@@ -194,7 +195,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_sell_amount(to_wei(100))
         .with_buy_token(token_b.address())
         .with_buy_amount(to_wei(80))
-        .with_valid_to(u32::max_value())
+        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .with_kind(OrderKind::Sell)
         .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
@@ -215,7 +216,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_sell_amount(to_wei(50))
         .with_buy_token(token_a.address())
         .with_buy_amount(to_wei(40))
-        .with_valid_to(u32::max_value())
+        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .with_kind(OrderKind::Sell)
         .with_signing_scheme(SigningScheme::EthSign)
         .sign_with(

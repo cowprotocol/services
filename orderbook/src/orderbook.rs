@@ -11,7 +11,7 @@ use contracts::GPv2Settlement;
 use futures::{join, TryStreamExt};
 use model::order::{OrderCancellation, OrderCreationPayload};
 use model::{
-    order::{Order, OrderCreation, OrderUid},
+    order::{Order, OrderUid},
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
@@ -19,6 +19,7 @@ use shared::time::now_in_epoch_seconds;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Duration,
 };
 use tokio::sync::Mutex;
 
@@ -30,7 +31,7 @@ pub enum AddOrderResult {
     InvalidSignature,
     Forbidden,
     MissingOrderData,
-    PastValidTo,
+    InsufficientValidTo,
     InsufficientFunds,
     InsufficientFee,
     UnsupportedToken(H160),
@@ -51,6 +52,7 @@ pub struct Orderbook {
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<MinFeeCalculator>,
     unsupported_tokens: HashSet<H160>,
+    min_order_validity_period: Duration,
 }
 
 impl Orderbook {
@@ -61,6 +63,7 @@ impl Orderbook {
         balance_fetcher: Box<dyn BalanceFetching>,
         fee_validator: Arc<MinFeeCalculator>,
         unsupported_tokens: HashSet<H160>,
+        min_order_validity_period: Duration,
     ) -> Self {
         Self {
             domain_separator,
@@ -69,6 +72,7 @@ impl Orderbook {
             balance_fetcher,
             fee_validator,
             unsupported_tokens,
+            min_order_validity_period,
         }
     }
 
@@ -80,8 +84,10 @@ impl Orderbook {
         if self.unsupported_tokens.contains(&order.sell_token) {
             return Ok(AddOrderResult::UnsupportedToken(order.sell_token));
         }
-        if !has_future_valid_to(shared::time::now_in_epoch_seconds(), &order) {
-            return Ok(AddOrderResult::PastValidTo);
+        if order.valid_to
+            < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
+        {
+            return Ok(AddOrderResult::InsufficientValidTo);
         }
         if !self
             .fee_validator
@@ -180,7 +186,7 @@ impl Orderbook {
 
     pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {
         let filter = OrderFilter {
-            min_valid_to: now_in_epoch_seconds(),
+            min_valid_to: now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32,
             exclude_fully_executed: true,
             exclude_invalidated: true,
             exclude_insufficient_balance: true,
@@ -194,10 +200,6 @@ impl Orderbook {
         let update_events = async { self.event_updater.lock().await.update_events().await };
         join!(update_events, self.balance_fetcher.update()).0
     }
-}
-
-fn has_future_valid_to(now_in_epoch_seconds: u32, order: &OrderCreation) -> bool {
-    order.valid_to > now_in_epoch_seconds
 }
 
 // Make sure the balance fetcher tracks all balances for user, sell token combinations in these

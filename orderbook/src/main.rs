@@ -17,7 +17,9 @@ use shared::{
     price_estimate::UniswapPriceEstimator,
     transport::LoggingTransport,
 };
-use std::{collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc};
+use std::{
+    collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
+};
 use structopt::StructOpt;
 use tokio::task;
 use url::Url;
@@ -40,6 +42,15 @@ struct Arguments {
 
     #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
     fee_discount_factor: f64,
+
+    /// The minimum amount of time an order has to be valid for.
+    #[structopt(
+        long,
+        env = "MIN_ORDER_VALIDITY_PERIOD",
+        default_value = "60",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    min_order_validity_period: Duration,
 }
 
 pub async fn orderbook_maintenance(
@@ -170,6 +181,7 @@ async fn main() {
         Box::new(balance_fetcher),
         fee_calculator.clone(),
         unsupported_tokens,
+        args.min_order_validity_period,
     ));
     check_database_connection(orderbook.as_ref()).await;
 
