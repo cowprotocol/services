@@ -52,6 +52,7 @@ impl Display for Slippage {
 ///
 /// These parameters are currently incomplete, and missing parameters can be
 /// added incrementally as needed.
+#[derive(Clone, Debug)]
 pub struct SwapQuery {
     /// Contract address of a token to sell.
     pub from_token_address: H160,
@@ -166,7 +167,14 @@ where
     hex::decode(hex_str).map_err(D::Error::custom)
 }
 
+/// Approve spender response.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct Spender {
+    pub address: H160,
+}
+
 /// 1Inch API Client implementation.
+#[derive(Debug)]
 pub struct OneInchClient {
     client: Client,
     base_url: Url,
@@ -190,6 +198,15 @@ impl OneInchClient {
             .await?
             .json()
             .await?)
+    }
+
+    /// Retrieves the address of the spender to use for token approvals.
+    pub async fn get_spender(&self) -> Result<Spender> {
+        let url = self
+            .base_url
+            .join("v3.0/1/approve/spender")
+            .expect("unexpectedly invalid URL");
+        Ok(self.client.get(url).send().await?.json().await?)
     }
 }
 
@@ -287,8 +304,8 @@ mod tests {
 
     #[test]
     fn deserialize_swap_response() {
-        let swap = serde_json::from_str::<Swap>(r#"
-            {
+        let swap = serde_json::from_str::<Swap>(
+            r#"{
               "fromToken": {
                 "symbol": "ETH",
                 "name": "Ethereum",
@@ -333,8 +350,9 @@ mod tests {
                 "gasPrice": "154110000000",
                 "gas": 143297
               }
-            }
-        "#).unwrap();
+            }"#,
+        )
+        .unwrap();
 
         assert_eq!(
             swap,
@@ -382,6 +400,23 @@ mod tests {
         );
     }
 
+    #[test]
+    fn deserialize_spender_response() {
+        let spender = serde_json::from_str::<Spender>(
+            r#"{
+              "address": "0x11111112542d85b3ef69ae05771c2dccff4faa26"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            spender,
+            Spender {
+                address: addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
+            }
+        )
+    }
+
     #[tokio::test]
     #[ignore]
     async fn oneinch_swap() {
@@ -414,5 +449,12 @@ mod tests {
             .await
             .unwrap();
         println!("{:#?}", swap);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn oneinch_spender_address() {
+        let spender = OneInchClient::default().get_spender().await.unwrap();
+        println!("{:#?}", spender);
     }
 }
