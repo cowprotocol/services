@@ -175,11 +175,8 @@ impl Driver {
             .filter_map(|(settlement, simulation)| match simulation {
                 Ok(()) => Some(settlement),
                 Err(err) => {
-                    tracing::error!(
-                        "simulation of settlement failed\nsettlement: {:?}\n error:{:?}",
-                        settlement.settlement,
-                        err
-                    );
+                    tracing::error!("settlement simulation failed\n error: {:?}", err);
+                    tracing::debug!("settlement failure for: \n{:#?}", settlement.settlement,);
                     None
                 }
             })
