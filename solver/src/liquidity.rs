@@ -10,6 +10,7 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 use model::order::Order;
 
 pub mod offchain_orderbook;
+pub mod slippage;
 pub mod uniswap;
 
 /// Defines the different types of liquidity our solvers support
