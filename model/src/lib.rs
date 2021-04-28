@@ -176,6 +176,17 @@ impl TokenPair {
         self.0 == *token || self.1 == *token
     }
 
+    /// Returns the token in the pair which is not the one passed in, or None if token passed in is not part of the pair
+    pub fn other(&self, token: &H160) -> Option<H160> {
+        if &self.0 == token {
+            Some(self.1)
+        } else if &self.1 == token {
+            Some(self.0)
+        } else {
+            None
+        }
+    }
+
     /// The first address is always the lower one.
     /// The addresses are never equal.
     pub fn get(&self) -> (H160, H160) {

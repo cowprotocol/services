@@ -2,9 +2,10 @@ use anyhow::Result;
 use ethcontract::{H160, U256};
 use maplit::hashmap;
 use model::TokenPair;
+use num::BigRational;
 use shared::{
     baseline_solver::{
-        estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
+        estimate_buy_amount, estimate_sell_amount, path_candidates, BaselineSolvable,
     },
     pool_fetching::Pool,
 };
@@ -30,18 +31,33 @@ impl Solver for BaselineSolver {
     }
 }
 
+impl BaselineSolvable for AmmOrder {
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+        amm_to_pool(self).get_amount_in(in_token, out_amount, out_token)
+    }
+
+    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+        amm_to_pool(self).get_amount_out(out_token, in_amount, in_token)
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        amm_to_pool(self).get_spot_price(base_token, quote_token)
+    }
+}
+
 impl BaselineSolver {
     pub fn new(base_tokens: HashSet<H160>) -> Self {
         Self { base_tokens }
     }
 
     fn solve(&self, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
-        let amm_map = extract_deepest_amm_liquidity(&liquidity);
-
-        let pool_map = amm_map
-            .iter()
-            .map(|(key, value)| (*key, vec![amm_to_pool(value)]))
-            .collect();
+        let mut amm_map: HashMap<_, Vec<_>> = HashMap::new();
+        for liquidity in &liquidity {
+            if let Liquidity::Amm(amm_order) = liquidity {
+                let entry = amm_map.entry(amm_order.tokens).or_default();
+                entry.push(amm_order.clone())
+            }
+        }
 
         // We assume that individual settlements do not move the amm pools significantly when
         // returning multiple settlemnts.
@@ -54,7 +70,7 @@ impl BaselineSolver {
                 Liquidity::Amm(_) => continue,
             };
 
-            let solution = match self.settle_order(&user_order, &pool_map) {
+            let solution = match self.settle_order(&user_order, &amm_map) {
                 Some(solution) => solution,
                 None => continue,
             };
@@ -63,7 +79,7 @@ impl BaselineSolver {
             if solution.executed_buy_amount >= user_order.buy_amount
                 && solution.executed_sell_amount <= user_order.sell_amount
             {
-                match solution.into_settlement(&user_order, &amm_map) {
+                match solution.into_settlement(&user_order) {
                     Ok(settlement) => settlements.push(settlement),
                     Err(err) => {
                         tracing::error!("baseline_solver failed to create settlement: {:?}", err)
@@ -78,7 +94,7 @@ impl BaselineSolver {
     fn settle_order(
         &self,
         order: &LimitOrder,
-        pools: &HashMap<TokenPair, Vec<Pool>>,
+        pools: &HashMap<TokenPair, Vec<AmmOrder>>,
     ) -> Option<Solution> {
         let candidates = path_candidates(
             order.sell_token,
@@ -87,44 +103,24 @@ impl BaselineSolver {
             MAX_HOPS,
         );
 
-        let (best, executed_sell_amount, executed_buy_amount) = match order.kind {
+        let (path, executed_sell_amount, executed_buy_amount) = match order.kind {
             model::order::OrderKind::Buy => {
-                let path = candidates.iter().min_by_key(|path| {
-                    estimate_sell_amount(order.buy_amount, path, &pools)
-                        .map(|estimate| estimate.value)
-                })?;
-                (
-                    path,
-                    estimate_sell_amount(order.buy_amount, path, &pools)
-                        .map(|estimate| estimate.value)?,
-                    order.buy_amount,
-                )
+                let best = candidates
+                    .iter()
+                    .filter_map(|path| estimate_sell_amount(order.buy_amount, path, &pools))
+                    .min_by_key(|estimate| estimate.value)?;
+                (best.path, best.value, order.buy_amount)
             }
             model::order::OrderKind::Sell => {
-                let path = candidates.iter().max_by_key(|path| {
-                    estimate_buy_amount(order.sell_amount, path, &pools)
-                        .map(|estimate| estimate.value)
-                })?;
-                (
-                    path,
-                    order.sell_amount,
-                    estimate_buy_amount(order.sell_amount, path, &pools)
-                        .map(|estimate| estimate.value)?,
-                )
+                let best = candidates
+                    .iter()
+                    .filter_map(|path| estimate_buy_amount(order.sell_amount, path, &pools))
+                    .max_by_key(|estimate| estimate.value)?;
+                (best.path.clone(), order.sell_amount, best.value)
             }
         };
         Some(Solution {
-            path: token_path_to_pair_path(best)
-                .iter()
-                .map(|pair| {
-                    pools
-                        .get(pair)
-                        .expect("Path was found so pool must exist")
-                        .first()
-                        .expect("We insert one pool per token pair")
-                        .clone()
-                })
-                .collect(),
+            path: path.into_iter().cloned().collect(),
             executed_sell_amount,
             executed_buy_amount,
         })
@@ -137,17 +133,13 @@ impl BaselineSolver {
 }
 
 struct Solution {
-    path: Vec<Pool>,
+    path: Vec<AmmOrder>,
     executed_sell_amount: U256,
     executed_buy_amount: U256,
 }
 
 impl Solution {
-    fn into_settlement(
-        self,
-        order: &LimitOrder,
-        amm_map: &HashMap<TokenPair, AmmOrder>,
-    ) -> Result<Settlement> {
+    fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => self.executed_buy_amount,
             order.buy_token => self.executed_sell_amount,
@@ -156,15 +148,13 @@ impl Solution {
         settlement.with_liquidity(order, order.full_execution_amount())?;
 
         let (mut sell_amount, mut sell_token) = (self.executed_sell_amount, order.sell_token);
-        for pool in self.path {
-            let (buy_amount, buy_token) = pool
-                .get_amount_out(sell_token, sell_amount)
-                .expect("Path was found, so amount must be caluclatable");
-            let amm = amm_map
-                .get(&pool.tokens)
-                .expect("Path was found so AMM must exist");
+        for amm in self.path {
+            let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
+            let buy_amount = amm
+                .get_amount_out(buy_token, sell_amount, sell_token)
+                .expect("Path was found, so amount must be calculateable");
             settlement.with_liquidity(
-                amm,
+                &amm,
                 AmmOrderExecution {
                     input: (sell_token, sell_amount),
                     output: (buy_token, buy_amount),
@@ -184,22 +174,6 @@ fn amm_to_pool(amm: &AmmOrder) -> Pool {
         reserves: amm.reserves,
         fee: amm.fee,
     }
-}
-
-pub fn extract_deepest_amm_liquidity(liquidity: &[Liquidity]) -> HashMap<TokenPair, AmmOrder> {
-    let mut result = HashMap::new();
-    for liquidity in liquidity {
-        match liquidity {
-            Liquidity::Amm(order) => {
-                let deepest_so_far = result.entry(order.tokens).or_insert_with(|| order.clone());
-                if deepest_so_far.constant_product() < order.constant_product() {
-                    result.insert(order.tokens, order.clone());
-                }
-            }
-            _ => continue,
-        }
-    }
-    result
 }
 
 #[cfg(test)]
@@ -263,6 +237,13 @@ mod tests {
             AmmOrder {
                 tokens: TokenPair::new(sell_token, native_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: amm_handler[1].clone(),
+            },
+            // Second native token pool has a worse price despite larger k
+            AmmOrder {
+                tokens: TokenPair::new(sell_token, native_token).unwrap(),
+                reserves: (11_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: amm_handler[1].clone(),
             },
@@ -362,6 +343,13 @@ mod tests {
                 fee: Ratio::new(3, 1000),
                 settlement_handling: amm_handler[1].clone(),
             },
+            // Second native token pool has a worse price despite larger k
+            AmmOrder {
+                tokens: TokenPair::new(sell_token, native_token).unwrap(),
+                reserves: (11_000_000, 10_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: amm_handler[1].clone(),
+            },
             AmmOrder {
                 tokens: TokenPair::new(native_token, buy_token).unwrap(),
                 reserves: (10_000_000, 10_000_000),
@@ -402,50 +390,6 @@ mod tests {
                 input: (native_token, 101_315.into()),
                 output: (buy_token, 100_000.into()),
             }
-        );
-    }
-
-    #[test]
-    fn test_extract_deepest_amm_liquidity() {
-        let token_pair =
-            TokenPair::new(H160::from_low_u64_be(0), H160::from_low_u64_be(1)).unwrap();
-        let unrelated_token_pair =
-            TokenPair::new(H160::from_low_u64_be(2), H160::from_low_u64_be(3)).unwrap();
-        let handler = CapturingSettlementHandler::arc();
-        let liquidity = vec![
-            // Deep pool
-            AmmOrder {
-                tokens: token_pair,
-                reserves: (10_000_000, 10_000_000),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: handler.clone(),
-            },
-            // Shallow pool
-            AmmOrder {
-                tokens: token_pair,
-                reserves: (100, 100),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: handler.clone(),
-            },
-            // unrelated pool
-            AmmOrder {
-                tokens: unrelated_token_pair,
-                reserves: (10_000_000, 10_000_000),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: handler,
-            },
-        ];
-        let result = extract_deepest_amm_liquidity(
-            &liquidity
-                .iter()
-                .cloned()
-                .map(Liquidity::Amm)
-                .collect::<Vec<_>>(),
-        );
-        assert_eq!(result[&token_pair].reserves, liquidity[0].reserves);
-        assert_eq!(
-            result[&unrelated_token_pair].reserves,
-            liquidity[2].reserves
         );
     }
 }

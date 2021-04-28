@@ -65,7 +65,7 @@ impl Pool {
 
     /// Given an input amount and token, returns the maximum output amount and address of the other asset.
     /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow)
-    pub fn get_amount_out(&self, token_in: H160, amount_in: U256) -> Option<(U256, H160)> {
+    fn get_amount_out(&self, token_in: H160, amount_in: U256) -> Option<(U256, H160)> {
         let (reserve_in, reserve_out, token_out) = self.get_relative_reserves(token_in);
         Some((
             self.amount_out(amount_in, reserve_in, reserve_out)?,
@@ -75,7 +75,7 @@ impl Pool {
 
     /// Given an output amount and token, returns a required input amount and address of the other asset.
     /// Returns None if operation not possible due to arithmetic issues (e.g. over or underflow, reserve too small)
-    pub fn get_amount_in(&self, token_out: H160, amount_out: U256) -> Option<(U256, H160)> {
+    fn get_amount_in(&self, token_out: H160, amount_out: U256) -> Option<(U256, H160)> {
         let (reserve_out, reserve_in, token_in) = self.get_relative_reserves(token_out);
         Some((
             self.amount_in(amount_out, reserve_in, reserve_out)?,
@@ -109,7 +109,7 @@ impl Pool {
 
     // Given the base token returns the price (as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18)
     // and quote token. E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD) the spot price is 125/100
-    pub fn get_spot_price(&self, base_token: H160) -> Option<(BigRational, H160)> {
+    fn get_spot_price(&self, base_token: H160) -> Option<(BigRational, H160)> {
         let (reserve_base, reserve_quote, quote_token) = if base_token == self.tokens.get().0 {
             (
                 BigInt::from(self.reserves.0),
