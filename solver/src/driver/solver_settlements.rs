@@ -86,7 +86,7 @@ fn merge_at_most_settlements(
         merged = match merged.clone().merge(next) {
             Ok(settlement) => settlement,
             Err(err) => {
-                tracing::error!("failed to merge settlement: {:?}", err);
+                tracing::debug!("failed to merge settlement: {:?}", err);
                 continue;
             }
         };
