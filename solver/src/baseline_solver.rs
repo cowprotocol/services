@@ -392,4 +392,44 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn finds_best_route_when_pool_returns_none() {
+        // Regression test for https://github.com/gnosis/gp-v2-services/issues/530
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(0);
+
+        let orders = vec![LimitOrder {
+            sell_amount: 110_000.into(),
+            buy_amount: 100_000.into(),
+            sell_token,
+            buy_token,
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+            id: "0".into(),
+        }];
+
+        let amms = vec![
+            AmmOrder {
+                tokens: TokenPair::new(buy_token, sell_token).unwrap(),
+                reserves: (10_000_000, 10_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+            // Other direct pool has not enough liquidity to compute a valid estimate
+            AmmOrder {
+                tokens: TokenPair::new(buy_token, sell_token).unwrap(),
+                reserves: (0, 0),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+        ];
+
+        let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
+        liquidity.extend(amms.iter().cloned().map(Liquidity::Amm));
+
+        let solver = BaselineSolver::new(hashset! {});
+        assert_eq!(solver.solve(liquidity).len(), 1);
+    }
 }
