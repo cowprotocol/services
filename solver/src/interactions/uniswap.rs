@@ -8,8 +8,8 @@ pub struct UniswapInteraction {
     pub router: IUniswapLikeRouter,
     pub settlement: GPv2Settlement,
     pub set_allowance: bool,
-    pub amount_in: U256,
-    pub amount_out_min: U256,
+    pub amount_out: U256,
+    pub amount_in_max: U256,
     pub token_in: H160,
     pub token_out: H160,
 }
@@ -37,9 +37,9 @@ impl UniswapInteraction {
     }
 
     fn encode_swap(&self) -> EncodedInteraction {
-        let method = self.router.swap_exact_tokens_for_tokens(
-            self.amount_in,
-            self.amount_out_min,
+        let method = self.router.swap_tokens_for_exact_tokens(
+            self.amount_out,
+            self.amount_in_max,
             vec![self.token_in, self.token_out],
             self.settlement.address(),
             U256::MAX,
@@ -68,8 +68,8 @@ mod tests {
 
     #[test]
     fn encode_uniswap_call() {
-        let amount_in = 5;
-        let amount_out_min = 6;
+        let amount_out = 5;
+        let amount_in_max = 6;
         let token_in = H160::from_low_u64_be(7);
         let token_out = 8;
         let payout_to = 9u8;
@@ -82,8 +82,8 @@ mod tests {
             router: router.clone(),
             settlement,
             set_allowance: true,
-            amount_in: amount_in.into(),
-            amount_out_min: amount_out_min.into(),
+            amount_out: amount_out.into(),
+            amount_in_max: amount_in_max.into(),
             token_in,
             token_out: H160::from_low_u64_be(token_out as u64),
         };
@@ -102,13 +102,13 @@ mod tests {
         let swap_call = &interactions[1];
         assert_eq!(swap_call.0, router.address());
         let call = &swap_call.2;
-        let swap_signature = [0x38u8, 0xed, 0x17, 0x39];
+        let swap_signature = hex!("8803dbee");
         let path_offset = 160;
         let path_size = 2;
         let deadline = [0xffu8; 32];
         assert_eq!(call[0..4], swap_signature);
-        assert_eq!(call[4..36], u8_as_32_bytes_be(amount_in));
-        assert_eq!(call[36..68], u8_as_32_bytes_be(amount_out_min));
+        assert_eq!(call[4..36], u8_as_32_bytes_be(amount_out));
+        assert_eq!(call[36..68], u8_as_32_bytes_be(amount_in_max));
         assert_eq!(call[68..100], u8_as_32_bytes_be(path_offset));
         assert_eq!(call[100..132], u8_as_32_bytes_be(payout_to));
         assert_eq!(call[132..164], deadline);

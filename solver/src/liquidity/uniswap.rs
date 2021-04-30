@@ -125,25 +125,30 @@ impl UniswapLikeLiquidity {
 }
 
 impl Inner {
-    fn _settle(&self, input: (H160, U256), output: (H160, U256)) -> UniswapInteraction {
+    fn _settle(
+        &self,
+        (token_in, amount_in): (H160, U256),
+        (token_out, amount_out): (H160, U256),
+    ) -> UniswapInteraction {
+        let amount_in_with_slippage = slippage::amount_plus_max_slippage(amount_in);
         let set_allowance = self
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .get(&input.0)
+            .get(&token_in)
             .cloned()
             .unwrap_or_default()
-            < input.1;
+            < amount_in_with_slippage;
 
         UniswapInteraction {
             router: self.router.clone(),
             settlement: self.gpv2_settlement.clone(),
             set_allowance,
-            amount_in: input.1,
             // Apply fixed slippage tolerance in case balances change between solution finding and mining
-            amount_out_min: slippage::amount_with_max_slippage(output.1),
-            token_in: input.0,
-            token_out: output.0,
+            amount_out,
+            amount_in_max: amount_in_with_slippage,
+            token_in,
+            token_out,
         }
     }
 }
@@ -187,8 +192,12 @@ mod tests {
         let interaction = inner._settle((token_a, 50.into()), (token_b, 100.into()));
         assert_eq!(interaction.set_allowance, false);
 
-        let interaction = inner._settle((token_a, 100.into()), (token_b, 100.into()));
+        let interaction = inner._settle((token_a, 99.into()), (token_b, 100.into()));
         assert_eq!(interaction.set_allowance, false);
+
+        // Allowance needed because of slippage
+        let interaction = inner._settle((token_a, 100.into()), (token_b, 100.into()));
+        assert_eq!(interaction.set_allowance, true);
 
         let interaction = inner._settle((token_a, 150.into()), (token_b, 100.into()));
         assert_eq!(interaction.set_allowance, true);
@@ -197,8 +206,12 @@ mod tests {
         let interaction = inner._settle((token_b, 150.into()), (token_a, 100.into()));
         assert_eq!(interaction.set_allowance, false);
 
-        let interaction = inner._settle((token_b, 200.into()), (token_a, 100.into()));
+        let interaction = inner._settle((token_b, 199.into()), (token_a, 100.into()));
         assert_eq!(interaction.set_allowance, false);
+
+        // Allowance needed because of slippage
+        let interaction = inner._settle((token_b, 200.into()), (token_a, 100.into()));
+        assert_eq!(interaction.set_allowance, true);
 
         let interaction = inner._settle((token_b, 250.into()), (token_a, 100.into()));
         assert_eq!(interaction.set_allowance, true);
