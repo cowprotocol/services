@@ -19,8 +19,10 @@ pub trait Solver {
     // order) so that they can be merged by the driver at its leisure.
     async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>>;
 
-    // Displayable name of the solver.
-    fn name(&self) -> &'static str;
+    // Displayable name of the solver. Defaults to the type name.
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 arg_enum! {

@@ -87,6 +87,22 @@ impl From<Order> for LimitOrder {
     }
 }
 
+#[cfg(test)]
+impl Default for LimitOrder {
+    fn default() -> Self {
+        LimitOrder {
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: Default::default(),
+            settlement_handling: tests::CapturingSettlementHandler::arc(),
+            id: Default::default(),
+        }
+    }
+}
+
 /// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
 pub struct AmmOrder {
@@ -119,6 +135,18 @@ impl Settleable for AmmOrder {
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
+    }
+}
+
+#[cfg(test)]
+impl Default for AmmOrder {
+    fn default() -> Self {
+        AmmOrder {
+            tokens: Default::default(),
+            reserves: Default::default(),
+            fee: Ratio::new(0, 1),
+            settlement_handling: tests::CapturingSettlementHandler::arc(),
+        }
     }
 }
 

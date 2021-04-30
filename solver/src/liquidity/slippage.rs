@@ -3,10 +3,10 @@
 use ethcontract::U256;
 
 /// Constant maximum slippage of 10 BPS (0.1%) to use for on-chain liquidity.
-pub const MAX_SLIPPAGE_BPS: u32 = 10;
+pub const MAX_SLIPPAGE_BPS: u16 = 10;
 
 /// Basis points in 100%.
-const BPS_BASE: u32 = 10000;
+const BPS_BASE: u16 = 10000;
 
 /// Multiply an integer amount by a rational, with additional handling in case
 /// of overflows.

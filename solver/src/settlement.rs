@@ -58,7 +58,7 @@ impl Trade {
     }
 }
 
-pub trait Interaction: std::fmt::Debug + Send {
+pub trait Interaction: std::fmt::Debug + Send + Sync {
     // TODO: not sure if this should return a result.
     // Write::write returns a result but we know we write to a vector in memory so we know it will
     // never fail. Then the question becomes whether interactions should be allowed to fail encoding
@@ -86,7 +86,7 @@ impl Interaction for NoopInteraction {
 
 #[derive(Debug, Clone)]
 pub struct Settlement {
-    encoder: SettlementEncoder,
+    pub encoder: SettlementEncoder,
 }
 
 impl Settlement {
