@@ -1,0 +1,12 @@
+FROM docker.io/library/node:lts
+WORKDIR /usr/src/gp-swap-ui
+
+RUN git clone https://github.com/gnosis/gp-swap-ui.git . && \
+    git checkout 750d749472ffa65d9f9122474133a0a94d903791 && \
+    yarn
+
+COPY docker/debug/swapui.env .env.local
+RUN yarn build
+
+WORKDIR /usr/src/gp-swap-ui/build
+CMD ["python3", "-m", "http.server"]

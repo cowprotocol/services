@@ -1,5 +1,5 @@
 FROM docker.io/clux/muslrust:stable as cargo-build
-WORKDIR /usr/src/oba-services
+WORKDIR /usr/src/gp-v2-services
 
 # Copy and Build Code
 COPY . .
@@ -18,8 +18,8 @@ FROM docker.io/alpine:latest
 # Handle signal handlers properly
 RUN apk add --no-cache tini
 COPY --from=cargo-build /usr/src/regex-stream-split/target/x86_64-unknown-linux-musl/release/regex-stream-split /usr/local/bin/regex-stream-split
-COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/orderbook /usr/local/bin/orderbook
-COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/solver /usr/local/bin/solver
+COPY --from=cargo-build /usr/src/gp-v2-services/target/x86_64-unknown-linux-musl/release/orderbook /usr/local/bin/orderbook
+COPY --from=cargo-build /usr/src/gp-v2-services/target/x86_64-unknown-linux-musl/release/solver /usr/local/bin/solver
 COPY docker/startup.sh /usr/local/bin/startup.sh
 
 CMD echo "Specify binary - either solver or orderbook"

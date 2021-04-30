@@ -1,0 +1,42 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: gp-v2
+
+spec:
+  containers:
+    - name: api
+      image: gnosispm/gp-v2-services
+      args: ["orderbook"]
+
+    - name: solver
+      image: gnosispm/gp-v2-services
+      args: ["solver"]
+
+    - name: migrations
+      image: gnosispm/gp-v2-services-migrations
+      env:
+        - name: FLYWAY_URL
+          value: "jdbc:postgresql://localhost/?user=me&password="
+      args: ["migrate"]
+
+    - name: swapui
+      image: gnosispm/gp-swap-ui
+      ports:
+        - hostPort: 8000
+
+    - name: postgres
+      image: docker.io/library/postgres:13.2
+      ports:
+        - hostPort: 5432
+      env:
+        - name: POSTGRES_HOST_AUTH_METHOD
+          value: trust
+        - name: POSTGRES_USER
+          value: me
+
+    - name: ganache-cli
+      image: docker.io/trufflesuite/ganache-cli:v6.12.2
+      args: ["-d", "-l", "1e7", "-i", "1337", "--chainId", "1337"]
+      ports:
+        - hostPort: 8545
