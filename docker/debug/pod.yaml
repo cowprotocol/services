@@ -5,13 +5,23 @@ metadata:
 
 spec:
   containers:
-    - name: api
-      image: gnosispm/gp-v2-services
-      args: ["orderbook"]
-
     - name: solver
       image: gnosispm/gp-v2-services
       args: ["solver"]
+      env:
+        - name: PRIVATE_KEY
+          value: "0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7d21715b23b1d"
+        - name: AMM_SOURCES
+          value: Uniswap
+
+    - name: api
+      image: gnosispm/gp-v2-services
+      args: ["orderbook"]
+      env:
+        - name: DB_URL
+          value: "postgresql://localhost/?user=me&password="
+      ports:
+        - hostPort: 8080
 
     - name: migrations
       image: gnosispm/gp-v2-services-migrations
@@ -37,6 +47,6 @@ spec:
 
     - name: ganache-cli
       image: docker.io/trufflesuite/ganache-cli:v6.12.2
-      args: ["-d", "-l", "1e7", "-i", "1337", "--chainId", "1337"]
+      args: ["-d", "-g", "0", "-l", "1e7", "-i", "5777", "--chainId", "1337"]
       ports:
         - hostPort: 8545

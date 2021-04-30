@@ -37,29 +37,32 @@ async fn run() -> Result<()> {
 
     macro_rules! deploy {
             ($contract:ident) => { deploy!($contract ()) };
-            ($contract:ident ( $($param:expr),* $(,)? )) => {{
-                const NAME: &str = stringify!($contract);
+            ($contract:ident ( $($param:expr),* $(,)? )) => {
+                deploy!($contract ($($param),*) as stringify!($contract))
+            };
+            ($contract:ident ( $($param:expr),* $(,)? ) as $name:expr) => {{
+                let name = $name;
 
-                log::debug!("deploying {}...", NAME);
+                log::debug!("deploying {}...", name);
                 let instance = $contract::builder(&web3 $(, $param)*)
                     .deploy()
                     .await
-                    .with_context(|| format!("failed to deploy {}", NAME))?;
+                    .with_context(|| format!("failed to deploy {}", name))?;
 
                 log::debug!(
                     "writing deployment to {}",
-                    paths::contract_address_file(NAME).display(),
+                    paths::contract_address_file(name).display(),
                 );
-                write_contract_address(stringify!($contract), instance.address())
-                    .with_context(|| format!("failed to write contract address for {}", NAME))?;
+                write_contract_address(name, instance.address())
+                    .with_context(|| format!("failed to write contract address for {}", name))?;
 
-                log::info!("deployed {} to {:?}", NAME, instance.address());
+                log::info!("deployed {} to {:?}", name, instance.address());
                 instance
             }};
         }
 
     log::info!("deploying Uniswap contracts");
-    let weth = deploy!(ERC20Mintable());
+    let weth = deploy!(ERC20Mintable() as "WETH9");
     let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
     deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
 
