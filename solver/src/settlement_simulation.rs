@@ -1,11 +1,19 @@
 use crate::encoding::EncodedSettlement;
-use anyhow::{Context, Result};
+use anyhow::{Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder};
 use futures::FutureExt;
 use shared::Web3;
+use web3::types::{BlockId, BlockNumber};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
+
+pub enum Block {
+    // Simulate the transactions at this block and attach a tenderly link to errors.
+    FixedWithTenderly(u64),
+    // Simulate the transactions at the latest block and do not attach a tenderly link.
+    LatestWithoutTenderly,
+}
 
 /// Simulate the settlement using a web3 `call`.
 // Clippy claims we don't need to collect `futures` but we do or the lifetimes with `join!` don't
@@ -16,6 +24,7 @@ pub async fn simulate_settlements(
     contract: &GPv2Settlement,
     web3: &Web3,
     network_id: &str,
+    block: Block,
 ) -> Result<Vec<Result<()>>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
@@ -23,33 +32,27 @@ pub async fn simulate_settlements(
             let method =
                 crate::settlement_submission::retry::settle_method_builder(contract, settlement);
             let transaction_builder = method.tx.clone();
-            (method.view().batch_call(&mut batch), transaction_builder)
+            let view = method.view().block(match block {
+                Block::FixedWithTenderly(block) => BlockId::Number(block.into()),
+                Block::LatestWithoutTenderly => BlockId::Number(BlockNumber::Latest),
+            });
+            (view.batch_call(&mut batch), transaction_builder)
         })
         .collect::<Vec<_>>();
-
-    // TODO: It would be nice to add this to the underlying web3 batch transport call used for the
-    // simulations.
-    let ((), current_block) = futures::join!(
-        batch.execute_all(SIMULATE_BATCH_SIZE),
-        web3.eth().block_number(),
-    );
-
-    let current_block = current_block
-        .context("failed to get current block")?
-        .as_u64();
+    batch.execute_all(SIMULATE_BATCH_SIZE).await;
 
     Ok(futures
         .into_iter()
         .map(|(future, transaction_builder)| {
-            future
-                .now_or_never()
-                .unwrap()
-                .map(|_| ())
-                .context(tenderly_link(
-                    current_block,
-                    network_id,
-                    transaction_builder,
-                ))
+            future.now_or_never().unwrap().map(|_| ()).map_err(|err| {
+                let err = Error::new(err);
+                match block {
+                    Block::FixedWithTenderly(block) => {
+                        err.context(tenderly_link(block, network_id, transaction_builder))
+                    }
+                    Block::LatestWithoutTenderly => err,
+                }
+            })
         })
         .collect())
 }
@@ -84,6 +87,7 @@ mod tests {
         let node = "https://dev-openethereum.mainnet.gnosisdev.com";
         let transport = LoggingTransport::new(web3::transports::Http::new(node).unwrap());
         let web3 = Web3::new(transport);
+        let block = web3.eth().block_number().await.unwrap().as_u64();
         let network_id = web3.net().version().await.unwrap();
         let mut contract = GPv2Settlement::deployed(&web3).await.unwrap();
         contract.defaults_mut().from = Some(Account::Offline(
@@ -109,6 +113,7 @@ mod tests {
             &contract,
             &web3,
             network_id.as_str(),
+            Block::FixedWithTenderly(block),
         )
         .await;
         let _ = dbg!(result);

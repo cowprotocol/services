@@ -98,6 +98,13 @@ impl CurrentBlockStream {
     pub fn current_block(&self) -> Block {
         self.most_recent.lock().unwrap().clone()
     }
+
+    pub fn current_block_number(&self) -> Result<u64> {
+        self.current_block()
+            .number
+            .ok_or_else(|| anyhow!("no block number"))
+            .map(|number| number.as_u64())
+    }
 }
 
 impl Stream for CurrentBlockStream {
