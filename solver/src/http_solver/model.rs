@@ -8,6 +8,7 @@ pub struct BatchAuctionModel {
     pub tokens: HashMap<String, TokenInfoModel>,
     pub orders: HashMap<String, OrderModel>,
     pub uniswaps: HashMap<String, UniswapModel>,
+    pub metadata: Option<MetadataModel>,
 }
 
 #[derive(Debug, Serialize)]
@@ -69,6 +70,11 @@ impl SettledBatchAuctionModel {
 
 #[derive(Debug, Deserialize)]
 pub struct Price(#[serde(with = "serde_with::rust::display_fromstr")] pub f64);
+
+#[derive(Debug, Serialize)]
+pub struct MetadataModel {
+    pub environment: Option<String>,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ExecutedOrderModel {

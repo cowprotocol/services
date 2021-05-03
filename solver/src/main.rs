@@ -2,7 +2,7 @@ use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160};
 use prometheus::Registry;
 use reqwest::Url;
-use shared::amm_pair_provider::SushiswapPairProvider;
+use shared::{amm_pair_provider::SushiswapPairProvider, network::network_name};
 use shared::{
     amm_pair_provider::UniswapPairProvider,
     metrics::serve_metrics,
@@ -140,6 +140,7 @@ async fn main() {
         .version()
         .await
         .expect("failed to get network id");
+    let network_name = network_name(&network_id, chain_id);
     let account = Account::Offline(args.private_key, Some(chain_id));
     let settlement_contract = solver::get_settlement_contract(&web3, account)
         .await
@@ -195,6 +196,7 @@ async fn main() {
         args.mip_solver_url,
         token_info_fetcher,
         price_estimator.clone(),
+        network_name.to_string(),
     );
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity,
