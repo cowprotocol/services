@@ -279,8 +279,9 @@ fn liquidity_with_price(
 mod tests {
     use super::*;
     use crate::liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder};
+    use maplit::hashmap;
     use model::{order::OrderKind, TokenPair};
-    use num::rational::Ratio;
+    use num::{rational::Ratio, traits::One};
     use shared::price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator};
 
     #[tokio::test]
@@ -359,5 +360,34 @@ mod tests {
         assert!(prices.contains_key(&sell_token));
         assert!(prices.contains_key(&native_token));
         assert!(prices.contains_key(&BUY_ETH_ADDRESS));
+    }
+
+    #[test]
+    fn liquidity_with_price_removes_liqiduity_without_price() {
+        let tokens = [
+            H160::from_low_u64_be(0),
+            H160::from_low_u64_be(1),
+            H160::from_low_u64_be(2),
+            H160::from_low_u64_be(3),
+        ];
+        let prices = hashmap! {tokens[0] => BigRational::one(), tokens[1] => BigRational::one()};
+        let order = |sell_token, buy_token| {
+            Liquidity::Limit(LimitOrder {
+                sell_token,
+                buy_token,
+                ..Default::default()
+            })
+        };
+        let liquidity = vec![
+            order(tokens[0], tokens[1]),
+            order(tokens[0], tokens[2]),
+            order(tokens[2], tokens[0]),
+            order(tokens[2], tokens[3]),
+        ];
+        let filtered = liquidity_with_price(liquidity, &prices);
+        assert_eq!(filtered.len(), 1);
+        assert!(
+            matches!(&filtered[0], Liquidity::Limit(order) if order.sell_token == tokens[0] && order.buy_token == tokens[1])
+        );
     }
 }
