@@ -126,7 +126,7 @@ impl Orderbook {
             _ => (),
         }
         self.balance_fetcher
-            .register(order.order_creation.sell_token, order.order_meta_data.owner)
+            .register(order.order_meta_data.owner, order.order_creation.sell_token)
             .await;
         Ok(AddOrderResult::Added(order.order_meta_data.uid))
     }
