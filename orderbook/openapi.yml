@@ -397,6 +397,11 @@ components:
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
         from:
+          description: |
+            If set, the backend enforces that this address matches what is decoded as the signer of
+            the signature. This helps catch errors with invalid signature encodings as the backend
+            might otherwise silently work with an unexpected address that for example does not have
+            any balance.
           $ref: "#/components/schemas/Address"
           nullable: true
       required:
