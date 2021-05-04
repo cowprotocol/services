@@ -255,6 +255,9 @@ impl Driver {
             settlements.len(),
             errors.len()
         );
+        self.metrics
+            .settlement_simulations_succeeded(settlements.len());
+        self.metrics.settlement_simulations_failed(errors.len());
         if let Some(settlement) = settlements
             .into_iter()
             .max_by(|a, b| a.objective_value.cmp(&b.objective_value))

@@ -11,6 +11,8 @@ pub trait SolverMetrics {
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, start: Instant);
     fn order_settled(&self, order: &Order);
+    fn settlement_simulations_succeeded(&self, count: usize);
+    fn settlement_simulations_failed(&self, count: usize);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -19,6 +21,7 @@ pub struct Metrics {
     order_settlement_time: IntCounter,
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
+    settlement_simulations: IntCounterVec,
 }
 
 impl Metrics {
@@ -51,11 +54,21 @@ impl Metrics {
         )?;
         registry.register(Box::new(liquidity.clone()))?;
 
+        let settlement_simulations = IntCounterVec::new(
+            Opts::new(
+                "gp_v2_solver_settlement_simulations",
+                "Settlement simulation counts",
+            ),
+            &["type"],
+        )?;
+        registry.register(Box::new(settlement_simulations.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
             solver_computation_time,
             liquidity,
+            settlement_simulations,
         })
     }
 }
@@ -95,6 +108,18 @@ impl SolverMetrics for Metrics {
                 .unwrap_or_default(),
         )
     }
+
+    fn settlement_simulations_succeeded(&self, count: usize) {
+        self.settlement_simulations
+            .with_label_values(&["success"])
+            .inc_by(count as u64)
+    }
+
+    fn settlement_simulations_failed(&self, count: usize) {
+        self.settlement_simulations
+            .with_label_values(&["failure"])
+            .inc_by(count as u64)
+    }
 }
 
 #[derive(Default)]
@@ -104,4 +129,21 @@ impl SolverMetrics for NoopMetrics {
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
     fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
     fn order_settled(&self, _order: &Order) {}
+    fn settlement_simulations_succeeded(&self, _count: usize) {}
+    fn settlement_simulations_failed(&self, _count: usize) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metrics_work() {
+        let registry = Registry::default();
+        let metrics = Metrics::new(&registry).unwrap();
+        metrics.settlement_computed("asdf", Instant::now());
+        metrics.order_settled(&Default::default());
+        metrics.settlement_simulations_succeeded(1);
+        metrics.settlement_simulations_failed(1);
+    }
 }
