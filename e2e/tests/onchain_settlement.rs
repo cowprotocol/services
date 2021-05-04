@@ -1,41 +1,33 @@
-use contracts::{ERC20Mintable, IUniswapLikeRouter, UniswapV2Factory, UniswapV2Router02, WETH9};
-use ethcontract::{
-    prelude::{Account, Address, PrivateKey, U256},
-    H160,
-};
+use contracts::IUniswapLikeRouter;
+use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use hex_literal::hex;
 use model::{
     order::{OrderBuilder, OrderKind},
-    DomainSeparator, SigningScheme,
-};
-use orderbook::{
-    account_balances::Web3BalanceFetcher, database::Database, event_updater::EventUpdater,
-    fee::MinFeeCalculator, orderbook::Orderbook,
+    SigningScheme,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use shared::{
-    amm_pair_provider::UniswapPairProvider,
-    current_block::current_block_stream,
-    pool_fetching::{CachedPoolFetcher, PoolFetcher},
-    price_estimate::UniswapPriceEstimator,
-    Web3,
-};
+use shared::{amm_pair_provider::UniswapPairProvider, Web3};
 use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics, orderbook::OrderBookApi,
+    metrics::NoopMetrics,
 };
-use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 mod ganache;
+#[macro_use]
+mod services;
+use crate::services::{
+    create_orderbook_api, deploy_mintable_token, to_wei, GPv2, OrderbookServices, UniswapContracts,
+    API_HOST,
+};
 
 const TRADER_A_PK: [u8; 32] =
     hex!("0000000000000000000000000000000000000000000000000000000000000001");
 const TRADER_B_PK: [u8; 32] =
     hex!("0000000000000000000000000000000000000000000000000000000000000002");
 
-const API_HOST: &str = "http://127.0.0.1:8080";
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
@@ -57,46 +49,18 @@ async fn onchain_settlement(web3: Web3) {
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
 
-    let deploy_mintable_token = || async {
-        ERC20Mintable::builder(&web3)
-            .deploy()
-            .await
-            .expect("MintableERC20 deployment failed")
-    };
-
-    macro_rules! tx {
-        ($acc:ident, $call:expr) => {{
-            const NAME: &str = stringify!($call);
-            $call
-                .from($acc.clone())
-                .send()
-                .await
-                .expect(&format!("{} failed", NAME))
-        }};
-    }
-
-    // Fetch deployed instances
-    let uniswap_factory = UniswapV2Factory::deployed(&web3)
-        .await
-        .expect("Failed to load deployed UniswapFactory");
-    let uniswap_router = UniswapV2Router02::deployed(&web3)
-        .await
-        .expect("Failed to load deployed UniswapRouter");
-    let gp_settlement = solver::get_settlement_contract(&web3, solver.clone())
-        .await
-        .expect("Failed to load deployed GPv2Settlement");
-    let gp_allowance = gp_settlement
-        .allowance_manager()
-        .call()
-        .await
-        .expect("Couldn't get allowance manager address");
+    let gpv2 = GPv2::fetch(&web3, &solver).await;
+    let UniswapContracts {
+        uniswap_factory,
+        uniswap_router,
+    } = UniswapContracts::fetch(&web3).await;
 
     // Create & Mint tokens to trade
-    let token_a = deploy_mintable_token().await;
+    let token_a = deploy_mintable_token(&web3).await;
     tx!(solver, token_a.mint(solver.address(), to_wei(100_000)));
     tx!(solver, token_a.mint(trader_a.address(), to_wei(100)));
 
-    let token_b = deploy_mintable_token().await;
+    let token_b = deploy_mintable_token(&web3).await;
     tx!(solver, token_b.mint(solver.address(), to_wei(100_000)));
     tx!(solver, token_b.mint(trader_b.address(), to_wei(100)));
 
@@ -128,67 +92,16 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader_a, token_a.approve(gp_allowance, to_wei(100)));
-    tx!(trader_b, token_b.approve(gp_allowance, to_wei(100)));
+    tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(100)));
+    tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(100)));
 
     // Place Orders
-    let domain_separator = DomainSeparator(
-        gp_settlement
-            .domain_separator()
-            .call()
-            .await
-            .expect("Couldn't query domain separator"),
-    );
-    let db = Database::new("postgresql://").unwrap();
-    db.clear().await.unwrap();
-    let event_updater = EventUpdater::new(gp_settlement.clone(), db.clone(), None);
-
-    let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
-    let pair_provider = Arc::new(UniswapPairProvider {
-        factory: uniswap_factory.clone(),
-        chain_id,
-    });
-    let pool_fetcher = CachedPoolFetcher::new(
-        Box::new(PoolFetcher {
-            pair_provider,
-            web3: web3.clone(),
-        }),
-        current_block_stream,
-    );
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
-        Box::new(pool_fetcher),
-        HashSet::new(),
-    ));
     let native_token = token_a.address();
-    let fee_calculator = Arc::new(MinFeeCalculator::new(
-        price_estimator.clone(),
-        Box::new(web3.clone()),
-        native_token,
-        db.clone(),
-        1.0,
-        HashSet::new(),
-    ));
-    let orderbook = Arc::new(Orderbook::new(
-        domain_separator,
-        db.clone(),
-        event_updater,
-        Box::new(Web3BalanceFetcher::new(
-            web3.clone(),
-            gp_allowance,
-            gp_settlement.address(),
-        )),
-        fee_calculator.clone(),
-        HashSet::new(),
-        Duration::from_secs(120),
-    ));
+    let OrderbookServices {
+        orderbook,
+        price_estimator,
+    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
 
-    orderbook::serve_task(
-        db.clone(),
-        orderbook.clone(),
-        fee_calculator,
-        price_estimator.clone(),
-        API_HOST[7..].parse().expect("Couldn't parse API address"),
-    );
     let client = reqwest::Client::new();
 
     let order_a = OrderBuilder::default()
@@ -200,7 +113,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
-            &domain_separator,
+            &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
         .build()
@@ -221,7 +134,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .with_signing_scheme(SigningScheme::EthSign)
         .sign_with(
-            &domain_separator,
+            &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
         )
         .build()
@@ -241,7 +154,7 @@ async fn onchain_settlement(web3: Web3) {
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         uniswap_pair_provider.clone(),
-        gp_settlement.clone(),
+        gpv2.settlement.clone(),
         HashSet::new(),
         web3.clone(),
     );
@@ -252,7 +165,7 @@ async fn onchain_settlement(web3: Web3) {
     };
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
-        gp_settlement.clone(),
+        gpv2.settlement.clone(),
         liquidity_collector,
         price_estimator,
         vec![Box::new(solver)],
@@ -284,24 +197,11 @@ async fn onchain_settlement(web3: Web3) {
     assert_eq!(balance, U256::from(50_175_363_672_226_073_522u128));
 
     // Drive orderbook in order to check the removal of settled order_b
-    orderbook.run_maintenance(&gp_settlement).await.unwrap();
+    orderbook.run_maintenance(&gpv2.settlement).await.unwrap();
 
     let orders = create_orderbook_api(&web3).get_orders().await.unwrap();
     assert!(orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();
-}
-
-fn to_wei(base: u32) -> U256 {
-    U256::from(base) * U256::from(10).pow(18.into())
-}
-
-fn create_orderbook_api(web3: &Web3) -> OrderBookApi {
-    let native_token = WETH9::at(web3, H160([0x42; 20]));
-    solver::orderbook::OrderBookApi::new(
-        reqwest::Url::from_str(API_HOST).unwrap(),
-        std::time::Duration::from_secs(10),
-        native_token,
-    )
 }
