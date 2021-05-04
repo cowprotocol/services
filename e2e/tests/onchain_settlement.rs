@@ -166,6 +166,7 @@ async fn onchain_settlement(web3: Web3) {
         native_token,
         db.clone(),
         1.0,
+        HashSet::new(),
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

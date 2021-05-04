@@ -172,6 +172,7 @@ async fn main() {
         native_token.address(),
         database.clone(),
         args.fee_discount_factor,
+        unsupported_tokens.clone(),
     ));
 
     let orderbook = Arc::new(Orderbook::new(

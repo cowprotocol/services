@@ -50,7 +50,7 @@ pub fn get_fee_info_response(
             StatusCode::NOT_FOUND,
         )),
         Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
-            super::error("UnsupportedToken", format!("Token address {}", token)),
+            super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
         )),
         Err(MinFeeCalculationError::Other(err)) => {
@@ -117,7 +117,7 @@ pub fn legacy_get_fee_info_response(
             StatusCode::NOT_FOUND,
         )),
         Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
-            super::error("UnsupportedToken", format!("Token address {}", token)),
+            super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
         )),
         Err(MinFeeCalculationError::Other(err)) => {
