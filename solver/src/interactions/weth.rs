@@ -39,12 +39,12 @@ impl Interaction for UnwrapWethInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::dummy_web3;
+    use crate::testutil;
     use hex_literal::hex;
 
     #[test]
     fn encode_unwrap_weth() {
-        let weth = dummy_web3::dummy_weth([0x42; 20]);
+        let weth = testutil::dummy_weth([0x42; 20]);
         let amount = U256::from(13_370_000_000_000_000_000u128);
         let interaction = UnwrapWethInteraction {
             weth: weth.clone(),
@@ -65,11 +65,11 @@ mod tests {
     #[test]
     fn merge_same_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 2.into(),
         };
 
@@ -80,11 +80,11 @@ mod tests {
     #[test]
     fn merge_different_native_token() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x02; 20]),
+            weth: testutil::dummy_weth([0x02; 20]),
             amount: 2.into(),
         };
 
@@ -96,11 +96,11 @@ mod tests {
     #[should_panic]
     fn merge_u256_overflow() {
         let mut unwrap0 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),
         };
         let unwrap1 = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: U256::max_value(),
         };
 

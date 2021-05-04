@@ -1,3 +1,7 @@
+#[cfg(test)]
+#[macro_use]
+mod testutil;
+
 pub mod baseline_solver;
 pub mod driver;
 pub mod encoding;

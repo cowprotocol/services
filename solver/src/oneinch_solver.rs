@@ -157,16 +157,15 @@ impl Display for OneInchSolver {
 mod tests {
     use super::*;
     use crate::{
-        interactions::dummy_web3,
         liquidity::{AmmOrder, LimitOrder},
+        testutil,
     };
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::H160;
-    use hex_literal::hex;
     use model::order::{Order, OrderCreation, OrderKind};
 
     fn dummy_solver() -> OneInchSolver {
-        let web3 = dummy_web3::dummy_web3();
+        let web3 = testutil::dummy_web3();
         let settlement = GPv2Settlement::at(&web3, H160::zero());
         OneInchSolver::new(settlement)
     }
@@ -205,11 +204,11 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn solve_order_on_oneinch() {
-        let web3 = dummy_web3::infura("mainnet");
+        let web3 = testutil::infura("mainnet");
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
         let weth = WETH9::deployed(&web3).await.unwrap();
-        let gno = H160(hex!("6810e776880c02933d47db1b9fc05908e5386b96"));
+        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let solver = OneInchSolver::new(settlement);
         let settlement = solver

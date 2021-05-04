@@ -271,10 +271,7 @@ impl SettlementEncoder {
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{
-        encoding::EncodedInteraction, interactions::dummy_web3, settlement::NoopInteraction,
-    };
-    use dummy_web3::dummy_web3;
+    use crate::{encoding::EncodedInteraction, settlement::NoopInteraction, testutil};
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderCreation};
 
@@ -310,7 +307,7 @@ pub mod tests {
 
     #[test]
     fn settlement_merges_unwraps_for_same_token() {
-        let weth = dummy_web3::dummy_weth([0x42; 20]);
+        let weth = testutil::dummy_weth([0x42; 20]);
 
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
@@ -336,11 +333,11 @@ pub mod tests {
     fn settlement_encoder_appends_unwraps_for_different_tokens() {
         let mut encoder = SettlementEncoder::new(HashMap::new());
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),
         });
         encoder.add_unwrap(UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x02; 20]),
+            weth: testutil::dummy_weth([0x02; 20]),
             amount: 2.into(),
         });
 
@@ -358,7 +355,7 @@ pub mod tests {
     fn settlement_unwraps_after_execution_plan() {
         let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Vec::new());
         let unwrap = UnwrapWethInteraction {
-            weth: dummy_web3::dummy_weth([0x01; 20]),
+            weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),
         };
 
@@ -435,7 +432,7 @@ pub mod tests {
 
     #[test]
     fn merge_ok() {
-        let web3 = dummy_web3();
+        let web3 = testutil::dummy_web3();
         let weth = contracts::WETH9::at(&web3, H160::zero());
 
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };

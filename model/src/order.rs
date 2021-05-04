@@ -519,7 +519,7 @@ mod tests {
         let expected_owner = H160(hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8"));
         let expected_uid = OrderUid(hex!("f308e6d59020614692e6d60e53689343e8aa9a3e21670da7e3153aecc5500e6a70997970c51812dc3a010c7d01b50e0d17dc79c8ffffffff"));
 
-        let eip712_signature =hex!("32f1261f1a30c4f9b3e7d17f572ded5c5f4077edce0c105d82c87fd63ae1f9a93bc8e28b1fe390fa45af8217e90c7cf506996c06cdeae9d18f51444e3520d17c1c");
+        let eip712_signature = hex!("32f1261f1a30c4f9b3e7d17f572ded5c5f4077edce0c105d82c87fd63ae1f9a93bc8e28b1fe390fa45af8217e90c7cf506996c06cdeae9d18f51444e3520d17c1c");
         let ethsign_signature = hex!("cca651a8260b08f318ffd8cd397919368a604836d17322cc4a7ab18eb9d8186e2f73a5b9d6a4a19816771caa776e0a37506d8f3ad2cc2327d4c3709eb66058031c");
 
         for (signing_scheme, signature) in &[

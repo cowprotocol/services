@@ -56,7 +56,7 @@ impl UniswapInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::dummy_web3;
+    use crate::testutil;
     use contracts::IUniswapLikeRouter;
     use hex_literal::hex;
 
@@ -73,9 +73,9 @@ mod tests {
         let token_in = H160::from_low_u64_be(7);
         let token_out = 8;
         let payout_to = 9u8;
-        let router = IUniswapLikeRouter::at(&dummy_web3::dummy_web3(), H160::from_low_u64_be(4));
+        let router = IUniswapLikeRouter::at(&testutil::dummy_web3(), H160::from_low_u64_be(4));
         let settlement = GPv2Settlement::at(
-            &dummy_web3::dummy_web3(),
+            &testutil::dummy_web3(),
             H160::from_low_u64_be(payout_to as u64),
         );
         let interaction = UniswapInteraction {

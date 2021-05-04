@@ -164,11 +164,11 @@ impl SettlementHandling<AmmOrder> for Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::dummy_web3;
+    use crate::testutil;
 
     impl Inner {
         fn new(allowances: HashMap<H160, U256>) -> Self {
-            let web3 = dummy_web3::dummy_web3();
+            let web3 = testutil::dummy_web3();
             Self {
                 router: IUniswapLikeRouter::at(&web3, H160::zero()),
                 gpv2_settlement: GPv2Settlement::at(&web3, H160::zero()),

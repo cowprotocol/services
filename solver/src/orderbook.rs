@@ -35,17 +35,15 @@ impl OrderBookApi {
 
 #[cfg(test)]
 pub mod test_util {
-    use ethcontract::H160;
-
-    use crate::interactions::dummy_web3;
-
     use super::*;
+    use crate::testutil;
+    use ethcontract::H160;
 
     // cargo test real_orderbook -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn real_orderbook() {
-        let native_token = WETH9::at(&dummy_web3::dummy_web3(), H160([0x42; 20]));
+        let native_token = testutil::dummy_weth(H160([0x42; 20]));
         let api = OrderBookApi::new(
             Url::parse("http://localhost:8080").unwrap(),
             Duration::from_secs(10),

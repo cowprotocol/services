@@ -28,13 +28,13 @@ impl Interaction for Erc20ApproveInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::dummy_web3;
+    use crate::testutil;
     use hex_literal::hex;
 
     #[test]
     fn encode_erc20_approve() {
         let approve = Erc20ApproveInteraction {
-            token: ERC20::at(&dummy_web3::dummy_web3(), H160([0x01; 20])),
+            token: ERC20::at(&testutil::dummy_web3(), H160([0x01; 20])),
             spender: H160([0x02; 20]),
             amount: U256::from_big_endian(&[0x03; 32]),
         };

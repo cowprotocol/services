@@ -233,12 +233,6 @@ fn default_http_client() -> Result<Client> {
 mod tests {
     use super::*;
 
-    macro_rules! addr {
-        ($val:literal) => {
-            ::ethcontract::H160(::hex_literal::hex!($val))
-        };
-    }
-
     #[test]
     fn slippage_from_basis_points() {
         assert_eq!(

@@ -1,5 +1,3 @@
-#[cfg(test)]
-pub mod dummy_web3;
 mod erc20;
 mod uniswap;
 mod weth;

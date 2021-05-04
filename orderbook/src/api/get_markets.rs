@@ -120,6 +120,7 @@ pub fn get_amount_estimate(
 mod tests {
     use super::*;
     use crate::api::response_body;
+    use hex_literal::hex;
     use warp::test::request;
 
     #[tokio::test]
@@ -137,10 +138,8 @@ mod tests {
             request,
             AmountEstimateQuery {
                 market: Market {
-                    base_token: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
-                        .unwrap(),
-                    quote_token: H160::from_str("0x6b175474e89094c44da98b954eedeac495271d0f")
-                        .unwrap()
+                    base_token: H160(hex!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
+                    quote_token: H160(hex!("6b175474e89094c44da98b954eedeac495271d0f")),
                 },
                 kind: OrderKind::Sell,
                 amount: 100.into()
