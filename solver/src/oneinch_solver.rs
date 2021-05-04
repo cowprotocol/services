@@ -13,7 +13,7 @@ use crate::{
     settlement::{Interaction, Settlement},
     solver::Solver,
 };
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use contracts::{GPv2Settlement, ERC20};
 use ethcontract::{dyns::DynWeb3, U256};
 use futures::future;
@@ -29,14 +29,22 @@ pub struct OneInchSolver {
     client: OneInchClient,
 }
 
+/// Chain ID for Mainnet.
+const MAINNET_CHAIN_ID: u64 = 1;
+
 impl OneInchSolver {
     /// Creates a new 1Inch solver instance for specified settlement contract
     /// instance.
-    pub fn new(settlement_contract: GPv2Settlement) -> Self {
-        Self {
+    pub fn new(settlement_contract: GPv2Settlement, chain_id: u64) -> Result<Self> {
+        ensure!(
+            chain_id == MAINNET_CHAIN_ID,
+            "1Inch solver only supported on Mainnet",
+        );
+
+        Ok(Self {
             settlement_contract,
             client: Default::default(),
-        }
+        })
     }
 
     /// Settles a single sell order against a 1Inch swap.
@@ -68,6 +76,10 @@ impl OneInchSolver {
             })
             .await?;
 
+        ensure!(
+            swap.to_token_amount >= order.buy_amount,
+            "order limit price not respected",
+        );
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => swap.to_token_amount,
             order.buy_token => swap.from_token_amount,
@@ -167,7 +179,7 @@ mod tests {
     fn dummy_solver() -> OneInchSolver {
         let web3 = testutil::dummy_web3();
         let settlement = GPv2Settlement::at(&web3, H160::zero());
-        OneInchSolver::new(settlement)
+        OneInchSolver::new(settlement, MAINNET_CHAIN_ID).unwrap()
     }
 
     #[tokio::test]
@@ -205,12 +217,13 @@ mod tests {
     #[ignore]
     async fn solve_order_on_oneinch() {
         let web3 = testutil::infura("mainnet");
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = OneInchSolver::new(settlement);
+        let solver = OneInchSolver::new(settlement, chain_id).unwrap();
         let settlement = solver
             .settle_order(
                 Order {
@@ -230,5 +243,15 @@ mod tests {
             .unwrap();
 
         println!("{:#?}", settlement);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn returns_error_on_non_mainnet() {
+        let web3 = testutil::infura("rinkeby");
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
+
+        assert!(OneInchSolver::new(settlement, chain_id).is_err())
     }
 }

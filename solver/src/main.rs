@@ -71,7 +71,7 @@ struct Arguments {
     #[structopt(
         long,
         env = "SOLVER_TYPE",
-        default_value = "Naive,UniswapBaseline",
+        default_value = "Naive,Baseline",
         possible_values = &SolverType::variants(),
         case_insensitive = true,
         use_delimiter = true,
@@ -194,10 +194,13 @@ async fn main() {
         base_tokens,
         native_token_contract.address(),
         args.mip_solver_url,
+        &settlement_contract,
         token_info_fetcher,
         price_estimator.clone(),
         network_name.to_string(),
-    );
+        chain_id,
+    )
+    .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity,
         orderbook_api,
