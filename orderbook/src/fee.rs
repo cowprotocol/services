@@ -5,6 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use std::sync::{Arc, Mutex};
+use thiserror::Error;
 
 use crate::database::Database;
 use gas_estimation::GasPriceEstimating;
@@ -53,6 +54,20 @@ const GAS_PER_ORDER: f64 = 100_000.0;
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 60;
 const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
 
+#[derive(Error, Debug)]
+pub enum MinFeeCalculationError {
+    // Represents a failure when no liquidity between sell and buy token via the native token can be found
+    #[error("Token not found")]
+    NotFound,
+
+    // Represents a failure when no liquidity between sell and buy token via the native token can be found
+    #[error("Token {0} not supported")]
+    UnsupportedToken(H160),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
 impl MinFeeCalculator {
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
@@ -70,9 +85,7 @@ impl MinFeeCalculator {
             discount_factor,
         }
     }
-}
 
-impl MinFeeCalculator {
     // Returns the minimum amount of fee required to accept an order selling the specified order
     // and an expiry date for the estimate.
     // Returns an error if there is some estimation error and Ok(None) if no information about the given
@@ -83,7 +96,7 @@ impl MinFeeCalculator {
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
-    ) -> Result<Option<Measurement>> {
+    ) -> Result<Measurement, MinFeeCalculationError> {
         let now = (self.now)();
         let official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
         let internal_valid_until = now + Duration::seconds(PERSISTED_VALIDITY_FOR_FEE_IN_SEC);
@@ -93,7 +106,7 @@ impl MinFeeCalculator {
             .get_min_fee(sell_token, buy_token, amount, kind, official_valid_until)
             .await
         {
-            return Ok(Some((past_fee, official_valid_until)));
+            return Ok((past_fee, official_valid_until));
         }
 
         let min_fee = match self
@@ -101,7 +114,7 @@ impl MinFeeCalculator {
             .await?
         {
             Some(fee) => fee,
-            None => return Ok(None),
+            None => return Err(MinFeeCalculationError::NotFound),
         };
 
         let _ = self
@@ -115,7 +128,7 @@ impl MinFeeCalculator {
                 min_fee,
             )
             .await;
-        Ok(Some((min_fee, official_valid_until)))
+        Ok((min_fee, official_valid_until))
     }
 
     async fn compute_min_fee(
@@ -290,7 +303,6 @@ mod tests {
         let (fee, expiry) = fee_estimator
             .min_fee(token, None, None, None)
             .await
-            .unwrap()
             .unwrap();
 
         // Gas price increase after measurement
@@ -322,7 +334,6 @@ mod tests {
         let (fee, _) = fee_estimator
             .min_fee(token, None, None, None)
             .await
-            .unwrap()
             .unwrap();
 
         let lower_fee = fee - U256::one();

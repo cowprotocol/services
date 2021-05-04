@@ -1735,6 +1735,7 @@ dependencies = [
  "shared",
  "sqlx",
  "structopt",
+ "thiserror",
  "tokio",
  "tracing",
  "url",
