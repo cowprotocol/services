@@ -131,7 +131,7 @@ impl Settlement {
     }
 
     // For now this computes the total surplus of all EOA trades.
-    pub fn objective_value(&self, external_prices: &HashMap<H160, BigRational>) -> BigRational {
+    pub fn total_surplus(&self, external_prices: &HashMap<H160, BigRational>) -> BigRational {
         match self.encoder.total_surplus(&external_prices) {
             Some(value) => value,
             None => {
@@ -241,7 +241,7 @@ pub mod tests {
     }
 
     #[test]
-    pub fn objective_value() {
+    pub fn total_surplus() {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
 
@@ -290,14 +290,14 @@ pub mod tests {
 
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
         assert_eq!(
-            settlement0.objective_value(&external_prices),
-            settlement1.objective_value(&external_prices)
+            settlement0.total_surplus(&external_prices),
+            settlement1.total_surplus(&external_prices)
         );
 
         let external_prices = maplit::hashmap! {token0 => r(2), token1 => r(1)};
         assert_eq!(
-            settlement0.objective_value(&external_prices),
-            settlement1.objective_value(&external_prices)
+            settlement0.total_surplus(&external_prices),
+            settlement1.total_surplus(&external_prices)
         );
 
         // Case where external price vector influences ranking:
@@ -341,8 +341,8 @@ pub mod tests {
         // If the external prices of the two tokens is the same, then both settlements are symmetric.
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
         assert_eq!(
-            settlement0.objective_value(&external_prices),
-            settlement1.objective_value(&external_prices)
+            settlement0.total_surplus(&external_prices),
+            settlement1.total_surplus(&external_prices)
         );
 
         // If the external price of the first token is higher, then the first settlement is preferred.
@@ -357,8 +357,8 @@ pub mod tests {
         // trade1: 0
 
         assert!(
-            settlement0.objective_value(&external_prices)
-                > settlement1.objective_value(&external_prices)
+            settlement0.total_surplus(&external_prices)
+                > settlement1.total_surplus(&external_prices)
         );
 
         // If the external price of the second token is higher, then the second settlement is preferred.
@@ -366,8 +366,8 @@ pub mod tests {
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(2)};
 
         assert!(
-            settlement0.objective_value(&external_prices)
-                < settlement1.objective_value(&external_prices)
+            settlement0.total_surplus(&external_prices)
+                < settlement1.total_surplus(&external_prices)
         );
     }
 
@@ -402,7 +402,7 @@ pub mod tests {
         let settlement = test_settlement(clearing_prices, vec![trade]);
 
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
-        settlement.objective_value(&external_prices);
+        settlement.total_surplus(&external_prices);
     }
 
     #[test]

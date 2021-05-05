@@ -1,7 +1,9 @@
 use crate::settlement::Settlement;
 use anyhow::Result;
+use ethcontract::U256;
 use num::BigRational;
 use primitive_types::H160;
+use shared::conversions::U256Ext;
 use std::{collections::HashMap, time::Duration};
 
 // Return None if the result is an error or there are no settlements remaining after removing
@@ -27,14 +29,24 @@ pub fn filter_bad_settlements(
 #[derive(Debug)]
 pub struct SolverWithSettlements {
     pub name: &'static str,
-    pub settlements: Vec<RatedSettlement>,
+    pub settlements: Vec<Settlement>,
 }
 
 // Each individual settlement has an objective value.
 #[derive(Debug)]
 pub struct RatedSettlement {
     pub settlement: Settlement,
-    pub objective_value: BigRational,
+    pub surplus: BigRational,
+    pub gas_estimate: U256,
+}
+
+impl RatedSettlement {
+    pub fn objective_value(&self, gas_price: f64) -> BigRational {
+        let gas_price = BigRational::from_float(gas_price).unwrap();
+        let gas_estimate = self.gas_estimate.to_big_rational();
+        let cost = gas_estimate * gas_price;
+        self.surplus.clone() - cost
+    }
 }
 
 // Takes the settlements of a single solver and adds a merged settlement.
@@ -42,30 +54,14 @@ pub fn merge_settlements(
     max_merged_settlements: usize,
     prices: &HashMap<H160, BigRational>,
     name: &'static str,
-    settlements: Vec<Settlement>,
+    mut settlements: Vec<Settlement>,
 ) -> SolverWithSettlements {
-    let mut settlements = settlements
-        .into_iter()
-        .map(|settlement| {
-            let objective_value = settlement.objective_value(prices);
-            RatedSettlement {
-                settlement,
-                objective_value,
-            }
-        })
-        .collect::<Vec<_>>();
-    settlements.sort_by(|a, b| b.objective_value.cmp(&a.objective_value));
-    if let Some(settlement) = merge_at_most_settlements(
-        max_merged_settlements,
-        settlements
-            .iter()
-            .map(|settlement| settlement.settlement.clone()),
-    ) {
-        let objective_value = settlement.objective_value(prices);
-        settlements.push(RatedSettlement {
-            settlement,
-            objective_value,
-        });
+    settlements.sort_by_cached_key(|a| -a.total_surplus(prices));
+
+    if let Some(settlement) =
+        merge_at_most_settlements(max_merged_settlements, settlements.clone().into_iter())
+    {
+        settlements.push(settlement);
     }
     SolverWithSettlements { name, settlements }
 }
@@ -101,13 +97,12 @@ fn merge_at_most_settlements(
 
 pub fn filter_settlements_without_old_orders(
     min_order_age: Duration,
-    settlements: &mut Vec<RatedSettlement>,
+    settlements: &mut Vec<Settlement>,
 ) {
     let settle_orders_older_than =
         chrono::offset::Utc::now() - chrono::Duration::from_std(min_order_age).unwrap();
     settlements.retain(|settlement| {
         settlement
-            .settlement
             .trades()
             .iter()
             .any(|trade| trade.order.order_meta_data.creation_date <= settle_orders_older_than)
@@ -170,7 +165,7 @@ mod tests {
 
         assert_eq!(settlements.len(), 4);
         assert!(settlements.iter().any(|settlement| {
-            let trades = settlement.settlement.trades();
+            let trades = settlement.trades();
             let uids: HashSet<OrderUid> = trades
                 .iter()
                 .map(|trade| trade.order.order_meta_data.uid)
