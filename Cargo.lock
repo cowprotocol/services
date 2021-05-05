@@ -633,7 +633,7 @@ dependencies = [
 [[package]]
 name = "ethcontract"
 version = "0.11.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=20714100f891663b3f16740df855e34222cc6178#20714100f891663b3f16740df855e34222cc6178"
 dependencies = [
  "arrayvec",
  "ethcontract-common",
@@ -655,7 +655,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-common"
 version = "0.11.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=20714100f891663b3f16740df855e34222cc6178#20714100f891663b3f16740df855e34222cc6178"
 dependencies = [
  "ethabi-fork-ethcontract",
  "hex",
@@ -670,7 +670,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-generate"
 version = "0.11.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=39d40e06428df7da6d36318054ca672ff4e2d115#39d40e06428df7da6d36318054ca672ff4e2d115"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=20714100f891663b3f16740df855e34222cc6178#20714100f891663b3f16740df855e34222cc6178"
 dependencies = [
  "Inflector",
  "anyhow",
