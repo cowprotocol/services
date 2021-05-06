@@ -29,14 +29,6 @@ pub trait Solver {
 
 arg_enum! {
     #[derive(Debug)]
-    pub enum AmmSources {
-        Uniswap,
-        Sushiswap,
-    }
-}
-
-arg_enum! {
-    #[derive(Debug)]
     pub enum SolverType {
         Naive,
         Baseline,

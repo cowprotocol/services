@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{baseline_solver::BaselineSolvable, Web3};
-use contracts::{UniswapV2Pair, ERC20};
+use contracts::{IUniswapLikePair, ERC20};
 use ethcontract::{batch::CallBatch, H160, U256};
 use model::TokenPair;
 use num::{rational::Ratio, BigInt, BigRational, Zero};
@@ -249,22 +249,17 @@ impl PoolFetching for PoolFetcher {
         let futures = token_pairs
             .into_iter()
             .map(|pair| {
-                let uniswap_pair_address = self.pair_provider.pair_address(&pair);
-                let pair_contract = UniswapV2Pair::at(&self.web3, uniswap_pair_address);
+                let pair_address = self.pair_provider.pair_address(&pair);
+                let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
 
                 // Fetch ERC20 token balances of the pools to sanity check with reserves
                 let token0 = ERC20::at(&self.web3, pair.get().0);
                 let token1 = ERC20::at(&self.web3, pair.get().1);
-
                 (
                     pair,
                     pair_contract.get_reserves().batch_call(&mut batch),
-                    token0
-                        .balance_of(uniswap_pair_address)
-                        .batch_call(&mut batch),
-                    token1
-                        .balance_of(uniswap_pair_address)
-                        .batch_call(&mut batch),
+                    token0.balance_of(pair_address).batch_call(&mut batch),
+                    token1.balance_of(pair_address).batch_call(&mut batch),
                 )
             })
             .collect::<Vec<_>>();

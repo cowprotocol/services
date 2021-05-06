@@ -22,9 +22,14 @@ const NPM_CONTRACTS: &[(&str, &str)] = &[
     (
         "@uniswap/v2-periphery@1.1.0-beta.0/build/UniswapV2Router02.json",
         "UniswapV2Router02.json",
-    ),(
+    ),
+    (
         "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Router02.json",
         "IUniswapLikeRouter.json",
+    ),
+    (
+        "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Pair.json",
+        "IUniswapLikePair.json",
     ),
     (
         "@uniswap/v2-core@1.0.1/build/UniswapV2Factory.json",

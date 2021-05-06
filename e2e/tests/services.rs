@@ -12,7 +12,7 @@ use shared::{
     amm_pair_provider::UniswapPairProvider,
     current_block::current_block_stream,
     pool_fetching::{CachedPoolFetcher, PoolFetcher},
-    price_estimate::UniswapPriceEstimator,
+    price_estimate::BaselinePriceEstimator,
     Web3,
 };
 use solver::orderbook::OrderBookApi;
@@ -103,7 +103,7 @@ pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
 
 pub struct OrderbookServices {
     pub orderbook: Arc<Orderbook>,
-    pub price_estimator: Arc<UniswapPriceEstimator>,
+    pub price_estimator: Arc<BaselinePriceEstimator>,
 }
 impl OrderbookServices {
     pub async fn new(
@@ -134,7 +134,7 @@ impl OrderbookServices {
             }),
             current_block_stream,
         );
-        let price_estimator = Arc::new(UniswapPriceEstimator::new(
+        let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
             HashSet::new(),
         ));

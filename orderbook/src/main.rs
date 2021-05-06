@@ -1,5 +1,5 @@
 use chrono::offset::Utc;
-use contracts::{GPv2Settlement, UniswapV2Factory, WETH9};
+use contracts::{GPv2Settlement, WETH9};
 use futures::StreamExt;
 use model::{order::OrderUid, DomainSeparator};
 use orderbook::{
@@ -11,10 +11,10 @@ use orderbook::{
     serve_task, verify_deployed_contract_constants,
 };
 use shared::{
-    amm_pair_provider::UniswapPairProvider,
     current_block::{current_block_stream, CurrentBlockStream},
-    pool_fetching::{CachedPoolFetcher, FilteredPoolFetcher, PoolFetcher},
-    price_estimate::UniswapPriceEstimator,
+    pool_aggregating::PoolAggregator,
+    pool_fetching::{CachedPoolFetcher, FilteredPoolFetcher},
+    price_estimate::BaselinePriceEstimator,
     transport::LoggingTransport,
 };
 use std::{
@@ -94,9 +94,6 @@ async fn main() {
         .call()
         .await
         .expect("Couldn't get allowance manager address");
-    let uniswap_factory = UniswapV2Factory::deployed(&web3)
-        .await
-        .expect("couldn't load deployed uniswap factory");
     let native_token = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
@@ -106,10 +103,7 @@ async fn main() {
         .await
         .expect("Could not get chainId")
         .as_u64();
-    let uniswap_pair_provider = UniswapPairProvider {
-        factory: uniswap_factory,
-        chain_id,
-    };
+
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
@@ -153,16 +147,14 @@ async fn main() {
     );
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
-    let cached_pool_fetcher = CachedPoolFetcher::new(
-        Box::new(PoolFetcher {
-            pair_provider: Arc::new(uniswap_pair_provider),
-            web3,
-        }),
-        current_block_stream.clone(),
-    );
+    let pool_aggregator =
+        PoolAggregator::from_sources(args.shared.baseline_sources, chain_id, web3.clone()).await;
+    let cached_pool_fetcher =
+        CachedPoolFetcher::new(Box::new(pool_aggregator), current_block_stream.clone());
     let pool_fetcher =
         FilteredPoolFetcher::new(Box::new(cached_pool_fetcher), unsupported_tokens.clone());
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
+
+    let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_fetcher),
         base_tokens,
     ));

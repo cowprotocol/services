@@ -2,21 +2,18 @@ use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160};
 use prometheus::Registry;
 use reqwest::Url;
-use shared::{amm_pair_provider::SushiswapPairProvider, network::network_name};
 use shared::{
-    amm_pair_provider::UniswapPairProvider,
+    amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
     metrics::serve_metrics,
-    pool_fetching::PoolFetcher,
-    price_estimate::UniswapPriceEstimator,
+    network::network_name,
+    pool_aggregating::{BaselineSources, PoolAggregator},
+    price_estimate::BaselinePriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     transport::LoggingTransport,
 };
 use solver::{
-    driver::Driver,
-    liquidity::uniswap::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector,
-    metrics::Metrics,
-    solver::{AmmSources, SolverType},
+    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
+    liquidity_collector::LiquidityCollector, metrics::Metrics, solver::SolverType,
 };
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -98,17 +95,6 @@ struct Arguments {
     )]
     metrics_port: u16,
 
-    /// Which AMM sources to use. Multiple sources are supported alone or simultaneously
-    #[structopt(
-    long,
-        env = "AMM_SOURCES",
-        default_value = "Uniswap,Sushiswap",
-        possible_values = &AmmSources::variants(),
-        case_insensitive = true,
-        use_delimiter = true
-    )]
-    pub amm_sources: Vec<AmmSources>,
-
     /// The port at which we serve our metrics
     #[structopt(long, env = "MAX_MERGED_SETTLEMENTS", default_value = "5")]
     max_merged_settlements: usize,
@@ -168,21 +154,16 @@ async fn main() {
     .await
     .expect("failed to create gas price estimator");
 
-    // TODO - Currently we use only Uniswap for price estimation.
-    let price_estimator = Arc::new(UniswapPriceEstimator::new(
-        Box::new(PoolFetcher {
-            pair_provider: Arc::new(UniswapPairProvider {
-                factory: contracts::UniswapV2Factory::deployed(&web3)
-                    .await
-                    .expect("couldn't load deployed uniswap router"),
-                chain_id,
-            }),
-            web3: web3.clone(),
-        }),
+    let pool_aggregator =
+        PoolAggregator::from_sources(args.shared.baseline_sources.clone(), chain_id, web3.clone())
+            .await;
+    // TODO - use Filtered-Cached PoolFetchers here too.
+    let price_estimator = Arc::new(BaselinePriceEstimator::new(
+        Box::new(pool_aggregator),
         base_tokens.clone(),
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
-        args.amm_sources,
+        args.shared.baseline_sources,
         chain_id,
         settlement_contract.clone(),
         base_tokens.clone(),
@@ -226,7 +207,7 @@ async fn main() {
 }
 
 async fn build_amm_artifacts(
-    sources: Vec<AmmSources>,
+    sources: Vec<BaselineSources>,
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: HashSet<H160>,
@@ -235,7 +216,7 @@ async fn build_amm_artifacts(
     let mut res = vec![];
     for source in sources {
         match source {
-            AmmSources::Uniswap => {
+            BaselineSources::Uniswap => {
                 let router = contracts::UniswapV2Router02::deployed(&web3)
                     .await
                     .expect("couldn't load deployed uniswap router");
@@ -251,7 +232,7 @@ async fn build_amm_artifacts(
                     web3.clone(),
                 ));
             }
-            AmmSources::Sushiswap => {
+            BaselineSources::Sushiswap => {
                 let router = contracts::SushiswapV2Router02::deployed(&web3)
                     .await
                     .expect("couldn't load deployed sushiswap router");

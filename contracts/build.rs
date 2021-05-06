@@ -37,6 +37,7 @@ fn main() {
     generate_contract("UniswapV2Pair", hashmap! {});
     // This is done to have a common interface for Sushiswap, Uniswap & Honeyswap
     generate_contract("IUniswapLikeRouter", hashmap! {});
+    generate_contract("IUniswapLikePair", hashmap! {});
     generate_contract(
         "SushiswapV2Router02",
         hashmap! {
