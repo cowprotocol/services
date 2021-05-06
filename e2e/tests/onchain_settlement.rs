@@ -178,6 +178,7 @@ async fn onchain_settlement(web3: Web3) {
         web3.clone(),
         network_id,
         1,
+        Duration::from_secs(30),
     );
     driver.single_run().await.unwrap();
 

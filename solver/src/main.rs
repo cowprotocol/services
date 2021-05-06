@@ -98,6 +98,15 @@ struct Arguments {
     /// The port at which we serve our metrics
     #[structopt(long, env = "MAX_MERGED_SETTLEMENTS", default_value = "5")]
     max_merged_settlements: usize,
+
+    /// The maximum amount of time a solver is allowed to take.
+    #[structopt(
+        long,
+        env = "SOLVER_TIME_LIMIT",
+        default_value = "30",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    solver_time_limit: Duration,
 }
 
 #[tokio::main]
@@ -182,6 +191,7 @@ async fn main() {
         network_name.to_string(),
         chain_id,
         args.shared.fee_discount_factor,
+        args.solver_time_limit,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
@@ -202,6 +212,7 @@ async fn main() {
         web3,
         network_id,
         args.max_merged_settlements,
+        args.solver_time_limit,
     );
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());

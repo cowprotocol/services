@@ -1,4 +1,4 @@
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 use crate::{
     baseline_solver::BaselineSolver,
@@ -14,6 +14,10 @@ use ethcontract::H160;
 use reqwest::Url;
 use shared::{price_estimate::PriceEstimating, token_info::TokenInfoFetching};
 use structopt::clap::arg_enum;
+
+// For solvers that enforce a timeout internally we set their timeout to the global solver timeout
+// minus this duration to account for additional delay for example from the network.
+const TIMEOUT_SAFETY_BUFFER: Duration = Duration::from_secs(5);
 
 #[async_trait::async_trait]
 pub trait Solver {
@@ -49,6 +53,7 @@ pub fn create(
     network_id: String,
     chain_id: u64,
     fee_discount_factor: f64,
+    solver_timeout: Duration,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -56,6 +61,10 @@ pub fn create(
     fn boxed(solver: impl Solver + 'static) -> Result<Box<dyn Solver>> {
         Ok(Box::new(solver))
     }
+
+    let time_limit = solver_timeout
+        .checked_sub(TIMEOUT_SAFETY_BUFFER)
+        .expect("solver_timeout too low");
 
     solvers
         .into_iter()
@@ -67,7 +76,7 @@ pub fn create(
                 None,
                 SolverConfig {
                     max_nr_exec_orders: 100,
-                    time_limit: 30,
+                    time_limit: time_limit.as_secs() as u32,
                 },
                 native_token,
                 token_info_fetcher.clone(),

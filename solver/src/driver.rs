@@ -10,7 +10,7 @@ use crate::{
     settlement_simulation, settlement_submission,
     solver::Solver,
 };
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
@@ -42,6 +42,7 @@ pub struct Driver {
     web3: Web3,
     network_id: String,
     max_merged_settlements: usize,
+    solver_time_limit: Duration,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -59,6 +60,7 @@ impl Driver {
         web3: Web3,
         network_id: String,
         max_merged_settlements: usize,
+        solver_time_limit: Duration,
     ) -> Self {
         Self {
             settlement_contract,
@@ -74,6 +76,7 @@ impl Driver {
             web3,
             network_id,
             max_merged_settlements,
+            solver_time_limit,
         }
     }
 
@@ -98,9 +101,17 @@ impl Driver {
             let metrics = &self.metrics;
             async move {
                 let start_time = Instant::now();
-                let settlement = solver.solve(liquidity, gas_price).await;
+                let result = match tokio::time::timeout(
+                    self.solver_time_limit,
+                    solver.solve(liquidity, gas_price),
+                )
+                .await
+                {
+                    Ok(inner) => inner,
+                    Err(_timeout) => Err(anyhow!("solver timed out")),
+                };
                 metrics.settlement_computed(solver.name(), start_time);
-                (solver.name(), settlement)
+                (solver.name(), result)
             }
         }))
         .await
