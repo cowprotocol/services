@@ -13,8 +13,19 @@ use std::{
     cmp::Reverse,
     collections::{HashMap, HashSet},
 };
+use thiserror::Error;
 
 const MAX_HOPS: usize = 2;
+
+#[derive(Error, Debug)]
+pub enum PriceEstimationError {
+    // Represents a failure when no liquidity between sell and buy token via the native token can be found
+    #[error("Token {0} not supported")]
+    UnsupportedToken(H160),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 #[async_trait::async_trait]
 pub trait PriceEstimating: Send + Sync {
@@ -25,7 +36,7 @@ pub trait PriceEstimating: Send + Sync {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<BigRational>;
+    ) -> Result<BigRational, PriceEstimationError>;
 
     // Returns the expected gas cost for this given trade
     async fn estimate_gas(
@@ -34,7 +45,7 @@ pub trait PriceEstimating: Send + Sync {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<U256>;
+    ) -> Result<U256, PriceEstimationError>;
 
     async fn estimate_price_as_f64(
         &self,
@@ -42,13 +53,13 @@ pub trait PriceEstimating: Send + Sync {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<f64> {
+    ) -> Result<f64, PriceEstimationError> {
         self.estimate_price(sell_token, buy_token, amount, kind)
             .await
             .and_then(|price| {
                 price
                     .to_f64()
-                    .ok_or_else(|| anyhow!("Cannot convert price ratio to float"))
+                    .ok_or_else(|| anyhow!("Cannot convert price ratio to float").into())
             })
     }
 
@@ -59,7 +70,7 @@ pub trait PriceEstimating: Send + Sync {
         &self,
         tokens: &[H160],
         denominator_token: H160,
-    ) -> Vec<Result<BigRational>> {
+    ) -> Vec<Result<BigRational, PriceEstimationError>> {
         join_all(tokens.iter().map(|token| async move {
             if *token != denominator_token {
                 self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
@@ -75,13 +86,19 @@ pub trait PriceEstimating: Send + Sync {
 pub struct BaselinePriceEstimator {
     pool_fetcher: Box<dyn PoolFetching>,
     base_tokens: HashSet<H160>,
+    unsupported_tokens: HashSet<H160>,
 }
 
 impl BaselinePriceEstimator {
-    pub fn new(pool_fetcher: Box<dyn PoolFetching>, base_tokens: HashSet<H160>) -> Self {
+    pub fn new(
+        pool_fetcher: Box<dyn PoolFetching>,
+        base_tokens: HashSet<H160>,
+        unsupported_tokens: HashSet<H160>,
+    ) -> Self {
         Self {
             pool_fetcher,
             base_tokens,
+            unsupported_tokens,
         }
     }
 }
@@ -97,15 +114,21 @@ impl PriceEstimating for BaselinePriceEstimator {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<BigRational> {
+    ) -> Result<BigRational, PriceEstimationError> {
+        if self.unsupported_tokens.contains(&sell_token) {
+            return Err(PriceEstimationError::UnsupportedToken(sell_token));
+        }
+        if self.unsupported_tokens.contains(&buy_token) {
+            return Err(PriceEstimationError::UnsupportedToken(buy_token));
+        }
         if sell_token == buy_token {
             return Ok(num::one());
         }
         if amount.is_zero() {
-            return self
+            return Ok(self
                 .best_execution_spot_price(sell_token, buy_token)
                 .await
-                .map(|(_, price)| price);
+                .map(|(_, price)| price)?);
         }
         match kind {
             OrderKind::Buy => {
@@ -122,9 +145,9 @@ impl PriceEstimating for BaselinePriceEstimator {
                     .best_execution_sell_order(sell_token, buy_token, amount)
                     .await?;
                 if buy_amount.is_zero() {
-                    return Err(anyhow!(
-                        "Attempt to create a rational with zero denominator."
-                    ));
+                    return Err(
+                        anyhow!("Attempt to create a rational with zero denominator.").into(),
+                    );
                 }
                 Ok(BigRational::new(
                     amount.to_big_int(),
@@ -140,7 +163,13 @@ impl PriceEstimating for BaselinePriceEstimator {
         buy_token: H160,
         amount: U256,
         kind: OrderKind,
-    ) -> Result<U256> {
+    ) -> Result<U256, PriceEstimationError> {
+        if self.unsupported_tokens.contains(&sell_token) {
+            return Err(PriceEstimationError::UnsupportedToken(sell_token));
+        }
+        if self.unsupported_tokens.contains(&buy_token) {
+            return Err(PriceEstimationError::UnsupportedToken(buy_token));
+        }
         if sell_token == buy_token || amount.is_zero() {
             return Ok(U256::zero());
         }
@@ -280,11 +309,17 @@ pub mod mocks {
             _: H160,
             _: U256,
             _: OrderKind,
-        ) -> Result<BigRational> {
+        ) -> Result<BigRational, PriceEstimationError> {
             Ok(self.0.clone())
         }
 
-        async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
+        async fn estimate_gas(
+            &self,
+            _: H160,
+            _: H160,
+            _: U256,
+            _: OrderKind,
+        ) -> Result<U256, PriceEstimationError> {
             Ok(100_000.into())
         }
     }
@@ -298,12 +333,18 @@ pub mod mocks {
             _: H160,
             _: U256,
             _: OrderKind,
-        ) -> Result<BigRational> {
-            Err(anyhow!("error"))
+        ) -> Result<BigRational, PriceEstimationError> {
+            Err(anyhow!("error").into())
         }
 
-        async fn estimate_gas(&self, _: H160, _: H160, _: U256, _: OrderKind) -> Result<U256> {
-            Err(anyhow!("error"))
+        async fn estimate_gas(
+            &self,
+            _: H160,
+            _: H160,
+            _: U256,
+            _: OrderKind,
+        ) -> Result<U256, PriceEstimationError> {
+            Err(anyhow!("error").into())
         }
     }
 }
@@ -339,7 +380,7 @@ mod tests {
         );
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!());
+        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(), hashset!());
 
         assert_approx_eq!(
             estimator
@@ -399,7 +440,7 @@ mod tests {
         );
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!());
+        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(), hashset!());
 
         assert!(estimator
             .estimate_price(token_a, token_b, 0.into(), OrderKind::Buy)
@@ -426,14 +467,17 @@ mod tests {
         );
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool_ab, pool_bc]));
-        let estimator =
-            BaselinePriceEstimator::new(pool_fetcher, hashset!(token_a, token_b, token_c));
+        let estimator = BaselinePriceEstimator::new(
+            pool_fetcher,
+            hashset!(token_a, token_b, token_c),
+            hashset!(),
+        );
 
         let prices = estimator
             .estimate_prices(&[token_a, token_b, token_c], token_c)
             .await
             .into_iter()
-            .collect::<Result<Vec<_>>>()
+            .collect::<Result<Vec<_>, _>>()
             .unwrap();
         assert_eq!(prices[0], BigRational::new(1.into(), 100.into()));
         assert_eq!(prices[1], BigRational::new(1.into(), 10.into()));
@@ -445,7 +489,7 @@ mod tests {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
         let pool_fetcher = Box::new(FakePoolFetcher(vec![]));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!());
+        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(), hashset!());
 
         assert!(estimator
             .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
@@ -463,7 +507,7 @@ mod tests {
         );
         let pool_fetcher =
             FilteredPoolFetcher::new(Box::new(FakePoolFetcher(vec![pool_ab])), hashset!(token_a));
-        let estimator = BaselinePriceEstimator::new(Box::new(pool_fetcher), hashset!());
+        let estimator = BaselinePriceEstimator::new(Box::new(pool_fetcher), hashset!(), hashset!());
 
         let result = estimator
             .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
@@ -496,7 +540,7 @@ mod tests {
         let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 10));
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!());
+        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(), hashset!());
 
         assert!(estimator
             .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
@@ -518,7 +562,7 @@ mod tests {
         );
 
         let pool_fetcher = Box::new(FakePoolFetcher(vec![pool]));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(base_token));
+        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(base_token), hashset!());
 
         assert!(estimator
             .estimate_price(token_a, token_b, 100.into(), OrderKind::Sell)
@@ -544,7 +588,8 @@ mod tests {
         ];
 
         let pool_fetcher = Box::new(FakePoolFetcher(pools));
-        let estimator = BaselinePriceEstimator::new(pool_fetcher, hashset!(intermediate));
+        let estimator =
+            BaselinePriceEstimator::new(pool_fetcher, hashset!(intermediate), hashset!());
 
         // Trade with intermediate hop
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
@@ -567,5 +612,47 @@ mod tests {
                 110_000.into()
             );
         }
+    }
+
+    #[tokio::test]
+    async fn unsupported_tokens() {
+        let supported_token = H160::from_low_u64_be(1);
+        let unsupported_token = H160::from_low_u64_be(2);
+
+        let pool_fetcher = Box::new(FakePoolFetcher(Vec::new()));
+        let estimator =
+            BaselinePriceEstimator::new(pool_fetcher, hashset!(), hashset!(unsupported_token));
+
+        // Price estimate selling unsupported
+        assert!(matches!(estimator.estimate_price(
+            unsupported_token,
+            supported_token,
+            100.into(),
+            OrderKind::Sell
+        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
+
+        // Price estimate buying unsupported
+        assert!(matches!(estimator.estimate_price(
+            supported_token,
+            unsupported_token,
+            100.into(),
+            OrderKind::Sell
+        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
+
+        // Gas estimate selling unsupported
+        assert!(matches!(estimator.estimate_gas(
+            unsupported_token,
+            supported_token,
+            100.into(),
+            OrderKind::Sell
+        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
+
+        // Gas estimate buying unsupported
+        assert!(matches!(estimator.estimate_gas(
+            supported_token,
+            unsupported_token,
+            100.into(),
+            OrderKind::Sell
+        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
     }
 }

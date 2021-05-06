@@ -157,6 +157,7 @@ async fn main() {
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_fetcher),
         base_tokens,
+        unsupported_tokens.clone(),
     ));
     let fee_calculator = Arc::new(MinFeeCalculator::new(
         price_estimator.clone(),

@@ -137,6 +137,7 @@ impl OrderbookServices {
         let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
             HashSet::new(),
+            HashSet::new(),
         ));
         let fee_calculator = Arc::new(MinFeeCalculator::new(
             price_estimator.clone(),

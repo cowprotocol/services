@@ -269,8 +269,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AmountEstimate"
+        400:
+          description: Token not supported by the protocol (e.g. token with fee on transfer)
         404:
           description: Token non-existent or no valid price found
+        500:
+          description: Unexpected internal error while processing the request
 components:
   schemas:
     TransactionHash:

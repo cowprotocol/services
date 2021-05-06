@@ -161,6 +161,7 @@ async fn main() {
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_aggregator),
         base_tokens.clone(),
+        args.shared.unsupported_tokens.into_iter().collect(),
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
         args.shared.baseline_sources,

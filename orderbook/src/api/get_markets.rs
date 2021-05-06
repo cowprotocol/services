@@ -3,7 +3,10 @@ use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::{BigInt, BigRational};
 use serde::{Deserialize, Serialize};
-use shared::{conversions::U256Ext, price_estimate::PriceEstimating};
+use shared::{
+    conversions::U256Ext,
+    price_estimate::{PriceEstimating, PriceEstimationError},
+};
 use std::sync::Arc;
 use std::{convert::Infallible, str::FromStr};
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -67,7 +70,7 @@ fn get_amount_estimate_request(
 }
 
 fn get_amount_estimate_response(
-    result: Result<BigRational>,
+    result: Result<BigRational, PriceEstimationError>,
     query: AmountEstimateQuery,
 ) -> impl Reply {
     match result {
@@ -90,7 +93,11 @@ fn get_amount_estimate_response(
                 StatusCode::OK,
             )
         }
-        Err(_) => reply::with_status(
+        Err(PriceEstimationError::UnsupportedToken(token)) => reply::with_status(
+            super::error("UnsupportedToken", format!("Token address {:?}", token)),
+            StatusCode::BAD_REQUEST,
+        ),
+        Err(PriceEstimationError::Other(_)) => reply::with_status(
             super::error("NotFound", "No price estimate found"),
             StatusCode::NOT_FOUND,
         ),

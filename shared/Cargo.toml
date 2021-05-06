@@ -32,3 +32,4 @@ warp = "0.2"
 web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
 num-bigint = "0.3"
 mockall = "0.9"
+thiserror = "1.0"

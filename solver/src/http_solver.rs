@@ -14,7 +14,7 @@ use num::{BigRational, ToPrimitive};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use shared::{
-    price_estimate::PriceEstimating,
+    price_estimate::{PriceEstimating, PriceEstimationError},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use std::{
@@ -114,7 +114,7 @@ impl HttpSolver {
         &self,
         tokens: &HashMap<String, H160>,
         token_infos: &HashMap<H160, TokenInfo>,
-        price_estimates: &HashMap<H160, Result<BigRational>>,
+        price_estimates: &HashMap<H160, Result<BigRational, PriceEstimationError>>,
     ) -> HashMap<String, TokenInfoModel> {
         tokens
             .iter()
@@ -220,10 +220,10 @@ impl HttpSolver {
             self.token_info_fetcher
                 .get_token_infos(addresses.as_slice()),
             self.price_estimator
-                .estimate_prices(addresses.as_slice(), addresses[0]),
+                .estimate_prices(addresses.as_slice(), addresses[0])
         );
 
-        let price_estimates: HashMap<H160, Result<BigRational>> =
+        let price_estimates: HashMap<H160, Result<BigRational, _>> =
             addresses.iter().cloned().zip(price_estimates).collect();
 
         let mut orders = split_liquidity(liquidity);
