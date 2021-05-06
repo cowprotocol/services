@@ -13,9 +13,9 @@ impl MinFeeStoring for Database {
     async fn save_fee_measurement(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         expiry: DateTime<Utc>,
         min_fee: U256,
     ) -> Result<()> {
@@ -23,9 +23,9 @@ impl MinFeeStoring for Database {
             "INSERT INTO min_fee_measurements (sell_token, buy_token, amount, order_kind, expiration_timestamp, min_fee) VALUES ($1, $2, $3, $4, $5, $6);";
         sqlx::query(QUERY)
             .bind(sell_token.as_bytes())
-            .bind(buy_token.as_ref().map(|t| t.as_bytes()))
-            .bind(amount.map(|a| u256_to_big_decimal(&a)))
-            .bind(kind.map(DbOrderKind::from))
+            .bind(buy_token.as_bytes())
+            .bind(u256_to_big_decimal(&amount))
+            .bind(DbOrderKind::from(kind))
             .bind(expiry)
             .bind(u256_to_big_decimal(&min_fee))
             .execute(&self.pool)
@@ -37,25 +37,25 @@ impl MinFeeStoring for Database {
     async fn get_min_fee(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         min_expiry: DateTime<Utc>,
     ) -> Result<Option<U256>> {
         const QUERY: &str = "\
             SELECT MIN(min_fee) FROM min_fee_measurements \
             WHERE sell_token = $1 \
-            AND ($2 IS NULL OR buy_token = $2) \
-            AND ($3 IS NULL OR amount = $3) \
-            AND ($4 IS NULL OR order_kind = $4) \
+            AND buy_token = $2 \
+            AND amount = $3 \
+            AND order_kind = $4 \
             AND expiration_timestamp >= $5
             ";
 
         let result: Option<BigDecimal> = sqlx::query_scalar(QUERY)
             .bind(sell_token.as_bytes())
-            .bind(buy_token.as_ref().map(|t| t.as_bytes()))
-            .bind(amount.map(|a| u256_to_big_decimal(&a)))
-            .bind(kind.map(DbOrderKind::from))
+            .bind(buy_token.as_bytes())
+            .bind(u256_to_big_decimal(&amount))
+            .bind(DbOrderKind::from(kind))
             .bind(min_expiry)
             .fetch_one(&self.pool)
             .await
@@ -100,14 +100,21 @@ mod tests {
         let token_b = H160::from_low_u64_be(2);
 
         // Save two measurements for token_a
-        db.save_fee_measurement(token_a, None, None, None, now, 100u32.into())
-            .await
-            .unwrap();
         db.save_fee_measurement(
             token_a,
-            None,
-            None,
-            None,
+            token_b,
+            100.into(),
+            OrderKind::Sell,
+            now,
+            100u32.into(),
+        )
+        .await
+        .unwrap();
+        db.save_fee_measurement(
+            token_a,
+            token_b,
+            100.into(),
+            OrderKind::Sell,
             now + Duration::seconds(60),
             200u32.into(),
         )
@@ -117,9 +124,9 @@ mod tests {
         // Save one measurement for token_b
         db.save_fee_measurement(
             token_b,
-            Some(token_a),
-            Some(100.into()),
-            Some(OrderKind::Buy),
+            token_a,
+            100.into(),
+            OrderKind::Buy,
             now,
             10u32.into(),
         )
@@ -128,61 +135,44 @@ mod tests {
 
         // Token A has readings valid until now and in 30s
         assert_eq!(
-            db.get_min_fee(token_a, None, None, None, now)
+            db.get_min_fee(token_a, token_b, 100.into(), OrderKind::Sell, now)
                 .await
                 .unwrap()
                 .unwrap(),
             100_u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_a, None, None, None, now + Duration::seconds(30))
-                .await
-                .unwrap()
-                .unwrap(),
+            db.get_min_fee(
+                token_a,
+                token_b,
+                100.into(),
+                OrderKind::Sell,
+                now + Duration::seconds(30)
+            )
+            .await
+            .unwrap()
+            .unwrap(),
             200u32.into()
         );
 
         // Token B only has readings valid until now
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now)
+            db.get_min_fee(token_b, token_a, 100.into(), OrderKind::Buy, now)
                 .await
                 .unwrap()
                 .unwrap(),
             10u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now + Duration::seconds(30))
-                .await
-                .unwrap(),
-            None
-        );
-
-        // Token B has readings for right filters
-        assert_eq!(
-            db.get_min_fee(token_b, Some(token_a), None, None, now)
-                .await
-                .unwrap()
-                .unwrap(),
-            10u32.into()
-        );
-        assert_eq!(
-            db.get_min_fee(token_b, None, Some(100.into()), None, now)
-                .await
-                .unwrap()
-                .unwrap(),
-            10u32.into()
-        );
-        assert_eq!(
-            db.get_min_fee(token_b, None, None, Some(OrderKind::Buy), now)
-                .await
-                .unwrap()
-                .unwrap(),
-            10u32.into()
-        );
-        assert_eq!(
-            db.get_min_fee(token_b, None, Some(U256::zero()), None, now)
-                .await
-                .unwrap(),
+            db.get_min_fee(
+                token_b,
+                token_a,
+                100.into(),
+                OrderKind::Buy,
+                now + Duration::seconds(30)
+            )
+            .await
+            .unwrap(),
             None
         );
 
@@ -190,7 +180,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now)
+            db.get_min_fee(token_b, token_a, 100.into(), OrderKind::Buy, now)
                 .await
                 .unwrap(),
             None

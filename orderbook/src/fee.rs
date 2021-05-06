@@ -29,9 +29,9 @@ pub trait MinFeeStoring: Send + Sync {
     async fn save_fee_measurement(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         expiry: DateTime<Utc>,
         min_fee: U256,
     ) -> Result<()>;
@@ -41,14 +41,12 @@ pub trait MinFeeStoring: Send + Sync {
     async fn get_min_fee(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         min_expiry: DateTime<Utc>,
     ) -> Result<Option<U256>>;
 }
-
-const GAS_PER_ORDER: f64 = 100_000.0;
 
 // We use a longer validity internally for persistence to avoid writing a value to storage on every request
 // This way we can serve a previous estimate if the same token is queried again shortly after
@@ -96,21 +94,15 @@ impl MinFeeCalculator {
     pub async fn min_fee(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
     ) -> Result<Measurement, MinFeeCalculationError> {
         if self.unsupported_tokens.contains(&sell_token) {
             return Err(MinFeeCalculationError::UnsupportedToken(sell_token));
         }
-
-        if buy_token
-            .map(|t| self.unsupported_tokens.contains(&t))
-            .unwrap_or_default()
-        {
-            return Err(MinFeeCalculationError::UnsupportedToken(
-                buy_token.expect("Must exist"),
-            ));
+        if self.unsupported_tokens.contains(&buy_token) {
+            return Err(MinFeeCalculationError::UnsupportedToken(buy_token));
         }
 
         let now = (self.now)();
@@ -150,28 +142,22 @@ impl MinFeeCalculator {
     async fn compute_min_fee(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
     ) -> Result<Option<U256>> {
         let gas_price = self.gas_estimator.estimate().await?;
-        let gas_amount =
-            if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
-                // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
-                match self
-                    .price_estimator
-                    .estimate_gas(sell_token, buy_token, amount, kind)
-                    .await
-                {
-                    Ok(amount) => amount.to_f64_lossy() * self.discount_factor,
-                    Err(err) => {
-                        tracing::warn!("Failed to estimate gas amount: {}", err);
-                        return Ok(None);
-                    }
-                }
-            } else {
-                GAS_PER_ORDER
-            };
+        let gas_amount = match self
+            .price_estimator
+            .estimate_gas(sell_token, buy_token, amount, kind)
+            .await
+        {
+            Ok(amount) => amount.to_f64_lossy() * self.discount_factor,
+            Err(err) => {
+                tracing::warn!("Failed to estimate gas amount: {}", err);
+                return Ok(None);
+            }
+        };
         let fee_in_eth = gas_price * gas_amount;
         let token_price = match self
             .price_estimator
@@ -194,17 +180,27 @@ impl MinFeeCalculator {
     }
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
-    pub async fn is_valid_fee(&self, sell_token: H160, fee: U256) -> bool {
+    pub async fn is_valid_fee(
+        &self,
+        sell_token: H160,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
+        fee: U256,
+    ) -> bool {
         if let Ok(Some(past_fee)) = self
             .measurements
-            .get_min_fee(sell_token, None, None, None, (self.now)())
+            .get_min_fee(sell_token, buy_token, amount, kind, (self.now)())
             .await
         {
             if fee >= past_fee {
                 return true;
             }
         }
-        if let Ok(Some(current_fee)) = self.compute_min_fee(sell_token, None, None, None).await {
+        if let Ok(Some(current_fee)) = self
+            .compute_min_fee(sell_token, buy_token, amount, kind)
+            .await
+        {
             return fee >= current_fee;
         }
         false
@@ -212,9 +208,9 @@ impl MinFeeCalculator {
 }
 
 struct FeeMeasurement {
-    buy_token: Option<H160>,
-    amount: Option<U256>,
-    kind: Option<OrderKind>,
+    buy_token: H160,
+    amount: U256,
+    kind: OrderKind,
     expiry: DateTime<Utc>,
     min_fee: U256,
 }
@@ -226,9 +222,9 @@ impl MinFeeStoring for InMemoryFeeStore {
     async fn save_fee_measurement(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         expiry: DateTime<Utc>,
         min_fee: U256,
     ) -> Result<()> {
@@ -250,21 +246,21 @@ impl MinFeeStoring for InMemoryFeeStore {
     async fn get_min_fee(
         &self,
         sell_token: H160,
-        buy_token: Option<H160>,
-        amount: Option<U256>,
-        kind: Option<OrderKind>,
+        buy_token: H160,
+        amount: U256,
+        kind: OrderKind,
         min_expiry: DateTime<Utc>,
     ) -> Result<Option<U256>> {
         let mut guard = self.0.lock().expect("Thread holding Mutex panicked");
         let measurements = guard.entry(sell_token).or_default();
         measurements.retain(|measurement| {
-            if buy_token.is_some() && buy_token != measurement.buy_token {
+            if buy_token != measurement.buy_token {
                 return false;
             }
-            if amount.is_some() && amount != measurement.amount {
+            if amount != measurement.amount {
                 return false;
             }
-            if kind.is_some() && kind != measurement.kind {
+            if kind != measurement.kind {
                 return false;
             }
             measurement.expiry >= min_expiry
@@ -317,9 +313,10 @@ mod tests {
         let fee_estimator =
             MinFeeCalculator::new_for_test(gas_price_estimator, price_estimator, Box::new(now));
 
-        let token = H160::from_low_u64_be(1);
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
         let (fee, expiry) = fee_estimator
-            .min_fee(token, None, None, None)
+            .min_fee(sell_token, buy_token, 100.into(), OrderKind::Sell)
             .await
             .unwrap();
 
@@ -328,11 +325,20 @@ mod tests {
 
         // fee is valid before expiry
         *time.lock().unwrap() = expiry - Duration::seconds(10);
-        assert!(fee_estimator.is_valid_fee(token, fee).await);
+        assert!(
+            fee_estimator
+                .is_valid_fee(sell_token, buy_token, 100.into(), OrderKind::Sell, fee)
+                .await
+        );
 
         // fee is invalid for some uncached token
         let token = H160::from_low_u64_be(2);
-        assert_eq!(fee_estimator.is_valid_fee(token, fee).await, false);
+        assert_eq!(
+            fee_estimator
+                .is_valid_fee(token, buy_token, 100.into(), OrderKind::Sell, fee)
+                .await,
+            false
+        );
     }
 
     #[tokio::test]
@@ -348,20 +354,42 @@ mod tests {
             Box::new(Utc::now),
         );
 
-        let token = H160::from_low_u64_be(1);
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
         let (fee, _) = fee_estimator
-            .min_fee(token, None, None, None)
+            .min_fee(sell_token, buy_token, 100.into(), OrderKind::Sell)
             .await
             .unwrap();
 
         let lower_fee = fee - U256::one();
 
         // slightly lower fee is not valid
-        assert_eq!(fee_estimator.is_valid_fee(token, lower_fee).await, false);
+        assert_eq!(
+            fee_estimator
+                .is_valid_fee(
+                    sell_token,
+                    buy_token,
+                    100.into(),
+                    OrderKind::Sell,
+                    lower_fee
+                )
+                .await,
+            false
+        );
 
         // Gas price reduces, and slightly lower fee is now valid
         *gas_price.lock().unwrap() /= 2.0;
-        assert!(fee_estimator.is_valid_fee(token, lower_fee).await);
+        assert!(
+            fee_estimator
+                .is_valid_fee(
+                    sell_token,
+                    buy_token,
+                    100.into(),
+                    OrderKind::Sell,
+                    lower_fee
+                )
+                .await
+        );
     }
 
     #[tokio::test]
@@ -388,10 +416,9 @@ mod tests {
             fee_estimator
                 .min_fee(
                     unsupported_token,
-                    Some(supported_token),
-                    Some(100.into()),
-                    Some(OrderKind::Sell)
-                )
+                    supported_token,
+                    100.into(),
+                    OrderKind::Sell)
                 .await,
             Err(MinFeeCalculationError::UnsupportedToken(t)) if t == unsupported_token
         ));
@@ -401,9 +428,9 @@ mod tests {
             fee_estimator
                 .min_fee(
                     supported_token,
-                    Some(unsupported_token),
-                    Some(100.into()),
-                    Some(OrderKind::Sell)
+                    unsupported_token,
+                    100.into(),
+                    OrderKind::Sell
                 )
                 .await,
             Err(MinFeeCalculationError::UnsupportedToken(t)) if t == unsupported_token
