@@ -13,7 +13,7 @@ atty = "0.2"
 contracts = { path = "../contracts" }
 ethcontract = { version = "0.11", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.0", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.1", features = ["web3_"] }
 hex-literal = "0.3"
 maplit = "1.0"
 model = { path = "../model" }

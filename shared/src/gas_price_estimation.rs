@@ -23,7 +23,7 @@ struct Client(reqwest::Client);
 
 #[async_trait::async_trait]
 impl Transport for Client {
-    async fn get_json<'a, T: DeserializeOwned>(&self, url: &'a str) -> Result<T> {
+    async fn get_json<T: DeserializeOwned>(&self, url: &str) -> Result<T> {
         self.0
             .get(url)
             .send()
