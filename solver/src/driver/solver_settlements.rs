@@ -1,4 +1,4 @@
-use crate::settlement::Settlement;
+use crate::{encoding::EncodedSettlement, settlement::Settlement};
 use anyhow::Result;
 use ethcontract::U256;
 use num::BigRational;
@@ -33,7 +33,7 @@ pub struct SolverWithSettlements {
 }
 
 // Each individual settlement has an objective value.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct RatedSettlement {
     pub settlement: Settlement,
     pub surplus: BigRational,
@@ -46,6 +46,22 @@ impl RatedSettlement {
         let gas_estimate = self.gas_estimate.to_big_rational();
         let cost = gas_estimate * gas_price;
         self.surplus.clone() - cost
+    }
+}
+
+impl RatedSettlement {
+    pub fn without_onchain_liquidity(&self) -> Self {
+        RatedSettlement {
+            settlement: self.settlement.without_onchain_liquidity(),
+            surplus: self.surplus.clone(),
+            gas_estimate: self.gas_estimate, // TODO: This becomes an overestimate!
+        }
+    }
+}
+
+impl From<RatedSettlement> for EncodedSettlement {
+    fn from(settlement: RatedSettlement) -> Self {
+        settlement.settlement.into()
     }
 }
 

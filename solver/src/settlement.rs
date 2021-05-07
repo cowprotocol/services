@@ -107,6 +107,11 @@ impl Settlement {
             .encode(execution, &mut self.encoder)
     }
 
+    pub fn without_onchain_liquidity(&self) -> Self {
+        let encoder = self.encoder.without_onchain_liquidity();
+        Self { encoder }
+    }
+
     #[cfg(test)]
     pub fn with_trades(clearing_prices: HashMap<H160, U256>, trades: Vec<Trade>) -> Self {
         let encoder = SettlementEncoder::with_trades(clearing_prices, trades);

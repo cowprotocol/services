@@ -2,6 +2,7 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
+    chain,
     liquidity::{offchain_orderbook::BUY_ETH_ADDRESS, Liquidity},
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
@@ -124,6 +125,19 @@ impl Driver {
             }
             Err(err) => tracing::error!("Failed to submit settlement: {:?}", err,),
         }
+    }
+
+    async fn can_settle(&self, settlement: RatedSettlement) -> Result<bool> {
+        let simulations = settlement_simulation::simulate_settlements(
+            chain![settlement.into()],
+            &self.settlement_contract,
+            &self.web3,
+            &self.network_id,
+            settlement_simulation::Block::LatestWithoutTenderly,
+        )
+        .await
+        .context("failed to simulate settlement")?;
+        Ok(simulations[0].is_ok())
     }
 
     // Split settlements into successfully simulating ones and errors.
@@ -275,6 +289,7 @@ impl Driver {
             self.min_order_age,
             &mut settlements,
         );
+
         let (settlements, errors) = self.simulate_settlements(settlements).await?;
         tracing::info!(
             "{} settlements passed simulation and {} failed",
@@ -287,10 +302,19 @@ impl Driver {
 
         let rated_settlements = self.rate_settlements(settlements, &estimated_prices).await;
 
-        if let Some(settlement) = rated_settlements.into_iter().max_by(|a, b| {
+        if let Some(mut settlement) = rated_settlements.into_iter().max_by(|a, b| {
             a.objective_value(gas_price)
                 .cmp(&b.objective_value(gas_price))
         }) {
+            // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
+            if self
+                .can_settle(settlement.without_onchain_liquidity())
+                .await
+                .unwrap_or(false)
+            {
+                settlement = settlement.without_onchain_liquidity();
+                tracing::info!("settlement without onchain liquidity");
+            }
             self.submit_settlement(settlement).await;
         }
 

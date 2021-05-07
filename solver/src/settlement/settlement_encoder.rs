@@ -68,6 +68,17 @@ impl SettlementEncoder {
         result
     }
 
+    // Returns a copy of self without any liquidity provision interaction.
+    pub fn without_onchain_liquidity(&self) -> Self {
+        SettlementEncoder {
+            tokens: self.tokens.clone(),
+            clearing_prices: self.clearing_prices.clone(),
+            trades: self.trades.clone(),
+            execution_plan: Vec::new(),
+            unwraps: self.unwraps.clone(),
+        }
+    }
+
     pub fn clearing_prices(&self) -> &HashMap<H160, U256> {
         &self.clearing_prices
     }
