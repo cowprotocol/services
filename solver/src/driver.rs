@@ -1,6 +1,6 @@
 pub mod solver_settlements;
 
-use self::solver_settlements::RatedSettlement;
+use self::solver_settlements::{RatedSettlement, SettlementWithSolver};
 use crate::{
     chain,
     liquidity::{offchain_orderbook::BUY_ETH_ADDRESS, Liquidity},
@@ -107,21 +107,22 @@ impl Driver {
         .into_iter()
     }
 
-    async fn submit_settlement(&self, settlement: RatedSettlement) {
-        let trades = settlement.settlement.trades().to_vec();
+    async fn submit_settlement(&self, rated_settlement: RatedSettlement) {
+        let SettlementWithSolver { name, settlement } = rated_settlement.clone().settlement;
+        let trades = settlement.trades().to_vec();
         match settlement_submission::submit(
             &self.settlement_contract,
             self.gas_price_estimator.as_ref(),
             self.target_confirm_time,
             GAS_PRICE_CAP,
-            settlement,
+            rated_settlement,
         )
         .await
         {
             Ok(_) => {
                 trades
                     .iter()
-                    .for_each(|trade| self.metrics.order_settled(&trade.order));
+                    .for_each(|trade| self.metrics.order_settled(&trade.order, name));
             }
             Err(err) => tracing::error!("Failed to submit settlement: {:?}", err,),
         }
@@ -143,12 +144,15 @@ impl Driver {
     // Split settlements into successfully simulating ones and errors.
     async fn simulate_settlements(
         &self,
-        settlements: Vec<Settlement>,
-    ) -> Result<(Vec<Settlement>, Vec<(Settlement, Error)>)> {
+        settlements: Vec<SettlementWithSolver>,
+    ) -> Result<(
+        Vec<SettlementWithSolver>,
+        Vec<(SettlementWithSolver, Error)>,
+    )> {
         let simulations = settlement_simulation::simulate_settlements(
             settlements
                 .iter()
-                .map(|settlement| settlement.clone().into()),
+                .map(|settlement| settlement.settlement.clone().into()),
             &self.settlement_contract,
             &self.web3,
             &self.network_id,
@@ -173,7 +177,7 @@ impl Driver {
     // the block has changed just as were were querying the node.
     async fn report_simulation_errors(
         &self,
-        errors: Vec<(Settlement, Error)>,
+        errors: Vec<(SettlementWithSolver, Error)>,
         current_block_during_liquidity_fetch: u64,
     ) {
         let simulations = match settlement_simulation::simulate_settlements(
@@ -216,16 +220,16 @@ impl Driver {
     // Rate settlements, ignoring those for which the rating procedure failed.
     async fn rate_settlements(
         &self,
-        settlements: Vec<Settlement>,
+        settlements: Vec<SettlementWithSolver>,
         prices: &HashMap<H160, BigRational>,
     ) -> Vec<RatedSettlement> {
         use futures::stream::StreamExt;
         futures::stream::iter(settlements)
             .filter_map(|settlement| async {
-                let surplus = settlement.total_surplus(prices);
+                let surplus = settlement.settlement.total_surplus(prices);
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
-                    &settlement.clone().into(),
+                    &settlement.settlement.clone().into(),
                 )
                 .await
                 .ok()?;
@@ -282,7 +286,7 @@ impl Driver {
                     settlements,
                 )
             })
-            .flat_map(|settlements| settlements.settlements.into_iter())
+            .flat_map(|settlements| -> Vec<SettlementWithSolver> { settlements.into() })
             .collect::<Vec<_>>();
 
         solver_settlements::filter_settlements_without_old_orders(
@@ -296,9 +300,13 @@ impl Driver {
             settlements.len(),
             errors.len()
         );
-        self.metrics
-            .settlement_simulations_succeeded(settlements.len());
-        self.metrics.settlement_simulations_failed(errors.len());
+        for settlement in &settlements {
+            self.metrics
+                .settlement_simulation_succeeded(settlement.name);
+        }
+        for (settlement, _) in &errors {
+            self.metrics.settlement_simulation_failed(settlement.name);
+        }
 
         let rated_settlements = self.rate_settlements(settlements, &estimated_prices).await;
 

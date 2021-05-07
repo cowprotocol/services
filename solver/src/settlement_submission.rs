@@ -36,7 +36,7 @@ pub async fn submit(
     settlement: RatedSettlement,
 ) -> Result<()> {
     let gas_estimate = settlement.gas_estimate;
-    let settlement: EncodedSettlement = settlement.settlement.into();
+    let settlement: EncodedSettlement = settlement.into();
 
     let nonce = transaction_count(contract)
         .await

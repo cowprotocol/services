@@ -10,14 +10,14 @@ use crate::liquidity::Liquidity;
 pub trait SolverMetrics {
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, start: Instant);
-    fn order_settled(&self, order: &Order);
-    fn settlement_simulations_succeeded(&self, count: usize);
-    fn settlement_simulations_failed(&self, count: usize);
+    fn order_settled(&self, order: &Order, solver: &'static str);
+    fn settlement_simulation_succeeded(&self, solver: &'static str);
+    fn settlement_simulation_failed(&self, solver: &'static str);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
 pub struct Metrics {
-    trade_counter: IntCounter,
+    trade_counter: IntCounterVec,
     order_settlement_time: IntCounter,
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
@@ -26,8 +26,10 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn new(registry: &Registry) -> Result<Self> {
-        let trade_counter =
-            IntCounter::new("gp_v2_solver_trade_counter", "Number of trades settled")?;
+        let trade_counter = IntCounterVec::new(
+            Opts::new("gp_v2_solver_trade_counter", "Number of trades settled"),
+            &["solver_type"],
+        )?;
         registry.register(Box::new(trade_counter.clone()))?;
 
         let order_settlement_time = IntCounter::new(
@@ -59,7 +61,7 @@ impl Metrics {
                 "gp_v2_solver_settlement_simulations",
                 "Settlement simulation counts",
             ),
-            &["type"],
+            &["result", "solver_type"],
         )?;
         registry.register(Box::new(settlement_simulations.clone()))?;
 
@@ -97,10 +99,10 @@ impl SolverMetrics for Metrics {
             )
     }
 
-    fn order_settled(&self, order: &Order) {
+    fn order_settled(&self, order: &Order, solver: &'static str) {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.order_meta_data.creation_date);
-        self.trade_counter.inc();
+        self.trade_counter.with_label_values(&[solver]).inc();
         self.order_settlement_time.inc_by(
             time_to_settlement
                 .num_seconds()
@@ -109,16 +111,16 @@ impl SolverMetrics for Metrics {
         )
     }
 
-    fn settlement_simulations_succeeded(&self, count: usize) {
+    fn settlement_simulation_succeeded(&self, solver: &'static str) {
         self.settlement_simulations
-            .with_label_values(&["success"])
-            .inc_by(count as u64)
+            .with_label_values(&["success", solver])
+            .inc()
     }
 
-    fn settlement_simulations_failed(&self, count: usize) {
+    fn settlement_simulation_failed(&self, solver: &'static str) {
         self.settlement_simulations
-            .with_label_values(&["failure"])
-            .inc_by(count as u64)
+            .with_label_values(&["failure", solver])
+            .inc()
     }
 }
 
@@ -128,9 +130,9 @@ pub struct NoopMetrics {}
 impl SolverMetrics for NoopMetrics {
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
     fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
-    fn order_settled(&self, _order: &Order) {}
-    fn settlement_simulations_succeeded(&self, _count: usize) {}
-    fn settlement_simulations_failed(&self, _count: usize) {}
+    fn order_settled(&self, _: &Order, _: &'static str) {}
+    fn settlement_simulation_succeeded(&self, _: &'static str) {}
+    fn settlement_simulation_failed(&self, _: &'static str) {}
 }
 
 #[cfg(test)]
@@ -142,8 +144,8 @@ mod tests {
         let registry = Registry::default();
         let metrics = Metrics::new(&registry).unwrap();
         metrics.settlement_computed("asdf", Instant::now());
-        metrics.order_settled(&Default::default());
-        metrics.settlement_simulations_succeeded(1);
-        metrics.settlement_simulations_failed(1);
+        metrics.order_settled(&Default::default(), "test");
+        metrics.settlement_simulation_succeeded("test");
+        metrics.settlement_simulation_failed("test");
     }
 }
