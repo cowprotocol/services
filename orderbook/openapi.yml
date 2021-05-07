@@ -240,7 +240,7 @@ paths:
   /api/v1/markets/{baseToken}-{quoteToken}/{kind}/{amount}:
     get:
       description: |
-        The estimated amount received for selling a `amount` of baseToken or the amount required to spend for buying `amount` of quote token.
+        The estimated amount in quote token for either buying or selling `amount` of baseToken.
       parameters:
         - name: baseToken
           in: path

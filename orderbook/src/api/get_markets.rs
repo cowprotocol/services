@@ -75,20 +75,15 @@ fn get_amount_estimate_response(
 ) -> impl Reply {
     match result {
         Ok(price) => {
-            let (amount, token) = match query.kind {
-                OrderKind::Buy => (
-                    query.amount.to_big_rational() * price,
-                    query.market.base_token,
-                ),
-                OrderKind::Sell => (
-                    query.amount.to_big_rational() / price,
-                    query.market.quote_token,
-                ),
+            let query_amount = query.amount.to_big_rational();
+            let response_amount = match query.kind {
+                OrderKind::Buy => query_amount * price,
+                OrderKind::Sell => query_amount / price,
             };
             reply::with_status(
                 reply::json(&AmountEstimateResult {
-                    amount: amount.to_integer(),
-                    token,
+                    amount: response_amount.to_integer(),
+                    token: query.market.quote_token,
                 }),
                 StatusCode::OK,
             )
@@ -110,13 +105,15 @@ pub fn get_amount_estimate(
     get_amount_estimate_request().and_then(move |query: AmountEstimateQuery| {
         let price_estimator = price_estimator.clone();
         async move {
+            let market = &query.market;
+            let (buy_token, sell_token) = match query.kind {
+                // Buy in WETH/DAI means buying ETH (selling DAI)
+                OrderKind::Buy => (market.base_token, market.quote_token),
+                // Sell in WETH/DAI means selling ETH (buying DAI)
+                OrderKind::Sell => (market.quote_token, market.base_token),
+            };
             let result = price_estimator
-                .estimate_price(
-                    query.market.base_token,
-                    query.market.quote_token,
-                    query.amount,
-                    query.kind,
-                )
+                .estimate_price(sell_token, buy_token, query.amount, query.kind)
                 .await;
             Result::<_, Infallible>::Ok(get_amount_estimate_response(result, query))
         }
@@ -192,6 +189,6 @@ mod tests {
         let estimate: AmountEstimateResult =
             serde_json::from_slice(response_body(response).await.as_slice()).unwrap();
         assert_eq!(estimate.amount, 200.into());
-        assert_eq!(estimate.token, query.market.base_token);
+        assert_eq!(estimate.token, query.market.quote_token);
     }
 }
