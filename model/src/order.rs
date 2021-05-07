@@ -414,8 +414,8 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[enumeration(case_insensitive)]
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[enumeration(case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     Buy,
