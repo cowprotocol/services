@@ -1,24 +1,38 @@
+use anyhow::Result;
+use prometheus::{HistogramOpts, HistogramVec, IntGaugeVec, Opts, Registry};
 use std::{convert::Infallible, sync::Arc, time::Instant};
-
-use prometheus::{HistogramOpts, HistogramVec, Registry};
-use warp::Filter;
-use warp::{reply::Response, Reply};
+use warp::{reply::Response, Filter, Reply};
 
 pub struct Metrics {
     requests: HistogramVec,
+    db_table_row_count: IntGaugeVec,
 }
 
 impl Metrics {
-    pub fn new(registry: &Registry) -> Self {
+    pub fn new(registry: &Registry) -> Result<Self> {
         let opts = HistogramOpts::new(
             "gp_v2_api_requests",
             "API Request durations labelled by route and response status code",
         );
         let requests = HistogramVec::new(opts, &["response", "request_type"]).unwrap();
-        registry
-            .register(Box::new(requests.clone()))
-            .expect("Failed to register metric");
-        Self { requests }
+        registry.register(Box::new(requests.clone()))?;
+
+        let db_table_row_count = IntGaugeVec::new(
+            Opts::new("gp_v2_api_table_rows", "Number of rows in db tables."),
+            &["table"],
+        )?;
+        registry.register(Box::new(db_table_row_count.clone()))?;
+
+        Ok(Self {
+            requests,
+            db_table_row_count,
+        })
+    }
+
+    pub fn set_table_row_count(&self, table: &str, count: i64) {
+        self.db_table_row_count
+            .with_label_values(&[table])
+            .set(count);
     }
 }
 

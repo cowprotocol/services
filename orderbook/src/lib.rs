@@ -29,9 +29,9 @@ pub fn serve_task(
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
     address: SocketAddr,
+    registry: Registry,
+    metrics: Arc<Metrics>,
 ) -> JoinHandle<()> {
-    let registry = Registry::default();
-    let metrics = Arc::new(Metrics::new(&registry));
     let filter = api::handle_all_routes(
         database,
         orderbook,
