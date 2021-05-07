@@ -181,6 +181,7 @@ async fn main() {
         price_estimator.clone(),
         network_name.to_string(),
         chain_id,
+        args.shared.fee_discount_factor,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

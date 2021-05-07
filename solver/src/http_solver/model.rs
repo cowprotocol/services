@@ -21,7 +21,7 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
-    pub fee: f64,
+    pub fee: FeeModel,
     pub cost: CostModel,
 }
 
@@ -47,6 +47,12 @@ pub struct TokenInfoModel {
 
 #[derive(Debug, Serialize)]
 pub struct CostModel {
+    pub amount: u128,
+    pub token: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct FeeModel {
     pub amount: u128,
     pub token: String,
 }

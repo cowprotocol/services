@@ -45,6 +45,7 @@ pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
         buy_amount: order.order_creation.buy_amount,
         kind: order.order_creation.kind,
         partially_fillable: order.order_creation.partially_fillable,
+        fee_amount: order.order_creation.fee_amount,
         settlement_handling: Arc::new(OrderSettlementHandler {
             order,
             native_token,

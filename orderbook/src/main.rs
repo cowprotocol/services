@@ -40,9 +40,6 @@ struct Arguments {
     #[structopt(long)]
     skip_event_sync: bool,
 
-    #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
-    fee_discount_factor: f64,
-
     /// The minimum amount of time an order has to be valid for.
     #[structopt(
         long,
@@ -164,7 +161,7 @@ async fn main() {
         Box::new(gas_price_estimator),
         native_token.address(),
         database.clone(),
-        args.fee_discount_factor,
+        args.shared.fee_discount_factor,
         unsupported_tokens.clone(),
     ));
 

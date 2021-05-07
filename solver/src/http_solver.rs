@@ -59,9 +59,11 @@ pub struct HttpSolver {
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     price_estimator: Arc<dyn PriceEstimating>,
     network_id: String,
+    fee_discount_factor: f64,
 }
 
 impl HttpSolver {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         base: Url,
         api_key: Option<String>,
@@ -70,6 +72,7 @@ impl HttpSolver {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         price_estimator: Arc<dyn PriceEstimating>,
         network_id: String,
+        fee_discount_factor: f64,
     ) -> Self {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
@@ -82,6 +85,7 @@ impl HttpSolver {
             token_info_fetcher,
             price_estimator,
             network_id,
+            fee_discount_factor,
         }
     }
 
@@ -147,28 +151,30 @@ impl HttpSolver {
         &self,
         orders: &HashMap<String, LimitOrder>,
         gas_price: f64,
-    ) -> HashMap<String, OrderModel> {
+    ) -> Result<HashMap<String, OrderModel>> {
         let order_cost = self.order_cost(gas_price).await;
-        orders
-            .iter()
-            .map(|(index, order)| {
-                let order = OrderModel {
-                    sell_token: self.token_to_string(&order.sell_token),
-                    buy_token: self.token_to_string(&order.buy_token),
-                    sell_amount: order.sell_amount,
-                    buy_amount: order.buy_amount,
-                    allow_partial_fill: order.partially_fillable,
-                    is_sell_order: matches!(order.kind, OrderKind::Sell),
-                    // TODO: map order fee and fixed cost
-                    fee: 0.0,
-                    cost: CostModel {
-                        amount: order_cost,
-                        token: self.token_to_string(&self.native_token),
-                    },
-                };
-                (index.clone(), order)
-            })
-            .collect()
+        let mut result: HashMap<String, OrderModel> = HashMap::new();
+        for (index, order) in orders {
+            let order_fee = self.order_fee(&order)?;
+            let order = OrderModel {
+                sell_token: self.token_to_string(&order.sell_token),
+                buy_token: self.token_to_string(&order.buy_token),
+                sell_amount: order.sell_amount,
+                buy_amount: order.buy_amount,
+                allow_partial_fill: order.partially_fillable,
+                is_sell_order: matches!(order.kind, OrderKind::Sell),
+                fee: FeeModel {
+                    amount: order_fee,
+                    token: self.token_to_string(&order.sell_token),
+                },
+                cost: CostModel {
+                    amount: order_cost,
+                    token: self.token_to_string(&self.native_token),
+                },
+            };
+            result.insert(index.clone(), order);
+        }
+        Ok(result)
     }
 
     fn map_amms_for_solver(&self, orders: Vec<AmmOrder>) -> HashMap<String, AmmOrder> {
@@ -240,7 +246,7 @@ impl HttpSolver {
         let token_models = self
             .token_models(&tokens, &token_infos, &price_estimates)
             .await;
-        let order_models = self.order_models(&limit_orders, gas_price).await;
+        let order_models = self.order_models(&limit_orders, gas_price).await?;
         let uniswap_models = self.amm_models(&amm_orders, gas_price).await;
         let model = BatchAuctionModel {
             tokens: token_models,
@@ -301,6 +307,13 @@ impl HttpSolver {
 
     async fn uniswap_cost(&self, gas_price: f64) -> u128 {
         gas_price as u128 * GAS_PER_UNISWAP
+    }
+
+    fn order_fee(&self, order: &LimitOrder) -> Result<u128> {
+        (order.fee_amount.to_f64_lossy() / self.fee_discount_factor)
+            .ceil()
+            .to_u128()
+            .context("failed to compute order fee")
     }
 }
 
@@ -424,6 +437,7 @@ mod tests {
             mock_token_info_fetcher,
             mock_price_estimation,
             "mock_network_id".to_string(),
+            1.,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![
@@ -434,6 +448,7 @@ mod tests {
                 sell_amount: base(2).into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
+                fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
             }),
@@ -503,6 +518,7 @@ mod tests {
             buy_amount: Default::default(),
             kind: OrderKind::Sell,
             partially_fillable: Default::default(),
+            fee_amount: Default::default(),
             settlement_handling: limit_handling.clone(),
             id: "0".to_string(),
         })

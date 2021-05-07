@@ -224,6 +224,7 @@ mod tests {
             buy_amount: 2.into(),
             kind: OrderKind::Sell,
             partially_fillable: false,
+            fee_amount: Default::default(),
             settlement_handling: limit_handler.clone(),
             id: "0".to_string(),
         };

@@ -51,6 +51,10 @@ pub struct Arguments {
     #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
+    /// Fee discount factor: 1 means no discount, 0.9 means 10% discount.
+    #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
+    pub fee_discount_factor: f64,
+
     /// Which Liquidity sources to be used by Price Estimator.
     #[structopt(
         long,
