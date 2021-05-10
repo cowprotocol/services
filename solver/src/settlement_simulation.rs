@@ -64,12 +64,12 @@ pub fn tenderly_link(
     tx: TransactionBuilder<DynTransport>,
 ) -> String {
     format!(
-        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&rawFunctionInput=0x{}&network={}",
+        "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
         current_block,
         tx.from.unwrap().address(),
         tx.to.unwrap(),
-        hex::encode(tx.data.unwrap().0),
-        network_id
+        network_id,
+        hex::encode(tx.data.unwrap().0)
     )
 }
 
