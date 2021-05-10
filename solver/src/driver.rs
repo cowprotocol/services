@@ -3,6 +3,7 @@ pub mod solver_settlements;
 use self::solver_settlements::{RatedSettlement, SettlementWithSolver};
 use crate::{
     chain,
+    encoding::EncodedSettlement,
     liquidity::{offchain_orderbook::BUY_ETH_ADDRESS, Liquidity},
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
@@ -12,6 +13,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
+use ethcontract::U256;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use itertools::{Either, Itertools};
@@ -27,6 +29,7 @@ use std::{
 // There is no economic viability calculation yet so we're using an arbitrary very high cap to
 // protect against a gas estimator giving bogus results that would drain all our funds.
 const GAS_PRICE_CAP: f64 = 500e9;
+const MAX_GAS_PER_TRADE: u64 = 750_000;
 
 pub struct Driver {
     settlement_contract: GPv2Settlement,
@@ -319,9 +322,13 @@ impl Driver {
             self.metrics.settlement_simulation_failed(settlement.name);
         }
 
-        let rated_settlements = self.rate_settlements(settlements, &estimated_prices).await;
+        let rated_settlements = self
+            .rate_settlements(settlements, &estimated_prices)
+            .await
+            .into_iter()
+            .filter(settlements_with_reasonable_gas_cost);
 
-        if let Some(mut settlement) = rated_settlements.into_iter().max_by(|a, b| {
+        if let Some(mut settlement) = rated_settlements.max_by(|a, b| {
             a.objective_value(gas_price)
                 .cmp(&b.objective_value(gas_price))
         }) {
@@ -409,6 +416,12 @@ fn liquidity_with_price(
         );
     }
     liquidity
+}
+
+// Returns true if the average gas cost in the settlement doesn't exceed MAX_GAS_PER_TRADE
+fn settlements_with_reasonable_gas_cost(settlement: &RatedSettlement) -> bool {
+    let encoded: EncodedSettlement = settlement.clone().into();
+    settlement.gas_estimate < U256::from(encoded.trades.len()) * U256::from(MAX_GAS_PER_TRADE)
 }
 
 #[cfg(test)]
