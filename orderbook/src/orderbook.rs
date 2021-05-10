@@ -89,19 +89,9 @@ impl Orderbook {
         {
             return Ok(AddOrderResult::InsufficientValidTo);
         }
-        let amount = match order.kind {
-            model::order::OrderKind::Buy => order.buy_amount,
-            model::order::OrderKind::Sell => order.sell_amount,
-        };
         if !self
             .fee_validator
-            .is_valid_fee(
-                order.sell_token,
-                order.buy_token,
-                amount,
-                order.kind,
-                order.fee_amount,
-            )
+            .is_valid_fee(order.sell_token, order.fee_amount)
             .await
         {
             return Ok(AddOrderResult::InsufficientFee);
