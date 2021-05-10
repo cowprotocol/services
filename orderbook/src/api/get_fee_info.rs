@@ -1,4 +1,4 @@
-use crate::fee::{MinFeeCalculationError, MinFeeCalculator};
+use crate::fee::{EthAwareMinFeeCalculator, MinFeeCalculating, MinFeeCalculationError};
 
 use super::H160Wrapper;
 use anyhow::Result;
@@ -64,7 +64,7 @@ pub fn get_fee_info_response(
 }
 
 pub fn get_fee_info(
-    fee_calculator: Arc<MinFeeCalculator>,
+    fee_calculator: Arc<EthAwareMinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
         let fee_calculator = fee_calculator.clone();
@@ -131,7 +131,7 @@ pub fn legacy_get_fee_info_response(
 }
 
 pub fn legacy_get_fee_info(
-    fee_calculator: Arc<MinFeeCalculator>,
+    fee_calculator: Arc<EthAwareMinFeeCalculator>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     legacy_get_fee_info_request().and_then(move |token| {
         let fee_calculator = fee_calculator.clone();

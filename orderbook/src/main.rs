@@ -6,7 +6,7 @@ use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{Database, OrderFilter},
     event_updater::EventUpdater,
-    fee::MinFeeCalculator,
+    fee::EthAwareMinFeeCalculator,
     orderbook::Orderbook,
     serve_task, verify_deployed_contract_constants,
 };
@@ -156,7 +156,7 @@ async fn main() {
         base_tokens,
         unsupported_tokens.clone(),
     ));
-    let fee_calculator = Arc::new(MinFeeCalculator::new(
+    let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         Box::new(gas_price_estimator),
         native_token.address(),

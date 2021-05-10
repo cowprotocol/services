@@ -4,13 +4,11 @@ use crate::settlement::SettlementEncoder;
 use anyhow::{anyhow, Context, Result};
 use contracts::WETH9;
 use ethcontract::H160;
-use model::order::{Order, OrderKind};
+use model::order::{Order, OrderKind, BUY_ETH_ADDRESS};
 use primitive_types::U256;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{LimitOrder, SettlementHandling};
-
-pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 
 impl OrderBookApi {
     /// Returns a list of limit orders coming from the offchain orderbook API

@@ -9,7 +9,7 @@ mod get_trades;
 
 use crate::metrics::{end_request, LabelledReply, Metrics};
 use crate::{database::Database, metrics::start_request};
-use crate::{fee::MinFeeCalculator, orderbook::Orderbook};
+use crate::{fee::EthAwareMinFeeCalculator, orderbook::Orderbook};
 use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
@@ -27,7 +27,7 @@ use warp::{
 pub fn handle_all_routes(
     database: Database,
     orderbook: Arc<Orderbook>,
-    fee_calculator: Arc<MinFeeCalculator>,
+    fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
     metrics: Arc<Metrics>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {

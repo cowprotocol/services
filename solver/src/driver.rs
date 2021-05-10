@@ -2,19 +2,15 @@ pub mod solver_settlements;
 
 use self::solver_settlements::{RatedSettlement, SettlementWithSolver};
 use crate::{
-    chain,
-    liquidity::{offchain_orderbook::BUY_ETH_ADDRESS, Liquidity},
-    liquidity_collector::LiquidityCollector,
-    metrics::SolverMetrics,
-    settlement::Settlement,
-    settlement_simulation, settlement_submission,
-    solver::Solver,
+    chain, liquidity::Liquidity, liquidity_collector::LiquidityCollector, metrics::SolverMetrics,
+    settlement::Settlement, settlement_simulation, settlement_submission, solver::Solver,
 };
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use itertools::{Either, Itertools};
+use model::order::BUY_ETH_ADDRESS;
 use num::BigRational;
 use primitive_types::H160;
 use shared::{price_estimate::PriceEstimating, Web3};

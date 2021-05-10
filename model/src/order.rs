@@ -19,6 +19,10 @@ use std::fmt::{self, Display};
 use std::str::FromStr;
 use web3::signing::{self, Key, SecretKeyRef};
 
+/// The flag denoting that an order is buying ETH (or the chain's native token).
+/// It is used in place of an actual buy token address in an order.
+pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
+
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.

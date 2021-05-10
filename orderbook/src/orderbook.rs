@@ -3,7 +3,7 @@ use crate::{
 };
 use crate::{
     database::{Database, InsertionError},
-    fee::MinFeeCalculator,
+    fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
 };
 use anyhow::Result;
 use chrono::Utc;
@@ -50,7 +50,7 @@ pub struct Orderbook {
     database: Database,
     event_updater: Mutex<EventUpdater>,
     balance_fetcher: Box<dyn BalanceFetching>,
-    fee_validator: Arc<MinFeeCalculator>,
+    fee_validator: Arc<EthAwareMinFeeCalculator>,
     unsupported_tokens: HashSet<H160>,
     min_order_validity_period: Duration,
 }
@@ -61,7 +61,7 @@ impl Orderbook {
         database: Database,
         event_updater: EventUpdater,
         balance_fetcher: Box<dyn BalanceFetching>,
-        fee_validator: Arc<MinFeeCalculator>,
+        fee_validator: Arc<EthAwareMinFeeCalculator>,
         unsupported_tokens: HashSet<H160>,
         min_order_validity_period: Duration,
     ) -> Self {
