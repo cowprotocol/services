@@ -137,6 +137,7 @@ impl Driver {
                 trades
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
+                self.metrics.settlement_submitted(true, name);
             }
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
@@ -150,6 +151,7 @@ impl Driver {
                 } else {
                     tracing::error!("Failed to submit settlement: {:?}", err)
                 };
+                self.metrics.settlement_submitted(false, name);
             }
         }
     }

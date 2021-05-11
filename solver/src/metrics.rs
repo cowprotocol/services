@@ -13,6 +13,7 @@ pub trait SolverMetrics {
     fn order_settled(&self, order: &Order, solver: &'static str);
     fn settlement_simulation_succeeded(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
+    fn settlement_submitted(&self, successful: bool, solver: &'static str);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -22,6 +23,7 @@ pub struct Metrics {
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
+    settlement_submissions: IntCounterVec,
 }
 
 impl Metrics {
@@ -65,12 +67,22 @@ impl Metrics {
         )?;
         registry.register(Box::new(settlement_simulations.clone()))?;
 
+        let settlement_submissions = IntCounterVec::new(
+            Opts::new(
+                "gp_v2_solver_settlement_submissions",
+                "Settlement submission counts",
+            ),
+            &["result", "solver_type"],
+        )?;
+        registry.register(Box::new(settlement_submissions.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
             solver_computation_time,
             liquidity,
             settlement_simulations,
+            settlement_submissions,
         })
     }
 }
@@ -122,6 +134,13 @@ impl SolverMetrics for Metrics {
             .with_label_values(&["failure", solver])
             .inc()
     }
+
+    fn settlement_submitted(&self, successful: bool, solver: &'static str) {
+        let result = if successful { "success" } else { "failures" };
+        self.settlement_submissions
+            .with_label_values(&[result, solver])
+            .inc()
+    }
 }
 
 #[derive(Default)]
@@ -133,6 +152,7 @@ impl SolverMetrics for NoopMetrics {
     fn order_settled(&self, _: &Order, _: &'static str) {}
     fn settlement_simulation_succeeded(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
+    fn settlement_submitted(&self, _: bool, _: &'static str) {}
 }
 
 #[cfg(test)]
@@ -147,5 +167,6 @@ mod tests {
         metrics.order_settled(&Default::default(), "test");
         metrics.settlement_simulation_succeeded("test");
         metrics.settlement_simulation_failed("test");
+        metrics.settlement_submitted(true, "test");
     }
 }
