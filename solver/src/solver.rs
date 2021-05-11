@@ -1,4 +1,8 @@
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 use crate::{
     baseline_solver::BaselineSolver,
@@ -10,9 +14,11 @@ use crate::{
 };
 use anyhow::Result;
 use contracts::GPv2Settlement;
-use ethcontract::H160;
+use ethcontract::{H160, U256};
 use reqwest::Url;
-use shared::{price_estimate::PriceEstimating, token_info::TokenInfoFetching};
+use shared::{
+    conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching,
+};
 use structopt::clap::arg_enum;
 
 // For solvers that enforce a timeout internally we set their timeout to the global solver timeout
@@ -54,6 +60,7 @@ pub fn create(
     chain_id: u64,
     fee_discount_factor: f64,
     solver_timeout: Duration,
+    min_order_size_one_inch: U256,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -85,8 +92,155 @@ pub fn create(
                 fee_discount_factor,
             )),
             SolverType::OneInch => {
-                boxed(OneInchSolver::new(settlement_contract.clone(), chain_id)?)
+                // We only want to use 1Inch for high value orders
+                boxed(SellVolumeFilteringSolver {
+                    inner: OneInchSolver::new(settlement_contract.clone(), chain_id)?,
+                    price_estimator: price_estimator.clone(),
+                    denominator_token: native_token,
+                    min_value: min_order_size_one_inch,
+                })
             }
         })
         .collect()
+}
+
+/// Dummy solver returning no settlements
+pub struct NoopSolver();
+#[async_trait::async_trait]
+impl Solver for NoopSolver {
+    async fn solve(&self, _: Vec<Liquidity>, _: f64) -> Result<Vec<Settlement>> {
+        Ok(Vec::new())
+    }
+}
+
+/// A solver that remove limit order below a certain threshold and
+/// passes the remaining liquidity onto an inner solver implementation.
+pub struct SellVolumeFilteringSolver<S> {
+    inner: S,
+    price_estimator: Arc<dyn PriceEstimating>,
+    denominator_token: H160,
+    min_value: U256,
+}
+
+impl<S> SellVolumeFilteringSolver<S> {
+    async fn filter_liquidity(&self, orders: Vec<Liquidity>) -> Vec<Liquidity> {
+        let sell_tokens: Vec<_> = orders
+            .iter()
+            .filter_map(|order| {
+                if let Liquidity::Limit(order) = order {
+                    Some(order.sell_token)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let prices: HashMap<_, _> = self
+            .price_estimator
+            .estimate_prices(&sell_tokens, self.denominator_token)
+            .await
+            .into_iter()
+            .zip(sell_tokens)
+            .filter_map(|(result, token)| {
+                if let Ok(price) = result {
+                    Some((token, price))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        orders
+            .into_iter()
+            .filter(|order| {
+                if let Liquidity::Limit(order) = order {
+                    prices
+                        .get(&order.sell_token)
+                        .map(|price| {
+                            price * order.sell_amount.to_big_rational()
+                                > self.min_value.to_big_rational()
+                        })
+                        .unwrap_or(false)
+                } else {
+                    true
+                }
+            })
+            .collect()
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: Solver + Send + Sync> Solver for SellVolumeFilteringSolver<S> {
+    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>> {
+        let original_length = orders.len();
+        let filtered_liquidity = self.filter_liquidity(orders).await;
+        tracing::info!(
+            "Filtered {} orders because on insufficient volume",
+            original_length - filtered_liquidity.len()
+        );
+        self.inner.solve(filtered_liquidity, gas_price).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use num::BigRational;
+    use shared::price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator};
+
+    use crate::liquidity::LimitOrder;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {
+        let sell_token = H160::from_low_u64_be(1);
+        let liquidity = vec![
+            // Only filter limit orders
+            Liquidity::Amm(Default::default()),
+            // Orders with high enough amount
+            Liquidity::Limit(LimitOrder {
+                sell_amount: 100_000.into(),
+                sell_token,
+                ..Default::default()
+            }),
+            Liquidity::Limit(LimitOrder {
+                sell_amount: 500_000.into(),
+                sell_token,
+                ..Default::default()
+            }),
+            // Order with small amount
+            Liquidity::Limit(LimitOrder {
+                sell_amount: 100.into(),
+                sell_token,
+                ..Default::default()
+            }),
+        ];
+
+        let price_estimator = Arc::new(FakePriceEstimator(BigRational::from_integer(42.into())));
+        let solver = SellVolumeFilteringSolver {
+            inner: NoopSolver(),
+            price_estimator,
+            denominator_token: H160::zero(),
+            min_value: 400_000.into(),
+        };
+        assert_eq!(solver.filter_liquidity(liquidity).await.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_filtering_solver_removes_orders_without_price_estimate() {
+        let sell_token = H160::from_low_u64_be(1);
+        let liquidity = vec![Liquidity::Limit(LimitOrder {
+            sell_amount: 100_000.into(),
+            sell_token,
+            ..Default::default()
+        })];
+
+        let price_estimator = Arc::new(FailingPriceEstimator());
+        let solver = SellVolumeFilteringSolver {
+            inner: NoopSolver(),
+            price_estimator,
+            denominator_token: H160::zero(),
+            min_value: 0.into(),
+        };
+        assert_eq!(solver.filter_liquidity(liquidity).await.len(), 0);
+    }
 }

@@ -1,6 +1,6 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{gas_price_estimation::GasEstimatorType, pool_aggregating::BaselineSources};
-use ethcontract::H160;
+use ethcontract::{H160, U256};
 use std::{num::ParseFloatError, time::Duration};
 use url::Url;
 
@@ -69,4 +69,8 @@ pub struct Arguments {
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
     Ok(Duration::from_secs_f32(s.parse()?))
+}
+
+pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
+    Ok(U256::from_dec_str(s)? * U256::exp10(18))
 }
