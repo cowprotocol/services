@@ -39,6 +39,7 @@ pub struct Web3BalanceFetcher {
     settlement_contract: H160,
     // Mapping of address, token to balance, allowance
     balances: Mutex<HashMap<SubscriptionKey, SubscriptionValue>>,
+    use_trace_api: bool,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -54,12 +55,18 @@ struct SubscriptionValue {
 }
 
 impl Web3BalanceFetcher {
-    pub fn new(web3: Web3, allowance_manager: H160, settlement_contract: H160) -> Self {
+    pub fn new(
+        web3: Web3,
+        allowance_manager: H160,
+        settlement_contract: H160,
+        use_trace_api: bool,
+    ) -> Self {
         Self {
             web3,
             allowance_manager,
             settlement_contract,
             balances: Default::default(),
+            use_trace_api,
         }
     }
 
@@ -209,9 +216,14 @@ impl BalanceFetching for Web3BalanceFetcher {
     }
 
     async fn can_transfer(&self, token: H160, from: H160, amount: U256) -> Result<bool> {
-        match self.can_transfer_trace(token, from, amount).await {
-            Ok(result) => return Ok(result),
-            Err(err) => tracing::warn!(?err, "failed to use trace api"),
+        if self.use_trace_api {
+            match self.can_transfer_trace(token, from, amount).await {
+                Ok(result) => {
+                    tracing::info!("can_transfer_trace token {:?} {}", token, result);
+                    return Ok(result);
+                }
+                Err(err) => tracing::warn!(?err, "failed to use trace api"),
+            }
         }
         Ok(self.can_transfer_call(token, from, amount).await)
     }
@@ -242,7 +254,7 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
+        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address(), true);
         let owner = H160(hex!("07c2af75788814BA7e5225b2F5c951eD161cB589"));
         let token = H160(hex!("dac17f958d2ee523a2206206994597c13d831ec7"));
 
@@ -264,7 +276,7 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
+        let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address(), true);
         let owner = H160(hex!("78045485dc4ad96f60937dad4b01b118958761ae"));
         // Token takes a fee.
         let token = H160(hex!("bae5f2d8a1299e5c4963eaff3312399253f27ccb"));
@@ -297,8 +309,12 @@ mod tests {
             .await
             .expect("MintableERC20 deployment failed");
 
-        let fetcher =
-            Web3BalanceFetcher::new(web3, allowance_target.address(), H160::from_low_u64_be(1));
+        let fetcher = Web3BalanceFetcher::new(
+            web3,
+            allowance_target.address(),
+            H160::from_low_u64_be(1),
+            true,
+        );
 
         // Not available until registered
         assert_eq!(fetcher.get_balance(trader.address(), token.address()), None,);

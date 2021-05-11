@@ -50,6 +50,13 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     min_order_validity_period: Duration,
+
+    /// Don't use the trace_callMany api that only some nodes support to check whether a token
+    /// should be denied.
+    /// Note that if a node does not support the api we still fallback to the less accurate call
+    /// api.
+    #[structopt(long, env = "SKIP_TRACE_API")]
+    skip_trace_api: bool,
 }
 
 pub async fn orderbook_maintenance(
@@ -136,8 +143,12 @@ async fn main() {
 
     let event_updater =
         EventUpdater::new(settlement_contract.clone(), database.clone(), sync_start);
-    let balance_fetcher =
-        Web3BalanceFetcher::new(web3.clone(), gp_allowance, settlement_contract.address());
+    let balance_fetcher = Web3BalanceFetcher::new(
+        web3.clone(),
+        gp_allowance,
+        settlement_contract.address(),
+        !args.skip_trace_api,
+    );
 
     let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
         &reqwest::Client::new(),
