@@ -2,11 +2,18 @@ pub mod solver_settlements;
 
 use self::solver_settlements::{RatedSettlement, SettlementWithSolver};
 use crate::{
-    chain, liquidity::Liquidity, liquidity_collector::LiquidityCollector, metrics::SolverMetrics,
-    settlement::Settlement, settlement_simulation, settlement_submission, solver::Solver,
+    chain,
+    liquidity::Liquidity,
+    liquidity_collector::LiquidityCollector,
+    metrics::SolverMetrics,
+    settlement::Settlement,
+    settlement_simulation,
+    settlement_submission::{self, retry::is_transaction_failure},
+    solver::Solver,
 };
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
+use ethcontract::errors::MethodError;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use itertools::{Either, Itertools};
@@ -131,7 +138,19 @@ impl Driver {
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
             }
-            Err(err) => tracing::error!("Failed to submit settlement: {:?}", err,),
+            Err(err) => {
+                // Since we simulate and only submit solutions when they used to pass before, there is no
+                // point in logging transaction failures in the form of race conditions as hard errors.
+                if err
+                    .downcast_ref::<MethodError>()
+                    .map(|e| is_transaction_failure(&e.inner))
+                    .unwrap_or(false)
+                {
+                    tracing::warn!("Failed to submit settlement: {:?}", err)
+                } else {
+                    tracing::error!("Failed to submit settlement: {:?}", err)
+                };
+            }
         }
     }
 

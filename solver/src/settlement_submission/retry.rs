@@ -12,12 +12,21 @@ use ethcontract::{
 use primitive_types::U256;
 use transaction_retry::{TransactionResult, TransactionSending};
 
+/// Failure indicating that some aspect about the signed transaction was wrong (e.g. wrong nonce, gas limit to high)
+/// and that the transaction could not be mined. This doesn't mean the transaction reverted.
 fn is_transaction_error(error: &ExecutionError) -> bool {
     // This is the error as we've seen it on openethereum nodes. The code and error messages can
     // be found in openethereum's source code in `rpc/src/v1/helpers/errors.rs`.
     // TODO: check how this looks on geth and infura. Not recognizing the error is not a serious
     // problem but it will make us sometimes log an error when there actually was no problem.
     matches!(error, ExecutionError::Web3(Web3Error::Rpc(RpcError { code, .. })) if code.code() == -32010)
+}
+
+/// Failure indicating the transaction reverted for some reason
+pub fn is_transaction_failure(error: &ExecutionError) -> bool {
+    matches!(error, ExecutionError::Failure(_))
+        || matches!(error, ExecutionError::Revert(_))
+        || matches!(error, ExecutionError::InvalidOpcode)
 }
 
 pub struct SettleResult(pub Result<(), MethodError>);
@@ -85,6 +94,7 @@ impl TransactionSending for CancelSender {
 mod tests {
     use super::*;
     use jsonrpc_core::ErrorCode;
+    use primitive_types::H256;
 
     #[test]
     fn test_submission_result_was_mined() {
@@ -104,5 +114,24 @@ mod tests {
 
         let result = SettleResult(Err(MethodError::from_parts("".into(), transaction_error)));
         assert!(!result.was_mined());
+    }
+
+    #[test]
+    fn test_is_transaction_failure() {
+        // Positives
+        assert_eq!(
+            is_transaction_failure(&ExecutionError::Failure(Default::default())),
+            true
+        );
+        assert_eq!(is_transaction_failure(&ExecutionError::Revert(None)), true);
+        assert_eq!(is_transaction_failure(&ExecutionError::InvalidOpcode), true);
+
+        // Sample negative
+        assert_eq!(
+            is_transaction_failure(&ExecutionError::ConfirmTimeout(Box::new(
+                ethcontract::transaction::TransactionResult::Hash(H256::default())
+            ))),
+            false
+        );
     }
 }
