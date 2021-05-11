@@ -116,6 +116,7 @@ impl Orderbook {
                 min_balance,
             )
             .await
+            .unwrap_or(false)
         {
             return Ok(AddOrderResult::InsufficientFunds);
         }
