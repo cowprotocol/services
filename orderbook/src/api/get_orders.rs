@@ -7,10 +7,14 @@ use model::order::Order;
 use serde::Deserialize;
 use shared::time::now_in_epoch_seconds;
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
+use warp::{
+    hyper::StatusCode,
+    reply::{self, Json, WithStatus},
+    Filter, Rejection, Reply,
+};
 
 // The default values create a filter that only includes valid orders.
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Query {
     #[serde(default = "now_in_epoch_seconds")]
@@ -29,9 +33,12 @@ struct Query {
 }
 
 impl Query {
-    fn order_filter(&self) -> OrderFilter {
+    fn order_filter(&self) -> Result<OrderFilter, &'static str> {
+        if self.owner.is_none() && self.sell_token.is_none() && self.buy_token.is_none() {
+            return Err("need to set at least one of owner, sell_token, buy_token");
+        }
         let to_h160 = |option: Option<&H160Wrapper>| option.map(|wrapper| wrapper.0);
-        OrderFilter {
+        Ok(OrderFilter {
             min_valid_to: self.min_valid_to,
             owner: to_h160(self.owner.as_ref()),
             sell_token: to_h160(self.sell_token.as_ref()),
@@ -41,21 +48,22 @@ impl Query {
             exclude_insufficient_balance: !self.include_insufficient_balance,
             exclude_unsupported_tokens: !self.include_unsupported_tokens,
             uid: None,
-        }
+        })
     }
 }
 
-pub fn get_orders_request() -> impl Filter<Extract = (OrderFilter,), Error = Rejection> + Clone {
+pub fn get_orders_request(
+) -> impl Filter<Extract = (Result<OrderFilter, &'static str>,), Error = Rejection> + Clone {
     warp::path!("orders")
         .and(warp::get())
         .and(warp::query::<Query>())
         .map(|query: Query| query.order_filter())
 }
 
-pub fn get_orders_response(result: Result<Vec<Order>>) -> impl Reply {
+pub fn get_orders_response(result: Result<Vec<Order>>) -> WithStatus<Json> {
     match result {
-        Ok(orders) => Ok(reply::with_status(reply::json(&orders), StatusCode::OK)),
-        Err(err) => Ok(convert_get_orders_error_to_reply(err)),
+        Ok(orders) => reply::with_status(reply::json(&orders), StatusCode::OK),
+        Err(err) => convert_get_orders_error_to_reply(err),
     }
 }
 
@@ -65,6 +73,13 @@ pub fn get_orders(
     get_orders_request().and_then(move |order_filter| {
         let orderbook = orderbook.clone();
         async move {
+            let order_filter = match order_filter {
+                Ok(order_filter) => order_filter,
+                Err(err) => {
+                    let err = super::error("InvalidOrderFilter", err);
+                    return Ok(warp::reply::with_status(err, StatusCode::BAD_REQUEST));
+                }
+            };
             let result = orderbook.get_orders(&order_filter).await;
             Result::<_, Infallible>::Ok(get_orders_response(result))
         }
@@ -86,11 +101,6 @@ mod tests {
             request.method("GET").filter(&filter).await
         };
 
-        let result = order_filter(request().path("/orders")).await.unwrap();
-        assert_eq!(result.owner, None);
-        assert_eq!(result.buy_token, None);
-        assert_eq!(result.sell_token, None);
-
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
         let sell = H160::from_slice(&hex!("0000000000000000000000000000000000000002"));
         let buy = H160::from_slice(&hex!("0000000000000000000000000000000000000003"));
@@ -99,7 +109,7 @@ mod tests {
             owner, sell, buy
         );
         let request = request().path(path.as_str());
-        let result = order_filter(request).await.unwrap();
+        let result = order_filter(request).await.unwrap().unwrap();
         assert_eq!(result.owner, Some(owner));
         assert_eq!(result.buy_token, Some(buy));
         assert_eq!(result.sell_token, Some(sell));
@@ -107,6 +117,17 @@ mod tests {
         assert_eq!(result.exclude_fully_executed, false);
         assert_eq!(result.exclude_invalidated, false);
         assert_eq!(result.exclude_insufficient_balance, false);
+    }
+
+    #[test]
+    fn cannot_create_too_generic_filter() {
+        let query = Query {
+            owner: None,
+            sell_token: None,
+            buy_token: None,
+            ..Default::default()
+        };
+        assert!(query.order_filter().is_err());
     }
 
     #[tokio::test]

@@ -53,6 +53,7 @@ paths:
         By default all currently valid orders are returned. The set of returned orders can be
         reduced by setting owner, sell token, buy token filters. It can be increased by disabling
         different order validity exclusion criteria.
+        At least one of owner, sellToken, buyToken has to be set.
       parameters:
         - name: owner
           in: query
@@ -181,8 +182,7 @@ paths:
     get:
       summary: Get existing Trades.
       description: |
-        By default all trades are returned.
-        Queries can be refined by specifiying owner or order_uid.
+        Exactly one of owner or order_uid has to be set.
       parameters:
         - name: owner
           in: query

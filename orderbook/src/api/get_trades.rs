@@ -32,13 +32,12 @@ impl Query {
     }
 
     fn validate(&self) -> Result<TradeFilter, TradeFilterError> {
-        // Ensure that not both owner and order_uid are specified
-        if self.order_uid.is_some() && self.owner.is_some() {
-            return Err(TradeFilterError::InvalidFilter(
-                "Cannot specify both owner and order_uid".to_owned(),
-            ));
+        match (self.order_uid.as_ref(), self.owner.as_ref()) {
+            (Some(_), None) | (None, Some(_)) => Ok(self.trade_filter()),
+            _ => Err(TradeFilterError::InvalidFilter(
+                "Must specify exactly one of owner and order_uid.".to_owned(),
+            )),
         }
-        Ok(self.trade_filter())
     }
 }
 
@@ -78,7 +77,6 @@ pub fn get_trades(db: Database) -> impl Filter<Extract = (impl Reply,), Error = 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::get_trades::TradeFilterError::InvalidFilter;
     use crate::api::response_body;
     use hex_literal::hex;
     use primitive_types::H160;
@@ -90,16 +88,9 @@ mod tests {
             let filter = get_trades_request();
             request.method("GET").filter(&filter).await
         };
-        let result = trade_filter(request().path("/trades"))
-            .await
-            .unwrap()
-            .unwrap();
-        assert_eq!(result.owner, None);
-        assert_eq!(result.order_uid, None);
 
         let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
         let owner_path = format!("/trades?owner=0x{:x}", owner);
-
         let result = trade_filter(request().path(owner_path.as_str()))
             .await
             .unwrap()
@@ -129,10 +120,11 @@ mod tests {
         let path = format!("/trades?owner=0x{:x}&orderUid={:}", owner, uid);
 
         let result = trade_filter(request().path(path.as_str())).await.unwrap();
-        let expected = Err(InvalidFilter(
-            "Cannot specify both owner and order_uid".to_owned(),
-        ));
-        assert_eq!(result, expected);
+        assert!(result.is_err());
+
+        let path = "/trades";
+        let result = trade_filter(request().path(path)).await.unwrap();
+        assert!(result.is_err());
     }
 
     #[tokio::test]
