@@ -48,6 +48,32 @@ impl Display for Slippage {
     }
 }
 
+/// Parts to split a swap.
+///
+/// This type is generic on the maximum number of splits allowed.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Amount<const MIN: usize, const MAX: usize>(usize);
+
+impl<const MIN: usize, const MAX: usize> Amount<MIN, MAX> {
+    /// Creates a parts amount from the specified count.
+    pub fn new(amount: usize) -> Result<Self> {
+        // 1Inch API only accepts a slippage from 0 to 50.
+        ensure!(
+            (MIN..=MAX).contains(&amount),
+            "parts outside of [{}, {}] range",
+            MIN,
+            MAX,
+        );
+        Ok(Amount(amount))
+    }
+}
+
+impl<const MIN: usize, const MAX: usize> Display for Amount<MIN, MAX> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
 /// A 1Inch API quote query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
@@ -69,6 +95,14 @@ pub struct SwapQuery {
     pub slippage: Slippage,
     /// Flag to disable checks of the required quantities.
     pub disable_estimate: Option<bool>,
+    /// Maximum number of token-connectors to be used in a transaction.
+    pub complexity_level: Option<Amount<0, 3>>,
+    /// Maximum amount of gas for a swap.
+    pub gas_limit: Option<u64>,
+    /// Limit maximum number of main route parts.
+    pub max_route_parts: Option<Amount<1, 50>>,
+    /// Limit maximum number of parts each main route part can be split into.
+    pub parts: Option<Amount<1, 100>>,
 }
 
 impl SwapQuery {
@@ -94,6 +128,22 @@ impl SwapQuery {
         if let Some(disable_estimate) = self.disable_estimate {
             url.query_pairs_mut()
                 .append_pair("disableEstimate", &disable_estimate.to_string());
+        }
+        if let Some(complexity_level) = self.complexity_level {
+            url.query_pairs_mut()
+                .append_pair("complexityLevel", &complexity_level.to_string());
+        }
+        if let Some(gas_limit) = self.gas_limit {
+            url.query_pairs_mut()
+                .append_pair("gasLimit", &gas_limit.to_string());
+        }
+        if let Some(max_route_parts) = self.max_route_parts {
+            url.query_pairs_mut()
+                .append_pair("maxRouteParts", &max_route_parts.to_string());
+        }
+        if let Some(parts) = self.parts {
+            url.query_pairs_mut()
+                .append_pair("parts", &parts.to_string());
         }
 
         url
@@ -248,6 +298,14 @@ mod tests {
     }
 
     #[test]
+    fn amounts_valid_range() {
+        assert!(Amount::<42, 1337>::new(41).is_err());
+        assert!(Amount::<42, 1337>::new(42).is_ok());
+        assert!(Amount::<42, 1337>::new(1337).is_ok());
+        assert!(Amount::<42, 1337>::new(1338).is_err());
+    }
+
+    #[test]
     fn swap_query_serialization() {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
@@ -257,6 +315,10 @@ mod tests {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
             disable_estimate: None,
+            complexity_level: None,
+            gas_limit: None,
+            max_route_parts: None,
+            parts: None,
         }
         .into_url(&base_url);
 
@@ -281,6 +343,10 @@ mod tests {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
             disable_estimate: Some(true),
+            complexity_level: Some(Amount::new(1).unwrap()),
+            gas_limit: Some(133700),
+            max_route_parts: Some(Amount::new(28).unwrap()),
+            parts: Some(Amount::new(42).unwrap()),
         }
         .into_url(&base_url);
 
@@ -292,7 +358,11 @@ mod tests {
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
                 &slippage=0.5\
-                &disableEstimate=true",
+                &disableEstimate=true\
+                &complexityLevel=1\
+                &gasLimit=133700\
+                &maxRouteParts=28\
+                &parts=42",
         );
     }
 
@@ -422,6 +492,10 @@ mod tests {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
                 slippage: Slippage::basis_points(50).unwrap(),
                 disable_estimate: None,
+                complexity_level: None,
+                gas_limit: None,
+                max_route_parts: None,
+                parts: None,
             })
             .await
             .unwrap();
@@ -430,7 +504,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn oneinch_swap_without_amount_checks() {
+    async fn oneinch_swap_without_amount_checks_and_splitting() {
         let swap = OneInchClient::default()
             .get_swap(SwapQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -439,6 +513,10 @@ mod tests {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
                 slippage: Slippage::basis_points(50).unwrap(),
                 disable_estimate: Some(true),
+                complexity_level: Some(Amount::new(1).unwrap()),
+                gas_limit: Some(750_000),
+                max_route_parts: Some(Amount::new(1).unwrap()),
+                parts: Some(Amount::new(1).unwrap()),
             })
             .await
             .unwrap();

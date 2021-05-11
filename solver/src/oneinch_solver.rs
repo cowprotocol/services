@@ -5,7 +5,7 @@
 
 pub mod api;
 
-use self::api::{OneInchClient, Slippage, Swap, SwapQuery};
+use self::api::{Amount, OneInchClient, Slippage, Swap, SwapQuery};
 use crate::{
     encoding::EncodedInteraction,
     interactions::Erc20ApproveInteraction,
@@ -73,6 +73,13 @@ impl OneInchSolver {
                 // Disable balance/allowance checks, as the settlement contract
                 // does not hold balances to traded tokens.
                 disable_estimate: Some(true),
+                // Use at most 1 connector token, reducing overall gas usage.
+                complexity_level: Some(Amount::new(1).unwrap()),
+                // Cap swap gas to 750K.
+                gas_limit: Some(750_000),
+                // Use only 1 main route for cheaper trades.
+                max_route_parts: Some(Amount::new(1).unwrap()),
+                parts: Some(Amount::new(1).unwrap()),
             })
             .await?;
 
