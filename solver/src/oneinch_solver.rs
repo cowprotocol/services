@@ -164,6 +164,10 @@ impl Solver for OneInchSolver {
             })
             .collect())
     }
+
+    fn name(&self) -> &'static str {
+        "1Inch"
+    }
 }
 
 impl Display for OneInchSolver {

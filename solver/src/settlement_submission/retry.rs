@@ -93,6 +93,7 @@ impl TransactionSending for CancelSender {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::Context;
     use jsonrpc_core::ErrorCode;
     use primitive_types::H256;
 
@@ -133,5 +134,16 @@ mod tests {
             ))),
             false
         );
+
+        let method_error =
+            MethodError::from_parts("foo".into(), ExecutionError::Failure(Default::default()));
+        let settle_result = SettleResult(Err(method_error));
+        let returned = settle_result.0.context("foo");
+
+        assert!(returned
+            .expect_err("expected error")
+            .downcast_ref::<MethodError>()
+            .map(|e| is_transaction_failure(&e.inner))
+            .unwrap_or(false));
     }
 }
