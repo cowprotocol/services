@@ -255,8 +255,12 @@ fn is_valid_solution(solution: &Settlement) -> bool {
             .clearing_price(order.sell_token)
             .expect("Solution should contain clearing price for sell token");
 
-        if order.sell_amount * sell_token_price < order.buy_amount * buy_token_price {
-            return false;
+        match (
+            order.sell_amount.checked_mul(sell_token_price),
+            order.buy_amount.checked_mul(buy_token_price),
+        ) {
+            (Some(sell_volume), Some(buy_volume)) if sell_volume >= buy_volume => (),
+            _ => return false,
         }
     }
 
@@ -646,28 +650,32 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            LimitOrder {
-                sell_token: token_a,
-                buy_token: token_b,
-                sell_amount: to_wei(900),
-                buy_amount: to_wei(1000),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "0".to_string(),
-            },
-            LimitOrder {
-                sell_token: token_b,
-                buy_token: token_a,
-                sell_amount: to_wei(900),
-                buy_amount: to_wei(1000),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "1".to_string(),
-            },
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_a,
+                    buy_token: token_b,
+                    sell_amount: to_wei(900),
+                    buy_amount: to_wei(1000),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .into(),
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_b,
+                    buy_token: token_a,
+                    sell_amount: to_wei(900),
+                    buy_amount: to_wei(1000),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .into(),
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
@@ -677,8 +685,7 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: amm_handler,
         };
-        let result = solve(orders.into_iter(), &pool).unwrap();
-        assert_eq!(result.trades().len(), 0);
+        assert!(solve(orders.into_iter(), &pool).is_none());
     }
 
     #[test]
@@ -774,28 +781,32 @@ mod tests {
         let token_a = Address::from_low_u64_be(0);
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
-            LimitOrder {
-                sell_token: token_a,
-                buy_token: token_b,
-                sell_amount: U256::MAX,
-                buy_amount: 1.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "0".into(),
-            },
-            LimitOrder {
-                sell_token: token_b,
-                buy_token: token_a,
-                sell_amount: 1.into(),
-                buy_amount: 1.into(),
-                kind: OrderKind::Sell,
-                partially_fillable: false,
-                fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "1".into(),
-            },
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_a,
+                    buy_token: token_b,
+                    sell_amount: U256::MAX,
+                    buy_amount: 1.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .into(),
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: token_b,
+                    buy_token: token_a,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .into(),
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
