@@ -203,7 +203,7 @@ impl HttpSolver {
                         amount: uniswap_cost,
                         token: self.token_to_string(&self.native_token),
                     },
-                    mandatory: true,
+                    mandatory: false,
                 };
                 (index.clone(), uniswap)
             })
