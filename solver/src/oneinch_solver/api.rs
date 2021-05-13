@@ -100,7 +100,7 @@ pub struct SwapQuery {
     /// Maximum amount of gas for a swap.
     pub gas_limit: Option<u64>,
     /// Limit maximum number of main route parts.
-    pub max_route_parts: Option<Amount<1, 50>>,
+    pub main_route_parts: Option<Amount<1, 50>>,
     /// Limit maximum number of parts each main route part can be split into.
     pub parts: Option<Amount<1, 100>>,
 }
@@ -130,16 +130,17 @@ impl SwapQuery {
                 .append_pair("disableEstimate", &disable_estimate.to_string());
         }
         if let Some(complexity_level) = self.complexity_level {
+            // complexity level needs to be encoded as a string despite being an in (https://docs.1inch.io/api/quote-swap)
             url.query_pairs_mut()
-                .append_pair("complexityLevel", &complexity_level.to_string());
+                .append_pair("complexityLevel", &format!("'{}'", complexity_level));
         }
         if let Some(gas_limit) = self.gas_limit {
             url.query_pairs_mut()
                 .append_pair("gasLimit", &gas_limit.to_string());
         }
-        if let Some(max_route_parts) = self.max_route_parts {
+        if let Some(main_route_parts) = self.main_route_parts {
             url.query_pairs_mut()
-                .append_pair("maxRouteParts", &max_route_parts.to_string());
+                .append_pair("mainRouteParts", &main_route_parts.to_string());
         }
         if let Some(parts) = self.parts {
             url.query_pairs_mut()
@@ -330,7 +331,7 @@ mod tests {
             disable_estimate: None,
             complexity_level: None,
             gas_limit: None,
-            max_route_parts: None,
+            main_route_parts: None,
             parts: None,
         }
         .into_url(&base_url);
@@ -358,7 +359,7 @@ mod tests {
             disable_estimate: Some(true),
             complexity_level: Some(Amount::new(1).unwrap()),
             gas_limit: Some(133700),
-            max_route_parts: Some(Amount::new(28).unwrap()),
+            main_route_parts: Some(Amount::new(28).unwrap()),
             parts: Some(Amount::new(42).unwrap()),
         }
         .into_url(&base_url);
@@ -372,9 +373,9 @@ mod tests {
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
                 &slippage=0.5\
                 &disableEstimate=true\
-                &complexityLevel=1\
+                &complexityLevel=%271%27\
                 &gasLimit=133700\
-                &maxRouteParts=28\
+                &mainRouteParts=28\
                 &parts=42",
         );
     }
@@ -507,7 +508,7 @@ mod tests {
                 disable_estimate: None,
                 complexity_level: None,
                 gas_limit: None,
-                max_route_parts: None,
+                main_route_parts: None,
                 parts: None,
             })
             .await
@@ -521,15 +522,15 @@ mod tests {
         let swap = OneInchClient::default()
             .get_swap(SwapQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
-                amount: 1_000_000_000_000_000_000u128.into(),
+                to_token_address: addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
+                amount: 100_000_000_000_000_000_000u128.into(),
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
                 slippage: Slippage::basis_points(50).unwrap(),
                 disable_estimate: Some(true),
-                complexity_level: Some(Amount::new(1).unwrap()),
+                complexity_level: Some(Amount::new(2).unwrap()),
                 gas_limit: Some(750_000),
-                max_route_parts: Some(Amount::new(1).unwrap()),
-                parts: Some(Amount::new(1).unwrap()),
+                main_route_parts: Some(Amount::new(3).unwrap()),
+                parts: Some(Amount::new(3).unwrap()),
             })
             .await
             .unwrap();

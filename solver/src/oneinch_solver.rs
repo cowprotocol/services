@@ -73,13 +73,13 @@ impl OneInchSolver {
                 // Disable balance/allowance checks, as the settlement contract
                 // does not hold balances to traded tokens.
                 disable_estimate: Some(true),
-                // Use at most 1 connector token, reducing overall gas usage.
-                complexity_level: Some(Amount::new(1).unwrap()),
+                // Use at most 2 connector tokens
+                complexity_level: Some(Amount::new(2).unwrap()),
                 // Cap swap gas to 750K.
                 gas_limit: Some(750_000),
-                // Use only 1 main route for cheaper trades.
-                max_route_parts: Some(Amount::new(1).unwrap()),
-                parts: Some(Amount::new(1).unwrap()),
+                // Use only 3 main route for cheaper trades.
+                main_route_parts: Some(Amount::new(3).unwrap()),
+                parts: Some(Amount::new(3).unwrap()),
             })
             .await?;
 
