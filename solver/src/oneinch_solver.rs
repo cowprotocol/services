@@ -232,7 +232,7 @@ mod tests {
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
         let weth = WETH9::deployed(&web3).await.unwrap();
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let solver = OneInchSolver::new(settlement, chain_id).unwrap();
         let settlement = solver

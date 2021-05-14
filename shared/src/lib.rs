@@ -4,6 +4,9 @@ pub mod baseline_solver;
 pub mod conversions;
 pub mod current_block;
 pub mod gas_price_estimation;
+pub mod http;
+#[macro_use]
+pub mod macros;
 pub mod metrics;
 pub mod network;
 pub mod pool_aggregating;
@@ -11,6 +14,7 @@ pub mod pool_fetching;
 pub mod price_estimate;
 pub mod time;
 pub mod token_info;
+pub mod token_list;
 pub mod tracing;
 pub mod transport;
 

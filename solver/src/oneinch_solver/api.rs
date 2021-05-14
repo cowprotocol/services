@@ -6,18 +6,15 @@
 
 use anyhow::{ensure, Result};
 use ethcontract::{H160, U256};
-use reqwest::{
-    header::{HeaderValue, ACCEPT},
-    Client, ClientBuilder, IntoUrl, Url,
-};
+use reqwest::{Client, IntoUrl, Url};
 use serde::{
     de::{Deserializer, Error as _},
     Deserialize,
 };
+use shared::http::default_http_client;
 use std::{
     borrow::Cow,
     fmt::{self, Display, Formatter},
-    time::Duration,
 };
 
 /// A slippage amount.
@@ -280,19 +277,6 @@ impl Default for OneInchClient {
     }
 }
 
-fn default_http_client() -> Result<Client> {
-    Ok(ClientBuilder::new()
-        .user_agent("gp-v2-services/2.0.0")
-        .default_headers(
-            vec![(ACCEPT, HeaderValue::from_static("application/json"))]
-                .into_iter()
-                .collect(),
-        )
-        .timeout(Duration::from_secs(60))
-        .https_only(true)
-        .build()?)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -323,10 +307,10 @@ mod tests {
     fn swap_query_serialization() {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
-            from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+            from_token_address: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             amount: 1_000_000_000_000_000_000u128.into(),
-            from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+            from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
             disable_estimate: None,
             complexity_level: None,
@@ -351,10 +335,10 @@ mod tests {
     fn swap_query_serialization_options_parameters() {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
-            from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+            from_token_address: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             amount: 1_000_000_000_000_000_000u128.into(),
-            from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+            from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
             disable_estimate: Some(true),
             complexity_level: Some(Amount::new(1).unwrap()),
@@ -436,10 +420,10 @@ mod tests {
             swap,
             Swap {
                 from_token: Token {
-                    address: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
+                    address: shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 },
                 to_token: Token {
-                    address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                    address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
                 },
                 from_token_amount: 1_000_000_000_000_000_000u128.into(),
                 to_token_amount: 501_739_725_821_378_713_485u128.into(),
@@ -447,19 +431,23 @@ mod tests {
                     vec![Protocol {
                         name: "WETH".to_owned(),
                         part: 100.,
-                        from_token_address: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
-                        to_token_address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        from_token_address: shared::addr!(
+                            "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+                        ),
+                        to_token_address: shared::addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                     }],
                     vec![Protocol {
                         name: "UNISWAP_V2".to_owned(),
                         part: 100.,
-                        from_token_address: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-                        to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                        from_token_address: shared::addr!(
+                            "c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                        ),
+                        to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
                     }],
                 ]],
                 tx: Transaction {
-                    from: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                    to: addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
+                    from: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+                    to: shared::addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
                     data: hex::decode(
                         "2e95b6c8\
                          0000000000000000000000000000000000000000000000000000000000000000\
@@ -490,7 +478,7 @@ mod tests {
         assert_eq!(
             spender,
             Spender {
-                address: addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
+                address: shared::addr!("11111112542d85b3ef69ae05771c2dccff4faa26"),
             }
         )
     }
@@ -500,10 +488,10 @@ mod tests {
     async fn oneinch_swap() {
         let swap = OneInchClient::default()
             .get_swap(SwapQuery {
-                from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                to_token_address: addr!("111111111117dc0aa78b770fa6a738034120c302"),
+                from_token_address: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
                 amount: 1_000_000_000_000_000_000u128.into(),
-                from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
+                from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
                 slippage: Slippage::basis_points(50).unwrap(),
                 disable_estimate: None,
                 complexity_level: None,
@@ -521,10 +509,10 @@ mod tests {
     async fn oneinch_swap_without_amount_checks_and_splitting() {
         let swap = OneInchClient::default()
             .get_swap(SwapQuery {
-                from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-                to_token_address: addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
+                from_token_address: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+                to_token_address: shared::addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
                 amount: 100_000_000_000_000_000_000u128.into(),
-                from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
+                from_address: shared::addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
                 slippage: Slippage::basis_points(50).unwrap(),
                 disable_estimate: Some(true),
                 complexity_level: Some(Amount::new(2).unwrap()),

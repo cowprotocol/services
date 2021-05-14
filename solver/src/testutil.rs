@@ -39,9 +39,3 @@ pub fn infura(network: impl AsRef<str>) -> shared::Web3 {
         Http::new(&node_url).expect("transport creation failed"),
     ))
 }
-
-macro_rules! addr {
-    ($val:literal) => {
-        ::ethcontract::H160(::hex_literal::hex!($val))
-    };
-}
