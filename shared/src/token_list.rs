@@ -22,8 +22,8 @@ pub struct Token {
 impl TokenList {
     pub async fn from_url(url: impl IntoUrl, chain_id: u64) -> Result<Self> {
         let client = default_http_client()?;
-        let model: Vec<TokenModel> = client.get(url).send().await?.json().await?;
-        Ok(Self::from_tokens(model, chain_id))
+        let model: TokenListModel = client.get(url).send().await?.json().await?;
+        Ok(Self::from_tokens(model.tokens, chain_id))
     }
 
     fn from_tokens(tokens: Vec<TokenModel>, chain_id: u64) -> Self {
