@@ -9,6 +9,7 @@ use shared::{
     pool_aggregating::{BaselineSources, PoolAggregator},
     price_estimate::BaselinePriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
+    token_list::TokenList,
     transport::LoggingTransport,
 };
 use solver::{
@@ -117,6 +118,15 @@ struct Arguments {
         parse(try_from_str = shared::arguments::wei_from_base_unit)
     )]
     min_order_size_one_inch: U256,
+
+    /// The list of tokens our settlement contract is willing to buy when settling trades
+    /// without external liquidity
+    #[structopt(
+        long,
+        env = "MARKET_MAKEABLE_TOKEN_LIST",
+        default_value = "https://tokens.coingecko.com/uniswap/all.json"
+    )]
+    market_makable_token_list: String,
 }
 
 #[tokio::main]
@@ -209,6 +219,10 @@ async fn main() {
         uniswap_like_liquidity,
         orderbook_api,
     };
+    let market_makable_token_list = TokenList::from_url(&args.market_makable_token_list, chain_id)
+        .await
+        .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
+        .ok();
     let mut driver = Driver::new(
         settlement_contract,
         liquidity_collector,
@@ -224,6 +238,7 @@ async fn main() {
         network_id,
         args.max_merged_settlements,
         args.solver_time_limit,
+        market_makable_token_list,
     );
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());

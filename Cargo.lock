@@ -522,6 +522,7 @@ dependencies = [
  "ethcontract",
  "hex-literal",
  "lazy_static",
+ "maplit",
  "model",
  "orderbook",
  "prometheus",

@@ -10,6 +10,7 @@ contracts = { path = "../contracts" }
 ethcontract = { version = "0.11",  default-features = false, features = ["http"] }
 hex-literal = "0.3"
 lazy_static = "1.4"
+maplit = "1.0"
 model = { path = "../model" }
 orderbook = { path = "../orderbook" }
 prometheus = "0.12"

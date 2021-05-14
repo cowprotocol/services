@@ -20,7 +20,7 @@ use itertools::{Either, Itertools};
 use model::order::BUY_ETH_ADDRESS;
 use num::BigRational;
 use primitive_types::H160;
-use shared::{price_estimate::PriceEstimating, Web3};
+use shared::{price_estimate::PriceEstimating, token_list::TokenList, Web3};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -46,6 +46,7 @@ pub struct Driver {
     network_id: String,
     max_merged_settlements: usize,
     solver_time_limit: Duration,
+    market_makable_token_list: Option<TokenList>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -64,6 +65,7 @@ impl Driver {
         network_id: String,
         max_merged_settlements: usize,
         solver_time_limit: Duration,
+        market_makable_token_list: Option<TokenList>,
     ) -> Self {
         Self {
             settlement_contract,
@@ -80,6 +82,7 @@ impl Driver {
             network_id,
             max_merged_settlements,
             solver_time_limit,
+            market_makable_token_list,
         }
     }
 
@@ -156,9 +159,19 @@ impl Driver {
         }
     }
 
-    async fn can_settle(&self, settlement: RatedSettlement) -> Result<bool> {
+    async fn can_settle_without_liquidity(&self, settlement: &RatedSettlement) -> Result<bool> {
+        // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
+        if !self
+            .market_makable_token_list
+            .as_ref()
+            .map(|list| is_only_selling_trusted_tokens(&settlement.settlement.settlement, list))
+            .unwrap_or(false)
+        {
+            return Ok(false);
+        }
+
         let simulations = settlement_simulation::simulate_settlements(
-            chain![settlement.into()],
+            chain![settlement.without_onchain_liquidity().into()],
             &self.settlement_contract,
             &self.web3,
             &self.network_id,
@@ -344,7 +357,7 @@ impl Driver {
         }) {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
-                .can_settle(settlement.without_onchain_liquidity())
+                .can_settle_without_liquidity(&settlement)
                 .await
                 .unwrap_or(false)
             {
@@ -428,14 +441,31 @@ fn liquidity_with_price(
     liquidity
 }
 
+fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
+    !settlement.encoder.trades().iter().any(|trade| {
+        token_list
+            .get(&trade.order.order_creation.sell_token)
+            .is_none()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder};
+    use crate::{
+        liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder},
+        settlement::Trade,
+    };
     use maplit::hashmap;
-    use model::{order::OrderKind, TokenPair};
+    use model::{
+        order::{Order, OrderCreation, OrderKind},
+        TokenPair,
+    };
     use num::{rational::Ratio, traits::One};
-    use shared::price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator};
+    use shared::{
+        price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator},
+        token_list::Token,
+    };
 
     #[tokio::test]
     async fn collect_estimated_prices_adds_prices_for_buy_and_sell_token_of_limit_orders() {
@@ -545,5 +575,54 @@ mod tests {
         assert!(
             matches!(&filtered[0], Liquidity::Limit(order) if order.sell_token == tokens[0] && order.buy_token == tokens[1])
         );
+    }
+
+    #[test]
+    fn test_is_only_selling_trusted_tokens() {
+        let good_token = H160::from_low_u64_be(1);
+        let another_good_token = H160::from_low_u64_be(2);
+        let bad_token = H160::from_low_u64_be(3);
+
+        let token_list = TokenList::new(hashmap! {
+            good_token => Token {
+                address: good_token,
+                symbol: "Foo".into(),
+                name: "FooCoin".into(),
+                decimals: 18,
+            },
+            another_good_token => Token {
+                address: another_good_token,
+                symbol: "Bar".into(),
+                name: "BarCoin".into(),
+                decimals: 18,
+            }
+        });
+
+        let trade = |token| Trade {
+            order: Order {
+                order_creation: OrderCreation {
+                    sell_token: token,
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let settlement = Settlement::with_trades(
+            HashMap::new(),
+            vec![trade(good_token), trade(another_good_token)],
+        );
+        assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
+
+        let settlement = Settlement::with_trades(
+            HashMap::new(),
+            vec![
+                trade(good_token),
+                trade(another_good_token),
+                trade(bad_token),
+            ],
+        );
+        assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
     }
 }
