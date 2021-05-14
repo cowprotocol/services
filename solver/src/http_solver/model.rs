@@ -43,6 +43,7 @@ pub struct UniswapModel {
 pub struct TokenInfoModel {
     pub decimals: Option<u32>,
     pub external_price: Option<f64>,
+    pub normalize_priority: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
