@@ -189,7 +189,13 @@ impl PriceEstimating for BaselinePriceEstimator {
         let trades = path.len() - 1;
         // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
         // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
-        return Ok(U256::from(50_000) + 60_000 * trades);
+        const BASELINE_GAS_PER_HOP: u64 = 60_000;
+        const BASELINE_FIXED_OVERHEAD: u64 = 50_000;
+        // Extrapolated from gp-v2-contract's `yarn bench:uniswap`
+        const GP_OVERHEAD: u64 = 90_000;
+        return Ok(U256::from(GP_OVERHEAD)
+            + BASELINE_FIXED_OVERHEAD
+            + BASELINE_GAS_PER_HOP * trades as u64);
     }
 }
 
@@ -598,7 +604,7 @@ mod tests {
                     .estimate_gas(token_a, token_b, 1.into(), *kind)
                     .await
                     .unwrap(),
-                170_000.into()
+                260_000.into()
             );
         }
 
@@ -609,7 +615,7 @@ mod tests {
                     .estimate_gas(token_b, token_a, 1.into(), *kind)
                     .await
                     .unwrap(),
-                110_000.into()
+                200_000.into()
             );
         }
     }
