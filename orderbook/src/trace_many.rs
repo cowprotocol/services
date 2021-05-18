@@ -1,5 +1,4 @@
-use anyhow::{anyhow, Result};
-use serde_json::Value;
+use anyhow::{anyhow, Context, Result};
 use shared::Web3;
 use web3::{
     types::{BlockNumber, BlockTrace, CallRequest, TraceType},
@@ -7,11 +6,9 @@ use web3::{
 };
 
 // Use the trace_callMany api https://openethereum.github.io/JSONRPC-trace-module#trace_callmany
-// api to simulate whether these call requests if applied together in order would succeed.
+// api to simulate these call requests applied together one after another.
 // Err if communication with the node failed.
-// Ok(true) if transactions simulate without reverting
-// Ok(false) if transactions simulate with at least one revert.
-pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<bool> {
+pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<BlockTrace>> {
     let transport = web3.transport();
     let requests = requests
         .into_iter()
@@ -28,14 +25,20 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<bool>
         serde_json::to_value(block)?,
     ];
     let response = transport.execute("trace_callMany", params).await?;
-    handle_trace_many_response(response)
+    serde_json::from_value(response).context("failed to decode response")
 }
 
-// Same return value as above but factored out for easier testing.
-fn handle_trace_many_response(response: Value) -> Result<bool> {
-    let traces: Vec<BlockTrace> = serde_json::from_value(response)?;
+// Check the return value of trace_many for whether all top level transactions succeeded (did not
+// revert).
+// Err if the response is missing trace data.
+// Ok(true) if transactions simulate without reverting
+// Ok(false) if transactions simulate with at least one revert.
+pub fn all_calls_succeeded(traces: &[BlockTrace]) -> Result<bool> {
     for trace in traces {
-        let transaction_trace = trace.trace.ok_or_else(|| anyhow!("trace not set"))?;
+        let transaction_trace = trace
+            .trace
+            .as_ref()
+            .ok_or_else(|| anyhow!("trace not set"))?;
         let first = transaction_trace
             .first()
             .ok_or_else(|| anyhow!("expected at least one trace"))?;
@@ -52,18 +55,8 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn communication_fails() {
-        let result = handle_trace_many_response(Value::Null);
-        assert!(result.is_err());
-
-        let response = json!([{"output": "0x", "trace": []}]);
-        let result = handle_trace_many_response(response);
-        assert!(result.is_err());
-    }
-
-    #[test]
     fn ok_true() {
-        let response = json!(
+        let response: Vec<BlockTrace> = serde_json::from_value(json!(
         [{
             "output": "0x",
             "trace": [{
@@ -79,15 +72,15 @@ mod tests {
               },
               "type": "call"
             }],
-          }]);
-
-        let result = handle_trace_many_response(response);
+          }]))
+        .unwrap();
+        let result = all_calls_succeeded(&response);
         assert!(result.unwrap());
     }
 
     #[test]
     fn ok_false() {
-        let response = json!(
+        let response: Vec<BlockTrace> = serde_json::from_value(json!(
         [{
             "output": "0x",
             "trace": [{
@@ -104,9 +97,10 @@ mod tests {
               "type": "call",
               "error": "Reverted"
             }],
-          }]);
+          }]))
+        .unwrap();
 
-        let result = handle_trace_many_response(response);
+        let result = all_calls_succeeded(&response);
         assert!(!result.unwrap());
     }
 }
