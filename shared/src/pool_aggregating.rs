@@ -14,38 +14,44 @@ arg_enum! {
     }
 }
 
+pub async fn pair_providers(
+    sources: &[BaselineSources],
+    chain_id: u64,
+    web3: &Web3,
+) -> Vec<Arc<dyn AmmPairProvider>> {
+    let mut providers: Vec<Arc<dyn AmmPairProvider>> = Vec::new();
+    for source in sources {
+        providers.push(match source {
+            BaselineSources::Uniswap => Arc::new(UniswapPairProvider {
+                factory: contracts::UniswapV2Factory::deployed(web3)
+                    .await
+                    .expect("couldn't load deployed uniswap router"),
+                chain_id,
+            }),
+            BaselineSources::Sushiswap => Arc::new(SushiswapPairProvider {
+                factory: contracts::SushiswapV2Factory::deployed(web3)
+                    .await
+                    .expect("couldn't load deployed sushiswap router"),
+            }),
+        })
+    }
+    providers
+}
+
 pub struct PoolAggregator {
     pub pool_fetchers: Vec<PoolFetcher>,
 }
 
 impl PoolAggregator {
-    pub async fn from_sources(sources: Vec<BaselineSources>, chain_id: u64, web3: Web3) -> Self {
-        let mut pool_fetchers = vec![];
-        for source in sources.clone() {
-            let pair_provider: Arc<dyn AmmPairProvider>;
-            match source {
-                BaselineSources::Uniswap => {
-                    pair_provider = Arc::new(UniswapPairProvider {
-                        factory: contracts::UniswapV2Factory::deployed(&web3)
-                            .await
-                            .expect("couldn't load deployed uniswap router"),
-                        chain_id,
-                    });
-                }
-                BaselineSources::Sushiswap => {
-                    pair_provider = Arc::new(SushiswapPairProvider {
-                        factory: contracts::SushiswapV2Factory::deployed(&web3)
-                            .await
-                            .expect("couldn't load deployed sushiswap router"),
-                    });
-                }
-            }
-            pool_fetchers.push(PoolFetcher {
+    pub async fn from_providers(pair_providers: &[Arc<dyn AmmPairProvider>], web3: &Web3) -> Self {
+        let pool_fetchers = pair_providers
+            .iter()
+            .cloned()
+            .map(|pair_provider| PoolFetcher {
                 pair_provider,
                 web3: web3.clone(),
             })
-        }
-        tracing::info!("Built Pool Aggregator from sources: {:?}", sources);
+            .collect();
         Self { pool_fetchers }
     }
 }

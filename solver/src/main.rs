@@ -6,7 +6,7 @@ use shared::{
     amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
     metrics::serve_metrics,
     network::network_name,
-    pool_aggregating::{BaselineSources, PoolAggregator},
+    pool_aggregating::{self, BaselineSources, PoolAggregator},
     price_estimate::BaselinePriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
@@ -113,7 +113,7 @@ struct Arguments {
     /// traded in order to use the 1Inch solver.
     #[structopt(
         long,
-        env = "MIN_ORDER_SIZE_ONE_INCH", 
+        env = "MIN_ORDER_SIZE_ONE_INCH",
         default_value = "5",
         parse(try_from_str = shared::arguments::wei_from_base_unit)
     )]
@@ -185,9 +185,11 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let pool_aggregator =
-        PoolAggregator::from_sources(args.shared.baseline_sources.clone(), chain_id, web3.clone())
-            .await;
+    let pair_providers =
+        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
+
+    let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
+
     // TODO - use Filtered-Cached PoolFetchers here too.
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_aggregator),

@@ -14,7 +14,7 @@ use orderbook::{
 use prometheus::Registry;
 use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
-    pool_aggregating::PoolAggregator,
+    pool_aggregating::{self, PoolAggregator},
     pool_fetching::{CachedPoolFetcher, FilteredPoolFetcher},
     price_estimate::BaselinePriceEstimator,
     transport::LoggingTransport,
@@ -173,8 +173,11 @@ async fn main() {
     );
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
-    let pool_aggregator =
-        PoolAggregator::from_sources(args.shared.baseline_sources, chain_id, web3.clone()).await;
+
+    let pair_providers =
+        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
+
+    let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
     let cached_pool_fetcher =
         CachedPoolFetcher::new(Box::new(pool_aggregator), current_block_stream.clone());
     let pool_fetcher =
