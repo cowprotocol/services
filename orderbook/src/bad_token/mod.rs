@@ -1,3 +1,4 @@
+pub mod cache;
 pub mod trace_call;
 
 use anyhow::Result;
