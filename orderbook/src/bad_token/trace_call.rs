@@ -1,3 +1,4 @@
+use super::{BadTokenDetecting, TokenQuality};
 use crate::trace_many;
 use anyhow::{anyhow, bail, ensure, Result};
 use contracts::ERC20;
@@ -11,24 +12,11 @@ use ethcontract::{
 use model::TokenPair;
 use primitive_types::{H160, U256};
 use shared::{amm_pair_provider::AmmPairProvider, Web3};
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
 };
-
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum TokenQuality {
-    Good { gas_per_transfer: U256 },
-    Bad { reason: String },
-    NoPool,
-}
-
-impl TokenQuality {
-    pub fn is_good(&self) -> bool {
-        matches!(self, Self::Good { .. })
-    }
-}
 
 /// Detects whether a token is "bad" (works in unexpected ways that are problematic for solving) by
 /// simulating several transfers of a token. To find an initial address to transfer from we use
@@ -37,24 +25,29 @@ impl TokenQuality {
 /// - we cannot find an amm pool of the token to one of the base tokens
 /// - transfer into the settlement contract or back out fails
 /// - a transfer loses total balance
-pub struct BadTokenDetector {
+pub struct TraceCallDetector {
     pub web3: Web3,
-    pub pools: Vec<Box<dyn AmmPairProvider>>,
+    pub pools: Vec<Arc<dyn AmmPairProvider>>,
     pub base_tokens: HashSet<H160>,
     pub settlement_contract: H160,
 }
 
-impl BadTokenDetector {
-    pub async fn detect(&self, token: H160) -> Result<TokenQuality> {
+#[async_trait::async_trait]
+impl BadTokenDetecting for TraceCallDetector {
+    async fn detect(&self, token: H160) -> Result<TokenQuality> {
+        self.detect_impl(token).await
+    }
+}
+
+impl TraceCallDetector {
+    pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
         let instance = ERC20::at(&self.web3, token);
         let decimals = match instance.decimals().call().await {
             Ok(decimals) => decimals,
             Err(err) => {
                 return match EthcontractError::classify(&err) {
                     EthcontractError::Node => Err(err.into()),
-                    EthcontractError::Contract => Ok(TokenQuality::Bad {
-                        reason: "failed to get decimals".to_string(),
-                    }),
+                    EthcontractError::Contract => Ok(TokenQuality::bad("failed to get decimals")),
                 }
             }
         };
@@ -63,11 +56,7 @@ impl BadTokenDetector {
                 tracing::debug!("testing token {:?} with amount {}", token, amount);
                 amount
             }
-            None => {
-                return Ok(TokenQuality::Bad {
-                    reason: "decimals too large".to_string(),
-                });
-            }
+            None => return Ok(TokenQuality::bad("decimals too large")),
         };
 
         let take_from = match self.find_largest_pool_owning_token(token).await? {
@@ -75,9 +64,7 @@ impl BadTokenDetector {
                 tracing::debug!("testing token {:?} with pool {:?}", token, address);
                 address
             }
-            _ => {
-                return Ok(TokenQuality::NoPool);
-            }
+            _ => return Ok(TokenQuality::bad("no pool with enough balance")),
         };
 
         // We transfer one unit (base on decimals) of the token from the amm pool into the
@@ -181,54 +168,34 @@ impl BadTokenDetector {
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::Bad { reason }),
+            Err(reason) => return Ok(TokenQuality::bad(reason)),
         };
         let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::Bad { reason }),
+            Err(reason) => return Ok(TokenQuality::bad(reason)),
         };
 
         let balance_before_in = match decode_u256(&traces[0]) {
             Ok(balance) => balance,
-            Err(_) => {
-                return Ok(TokenQuality::Bad {
-                    reason: "can't decode initial settlement balance".to_string(),
-                })
-            }
+            Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
         let balance_after_in = match decode_u256(&traces[2]) {
             Ok(balance) => balance,
-            Err(_) => {
-                return Ok(TokenQuality::Bad {
-                    reason: "can't decode middle settlement balance".to_string(),
-                })
-            }
+            Err(_) => return Ok(TokenQuality::bad("can't decode middle settlement balance")),
         };
         let balance_after_out = match decode_u256(&traces[5]) {
             Ok(balance) => balance,
-            Err(_) => {
-                return Ok(TokenQuality::Bad {
-                    reason: "can't decode final settlement balance".to_string(),
-                })
-            }
+            Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
         };
 
         let balance_recpient_before = match decode_u256(&traces[3]) {
             Ok(balance) => balance,
-            Err(_) => {
-                return Ok(TokenQuality::Bad {
-                    reason: "can't decode recipient balance before".to_string(),
-                })
-            }
+            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
         };
 
         let balance_recipient_after = match decode_u256(&traces[6]) {
             Ok(balance) => balance,
-            Err(_) => {
-                return Ok(TokenQuality::Bad {
-                    reason: "can't decode recipient balance after".to_string(),
-                })
-            }
+            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance after")),
         };
 
         tracing::debug!(%amount, %balance_before_in, %balance_after_in, %balance_after_out);
@@ -237,24 +204,21 @@ impl BadTokenDetector {
         // an amount transferred like an anti fee.
 
         if balance_after_in != balance_before_in + amount {
-            return Ok(TokenQuality::Bad {
-                reason: "balance after in transfer does not match".to_string(),
-            });
+            return Ok(TokenQuality::bad(
+                "balance after in transfer does not match",
+            ));
         }
         if balance_after_out != balance_before_in {
-            return Ok(TokenQuality::Bad {
-                reason: "balance after out transfer does not match".to_string(),
-            });
+            return Ok(TokenQuality::bad(
+                "balance after out transfer does not match",
+            ));
         }
         if balance_recpient_before + amount != balance_recipient_after {
-            return Ok(TokenQuality::Bad {
-                reason: "balance of recipient does not match".to_string(),
-            });
+            return Ok(TokenQuality::bad("balance of recipient does not match"));
         }
 
-        Ok(TokenQuality::Good {
-            gas_per_transfer: (gas_in + gas_out) / 2,
-        })
+        let _gas_per_transfer = (gas_in + gas_out) / 2;
+        Ok(TokenQuality::Good)
     }
 }
 
@@ -422,16 +386,14 @@ mod tests {
             },
         ];
 
-        let result = BadTokenDetector::handle_response(traces, 1.into()).unwrap();
-        let expected = TokenQuality::Good {
-            gas_per_transfer: 2.into(),
-        };
+        let result = TraceCallDetector::handle_response(traces, 1.into()).unwrap();
+        let expected = TokenQuality::Good;
         assert_eq!(result, expected);
     }
 
     #[test]
     fn arbitrary_recipient_() {
-        println!("{:?}", BadTokenDetector::arbitrary_recipient());
+        println!("{:?}", TraceCallDetector::arbitrary_recipient());
     }
 
     // cargo test -p orderbook mainnet_tokens -- --nocapture
@@ -564,16 +526,16 @@ mod tests {
 
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let uniswap = Box::new(UniswapPairProvider {
+        let uniswap = Arc::new(UniswapPairProvider {
             factory: contracts::UniswapV2Factory::deployed(&web3).await.unwrap(),
             chain_id,
         });
-        let sushiswap = Box::new(SushiswapPairProvider {
+        let sushiswap = Arc::new(SushiswapPairProvider {
             factory: contracts::SushiswapV2Factory::deployed(&web3)
                 .await
                 .unwrap(),
         });
-        let token_cache = BadTokenDetector {
+        let token_cache = TraceCallDetector {
             web3,
             settlement_contract: settlement.address(),
             pools: vec![uniswap, sushiswap],
