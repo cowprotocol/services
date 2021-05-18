@@ -12,6 +12,7 @@ use crate::amm_pair_provider::AmmPairProvider;
 use crate::current_block::{Block, CurrentBlockStream};
 
 const MAX_BATCH_SIZE: usize = 100;
+const POOL_SWAP_GAS_COST: usize = 60_000;
 
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
 /// `reserve_a` refers to the reserve of the excluded token.
@@ -182,6 +183,10 @@ impl BaselineSolvable for Pool {
             assert_eq!(token, quote_token);
             price
         })
+    }
+
+    fn gas_cost(&self) -> usize {
+        POOL_SWAP_GAS_COST
     }
 }
 

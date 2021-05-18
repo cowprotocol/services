@@ -22,7 +22,7 @@ pub struct EthAdapter<T> {
 
 pub struct MinFeeCalculator {
     price_estimator: Arc<dyn PriceEstimating>,
-    gas_estimator: Box<dyn GasPriceEstimating>,
+    gas_estimator: Arc<dyn GasPriceEstimating>,
     native_token: H160,
     measurements: Box<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
@@ -106,7 +106,7 @@ fn normalize_buy_token(buy_token: H160, weth: H160) -> H160 {
 impl EthAwareMinFeeCalculator {
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
-        gas_estimator: Box<dyn GasPriceEstimating>,
+        gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         database: Database,
         discount_factor: f64,
@@ -156,7 +156,7 @@ where
 impl MinFeeCalculator {
     fn new(
         price_estimator: Arc<dyn PriceEstimating>,
-        gas_estimator: Box<dyn GasPriceEstimating>,
+        gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         database: Database,
         discount_factor: f64,
@@ -424,7 +424,7 @@ mod tests {
 
     impl MinFeeCalculator {
         fn new_for_test(
-            gas_estimator: Box<dyn GasPriceEstimating>,
+            gas_estimator: Arc<dyn GasPriceEstimating>,
             price_estimator: Arc<dyn PriceEstimating>,
             now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
         ) -> Self {
@@ -445,7 +445,7 @@ mod tests {
         let gas_price = Arc::new(Mutex::new(100.0));
         let time = Arc::new(Mutex::new(Utc::now()));
 
-        let gas_price_estimator = Box::new(FakeGasPriceEstimator(gas_price.clone()));
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
         let time_copy = time.clone();
         let now = move || *time_copy.lock().unwrap();
@@ -475,7 +475,7 @@ mod tests {
     async fn accepts_fee_if_higher_than_current_min_fee() {
         let gas_price = Arc::new(Mutex::new(100.0));
 
-        let gas_price_estimator = Box::new(FakeGasPriceEstimator(gas_price.clone()));
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
 
         let fee_estimator = MinFeeCalculator::new_for_test(
@@ -505,7 +505,7 @@ mod tests {
         let unsupported_token = H160::from_low_u64_be(1);
         let supported_token = H160::from_low_u64_be(2);
 
-        let gas_price_estimator = Box::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
         let unsupported_tokens = hashset! {unsupported_token};
 

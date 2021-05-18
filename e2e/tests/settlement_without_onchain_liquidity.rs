@@ -170,7 +170,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         liquidity_collector,
         price_estimator,
         vec![Box::new(solver)],
-        Box::new(web3.clone()),
+        Arc::new(web3.clone()),
         Duration::from_secs(1),
         Duration::from_secs(30),
         native_token,

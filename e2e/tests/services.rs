@@ -135,14 +135,17 @@ impl OrderbookServices {
             }),
             current_block_stream,
         );
+        let gas_estimator = Arc::new(web3.clone());
         let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
+            gas_estimator.clone(),
             HashSet::new(),
             HashSet::new(),
+            native_token,
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
-            Box::new(web3.clone()),
+            gas_estimator,
             native_token,
             db.clone(),
             1.0,

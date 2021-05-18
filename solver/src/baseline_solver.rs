@@ -43,6 +43,10 @@ impl BaselineSolvable for AmmOrder {
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
         amm_to_pool(self).get_spot_price(base_token, quote_token)
     }
+
+    fn gas_cost(&self) -> usize {
+        amm_to_pool(self).gas_cost()
+    }
 }
 
 impl BaselineSolver {

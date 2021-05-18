@@ -175,13 +175,15 @@ async fn main() {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
-        &reqwest::Client::new(),
-        &web3,
-        args.shared.gas_estimators.as_slice(),
-    )
-    .await
-    .expect("failed to create gas price estimator");
+    let gas_price_estimator = Arc::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            &reqwest::Client::new(),
+            &web3,
+            args.shared.gas_estimators.as_slice(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    );
 
     let pool_aggregator =
         PoolAggregator::from_sources(args.shared.baseline_sources.clone(), chain_id, web3.clone())
@@ -189,8 +191,10 @@ async fn main() {
     // TODO - use Filtered-Cached PoolFetchers here too.
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_aggregator),
+        gas_price_estimator.clone(),
         base_tokens.clone(),
         args.shared.unsupported_tokens.into_iter().collect(),
+        native_token_contract.address(),
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
         args.shared.baseline_sources,
@@ -228,7 +232,7 @@ async fn main() {
         liquidity_collector,
         price_estimator,
         solver,
-        Box::new(gas_price_estimator),
+        gas_price_estimator,
         args.target_confirm_time,
         args.settle_interval,
         native_token_contract.address(),

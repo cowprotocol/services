@@ -18,6 +18,9 @@ pub trait BaselineSolvable {
     // E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD), the spot price is 125/100.
     // Implementation may assume no amount is actually being traded, e.g. no fee incurs
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational>;
+
+    // Returns the approximate amount of gas that using this piece of liquidity would incur
+    fn gas_cost(&self) -> usize;
 }
 
 pub struct Estimate<'a, V, L> {
@@ -25,6 +28,15 @@ pub struct Estimate<'a, V, L> {
     pub value: V,
     // The liquidity path used to derive at that estimate
     pub path: Vec<&'a L>,
+}
+
+impl<'a, V, L: BaselineSolvable> Estimate<'a, V, L> {
+    pub fn gas_cost(&self) -> usize {
+        // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
+        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
+        let cost_of_hops: usize = self.path.iter().map(|item| item.gas_cost()).sum();
+        50_000 + cost_of_hops
+    }
 }
 
 // Given a path and sell amount (first token of the path) estimates the buy amount (last token of the path) and

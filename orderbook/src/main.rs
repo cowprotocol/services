@@ -150,13 +150,15 @@ async fn main() {
         !args.skip_trace_api,
     );
 
-    let gas_price_estimator = shared::gas_price_estimation::create_priority_estimator(
-        &reqwest::Client::new(),
-        &web3,
-        args.shared.gas_estimators.as_slice(),
-    )
-    .await
-    .expect("failed to create gas price estimator");
+    let gas_price_estimator = Arc::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            &reqwest::Client::new(),
+            &web3,
+            args.shared.gas_estimators.as_slice(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    );
 
     let unsupported_tokens = HashSet::from_iter(args.shared.unsupported_tokens);
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
@@ -180,12 +182,14 @@ async fn main() {
 
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_fetcher),
+        gas_price_estimator.clone(),
         base_tokens,
         unsupported_tokens.clone(),
+        native_token.address(),
     ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
-        Box::new(gas_price_estimator),
+        gas_price_estimator,
         native_token.address(),
         database.clone(),
         args.shared.fee_discount_factor,
