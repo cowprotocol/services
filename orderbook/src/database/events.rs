@@ -1,7 +1,14 @@
 use super::Database;
 use crate::conversions::*;
-use anyhow::{Context, Result};
-use ethcontract::{H160, H256, U256};
+use anyhow::{anyhow, Context, Result};
+use contracts::g_pv_2_settlement::{
+    event_data::{
+        OrderInvalidated as ContractInvalidation, Settlement as ContractSettlement,
+        Trade as ContractTrade,
+    },
+    Event as ContractEvent,
+};
+use ethcontract::{Event as EthContractEvent, EventMetadata, H160, H256, U256};
 use futures::FutureExt;
 use model::order::OrderUid;
 use sqlx::{Connection, Executor, Postgres, Transaction};
@@ -90,6 +97,31 @@ impl Database {
             })
             .await?;
         Ok(())
+    }
+
+    pub fn contract_to_db_events(
+        &self,
+        contract_events: Vec<EthContractEvent<ContractEvent>>,
+    ) -> Result<Vec<(EventIndex, Event)>> {
+        contract_events
+            .into_iter()
+            .filter_map(|EthContractEvent { data, meta }| {
+                let meta = match meta {
+                    Some(meta) => meta,
+                    None => return Some(Err(anyhow!("event without metadata"))),
+                };
+                match data {
+                    ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)),
+                    ContractEvent::Settlement(event) => Some(Ok(convert_settlement(&event, &meta))),
+                    ContractEvent::OrderInvalidated(event) => {
+                        Some(convert_invalidation(&event, &meta))
+                    }
+                    // TODO: handle new events
+                    ContractEvent::Interaction(_) => None,
+                    ContractEvent::PreSignature(_) => None,
+                }
+            })
+            .collect::<Result<Vec<_>>>()
     }
 }
 
@@ -194,6 +226,57 @@ async fn insert_settlement(
         )
         .await?;
     Ok(())
+}
+
+fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(EventIndex, Event)> {
+    let order_uid = OrderUid(
+        trade
+            .order_uid
+            .as_slice()
+            .try_into()
+            .context("trade event order_uid has wrong number of bytes")?,
+    );
+    let event = Trade {
+        order_uid,
+        sell_amount_including_fee: trade.sell_amount,
+        buy_amount: trade.buy_amount,
+        fee_amount: trade.fee_amount,
+    };
+    Ok((event_meta_to_index(meta), Event::Trade(event)))
+}
+
+fn convert_settlement(
+    settlement: &ContractSettlement,
+    meta: &EventMetadata,
+) -> (EventIndex, Event) {
+    let event = Settlement {
+        solver: settlement.solver,
+        transaction_hash: meta.transaction_hash,
+    };
+    (event_meta_to_index(meta), Event::Settlement(event))
+}
+
+fn convert_invalidation(
+    invalidation: &ContractInvalidation,
+    meta: &EventMetadata,
+) -> Result<(EventIndex, Event)> {
+    let order_uid = OrderUid(
+        invalidation
+            .order_uid
+            .as_slice()
+            .try_into()
+            .context("invalidation event order_uid has wrong number of bytes")?,
+    );
+    let event = Invalidation { order_uid };
+    Ok((event_meta_to_index(meta), Event::Invalidation(event)))
+}
+
+// Converts EventMetaData to DbEventIndex struct
+fn event_meta_to_index(meta: &EventMetadata) -> EventIndex {
+    EventIndex {
+        block_number: meta.block_number,
+        log_index: meta.log_index as u64,
+    }
 }
 
 #[cfg(test)]
