@@ -14,6 +14,7 @@ pub trait SolverMetrics {
     fn settlement_simulation_succeeded(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, successful: bool, solver: &'static str);
+    fn orders_matched_but_not_settled(&self, count: usize);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -24,6 +25,7 @@ pub struct Metrics {
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
+    matched_but_unsettled_orders: IntCounter,
 }
 
 impl Metrics {
@@ -76,6 +78,12 @@ impl Metrics {
         )?;
         registry.register(Box::new(settlement_submissions.clone()))?;
 
+        let matched_but_unsettled_orders = IntCounter::new(
+            "gp_v2_solver_orders_matched_not_settled",
+            "Counter for the number of orders for which at least one solver computed an execution which was not chosen in this run-loop",
+        )?;
+        registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -83,6 +91,7 @@ impl Metrics {
             liquidity,
             settlement_simulations,
             settlement_submissions,
+            matched_but_unsettled_orders,
         })
     }
 }
@@ -141,6 +150,10 @@ impl SolverMetrics for Metrics {
             .with_label_values(&[result, solver])
             .inc()
     }
+
+    fn orders_matched_but_not_settled(&self, count: usize) {
+        self.matched_but_unsettled_orders.inc_by(count as u64);
+    }
 }
 
 #[derive(Default)]
@@ -153,6 +166,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_simulation_succeeded(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: bool, _: &'static str) {}
+    fn orders_matched_but_not_settled(&self, _: usize) {}
 }
 
 #[cfg(test)]
@@ -168,5 +182,6 @@ mod tests {
         metrics.settlement_simulation_succeeded("test");
         metrics.settlement_simulation_failed("test");
         metrics.settlement_submitted(true, "test");
+        metrics.orders_matched_but_not_settled(20);
     }
 }

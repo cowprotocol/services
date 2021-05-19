@@ -258,6 +258,27 @@ impl Driver {
         }
     }
 
+    // Record metric with the amount of orders that were matched but not settled in this runloop (effectively queued for the next one)
+    // Should help us to identify how much we can save by parallelizing execution.
+    fn report_matched_but_unsettled_orders(
+        &self,
+        submitted: &Settlement,
+        all: impl Iterator<Item = Settlement>,
+    ) {
+        let submitted: HashSet<_> = submitted
+            .trades()
+            .iter()
+            .map(|trade| trade.order.order_meta_data.uid)
+            .collect();
+        let all_matched: HashSet<_> = all
+            .flat_map(|solution| solution.trades().to_vec())
+            .map(|trade| trade.order.order_meta_data.uid)
+            .collect();
+        let matched_but_not_settled: HashSet<_> = all_matched.difference(&submitted).collect();
+        self.metrics
+            .orders_matched_but_not_settled(matched_but_not_settled.len())
+    }
+
     // Rate settlements, ignoring those for which the rating procedure failed.
     async fn rate_settlements(
         &self,
@@ -351,7 +372,7 @@ impl Driver {
 
         let rated_settlements = self.rate_settlements(settlements, &estimated_prices).await;
 
-        if let Some(mut settlement) = rated_settlements.into_iter().max_by(|a, b| {
+        if let Some(mut settlement) = rated_settlements.clone().into_iter().max_by(|a, b| {
             a.objective_value(gas_price)
                 .cmp(&b.objective_value(gas_price))
         }) {
@@ -364,7 +385,12 @@ impl Driver {
                 settlement = settlement.without_onchain_liquidity();
                 tracing::info!("settlement without onchain liquidity");
             }
-            self.submit_settlement(settlement).await;
+
+            self.submit_settlement(settlement.clone()).await;
+            self.report_matched_but_unsettled_orders(
+                &Settlement::from(settlement),
+                rated_settlements.into_iter().map(Settlement::from),
+            );
         }
 
         // Happens after settlement submission so that we do not delay it.
