@@ -1,5 +1,5 @@
+use crate::Web3;
 use anyhow::{anyhow, Context, Result};
-use shared::Web3;
 use web3::{
     types::{BlockNumber, BlockTrace, CallRequest, TraceType},
     Transport,

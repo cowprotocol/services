@@ -11,6 +11,7 @@ use orderbook::{
 use prometheus::Registry;
 use shared::{
     amm_pair_provider::UniswapPairProvider,
+    bad_token::list_based::ListBasedDetector,
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
     pool_fetching::{CachedPoolFetcher, PoolFetcher},
@@ -136,11 +137,12 @@ impl OrderbookServices {
             current_block_stream,
         );
         let gas_estimator = Arc::new(web3.clone());
+        let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
         let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
             gas_estimator.clone(),
             HashSet::new(),
-            HashSet::new(),
+            bad_token_detector.clone(),
             native_token,
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
@@ -149,7 +151,7 @@ impl OrderbookServices {
             native_token,
             db.clone(),
             1.0,
-            HashSet::new(),
+            bad_token_detector.clone(),
         ));
         let orderbook = Arc::new(Orderbook::new(
             gpv2.domain_separator,
@@ -161,8 +163,8 @@ impl OrderbookServices {
                 true,
             )),
             fee_calculator.clone(),
-            HashSet::new(),
             Duration::from_secs(120),
+            bad_token_detector,
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![orderbook.clone(), Arc::new(db.clone()), event_updater],

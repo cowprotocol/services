@@ -1,9 +1,12 @@
-use crate::baseline_solver::{
-    estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
-    token_path_to_pair_path,
+use crate::{
+    bad_token::BadTokenDetecting,
+    baseline_solver::{
+        estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
+        token_path_to_pair_path,
+    },
+    conversions::U256Ext,
+    pool_fetching::{Pool, PoolFetching},
 };
-use crate::conversions::U256Ext;
-use crate::pool_fetching::{Pool, PoolFetching};
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use futures::future::join_all;
@@ -89,7 +92,7 @@ pub struct BaselinePriceEstimator {
     pool_fetcher: Box<dyn PoolFetching>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
     base_tokens: HashSet<H160>,
-    unsupported_tokens: HashSet<H160>,
+    bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: H160,
 }
 
@@ -98,15 +101,28 @@ impl BaselinePriceEstimator {
         pool_fetcher: Box<dyn PoolFetching>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         base_tokens: HashSet<H160>,
-        unsupported_tokens: HashSet<H160>,
+        bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_token: H160,
     ) -> Self {
         Self {
             pool_fetcher,
             gas_estimator,
             base_tokens,
-            unsupported_tokens,
+            bad_token_detector,
             native_token,
+        }
+    }
+
+    async fn ensure_token_supported(&self, token: H160) -> Result<(), PriceEstimationError> {
+        match self.bad_token_detector.detect(token).await {
+            Ok(quality) => {
+                if quality.is_good() {
+                    Ok(())
+                } else {
+                    Err(PriceEstimationError::UnsupportedToken(token))
+                }
+            }
+            Err(err) => Err(PriceEstimationError::Other(err)),
         }
     }
 }
@@ -123,12 +139,8 @@ impl PriceEstimating for BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
     ) -> Result<BigRational, PriceEstimationError> {
-        if self.unsupported_tokens.contains(&sell_token) {
-            return Err(PriceEstimationError::UnsupportedToken(sell_token));
-        }
-        if self.unsupported_tokens.contains(&buy_token) {
-            return Err(PriceEstimationError::UnsupportedToken(buy_token));
-        }
+        self.ensure_token_supported(sell_token).await?;
+        self.ensure_token_supported(buy_token).await?;
         if sell_token == buy_token {
             return Ok(num::one());
         }
@@ -173,12 +185,8 @@ impl PriceEstimating for BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
     ) -> Result<U256, PriceEstimationError> {
-        if self.unsupported_tokens.contains(&sell_token) {
-            return Err(PriceEstimationError::UnsupportedToken(sell_token));
-        }
-        if self.unsupported_tokens.contains(&buy_token) {
-            return Err(PriceEstimationError::UnsupportedToken(buy_token));
-        }
+        self.ensure_token_supported(sell_token).await?;
+        self.ensure_token_supported(buy_token).await?;
         if sell_token == buy_token || amount.is_zero() {
             return Ok(U256::zero());
         }
@@ -390,6 +398,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
+    use crate::bad_token::list_based::ListBasedDetector;
     use assert_approx_eq::assert_approx_eq;
     use maplit::hashset;
     use std::collections::HashSet;
@@ -428,7 +437,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             token_b,
         );
 
@@ -495,7 +504,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
         );
 
@@ -529,7 +538,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(token_a, token_b, token_c),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
         );
 
@@ -554,7 +563,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
         );
 
@@ -573,12 +582,13 @@ mod tests {
             (10u128.pow(30), 10u128.pow(29)),
         );
         let pool_fetcher = FakePoolFetcher(vec![pool_ab]);
+        let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token_a]));
         let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
         let estimator = BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
             gas_estimator,
             hashset!(),
-            hashset!(token_a),
+            bad_token,
             token_a,
         );
 
@@ -612,7 +622,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
         );
 
@@ -641,7 +651,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(base_token),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             token_b,
         );
 
@@ -674,7 +684,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(intermediate),
-            hashset!(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             intermediate,
         );
 
@@ -712,7 +722,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(),
-            hashset!(unsupported_token),
+            Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
             Default::default(),
         );
 
@@ -774,7 +784,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(intermediate),
-            HashSet::new(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             intermediate,
         );
 
@@ -803,7 +813,7 @@ mod tests {
             pool_fetcher,
             gas_estimator,
             hashset!(intermediate),
-            HashSet::new(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
             intermediate,
         );
 

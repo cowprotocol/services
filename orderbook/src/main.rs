@@ -11,6 +11,7 @@ use orderbook::{
 };
 use prometheus::Registry;
 use shared::{
+    bad_token::list_based::{ListBasedDetector, UnknownTokenStrategy},
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
@@ -52,8 +53,7 @@ struct Arguments {
 
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
-    /// Note that if a node does not support the api we still fallback to the less accurate call
-    /// api.
+    /// Note that if a node does not support the api we still use the less accurate call api.
     #[structopt(long, env = "SKIP_TRACE_API")]
     skip_trace_api: bool,
 }
@@ -137,22 +137,23 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let unsupported_tokens = HashSet::from_iter(args.shared.unsupported_tokens);
+    let pair_providers =
+        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
+
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token.address());
-    assert!(
-        unsupported_tokens
-            .intersection(&base_tokens)
-            .collect::<HashSet<_>>()
-            .is_empty(),
-        "Base tokens include at least one unsupported token!"
-    );
+    let mut allowed_tokens = args.shared.allowed_tokens;
+    allowed_tokens.extend(base_tokens.iter().copied());
+    let unsupported_tokens = args.shared.unsupported_tokens;
+
+    let bad_token_detector = Arc::new(ListBasedDetector::new(
+        allowed_tokens,
+        unsupported_tokens,
+        UnknownTokenStrategy::Allow,
+    ));
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
-
-    let pair_providers =
-        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
 
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
     let pool_fetcher =
@@ -162,7 +163,7 @@ async fn main() {
         Box::new(pool_fetcher),
         gas_price_estimator.clone(),
         base_tokens,
-        unsupported_tokens.clone(),
+        bad_token_detector.clone(),
         native_token.address(),
     ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
@@ -171,7 +172,7 @@ async fn main() {
         native_token.address(),
         database.clone(),
         args.shared.fee_discount_factor,
-        unsupported_tokens.clone(),
+        bad_token_detector.clone(),
     ));
 
     let orderbook = Arc::new(Orderbook::new(
@@ -179,8 +180,8 @@ async fn main() {
         database.clone(),
         Box::new(balance_fetcher),
         fee_calculator.clone(),
-        unsupported_tokens,
         args.min_order_validity_period,
+        bad_token_detector,
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![

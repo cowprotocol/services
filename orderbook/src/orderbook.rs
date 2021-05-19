@@ -1,5 +1,6 @@
-use crate::{account_balances::BalanceFetching, database::OrderFilter};
 use crate::{
+    account_balances::BalanceFetching,
+    database::OrderFilter,
     database::{Database, InsertionError},
     fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
 };
@@ -12,8 +13,7 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
-use shared::maintenance::Maintaining;
-use shared::time::now_in_epoch_seconds;
+use shared::{bad_token::BadTokenDetecting, maintenance::Maintaining, time::now_in_epoch_seconds};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -47,8 +47,8 @@ pub struct Orderbook {
     database: Database,
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<EthAwareMinFeeCalculator>,
-    unsupported_tokens: HashSet<H160>,
     min_order_validity_period: Duration,
+    bad_token_detector: Arc<dyn BadTokenDetecting>,
 }
 
 impl Orderbook {
@@ -57,27 +57,21 @@ impl Orderbook {
         database: Database,
         balance_fetcher: Box<dyn BalanceFetching>,
         fee_validator: Arc<EthAwareMinFeeCalculator>,
-        unsupported_tokens: HashSet<H160>,
         min_order_validity_period: Duration,
+        bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
             domain_separator,
             database,
             balance_fetcher,
             fee_validator,
-            unsupported_tokens,
             min_order_validity_period,
+            bad_token_detector,
         }
     }
 
     pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
         let order = payload.order_creation;
-        if self.unsupported_tokens.contains(&order.buy_token) {
-            return Ok(AddOrderResult::UnsupportedToken(order.buy_token));
-        }
-        if self.unsupported_tokens.contains(&order.sell_token) {
-            return Ok(AddOrderResult::UnsupportedToken(order.sell_token));
-        }
         if order.valid_to
             < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
         {
@@ -96,6 +90,15 @@ impl Orderbook {
         };
         if matches!(payload.from, Some(from) if from != order.order_meta_data.owner) {
             return Ok(AddOrderResult::WrongOwner(order.order_meta_data.owner));
+        }
+
+        for &token in &[
+            order.order_creation.sell_token,
+            order.order_creation.buy_token,
+        ] {
+            if !self.bad_token_detector.detect(token).await?.is_good() {
+                return Ok(AddOrderResult::UnsupportedToken(token));
+            }
         }
 
         let min_balance = match minimum_balance(&order) {
@@ -174,7 +177,7 @@ impl Orderbook {
             orders = solvable_orders(orders, &balances);
         }
         if filter.exclude_unsupported_tokens {
-            orders.retain(|order| !order.contains_token_from(&self.unsupported_tokens));
+            orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
         }
         Ok(orders)
     }
@@ -198,6 +201,25 @@ impl Maintaining for Orderbook {
         self.balance_fetcher.update().await;
         Ok(())
     }
+}
+
+async fn filter_unsupported_tokens(
+    mut orders: Vec<Order>,
+    bad_token: &dyn BadTokenDetecting,
+) -> Result<Vec<Order>> {
+    // Can't use normal `retain` or `filter` because the bad token detection is async. So either
+    // this manual iteration or conversion to stream.
+    let mut index = 0;
+    'outer: while index < orders.len() {
+        for token in orders[index].order_creation.token_pair().unwrap() {
+            if !bad_token.detect(token).await?.is_good() {
+                orders.swap_remove(index);
+                continue 'outer;
+            }
+        }
+        index += 1;
+    }
+    Ok(orders)
 }
 
 // Make sure the balance fetcher tracks all balances for user, sell token combinations in these
@@ -296,9 +318,11 @@ mod tests {
     use crate::account_balances::MockBalanceFetching;
     use chrono::{DateTime, NaiveDateTime};
     use ethcontract::H160;
+    use futures::FutureExt;
     use maplit::hashmap;
     use mockall::{predicate::eq, Sequence};
-    use model::order::{OrderCreation, OrderMetaData};
+    use model::order::{OrderBuilder, OrderCreation, OrderMetaData};
+    use shared::bad_token::list_based::ListBasedDetector;
 
     #[tokio::test]
     async fn track_and_get_balances_() {
@@ -407,5 +431,32 @@ mod tests {
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
         let orders_ = solvable_orders(orders.clone(), &balances);
         assert_eq!(orders_, orders[..1]);
+    }
+
+    #[test]
+    fn filter_unsupported_tokens_() {
+        let token0 = H160::from_low_u64_le(0);
+        let token1 = H160::from_low_u64_le(1);
+        let token2 = H160::from_low_u64_le(2);
+        let bad_token = ListBasedDetector::deny_list(vec![token0]);
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token0)
+                .with_buy_token(token1)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token0)
+                .with_buy_token(token2)
+                .build(),
+        ];
+        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, &orders[1..2]);
     }
 }

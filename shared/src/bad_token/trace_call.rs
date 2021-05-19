@@ -1,5 +1,5 @@
 use super::{BadTokenDetecting, TokenQuality};
-use crate::trace_many;
+use crate::{amm_pair_provider::AmmPairProvider, trace_many, Web3};
 use anyhow::{anyhow, bail, ensure, Result};
 use contracts::ERC20;
 use ethcontract::{
@@ -11,7 +11,6 @@ use ethcontract::{
 };
 use model::TokenPair;
 use primitive_types::{H160, U256};
-use shared::{amm_pair_provider::AmmPairProvider, Web3};
 use std::{collections::HashSet, sync::Arc};
 use web3::{
     signing::keccak256,
@@ -282,11 +281,11 @@ impl EthcontractError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hex_literal::hex;
-    use shared::{
+    use crate::{
         amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
         transport::LoggingTransport,
     };
+    use hex_literal::hex;
     use web3::{
         transports::Http,
         types::{Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace},

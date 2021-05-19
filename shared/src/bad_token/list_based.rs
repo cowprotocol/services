@@ -11,9 +11,36 @@ pub enum UnknownTokenStrategy {
 
 /// Classify tokens with explicit allow and deny lists.
 pub struct ListBasedDetector {
-    pub allow_list: Vec<H160>,
-    pub deny_list: Vec<H160>,
-    pub strategy: UnknownTokenStrategy,
+    allow_list: Vec<H160>,
+    deny_list: Vec<H160>,
+    strategy: UnknownTokenStrategy,
+}
+
+impl ListBasedDetector {
+    /// Panics if same token is both allowed and denied.
+    pub fn new(
+        allow_list: Vec<H160>,
+        deny_list: Vec<H160>,
+        strategy: UnknownTokenStrategy,
+    ) -> Self {
+        assert!(
+            allow_list.iter().all(|token| !deny_list.contains(token)),
+            "token is allowed and denied"
+        );
+        Self {
+            allow_list,
+            deny_list,
+            strategy,
+        }
+    }
+
+    pub fn deny_list(list: Vec<H160>) -> Self {
+        Self {
+            allow_list: Vec::new(),
+            deny_list: list,
+            strategy: UnknownTokenStrategy::Allow,
+        }
+    }
 }
 
 #[async_trait::async_trait]

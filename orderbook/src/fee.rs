@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::database::Database;
 use gas_estimation::GasPriceEstimating;
-use shared::price_estimate::PriceEstimating;
+use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
 
 type Measurement = (U256, DateTime<Utc>);
 
@@ -27,7 +27,7 @@ pub struct MinFeeCalculator {
     measurements: Box<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     discount_factor: f64,
-    unsupported_tokens: HashSet<H160>,
+    bad_token_detector: Arc<dyn BadTokenDetecting>,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -110,7 +110,7 @@ impl EthAwareMinFeeCalculator {
         native_token: H160,
         database: Database,
         discount_factor: f64,
-        unsupported_tokens: HashSet<H160>,
+        bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
             calculator: MinFeeCalculator::new(
@@ -119,7 +119,7 @@ impl EthAwareMinFeeCalculator {
                 native_token,
                 database,
                 discount_factor,
-                unsupported_tokens,
+                bad_token_detector,
             ),
             weth: native_token,
         }
@@ -160,7 +160,7 @@ impl MinFeeCalculator {
         native_token: H160,
         database: Database,
         discount_factor: f64,
-        unsupported_tokens: HashSet<H160>,
+        bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
             price_estimator,
@@ -169,7 +169,7 @@ impl MinFeeCalculator {
             measurements: Box::new(database),
             now: Box::new(Utc::now),
             discount_factor,
-            unsupported_tokens,
+            bad_token_detector,
         }
     }
 
@@ -218,6 +218,19 @@ impl MinFeeCalculator {
 
         Ok(Some(U256::from_f64_lossy(fee_in_eth * token_price)))
     }
+
+    async fn ensure_token_supported(&self, token: H160) -> Result<(), MinFeeCalculationError> {
+        match self.bad_token_detector.detect(token).await {
+            Ok(quality) => {
+                if quality.is_good() {
+                    Ok(())
+                } else {
+                    Err(MinFeeCalculationError::UnsupportedToken(token))
+                }
+            }
+            Err(err) => Err(MinFeeCalculationError::Other(err)),
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -233,17 +246,9 @@ impl MinFeeCalculating for MinFeeCalculator {
         amount: Option<U256>,
         kind: Option<OrderKind>,
     ) -> Result<Measurement, MinFeeCalculationError> {
-        if self.unsupported_tokens.contains(&sell_token) {
-            return Err(MinFeeCalculationError::UnsupportedToken(sell_token));
-        }
-
-        if buy_token
-            .map(|t| self.unsupported_tokens.contains(&t))
-            .unwrap_or_default()
-        {
-            return Err(MinFeeCalculationError::UnsupportedToken(
-                buy_token.expect("Must exist"),
-            ));
+        self.ensure_token_supported(sell_token).await?;
+        if let Some(buy_token) = buy_token {
+            self.ensure_token_supported(buy_token).await?;
         }
 
         let now = (self.now)();
@@ -365,12 +370,12 @@ impl MinFeeStoring for InMemoryFeeStore {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
-    use chrono::NaiveDateTime;
-    use maplit::hashset;
-    use shared::gas_price_estimation::FakeGasPriceEstimator;
-    use shared::price_estimate::mocks::FakePriceEstimator;
-    use std::{collections::HashSet, sync::Arc};
+    use chrono::{Duration, NaiveDateTime};
+    use shared::{
+        bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
+        price_estimate::mocks::FakePriceEstimator,
+    };
+    use std::sync::Arc;
 
     use super::*;
 
@@ -435,7 +440,7 @@ mod tests {
                 measurements: Box::new(InMemoryFeeStore::default()),
                 now,
                 discount_factor: 1.0,
-                unsupported_tokens: HashSet::new(),
+                bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
             }
         }
     }
@@ -507,7 +512,6 @@ mod tests {
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
         let price_estimator = Arc::new(FakePriceEstimator(num::one()));
-        let unsupported_tokens = hashset! {unsupported_token};
 
         let fee_estimator = MinFeeCalculator {
             price_estimator,
@@ -516,7 +520,7 @@ mod tests {
             measurements: Box::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             discount_factor: 1.0,
-            unsupported_tokens,
+            bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
         };
 
         // Selling unsupported token

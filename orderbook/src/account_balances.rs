@@ -176,8 +176,8 @@ impl Web3BalanceFetcher {
         };
 
         let traces =
-            crate::trace_many::trace_many(vec![transfer_in, transfer_out], &self.web3).await?;
-        crate::trace_many::all_calls_succeeded(&traces)
+            shared::trace_many::trace_many(vec![transfer_in, transfer_out], &self.web3).await?;
+        shared::trace_many::all_calls_succeeded(&traces)
     }
 }
 
