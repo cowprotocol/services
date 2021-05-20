@@ -14,7 +14,7 @@ use shared::{
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
-    pool_fetching::{CachedPoolFetcher, FilteredPoolFetcher},
+    pool_fetching::CachedPoolFetcher,
     price_estimate::BaselinePriceEstimator,
     transport::LoggingTransport,
 };
@@ -155,10 +155,8 @@ async fn main() {
         pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
 
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
-    let cached_pool_fetcher =
-        CachedPoolFetcher::new(Box::new(pool_aggregator), current_block_stream.clone());
     let pool_fetcher =
-        FilteredPoolFetcher::new(Box::new(cached_pool_fetcher), unsupported_tokens.clone());
+        CachedPoolFetcher::new(Box::new(pool_aggregator), current_block_stream.clone());
 
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         Box::new(pool_fetcher),

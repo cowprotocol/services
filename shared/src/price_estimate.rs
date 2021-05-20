@@ -22,7 +22,7 @@ const MAX_HOPS: usize = 2;
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
     // Represents a failure when no liquidity between sell and buy token via the native token can be found
-    #[error("Token {0} not supported")]
+    #[error("Token {0:?} not supported")]
     UnsupportedToken(H160),
 
     #[error(transparent)]
@@ -398,7 +398,7 @@ mod tests {
     use super::*;
     use crate::{
         gas_price_estimation::FakeGasPriceEstimator,
-        pool_fetching::{FilteredPoolFetcher, Pool, PoolFetching},
+        pool_fetching::{Pool, PoolFetching},
     };
 
     struct FakePoolFetcher(Vec<Pool>);
@@ -572,14 +572,13 @@ mod tests {
             TokenPair::new(token_a, token_b).unwrap(),
             (10u128.pow(30), 10u128.pow(29)),
         );
-        let pool_fetcher =
-            FilteredPoolFetcher::new(Box::new(FakePoolFetcher(vec![pool_ab])), hashset!(token_a));
+        let pool_fetcher = FakePoolFetcher(vec![pool_ab]);
         let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
         let estimator = BaselinePriceEstimator::new(
             Box::new(pool_fetcher),
             gas_estimator,
             hashset!(),
-            hashset!(),
+            hashset!(token_a),
             token_a,
         );
 
@@ -588,10 +587,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(
-            format!(
-                "No valid path found between {:#x} and {:#x}",
-                token_a, token_b
-            ),
+            format!("Token {:?} not supported", token_a),
             result.to_string()
         );
         let result = estimator
@@ -599,10 +595,7 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(
-            format!(
-                "No valid path found between {:#x} and {:#x}",
-                token_a, token_b
-            ),
+            format!("Token {:?} not supported", token_a),
             result.to_string()
         );
     }
