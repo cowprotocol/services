@@ -284,8 +284,16 @@ impl Driver {
         &self,
         settlements: Vec<SettlementWithSolver>,
         prices: &HashMap<H160, BigRational>,
+        gas_price_wei: f64,
     ) -> Vec<RatedSettlement> {
         use futures::stream::StreamExt;
+
+        // Normalize gas_price_wei to the native token price in the prices vector.
+        let gas_price_wei = BigRational::from_float(gas_price_wei).expect("Invalid gas price.")
+            * prices
+                .get(&self.native_token)
+                .expect("Price of native token must be known.");
+
         futures::stream::iter(settlements)
             .filter_map(|settlement| async {
                 let surplus = settlement.settlement.total_surplus(prices);
@@ -295,11 +303,22 @@ impl Driver {
                 )
                 .await
                 .ok()?;
-                Some(RatedSettlement {
+                let solver_name = settlement.name;
+                let rated_settlement = RatedSettlement {
                     settlement,
                     surplus,
                     gas_estimate,
-                })
+                    gas_price: gas_price_wei.clone(),
+                };
+                tracing::info!(
+                    "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
+                    solver_name,
+                    rated_settlement.objective_value(),
+                    rated_settlement.surplus,
+                    rated_settlement.gas_estimate,
+                    rated_settlement.gas_price,
+                );
+                Some(rated_settlement)
             })
             .collect::<Vec<_>>()
             .await
@@ -319,18 +338,20 @@ impl Driver {
         let estimated_prices =
             collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &liquidity)
                 .await;
+        tracing::debug!("estimated prices: {:?}", estimated_prices);
+
         let liquidity = liquidity_with_price(liquidity, &estimated_prices);
         self.metrics.liquidity_fetched(&liquidity);
 
-        let gas_price = self
+        let gas_price_wei = self
             .gas_price_estimator
             .estimate()
             .await
             .context("failed to estimate gas price")?;
-        tracing::debug!("solving with gas price of {}", gas_price);
+        tracing::debug!("solving with gas price of {}", gas_price_wei);
 
         let settlements = self
-            .run_solvers(liquidity, gas_price)
+            .run_solvers(liquidity, gas_price_wei)
             .await
             .filter_map(solver_settlements::filter_bad_settlements)
             .inspect(|(name, settlements)| {
@@ -370,12 +391,15 @@ impl Driver {
             self.metrics.settlement_simulation_failed(settlement.name);
         }
 
-        let rated_settlements = self.rate_settlements(settlements, &estimated_prices).await;
+        let rated_settlements = self
+            .rate_settlements(settlements, &estimated_prices, gas_price_wei)
+            .await;
 
-        if let Some(mut settlement) = rated_settlements.clone().into_iter().max_by(|a, b| {
-            a.objective_value(gas_price)
-                .cmp(&b.objective_value(gas_price))
-        }) {
+        if let Some(mut settlement) = rated_settlements
+            .clone()
+            .into_iter()
+            .max_by(|a, b| a.objective_value().cmp(&b.objective_value()))
+        {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
                 .can_settle_without_liquidity(&settlement)
@@ -386,6 +410,7 @@ impl Driver {
                 tracing::info!("settlement without onchain liquidity");
             }
 
+            tracing::debug!("winning settlement: {:?}", settlement);
             self.submit_settlement(settlement.clone()).await;
             self.report_matched_but_unsettled_orders(
                 &Settlement::from(settlement),
@@ -407,6 +432,8 @@ pub async fn collect_estimated_prices(
     liquidity: &[Liquidity],
 ) -> HashMap<H160, BigRational> {
     // Computes set of traded tokens (limit orders only).
+    // NOTE: The native token is always added.
+
     let mut tokens = HashSet::new();
     for liquid in liquidity {
         if let Liquidity::Limit(limit_order) = liquid {
@@ -436,10 +463,12 @@ pub async fn collect_estimated_prices(
         })
         .collect();
 
-    // If the wrapped native token is in the price list (e.g. WETH), so should be the placeholder for its native counterpart
-    if let Some(price) = prices.get(&native_token).cloned() {
-        prices.insert(BUY_ETH_ADDRESS, price);
-    }
+    // Always include the native token.
+    prices.insert(native_token, num::one());
+
+    // And the placeholder for its native counterpart.
+    prices.insert(BUY_ETH_ADDRESS, num::one());
+
     prices
 }
 
@@ -521,7 +550,7 @@ mod tests {
             }),
         ];
         let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
-        assert_eq!(prices.len(), 2);
+        assert_eq!(prices.len(), 4);
         assert!(prices.contains_key(&sell_token));
         assert!(prices.contains_key(&buy_token));
     }
@@ -546,7 +575,7 @@ mod tests {
             id: "0".into(),
         })];
         let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
-        assert_eq!(prices.len(), 0);
+        assert_eq!(prices.len(), 2);
     }
 
     #[tokio::test]
