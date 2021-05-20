@@ -11,7 +11,11 @@ use orderbook::{
 };
 use prometheus::Registry;
 use shared::{
-    bad_token::list_based::{ListBasedDetector, UnknownTokenStrategy},
+    bad_token::{
+        cache::CachingDetector,
+        list_based::{ListBasedDetector, UnknownTokenStrategy},
+        trace_call::TraceCallDetector,
+    },
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
@@ -120,12 +124,8 @@ async fn main() {
 
     let event_updater =
         EventUpdater::new(settlement_contract.clone(), database.clone(), sync_start);
-    let balance_fetcher = Web3BalanceFetcher::new(
-        web3.clone(),
-        gp_allowance,
-        settlement_contract.address(),
-        !args.skip_trace_api,
-    );
+    let balance_fetcher =
+        Web3BalanceFetcher::new(web3.clone(), gp_allowance, settlement_contract.address());
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
@@ -147,10 +147,21 @@ async fn main() {
     allowed_tokens.extend(base_tokens.iter().copied());
     let unsupported_tokens = args.shared.unsupported_tokens;
 
+    let trace_call_detector = TraceCallDetector {
+        web3: web3.clone(),
+        pools: pair_providers.clone(),
+        base_tokens: base_tokens.clone(),
+        settlement_contract: settlement_contract.address(),
+    };
+    let caching_detector = CachingDetector::new(Box::new(trace_call_detector));
     let bad_token_detector = Arc::new(ListBasedDetector::new(
         allowed_tokens,
         unsupported_tokens,
-        UnknownTokenStrategy::Allow,
+        if args.skip_trace_api {
+            UnknownTokenStrategy::Allow
+        } else {
+            UnknownTokenStrategy::Forward(Box::new(caching_detector))
+        },
     ));
 
     let current_block_stream = current_block_stream(web3.clone()).await.unwrap();

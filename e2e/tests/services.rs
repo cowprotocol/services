@@ -160,7 +160,6 @@ impl OrderbookServices {
                 web3.clone(),
                 gpv2.allowance,
                 gpv2.settlement.address(),
-                true,
             )),
             fee_calculator.clone(),
             Duration::from_secs(120),

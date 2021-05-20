@@ -34,7 +34,9 @@ pub struct TraceCallDetector {
 #[async_trait::async_trait]
 impl BadTokenDetecting for TraceCallDetector {
     async fn detect(&self, token: H160) -> Result<TokenQuality> {
-        self.detect_impl(token).await
+        let quality = self.detect_impl(token).await?;
+        tracing::info!("token {:?} quality {:?}", token, quality);
+        Ok(quality)
     }
 }
 
