@@ -74,3 +74,8 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
 pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
     Ok(U256::from_dec_str(s)? * U256::exp10(18))
 }
+
+pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
+    let in_gwei: f64 = s.parse()?;
+    Ok(in_gwei * 10e9)
+}

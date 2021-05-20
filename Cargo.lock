@@ -2989,7 +2989,7 @@ dependencies = [
 [[package]]
 name = "transaction-retry"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.1.0#31b32869dbc773d62c11e91dac4d66aaa691faa2"
+source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.1.1#6c94d9d2e2a8314f85b5aec4ca0a96185110bd98"
 dependencies = [
  "async-trait",
  "futures",

@@ -180,6 +180,7 @@ async fn onchain_settlement(web3: Web3) {
         network_id,
         1,
         Duration::from_secs(30),
+        f64::MAX,
         None,
     );
     driver.single_run().await.unwrap();

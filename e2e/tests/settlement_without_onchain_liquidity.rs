@@ -181,6 +181,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         network_id,
         1,
         Duration::from_secs(10),
+        f64::MAX,
         Some(market_makable_token_list),
     );
     driver.single_run().await.unwrap();
