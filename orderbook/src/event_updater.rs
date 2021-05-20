@@ -1,16 +1,20 @@
 use crate::database::Database;
 use anyhow::{Context, Result};
-use contracts::{g_pv_2_settlement::Event as ContractEvent, GPv2Settlement};
-use ethcontract::contract::AllEventsBuilder;
-use ethcontract::{dyns::DynTransport, Event};
-use shared::event_handling::{BlockNumber, EventHandler, EventRetrieving, EventStoring};
+use contracts::{
+    gpv2_settlement::{self, Event as ContractEvent},
+    GPv2Settlement,
+};
+use ethcontract::{dyns::DynWeb3, Event};
+use shared::{
+    event_handling::{BlockNumber, EventHandler, EventStoring},
+    impl_event_retrieving,
+};
 use std::ops::{Deref, DerefMut, RangeInclusive};
-use web3::Web3;
 
-pub struct EventUpdater(EventHandler<GPv2SettlementContract, Database>);
+pub struct EventUpdater(EventHandler<DynWeb3, GPv2SettlementContract, Database>);
 
 impl Deref for EventUpdater {
-    type Target = EventHandler<GPv2SettlementContract, Database>;
+    type Target = EventHandler<DynWeb3, GPv2SettlementContract, Database>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -60,22 +64,14 @@ impl EventStoring<ContractEvent> for Database {
     }
 }
 
-pub struct GPv2SettlementContract(GPv2Settlement);
-
-impl EventRetrieving for GPv2SettlementContract {
-    type Event = ContractEvent;
-    fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event> {
-        self.0.all_events()
-    }
-
-    fn web3(&self) -> Web3<DynTransport> {
-        self.0.raw_instance().web3()
-    }
+impl_event_retrieving! {
+    pub GPv2SettlementContract for gpv2_settlement
 }
 
 impl EventUpdater {
     pub fn new(contract: GPv2Settlement, db: Database, start_sync_at_block: Option<u64>) -> Self {
         Self(EventHandler::new(
+            contract.raw_instance().web3(),
             GPv2SettlementContract(contract),
             db,
             start_sync_at_block,
