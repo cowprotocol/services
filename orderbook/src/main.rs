@@ -60,6 +60,15 @@ struct Arguments {
     /// Note that if a node does not support the api we still use the less accurate call api.
     #[structopt(long, env = "SKIP_TRACE_API")]
     skip_trace_api: bool,
+
+    /// The amount of time a classification of a token into good or bad is valid for.
+    #[structopt(
+        long,
+        env = "TOKEN_QUALITY_CACHE_EXPIRY_SECONDS",
+        default_value = "600",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    token_quality_cache_expiry: Duration,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
@@ -153,7 +162,10 @@ async fn main() {
         base_tokens: base_tokens.clone(),
         settlement_contract: settlement_contract.address(),
     };
-    let caching_detector = CachingDetector::new(Box::new(trace_call_detector));
+    let caching_detector = CachingDetector::new(
+        Box::new(trace_call_detector),
+        args.token_quality_cache_expiry,
+    );
     let bad_token_detector = Arc::new(ListBasedDetector::new(
         allowed_tokens,
         unsupported_tokens,
