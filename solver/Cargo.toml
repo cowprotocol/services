@@ -20,14 +20,15 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 ethcontract = { version = "0.11", default-features = false }
 futures = "0.3"
-transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.1.1" }
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.1", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.2", features = ["web3_"] }
 hex = "0.4"
 hex-literal = "0.3"
+itertools = "0.10"
 jsonrpc-core = "16.0"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
+orderbook= { path = "../orderbook" }
 primitive-types = { version = "0.8", features = ["fp-conversion"] }
 prometheus = "0.12"
 rand = "0.8"
@@ -41,9 +42,8 @@ strum = "0.20"
 strum_macros = "0.20"
 tokio = { version = "0.2", features = ["macros", "rt-threaded", "time"] }
 tracing = "0.1"
+transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.1.1" }
 web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
-itertools = "0.10"
-orderbook= { path = "../orderbook" }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
