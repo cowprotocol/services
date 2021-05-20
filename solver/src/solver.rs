@@ -179,6 +179,10 @@ impl<S: Solver + Send + Sync> Solver for SellVolumeFilteringSolver<S> {
         );
         self.inner.solve(filtered_liquidity, gas_price).await
     }
+
+    fn name(&self) -> &'static str {
+        self.inner.name()
+    }
 }
 
 #[cfg(test)]
