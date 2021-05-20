@@ -1,23 +1,17 @@
-use crate::current_block::BlockRetrieving;
 use anyhow::{Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{dyns::DynTransport, BlockNumber as Web3BlockNumber, Event as EthcontractEvent};
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::ops::RangeInclusive;
+use web3::Web3;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
 const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
-pub struct EventHandler<B, C, S>
-where
-    B: BlockRetrieving,
-    C: EventRetrieving,
-    S: EventStoring<C::Event>,
-{
-    block_retriever: B,
+pub struct EventHandler<C: EventRetrieving, S: EventStoring<C::Event>> {
     contract: C,
     store: S,
     last_handled_block: Option<u64>,
@@ -54,22 +48,16 @@ pub trait EventStoring<T> {
 pub trait EventRetrieving {
     type Event: ParseLog;
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
+    fn web3(&self) -> Web3<DynTransport>;
 }
 
-impl<B, C, S> EventHandler<B, C, S>
+impl<C, S> EventHandler<C, S>
 where
-    B: BlockRetrieving,
     C: EventRetrieving,
     S: EventStoring<C::Event>,
 {
-    pub fn new(
-        block_retriever: B,
-        contract: C,
-        store: S,
-        start_sync_at_block: Option<u64>,
-    ) -> Self {
+    pub fn new(contract: C, store: S, start_sync_at_block: Option<u64>) -> Self {
         Self {
-            block_retriever,
             contract,
             store,
             last_handled_block: start_sync_at_block,
@@ -77,6 +65,7 @@ where
     }
 
     async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
+        let web3 = self.contract.web3();
         // Instead of using only the most recent event block from the db we also store the last
         // handled block in self so that during long times of no events we do not query needlessly
         // large block ranges.
@@ -84,7 +73,12 @@ where
             Some(block) => block,
             None => self.store.last_event_block().await?,
         };
-        let current_block = self.block_retriever.current_block_number().await?;
+        let current_block = web3
+            .eth()
+            .block_number()
+            .await
+            .context("failed to get current block")?
+            .as_u64();
         let from_block = last_handled_block.saturating_sub(MAX_REORG_BLOCK_COUNT);
         anyhow::ensure!(
             from_block <= current_block,
@@ -186,22 +180,4 @@ impl BlockNumber {
             BlockNumber::Latest(_) => Web3BlockNumber::Latest,
         }
     }
-}
-
-#[macro_export]
-macro_rules! impl_event_retrieving {
-    ($vis:vis $name:ident for $($contract_module:tt)*) => {
-        $vis struct $name($($contract_module)*::Contract);
-
-        impl ::shared::event_handling::EventRetrieving for $name {
-            type Event = $($contract_module)*::Event;
-
-            fn get_events(&self) -> ::ethcontract::contract::AllEventsBuilder<
-                ::ethcontract::dyns::DynTransport,
-                Self::Event,
-            > {
-                self.0.all_events()
-            }
-        }
-    };
 }

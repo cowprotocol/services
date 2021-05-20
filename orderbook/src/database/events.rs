@@ -1,7 +1,7 @@
 use super::Database;
 use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
-use contracts::gpv2_settlement::{
+use contracts::g_pv_2_settlement::{
     event_data::{
         OrderInvalidated as ContractInvalidation, Settlement as ContractSettlement,
         Trade as ContractTrade,
