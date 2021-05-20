@@ -1,7 +1,7 @@
 use crate::database::Database;
 use anyhow::{Context, Result};
 use contracts::{
-    g_pv_2_settlement::{self, Event as ContractEvent},
+    gpv2_settlement::{self, Event as ContractEvent},
     GPv2Settlement,
 };
 use ethcontract::{dyns::DynWeb3, Event};
@@ -65,7 +65,7 @@ impl EventStoring<ContractEvent> for Database {
 }
 
 impl_event_retrieving! {
-    pub GPv2SettlementContract for g_pv_2_settlement
+    pub GPv2SettlementContract for gpv2_settlement
 }
 
 impl EventUpdater {
