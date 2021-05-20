@@ -1,10 +1,11 @@
-use crate::current_block::BlockRetrieving;
+use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
 use anyhow::{Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{dyns::DynTransport, BlockNumber as Web3BlockNumber, Event as EthcontractEvent};
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::ops::RangeInclusive;
+use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
 const MAX_REORG_BLOCK_COUNT: u64 = 25;
@@ -157,6 +158,23 @@ where
             .query_paginated()
             .await?
             .map_err(Error::from))
+    }
+}
+
+#[async_trait::async_trait]
+impl<B, C, S> Maintaining for Mutex<EventHandler<B, C, S>>
+where
+    B: BlockRetrieving + Send + Sync,
+    C: EventRetrieving + Send + Sync,
+    C::Event: Send,
+    S: EventStoring<C::Event> + Send + Sync,
+{
+    async fn run_maintenance(&self) -> Result<()> {
+        self.lock()
+            .await
+            .update_events()
+            .await
+            .context("event update error")
     }
 }
 

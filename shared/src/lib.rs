@@ -8,6 +8,7 @@ pub mod http;
 #[macro_use]
 pub mod macros;
 pub mod event_handling;
+pub mod maintenance;
 pub mod metrics;
 pub mod network;
 pub mod pool_aggregating;

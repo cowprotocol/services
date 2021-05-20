@@ -1,3 +1,21 @@
+use std::{net::SocketAddr, sync::Arc};
+
+use anyhow::{anyhow, Context as _, Result};
+use prometheus::Registry;
+use tokio::{task, task::JoinHandle};
+
+use contracts::GPv2Settlement;
+use fee::EthAwareMinFeeCalculator;
+use metrics::Metrics;
+use model::DomainSeparator;
+use shared::{
+    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
+    price_estimate::PriceEstimating,
+};
+
+use crate::database::Database;
+use crate::orderbook::Orderbook;
+
 pub mod account_balances;
 pub mod api;
 pub mod bad_token;
@@ -8,21 +26,6 @@ pub mod fee;
 pub mod metrics;
 pub mod orderbook;
 pub mod trace_many;
-
-use crate::database::Database;
-use crate::orderbook::Orderbook;
-use anyhow::{anyhow, Context as _, Result};
-use contracts::GPv2Settlement;
-use fee::EthAwareMinFeeCalculator;
-use metrics::Metrics;
-use model::DomainSeparator;
-use prometheus::Registry;
-use shared::{
-    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-    price_estimate::PriceEstimating,
-};
-use std::{net::SocketAddr, sync::Arc};
-use tokio::{task, task::JoinHandle};
 
 pub fn serve_task(
     database: Database,

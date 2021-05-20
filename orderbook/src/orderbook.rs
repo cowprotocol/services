@@ -1,27 +1,24 @@
-use crate::{
-    account_balances::BalanceFetching, database::OrderFilter, event_updater::EventUpdater,
-};
+use crate::{account_balances::BalanceFetching, database::OrderFilter};
 use crate::{
     database::{Database, InsertionError},
     fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
 };
 use anyhow::Result;
 use chrono::Utc;
-use contracts::GPv2Settlement;
-use futures::{join, TryStreamExt};
+use futures::TryStreamExt;
 use model::order::{OrderCancellation, OrderCreationPayload};
 use model::{
     order::{Order, OrderUid},
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
+use shared::maintenance::Maintaining;
 use shared::time::now_in_epoch_seconds;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
     time::Duration,
 };
-use tokio::sync::Mutex;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderResult {
@@ -48,7 +45,6 @@ pub enum OrderCancellationResult {
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     database: Database,
-    event_updater: Mutex<EventUpdater>,
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<EthAwareMinFeeCalculator>,
     unsupported_tokens: HashSet<H160>,
@@ -59,7 +55,6 @@ impl Orderbook {
     pub fn new(
         domain_separator: DomainSeparator,
         database: Database,
-        event_updater: EventUpdater,
         balance_fetcher: Box<dyn BalanceFetching>,
         fee_validator: Arc<EthAwareMinFeeCalculator>,
         unsupported_tokens: HashSet<H160>,
@@ -68,7 +63,6 @@ impl Orderbook {
         Self {
             domain_separator,
             database,
-            event_updater: Mutex::new(event_updater),
             balance_fetcher,
             fee_validator,
             unsupported_tokens,
@@ -196,10 +190,13 @@ impl Orderbook {
         };
         self.get_orders(&filter).await
     }
+}
 
-    pub async fn run_maintenance(&self, _settlement_contract: &GPv2Settlement) -> Result<()> {
-        let update_events = async { self.event_updater.lock().await.update_events().await };
-        join!(update_events, self.balance_fetcher.update()).0
+#[async_trait::async_trait]
+impl Maintaining for Orderbook {
+    async fn run_maintenance(&self) -> Result<()> {
+        self.balance_fetcher.update().await;
+        Ok(())
     }
 }
 

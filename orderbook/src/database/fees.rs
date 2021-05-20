@@ -7,6 +7,7 @@ use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
+use shared::maintenance::Maintaining;
 
 #[async_trait::async_trait]
 impl MinFeeStoring for Database {
@@ -80,6 +81,15 @@ impl Database {
             .await
             .context("insert MinFeeMeasurement failed")
             .map(|_| ())
+    }
+}
+
+#[async_trait::async_trait]
+impl Maintaining for Database {
+    async fn run_maintenance(&self) -> Result<()> {
+        self.remove_expired_fee_measurements(Utc::now())
+            .await
+            .context("fee measurement maintenance error")
     }
 }
 
