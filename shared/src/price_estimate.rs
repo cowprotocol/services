@@ -318,13 +318,13 @@ impl BaselinePriceEstimator {
             .iter()
             .flat_map(|candidate| token_path_to_pair_path(candidate).into_iter())
             .collect();
-        let pools: HashMap<_, _> = self
-            .pool_fetcher
-            .fetch(all_pairs)
-            .await
-            .into_iter()
-            .map(|pool| (pool.tokens, vec![pool]))
-            .collect();
+        let pools = self.pool_fetcher.fetch(all_pairs).await.into_iter().fold(
+            HashMap::<_, Vec<Pool>>::new(),
+            |mut pools, pool| {
+                pools.entry(pool.tokens).or_default().push(pool);
+                pools
+            },
+        );
         let best_path = path_candidates
             .iter()
             .max_by_key(|path| comparison(amount, path, &pools))
@@ -398,7 +398,7 @@ pub mod mocks {
 
 #[cfg(test)]
 mod tests {
-    use crate::bad_token::list_based::ListBasedDetector;
+    use crate::{bad_token::list_based::ListBasedDetector, baseline_solver::BaselineSolvable};
     use assert_approx_eq::assert_approx_eq;
     use maplit::hashset;
     use std::collections::HashSet;
@@ -663,6 +663,60 @@ mod tests {
             .estimate_price(token_a, token_b, 100.into(), OrderKind::Buy)
             .await
             .is_ok());
+    }
+
+    fn pool_price(
+        pool: &Pool,
+        token_out: H160,
+        amount_in: impl Into<U256>,
+        token_in: H160,
+    ) -> BigRational {
+        let amount_in = amount_in.into();
+        BigRational::new(
+            amount_in.to_big_int(),
+            pool.get_amount_out(token_out, amount_in, token_in)
+                .unwrap()
+                .as_u128()
+                .into(),
+        )
+    }
+
+    #[tokio::test]
+    async fn price_estimate_uses_best_pool() {
+        let token_a = H160([0x0a; 20]);
+        let token_b = H160([0x0b; 20]);
+
+        let pools = vec![
+            Pool::uniswap(
+                TokenPair::new(token_a, token_b).unwrap(),
+                (100_000, 100_000),
+            ),
+            Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100_000, 90_000)),
+        ];
+
+        let pool_fetcher = Box::new(FakePoolFetcher(pools.clone()));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let estimator = BaselinePriceEstimator::new(
+            pool_fetcher,
+            gas_estimator,
+            HashSet::new(),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
+            token_a,
+        );
+
+        let price = estimator
+            .estimate_price(token_a, token_b, 100.into(), OrderKind::Sell)
+            .await
+            .unwrap();
+        // Pool 0 is more favourable for buying token B.
+        assert_eq!(price, pool_price(&pools[0], token_b, 100, token_a));
+
+        let price = estimator
+            .estimate_price(token_b, token_a, 100.into(), OrderKind::Sell)
+            .await
+            .unwrap();
+        // Pool 1 is more favourable for buying token A.
+        assert_eq!(price, pool_price(&pools[1], token_a, 100, token_b));
     }
 
     #[tokio::test]
