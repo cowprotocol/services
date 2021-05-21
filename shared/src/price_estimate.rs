@@ -8,7 +8,7 @@ use crate::{
     pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::{anyhow, Result};
-use ethcontract::{H160, U256};
+use ethcontract::{BlockNumber, H160, U256};
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
@@ -318,13 +318,15 @@ impl BaselinePriceEstimator {
             .iter()
             .flat_map(|candidate| token_path_to_pair_path(candidate).into_iter())
             .collect();
-        let pools = self.pool_fetcher.fetch(all_pairs).await.into_iter().fold(
-            HashMap::<_, Vec<Pool>>::new(),
-            |mut pools, pool| {
+        let pools = self
+            .pool_fetcher
+            .fetch(all_pairs, BlockNumber::Latest)
+            .await
+            .into_iter()
+            .fold(HashMap::<_, Vec<Pool>>::new(), |mut pools, pool| {
                 pools.entry(pool.tokens).or_default().push(pool);
                 pools
-            },
-        );
+            });
         let best_path = path_candidates
             .iter()
             .max_by_key(|path| comparison(amount, path, &pools))
@@ -413,7 +415,7 @@ mod tests {
     struct FakePoolFetcher(Vec<Pool>);
     #[async_trait::async_trait]
     impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: BlockNumber) -> Vec<Pool> {
             self.0
                 .clone()
                 .into_iter()

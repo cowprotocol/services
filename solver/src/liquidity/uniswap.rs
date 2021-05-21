@@ -1,6 +1,6 @@
 use anyhow::Result;
 use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
-use ethcontract::batch::CallBatch;
+use ethcontract::{batch::CallBatch, BlockNumber};
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::{path_candidates, token_path_to_pair_path},
@@ -60,6 +60,7 @@ impl UniswapLikeLiquidity {
     pub async fn get_liquidity(
         &self,
         offchain_orders: impl Iterator<Item = &LimitOrder> + Send + Sync,
+        at_block: BlockNumber,
     ) -> Result<Vec<AmmOrder>> {
         let mut pools = HashSet::new();
 
@@ -79,7 +80,7 @@ impl UniswapLikeLiquidity {
 
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(pools).await {
+        for pool in self.pool_fetcher.fetch(pools, at_block).await {
             tokens.insert(pool.tokens.get().0);
             tokens.insert(pool.tokens.get().1);
 

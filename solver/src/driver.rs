@@ -325,7 +325,6 @@ impl Driver {
 
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
-        let liquidity = self.liquidity_collector.get_liquidity().await?;
         let current_block_during_liquidity_fetch = self
             .web3
             .eth()
@@ -333,6 +332,10 @@ impl Driver {
             .await
             .context("failed to get current block")?
             .as_u64();
+        let liquidity = self
+            .liquidity_collector
+            .get_liquidity(current_block_during_liquidity_fetch.into())
+            .await?;
 
         let estimated_prices =
             collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &liquidity)

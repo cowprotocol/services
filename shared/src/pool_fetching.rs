@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{baseline_solver::BaselineSolvable, Web3};
 use contracts::{IUniswapLikePair, ERC20};
-use ethcontract::{batch::CallBatch, H160, U256};
+use ethcontract::{batch::CallBatch, BlockNumber, H160, U256};
 use model::TokenPair;
 use num::{rational::Ratio, BigInt, BigRational, Zero};
 use std::sync::Arc;
@@ -20,7 +20,7 @@ type RelativeReserves = (U256, U256, H160);
 
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool>;
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: BlockNumber) -> Vec<Pool>;
 }
 
 #[derive(Clone, Hash, PartialEq, Debug)]
@@ -183,8 +183,13 @@ impl CachedPoolFetcher {
         }
     }
 
-    async fn fetch_inner(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+    async fn fetch_inner(
+        &self,
+        token_pairs: HashSet<TokenPair>,
+        at_block: BlockNumber,
+    ) -> Vec<Pool> {
         let mut cache = self.cache.lock().await;
+        //TODO check that cache hit also matches at_block parameter
         let (cache_hits, cache_misses) = token_pairs
             .into_iter()
             .partition::<HashSet<_>, _>(|pair| cache.1.contains_key(pair));
@@ -195,7 +200,7 @@ impl CachedPoolFetcher {
             .cloned()
             .collect();
 
-        let mut inner_results = self.inner.fetch(cache_misses).await;
+        let mut inner_results = self.inner.fetch(cache_misses, at_block).await;
         for miss in &inner_results {
             cache.1.entry(miss.tokens).or_default().push(miss.clone());
         }
@@ -214,9 +219,9 @@ impl CachedPoolFetcher {
 
 #[async_trait::async_trait]
 impl PoolFetching for CachedPoolFetcher {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: BlockNumber) -> Vec<Pool> {
         self.clear_cache_if_necessary().await;
-        self.fetch_inner(token_pairs).await
+        self.fetch_inner(token_pairs, at_block).await
     }
 }
 
@@ -227,7 +232,7 @@ pub struct PoolFetcher {
 
 #[async_trait::async_trait]
 impl PoolFetching for PoolFetcher {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: BlockNumber) -> Vec<Pool> {
         let mut batch = CallBatch::new(self.web3.transport());
         let futures = token_pairs
             .into_iter()
@@ -240,9 +245,18 @@ impl PoolFetching for PoolFetcher {
                 let token1 = ERC20::at(&self.web3, pair.get().1);
                 (
                     pair,
-                    pair_contract.get_reserves().batch_call(&mut batch),
-                    token0.balance_of(pair_address).batch_call(&mut batch),
-                    token1.balance_of(pair_address).batch_call(&mut batch),
+                    pair_contract
+                        .get_reserves()
+                        .block(at_block.into())
+                        .batch_call(&mut batch),
+                    token0
+                        .balance_of(pair_address)
+                        .block(at_block.into())
+                        .batch_call(&mut batch),
+                    token1
+                        .balance_of(pair_address)
+                        .block(at_block.into())
+                        .batch_call(&mut batch),
                 )
             })
             .collect::<Vec<_>>();
@@ -402,7 +416,7 @@ mod tests {
     struct FakePoolFetcher(Arc<Mutex<Vec<Pool>>>);
     #[async_trait::async_trait]
     impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, _: HashSet<TokenPair>) -> Vec<Pool> {
+        async fn fetch(&self, _: HashSet<TokenPair>, _: BlockNumber) -> Vec<Pool> {
             self.0.lock().await.clone()
         }
     }
@@ -428,14 +442,14 @@ mod tests {
 
         // Read Through
         assert_eq!(
-            instance.fetch(hashset!(pair)).await,
+            instance.fetch(hashset!(pair), BlockNumber::Latest).await,
             vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
         );
 
         // clear inner to test caching
         pools.lock().await.clear();
         assert_eq!(
-            instance.fetch(hashset!(pair)).await,
+            instance.fetch(hashset!(pair), BlockNumber::Latest).await,
             vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2)),]
         );
 
@@ -444,6 +458,9 @@ mod tests {
             hash: Some(H256::from_low_u64_be(1)),
             ..Default::default()
         };
-        assert_eq!(instance.fetch(hashset!(pair)).await, vec![]);
+        assert_eq!(
+            instance.fetch(hashset!(pair), BlockNumber::Latest).await,
+            vec![]
+        );
     }
 }

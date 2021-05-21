@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use ethcontract::BlockNumber;
 
 use crate::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity::Liquidity, orderbook::OrderBookApi,
@@ -10,7 +11,7 @@ pub struct LiquidityCollector {
 }
 
 impl LiquidityCollector {
-    pub async fn get_liquidity(&self) -> Result<Vec<Liquidity>> {
+    pub async fn get_liquidity(&self, at_block: BlockNumber) -> Result<Vec<Liquidity>> {
         let limit_orders = self
             .orderbook_api
             .get_liquidity()
@@ -22,7 +23,7 @@ impl LiquidityCollector {
         for liquidity in self.uniswap_like_liquidity.iter() {
             amms.extend(
                 liquidity
-                    .get_liquidity(limit_orders.iter())
+                    .get_liquidity(limit_orders.iter(), at_block)
                     .await
                     .context("failed to get pool")?,
             );

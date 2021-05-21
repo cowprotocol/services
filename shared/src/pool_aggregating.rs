@@ -1,6 +1,7 @@
 use crate::amm_pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider};
 use crate::pool_fetching::{Pool, PoolFetcher, PoolFetching};
 use crate::Web3;
+use ethcontract::BlockNumber;
 use model::TokenPair;
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -58,10 +59,10 @@ impl PoolAggregator {
 
 #[async_trait::async_trait]
 impl PoolFetching for PoolAggregator {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>) -> Vec<Pool> {
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: BlockNumber) -> Vec<Pool> {
         let mut pools = vec![];
         for fetcher in self.pool_fetchers.iter() {
-            pools.extend(fetcher.fetch(token_pairs.clone()).await);
+            pools.extend(fetcher.fetch(token_pairs.clone(), at_block).await);
         }
         pools
     }
