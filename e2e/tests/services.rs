@@ -24,27 +24,34 @@ use std::{collections::HashSet, str::FromStr, sync::Arc, time::Duration};
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
 #[macro_export]
-macro_rules! tx {
-    ($acc:ident, $call:expr) => {{
+macro_rules! tx_value {
+    ($acc:ident, $value:expr, $call:expr) => {{
         const NAME: &str = stringify!($call);
         $call
             .from($acc.clone())
+            .value($value)
             .send()
             .await
             .expect(&format!("{} failed", NAME))
     }};
+}
+#[macro_export]
+macro_rules! tx {
+    ($acc:ident, $call:expr) => {
+        tx_value!($acc, U256::zero(), $call)
+    };
 }
 
 pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::from(10).pow(18.into())
 }
 
-pub fn create_orderbook_api(web3: &Web3) -> OrderBookApi {
-    let native_token = WETH9::at(web3, H160([0x42; 20]));
+pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
+    let weth = WETH9::at(&web3, weth_address);
     solver::orderbook::OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         std::time::Duration::from_secs(10),
-        native_token,
+        weth,
     )
 }
 

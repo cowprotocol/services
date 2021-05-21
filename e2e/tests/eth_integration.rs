@@ -1,13 +1,12 @@
-use contracts::IUniswapLikeRouter;
+use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use hex_literal::hex;
 use model::{
-    order::{OrderBuilder, OrderKind},
+    order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
     SigningScheme,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use shared::{amm_pair_provider::UniswapPairProvider, Web3};
+use shared::{amm_pair_provider::UniswapPairProvider, maintenance::Maintaining, Web3};
 use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,
@@ -22,21 +21,19 @@ use crate::services::{
     create_orderbook_api, deploy_mintable_token, to_wei, GPv2, OrderbookServices, UniswapContracts,
     API_HOST,
 };
-use shared::maintenance::Maintaining;
 
-const TRADER_A_PK: [u8; 32] =
-    hex!("0000000000000000000000000000000000000000000000000000000000000001");
-const TRADER_B_PK: [u8; 32] =
-    hex!("0000000000000000000000000000000000000000000000000000000000000002");
+const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
+const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
+const FEE_ENDPOINT: &str = "/api/v1/fee/";
 
 #[tokio::test]
-async fn ganache_onchain_settlement() {
-    ganache::test(onchain_settlement).await;
+async fn ganache_eth_integration() {
+    ganache::test(eth_integration).await;
 }
 
-async fn onchain_settlement(web3: Web3) {
+async fn eth_integration(web3: Web3) {
     shared::tracing::initialize("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
@@ -47,8 +44,10 @@ async fn onchain_settlement(web3: Web3) {
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver = Account::Local(accounts[0], None);
-    let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
-    let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
+    let trader_buy_eth_a =
+        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_A_PK).unwrap(), None);
+    let trader_buy_eth_b =
+        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
 
     let gpv2 = GPv2::fetch(&web3, &solver).await;
     let UniswapContracts {
@@ -57,32 +56,35 @@ async fn onchain_settlement(web3: Web3) {
     } = UniswapContracts::fetch(&web3).await;
 
     // Create & Mint tokens to trade
-    let token_a = deploy_mintable_token(&web3).await;
-    tx!(solver, token_a.mint(solver.address(), to_wei(100_000)));
-    tx!(solver, token_a.mint(trader_a.address(), to_wei(100)));
+    let token = deploy_mintable_token(&web3).await;
+    tx!(solver, token.mint(solver.address(), to_wei(100_000)));
+    tx!(solver, token.mint(trader_buy_eth_a.address(), to_wei(50)));
+    tx!(solver, token.mint(trader_buy_eth_b.address(), to_wei(50)));
 
-    let token_b = deploy_mintable_token(&web3).await;
-    tx!(solver, token_b.mint(solver.address(), to_wei(100_000)));
-    tx!(solver, token_b.mint(trader_b.address(), to_wei(100)));
+    let weth = WETH9::builder(&web3)
+        .deploy()
+        .await
+        .expect("WETH deployment failed");
+    tx_value!(solver, to_wei(100_000), weth.deposit());
 
     // Create and fund Uniswap pool
     tx!(
         solver,
-        uniswap_factory.create_pair(token_a.address(), token_b.address())
+        uniswap_factory.create_pair(token.address(), weth.address())
     );
     tx!(
         solver,
-        token_a.approve(uniswap_router.address(), to_wei(100_000))
+        token.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver,
-        token_b.approve(uniswap_router.address(), to_wei(100_000))
+        weth.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver,
         uniswap_router.add_liquidity(
-            token_a.address(),
-            token_b.address(),
+            token.address(),
+            weth.address(),
             to_wei(100_000),
             to_wei(100_000),
             0_u64.into(),
@@ -93,65 +95,89 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(100)));
-    tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(100)));
+    tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(50)));
+    tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(50)));
 
-    // Place Orders
-    let native_token = token_a.address();
+    let native_token = weth.address();
     let OrderbookServices {
-        price_estimator,
         maintenance,
+        price_estimator,
+        ..
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
 
     let client = reqwest::Client::new();
 
-    let order_a = OrderBuilder::default()
-        .with_sell_token(token_a.address())
-        .with_sell_amount(to_wei(100))
-        .with_buy_token(token_b.address())
-        .with_buy_amount(to_wei(80))
+    // Test fee endpoint
+    let client_ref = &client;
+    let estimate_fee = |sell_token, buy_token| async move {
+        client_ref
+            .get(&format!(
+                "{}{}?sellToken={:?}&buyToken={:?}&amount={}&kind=sell",
+                API_HOST,
+                FEE_ENDPOINT,
+                sell_token,
+                buy_token,
+                to_wei(42)
+            ))
+            .send()
+            .await
+            .unwrap()
+    };
+    let fee_buy_eth = estimate_fee(token.address(), BUY_ETH_ADDRESS).await;
+    assert_eq!(fee_buy_eth.status(), 200);
+    // Eth is only supported as the buy token
+    let fee_invalid_token = estimate_fee(BUY_ETH_ADDRESS, token.address()).await;
+    assert_eq!(fee_invalid_token.status(), 404);
+
+    // Place Orders
+    assert_ne!(weth.address(), BUY_ETH_ADDRESS);
+    let order_buy_eth_a = OrderBuilder::default()
+        .with_kind(OrderKind::Buy)
+        .with_sell_token(token.address())
+        .with_sell_amount(to_wei(50))
+        .with_buy_token(BUY_ETH_ADDRESS)
+        .with_buy_amount(to_wei(49))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
         .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
             &gpv2.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
+            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_A_PK).unwrap()),
         )
         .build()
         .order_creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_a).to_string())
+        .body(json!(order_buy_eth_a).to_string())
+        .send()
+        .await;
+    assert_eq!(placement.unwrap().status(), 201);
+    let order_buy_eth_b = OrderBuilder::default()
+        .with_kind(OrderKind::Sell)
+        .with_sell_token(token.address())
+        .with_sell_amount(to_wei(50))
+        .with_buy_token(BUY_ETH_ADDRESS)
+        .with_buy_amount(to_wei(49))
+        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
+        .with_signing_scheme(SigningScheme::Eip712)
+        .sign_with(
+            &gpv2.domain_separator,
+            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_B_PK).unwrap()),
+        )
+        .build()
+        .order_creation;
+    let placement = client
+        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
+        .body(json!(order_buy_eth_b).to_string())
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
-    let order_b = OrderBuilder::default()
-        .with_sell_token(token_b.address())
-        .with_sell_amount(to_wei(50))
-        .with_buy_token(token_a.address())
-        .with_buy_amount(to_wei(40))
-        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .with_kind(OrderKind::Sell)
-        .with_signing_scheme(SigningScheme::EthSign)
-        .sign_with(
-            &gpv2.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
-        )
-        .build()
-        .order_creation;
-    let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_b).to_string())
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+    // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
         factory: uniswap_factory.clone(),
         chain_id,
     });
 
-    // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         uniswap_pair_provider.clone(),
@@ -162,7 +188,7 @@ async fn onchain_settlement(web3: Web3) {
     let solver = solver::naive_solver::NaiveSolver {};
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
-        orderbook_api: create_orderbook_api(&web3, native_token),
+        orderbook_api: create_orderbook_api(&web3, weth.address()),
     };
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
@@ -186,29 +212,26 @@ async fn onchain_settlement(web3: Web3) {
     driver.single_run().await.unwrap();
 
     // Check matching
-    let balance = token_b
-        .balance_of(trader_a.address())
-        .call()
-        .await
-        .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_316_810u128));
+    let web3_ref = &web3;
+    let eth_balance = |trader: Account| async move {
+        web3_ref
+            .eth()
+            .balance(trader.address(), None)
+            .await
+            .expect("Couldn't fetch ETH balance")
+    };
+    assert_eq!(eth_balance(trader_buy_eth_a).await, to_wei(49));
+    assert_eq!(
+        eth_balance(trader_buy_eth_b).await,
+        U256::from(49_800_747_827_208_136_743u128)
+    );
 
-    let balance = token_a
-        .balance_of(trader_b.address())
-        .call()
-        .await
-        .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, U256::from(50_175_363_672_226_073_522u128));
-
-    // Drive orderbook in order to check the removal of settled order_b
+    // Drive orderbook in order to check that all orders were settled
     maintenance.run_maintenance().await.unwrap();
 
-    let orders = create_orderbook_api(&web3, native_token)
+    let orders = create_orderbook_api(&web3, weth.address())
         .get_orders()
         .await
         .unwrap();
     assert!(orders.is_empty());
-
-    // Drive again to ensure we can continue solution finding
-    driver.single_run().await.unwrap();
 }

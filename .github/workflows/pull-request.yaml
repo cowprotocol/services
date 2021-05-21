@@ -49,7 +49,7 @@ jobs:
           cargo test --locked --workspace --all-features --jobs 1 postgres -- --ignored --test-threads 1
       - run: |
           npm install ganache-cli
-          node_modules/.bin/ganache-cli --networkId 5777 --gasLimit 10000000 --gasPrice 0&
+          node_modules/.bin/ganache-cli --networkId 5777 --gasLimit 10000000 --gasPrice 0  --defaultBalanceEther 1000000 &
       - run: cargo run --bin deploy --features bin
         working-directory: contracts
       - run: cargo test --locked --package e2e
