@@ -58,7 +58,12 @@ struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[structopt(long, env = "SKIP_TRACE_API")]
+    #[structopt(
+        long,
+        env = "SKIP_TRACE_API",
+        parse(try_from_str),
+        default_value = "false"
+    )]
     skip_trace_api: bool,
 
     /// The amount of time a classification of a token into good or bad is valid for.
