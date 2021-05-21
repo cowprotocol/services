@@ -165,10 +165,12 @@ impl BaselineSolvable for Pool {
     }
 }
 
+type TokenPoolsMap = HashMap<TokenPair, Vec<Pool>>;
+
 // Read though Pool Fetcher that keeps previously fetched pools in a cache, which get invalidated whenever there is a new block
 pub struct CachedPoolFetcher {
     inner: Box<dyn PoolFetching>,
-    cache: Arc<Mutex<(Block, HashMap<TokenPair, Pool>)>>,
+    cache: Arc<Mutex<(Block, TokenPoolsMap)>>,
     block_stream: CurrentBlockStream,
 }
 
@@ -189,12 +191,13 @@ impl CachedPoolFetcher {
         let cache_results: Vec<_> = cache_hits
             .iter()
             .filter_map(|pair| cache.1.get(pair))
+            .flatten()
             .cloned()
             .collect();
 
         let mut inner_results = self.inner.fetch(cache_misses).await;
         for miss in &inner_results {
-            cache.1.insert(miss.tokens, miss.clone());
+            cache.1.entry(miss.tokens).or_default().push(miss.clone());
         }
         inner_results.extend(cache_results);
         inner_results
@@ -410,7 +413,10 @@ mod tests {
         let token_b = H160::from_low_u64_be(2);
         let pair = TokenPair::new(token_a, token_b).unwrap();
 
-        let pools = Arc::new(Mutex::new(vec![Pool::uniswap(pair, (1, 1))]));
+        let pools = Arc::new(Mutex::new(vec![
+            Pool::uniswap(pair, (1, 1)),
+            Pool::uniswap(pair, (2, 2)),
+        ]));
 
         let current_block = Arc::new(std::sync::Mutex::new(Block::default()));
 
@@ -423,14 +429,14 @@ mod tests {
         // Read Through
         assert_eq!(
             instance.fetch(hashset!(pair)).await,
-            vec![Pool::uniswap(pair, (1, 1))]
+            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
         );
 
         // clear inner to test caching
         pools.lock().await.clear();
         assert_eq!(
             instance.fetch(hashset!(pair)).await,
-            vec![Pool::uniswap(pair, (1, 1))]
+            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2)),]
         );
 
         // invalidate cache
