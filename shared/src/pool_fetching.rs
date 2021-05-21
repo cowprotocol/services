@@ -1,12 +1,13 @@
-use std::collections::{HashMap, HashSet};
-
 use crate::{baseline_solver::BaselineSolvable, Web3};
 use contracts::{IUniswapLikePair, ERC20};
 use ethcontract::{batch::CallBatch, BlockNumber, H160, U256};
 use lru::LruCache;
 use model::TokenPair;
 use num::{rational::Ratio, BigInt, BigRational, Zero};
-use std::sync::Arc;
+use std::{
+    collections::{hash_map::Entry, HashMap, HashSet},
+    sync::Arc,
+};
 use tokio::sync::Mutex;
 
 use crate::amm_pair_provider::AmmPairProvider;
@@ -217,28 +218,47 @@ impl CachedPoolFetcher {
                 return self.inner.fetch(token_pairs, at_block).await;
             }
         };
-        let mut cached_pools = cache.pools.pop(&block).unwrap_or_else(HashMap::new);
 
-        let (cache_hits, cache_misses) = token_pairs
-            .into_iter()
-            .partition::<HashSet<_>, _>(|pair| cached_pools.contains_key(pair));
-        let cache_results: Vec<_> = cache_hits
-            .iter()
-            .filter_map(|pair| cached_pools.get(pair))
-            .flatten()
-            .cloned()
-            .collect();
+        let cached_pools = match cache.pools.get_mut(&block) {
+            Some(cache) => cache,
+            None => {
+                cache.pools.put(block, Default::default());
+                cache.pools.get_mut(&block).unwrap()
+            }
+        };
+
+        let mut cache_hits = Vec::new();
+        let mut cache_misses = HashSet::new();
+        for &pair in &token_pairs {
+            match cached_pools.entry(pair) {
+                Entry::Occupied(entry) => {
+                    cache_hits.extend_from_slice(entry.get());
+                }
+                Entry::Vacant(entry) => {
+                    cache_misses.insert(pair);
+                    // It is possible that the inner fetcher when queried below does not return any
+                    // pools for a token pair. It is important that this information itself enters
+                    // the cache so that it is remembered on next fetch and we do not attempt to
+                    // fetch pools for the token pair again (until the cache expires).
+                    entry.insert(Default::default());
+                }
+            }
+        }
+
+        if cache_misses.is_empty() {
+            return cache_hits;
+        }
 
         let mut inner_results = self.inner.fetch(cache_misses, at_block).await;
         for miss in &inner_results {
+            // Unwrap because the loop above guarantees that the cache has an entry for all pairs.
             cached_pools
-                .entry(miss.tokens)
-                .or_default()
+                .get_mut(&miss.tokens)
+                .unwrap()
                 .push(miss.clone());
         }
-        cache.pools.put(block, cached_pools.clone());
 
-        inner_results.extend(cache_results);
+        inner_results.append(&mut cache_hits);
         inner_results
     }
 
@@ -610,5 +630,38 @@ mod tests {
             instance.fetch(hashset!(pair), BlockNumber::Latest).await,
             vec![]
         );
+    }
+
+    #[tokio::test]
+    async fn caching_pool_fetcher_caches_empty() {
+        let token_a = H160::from_low_u64_be(1);
+        let token_b = H160::from_low_u64_be(2);
+        let pair = TokenPair::new(token_a, token_b).unwrap();
+
+        let pools = Arc::new(Mutex::new(vec![]));
+
+        let starting_block = CurrentBlock {
+            hash: Some(H256::from_low_u64_be(0)),
+            number: Some(0.into()),
+            ..Default::default()
+        };
+        let current_block = Arc::new(std::sync::Mutex::new(starting_block));
+        let (_, receiver) = watch::channel::<CurrentBlock>(Default::default());
+        let block_stream = CurrentBlockStream::new(receiver, current_block);
+
+        let inner = Box::new(FakePoolFetcher(pools.clone()));
+        let instance = CachedPoolFetcher::new(inner, block_stream);
+
+        assert!(instance
+            .fetch(hashset!(pair), BlockNumber::Latest)
+            .await
+            .is_empty());
+        // Change inner to return a new pool if it was called.
+        pools.lock().await.push(Pool::uniswap(pair, (1, 1)));
+        // Inner shouldn't get called because the previous empty result is still cached.
+        assert!(instance
+            .fetch(hashset!(pair), BlockNumber::Latest)
+            .await
+            .is_empty());
     }
 }
