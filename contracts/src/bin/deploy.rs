@@ -10,7 +10,6 @@ use filetime::FileTime;
 use std::{
     fs,
     path::Path,
-    thread,
     time::{Duration, Instant, SystemTime},
 };
 
@@ -125,11 +124,7 @@ async fn wait_for_node(web3: &Web3<Http>) -> Result<()> {
             "node not responding, retrying in {}s",
             NODE_READY_POLL_INTERVAL.as_secs_f64(),
         );
-
-        // NOTE: Usually a blocking call in a future is bad, but since we block
-        // on this future right at the beginning and have no concurrent fibers,
-        // it should be OK for this simple script.
-        thread::sleep(NODE_READY_POLL_INTERVAL);
+        tokio::time::delay_for(NODE_READY_POLL_INTERVAL).await;
     }
 
     bail!(
