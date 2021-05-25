@@ -1,5 +1,8 @@
 use contracts::{GPv2Settlement, WETH9};
-use model::{order::OrderUid, DomainSeparator};
+use model::{
+    order::{OrderUid, BUY_ETH_ADDRESS},
+    DomainSeparator,
+};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{Database, OrderFilter},
@@ -159,6 +162,7 @@ async fn main() {
     base_tokens.insert(native_token.address());
     let mut allowed_tokens = args.shared.allowed_tokens;
     allowed_tokens.extend(base_tokens.iter().copied());
+    allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.shared.unsupported_tokens;
 
     let trace_call_detector = TraceCallDetector {
