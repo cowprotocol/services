@@ -127,9 +127,8 @@ impl SwapQuery {
                 .append_pair("disableEstimate", &disable_estimate.to_string());
         }
         if let Some(complexity_level) = self.complexity_level {
-            // complexity level needs to be encoded as a string despite being an in (https://docs.1inch.io/api/quote-swap)
             url.query_pairs_mut()
-                .append_pair("complexityLevel", &format!("'{}'", complexity_level));
+                .append_pair("complexityLevel", &complexity_level.to_string());
         }
         if let Some(gas_limit) = self.gas_limit {
             url.query_pairs_mut()
@@ -357,7 +356,7 @@ mod tests {
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
                 &slippage=0.5\
                 &disableEstimate=true\
-                &complexityLevel=%271%27\
+                &complexityLevel=1\
                 &gasLimit=133700\
                 &mainRouteParts=28\
                 &parts=42",
