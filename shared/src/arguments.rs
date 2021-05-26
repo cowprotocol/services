@@ -47,15 +47,6 @@ pub struct Arguments {
     #[structopt(long, env = "BASE_TOKENS", use_delimiter = true)]
     pub base_tokens: Vec<H160>,
 
-    /// List of token addresses to be ignored throughout service
-    #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
-
-    /// List of token addresses that shoud be allowed regardless of whether the bad token detector
-    /// thinks they are bad. Base tokens are automatically allowed.
-    #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
-
     /// Fee discount factor: 1 means no discount, 0.9 means 10% discount.
     #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
     pub fee_discount_factor: f64,

@@ -12,6 +12,7 @@ use orderbook::{
     orderbook::Orderbook,
     serve_task, verify_deployed_contract_constants,
 };
+use primitive_types::H160;
 use prometheus::Registry;
 use shared::{
     bad_token::{
@@ -77,6 +78,15 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     token_quality_cache_expiry: Duration,
+
+    /// List of token addresses to be ignored throughout service
+    #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
+    pub unsupported_tokens: Vec<H160>,
+
+    /// List of token addresses that shoud be allowed regardless of whether the bad token detector
+    /// thinks they are bad. Base tokens are automatically allowed.
+    #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
+    pub allowed_tokens: Vec<H160>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
@@ -160,10 +170,10 @@ async fn main() {
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
     base_tokens.insert(native_token.address());
-    let mut allowed_tokens = args.shared.allowed_tokens;
+    let mut allowed_tokens = args.allowed_tokens;
     allowed_tokens.extend(base_tokens.iter().copied());
     allowed_tokens.push(BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.shared.unsupported_tokens;
+    let unsupported_tokens = args.unsupported_tokens;
 
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
