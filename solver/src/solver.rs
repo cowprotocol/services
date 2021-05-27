@@ -61,6 +61,7 @@ pub fn create(
     fee_discount_factor: f64,
     solver_timeout: Duration,
     min_order_size_one_inch: U256,
+    disabled_one_inch_protocols: Vec<String>,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -94,7 +95,11 @@ pub fn create(
             SolverType::OneInch => {
                 // We only want to use 1Inch for high value orders
                 boxed(SellVolumeFilteringSolver {
-                    inner: OneInchSolver::new(settlement_contract.clone(), chain_id)?,
+                    inner: OneInchSolver::with_disabled_protocols(
+                        settlement_contract.clone(),
+                        chain_id,
+                        disabled_one_inch_protocols.clone(),
+                    )?,
                     price_estimator: price_estimator.clone(),
                     denominator_token: native_token,
                     min_value: min_order_size_one_inch,

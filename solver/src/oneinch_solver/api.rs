@@ -90,6 +90,8 @@ pub struct SwapQuery {
     pub from_address: H160,
     /// Limit of price slippage you are willing to accept.
     pub slippage: Slippage,
+    /// List of protocols to use for the swap.
+    pub protocols: Option<Vec<String>>,
     /// Flag to disable checks of the required quantities.
     pub disable_estimate: Option<bool>,
     /// Maximum number of token-connectors to be used in a transaction.
@@ -122,6 +124,10 @@ impl SwapQuery {
             .append_pair("fromAddress", &addr2str(self.from_address))
             .append_pair("slippage", &self.slippage.to_string());
 
+        if let Some(protocols) = self.protocols {
+            url.query_pairs_mut()
+                .append_pair("protocols", &protocols.join(","));
+        }
         if let Some(disable_estimate) = self.disable_estimate {
             url.query_pairs_mut()
                 .append_pair("disableEstimate", &disable_estimate.to_string());
@@ -233,6 +239,12 @@ pub struct Spender {
     pub address: H160,
 }
 
+/// Protocols query response.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+pub struct Protocols {
+    pub protocols: Vec<String>,
+}
+
 /// 1Inch API Client implementation.
 #[derive(Debug)]
 pub struct OneInchClient {
@@ -265,6 +277,15 @@ impl OneInchClient {
         let url = self
             .base_url
             .join("v3.0/1/approve/spender")
+            .expect("unexpectedly invalid URL");
+        Ok(self.client.get(url).send().await?.json().await?)
+    }
+
+    /// Retrieves a list of the on-chain protocols supported by 1Inch.
+    pub async fn get_protocols(&self) -> Result<Protocols> {
+        let url = self
+            .base_url
+            .join("v3.0/1/protocols")
             .expect("unexpectedly invalid URL");
         Ok(self.client.get(url).send().await?.json().await?)
     }
@@ -311,6 +332,7 @@ mod tests {
             amount: 1_000_000_000_000_000_000u128.into(),
             from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
+            protocols: None,
             disable_estimate: None,
             complexity_level: None,
             gas_limit: None,
@@ -339,6 +361,7 @@ mod tests {
             amount: 1_000_000_000_000_000_000u128.into(),
             from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
             slippage: Slippage::basis_points(50).unwrap(),
+            protocols: Some(vec!["WETH".to_string(), "UNISWAP_V3".to_string()]),
             disable_estimate: Some(true),
             complexity_level: Some(Amount::new(1).unwrap()),
             gas_limit: Some(133700),
@@ -355,6 +378,7 @@ mod tests {
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
                 &slippage=0.5\
+                &protocols=WETH%2CUNISWAP_V3\
                 &disableEstimate=true\
                 &complexityLevel=1\
                 &gasLimit=133700\
@@ -492,6 +516,7 @@ mod tests {
                 amount: 1_000_000_000_000_000_000u128.into(),
                 from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
                 slippage: Slippage::basis_points(50).unwrap(),
+                protocols: None,
                 disable_estimate: None,
                 complexity_level: None,
                 gas_limit: None,
@@ -505,7 +530,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn oneinch_swap_without_amount_checks_and_splitting() {
+    async fn oneinch_swap_fully_parameterized() {
         let swap = OneInchClient::default()
             .get_swap(SwapQuery {
                 from_token_address: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -513,6 +538,7 @@ mod tests {
                 amount: 100_000_000_000_000_000_000u128.into(),
                 from_address: shared::addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
                 slippage: Slippage::basis_points(50).unwrap(),
+                protocols: Some(vec!["WETH".to_string(), "UNISWAP_V2".to_string()]),
                 disable_estimate: Some(true),
                 complexity_level: Some(Amount::new(2).unwrap()),
                 gas_limit: Some(750_000),
@@ -522,6 +548,13 @@ mod tests {
             .await
             .unwrap();
         println!("{:#?}", swap);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn oneinch_protocols() {
+        let protocols = OneInchClient::default().get_protocols().await.unwrap();
+        println!("{:#?}", protocols);
     }
 
     #[tokio::test]

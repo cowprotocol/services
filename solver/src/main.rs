@@ -120,6 +120,12 @@ struct Arguments {
     )]
     min_order_size_one_inch: U256,
 
+    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
+    /// (representing a private market maker) is disabled as it seems to
+    /// produce invalid swaps.
+    #[structopt(long, env, default_value = "PMM1", use_delimiter = true)]
+    disabled_one_inch_protocols: Vec<String>,
+
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
     #[structopt(
@@ -230,6 +236,7 @@ async fn main() {
         args.shared.fee_discount_factor,
         args.solver_time_limit,
         args.min_order_size_one_inch,
+        args.disabled_one_inch_protocols,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
