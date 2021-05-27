@@ -1,13 +1,11 @@
 use super::{BadTokenDetecting, TokenQuality};
-use crate::{amm_pair_provider::AmmPairProvider, trace_many, Web3};
+use crate::{
+    amm_pair_provider::AmmPairProvider, ethcontract_error::EthcontractErrorType, trace_many, Web3,
+};
 use anyhow::{anyhow, bail, ensure, Result};
 use contracts::ERC20;
 use ethcontract::{
-    batch::CallBatch,
-    dyns::DynTransport,
-    errors::{ExecutionError, MethodError},
-    transaction::TransactionBuilder,
-    PrivateKey,
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
 };
 use model::TokenPair;
 use primitive_types::{H160, U256};
@@ -46,9 +44,11 @@ impl TraceCallDetector {
         let decimals = match instance.decimals().call().await {
             Ok(decimals) => decimals,
             Err(err) => {
-                return match EthcontractError::classify(&err) {
-                    EthcontractError::Node => Err(err.into()),
-                    EthcontractError::Contract => Ok(TokenQuality::bad("failed to get decimals")),
+                return match EthcontractErrorType::classify(&err) {
+                    EthcontractErrorType::Node => Err(err.into()),
+                    EthcontractErrorType::Contract => {
+                        Ok(TokenQuality::bad("failed to get decimals"))
+                    }
                 }
             }
         };
@@ -110,9 +110,9 @@ impl TraceCallDetector {
             let balance = match result {
                 Ok(balance) => balance,
                 Err(err) => {
-                    return match EthcontractError::classify(&err) {
-                        EthcontractError::Node => Err(err.into()),
-                        EthcontractError::Contract => Ok(None),
+                    return match EthcontractErrorType::classify(&err) {
+                        EthcontractErrorType::Node => Err(err.into()),
+                        EthcontractErrorType::Contract => Ok(None),
                     }
                 }
             };
@@ -261,23 +261,6 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
         _ => bail!("no error but also no call result"),
     };
     Ok(Ok(call_result.gas_used))
-}
-
-#[derive(Copy, Clone, Debug)]
-enum EthcontractError {
-    // The error stems from communicating with the node.
-    Node,
-    // Communication was successful but the contract on chain errored.
-    Contract,
-}
-
-impl EthcontractError {
-    fn classify(err: &MethodError) -> Self {
-        match &err.inner {
-            ExecutionError::Web3(_) => Self::Node,
-            _ => Self::Contract,
-        }
-    }
 }
 
 #[cfg(test)]

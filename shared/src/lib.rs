@@ -8,6 +8,7 @@ pub mod http;
 #[macro_use]
 pub mod macros;
 pub mod bad_token;
+pub mod ethcontract_error;
 pub mod event_handling;
 pub mod maintenance;
 pub mod metrics;

@@ -321,7 +321,7 @@ impl BaselinePriceEstimator {
         let pools = self
             .pool_fetcher
             .fetch(all_pairs, BlockNumber::Latest)
-            .await
+            .await?
             .into_iter()
             .fold(HashMap::<_, Vec<Pool>>::new(), |mut pools, pool| {
                 pools.entry(pool.tokens).or_default().push(pool);
@@ -415,12 +415,17 @@ mod tests {
     struct FakePoolFetcher(Vec<Pool>);
     #[async_trait::async_trait]
     impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: BlockNumber) -> Vec<Pool> {
-            self.0
+        async fn fetch(
+            &self,
+            token_pairs: HashSet<TokenPair>,
+            _: BlockNumber,
+        ) -> Result<Vec<Pool>> {
+            Ok(self
+                .0
                 .clone()
                 .into_iter()
                 .filter(|pool| token_pairs.contains(&pool.tokens))
-                .collect()
+                .collect())
         }
     }
 

@@ -80,7 +80,7 @@ impl UniswapLikeLiquidity {
 
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(pools, at_block).await {
+        for pool in self.pool_fetcher.fetch(pools, at_block).await? {
             tokens.insert(pool.tokens.get().0);
             tokens.insert(pool.tokens.get().1);
 

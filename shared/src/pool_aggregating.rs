@@ -1,6 +1,7 @@
 use crate::amm_pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider};
 use crate::pool_fetching::{Pool, PoolFetcher, PoolFetching};
 use crate::Web3;
+use anyhow::Result;
 use ethcontract::BlockNumber;
 use model::TokenPair;
 use std::collections::HashSet;
@@ -59,15 +60,19 @@ impl PoolAggregator {
 
 #[async_trait::async_trait]
 impl PoolFetching for PoolAggregator {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: BlockNumber) -> Vec<Pool> {
-        futures::future::join_all(
+    async fn fetch(
+        &self,
+        token_pairs: HashSet<TokenPair>,
+        at_block: BlockNumber,
+    ) -> Result<Vec<Pool>> {
+        // vk: Using try join means if any pool fetcher fails we fail too. Alternatively we could
+        // return the succeeding ones but I feel it is cleaner to forward the error.
+        let results = futures::future::try_join_all(
             self.pool_fetchers
                 .iter()
                 .map(|pool_fetcher| pool_fetcher.fetch(token_pairs.clone(), at_block)),
         )
-        .await
-        .into_iter()
-        .flatten()
-        .collect()
+        .await?;
+        Ok(results.into_iter().flatten().collect())
     }
 }
