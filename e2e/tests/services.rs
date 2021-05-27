@@ -131,7 +131,9 @@ impl OrderbookServices {
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let event_updater = Arc::new(EventUpdater::new(gpv2.settlement.clone(), db.clone(), None));
-        let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
+        let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(1))
+            .await
+            .unwrap();
         let pair_provider = Arc::new(UniswapPairProvider {
             factory: uniswap_factory.clone(),
             chain_id,

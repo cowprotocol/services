@@ -87,6 +87,15 @@ struct Arguments {
     /// thinks they are bad. Base tokens are automatically allowed.
     #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
+
+    /// The amount of time a classification of a token into good or bad is valid for.
+    #[structopt(
+        long,
+        env,
+        default_value = "5",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    block_stream_poll_interval_seconds: Duration,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
@@ -195,7 +204,10 @@ async fn main() {
         },
     ));
 
-    let current_block_stream = current_block_stream(web3.clone()).await.unwrap();
+    let current_block_stream =
+        current_block_stream(web3.clone(), args.block_stream_poll_interval_seconds)
+            .await
+            .unwrap();
 
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
     let pool_fetcher =
