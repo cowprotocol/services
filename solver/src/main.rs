@@ -124,7 +124,7 @@ struct Arguments {
     /// without external liquidity
     #[structopt(
         long,
-        env = "MARKET_MAKEABLE_TOKEN_LIST",
+        env = "MARKET_MAKABLE_TOKEN_LIST",
         default_value = "https://tokens.coingecko.com/uniswap/all.json"
     )]
     market_makable_token_list: String,
