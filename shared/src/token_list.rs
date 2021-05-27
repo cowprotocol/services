@@ -43,6 +43,10 @@ impl TokenList {
     pub fn get(&self, address: &H160) -> Option<&Token> {
         self.tokens.get(address)
     }
+
+    pub fn all(&self) -> Vec<Token> {
+        self.tokens.values().cloned().collect()
+    }
 }
 
 /// Relevant parts of TokenList schema as defined in https://uniswap.org/tokenlist.schema.json
