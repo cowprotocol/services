@@ -19,7 +19,7 @@ impl Maintaining for ServiceMaintenance {
     async fn run_maintenance(&self) -> Result<()> {
         for result in join_all(self.maintainers.iter().map(|m| m.run_maintenance())).await {
             if let Err(err) = result {
-                tracing::error!("failed with: {}", err);
+                tracing::error!("Service Maintenance Error: {:?}", err);
             }
         }
         Ok(())
