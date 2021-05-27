@@ -110,10 +110,11 @@ impl TradesQueryRow {
 mod tests {
 
     use super::*;
-    use crate::database::{Event, EventIndex, Settlement as DbSettlement, Trade as DbTrade};
+    use crate::database::{Event, Settlement as DbSettlement, Trade as DbTrade};
     use ethcontract::H256;
     use model::order::{Order, OrderCreation, OrderMetaData};
     use model::trade::Trade;
+    use shared::event_handling::EventIndex;
     use std::collections::HashSet;
 
     async fn generate_owners_and_order_ids(

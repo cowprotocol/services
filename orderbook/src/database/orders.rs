@@ -265,6 +265,7 @@ mod tests {
     use futures::StreamExt;
     use num_bigint::BigUint;
     use primitive_types::U256;
+    use shared::event_handling::EventIndex;
     use sqlx::Executor;
     use std::collections::HashSet;
 
