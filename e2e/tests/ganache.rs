@@ -1,7 +1,7 @@
 use ethcontract::futures::FutureExt;
-use ethcontract::{Http, U256};
+use ethcontract::U256;
 use lazy_static::lazy_static;
-use shared::{transport::LoggingTransport, Web3};
+use shared::{transport::create_test_transport, Web3};
 use std::{
     fmt::Debug,
     future::Future,
@@ -33,7 +33,7 @@ where
     // it but rather in the locked state.
     let _lock = GANACHE_MUTEX.lock();
 
-    let http = LoggingTransport::new(Http::new(NODE_HOST).expect("transport failure"));
+    let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
     let resetter = Resetter::new(&web3).await;
 

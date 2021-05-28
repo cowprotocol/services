@@ -1,8 +1,14 @@
-use std::{convert::TryInto, time::Instant};
+use std::{
+    convert::TryInto,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use model::order::Order;
-use prometheus::{IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry};
+use prometheus::{
+    HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
+};
+use shared::transport::TransportMetrics;
 use strum::{AsStaticRef, VariantNames};
 
 use crate::liquidity::Liquidity;
@@ -26,6 +32,7 @@ pub struct Metrics {
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
+    transport_requests: HistogramVec,
 }
 
 impl Metrics {
@@ -84,6 +91,13 @@ impl Metrics {
         )?;
         registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
 
+        let opts = HistogramOpts::new(
+            "gp_v2_solver_transport_requests",
+            "RPC Request durations labelled by method",
+        );
+        let transport_requests = HistogramVec::new(opts, &["method"]).unwrap();
+        registry.register(Box::new(transport_requests.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -92,6 +106,7 @@ impl Metrics {
             settlement_simulations,
             settlement_submissions,
             matched_but_unsettled_orders,
+            transport_requests,
         })
     }
 }
@@ -153,6 +168,14 @@ impl SolverMetrics for Metrics {
 
     fn orders_matched_but_not_settled(&self, count: usize) {
         self.matched_but_unsettled_orders.inc_by(count as u64);
+    }
+}
+
+impl TransportMetrics for Metrics {
+    fn report_query(&self, label: &str, elapsed: Duration) {
+        self.transport_requests
+            .with_label_values(&[label])
+            .observe(elapsed.as_secs_f64())
     }
 }
 

@@ -11,7 +11,7 @@ use shared::{
     price_estimate::BaselinePriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::LoggingTransport,
+    transport::create_instrumented_transport,
 };
 use solver::{
     driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
@@ -20,7 +20,6 @@ use solver::{
 use std::iter::FromIterator as _;
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use structopt::StructOpt;
-use web3::transports::Http;
 
 #[derive(Debug, StructOpt)]
 struct Arguments {
@@ -155,9 +154,10 @@ async fn main() {
     let metrics = Arc::new(Metrics::new(&registry).expect("Couldn't register metrics"));
 
     // TODO: custom transport that allows setting timeout
-    let transport = LoggingTransport::new(
+    let transport = create_instrumented_transport(
         web3::transports::Http::new(args.shared.node_url.as_str())
             .expect("transport creation failed"),
+        metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
@@ -275,7 +275,7 @@ async fn build_amm_artifacts(
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: HashSet<H160>,
-    web3: web3::Web3<LoggingTransport<Http>>,
+    web3: shared::Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
     for source in sources {

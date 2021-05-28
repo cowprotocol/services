@@ -25,7 +25,7 @@ use shared::{
     pool_aggregating::{self, PoolAggregator},
     pool_fetching::CachedPoolFetcher,
     price_estimate::BaselinePriceEstimator,
-    transport::LoggingTransport,
+    transport::create_instrumented_transport,
 };
 use std::{
     collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
@@ -118,9 +118,13 @@ async fn main() {
     shared::tracing::initialize(args.shared.log_filter.as_str());
     tracing::info!("running order book with {:#?}", args);
 
-    let transport = LoggingTransport::new(
+    let registry = Registry::default();
+    let metrics = Arc::new(Metrics::new(&registry).unwrap());
+
+    let transport = create_instrumented_transport(
         web3::transports::Http::new(args.shared.node_url.as_str())
             .expect("transport creation failed"),
+        metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
@@ -245,9 +249,6 @@ async fn main() {
         ],
     };
     check_database_connection(orderbook.as_ref()).await;
-
-    let registry = Registry::default();
-    let metrics = Arc::new(Metrics::new(&registry).unwrap());
 
     let serve_task = serve_task(
         database.clone(),

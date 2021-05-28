@@ -77,7 +77,7 @@ pub fn tenderly_link(
 mod tests {
     use super::*;
     use ethcontract::{Account, PrivateKey};
-    use shared::transport::LoggingTransport;
+    use shared::transport::create_test_transport;
 
     // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored --nocapture
     #[tokio::test]
@@ -85,7 +85,7 @@ mod tests {
     async fn mainnet() {
         // Create some bogus settlements to see that the simulation returns an error.
         let node = "https://dev-openethereum.mainnet.gnosisdev.com";
-        let transport = LoggingTransport::new(web3::transports::Http::new(node).unwrap());
+        let transport = create_test_transport(node);
         let web3 = Web3::new(transport);
         let block = web3.eth().block_number().await.unwrap().as_u64();
         let network_id = web3.net().version().await.unwrap();

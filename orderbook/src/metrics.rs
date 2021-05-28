@@ -1,11 +1,19 @@
 use anyhow::Result;
 use prometheus::{HistogramOpts, HistogramVec, IntGaugeVec, Opts, Registry};
-use std::{convert::Infallible, sync::Arc, time::Instant};
+use shared::transport::TransportMetrics;
+use std::{
+    convert::Infallible,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use warp::{reply::Response, Filter, Reply};
 
 pub struct Metrics {
-    requests: HistogramVec,
+    /// Incoming API request metrics
+    api_requests: HistogramVec,
     db_table_row_count: IntGaugeVec,
+    /// Outgoing RPC request metrics
+    rpc_requests: HistogramVec,
 }
 
 impl Metrics {
@@ -14,8 +22,8 @@ impl Metrics {
             "gp_v2_api_requests",
             "API Request durations labelled by route and response status code",
         );
-        let requests = HistogramVec::new(opts, &["response", "request_type"]).unwrap();
-        registry.register(Box::new(requests.clone()))?;
+        let api_requests = HistogramVec::new(opts, &["response", "request_type"]).unwrap();
+        registry.register(Box::new(api_requests.clone()))?;
 
         let db_table_row_count = IntGaugeVec::new(
             Opts::new("gp_v2_api_table_rows", "Number of rows in db tables."),
@@ -23,9 +31,17 @@ impl Metrics {
         )?;
         registry.register(Box::new(db_table_row_count.clone()))?;
 
+        let opts = HistogramOpts::new(
+            "gp_v2_solver_transport_requests",
+            "RPC Request durations labelled by method",
+        );
+        let rpc_requests = HistogramVec::new(opts, &["method"]).unwrap();
+        registry.register(Box::new(rpc_requests.clone()))?;
+
         Ok(Self {
-            requests,
+            api_requests,
             db_table_row_count,
+            rpc_requests,
         })
     }
 
@@ -33,6 +49,14 @@ impl Metrics {
         self.db_table_row_count
             .with_label_values(&[table])
             .set(count);
+    }
+}
+
+impl TransportMetrics for Metrics {
+    fn report_query(&self, label: &str, elapsed: Duration) {
+        self.rpc_requests
+            .with_label_values(&[label])
+            .observe(elapsed.as_secs_f64())
     }
 }
 
@@ -77,7 +101,7 @@ pub fn end_request(metrics: Arc<Metrics>, timer: Instant, reply: LabelledReply) 
     let response = inner.into_response();
     let elapsed = timer.elapsed().as_secs_f64();
     metrics
-        .requests
+        .api_requests
         .with_label_values(&[response.status().as_str(), label])
         .observe(elapsed);
     MetricsReply { response }

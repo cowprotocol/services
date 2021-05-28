@@ -24,4 +24,7 @@ pub mod trace_many;
 pub mod tracing;
 pub mod transport;
 
-pub type Web3 = web3::Web3<transport::LoggingTransport<web3::transports::Http>>;
+pub type Web3 =
+    web3::Web3<transport::LoggingTransport<transport::MetricTransport<web3::transports::Http>>>;
+
+extern crate derivative;

@@ -189,16 +189,14 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
 mod tests {
     use super::*;
     use contracts::ERC20Mintable;
-    use ethcontract::{prelude::Account, Http};
+    use ethcontract::prelude::Account;
     use hex_literal::hex;
-    use shared::transport::LoggingTransport;
+    use shared::transport::create_test_transport;
 
     #[tokio::test]
     #[ignore]
     async fn mainnet_can_transfer() {
-        let http = LoggingTransport::new(
-            Http::new("https://dev-openethereum.mainnet.gnosisdev.com/").unwrap(),
-        );
+        let http = create_test_transport("http://127.0.0.1:8545");
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
@@ -216,9 +214,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_cannot_transfer() {
-        let http = LoggingTransport::new(
-            Http::new("https://dev-openethereum.mainnet.gnosisdev.com/").unwrap(),
-        );
+        let http = create_test_transport("http://127.0.0.1:8545");
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
@@ -238,8 +234,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn watch_testnet_balance() {
-        let http =
-            LoggingTransport::new(Http::new("http://127.0.0.1:8545").expect("transport failure"));
+        let http = create_test_transport("http://127.0.0.1:8545");
         let web3 = Web3::new(http);
 
         let accounts: Vec<H160> = web3.eth().accounts().await.expect("get accounts failed");

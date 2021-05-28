@@ -1,8 +1,8 @@
 use contracts::WETH9;
 use jsonrpc_core::Call as RpcCall;
 use serde_json::Value;
-use shared::transport::LoggingTransport;
-use web3::{api::Web3, transports::Http, types::H160, Transport};
+use shared::transport::create_test_transport;
+use web3::{api::Web3, types::H160, Transport};
 
 // To create an ethcontract instance we need to provide a web3 even though we never use it. This
 // module provides a dummy transport and web3.
@@ -35,7 +35,5 @@ pub fn infura(network: impl AsRef<str>) -> shared::Web3 {
         infura_project_id
     );
 
-    Web3::new(LoggingTransport::new(
-        Http::new(&node_url).expect("transport creation failed"),
-    ))
+    Web3::new(create_test_transport(&node_url))
 }

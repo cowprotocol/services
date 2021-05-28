@@ -268,12 +268,11 @@ mod tests {
     use super::*;
     use crate::{
         amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
-        transport::LoggingTransport,
+        transport::create_test_transport,
     };
     use hex_literal::hex;
-    use web3::{
-        transports::Http,
-        types::{Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace},
+    use web3::types::{
+        Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace,
     };
 
     fn encode_u256(u256: U256) -> Bytes {
@@ -385,9 +384,7 @@ mod tests {
     #[ignore]
     async fn mainnet_tokens() {
         // shared::tracing::initialize("orderbook::bad_token=debug,shared::transport=debug");
-        let http = LoggingTransport::new(
-            Http::new("https://dev-openethereum.mainnet.gnosisdev.com/").unwrap(),
-        );
+        let http = create_test_transport("https://dev-openethereum.mainnet.gnosisdev.com/");
         let web3 = Web3::new(http);
 
         let base_tokens = &[
