@@ -2,7 +2,7 @@ use super::{BadTokenDetecting, TokenQuality};
 use crate::{
     amm_pair_provider::AmmPairProvider, ethcontract_error::EthcontractErrorType, trace_many, Web3,
 };
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{
     batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
@@ -74,7 +74,9 @@ impl TraceCallDetector {
         // sending to an address that does not have any balance yet (implicitly 0) causes an
         // allocation.
         let request = self.create_trace_request(token, amount, take_from);
-        let traces = trace_many::trace_many(request, &self.web3).await?;
+        let traces = trace_many::trace_many(request, &self.web3)
+            .await
+            .context("failed to trace for bad token detection")?;
         Self::handle_response(&traces, amount)
     }
 
