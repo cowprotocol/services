@@ -24,8 +24,11 @@ pub async fn trace_many(requests: Vec<CallRequest>, web3: &Web3) -> Result<Vec<B
         serde_json::to_value(requests)?,
         serde_json::to_value(block)?,
     ];
-    let response = transport.execute("trace_callMany", params).await?;
-    serde_json::from_value(response).context("failed to decode response")
+    let response = transport
+        .execute("trace_callMany", params)
+        .await
+        .context("trace_callMany failed")?;
+    serde_json::from_value(response).context("failed to decode trace_callMany response")
 }
 
 // Check the return value of trace_many for whether all top level transactions succeeded (did not
