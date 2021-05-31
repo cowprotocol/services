@@ -381,7 +381,7 @@ mod tests {
         println!("{:?}", TraceCallDetector::arbitrary_recipient());
     }
 
-    // cargo test -p orderbook mainnet_tokens -- --nocapture
+    // cargo test -p shared mainnet_tokens -- --nocapture --ignored
     #[tokio::test]
     #[ignore]
     async fn mainnet_tokens() {
@@ -492,6 +492,7 @@ mod tests {
             H160(hex!("2b1fe2cea92436e8c34b7c215af66aaa2932a8b2")),
             H160(hex!("c7c24fe893c21e8a4ef46eaf31badcab9f362841")),
             H160(hex!("ef5b32486ed432b804a51d129f4d2fbdf18057ec")),
+            H160(hex!("2129ff6000b95a973236020bcd2b2006b0d8e019")),
         ];
 
         // Of the deny listed tokens the following are detected as good:
