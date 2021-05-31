@@ -124,7 +124,7 @@ async fn wait_for_node(web3: &Web3<Http>) -> Result<()> {
             "node not responding, retrying in {}s",
             NODE_READY_POLL_INTERVAL.as_secs_f64(),
         );
-        tokio::time::delay_for(NODE_READY_POLL_INTERVAL).await;
+        tokio::time::sleep(NODE_READY_POLL_INTERVAL).await;
     }
 
     bail!(

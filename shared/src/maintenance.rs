@@ -1,4 +1,4 @@
-use crate::current_block::{Block, CurrentBlockStream};
+use crate::current_block::{self, Block, CurrentBlockStream};
 use anyhow::Result;
 use futures::{future::join_all, Stream, StreamExt};
 use std::sync::Arc;
@@ -42,7 +42,7 @@ impl ServiceMaintenance {
     }
 
     pub async fn run_maintenance_on_new_block(self, current_block_stream: CurrentBlockStream) -> ! {
-        self.run_maintenance_for_block_stream(current_block_stream)
+        self.run_maintenance_for_block_stream(current_block::into_stream(current_block_stream))
             .await;
         unreachable!()
     }
@@ -52,7 +52,6 @@ impl ServiceMaintenance {
 mod tests {
     use super::*;
     use anyhow::bail;
-    use tokio::stream::StreamExt;
 
     #[tokio::test]
     async fn run_maintenance_ignores_errors() {

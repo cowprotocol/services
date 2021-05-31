@@ -12,26 +12,27 @@ async-trait = "0.1"
 atty = "0.2"
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { version = "0.11", default-features = false }
+ethcontract = { version = "0.12", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.1.2", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.2.0", features = ["web3_"] }
 hex-literal = "0.3"
 lru = "0.6"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
-primitive-types = "0.8"
+primitive-types = "0.9"
 prometheus = "0.12"
-reqwest = { version = "0.10", features = ["json"] }
+reqwest = { version = "0.11", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 structopt = { version = "0.3", default-features = false }
-tokio = { version = "0.2", features = ["macros", "time"] }
+tokio = { version = "1.6", features = ["macros", "time"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = "0.2"
 url = "2.2"
-warp = "0.2"
-web3 = { version = "0.15", default-features = false, features = ["http-tls"] }
+warp = "0.3"
+web3 = { version = "0.16", default-features = false, features = ["http-tls"] }
 num-bigint = "0.3"
 mockall = "0.9"
 thiserror = "1.0"

@@ -227,6 +227,7 @@ fn convert_trade(trade: &ContractTrade, meta: &EventMetadata) -> Result<(EventIn
     let order_uid = OrderUid(
         trade
             .order_uid
+            .0
             .as_slice()
             .try_into()
             .context("trade event order_uid has wrong number of bytes")?,
@@ -258,6 +259,7 @@ fn convert_invalidation(
     let order_uid = OrderUid(
         invalidation
             .order_uid
+            .0
             .as_slice()
             .try_into()
             .context("invalidation event order_uid has wrong number of bytes")?,

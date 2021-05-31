@@ -272,8 +272,9 @@ impl CachedPoolFetcher {
 
     async fn clear_cache_if_necessary(&self) {
         let mut cache = self.cache.lock().await;
-        if cache.latest_block != self.block_stream.current_block() {
-            cache.latest_block = self.block_stream.current_block();
+        let current = self.block_stream.borrow().clone();
+        if cache.latest_block != current {
+            cache.latest_block = current;
             // Make sure we don't keep any cached data at that block around
             let number = cache.latest_block_number();
             cache.pools.pop(&number);
@@ -546,13 +547,9 @@ mod tests {
             ..Default::default()
         };
 
-        let current_block = Arc::new(std::sync::Mutex::new(starting_block));
-
-        let (_, receiver) = watch::channel::<CurrentBlock>(Default::default());
-        let block_stream = CurrentBlockStream::new(receiver, current_block.clone());
-
+        let (sender, receiver) = watch::channel(starting_block);
         let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, block_stream);
+        let instance = CachedPoolFetcher::new(inner, receiver);
 
         // Read Through
         assert_eq!(
@@ -588,11 +585,13 @@ mod tests {
         );
 
         // invalidate cache
-        *current_block.lock().unwrap() = CurrentBlock {
-            hash: Some(H256::from_low_u64_be(1)),
-            number: Some(1.into()),
-            ..Default::default()
-        };
+        sender
+            .send(CurrentBlock {
+                hash: Some(H256::from_low_u64_be(1)),
+                number: Some(1.into()),
+                ..Default::default()
+            })
+            .unwrap();
         assert_eq!(
             instance
                 .fetch(hashset!(pair), BlockNumber::Latest)
@@ -625,13 +624,9 @@ mod tests {
             ..Default::default()
         };
 
-        let current_block = Arc::new(std::sync::Mutex::new(starting_block));
-
-        let (_, receiver) = watch::channel::<CurrentBlock>(Default::default());
-        let block_stream = CurrentBlockStream::new(receiver, current_block.clone());
-
+        let (_sender, receiver) = watch::channel(starting_block);
         let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, block_stream);
+        let instance = CachedPoolFetcher::new(inner, receiver);
 
         // Read Through
         assert_eq!(
@@ -667,13 +662,9 @@ mod tests {
             ..Default::default()
         };
 
-        let current_block = Arc::new(std::sync::Mutex::new(starting_block.clone()));
-
-        let (_, receiver) = watch::channel::<CurrentBlock>(Default::default());
-        let block_stream = CurrentBlockStream::new(receiver, current_block.clone());
-
+        let (sender, receiver) = watch::channel(starting_block.clone());
         let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, block_stream);
+        let instance = CachedPoolFetcher::new(inner, receiver);
 
         // Read Through
         assert_eq!(
@@ -685,11 +676,13 @@ mod tests {
         );
 
         // simulate reorg on latest block
-        *current_block.lock().unwrap() = CurrentBlock {
-            hash: Some(H256::from_low_u64_be(1)),
-            number: starting_block.number,
-            ..Default::default()
-        };
+        sender
+            .send(CurrentBlock {
+                hash: Some(H256::from_low_u64_be(1)),
+                number: starting_block.number,
+                ..Default::default()
+            })
+            .unwrap();
 
         // clear inner, to test we are not using cache
         pools.lock().await.clear();
@@ -722,12 +715,9 @@ mod tests {
             number: Some(0.into()),
             ..Default::default()
         };
-        let current_block = Arc::new(std::sync::Mutex::new(starting_block));
-        let (_, receiver) = watch::channel::<CurrentBlock>(Default::default());
-        let block_stream = CurrentBlockStream::new(receiver, current_block);
-
+        let (_sender, receiver) = watch::channel(starting_block);
         let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, block_stream);
+        let instance = CachedPoolFetcher::new(inner, receiver);
 
         assert!(instance
             .fetch(hashset!(pair), BlockNumber::Latest)

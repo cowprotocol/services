@@ -26,7 +26,7 @@ pub struct OrderFilter {
 }
 
 #[derive(sqlx::Type)]
-#[sqlx(rename = "OrderKind")]
+#[sqlx(type_name = "OrderKind")]
 #[sqlx(rename_all = "lowercase")]
 pub enum DbOrderKind {
     Buy,
@@ -50,7 +50,7 @@ impl DbOrderKind {
 }
 
 #[derive(sqlx::Type)]
-#[sqlx(rename = "SigningScheme")]
+#[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum DbSigningScheme {
     Eip712,

@@ -17,6 +17,5 @@ default-members = [
 ]
 
 [patch.crates-io]
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "20714100f891663b3f16740df855e34222cc6178" }
-ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "20714100f891663b3f16740df855e34222cc6178" }
-warp = { git = 'https://github.com/vkgnosis/warp.git', rev = "c329629f1130c190c10fa1e8ec9fb63fc81e45b0" }
+# Warp fork with an extra commit to allow turning rejections into responses.
+warp = { git = 'https://github.com/vkgnosis/warp.git', rev = "87a91e24311b0ca6ed67408d2d302c569331dfec" }

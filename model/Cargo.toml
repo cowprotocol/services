@@ -7,18 +7,18 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
-ethabi = "13.0"
+ethabi = "14.0"
 enum-utils = "0.1"
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"
 num-bigint = "0.3"
-primitive-types = { version = "0.8" }
+primitive-types = { version = "0.9" }
 secp256k1 = "0.20"
 serde = { version = "1.0", features = ["derive"] }
 serde_with = { version = "1.9", default-features = false, features = ["macros"] }
-web3 = { version = "0.15", default-features = false, features = ["signing"] }
+web3 = { version = "0.16", default-features = false, features = ["signing"] }
 
 [dev-dependencies]
 serde_json = "1.0"

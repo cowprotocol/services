@@ -109,9 +109,7 @@ fn generate_contract_with_config(name: &str, config: impl FnOnce(Builder) -> Bui
     println!("cargo:rerun-if-changed={}", artifact.display());
     let mut builder = Builder::new(artifact)
         .with_contract_name_override(Some(name))
-        .with_visibility_modifier(Some("pub"))
-        .add_event_derive("serde::Deserialize")
-        .add_event_derive("serde::Serialize");
+        .with_visibility_modifier(Some("pub"));
 
     if let Ok(address) = fs::read_to_string(&address_file) {
         println!("cargo:rerun-if-changed={}", address_file.display());

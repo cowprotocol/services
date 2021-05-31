@@ -15,7 +15,7 @@ use crate::{
 };
 use anyhow::{ensure, Result};
 use contracts::{GPv2Settlement, ERC20};
-use ethcontract::{dyns::DynWeb3, U256};
+use ethcontract::{dyns::DynWeb3, Bytes, U256};
 use futures::future;
 use maplit::hashmap;
 use model::order::OrderKind;
@@ -154,7 +154,7 @@ impl OneInchSolver {
 
 impl Interaction for Swap {
     fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.tx.to, self.tx.value, self.tx.data.clone())]
+        vec![(self.tx.to, self.tx.value, Bytes(self.tx.data.clone()))]
     }
 }
 

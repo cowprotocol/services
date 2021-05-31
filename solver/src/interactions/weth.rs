@@ -1,6 +1,7 @@
 use crate::{encoding::EncodedInteraction, settlement::Interaction};
 use anyhow::{ensure, Result};
 use contracts::WETH9;
+use ethcontract::Bytes;
 use primitive_types::U256;
 
 #[derive(Clone, Debug)]
@@ -32,7 +33,7 @@ impl Interaction for UnwrapWethInteraction {
     fn encode(&self) -> Vec<EncodedInteraction> {
         let method = self.weth.withdraw(self.amount);
         let calldata = method.tx.data.expect("no calldata").0;
-        vec![(self.weth.address(), 0.into(), calldata)]
+        vec![(self.weth.address(), 0.into(), Bytes(calldata))]
     }
 }
 
@@ -55,7 +56,7 @@ mod tests {
         let withdraw_call = &encoded_interactions[0];
         assert_eq!(withdraw_call.0, weth.address());
         assert_eq!(withdraw_call.1, U256::from(0));
-        let call = &withdraw_call.2;
+        let call = &withdraw_call.2 .0;
         assert_eq!(call.len(), 36);
         let withdraw_signature = hex!("2e1a7d4d");
         assert_eq!(call[0..4], withdraw_signature);

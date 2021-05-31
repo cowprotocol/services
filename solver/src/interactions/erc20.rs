@@ -2,6 +2,7 @@
 
 use crate::{encoding::EncodedInteraction, settlement::Interaction};
 use contracts::ERC20;
+use ethcontract::Bytes;
 use primitive_types::{H160, U256};
 
 #[derive(Debug)]
@@ -15,7 +16,7 @@ impl Erc20ApproveInteraction {
     pub fn as_encoded(&self) -> EncodedInteraction {
         let method = self.token.approve(self.spender, self.amount);
         let calldata = method.tx.data.expect("no calldata").0;
-        (self.token.address(), 0.into(), calldata)
+        (self.token.address(), 0.into(), Bytes(calldata))
     }
 }
 
@@ -43,7 +44,7 @@ mod tests {
         assert_eq!(target, approve.token.address());
         assert_eq!(value, 0.into());
         assert_eq!(
-            calldata,
+            calldata.0,
             hex!(
                 "095ea7b3
                  0000000000000000000000000202020202020202020202020202020202020202

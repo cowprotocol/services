@@ -93,7 +93,7 @@ impl Driver {
                 Ok(()) => tracing::debug!("single run finished ok"),
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
-            tokio::time::delay_for(self.settle_interval).await;
+            tokio::time::sleep(self.settle_interval).await;
         }
     }
 

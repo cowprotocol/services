@@ -115,6 +115,6 @@ async fn recover_gas_price_from_pending_transaction(
         .context("pending_transactions failed")?;
     let transaction = transactions
         .iter()
-        .find(|transaction| transaction.from == *address && transaction.nonce == nonce);
+        .find(|transaction| transaction.from == Some(*address) && transaction.nonce == nonce);
     Ok(transaction.map(|transaction| transaction.gas_price))
 }

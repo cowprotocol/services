@@ -10,7 +10,7 @@ const TOKEN_LIST: &str = "https://gateway.ipfs.io/ipns/tokens.uniswap.org";
 const BASE_URL: &str = "http://localhost:8080/api/v1";
 
 pub fn criterion_benchmark(c: &mut Criterion) {
-    let mut rt = Runtime::new().unwrap();
+    let rt = Runtime::new().unwrap();
     let token_list = rt
         .block_on(TokenList::from_url(TOKEN_LIST, 1))
         .expect("Failed to fetch token list");

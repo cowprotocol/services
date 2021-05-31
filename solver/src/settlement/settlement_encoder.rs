@@ -283,6 +283,7 @@ impl SettlementEncoder {
 pub mod tests {
     use super::*;
     use crate::{encoding::EncodedInteraction, settlement::NoopInteraction, testutil};
+    use ethcontract::Bytes;
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderCreation};
 
@@ -364,7 +365,7 @@ pub mod tests {
 
     #[test]
     fn settlement_unwraps_after_execution_plan() {
-        let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Vec::new());
+        let interaction: EncodedInteraction = (H160([0x01; 20]), 0.into(), Bytes(Vec::new()));
         let unwrap = UnwrapWethInteraction {
             weth: testutil::dummy_weth([0x01; 20]),
             amount: 1.into(),

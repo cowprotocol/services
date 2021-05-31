@@ -75,7 +75,8 @@ impl GPv2 {
                 .domain_separator()
                 .call()
                 .await
-                .expect("Couldn't query domain separator"),
+                .expect("Couldn't query domain separator")
+                .0,
         );
         Self {
             settlement,

@@ -1,6 +1,7 @@
 use super::Erc20ApproveInteraction;
 use crate::{encoding::EncodedInteraction, settlement::Interaction};
 use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
+use ethcontract::Bytes;
 use primitive_types::{H160, U256};
 
 #[derive(Debug)]
@@ -45,7 +46,7 @@ impl UniswapInteraction {
             U256::MAX,
         );
         let calldata = method.tx.data.expect("no calldata").0;
-        (self.router.address(), 0.into(), calldata)
+        (self.router.address(), 0.into(), Bytes(calldata))
     }
 
     fn web3(&self) -> web3::Web3<ethcontract::transport::DynTransport> {
@@ -92,7 +93,7 @@ mod tests {
         // Verify Approve
         let approve_call = &interactions[0];
         assert_eq!(approve_call.0, token_in);
-        let call = &approve_call.2;
+        let call = &approve_call.2 .0;
         let approve_signature = hex!("095ea7b3");
         assert_eq!(call[0..4], approve_signature);
         assert_eq!(&call[16..36], router.address().as_fixed_bytes()); //spender
@@ -101,7 +102,7 @@ mod tests {
         // Verify Swap
         let swap_call = &interactions[1];
         assert_eq!(swap_call.0, router.address());
-        let call = &swap_call.2;
+        let call = &swap_call.2 .0;
         let swap_signature = hex!("8803dbee");
         let path_offset = 160;
         let path_size = 2;

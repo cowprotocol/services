@@ -18,7 +18,7 @@ pub fn gas_price_stream(
                 return Some((Ok(initial_gas_price), false));
             }
         } else {
-            tokio::time::delay_for(GAS_PRICE_REFRESH_INTERVAL).await;
+            tokio::time::sleep(GAS_PRICE_REFRESH_INTERVAL).await;
         }
         let estimate = estimator
             .estimate_with_limits(gas_limit, target_confirm_time)

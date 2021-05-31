@@ -108,7 +108,7 @@ pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
             }
             Err(err) => tracing::error!(?err, "failed to update db metrics"),
         };
-        tokio::time::delay_for(Duration::from_secs(10)).await;
+        tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
 
