@@ -255,7 +255,7 @@ impl OrderCreation {
 
 /// An order cancellation as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Hash)]
 pub struct OrderCancellation {
     pub order_uid: OrderUid,
     pub signature: Signature,

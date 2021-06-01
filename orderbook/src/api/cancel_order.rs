@@ -10,7 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 
-#[derive(Deserialize, Serialize)]
+#[derive(Debug, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CancellationPayload {
     signature: Signature,
     signing_scheme: SigningScheme,
@@ -69,7 +70,36 @@ pub fn cancel_order(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ethcontract::H256;
+    use hex_literal::hex;
+    use serde_json::json;
     use warp::test::request;
+
+    #[test]
+    fn cancellation_payload_deserialization() {
+        assert_eq!(
+            CancellationPayload::deserialize(json!({
+                "signature": "0x\
+                    000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f\
+                    202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f\
+                    1b",
+                "signingScheme": "eip712"
+            }))
+            .unwrap(),
+            CancellationPayload {
+                signature: Signature {
+                    r: H256(hex!(
+                        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+                    )),
+                    s: H256(hex!(
+                        "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"
+                    )),
+                    v: 27,
+                },
+                signing_scheme: SigningScheme::Eip712,
+            },
+        );
+    }
 
     #[tokio::test]
     async fn cancel_order_request_ok() {
