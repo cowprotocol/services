@@ -32,7 +32,7 @@ impl Metrics {
         registry.register(Box::new(db_table_row_count.clone()))?;
 
         let opts = HistogramOpts::new(
-            "gp_v2_solver_transport_requests",
+            "gp_v2_api_transport_requests",
             "RPC Request durations labelled by method",
         );
         let rpc_requests = HistogramVec::new(opts, &["method"]).unwrap();
