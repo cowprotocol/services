@@ -4,21 +4,26 @@ use crate::settlement::SettlementEncoder;
 use anyhow::{anyhow, Context, Result};
 use contracts::WETH9;
 use ethcontract::H160;
-use model::order::{Order, OrderKind, BUY_ETH_ADDRESS};
+use model::order::{Order, OrderKind, OrderUid, BUY_ETH_ADDRESS};
 use primitive_types::U256;
 use std::{collections::HashMap, sync::Arc};
 
 use super::{LimitOrder, SettlementHandling};
+use std::collections::HashSet;
 
 impl OrderBookApi {
     /// Returns a list of limit orders coming from the offchain orderbook API
-    pub async fn get_liquidity(&self) -> Result<Vec<LimitOrder>> {
+    pub async fn get_liquidity(
+        &self,
+        inflight_trades: &HashSet<OrderUid>,
+    ) -> Result<Vec<LimitOrder>> {
         Ok(self
             .get_orders()
             .await
             .context("failed to get orderbook")?
             .into_iter()
-            .map(|order| normalize_limit_order(order, self.get_native_token()))
+            .filter_map(|order| inflight_order_filter(order, inflight_trades))
+            .map(|altered_order| normalize_limit_order(altered_order, self.get_native_token()))
             .collect())
     }
 }
@@ -26,6 +31,24 @@ impl OrderBookApi {
 struct OrderSettlementHandler {
     native_token: WETH9,
     order: Order,
+}
+
+fn inflight_order_filter(order: Order, inflight_trades: &HashSet<OrderUid>) -> Option<Order> {
+    // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
+    // https://github.com/gnosis/gp-v2-services/issues/673
+    if inflight_trades.contains(&order.order_meta_data.uid) {
+        return if order.order_creation.partially_fillable {
+            // TODO - driver logic for Partially Fillable Orders
+            // https://github.com/gnosis/gp-v2-services/issues/673
+            // Note that this will result in simulation error "GPv2: order filled" if the
+            // next solver run loop tries to match the order again beyond its remaining amount.
+            Some(order)
+        } else {
+            // Fully filled, inflight orders are excluded from consideration
+            None
+        };
+    }
+    Some(order)
 }
 
 pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
@@ -39,6 +62,7 @@ pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
         sell_token: order.order_creation.sell_token,
         buy_token,
         // TODO discount previously executed sell amount
+        // https://github.com/gnosis/gp-v2-services/issues/673
         sell_amount: order.order_creation.sell_amount,
         buy_amount: order.order_creation.buy_amount,
         kind: order.order_creation.kind,
@@ -110,8 +134,9 @@ fn executed_buy_amount(order: &Order, executed_amount: U256, price: Price) -> Op
 pub mod tests {
     use super::*;
     use crate::{settlement::tests::assert_settlement_encoded_with, testutil};
-    use maplit::hashmap;
+    use maplit::{hashmap, hashset};
     use model::order::OrderCreation;
+    use model::DomainSeparator;
 
     #[test]
     fn eth_buy_liquidity_is_assigned_to_weth() {
@@ -311,5 +336,43 @@ pub mod tests {
                 assert!(encoder.add_trade(order, executed_amount).is_ok());
             },
         );
+    }
+
+    #[test]
+    fn inflight_order_filter_() {
+        let fully_fillable_order = Order::from_order_creation(
+            OrderCreation {
+                partially_fillable: false,
+                ..Default::default()
+            },
+            &DomainSeparator::default(),
+        )
+        .unwrap();
+        assert!(inflight_order_filter(
+            fully_fillable_order.clone(),
+            &hashset!(fully_fillable_order.order_meta_data.uid)
+        )
+        .is_none());
+        let order = inflight_order_filter(fully_fillable_order.clone(), &hashset!());
+        assert!(order.is_some());
+        assert_eq!(order.unwrap(), fully_fillable_order);
+
+        let partially_fillable_order = Order::from_order_creation(
+            OrderCreation {
+                partially_fillable: true,
+                ..Default::default()
+            },
+            &DomainSeparator::default(),
+        )
+        .unwrap();
+        let adjusted_order = inflight_order_filter(
+            partially_fillable_order.clone(),
+            &hashset!(partially_fillable_order.order_meta_data.uid),
+        );
+        assert!(adjusted_order.is_some());
+
+        // TODO - The following assertion will fail and need to be adapted in
+        // https://github.com/gnosis/gp-v2-services/issues/673
+        assert_eq!(adjusted_order.unwrap(), partially_fillable_order);
     }
 }

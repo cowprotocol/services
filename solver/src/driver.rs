@@ -17,7 +17,7 @@ use ethcontract::errors::MethodError;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use itertools::{Either, Itertools};
-use model::order::BUY_ETH_ADDRESS;
+use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
 use primitive_types::H160;
 use shared::{price_estimate::PriceEstimating, token_list::TokenList, Web3};
@@ -44,6 +44,7 @@ pub struct Driver {
     solver_time_limit: Duration,
     gas_price_cap: f64,
     market_makable_token_list: Option<TokenList>,
+    inflight_trades: HashSet<OrderUid>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -82,6 +83,7 @@ impl Driver {
             solver_time_limit,
             gas_price_cap,
             market_makable_token_list,
+            inflight_trades: HashSet::new(),
         }
     }
 
@@ -334,9 +336,13 @@ impl Driver {
             .await
             .context("failed to get current block")?
             .as_u64();
+
         let liquidity = self
             .liquidity_collector
-            .get_liquidity(current_block_during_liquidity_fetch.into())
+            .get_liquidity(
+                current_block_during_liquidity_fetch.into(),
+                &self.inflight_trades,
+            )
             .await?;
 
         let estimated_prices =
@@ -398,7 +404,6 @@ impl Driver {
         let rated_settlements = self
             .rate_settlements(settlements, &estimated_prices, gas_price_wei)
             .await;
-
         if let Some(mut settlement) = rated_settlements
             .clone()
             .into_iter()
@@ -416,6 +421,14 @@ impl Driver {
 
             tracing::debug!("winning settlement: {:?}", settlement);
             self.submit_settlement(settlement.clone()).await;
+            self.inflight_trades = settlement
+                .settlement
+                .settlement
+                .trades()
+                .iter()
+                .map(|t| t.order.order_meta_data.uid)
+                .collect::<HashSet<OrderUid>>();
+
             self.report_matched_but_unsettled_orders(
                 &Settlement::from(settlement),
                 rated_settlements.into_iter().map(Settlement::from),

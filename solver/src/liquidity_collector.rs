@@ -4,6 +4,8 @@ use ethcontract::BlockNumber;
 use crate::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity::Liquidity, orderbook::OrderBookApi,
 };
+use model::order::OrderUid;
+use std::collections::HashSet;
 
 pub struct LiquidityCollector {
     pub uniswap_like_liquidity: Vec<UniswapLikeLiquidity>,
@@ -11,10 +13,14 @@ pub struct LiquidityCollector {
 }
 
 impl LiquidityCollector {
-    pub async fn get_liquidity(&self, at_block: BlockNumber) -> Result<Vec<Liquidity>> {
+    pub async fn get_liquidity(
+        &self,
+        at_block: BlockNumber,
+        inflight_trades: &HashSet<OrderUid>,
+    ) -> Result<Vec<Liquidity>> {
         let limit_orders = self
             .orderbook_api
-            .get_liquidity()
+            .get_liquidity(inflight_trades)
             .await
             .context("failed to get orderbook")?;
         tracing::debug!("got {} orders", limit_orders.len());
