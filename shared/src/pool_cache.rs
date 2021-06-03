@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use lru::LruCache;
 use model::TokenPair;
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     num::NonZeroU64,
     sync::Mutex,
 };
@@ -187,7 +187,15 @@ impl Mutexed {
 
     fn insert(&mut self, block: u64, pairs: impl Iterator<Item = TokenPair>, pools: &[Pool]) {
         for pair in pairs {
-            self.cached_most_recently_at_block.insert(pair, block);
+            match self.cached_most_recently_at_block.entry(pair) {
+                Entry::Occupied(mut entry) => {
+                    let value = entry.get_mut();
+                    *value = (*value).max(block);
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(block);
+                }
+            }
             // Make sure pairs without pools are cached.
             self.pools.insert((block, pair), Vec::new());
         }
@@ -444,6 +452,26 @@ mod tests {
 
         pools.lock().unwrap().clear();
         // cache hit at block 6
+        let result = cache
+            .fetch(test_pairs()[0..1].iter().copied().collect(), Block::Recent)
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, vec![Pool::uniswap(test_pairs()[0], (2, 2))]);
+
+        // Now cache at an earlier block and see that it doesn't override the most recent entry.
+        *pools.lock().unwrap() = vec![Pool::uniswap(test_pairs()[0], (3, 3))];
+        let result = cache
+            .fetch(
+                test_pairs()[0..1].iter().copied().collect(),
+                Block::Number(4),
+            )
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, vec![Pool::uniswap(test_pairs()[0], (3, 3))]);
+
+        // We still get the cache hit from block 6.
         let result = cache
             .fetch(test_pairs()[0..1].iter().copied().collect(), Block::Recent)
             .now_or_never()
