@@ -208,7 +208,7 @@ async fn main() {
 
     // TODO: use caching pool fetcher
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
-        Box::new(pool_aggregator),
+        Arc::new(pool_aggregator),
         gas_price_estimator.clone(),
         base_tokens.clone(),
         // Order book already filters bad tokens

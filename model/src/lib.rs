@@ -192,6 +192,14 @@ impl TokenPair {
     pub fn get(&self) -> (H160, H160) {
         (self.0, self.1)
     }
+
+    /// Lowest element according to Ord trait.
+    pub fn first_ord() -> Self {
+        Self(
+            H160([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]),
+            H160([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1]),
+        )
+    }
 }
 
 impl Default for TokenPair {

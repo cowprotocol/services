@@ -273,7 +273,7 @@ mod tests {
             (100, 100),
         )];
         let pools = hashmap! {
-            pools[0].tokens => vec![pools[0].clone()],
+            pools[0].tokens => vec![pools[0]],
         };
 
         assert!(estimate_buy_amount(1.into(), &path, &pools).is_none());
@@ -292,8 +292,8 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => vec![pools[0].clone()],
-            pools[1].tokens => vec![pools[1].clone()],
+            pools[0].tokens => vec![pools[0]],
+            pools[1].tokens => vec![pools[1]],
         };
 
         assert_eq!(
@@ -321,8 +321,8 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => vec![pools[0].clone()],
-            pools[1].tokens => vec![pools[1].clone()],
+            pools[0].tokens => vec![pools[0]],
+            pools[1].tokens => vec![pools[1]],
         };
 
         assert!(estimate_sell_amount(100.into(), &path, &pools).is_none());
@@ -340,8 +340,8 @@ mod tests {
             Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
         ];
         let pools = hashmap! {
-            pools[0].tokens => vec![pools[0].clone()],
-            pools[1].tokens => vec![pools[1].clone()]
+            pools[0].tokens => vec![pools[0]],
+            pools[1].tokens => vec![pools[1]]
         };
 
         assert_eq!(
@@ -365,8 +365,8 @@ mod tests {
         let second_hop_high_slippage = Pool::uniswap(second_pair, (200_000, 50_000));
         let second_hop_low_slippage = Pool::uniswap(second_pair, (200_000_000, 50_000_000));
         let pools = hashmap! {
-            first_pair => vec![first_hop_high_price.clone(), first_hop_low_price.clone()],
-            second_pair => vec![second_hop_high_slippage, second_hop_low_slippage.clone()],
+            first_pair => vec![first_hop_high_price, first_hop_low_price],
+            second_pair => vec![second_hop_high_slippage, second_hop_low_slippage],
         };
 
         let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
@@ -418,7 +418,7 @@ mod tests {
         let valid_pool = Pool::uniswap(pair, (100_000, 100_000));
         let invalid_pool = Pool::uniswap(pair, (0, 0));
         let pools = hashmap! {
-            pair => vec![valid_pool.clone(), invalid_pool],
+            pair => vec![valid_pool, invalid_pool],
         };
 
         let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();

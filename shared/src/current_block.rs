@@ -68,6 +68,13 @@ pub fn into_stream(receiver: watch::Receiver<Block>) -> WatchStream<Block> {
     WatchStream::new(receiver)
 }
 
+pub fn block_number(block: &Block) -> Result<u64> {
+    block
+        .number
+        .map(|number| number.as_u64())
+        .ok_or_else(|| anyhow!("no block number"))
+}
+
 /// Trait for abstracting the retrieval of the block information such as the
 /// latest block number.
 #[async_trait::async_trait]

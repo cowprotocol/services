@@ -1,21 +1,13 @@
 use crate::{
-    amm_pair_provider::AmmPairProvider,
-    baseline_solver::BaselineSolvable,
-    current_block::{Block as CurrentBlock, CurrentBlockStream},
-    ethcontract_error::EthcontractErrorType,
-    Web3,
+    amm_pair_provider::AmmPairProvider, baseline_solver::BaselineSolvable,
+    ethcontract_error::EthcontractErrorType, Web3,
 };
 use anyhow::Result;
 use contracts::{IUniswapLikePair, ERC20};
 use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, BlockNumber, H160, U256};
-use lru::LruCache;
 use model::TokenPair;
 use num::{rational::Ratio, BigInt, BigRational, Zero};
-use std::{
-    collections::{hash_map::Entry, HashMap, HashSet},
-    sync::Arc,
-};
-use tokio::sync::Mutex;
+use std::{collections::HashSet, sync::Arc};
 
 const MAX_BATCH_SIZE: usize = 100;
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -47,7 +39,7 @@ pub trait PoolFetching: Send + Sync {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>>;
 }
 
-#[derive(Clone, Hash, PartialEq, Debug)]
+#[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
 pub struct Pool {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
@@ -189,116 +181,6 @@ impl BaselineSolvable for Pool {
     }
 }
 
-const MAX_CACHED_BLOCKS: usize = 10;
-
-// Read though Pool Fetcher that keeps previously fetched pools in a LRU cache. Pools fetched for `Block::Latest` get invalidated whenever there is a new block
-pub struct CachedPoolFetcher {
-    inner: Box<dyn PoolFetching>,
-    cache: Arc<Mutex<Cache>>,
-    block_stream: CurrentBlockStream,
-}
-
-struct Cache {
-    /// Used to store details (e.g. hash) about the latest block. Needed so we know what `Block::Latest` refers to
-    latest_block: CurrentBlock,
-    pools: LruCache<u64, HashMap<TokenPair, Vec<Pool>>>,
-}
-
-impl Cache {
-    fn latest_block_number(&self) -> u64 {
-        self.latest_block
-            .number
-            .expect("Latest block always has a number")
-            .as_u64()
-    }
-}
-
-impl CachedPoolFetcher {
-    pub fn new(inner: Box<dyn PoolFetching>, block_stream: CurrentBlockStream) -> Self {
-        Self {
-            inner,
-            cache: Arc::new(Mutex::new(Cache {
-                latest_block: CurrentBlock::default(),
-                pools: LruCache::new(MAX_CACHED_BLOCKS),
-            })),
-            block_stream,
-        }
-    }
-
-    async fn fetch_inner(
-        &self,
-        token_pairs: HashSet<TokenPair>,
-        at_block: Block,
-    ) -> Result<Vec<Pool>> {
-        let mut cache = self.cache.lock().await;
-        let block = match at_block {
-            Block::Recent => cache.latest_block_number(),
-            Block::Number(number) => number,
-        };
-
-        let cached_pools = match cache.pools.get_mut(&block) {
-            Some(cache) => cache,
-            None => {
-                cache.pools.put(block, Default::default());
-                cache.pools.get_mut(&block).unwrap()
-            }
-        };
-
-        let mut cache_hits = Vec::new();
-        let mut cache_misses = HashSet::new();
-        for &pair in &token_pairs {
-            match cached_pools.entry(pair) {
-                Entry::Occupied(entry) => {
-                    cache_hits.extend_from_slice(entry.get());
-                }
-                Entry::Vacant(entry) => {
-                    cache_misses.insert(pair);
-                    // It is possible that the inner fetcher when queried below does not return any
-                    // pools for a token pair. It is important that this information itself enters
-                    // the cache so that it is remembered on next fetch and we do not attempt to
-                    // fetch pools for the token pair again (until the cache expires).
-                    entry.insert(Default::default());
-                }
-            }
-        }
-
-        if cache_misses.is_empty() {
-            return Ok(cache_hits);
-        }
-
-        let mut inner_results = self.inner.fetch(cache_misses, at_block).await?;
-        for miss in &inner_results {
-            // Unwrap because the loop above guarantees that the cache has an entry for all pairs.
-            cached_pools
-                .get_mut(&miss.tokens)
-                .unwrap()
-                .push(miss.clone());
-        }
-
-        inner_results.append(&mut cache_hits);
-        Ok(inner_results)
-    }
-
-    async fn clear_cache_if_necessary(&self) {
-        let mut cache = self.cache.lock().await;
-        let current = self.block_stream.borrow().clone();
-        if cache.latest_block != current {
-            cache.latest_block = current;
-            // Make sure we don't keep any cached data at that block around
-            let number = cache.latest_block_number();
-            cache.pools.pop(&number);
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl PoolFetching for CachedPoolFetcher {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        self.clear_cache_if_necessary().await;
-        self.fetch_inner(token_pairs, at_block).await
-    }
-}
-
 pub struct PoolFetcher {
     pub pair_provider: Arc<dyn AmmPairProvider>,
     pub web3: Web3,
@@ -402,13 +284,9 @@ fn handle_results(results: Vec<FetchedPool>) -> Result<Vec<Pool>> {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
     use crate::{conversions::big_rational_to_float, ethcontract_error};
     use assert_approx_eq::assert_approx_eq;
-    use ethcontract::H256;
-    use maplit::hashset;
-    use tokio::sync::watch;
 
     #[test]
     fn test_get_amounts_out() {
@@ -522,165 +400,6 @@ mod tests {
 
         let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 0));
         assert_eq!(pool.get_spot_price(token_a), None);
-    }
-
-    struct FakePoolFetcher(Arc<Mutex<Vec<Pool>>>);
-    #[async_trait::async_trait]
-    impl PoolFetching for FakePoolFetcher {
-        async fn fetch(&self, _: HashSet<TokenPair>, _: Block) -> Result<Vec<Pool>> {
-            Ok(self.0.lock().await.clone())
-        }
-    }
-
-    #[tokio::test]
-    async fn caching_pool_fetcher() {
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
-        let pair = TokenPair::new(token_a, token_b).unwrap();
-
-        let pools = Arc::new(Mutex::new(vec![
-            Pool::uniswap(pair, (1, 1)),
-            Pool::uniswap(pair, (2, 2)),
-        ]));
-
-        let starting_block = CurrentBlock {
-            hash: Some(H256::from_low_u64_be(0)),
-            number: Some(0.into()),
-            ..Default::default()
-        };
-
-        let (sender, receiver) = watch::channel(starting_block);
-        let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, receiver);
-
-        // Read Through
-        assert_eq!(
-            instance.fetch(hashset!(pair), Block::Recent).await.unwrap(),
-            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
-        );
-        assert_eq!(
-            instance
-                .fetch(hashset!(pair), Block::Number(42))
-                .await
-                .unwrap(),
-            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
-        );
-
-        // clear inner to test caching
-        pools.lock().await.clear();
-        assert_eq!(
-            instance.fetch(hashset!(pair), Block::Recent).await.unwrap(),
-            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
-        );
-        assert_eq!(
-            instance
-                .fetch(hashset!(pair), Block::Number(42))
-                .await
-                .unwrap(),
-            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
-        );
-
-        // invalidate cache
-        sender
-            .send(CurrentBlock {
-                hash: Some(H256::from_low_u64_be(1)),
-                number: Some(1.into()),
-                ..Default::default()
-            })
-            .unwrap();
-        assert_eq!(
-            instance.fetch(hashset!(pair), Block::Recent).await.unwrap(),
-            vec![]
-        );
-
-        // Cache entry for fixed block didn't change
-        assert_eq!(
-            instance
-                .fetch(hashset!(pair), Block::Number(42))
-                .await
-                .unwrap(),
-            vec![Pool::uniswap(pair, (1, 1)), Pool::uniswap(pair, (2, 2))]
-        );
-    }
-
-    #[tokio::test]
-    async fn caching_pool_fetcher_invalidates_if_latest_block_reorgs() {
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
-        let pair = TokenPair::new(token_a, token_b).unwrap();
-
-        let pools = Arc::new(Mutex::new(vec![Pool::uniswap(pair, (1, 1))]));
-
-        let starting_block = CurrentBlock {
-            hash: Some(H256::from_low_u64_be(0)),
-            number: Some(0.into()),
-            ..Default::default()
-        };
-
-        let (sender, receiver) = watch::channel(starting_block.clone());
-        let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, receiver);
-
-        // Read Through
-        assert_eq!(
-            instance.fetch(hashset!(pair), Block::Recent).await.unwrap(),
-            vec![Pool::uniswap(pair, (1, 1))]
-        );
-
-        // simulate reorg on latest block
-        sender
-            .send(CurrentBlock {
-                hash: Some(H256::from_low_u64_be(1)),
-                number: starting_block.number,
-                ..Default::default()
-            })
-            .unwrap();
-
-        // clear inner, to test we are not using cache
-        pools.lock().await.clear();
-        assert_eq!(
-            instance
-                .fetch(hashset!(pair), Block::Number(0))
-                .await
-                .unwrap(),
-            vec![]
-        );
-        assert_eq!(
-            instance.fetch(hashset!(pair), Block::Recent).await.unwrap(),
-            vec![]
-        );
-    }
-
-    #[tokio::test]
-    async fn caching_pool_fetcher_caches_empty() {
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
-        let pair = TokenPair::new(token_a, token_b).unwrap();
-
-        let pools = Arc::new(Mutex::new(vec![]));
-
-        let starting_block = CurrentBlock {
-            hash: Some(H256::from_low_u64_be(0)),
-            number: Some(0.into()),
-            ..Default::default()
-        };
-        let (_sender, receiver) = watch::channel(starting_block);
-        let inner = Box::new(FakePoolFetcher(pools.clone()));
-        let instance = CachedPoolFetcher::new(inner, receiver);
-
-        assert!(instance
-            .fetch(hashset!(pair), Block::Recent)
-            .await
-            .unwrap()
-            .is_empty());
-        // Change inner to return a new pool if it was called.
-        pools.lock().await.push(Pool::uniswap(pair, (1, 1)));
-        // Inner shouldn't get called because the previous empty result is still cached.
-        assert!(instance
-            .fetch(hashset!(pair), Block::Recent)
-            .await
-            .unwrap()
-            .is_empty());
     }
 
     #[test]

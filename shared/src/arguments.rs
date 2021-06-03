@@ -1,7 +1,10 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{gas_price_estimation::GasEstimatorType, pool_aggregating::BaselineSources};
 use ethcontract::{H160, U256};
-use std::{num::ParseFloatError, time::Duration};
+use std::{
+    num::{NonZeroU64, ParseFloatError},
+    time::Duration,
+};
 use url::Url;
 
 #[derive(Debug, structopt::StructOpt)]
@@ -61,6 +64,18 @@ pub struct Arguments {
         use_delimiter = true
     )]
     pub baseline_sources: Vec<BaselineSources>,
+
+    /// The number of blocks kept in the pool cache.
+    #[structopt(long, env, default_value = "10")]
+    pub pool_cache_blocks: NonZeroU64,
+
+    /// The number of pairs that are automatically updated in the pool cache.
+    #[structopt(long, env, default_value = "200")]
+    pub pool_cache_lru_size: usize,
+
+    /// The number of pairs that are automatically updated in the pool cache.
+    #[structopt(long, env, default_value = "4")]
+    pub pool_cache_maximum_recent_block_age: u64,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

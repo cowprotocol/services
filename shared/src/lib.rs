@@ -15,6 +15,7 @@ pub mod maintenance;
 pub mod metrics;
 pub mod network;
 pub mod pool_aggregating;
+pub mod pool_cache;
 pub mod pool_fetching;
 pub mod price_estimate;
 pub mod time;
