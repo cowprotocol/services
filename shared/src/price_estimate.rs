@@ -5,10 +5,10 @@ use crate::{
         token_path_to_pair_path,
     },
     conversions::U256Ext,
-    pool_fetching::{Pool, PoolFetching},
+    pool_fetching::{Block, Pool, PoolFetching},
 };
 use anyhow::{anyhow, Result};
-use ethcontract::{BlockNumber, H160, U256};
+use ethcontract::{H160, U256};
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
@@ -320,7 +320,7 @@ impl BaselinePriceEstimator {
             .collect();
         let pools = self
             .pool_fetcher
-            .fetch(all_pairs, BlockNumber::Latest)
+            .fetch(all_pairs, Block::Recent)
             .await?
             .into_iter()
             .fold(HashMap::<_, Vec<Pool>>::new(), |mut pools, pool| {
@@ -415,11 +415,7 @@ mod tests {
     struct FakePoolFetcher(Vec<Pool>);
     #[async_trait::async_trait]
     impl PoolFetching for FakePoolFetcher {
-        async fn fetch(
-            &self,
-            token_pairs: HashSet<TokenPair>,
-            _: BlockNumber,
-        ) -> Result<Vec<Pool>> {
+        async fn fetch(&self, token_pairs: HashSet<TokenPair>, _: Block) -> Result<Vec<Pool>> {
             Ok(self
                 .0
                 .clone()

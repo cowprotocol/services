@@ -20,7 +20,7 @@ use itertools::{Either, Itertools};
 use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
 use primitive_types::H160;
-use shared::{price_estimate::PriceEstimating, token_list::TokenList, Web3};
+use shared::{pool_fetching::Block, price_estimate::PriceEstimating, token_list::TokenList, Web3};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -340,7 +340,7 @@ impl Driver {
         let liquidity = self
             .liquidity_collector
             .get_liquidity(
-                current_block_during_liquidity_fetch.into(),
+                Block::Number(current_block_during_liquidity_fetch),
                 &self.inflight_trades,
             )
             .await?;
