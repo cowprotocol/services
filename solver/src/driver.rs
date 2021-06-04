@@ -20,7 +20,13 @@ use itertools::{Either, Itertools};
 use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
 use primitive_types::H160;
-use shared::{pool_fetching::Block, price_estimate::PriceEstimating, token_list::TokenList, Web3};
+use shared::{
+    current_block::{self, CurrentBlockStream},
+    pool_fetching::Block,
+    price_estimate::PriceEstimating,
+    token_list::TokenList,
+    Web3,
+};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -45,6 +51,7 @@ pub struct Driver {
     gas_price_cap: f64,
     market_makable_token_list: Option<TokenList>,
     inflight_trades: HashSet<OrderUid>,
+    block_stream: CurrentBlockStream,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -65,6 +72,7 @@ impl Driver {
         solver_time_limit: Duration,
         gas_price_cap: f64,
         market_makable_token_list: Option<TokenList>,
+        block_stream: CurrentBlockStream,
     ) -> Self {
         Self {
             settlement_contract,
@@ -84,6 +92,7 @@ impl Driver {
             gas_price_cap,
             market_makable_token_list,
             inflight_trades: HashSet::new(),
+            block_stream,
         }
     }
 
@@ -329,13 +338,8 @@ impl Driver {
 
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
-        let current_block_during_liquidity_fetch = self
-            .web3
-            .eth()
-            .block_number()
-            .await
-            .context("failed to get current block")?
-            .as_u64();
+        let current_block_during_liquidity_fetch =
+            current_block::block_number(&self.block_stream.borrow())?;
 
         let liquidity = self
             .liquidity_collector

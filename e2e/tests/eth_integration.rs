@@ -102,6 +102,7 @@ async fn eth_integration(web3: Web3) {
     let OrderbookServices {
         maintenance,
         price_estimator,
+        block_stream,
         ..
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
 
@@ -208,6 +209,7 @@ async fn eth_integration(web3: Web3) {
         Duration::from_secs(30),
         f64::MAX,
         None,
+        block_stream,
     );
     driver.single_run().await.unwrap();
 

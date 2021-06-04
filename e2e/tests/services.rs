@@ -10,9 +10,14 @@ use orderbook::{
 };
 use prometheus::Registry;
 use shared::{
-    amm_pair_provider::UniswapPairProvider, bad_token::list_based::ListBasedDetector,
-    current_block::current_block_stream, maintenance::ServiceMaintenance, pool_cache::PoolCache,
-    pool_fetching::PoolFetcher, price_estimate::BaselinePriceEstimator, Web3,
+    amm_pair_provider::UniswapPairProvider,
+    bad_token::list_based::ListBasedDetector,
+    current_block::{current_block_stream, CurrentBlockStream},
+    maintenance::ServiceMaintenance,
+    pool_cache::PoolCache,
+    pool_fetching::PoolFetcher,
+    price_estimate::BaselinePriceEstimator,
+    Web3,
 };
 use solver::orderbook::OrderBookApi;
 use std::{collections::HashSet, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
@@ -111,6 +116,7 @@ pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
 pub struct OrderbookServices {
     pub price_estimator: Arc<BaselinePriceEstimator>,
     pub maintenance: ServiceMaintenance,
+    pub block_stream: CurrentBlockStream,
 }
 impl OrderbookServices {
     pub async fn new(
@@ -145,7 +151,7 @@ impl OrderbookServices {
                 pair_provider,
                 web3: web3.clone(),
             }),
-            current_block_stream,
+            current_block_stream.clone(),
             metrics.clone(),
         )
         .unwrap();
@@ -194,6 +200,7 @@ impl OrderbookServices {
         Self {
             price_estimator,
             maintenance,
+            block_stream: current_block_stream,
         }
     }
 }

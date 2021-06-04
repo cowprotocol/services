@@ -5,10 +5,13 @@ use reqwest::Url;
 use shared::{
     amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
     bad_token::list_based::ListBasedDetector,
+    current_block::current_block_stream,
     http_transport::HttpTransport,
+    maintenance::ServiceMaintenance,
     metrics::serve_metrics,
     network::network_name,
     pool_aggregating::{self, BaselineSources, PoolAggregator},
+    pool_cache::PoolCache,
     price_estimate::BaselinePriceEstimator,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
@@ -199,14 +202,28 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
+    let current_block_stream =
+        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
+            .await
+            .unwrap();
+
     let pair_providers =
         pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
-
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
+    let pool_fetcher = Arc::new(
+        PoolCache::new(
+            args.shared.pool_cache_blocks,
+            0,
+            args.shared.pool_cache_maximum_recent_block_age,
+            Box::new(pool_aggregator),
+            current_block_stream.clone(),
+            metrics.clone(),
+        )
+        .expect("failed to create pool cache"),
+    );
 
-    // TODO: use caching pool fetcher
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
-        Arc::new(pool_aggregator),
+        pool_fetcher.clone(),
         gas_price_estimator.clone(),
         base_tokens.clone(),
         // Order book already filters bad tokens
@@ -262,7 +279,13 @@ async fn main() {
         args.solver_time_limit,
         args.gas_price_cap,
         market_makable_token_list,
+        current_block_stream.clone(),
     );
+
+    let maintainer = ServiceMaintenance {
+        maintainers: vec![pool_fetcher],
+    };
+    tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
     serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await;

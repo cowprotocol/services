@@ -8,7 +8,7 @@ use model::order::Order;
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
 };
-use shared::transport::TransportMetrics;
+use shared::{pool_cache::PoolCacheMetrics, transport::TransportMetrics};
 use strum::{AsStaticRef, VariantNames};
 
 use crate::liquidity::Liquidity;
@@ -33,6 +33,8 @@ pub struct Metrics {
     settlement_submissions: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
     transport_requests: HistogramVec,
+    pool_cache_hits: IntCounter,
+    pool_cache_misses: IntCounter,
 }
 
 impl Metrics {
@@ -98,6 +100,18 @@ impl Metrics {
         let transport_requests = HistogramVec::new(opts, &["method"]).unwrap();
         registry.register(Box::new(transport_requests.clone()))?;
 
+        let pool_cache_hits = IntCounter::new(
+            "gp_v2_solver_pool_cache_hits",
+            "Number of cache hits in the pool fetcher cache.",
+        )?;
+        registry.register(Box::new(pool_cache_hits.clone()))?;
+
+        let pool_cache_misses = IntCounter::new(
+            "gp_v2_solver_pool_cache_misses",
+            "Number of cache misses in the pool fetcher cache.",
+        )?;
+        registry.register(Box::new(pool_cache_misses.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -107,6 +121,8 @@ impl Metrics {
             settlement_submissions,
             matched_but_unsettled_orders,
             transport_requests,
+            pool_cache_hits,
+            pool_cache_misses,
         })
     }
 }
@@ -176,6 +192,13 @@ impl TransportMetrics for Metrics {
         self.transport_requests
             .with_label_values(&[label])
             .observe(elapsed.as_secs_f64())
+    }
+}
+
+impl PoolCacheMetrics for Metrics {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        self.pool_cache_hits.inc_by(cache_hits as u64);
+        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 

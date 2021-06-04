@@ -70,12 +70,17 @@ pub struct Arguments {
     pub pool_cache_blocks: NonZeroU64,
 
     /// The number of pairs that are automatically updated in the pool cache.
-    #[structopt(long, env, default_value = "200")]
-    pub pool_cache_lru_size: usize,
-
-    /// The number of pairs that are automatically updated in the pool cache.
     #[structopt(long, env, default_value = "4")]
     pub pool_cache_maximum_recent_block_age: u64,
+
+    /// How often we poll the node to check if the current block has changed.
+    #[structopt(
+        long,
+        env,
+        default_value = "5",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub block_stream_poll_interval_seconds: Duration,
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

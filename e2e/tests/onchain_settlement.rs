@@ -101,6 +101,7 @@ async fn onchain_settlement(web3: Web3) {
     let OrderbookServices {
         price_estimator,
         maintenance,
+        block_stream,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
 
     let client = reqwest::Client::new();
@@ -182,6 +183,7 @@ async fn onchain_settlement(web3: Web3) {
         Duration::from_secs(30),
         f64::MAX,
         None,
+        block_stream,
     );
     driver.single_run().await.unwrap();
 

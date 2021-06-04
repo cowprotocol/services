@@ -89,14 +89,9 @@ struct Arguments {
     #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
 
-    /// The amount of time a classification of a token into good or bad is valid for.
-    #[structopt(
-        long,
-        env,
-        default_value = "5",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    block_stream_poll_interval_seconds: Duration,
+    /// The number of pairs that are automatically updated in the pool cache.
+    #[structopt(long, env, default_value = "200")]
+    pub pool_cache_lru_size: usize,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
@@ -207,7 +202,7 @@ async fn main() {
     ));
 
     let current_block_stream =
-        current_block_stream(web3.clone(), args.block_stream_poll_interval_seconds)
+        current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)
             .await
             .unwrap();
 
@@ -215,7 +210,7 @@ async fn main() {
     let pool_fetcher = Arc::new(
         PoolCache::new(
             args.shared.pool_cache_blocks,
-            args.shared.pool_cache_lru_size,
+            args.pool_cache_lru_size,
             args.shared.pool_cache_maximum_recent_block_age,
             Box::new(pool_aggregator),
             current_block_stream.clone(),
