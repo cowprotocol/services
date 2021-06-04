@@ -14,7 +14,7 @@ use shared::{
     bad_token::list_based::ListBasedDetector,
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
-    pool_cache::PoolCache,
+    pool_cache::{PoolCache, PoolCacheConfig},
     pool_fetching::PoolFetcher,
     price_estimate::BaselinePriceEstimator,
     Web3,
@@ -144,9 +144,12 @@ impl OrderbookServices {
             .await
             .unwrap();
         let pool_fetcher = PoolCache::new(
-            NonZeroU64::new(10).unwrap(),
-            20,
-            4,
+            PoolCacheConfig {
+                number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
+                number_of_pairs_to_auto_update: 20,
+                maximum_recent_block_age: 4,
+                ..Default::default()
+            },
             Box::new(PoolFetcher {
                 pair_provider,
                 web3: web3.clone(),

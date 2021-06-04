@@ -10,6 +10,7 @@ use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     num::NonZeroU64,
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 /// Caching pool fetcher
@@ -22,6 +23,29 @@ pub struct PoolCache {
     inner: Box<dyn PoolFetching>,
     block_stream: CurrentBlockStream,
     metrics: Arc<dyn PoolCacheMetrics>,
+    maximum_retries: u32,
+    delay_between_retries: Duration,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct PoolCacheConfig {
+    pub number_of_blocks_to_cache: NonZeroU64,
+    pub number_of_pairs_to_auto_update: usize,
+    pub maximum_recent_block_age: u64,
+    pub max_retries: u32,
+    pub delay_between_retries: Duration,
+}
+
+impl Default for PoolCacheConfig {
+    fn default() -> Self {
+        Self {
+            number_of_blocks_to_cache: NonZeroU64::new(1).unwrap(),
+            number_of_pairs_to_auto_update: Default::default(),
+            maximum_recent_block_age: Default::default(),
+            max_retries: Default::default(),
+            delay_between_retries: Default::default(),
+        }
+    }
 }
 
 pub trait PoolCacheMetrics: Send + Sync {
@@ -61,9 +85,7 @@ impl PoolCache {
     /// maximum_recent_block_age: When a recent block is requested, this is the maximum a cached
     /// block can have to be considered.
     pub fn new(
-        number_of_blocks_to_cache: NonZeroU64,
-        number_of_pairs_to_auto_update: usize,
-        maximum_recent_block_age: u64,
+        config: PoolCacheConfig,
         inner: Box<dyn PoolFetching>,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn PoolCacheMetrics>,
@@ -71,14 +93,16 @@ impl PoolCache {
         let block = current_block::block_number(&block_stream.borrow())?;
         Ok(Self {
             mutexed: Mutex::new(Mutexed::new(
-                number_of_pairs_to_auto_update,
+                config.number_of_pairs_to_auto_update,
                 block,
-                maximum_recent_block_age,
+                config.maximum_recent_block_age,
             )),
-            number_of_blocks_to_cache,
+            number_of_blocks_to_cache: config.number_of_blocks_to_cache,
             inner,
             block_stream,
             metrics,
+            maximum_retries: config.max_retries,
+            delay_between_retries: config.delay_between_retries,
         })
     }
 
@@ -91,8 +115,7 @@ impl PoolCache {
             .collect::<HashSet<_>>();
         tracing::debug!("automatically updating {} pair pools", pairs.len());
         let pools = self
-            .inner
-            .fetch(pairs.clone(), Block::Number(new_block))
+            .fetch_inner(pairs.clone(), Block::Number(new_block))
             .await?;
         {
             let mut mutexed = self.mutexed.lock().unwrap();
@@ -102,6 +125,21 @@ impl PoolCache {
             mutexed.last_update_block = new_block;
         }
         Ok(())
+    }
+
+    // Sometimes nodes requests error when we try to get state from what we think is the current
+    // block when the node has been load balanced out to one that hasn't seen the block yet. As a
+    // workaround we repeat the request up to N times while sleeping in between.
+    async fn fetch_inner(&self, pairs: HashSet<TokenPair>, block: Block) -> Result<Vec<Pool>> {
+        let fetch = || self.inner.fetch(pairs.clone(), block);
+        for _ in 0..self.maximum_retries {
+            match fetch().await {
+                Ok(pools) => return Ok(pools),
+                Err(err) => tracing::debug!("retrying pool fetch because error: {:?}", err),
+            }
+            tokio::time::sleep(self.delay_between_retries).await;
+        }
+        fetch().await
     }
 }
 
@@ -138,8 +176,7 @@ impl PoolFetching for PoolCache {
 
         let cache_miss_block = block.unwrap_or(last_update_block);
         let uncached_pools = self
-            .inner
-            .fetch(cache_misses.clone(), Block::Number(cache_miss_block))
+            .fetch_inner(cache_misses.clone(), Block::Number(cache_miss_block))
             .await?;
         {
             let mut mutexed = self.mutexed.lock().unwrap();
@@ -277,9 +314,10 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(1).unwrap(),
-            2,
-            10,
+            PoolCacheConfig {
+                number_of_pairs_to_auto_update: 2,
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
@@ -330,9 +368,10 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(1).unwrap(),
-            2,
-            10,
+            PoolCacheConfig {
+                number_of_pairs_to_auto_update: 2,
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
@@ -380,9 +419,10 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(1).unwrap(),
-            2,
-            10,
+            PoolCacheConfig {
+                number_of_pairs_to_auto_update: 2,
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
@@ -436,9 +476,11 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(1).unwrap(),
-            2,
-            10,
+            PoolCacheConfig {
+                number_of_pairs_to_auto_update: 2,
+                maximum_recent_block_age: 10,
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
@@ -509,9 +551,10 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(5).unwrap(),
-            0,
-            10,
+            PoolCacheConfig {
+                number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
@@ -544,9 +587,11 @@ mod tests {
         };
         let (_sender, receiver) = watch::channel(block);
         let cache = PoolCache::new(
-            NonZeroU64::new(5).unwrap(),
-            0,
-            2,
+            PoolCacheConfig {
+                number_of_blocks_to_cache: NonZeroU64::new(5).unwrap(),
+                maximum_recent_block_age: 2,
+                ..Default::default()
+            },
             Box::new(inner),
             receiver,
             Arc::new(NoopPoolCacheMetrics),
