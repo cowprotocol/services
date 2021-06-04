@@ -24,7 +24,7 @@ use shared::{
     http_transport::HttpTransport,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
-    pool_cache::PoolCache,
+    pool_cache::{PoolCache, PoolCacheConfig},
     price_estimate::BaselinePriceEstimator,
     transport::create_instrumented_transport,
 };
@@ -209,9 +209,13 @@ async fn main() {
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
     let pool_fetcher = Arc::new(
         PoolCache::new(
-            args.shared.pool_cache_blocks,
-            args.pool_cache_lru_size,
-            args.shared.pool_cache_maximum_recent_block_age,
+            PoolCacheConfig {
+                number_of_blocks_to_cache: args.shared.pool_cache_blocks,
+                number_of_pairs_to_auto_update: args.pool_cache_lru_size,
+                maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
+                max_retries: args.shared.pool_cache_maximum_retries,
+                delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+            },
             Box::new(pool_aggregator),
             current_block_stream.clone(),
             metrics.clone(),
