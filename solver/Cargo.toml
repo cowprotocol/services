@@ -43,7 +43,7 @@ strum_macros = "0.20"
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread", "time"] }
 tracing = "0.1"
 transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.1.1" }
-web3 = { version = "0.16", default-features = false, features = ["http-tls"] }
+web3 = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"

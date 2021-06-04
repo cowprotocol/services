@@ -21,6 +21,7 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     current_block::current_block_stream,
+    http_transport::HttpTransport,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
     pool_cache::PoolCache,
@@ -121,11 +122,8 @@ async fn main() {
     let registry = Registry::default();
     let metrics = Arc::new(Metrics::new(&registry).unwrap());
 
-    let transport = create_instrumented_transport(
-        web3::transports::Http::new(args.shared.node_url.as_str())
-            .expect("transport creation failed"),
-        metrics.clone(),
-    );
+    let transport =
+        create_instrumented_transport(HttpTransport::new(args.shared.node_url), metrics.clone());
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await

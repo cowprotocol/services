@@ -32,7 +32,7 @@ tracing = "0.1"
 tracing-subscriber = "0.2"
 url = "2.2"
 warp = "0.3"
-web3 = { version = "0.16", default-features = false, features = ["http-tls"] }
+web3 = { version = "0.16", default-features = false }
 num-bigint = "0.3"
 mockall = "0.9"
 thiserror = "1.0"

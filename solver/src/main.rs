@@ -5,6 +5,7 @@ use reqwest::Url;
 use shared::{
     amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
     bad_token::list_based::ListBasedDetector,
+    http_transport::HttpTransport,
     metrics::serve_metrics,
     network::network_name,
     pool_aggregating::{self, BaselineSources, PoolAggregator},
@@ -154,11 +155,8 @@ async fn main() {
     let metrics = Arc::new(Metrics::new(&registry).expect("Couldn't register metrics"));
 
     // TODO: custom transport that allows setting timeout
-    let transport = create_instrumented_transport(
-        web3::transports::Http::new(args.shared.node_url.as_str())
-            .expect("transport creation failed"),
-        metrics.clone(),
-    );
+    let transport =
+        create_instrumented_transport(HttpTransport::new(args.shared.node_url), metrics.clone());
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
         .eth()
