@@ -9,11 +9,14 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use model::order::{OrderCancellation, OrderCreationPayload};
 use model::{
-    order::{Order, OrderUid},
+    order::{Order, OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
-use shared::{bad_token::BadTokenDetecting, maintenance::Maintaining, time::now_in_epoch_seconds};
+use shared::{
+    bad_token::BadTokenDetecting, maintenance::Maintaining, time::now_in_epoch_seconds,
+    web3_traits::CodeFetching,
+};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -32,6 +35,7 @@ pub enum AddOrderResult {
     InsufficientFunds,
     InsufficientFee,
     UnsupportedToken(H160),
+    TransferEthToContract,
 }
 
 #[derive(Debug)]
@@ -49,6 +53,7 @@ pub struct Orderbook {
     fee_validator: Arc<EthAwareMinFeeCalculator>,
     min_order_validity_period: Duration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
+    code_fetcher: Box<dyn CodeFetching>,
 }
 
 impl Orderbook {
@@ -59,6 +64,7 @@ impl Orderbook {
         fee_validator: Arc<EthAwareMinFeeCalculator>,
         min_order_validity_period: Duration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        code_fetcher: Box<dyn CodeFetching>,
     ) -> Self {
         Self {
             domain_separator,
@@ -67,6 +73,7 @@ impl Orderbook {
             fee_validator,
             min_order_validity_period,
             bad_token_detector,
+            code_fetcher,
         }
     }
 
@@ -116,6 +123,13 @@ impl Orderbook {
             .unwrap_or(false)
         {
             return Ok(AddOrderResult::InsufficientFunds);
+        }
+
+        if order.order_creation.buy_token == BUY_ETH_ADDRESS {
+            let code_size = self.code_fetcher.code_size(order.actual_receiver()).await?;
+            if code_size != 0 {
+                return Ok(AddOrderResult::TransferEthToContract);
+            }
         }
 
         match self.database.insert_order(&order).await {

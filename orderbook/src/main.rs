@@ -242,6 +242,7 @@ async fn main() {
         fee_calculator.clone(),
         args.min_order_validity_period,
         bad_token_detector,
+        Box::new(web3.clone()),
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![

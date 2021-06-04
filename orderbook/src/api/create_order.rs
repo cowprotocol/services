@@ -66,6 +66,14 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             super::error("InsufficientFee", "Order does not include sufficient fee"),
             StatusCode::BAD_REQUEST,
         ),
+        Ok(AddOrderResult::TransferEthToContract) => (
+            super::error(
+                "TransferEthToContract",
+                "Setting receiver to a smart contract wallet when buying Ether \
+                 is currently not supported",
+            ),
+            StatusCode::BAD_REQUEST,
+        ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
     };
     warp::reply::with_status(body, status_code)

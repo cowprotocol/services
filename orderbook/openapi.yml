@@ -562,11 +562,12 @@ components:
           enum:
             [
               DuplicateOrder,
+              InsufficientFee,
+              InsufficientFunds,
+              InsufficientValidTo,
               InvalidSignature,
               MissingOrderData,
-              InsufficientValidTo,
-              InsufficientFunds,
-              InsufficientFee,
+              TransferEthToContract,
               UnsupportedToken,
               WrongOwner,
             ]

@@ -183,6 +183,7 @@ impl OrderbookServices {
             fee_calculator.clone(),
             Duration::from_secs(120),
             bad_token_detector,
+            Box::new(web3.clone()),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![orderbook.clone(), Arc::new(db.clone()), event_updater],

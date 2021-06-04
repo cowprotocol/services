@@ -65,6 +65,15 @@ impl Order {
         token_list.contains(&self.order_creation.buy_token)
             || token_list.contains(&self.order_creation.sell_token)
     }
+
+    pub fn actual_receiver(&self) -> H160 {
+        let receiver = self.order_creation.receiver.unwrap_or_default();
+        if receiver == H160::zero() {
+            self.order_meta_data.owner
+        } else {
+            receiver
+        }
+    }
 }
 
 #[derive(Default)]
