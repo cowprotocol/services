@@ -221,6 +221,7 @@ async fn main() {
             args.shared.pool_cache_maximum_recent_block_age,
             Box::new(pool_aggregator),
             current_block_stream.clone(),
+            metrics.clone(),
         )
         .expect("failed to create pool cache"),
     );

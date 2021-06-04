@@ -9,7 +9,7 @@ use model::TokenPair;
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     num::NonZeroU64,
-    sync::Mutex,
+    sync::{Arc, Mutex},
 };
 
 /// Caching pool fetcher
@@ -21,6 +21,16 @@ pub struct PoolCache {
     number_of_blocks_to_cache: NonZeroU64,
     inner: Box<dyn PoolFetching>,
     block_stream: CurrentBlockStream,
+    metrics: Arc<dyn PoolCacheMetrics>,
+}
+
+pub trait PoolCacheMetrics: Send + Sync {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
+}
+
+pub struct NoopPoolCacheMetrics;
+impl PoolCacheMetrics for NoopPoolCacheMetrics {
+    fn pools_fetched(&self, _: usize, _: usize) {}
 }
 
 // Design:
@@ -56,6 +66,7 @@ impl PoolCache {
         maximum_recent_block_age: u64,
         inner: Box<dyn PoolFetching>,
         block_stream: CurrentBlockStream,
+        metrics: Arc<dyn PoolCacheMetrics>,
     ) -> Result<Self> {
         let block = current_block::block_number(&block_stream.borrow())?;
         Ok(Self {
@@ -67,6 +78,7 @@ impl PoolCache {
             number_of_blocks_to_cache,
             inner,
             block_stream,
+            metrics,
         })
     }
 
@@ -116,6 +128,9 @@ impl PoolFetching for PoolCache {
             }
             last_update_block = mutexed.last_update_block;
         }
+
+        self.metrics
+            .pools_fetched(pairs.len() - cache_misses.len(), cache_misses.len());
 
         if cache_misses.is_empty() {
             return Ok(cache_hits);
@@ -267,6 +282,7 @@ mod tests {
             10,
             Box::new(inner),
             receiver,
+            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
 
@@ -319,6 +335,7 @@ mod tests {
             10,
             Box::new(inner),
             receiver,
+            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
 
@@ -368,6 +385,7 @@ mod tests {
             10,
             Box::new(inner),
             receiver,
+            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
 
@@ -423,6 +441,7 @@ mod tests {
             10,
             Box::new(inner),
             receiver,
+            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
 
@@ -495,6 +514,7 @@ mod tests {
             10,
             Box::new(inner),
             receiver,
+            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
 
@@ -523,8 +543,15 @@ mod tests {
             ..Default::default()
         };
         let (_sender, receiver) = watch::channel(block);
-        let cache =
-            PoolCache::new(NonZeroU64::new(5).unwrap(), 0, 2, Box::new(inner), receiver).unwrap();
+        let cache = PoolCache::new(
+            NonZeroU64::new(5).unwrap(),
+            0,
+            2,
+            Box::new(inner),
+            receiver,
+            Arc::new(NoopPoolCacheMetrics),
+        )
+        .unwrap();
         let pair = test_pairs()[0];
 
         // cache at block 7, most recent block is 10.

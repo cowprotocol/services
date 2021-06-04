@@ -119,6 +119,8 @@ impl OrderbookServices {
         uniswap_factory: &UniswapV2Factory,
         native_token: H160,
     ) -> Self {
+        let registry = Registry::default();
+        let metrics = Arc::new(Metrics::new(&registry).unwrap());
         let chain_id = web3
             .eth()
             .chain_id()
@@ -144,6 +146,7 @@ impl OrderbookServices {
                 web3: web3.clone(),
             }),
             current_block_stream,
+            metrics.clone(),
         )
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());
@@ -178,8 +181,6 @@ impl OrderbookServices {
         let maintenance = ServiceMaintenance {
             maintainers: vec![orderbook.clone(), Arc::new(db.clone()), event_updater],
         };
-        let registry = Registry::default();
-        let metrics = Arc::new(Metrics::new(&registry).unwrap());
         orderbook::serve_task(
             db.clone(),
             orderbook,

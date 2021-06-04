@@ -1,6 +1,6 @@
 use anyhow::Result;
-use prometheus::{HistogramOpts, HistogramVec, IntGaugeVec, Opts, Registry};
-use shared::transport::TransportMetrics;
+use prometheus::{HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts, Registry};
+use shared::{pool_cache::PoolCacheMetrics, transport::TransportMetrics};
 use std::{
     convert::Infallible,
     sync::Arc,
@@ -14,6 +14,8 @@ pub struct Metrics {
     db_table_row_count: IntGaugeVec,
     /// Outgoing RPC request metrics
     rpc_requests: HistogramVec,
+    pool_cache_hits: IntCounter,
+    pool_cache_misses: IntCounter,
 }
 
 impl Metrics {
@@ -38,10 +40,24 @@ impl Metrics {
         let rpc_requests = HistogramVec::new(opts, &["method"]).unwrap();
         registry.register(Box::new(rpc_requests.clone()))?;
 
+        let pool_cache_hits = IntCounter::new(
+            "gp_v2_api_pool_cache_hits",
+            "Number of cache hits in the pool fetcher cache.",
+        )?;
+        registry.register(Box::new(pool_cache_hits.clone()))?;
+
+        let pool_cache_misses = IntCounter::new(
+            "gp_v2_api_pool_cache_misses",
+            "Number of cache misses in the pool fetcher cache.",
+        )?;
+        registry.register(Box::new(pool_cache_misses.clone()))?;
+
         Ok(Self {
             api_requests,
             db_table_row_count,
             rpc_requests,
+            pool_cache_hits,
+            pool_cache_misses,
         })
     }
 
@@ -57,6 +73,13 @@ impl TransportMetrics for Metrics {
         self.rpc_requests
             .with_label_values(&[label])
             .observe(elapsed.as_secs_f64())
+    }
+}
+
+impl PoolCacheMetrics for Metrics {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        self.pool_cache_hits.inc_by(cache_hits as u64);
+        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 
