@@ -239,6 +239,10 @@ impl BalancerPools {
                     ContractEvent::TokensRegistered(event) => {
                         Some(convert_tokens_registered(&event, &meta))
                     }
+                    ContractEvent::TokensDeregistered(event) => {
+                        tracing::error!("unexpected Token Deregistration event {:?}", event);
+                        None
+                    }
                     _ => {
                         // TODO - Not processing other events at the moment.
                         // https://github.com/gnosis/gp-v2-services/issues/681
