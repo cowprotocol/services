@@ -286,6 +286,7 @@ async fn main() {
         args.gas_price_cap,
         market_makable_token_list,
         current_block_stream.clone(),
+        args.shared.fee_discount_factor,
     );
 
     let maintainer = ServiceMaintenance {

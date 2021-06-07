@@ -52,6 +52,7 @@ pub struct Driver {
     market_makable_token_list: Option<TokenList>,
     inflight_trades: HashSet<OrderUid>,
     block_stream: CurrentBlockStream,
+    fee_discount_factor: f64,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -73,6 +74,7 @@ impl Driver {
         gas_price_cap: f64,
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
+        fee_discount_factor: f64,
     ) -> Self {
         Self {
             settlement_contract,
@@ -93,6 +95,7 @@ impl Driver {
             market_makable_token_list,
             inflight_trades: HashSet::new(),
             block_stream,
+            fee_discount_factor,
         }
     }
 
@@ -309,6 +312,9 @@ impl Driver {
         futures::stream::iter(settlements)
             .filter_map(|settlement| async {
                 let surplus = settlement.settlement.total_surplus(prices);
+                // Because of a potential fee discount, the solver fees may by themselves not be sufficient to make a solution economically viable (leading to a negative objective value)
+                // We therefore reverse apply the fee discount to simulate unsubsidized fees for ranking.
+                let unsubsidized_solver_fees = settlement.settlement.total_fees(prices) / BigRational::from_float(self.fee_discount_factor).expect("Discount factor is not a rational");
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
                     &settlement.settlement.clone().into(),
@@ -319,6 +325,7 @@ impl Driver {
                 let rated_settlement = RatedSettlement {
                     settlement,
                     surplus,
+                    solver_fees: unsubsidized_solver_fees,
                     gas_estimate,
                     gas_price: gas_price_wei.clone(),
                 };

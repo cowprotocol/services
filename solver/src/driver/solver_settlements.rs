@@ -74,26 +74,33 @@ impl SettlementWithSolver {
 #[derive(Debug, Clone)]
 pub struct RatedSettlement {
     pub settlement: SettlementWithSolver,
-    pub surplus: BigRational,   // In wei.
-    pub gas_estimate: U256,     // In gas units.
-    pub gas_price: BigRational, // In wei per gas unit.
+    pub surplus: BigRational,     // In wei.
+    pub solver_fees: BigRational, // In wei.
+    pub gas_estimate: U256,       // In gas units.
+    pub gas_price: BigRational,   // In wei per gas unit.
 }
 
 // Helper function for RatedSettlement to allow unit testing objective value computation
 // without a Settlement.
 fn compute_objective_value(
     surplus: &BigRational,
+    solver_fees: &BigRational,
     gas_estimate: &BigRational,
     gas_price: &BigRational,
 ) -> BigRational {
     let cost = gas_estimate * gas_price;
-    surplus - cost
+    surplus + solver_fees - cost
 }
 
 impl RatedSettlement {
     pub fn objective_value(&self) -> BigRational {
         let gas_estimate = self.gas_estimate.to_big_rational();
-        compute_objective_value(&self.surplus, &gas_estimate, &self.gas_price)
+        compute_objective_value(
+            &self.surplus,
+            &self.solver_fees,
+            &gas_estimate,
+            &self.gas_price,
+        )
     }
 }
 
@@ -114,6 +121,7 @@ impl RatedSettlement {
         RatedSettlement {
             settlement: self.settlement.without_onchain_liquidity(),
             surplus: self.surplus.clone(),
+            solver_fees: self.solver_fees.clone(),
             gas_estimate: self.gas_estimate, // TODO: This becomes an overestimate!
             gas_price: self.gas_price.clone(),
         }
@@ -271,11 +279,14 @@ mod tests {
 
     #[test]
     fn compute_objective_value() {
-        // Surplus1 is 1.004 ETH
-        let surplus1 = BigRational::from_integer(1_004_000_000_000_000_000_u128.into());
+        // Surplus1 is 1.003 ETH
+        let surplus1 = BigRational::from_integer(1_003_000_000_000_000_000_u128.into());
 
-        // Surplus2 is 1.01 ETH
-        let surplus2 = BigRational::from_integer(1_010_000_000_000_000_000_u128.into());
+        // Surplus2 is 1.009 ETH
+        let surplus2 = BigRational::from_integer(1_009_000_000_000_000_000_u128.into());
+
+        // Fees is 0.001 ETH
+        let solver_fees = BigRational::from_integer(1_000_000_000_000_000_u128.into());
 
         let gas_estimate1 = BigRational::from_integer(300_000.into());
         let gas_estimate2 = BigRational::from_integer(500_000.into());
@@ -288,7 +299,8 @@ mod tests {
         let gas_price = BigRational::from_integer(10_000_000_000_u128.into());
 
         // Objective value 1 is 1.004 - 3e5 * 10e-9 = 1.001 ETH
-        let obj_value1 = super::compute_objective_value(&surplus1, &gas_estimate1, &gas_price);
+        let obj_value1 =
+            super::compute_objective_value(&surplus1, &solver_fees, &gas_estimate1, &gas_price);
 
         assert_eq!(
             obj_value1,
@@ -296,7 +308,8 @@ mod tests {
         );
 
         // Objective value 2 is 1.01 - 5e5 * 10e-9 = 1.005 ETH
-        let obj_value2 = super::compute_objective_value(&surplus2, &gas_estimate2, &gas_price);
+        let obj_value2 =
+            super::compute_objective_value(&surplus2, &solver_fees, &gas_estimate2, &gas_price);
 
         assert_eq!(
             obj_value2,
@@ -311,7 +324,8 @@ mod tests {
         let gas_price = BigRational::from_integer(30_000_000_000_u128.into());
 
         // Objective value 1 is 1.004 - 3e5 * 30e-9 = 0.995 ETH
-        let obj_value1 = super::compute_objective_value(&surplus1, &gas_estimate1, &gas_price);
+        let obj_value1 =
+            super::compute_objective_value(&surplus1, &solver_fees, &gas_estimate1, &gas_price);
 
         assert_eq!(
             obj_value1,
@@ -319,7 +333,8 @@ mod tests {
         );
 
         // Objective value 2 is 1.01 - 5e5 * 30e-9 = 0.995 ETH
-        let obj_value2 = super::compute_objective_value(&surplus2, &gas_estimate2, &gas_price);
+        let obj_value2 =
+            super::compute_objective_value(&surplus2, &solver_fees, &gas_estimate2, &gas_price);
 
         assert_eq!(
             obj_value2,
@@ -334,7 +349,8 @@ mod tests {
         let gas_price = BigRational::from_integer(50_000_000_000_u128.into());
 
         // Objective value 1 is 1.004 - 3e5 * 50e-9 = 0.989 ETH
-        let obj_value1 = super::compute_objective_value(&surplus1, &gas_estimate1, &gas_price);
+        let obj_value1 =
+            super::compute_objective_value(&surplus1, &solver_fees, &gas_estimate1, &gas_price);
 
         assert_eq!(
             obj_value1,
@@ -342,7 +358,8 @@ mod tests {
         );
 
         // Objective value 2 is 1.01 - 5e5 * 50e-9 = 0.985 ETH
-        let obj_value2 = super::compute_objective_value(&surplus2, &gas_estimate2, &gas_price);
+        let obj_value2 =
+            super::compute_objective_value(&surplus2, &solver_fees, &gas_estimate2, &gas_price);
 
         assert_eq!(
             obj_value2,

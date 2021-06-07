@@ -210,6 +210,7 @@ async fn eth_integration(web3: Web3) {
         f64::MAX,
         None,
         block_stream,
+        1.0,
     );
     driver.single_run().await.unwrap();
 
