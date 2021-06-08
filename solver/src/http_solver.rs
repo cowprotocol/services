@@ -36,6 +36,7 @@ const GAS_PER_UNISWAP: u128 = 94696;
 pub struct SolverConfig {
     pub max_nr_exec_orders: u32,
     pub time_limit: u32,
+    pub instance_name: String,
     // TODO: add more parameters that we want to set
 }
 
@@ -46,7 +47,8 @@ impl SolverConfig {
                 "max_nr_exec_orders",
                 self.max_nr_exec_orders.to_string().as_str(),
             )
-            .append_pair("time_limit", self.time_limit.to_string().as_str());
+            .append_pair("time_limit", self.time_limit.to_string().as_str())
+            .append_pair("instance_name", self.instance_name.as_str());
     }
 }
 
@@ -316,6 +318,16 @@ impl HttpSolver {
             .to_u128()
             .context("failed to compute order fee")
     }
+
+    pub fn generate_instance_name(network_id: &str, chain_id: u64) -> String {
+        let now = chrono::offset::Utc::now();
+        format!(
+            "{}_{}_{}",
+            now.to_string().replace(" ", "_"),
+            network_id,
+            chain_id
+        )
+    }
 }
 
 fn split_liquidity(liquidity: Vec<Liquidity>) -> (Vec<LimitOrder>, Vec<AmmOrder>) {
@@ -433,6 +445,7 @@ mod tests {
             SolverConfig {
                 max_nr_exec_orders: 100,
                 time_limit: 100,
+                instance_name: "test_instance".to_string(),
             },
             H160::zero(),
             mock_token_info_fetcher,

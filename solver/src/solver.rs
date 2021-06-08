@@ -85,6 +85,7 @@ pub fn create(
                 SolverConfig {
                     max_nr_exec_orders: 100,
                     time_limit: time_limit.as_secs() as u32,
+                    instance_name: HttpSolver::generate_instance_name(&network_id, chain_id),
                 },
                 native_token,
                 token_info_fetcher.clone(),
