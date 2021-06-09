@@ -36,7 +36,6 @@ const GAS_PER_UNISWAP: u128 = 94696;
 pub struct SolverConfig {
     pub max_nr_exec_orders: u32,
     pub time_limit: u32,
-    pub instance_name: String,
     // TODO: add more parameters that we want to set
 }
 
@@ -47,8 +46,7 @@ impl SolverConfig {
                 "max_nr_exec_orders",
                 self.max_nr_exec_orders.to_string().as_str(),
             )
-            .append_pair("time_limit", self.time_limit.to_string().as_str())
-            .append_pair("instance_name", self.instance_name.as_str());
+            .append_pair("time_limit", self.time_limit.to_string().as_str());
     }
 }
 
@@ -61,6 +59,7 @@ pub struct HttpSolver {
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     price_estimator: Arc<dyn PriceEstimating>,
     network_id: String,
+    chain_id: u64,
     fee_discount_factor: f64,
 }
 
@@ -74,6 +73,7 @@ impl HttpSolver {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         price_estimator: Arc<dyn PriceEstimating>,
         network_id: String,
+        chain_id: u64,
         fee_discount_factor: f64,
     ) -> Self {
         // Unwrap because we cannot handle client creation failing.
@@ -87,6 +87,7 @@ impl HttpSolver {
             token_info_fetcher,
             price_estimator,
             network_id,
+            chain_id,
             fee_discount_factor,
         }
     }
@@ -270,6 +271,12 @@ impl HttpSolver {
     async fn send(&self, model: &BatchAuctionModel) -> Result<SettledBatchAuctionModel> {
         let mut url = self.base.clone();
         url.set_path("/solve");
+
+        let instance_name = self.generate_instance_name();
+        tracing::info!("http solver instance name is {}", instance_name);
+        url.query_pairs_mut()
+            .append_pair("instance_name", &instance_name);
+
         self.config.add_to_query(&mut url);
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let mut request = self.client.post(url);
@@ -319,13 +326,13 @@ impl HttpSolver {
             .context("failed to compute order fee")
     }
 
-    pub fn generate_instance_name(network_id: &str, chain_id: u64) -> String {
-        let now = chrono::offset::Utc::now();
+    pub fn generate_instance_name(&self) -> String {
+        let now = chrono::Utc::now();
         format!(
             "{}_{}_{}",
             now.to_string().replace(" ", "_"),
-            network_id,
-            chain_id
+            self.network_id,
+            self.chain_id
         )
     }
 }
@@ -387,7 +394,6 @@ impl Solver for HttpSolver {
             return Ok(Vec::new());
         };
         let (model, context) = self.prepare_model(liquidity, gas_price).await?;
-        tracing::info!("http solver instance name is {}", self.config.instance_name);
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
@@ -446,12 +452,12 @@ mod tests {
             SolverConfig {
                 max_nr_exec_orders: 100,
                 time_limit: 100,
-                instance_name: "test_instance".to_string(),
             },
             H160::zero(),
             mock_token_info_fetcher,
             mock_price_estimation,
             "mock_network_id".to_string(),
+            0,
             1.,
         );
         let base = |x: u128| x * 10u128.pow(18);
