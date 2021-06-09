@@ -387,6 +387,7 @@ impl Solver for HttpSolver {
             return Ok(Vec::new());
         };
         let (model, context) = self.prepare_model(liquidity, gas_price).await?;
+        tracing::info!("http solver instance name is {}", self.config.instance_name);
         let settled = self.send(&model).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
