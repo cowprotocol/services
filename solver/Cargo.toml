@@ -18,7 +18,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.12", default-features = false }
+ethcontract = { version = "0.12.2", default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.2.0", features = ["web3_"] }
 hex = "0.4"

@@ -33,6 +33,7 @@ fn main() {
                 )),
             )
     });
+    generate_contract("BalancerV2WeightedPool");
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
     generate_contract("GPv2AllowListAuthentication");

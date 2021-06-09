@@ -28,8 +28,7 @@ fn run() -> Result<()> {
         .full()
         .github(
             "BalancerV2Vault",
-            "balancer-labs/balancer-core-v2/v1.0.0-artifacts/\
-             deployments/artifacts/mainnet/Vault.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/Vault.json",
         )?
         .npm(
             "ERC20Mintable",
@@ -38,7 +37,7 @@ fn run() -> Result<()> {
         .npm(
             "GPv2AllowListAuthentication",
             // We use `_Implementation` because the use of a proxy contract makes
-            // deploying  for the e2e tests more combersome.
+            // deploying  for the e2e tests more cumbersome.
             "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.15/\
              deployments/mainnet/GPv2AllowListAuthentication_Implementation.json",
         )?
@@ -58,6 +57,10 @@ fn run() -> Result<()> {
 
     vendor
         .abi_only()
+        .github(
+            "BalancerV2WeightedPool",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/extra-abis/WeightedPool.json",
+        )?
         .npm(
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",

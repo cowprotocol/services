@@ -2,6 +2,7 @@
 pub mod paths;
 
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20Mintable.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2AllowListAuthentication.rs"));

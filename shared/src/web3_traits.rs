@@ -1,4 +1,4 @@
-//! Module containting traits for abstracting Web3 operations so components can
+//! Module containing traits for abstracting Web3 operations so components can
 //! more easily be tested with mocked versions of these behaviours.
 
 use crate::Web3;
@@ -8,7 +8,7 @@ use ethcontract::H160;
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeFetching: Send + Sync {
-    /// Fethces the code size at the specified address.
+    /// Fetches the code size at the specified address.
     async fn code_size(&self, address: H160) -> Result<usize>;
 }
 

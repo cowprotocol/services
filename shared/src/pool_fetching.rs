@@ -215,7 +215,7 @@ impl PoolFetching for PoolFetcher {
                     .batch_call(&mut batch);
 
                 async move {
-                    // Clippy is wrong about this being eval order depndendent.
+                    // Clippy is wrong about this being eval order dependent.
                     #[allow(clippy::eval_order_dependence)]
                     FetchedPool {
                         pair,
