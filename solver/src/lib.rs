@@ -17,6 +17,7 @@ pub mod pending_transactions;
 pub mod settlement;
 pub mod settlement_simulation;
 pub mod settlement_submission;
+pub mod single_order_solver;
 pub mod solver;
 mod util;
 

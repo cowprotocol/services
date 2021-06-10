@@ -9,17 +9,15 @@ use self::api::{Amount, OneInchClient, Slippage, Swap, SwapQuery};
 use crate::{
     encoding::EncodedInteraction,
     interactions::Erc20ApproveInteraction,
-    liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder, Liquidity},
+    liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
-    solver::Solver,
+    single_order_solver::SingleOrderSolving,
 };
 use anyhow::{ensure, Result};
 use contracts::{GPv2Settlement, ERC20};
 use ethcontract::{dyns::DynWeb3, Bytes, U256};
-use futures::future;
 use maplit::hashmap;
 use model::order::OrderKind;
-use rand::seq::SliceRandom as _;
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
@@ -158,51 +156,15 @@ impl Interaction for Swap {
     }
 }
 
-/// Maximum number of sell orders to consider for settlements.
-///
-/// This is mostly out of concern to avoid rate limiting and because 1Inch
-/// requests take a non-trivial amount of time.
-const MAX_SETTLEMENTS: usize = 5;
-
 #[async_trait::async_trait]
-impl Solver for OneInchSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
-        let mut sell_orders = liquidity
-            .into_iter()
-            .filter_map(|liquidity| match liquidity {
-                Liquidity::Limit(order) if order.kind == OrderKind::Sell => Some(order),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        // Randomize which orders we take, this prevents this solver "getting
-        // stuck" on bad orders.
-        if sell_orders.len() > MAX_SETTLEMENTS {
-            sell_orders.shuffle(&mut rand::thread_rng());
-        }
-
+impl SingleOrderSolving for OneInchSolver {
+    async fn settle_order(&self, order: LimitOrder) -> Result<Settlement> {
+        ensure!(
+            order.kind == OrderKind::Sell,
+            "1Inch only supports sell orders"
+        );
         let protocols = self.supported_protocols().await?;
-        let settlements = future::join_all(
-            sell_orders
-                .into_iter()
-                .take(MAX_SETTLEMENTS)
-                .map(|sell_order| self.settle_order(sell_order, protocols.clone())),
-        )
-        .await;
-
-        Ok(settlements
-            .into_iter()
-            .filter_map(|settlement| match settlement {
-                Ok(settlement) => Some(settlement),
-                Err(err) => {
-                    // It could be that 1Inch can't match an order and would
-                    // return an error for whatever reason. In that case, we want
-                    // to continue trying to solve for other orders.
-                    tracing::warn!("1Inch API error quoting swap: {}", err);
-                    None
-                }
-            })
-            .collect())
+        self.settle_order(order, protocols).await
     }
 
     fn name(&self) -> &'static str {
@@ -219,10 +181,7 @@ impl Display for OneInchSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        liquidity::{AmmOrder, LimitOrder},
-        testutil,
-    };
+    use crate::{liquidity::LimitOrder, testutil};
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::H160;
     use model::order::{Order, OrderCreation, OrderKind};
@@ -246,25 +205,6 @@ mod tests {
                 None,
             )
             .await;
-    }
-
-    #[tokio::test]
-    async fn ignores_all_liquidity_other_than_sell_orders() {
-        let settlements = dummy_solver()
-            .solve(
-                vec![
-                    Liquidity::Limit(LimitOrder {
-                        kind: OrderKind::Buy,
-                        ..Default::default()
-                    }),
-                    Liquidity::Amm(AmmOrder::default()),
-                ],
-                0.0,
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(settlements.len(), 0);
     }
 
     #[tokio::test]
