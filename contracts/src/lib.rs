@@ -3,6 +3,10 @@ pub mod paths;
 
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/BalancerV2WeightedPoolFactory.rs"
+));
 include!(concat!(env!("OUT_DIR"), "/ERC20.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20Mintable.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2AllowListAuthentication.rs"));
@@ -71,6 +75,7 @@ mod tests {
         }
         for network in &[1, 4] {
             assert_has_deployment_address!(BalancerV2Vault for *network);
+            assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
         }
     }
 
@@ -89,6 +94,7 @@ mod tests {
         }
         for network in &[1, 4] {
             assert_has_deployment_information!(BalancerV2Vault for *network);
+            assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
         }
     }
 }

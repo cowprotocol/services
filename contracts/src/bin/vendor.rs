@@ -30,6 +30,10 @@ fn run() -> Result<()> {
             "BalancerV2Vault",
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/Vault.json",
         )?
+        .github(
+            "BalancerV2WeightedPoolFactory",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/WeightedPoolFactory.json",
+        )?
         .npm(
             "ERC20Mintable",
             "@openzeppelin/contracts@2.5.0/build/contracts/ERC20Mintable.json",

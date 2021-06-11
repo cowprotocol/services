@@ -33,6 +33,24 @@ fn main() {
                 )),
             )
     });
+    generate_contract_with_config("BalancerV2WeightedPoolFactory", |builder| {
+        builder
+            .with_contract_mod_override(Some("balancer_v2_weighted_pool_factory"))
+            .add_deployment(
+                1,
+                addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
+                Some(tx(
+                    "0x0f9bb3624c185b4e107eaf9176170d2dc9cb1c48d0f070ed18416864b3202792",
+                )),
+            )
+            .add_deployment(
+                4,
+                addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
+                Some(tx(
+                    "0xae8c45c1d40756d0eb312723a2993341e379ea6d8bef4adfae2709345939f8eb",
+                )),
+            )
+    });
     generate_contract("BalancerV2WeightedPool");
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
