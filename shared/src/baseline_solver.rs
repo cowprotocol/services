@@ -115,6 +115,8 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
         })
 }
 
+/// Maximum amount of units of the last token of the path you get when selling 1 unit of the first
+/// token along the path.
 pub fn estimate_spot_price<'a, L: BaselineSolvable>(
     path: &[H160],
     liquidity: &'a HashMap<TokenPair, Vec<L>>,

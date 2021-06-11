@@ -34,7 +34,11 @@ pub enum PriceEstimationError {
 
 #[async_trait::async_trait]
 pub trait PriceEstimating: Send + Sync {
-    // Price is given in how much of sell_token needs to be sold for one buy_token.
+    /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in buy_token.
+    /// The resulting price is how many units of sell_token needs to be sold for one unit of
+    /// buy_token (sell_amount / buy_amount).
+    /// If amount is 0 then kind is ignored and the result is how many units of buy token you get
+    /// from selling one unit of sell token (buy_amount / sell_amount).
     async fn estimate_price(
         &self,
         sell_token: H160,
@@ -129,9 +133,6 @@ impl BaselinePriceEstimator {
 
 #[async_trait::async_trait]
 impl PriceEstimating for BaselinePriceEstimator {
-    // Estimates the price between sell and buy token denominated in |sell token| per buy token.
-    // Returns an error if no path exists between sell and buy token.
-    // Incorporates uniswap fee unless amount is 0 in which case it returns the best spot price.
     async fn estimate_price(
         &self,
         sell_token: H160,
@@ -227,7 +228,7 @@ impl BaselinePriceEstimator {
     ) -> Result<(Vec<H160>, U256)> {
         // Estimate with amount 0 to get a spot price (avoid potential endless recursion)
         let buy_token_price_in_native_token = self
-            .estimate_price(self.native_token, buy_token, U256::zero(), OrderKind::Sell)
+            .estimate_price(buy_token, self.native_token, U256::zero(), OrderKind::Sell)
             .await?;
         self.best_execution(
             sell_token,
@@ -258,7 +259,7 @@ impl BaselinePriceEstimator {
     ) -> Result<(Vec<H160>, U256)> {
         // Estimate with amount 0 to get a spot price (avoid potential endless recursion)
         let sell_token_price_in_eth = self
-            .estimate_price(self.native_token, sell_token, U256::zero(), OrderKind::Sell)
+            .estimate_price(sell_token, self.native_token, U256::zero(), OrderKind::Sell)
             .await?;
         self.best_execution(
             sell_token,
@@ -818,78 +819,63 @@ mod tests {
 
     #[tokio::test]
     async fn price_estimate_takes_gas_costs_into_account() {
-        let token_a = H160::from_low_u64_be(1);
+        let native = H160::from_low_u64_be(0);
+        let sell = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
-        let token_b = H160::from_low_u64_be(3);
+        let buy = H160::from_low_u64_be(3);
 
-        // Multi-hop offers better price when selling a for b
         let pools = vec![
-            Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100_000, 90_000)),
+            // Native token connection for tokens 1, 2. Note that the connection has a price much
+            // worse than the pools between 1, 2, 3 so that it is not used for the trade, just for
+            // gas price.
             Pool::uniswap(
-                TokenPair::new(token_a, intermediate).unwrap(),
-                (100_000, 100_000),
+                TokenPair::new(native, sell).unwrap(),
+                (100_000_000_000, 2_000),
             ),
             Pool::uniswap(
-                TokenPair::new(intermediate, token_b).unwrap(),
-                (100_000, 100_000),
+                TokenPair::new(native, buy).unwrap(),
+                (100_000_000_000, 1_000),
             ),
+            // Direct connection 1 to 3.
+            Pool::uniswap(TokenPair::new(sell, buy).unwrap(), (1000, 800)),
+            // Intermediate from 1 to 2 to 2, cheaper than direct.
+            Pool::uniswap(TokenPair::new(sell, intermediate).unwrap(), (1000, 1000)),
+            Pool::uniswap(TokenPair::new(intermediate, buy).unwrap(), (1000, 1000)),
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(10000.0))));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
-            gas_estimator,
-            hashset!(intermediate),
+            gas_estimator.clone(),
+            hashset!(native, intermediate),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
-            intermediate,
+            native,
         );
 
-        // Only use 1 hop
-        assert_eq!(
-            estimator
-                .estimate_gas(token_a, token_b, 100.into(), OrderKind::Sell)
-                .await
-                .unwrap(),
-            200_000.into()
-        );
+        // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
+        for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
+            assert_eq!(
+                estimator
+                    .estimate_gas(sell, buy, 10.into(), *order_kind)
+                    .await
+                    .unwrap(),
+                200_000.into()
+            );
+        }
 
-        // Only use 1 hop
-        assert_eq!(
-            estimator
-                .estimate_gas(token_a, token_b, 100.into(), OrderKind::Buy)
-                .await
-                .unwrap(),
-            200_000.into()
-        );
+        // Reduce gas price.
+        *gas_estimator.0.lock().unwrap() = 1.0;
 
-        // Now with a cheap gas price
-        let pool_fetcher = Arc::new(FakePoolFetcher(pools));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
-        let estimator = BaselinePriceEstimator::new(
-            pool_fetcher,
-            gas_estimator,
-            hashset!(intermediate),
-            Arc::new(ListBasedDetector::deny_list(Vec::new())),
-            intermediate,
-        );
-
-        // Use 2 hops
-        assert_eq!(
-            estimator
-                .estimate_gas(token_a, token_b, 100.into(), OrderKind::Sell)
-                .await
-                .unwrap(),
-            260_000.into()
-        );
-
-        // Use 2 hops
-        assert_eq!(
-            estimator
-                .estimate_gas(token_a, token_b, 100.into(), OrderKind::Buy)
-                .await
-                .unwrap(),
-            260_000.into()
-        );
+        // Lower gas price does make the intermediate hop worth it.
+        for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
+            assert_eq!(
+                estimator
+                    .estimate_gas(sell, buy, 10.into(), *order_kind)
+                    .await
+                    .unwrap(),
+                260_000.into()
+            );
+        }
     }
 }
