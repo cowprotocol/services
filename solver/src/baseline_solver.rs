@@ -32,12 +32,12 @@ impl Solver for BaselineSolver {
 }
 
 impl BaselineSolvable for AmmOrder {
-    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
-        amm_to_pool(self).get_amount_in(in_token, out_amount, out_token)
-    }
-
     fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
         amm_to_pool(self).get_amount_out(out_token, in_amount, in_token)
+    }
+
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+        amm_to_pool(self).get_amount_in(in_token, out_amount, out_token)
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {

@@ -26,6 +26,11 @@ use structopt::clap::arg_enum;
 // minus this duration to account for additional delay for example from the network.
 const TIMEOUT_SAFETY_BUFFER: Duration = Duration::from_secs(5);
 
+/// Interface that all solvers must implement
+/// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
+/// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
+/// would like to include/process (i.e. those already supported here or their own private sources)
+/// The `name` method is included for logging purposes.
 #[async_trait::async_trait]
 pub trait Solver {
     // The returned settlements should be independent (for example not reusing the same user

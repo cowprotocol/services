@@ -41,7 +41,7 @@ impl SettlementEncoder {
     /// The prices must be provided up front in order to ensure that all tokens
     /// included in the settlement are known when encoding trades.
     pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
-        // Explicitely define a token ordering based on the supplied clearing
+        // Explicitly define a token ordering based on the supplied clearing
         // prices. This is done since `HashMap::keys` returns an iterator in
         // arbitrary order ([1]), meaning that we can't rely that the ordering
         // will be consistent across calls. The list is sorted so that
