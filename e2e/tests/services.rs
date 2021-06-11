@@ -14,9 +14,10 @@ use shared::{
     bad_token::list_based::ListBasedDetector,
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
-    pool_cache::{PoolCache, PoolCacheConfig},
+    pool_cache::PoolCache,
     pool_fetching::PoolFetcher,
     price_estimate::BaselinePriceEstimator,
+    recent_block_cache::CacheConfig,
     Web3,
 };
 use solver::orderbook::OrderBookApi;
@@ -144,9 +145,9 @@ impl OrderbookServices {
             .await
             .unwrap();
         let pool_fetcher = PoolCache::new(
-            PoolCacheConfig {
+            CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
-                number_of_pairs_to_auto_update: 20,
+                number_of_entries_to_auto_update: 20,
                 maximum_recent_block_age: 4,
                 ..Default::default()
             },

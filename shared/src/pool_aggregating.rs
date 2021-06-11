@@ -2,7 +2,7 @@ use crate::pool_fetching::{Pool, PoolFetcher, PoolFetching};
 use crate::Web3;
 use crate::{
     amm_pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider},
-    pool_fetching::Block,
+    recent_block_cache::Block,
 };
 use anyhow::Result;
 use model::TokenPair;

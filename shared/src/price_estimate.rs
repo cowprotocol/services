@@ -5,7 +5,8 @@ use crate::{
         token_path_to_pair_path,
     },
     conversions::U256Ext,
-    pool_fetching::{Block, Pool, PoolFetching},
+    pool_fetching::{Pool, PoolFetching},
+    recent_block_cache::Block,
 };
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};

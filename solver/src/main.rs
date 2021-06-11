@@ -11,8 +11,9 @@ use shared::{
     metrics::serve_metrics,
     network::network_name,
     pool_aggregating::{self, BaselineSources, PoolAggregator},
-    pool_cache::{PoolCache, PoolCacheConfig},
+    pool_cache::PoolCache,
     price_estimate::BaselinePriceEstimator,
+    recent_block_cache::CacheConfig,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     transport::create_instrumented_transport,
@@ -212,11 +213,11 @@ async fn main() {
     let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
     let pool_fetcher = Arc::new(
         PoolCache::new(
-            PoolCacheConfig {
+            CacheConfig {
                 number_of_blocks_to_cache: args.shared.pool_cache_blocks,
                 // 0 because we don't make use of the auto update functionality as we always fetch
                 // for specific blocks
-                number_of_pairs_to_auto_update: 0,
+                number_of_entries_to_auto_update: 0,
                 maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
                 max_retries: args.shared.pool_cache_maximum_retries,
                 delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,

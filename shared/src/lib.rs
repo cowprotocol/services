@@ -20,6 +20,7 @@ pub mod pool_aggregating;
 pub mod pool_cache;
 pub mod pool_fetching;
 pub mod price_estimate;
+pub mod recent_block_cache;
 pub mod time;
 pub mod token_info;
 pub mod token_list;

@@ -3,7 +3,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use model::order::OrderUid;
-use shared::pool_fetching::Block;
+use shared::recent_block_cache::Block;
 use std::collections::HashSet;
 
 pub struct LiquidityCollector {

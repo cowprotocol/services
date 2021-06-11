@@ -4,7 +4,8 @@ use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::{path_candidates, token_path_to_pair_path},
-    pool_fetching::{Block, PoolFetcher, PoolFetching as _},
+    pool_fetching::{PoolFetcher, PoolFetching as _},
+    recent_block_cache::Block,
     Web3,
 };
 use std::collections::{HashMap, HashSet};

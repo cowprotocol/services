@@ -22,8 +22,8 @@ use num::BigRational;
 use primitive_types::H160;
 use shared::{
     current_block::{self, CurrentBlockStream},
-    pool_fetching::Block,
     price_estimate::PriceEstimating,
+    recent_block_cache::Block,
     token_list::TokenList,
     Web3,
 };

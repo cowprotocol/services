@@ -12,9 +12,10 @@ use lazy_static::lazy_static;
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
 use std::fmt;
-use web3::signing::{self};
-use web3::signing::{Key, SecretKeyRef};
-use web3::types::Recovery;
+use web3::{
+    signing::{self, Key, SecretKeyRef},
+    types::Recovery,
+};
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]

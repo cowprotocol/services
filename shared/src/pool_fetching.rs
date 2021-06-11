@@ -1,10 +1,10 @@
 use crate::{
     amm_pair_provider::AmmPairProvider, baseline_solver::BaselineSolvable,
-    ethcontract_error::EthcontractErrorType, Web3,
+    ethcontract_error::EthcontractErrorType, recent_block_cache::Block, Web3,
 };
 use anyhow::Result;
 use contracts::{IUniswapLikePair, ERC20};
-use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, BlockNumber, H160, U256};
+use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, H160, U256};
 use model::TokenPair;
 use num::{rational::Ratio, BigInt, BigRational, Zero};
 use std::{collections::HashSet, sync::Arc};
@@ -15,24 +15,6 @@ const POOL_SWAP_GAS_COST: usize = 60_000;
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
 /// `reserve_a` refers to the reserve of the excluded token.
 type RelativeReserves = (U256, U256, H160);
-
-/// The state of the chain at which information should be retrieved.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, PartialOrd, Ord)]
-pub enum Block {
-    /// The most recent state. This is on a best effort basis so that for example a cache can still
-    /// return results that are slightly out of date.
-    Recent,
-    Number(u64),
-}
-
-impl From<Block> for BlockNumber {
-    fn from(val: Block) -> Self {
-        match val {
-            Block::Recent => BlockNumber::Latest,
-            Block::Number(number) => BlockNumber::Number(number.into()),
-        }
-    }
-}
 
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
