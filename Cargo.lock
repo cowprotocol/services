@@ -2501,6 +2501,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "hex-literal",
+ "itertools 0.10.0",
  "lru",
  "maplit",
  "mockall",

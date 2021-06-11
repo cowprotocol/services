@@ -4,7 +4,7 @@ pub mod macros;
 pub mod amm_pair_provider;
 pub mod arguments;
 pub mod bad_token;
-pub mod balancer_event_handler;
+pub mod balancer;
 pub mod baseline_solver;
 pub mod conversions;
 pub mod current_block;
