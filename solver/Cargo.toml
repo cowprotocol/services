@@ -39,7 +39,7 @@ serde_with = { version = "1.9", default-features = false }
 shared = { path = "../shared" }
 structopt = "0.3"
 strum = "0.20"
-strum_macros = "0.20"
+strum_macros = "0.21"
 tokio = { version = "1.6", features = ["macros", "rt-multi-thread", "time"] }
 tracing = "0.1"
 transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.1.1" }
