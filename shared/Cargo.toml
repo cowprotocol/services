@@ -36,4 +36,4 @@ web3 = { version = "0.16", default-features = false }
 num-bigint = "0.3"
 mockall = "0.9"
 thiserror = "1.0"
-itertools = "0.10.0"
+itertools = "0.10.1"
