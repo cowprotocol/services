@@ -1,4 +1,5 @@
 use crate::pool_fetching::MAX_BATCH_SIZE;
+use crate::token_info::TokenInfoFetching;
 use crate::{
     current_block::BlockRetrieving,
     event_handling::{BlockNumber, EventHandler, EventIndex, EventStoring},
@@ -11,7 +12,7 @@ use contracts::{
     balancer_v2_weighted_pool_factory::{
         self, event_data::PoolCreated as ContractPoolCreated, Event as ContractEvent,
     },
-    BalancerV2Vault, BalancerV2WeightedPool, BalancerV2WeightedPoolFactory, ERC20,
+    BalancerV2Vault, BalancerV2WeightedPool, BalancerV2WeightedPoolFactory,
 };
 use derivative::Derivative;
 use ethcontract::batch::CallBatch;
@@ -19,10 +20,10 @@ use ethcontract::common::DeploymentInformation;
 use ethcontract::{
     dyns::DynWeb3, Bytes, Event as EthContractEvent, EventMetadata, H160, H256, U256,
 };
-use futures::future::join_all;
 use itertools::Itertools;
 use mockall::*;
 use model::TokenPair;
+use std::sync::Arc;
 use std::{
     collections::{HashMap, HashSet},
     fmt::Debug,
@@ -73,6 +74,11 @@ pub struct WeightedPoolData {
     scaling_exponents: Vec<u8>,
 }
 
+struct PoolDataFetcher {
+    web3: Web3,
+    token_info_fetcher: Arc<dyn TokenInfoFetching>,
+}
+
 #[automock]
 #[async_trait::async_trait]
 trait PoolDataFetching: Send + Sync {
@@ -80,13 +86,13 @@ trait PoolDataFetching: Send + Sync {
 }
 
 #[async_trait::async_trait]
-impl PoolDataFetching for Web3 {
+impl PoolDataFetching for PoolDataFetcher {
     /// Could result in ethcontract::{NodeError, MethodError or ContractError}
     async fn get_pool_data(&self, pool_address: H160) -> Result<WeightedPoolData> {
-        let mut batch = CallBatch::new(self.transport());
-        let pool_contract = BalancerV2WeightedPool::at(self, pool_address);
+        let mut batch = CallBatch::new(self.web3.transport());
+        let pool_contract = BalancerV2WeightedPool::at(&self.web3, pool_address);
         // Need vault and pool_id before we can fetch tokens.
-        let vault = BalancerV2Vault::deployed(&self).await?;
+        let vault = BalancerV2Vault::deployed(&self.web3).await?;
         let pool_id = H256::from(pool_contract.methods().get_pool_id().call().await?.0);
 
         // token_data and weight calls can be batched
@@ -101,28 +107,20 @@ impl PoolDataFetching for Web3 {
         batch.execute_all(MAX_BATCH_SIZE).await;
 
         let tokens = token_data.await?.0;
-        // This is already a batch call for a list of token decimals.
-        let mut batch = CallBatch::new(self.transport());
-        let futures = tokens
+
+        let token_decimals = self.token_info_fetcher.get_token_infos(&tokens).await;
+        let ordered_decimals = tokens
             .iter()
-            .map(|address| {
-                let erc20 = ERC20::at(&self, *address);
-                erc20.methods().decimals().batch_call(&mut batch)
-            })
-            .collect::<Vec<_>>();
-        batch.execute_all(MAX_BATCH_SIZE).await;
-        let token_decimals = join_all(futures)
-            .await
-            .into_iter()
-            .collect::<Result<Vec<_>, _>>()?;
-        let scaling_exponents = token_decimals
+            .map(|token| token_decimals.get(token).and_then(|t| t.decimals))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow!("all token decimals required to build scaling factors"))?;
+        // Note that balancer does not support tokens with more than 18 decimals
+        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/ce70f7663e0ac94b25ed60cb86faaa8199fd9e13/pkg/pool-utils/contracts/BasePool.sol#L497-L508
+        let scaling_exponents = ordered_decimals
             .iter()
-            .map(|decimals| {
-                // Note that balancer does not support tokens with more than 18 decimals
-                // https://github.com/balancer-labs/balancer-v2-monorepo/blob/ce70f7663e0ac94b25ed60cb86faaa8199fd9e13/pkg/pool-utils/contracts/BasePool.sol#L497-L508
-                18 - decimals
-            })
-            .collect();
+            .map(|decimals| 18u8.checked_sub(*decimals))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow!("token with more than 18 decimals"))?;
         Ok(WeightedPoolData {
             pool_id,
             tokens,
@@ -365,7 +363,6 @@ mod tests {
         ];
 
         let mut dummy_data_fetcher = MockPoolDataFetching::new();
-
         for i in 0..n {
             let expected_pool_data = WeightedPoolData {
                 pool_id: pool_ids[i],
