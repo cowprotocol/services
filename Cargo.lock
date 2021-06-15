@@ -2502,6 +2502,7 @@ dependencies = [
  "gas-estimation",
  "hex-literal",
  "itertools 0.10.1",
+ "lazy_static",
  "lru",
  "maplit",
  "mockall",
