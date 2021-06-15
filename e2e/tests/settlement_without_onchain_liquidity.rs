@@ -9,6 +9,7 @@ use secp256k1::SecretKey;
 use serde_json::json;
 use shared::{
     amm_pair_provider::UniswapPairProvider,
+    pool_fetching::PoolFetcher,
     token_list::{Token, TokenList},
     Web3,
 };
@@ -148,10 +149,13 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        uniswap_pair_provider.clone(),
         gpv2.settlement.clone(),
         HashSet::new(),
         web3.clone(),
+        Arc::new(PoolFetcher {
+            pair_provider: uniswap_pair_provider,
+            web3: web3.clone(),
+        }),
     );
     let solver = solver::naive_solver::NaiveSolver {};
     let liquidity_collector = LiquidityCollector {

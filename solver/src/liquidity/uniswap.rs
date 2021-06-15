@@ -4,7 +4,7 @@ use ethcontract::batch::CallBatch;
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::{path_candidates, token_path_to_pair_path},
-    pool_fetching::{PoolFetcher, PoolFetching as _},
+    pool_fetching::PoolFetching,
     recent_block_cache::Block,
     Web3,
 };
@@ -18,11 +18,10 @@ use super::slippage;
 use crate::{interactions::UniswapInteraction, settlement::SettlementEncoder};
 
 use super::{AmmOrder, AmmOrderExecution, LimitOrder, SettlementHandling};
-use shared::amm_pair_provider::AmmPairProvider;
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
-    pool_fetcher: PoolFetcher,
+    pool_fetcher: Arc<dyn PoolFetching>,
     web3: Web3,
     base_tokens: HashSet<H160>,
 }
@@ -37,10 +36,10 @@ struct Inner {
 impl UniswapLikeLiquidity {
     pub fn new(
         router: IUniswapLikeRouter,
-        pair_provider: Arc<dyn AmmPairProvider>,
         gpv2_settlement: GPv2Settlement,
         base_tokens: HashSet<H160>,
         web3: Web3,
+        pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
         Self {
             inner: Arc::new(Inner {
@@ -48,11 +47,8 @@ impl UniswapLikeLiquidity {
                 gpv2_settlement,
                 allowances: Mutex::new(HashMap::new()),
             }),
-            web3: web3.clone(),
-            pool_fetcher: PoolFetcher {
-                pair_provider,
-                web3,
-            },
+            web3,
+            pool_fetcher,
             base_tokens,
         }
     }

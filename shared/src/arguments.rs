@@ -1,5 +1,5 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
-use crate::{gas_price_estimation::GasEstimatorType, pool_aggregating::BaselineSources};
+use crate::{gas_price_estimation::GasEstimatorType, pool_aggregating::BaselineSource};
 use ethcontract::{H160, U256};
 use std::{
     num::{NonZeroU64, ParseFloatError},
@@ -59,11 +59,11 @@ pub struct Arguments {
         long,
         env = "BASELINE_SOURCES",
         default_value = "Uniswap,Sushiswap",
-        possible_values = &BaselineSources::variants(),
+        possible_values = &BaselineSource::variants(),
         case_insensitive = true,
         use_delimiter = true
     )]
-    pub baseline_sources: Vec<BaselineSources>,
+    pub baseline_sources: Vec<BaselineSource>,
 
     /// The number of blocks kept in the pool cache.
     #[structopt(long, env, default_value = "10")]

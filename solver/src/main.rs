@@ -1,17 +1,18 @@
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
+use futures::{stream, StreamExt};
 use prometheus::Registry;
 use reqwest::Url;
 use shared::{
-    amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
     bad_token::list_based::ListBasedDetector,
     current_block::current_block_stream,
     http_transport::HttpTransport,
-    maintenance::ServiceMaintenance,
+    maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
     network::network_name,
-    pool_aggregating::{self, BaselineSources, PoolAggregator},
+    pool_aggregating::{self, BaselineSource, PoolAggregator},
     pool_cache::PoolCache,
+    pool_fetching::{PoolFetcher, PoolFetching},
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -22,7 +23,7 @@ use solver::{
     driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
     liquidity_collector::LiquidityCollector, metrics::Metrics, solver::SolverType,
 };
-use std::iter::FromIterator as _;
+use std::{collections::HashMap, iter::FromIterator as _};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use structopt::StructOpt;
 
@@ -208,29 +209,46 @@ async fn main() {
             .await
             .unwrap();
 
-    let pair_providers =
-        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
-    let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
-    let pool_fetcher = Arc::new(
-        PoolCache::new(
-            CacheConfig {
-                number_of_blocks_to_cache: args.shared.pool_cache_blocks,
-                // 0 because we don't make use of the auto update functionality as we always fetch
-                // for specific blocks
-                number_of_entries_to_auto_update: 0,
-                maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
-                max_retries: args.shared.pool_cache_maximum_retries,
-                delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
-            },
-            Box::new(pool_aggregator),
-            current_block_stream.clone(),
-            metrics.clone(),
-        )
-        .expect("failed to create pool cache"),
-    );
+    let cache_config = CacheConfig {
+        number_of_blocks_to_cache: args.shared.pool_cache_blocks,
+        // 0 because we don't make use of the auto update functionality as we always fetch
+        // for specific blocks
+        number_of_entries_to_auto_update: 0,
+        maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
+        max_retries: args.shared.pool_cache_maximum_retries,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+    };
+    let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
+        stream::iter(args.shared.baseline_sources)
+            .then(|source| {
+                let web3 = web3.clone();
+                let current_block_stream = current_block_stream.clone();
+                let metrics = metrics.clone();
+                async move {
+                    let pair_provider =
+                        pool_aggregating::pair_provider(source, chain_id, &web3).await;
+                    let fetcher = Box::new(PoolFetcher {
+                        pair_provider,
+                        web3,
+                    });
+                    let pool_cache =
+                        PoolCache::new(cache_config, fetcher, current_block_stream, metrics)
+                            .expect("failed to create pool cache");
+                    (source, Arc::new(pool_cache))
+                }
+            })
+            .collect()
+            .await;
+
+    let pool_aggregator = Arc::new(PoolAggregator {
+        pool_fetchers: pool_caches
+            .values()
+            .map(|cache| cache.clone() as Arc<dyn PoolFetching>)
+            .collect(),
+    });
 
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
-        pool_fetcher.clone(),
+        pool_aggregator,
         gas_price_estimator.clone(),
         base_tokens.clone(),
         // Order book already filters bad tokens
@@ -238,8 +256,7 @@ async fn main() {
         native_token_contract.address(),
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
-        args.shared.baseline_sources,
-        chain_id,
+        &pool_caches,
         settlement_contract.clone(),
         base_tokens.clone(),
         web3.clone(),
@@ -291,7 +308,10 @@ async fn main() {
     );
 
     let maintainer = ServiceMaintenance {
-        maintainers: vec![pool_fetcher],
+        maintainers: pool_caches
+            .into_iter()
+            .map(|(_, cache)| cache as Arc<dyn Maintaining>)
+            .collect(),
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
@@ -300,45 +320,36 @@ async fn main() {
 }
 
 async fn build_amm_artifacts(
-    sources: Vec<BaselineSources>,
-    chain_id: u64,
+    sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
     base_tokens: HashSet<H160>,
     web3: shared::Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
-    for source in sources {
-        match source {
-            BaselineSources::Uniswap => {
+    for (key, value) in sources {
+        match key {
+            BaselineSource::Uniswap => {
                 let router = contracts::UniswapV2Router02::deployed(&web3)
                     .await
                     .expect("couldn't load deployed uniswap router");
-                let factory = contracts::UniswapV2Factory::deployed(&web3)
-                    .await
-                    .expect("couldn't load deployed uniswap router");
-                let pair_provider = Arc::new(UniswapPairProvider { factory, chain_id });
                 res.push(UniswapLikeLiquidity::new(
                     IUniswapLikeRouter::at(&web3, router.address()),
-                    pair_provider.clone(),
                     settlement_contract.clone(),
                     base_tokens.clone(),
                     web3.clone(),
+                    value.clone(),
                 ));
             }
-            BaselineSources::Sushiswap => {
+            BaselineSource::Sushiswap => {
                 let router = contracts::SushiswapV2Router02::deployed(&web3)
                     .await
                     .expect("couldn't load deployed sushiswap router");
-                let factory = contracts::SushiswapV2Factory::deployed(&web3)
-                    .await
-                    .expect("couldn't load deployed sushiswap router");
-                let pair_provider = Arc::new(SushiswapPairProvider { factory });
                 res.push(UniswapLikeLiquidity::new(
                     IUniswapLikeRouter::at(&web3, router.address()),
-                    pair_provider.clone(),
                     settlement_contract.clone(),
                     base_tokens.clone(),
                     web3.clone(),
+                    value.clone(),
                 ));
             }
         }

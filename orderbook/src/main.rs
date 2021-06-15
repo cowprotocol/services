@@ -1,4 +1,5 @@
 use contracts::{GPv2Settlement, WETH9};
+use futures::{stream, StreamExt};
 use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
@@ -15,6 +16,7 @@ use orderbook::{
 use primitive_types::H160;
 use prometheus::Registry;
 use shared::{
+    amm_pair_provider::AmmPairProvider,
     bad_token::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
@@ -25,6 +27,7 @@ use shared::{
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
     pool_cache::PoolCache,
+    pool_fetching::{PoolFetcher, PoolFetching},
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     transport::create_instrumented_transport,
@@ -171,8 +174,13 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let pair_providers =
-        pool_aggregating::pair_providers(&args.shared.baseline_sources, chain_id, &web3).await;
+    let pair_providers: Vec<Arc<dyn AmmPairProvider>> = stream::iter(args.shared.baseline_sources)
+        .then(|source| {
+            let web3 = web3.clone();
+            async move { pool_aggregating::pair_provider(source, chain_id, &web3).await }
+        })
+        .collect()
+        .await;
 
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
@@ -207,7 +215,17 @@ async fn main() {
             .await
             .unwrap();
 
-    let pool_aggregator = PoolAggregator::from_providers(&pair_providers, &web3).await;
+    let pool_aggregator = PoolAggregator {
+        pool_fetchers: pair_providers
+            .into_iter()
+            .map(|pair_provider| {
+                Arc::new(PoolFetcher {
+                    pair_provider,
+                    web3: web3.clone(),
+                }) as Arc<dyn PoolFetching>
+            })
+            .collect(),
+    };
     let pool_fetcher = Arc::new(
         PoolCache::new(
             CacheConfig {

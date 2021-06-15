@@ -6,7 +6,10 @@ use model::{
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use shared::{amm_pair_provider::UniswapPairProvider, maintenance::Maintaining, Web3};
+use shared::{
+    amm_pair_provider::UniswapPairProvider, maintenance::Maintaining, pool_fetching::PoolFetcher,
+    Web3,
+};
 use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,
@@ -181,10 +184,13 @@ async fn eth_integration(web3: Web3) {
 
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        uniswap_pair_provider.clone(),
         gpv2.settlement.clone(),
         HashSet::new(),
         web3.clone(),
+        Arc::new(PoolFetcher {
+            pair_provider: uniswap_pair_provider,
+            web3: web3.clone(),
+        }),
     );
     let solver = solver::naive_solver::NaiveSolver {};
     let liquidity_collector = LiquidityCollector {
