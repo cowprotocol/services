@@ -51,6 +51,24 @@ fn main() {
                 )),
             )
     });
+    generate_contract_with_config("BalancerV2WeightedPool2TokensFactory", |builder| {
+        builder
+            .with_contract_mod_override(Some("balancer_v2_weighted_pool_2_tokens_factory"))
+            .add_deployment(
+                1,
+                addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
+                Some(tx(
+                    "0xf40c05058422d730b7035c254f8b765722935a5d3003ac37b13a61860adbaf08",
+                )),
+            )
+            .add_deployment(
+                4,
+                addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
+                Some(tx(
+                    "0xbe28062b575c2743b3b4525c3a175b9acad36695c15dba1c69af5f3fc3ceca37",
+                )),
+            )
+    });
     generate_contract("BalancerV2WeightedPool");
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");

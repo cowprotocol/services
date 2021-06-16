@@ -9,17 +9,15 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use contracts::{
-    balancer_v2_weighted_pool_factory::{
-        self, event_data::PoolCreated as ContractPoolCreated, Event as ContractEvent,
-    },
-    BalancerV2Vault, BalancerV2WeightedPool, BalancerV2WeightedPoolFactory,
+    balancer_v2_weighted_pool_2_tokens_factory::{self, Event as WeightedPool2TokensFactoryEvent},
+    balancer_v2_weighted_pool_factory::{self, Event as WeightedPoolFactoryEvent},
+    BalancerV2Vault, BalancerV2WeightedPool, BalancerV2WeightedPool2TokensFactory,
+    BalancerV2WeightedPoolFactory,
 };
 use derivative::Derivative;
 use ethcontract::batch::CallBatch;
 use ethcontract::common::DeploymentInformation;
-use ethcontract::{
-    dyns::DynWeb3, Bytes, Event as EthContractEvent, EventMetadata, H160, H256, U256,
-};
+use ethcontract::{Bytes, Event as EthContractEvent, H160, H256, U256};
 use itertools::Itertools;
 use mockall::*;
 use model::TokenPair;
@@ -31,12 +29,12 @@ use std::{
 };
 use tokio::sync::Mutex;
 
-#[derive(Copy, Debug, Default, Clone, Eq, PartialEq, Hash)]
+#[derive(Copy, Debug, Default, Clone, Eq, PartialEq)]
 pub struct PoolCreated {
     pub pool_address: H160,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RegisteredWeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
@@ -81,7 +79,7 @@ struct PoolDataFetcher {
 
 #[automock]
 #[async_trait::async_trait]
-trait PoolDataFetching: Send + Sync {
+pub trait PoolDataFetching: Send + Sync {
     async fn get_pool_data(&self, pool_address: H160) -> Result<WeightedPoolData>;
 }
 
@@ -133,7 +131,7 @@ impl PoolDataFetching for PoolDataFetcher {
 /// The BalancerPool struct represents in-memory storage of all deployed Balancer Pools
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct PoolRegistry {
+pub struct PoolStorage {
     /// Used for O(1) access to all pool_ids for a given token
     pools_by_token: HashMap<H160, HashSet<H256>>,
     /// WeightedPool data for a given PoolId
@@ -142,13 +140,13 @@ pub struct PoolRegistry {
     data_fetcher: Box<dyn PoolDataFetching>,
 }
 
-impl PoolRegistry {
+impl PoolStorage {
     // Since all the fields are private, we expose helper methods to fetch relevant information
     /// Returns all pools containing both tokens from TokenPair
     pub fn pools_containing_token_pair(
         &self,
         token_pair: TokenPair,
-    ) -> HashSet<RegisteredWeightedPool> {
+    ) -> Vec<RegisteredWeightedPool> {
         let empty_set = HashSet::new();
         let pools_0 = self
             .pools_by_token
@@ -167,19 +165,27 @@ impl PoolRegistry {
                     .expect("failed iterating over known pools")
                     .clone()
             })
-            .collect::<HashSet<RegisteredWeightedPool>>()
+            .collect::<Vec<RegisteredWeightedPool>>()
     }
 
     /// Given a collection of TokenPair, returns all pools containing at least one of the pairs.
     pub fn pools_containing_token_pairs(
         &self,
         token_pairs: HashSet<TokenPair>,
-    ) -> HashSet<RegisteredWeightedPool> {
+    ) -> Vec<RegisteredWeightedPool> {
         token_pairs
             .into_iter()
             .flat_map(|pair| self.pools_containing_token_pair(pair))
             .unique_by(|pool| pool.pool_id)
             .collect()
+    }
+
+    pub fn new(data_fetcher: Box<dyn PoolDataFetching>) -> Self {
+        PoolStorage {
+            pools_by_token: Default::default(),
+            pools: Default::default(),
+            data_fetcher,
+        }
     }
 
     async fn insert_events(&mut self, events: Vec<(EventIndex, PoolCreated)>) -> Result<()> {
@@ -202,11 +208,16 @@ impl PoolRegistry {
         Ok(())
     }
 
-    async fn replace_events(
+    async fn replace_events_inner(
         &mut self,
         delete_from_block_number: u64,
         events: Vec<(EventIndex, PoolCreated)>,
     ) -> Result<()> {
+        tracing::debug!(
+            "replacing {} events from block number {}",
+            events.len(),
+            delete_from_block_number,
+        );
         self.delete_pools(delete_from_block_number)?;
         self.insert_events(events).await?;
         Ok(())
@@ -235,75 +246,125 @@ impl PoolRegistry {
             .max()
             .unwrap_or(0)
     }
+}
 
-    fn contract_to_balancer_events(
+pub struct BalancerPoolRegistry {
+    weighted_pool_updater:
+        Mutex<EventHandler<Web3, BalancerV2WeightedPoolFactoryContract, PoolStorage>>,
+    two_token_pool_updater:
+        Mutex<EventHandler<Web3, BalancerV2WeightedPool2TokensFactoryContract, PoolStorage>>,
+}
+
+impl BalancerPoolRegistry {
+    pub async fn get_pools_containing_token_pairs(
         &self,
-        contract_events: Vec<EthContractEvent<ContractEvent>>,
-    ) -> Result<Vec<(EventIndex, PoolCreated)>> {
-        contract_events
-            .into_iter()
-            .map(|EthContractEvent { data, meta }| {
-                let meta = match meta {
-                    Some(meta) => meta,
-                    None => return Err(anyhow!("event without metadata")),
-                };
-                match data {
-                    ContractEvent::PoolCreated(event) => convert_pool_created(&event, &meta),
-                }
-            })
-            .collect::<Result<Vec<_>>>()
+        token_pairs: HashSet<TokenPair>,
+    ) -> Vec<RegisteredWeightedPool> {
+        let mut pool_set_1 = self
+            .weighted_pool_updater
+            .lock()
+            .await
+            .store
+            .pools_containing_token_pairs(token_pairs.clone());
+        let pool_set_2 = self
+            .two_token_pool_updater
+            .lock()
+            .await
+            .store
+            .pools_containing_token_pairs(token_pairs);
+        pool_set_1.extend(pool_set_2);
+        pool_set_1
     }
 }
 
-pub struct BalancerEventUpdater(
-    Mutex<EventHandler<DynWeb3, BalancerV2WeightedPoolFactoryContract, PoolRegistry>>,
-);
+impl BalancerPoolRegistry {
+    pub async fn new(web3: Web3, token_info_fetcher: Arc<dyn TokenInfoFetching>) -> Result<Self> {
+        let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
+        let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
+        let deployment_block_weighted_pool =
+            get_deployment_block(weighted_pool_factory.deployment_information(), &web3).await;
+        let deployment_block_two_token_pool =
+            get_deployment_block(two_token_pool_factory.deployment_information(), &web3).await;
+        let weighted_pool_updater = Mutex::new(EventHandler::new(
+            web3.clone(),
+            BalancerV2WeightedPoolFactoryContract(weighted_pool_factory),
+            PoolStorage::new(Box::new(PoolDataFetcher {
+                web3: web3.clone(),
+                token_info_fetcher: token_info_fetcher.clone(),
+            })),
+            deployment_block_weighted_pool,
+        ));
+        let two_token_pool_updater = Mutex::new(EventHandler::new(
+            web3.clone(),
+            BalancerV2WeightedPool2TokensFactoryContract(two_token_pool_factory),
+            PoolStorage::new(Box::new(PoolDataFetcher {
+                web3,
+                token_info_fetcher,
+            })),
+            deployment_block_two_token_pool,
+        ));
+        Ok(Self {
+            weighted_pool_updater,
+            two_token_pool_updater,
+        })
+    }
+}
 
-impl BalancerEventUpdater {
-    pub async fn new(contract: BalancerV2WeightedPoolFactory, pools: PoolRegistry) -> Result<Self> {
-        let deployment_block = match contract.deployment_information() {
-            Some(DeploymentInformation::BlockNumber(block_number)) => Some(block_number),
-            Some(DeploymentInformation::TransactionHash(hash)) => Some(
-                contract
-                    .raw_instance()
-                    .web3()
-                    .block_number_from_tx_hash(hash)
-                    .await?,
-            ),
-            None => None,
-        };
-        Ok(Self(Mutex::new(EventHandler::new(
-            contract.raw_instance().web3(),
-            BalancerV2WeightedPoolFactoryContract(contract),
-            pools,
-            deployment_block,
-        ))))
+async fn get_deployment_block(
+    deployment_info: Option<DeploymentInformation>,
+    web3: &Web3,
+) -> Option<u64> {
+    match deployment_info {
+        Some(DeploymentInformation::BlockNumber(block_number)) => Some(block_number),
+        Some(DeploymentInformation::TransactionHash(hash)) => {
+            Some(web3.block_number_from_tx_hash(hash).await.ok()?)
+        }
+        None => None,
     }
 }
 
 #[async_trait::async_trait]
-impl EventStoring<ContractEvent> for PoolRegistry {
+impl EventStoring<WeightedPoolFactoryEvent> for PoolStorage {
     async fn replace_events(
         &mut self,
-        events: Vec<EthContractEvent<ContractEvent>>,
+        events: Vec<EthContractEvent<WeightedPoolFactoryEvent>>,
         range: RangeInclusive<BlockNumber>,
     ) -> Result<()> {
-        let balancer_events = self
-            .contract_to_balancer_events(events)
-            .context("failed to convert events")?;
-        tracing::debug!(
-            "replacing {} events from block number {}",
-            balancer_events.len(),
-            range.start().to_u64()
-        );
-        PoolRegistry::replace_events(self, 0, balancer_events).await?;
+        let balancer_events = convert_weighted_pool_created(events)?;
+        PoolStorage::replace_events_inner(self, range.start().to_u64(), balancer_events).await?;
         Ok(())
     }
 
-    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let balancer_events = self
-            .contract_to_balancer_events(events)
-            .context("failed to convert events")?;
+    async fn append_events(
+        &mut self,
+        events: Vec<EthContractEvent<WeightedPoolFactoryEvent>>,
+    ) -> Result<()> {
+        let balancer_events = convert_weighted_pool_created(events)?;
+        self.insert_events(balancer_events).await
+    }
+
+    async fn last_event_block(&self) -> Result<u64> {
+        Ok(self.last_event_block())
+    }
+}
+
+#[async_trait::async_trait]
+impl EventStoring<WeightedPool2TokensFactoryEvent> for PoolStorage {
+    async fn replace_events(
+        &mut self,
+        events: Vec<EthContractEvent<WeightedPool2TokensFactoryEvent>>,
+        range: RangeInclusive<BlockNumber>,
+    ) -> Result<()> {
+        let balancer_events = convert_two_token_pool_created(events)?;
+        PoolStorage::replace_events_inner(self, range.start().to_u64(), balancer_events).await?;
+        Ok(())
+    }
+
+    async fn append_events(
+        &mut self,
+        events: Vec<EthContractEvent<WeightedPool2TokensFactoryEvent>>,
+    ) -> Result<()> {
+        let balancer_events = convert_two_token_pool_created(events)?;
         self.insert_events(balancer_events).await
     }
 
@@ -316,23 +377,53 @@ impl_event_retrieving! {
     pub BalancerV2WeightedPoolFactoryContract for balancer_v2_weighted_pool_factory
 }
 
+impl_event_retrieving! {
+    pub BalancerV2WeightedPool2TokensFactoryContract for balancer_v2_weighted_pool_2_tokens_factory
+}
+
 #[async_trait::async_trait]
-impl Maintaining for BalancerEventUpdater {
+impl Maintaining for BalancerPoolRegistry {
     async fn run_maintenance(&self) -> Result<()> {
-        self.0.run_maintenance().await
+        futures::try_join!(
+            self.two_token_pool_updater.run_maintenance(),
+            self.weighted_pool_updater.run_maintenance(),
+        )?;
+        Ok(())
     }
 }
 
-fn convert_pool_created(
-    creation: &ContractPoolCreated,
-    meta: &EventMetadata,
-) -> Result<(EventIndex, PoolCreated)> {
-    Ok((
-        EventIndex::from(meta),
-        PoolCreated {
+fn contract_to_pool_creation<T>(
+    contract_events: Vec<EthContractEvent<T>>,
+    adapter: impl Fn(T) -> PoolCreated,
+) -> Result<Vec<(EventIndex, PoolCreated)>> {
+    contract_events
+        .into_iter()
+        .map(|EthContractEvent { data, meta }| {
+            let meta = meta.ok_or_else(|| anyhow!("event without metadata"))?;
+            Ok((EventIndex::from(&meta), adapter(data)))
+        })
+        .collect::<Result<Vec<_>>>()
+        .context("failed to convert events")
+}
+
+fn convert_weighted_pool_created(
+    events: Vec<EthContractEvent<WeightedPoolFactoryEvent>>,
+) -> Result<Vec<(EventIndex, PoolCreated)>> {
+    contract_to_pool_creation(events, |event| match event {
+        WeightedPoolFactoryEvent::PoolCreated(creation) => PoolCreated {
             pool_address: creation.pool,
         },
-    ))
+    })
+}
+
+fn convert_two_token_pool_created(
+    events: Vec<EthContractEvent<WeightedPool2TokensFactoryEvent>>,
+) -> Result<Vec<(EventIndex, PoolCreated)>> {
+    contract_to_pool_creation(events, |event| match event {
+        WeightedPool2TokensFactoryEvent::PoolCreated(creation) => PoolCreated {
+            pool_address: creation.pool,
+        },
+    })
 }
 
 #[cfg(test)]
@@ -376,7 +467,7 @@ mod tests {
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
 
-        let mut pool_store = PoolRegistry {
+        let mut pool_store = PoolStorage {
             pools_by_token: Default::default(),
             pools: Default::default(),
             data_fetcher: Box::new(dummy_data_fetcher),
@@ -480,7 +571,7 @@ mod tests {
                 })
             });
 
-        let mut pool_store = PoolRegistry {
+        let mut pool_store = PoolStorage {
             pools_by_token: Default::default(),
             pools: Default::default(),
             data_fetcher: Box::new(dummy_data_fetcher),
@@ -488,8 +579,10 @@ mod tests {
         pool_store.insert_events(converted_events).await.unwrap();
         // Let the tests begin!
         assert_eq!(pool_store.last_event_block(), end_block as u64);
-        pool_store.replace_events(3, vec![new_event]).await.unwrap();
-
+        pool_store
+            .replace_events_inner(3, vec![new_event])
+            .await
+            .unwrap();
         // Everything until block 3 is unchanged.
         for i in 0..3 {
             assert_eq!(
@@ -564,6 +657,7 @@ mod tests {
             .map(|i| TokenPair::new(tokens[i], tokens[(i + 1) % n]).unwrap())
             .collect();
 
+        // Test the empty registry.
         let mut dummy_data_fetcher = MockPoolDataFetching::new();
         // Have to load all expected data into fetcher before it is passed on.
         for i in 0..n {
@@ -578,16 +672,13 @@ mod tests {
                 .with(eq(pool_addresses[i]))
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
-        // Test the empty pool.
-        let mut pool_store = PoolRegistry {
+        let mut registry = PoolStorage {
             pools_by_token: Default::default(),
             pools: Default::default(),
             data_fetcher: Box::new(dummy_data_fetcher),
         };
         for token_pair in token_pairs.iter().take(n) {
-            assert!(pool_store
-                .pools_containing_token_pair(*token_pair)
-                .is_empty());
+            assert!(registry.pools_containing_token_pair(*token_pair).is_empty());
         }
 
         // Now test non-empty pool with standard form.
@@ -595,7 +686,7 @@ mod tests {
         for i in 0..n {
             for pool_id in pool_ids.iter().take(i + 1) {
                 // This is tokens[i] => { pool_id[0], pool_id[1], ..., pool_id[i] }
-                let entry = pool_store.pools_by_token.entry(tokens[i]).or_default();
+                let entry = registry.pools_by_token.entry(tokens[i]).or_default();
                 entry.insert(*pool_id);
             }
             // This is weighted_pools[i] has tokens [tokens[i], tokens[i+1], ... , tokens[n]]
@@ -607,7 +698,7 @@ mod tests {
                 block_created: 0,
                 pool_address: pool_addresses[i],
             });
-            pool_store
+            registry
                 .pools
                 .insert(pool_ids[i], weighted_pools[i].clone());
         }
@@ -633,16 +724,16 @@ mod tests {
         // };
 
         assert_eq!(
-            pool_store.pools_containing_token_pair(token_pairs[0]),
-            hashset! { weighted_pools[0].clone() }
+            registry.pools_containing_token_pair(token_pairs[0]),
+            vec![weighted_pools[0].clone()]
         );
         assert_eq!(
-            pool_store.pools_containing_token_pair(token_pairs[1]),
-            hashset! { weighted_pools[1].clone(), weighted_pools[0].clone() }
+            registry.pools_containing_token_pair(token_pairs[1]),
+            vec![weighted_pools[0].clone(), weighted_pools[1].clone()]
         );
         assert_eq!(
-            pool_store.pools_containing_token_pair(token_pairs[2]),
-            hashset! { weighted_pools[0].clone() }
+            registry.pools_containing_token_pair(token_pairs[2]),
+            vec![weighted_pools[0].clone()]
         );
     }
 }

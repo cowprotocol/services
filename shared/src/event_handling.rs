@@ -22,7 +22,7 @@ where
 {
     block_retriever: B,
     contract: C,
-    store: S,
+    pub(crate) store: S,
     last_handled_block: Option<u64>,
 }
 
