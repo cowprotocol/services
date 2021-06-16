@@ -17,7 +17,7 @@ futures = "0.3"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.2.0", features = ["web3_"] }
 hex-literal = "0.3"
 itertools = "0.10"
-lazy_static = "1.4"
+lazy_static = "1.4.0"
 lru = "0.6"
 maplit = "1.0"
 mockall = "0.9"
@@ -38,3 +38,6 @@ tracing-subscriber = "0.2"
 url = "2.2"
 warp = "0.3"
 web3 = { version = "0.16", default-features = false }
+
+[dev-dependencies]
+regex = "1.5.4"
