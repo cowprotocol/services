@@ -36,6 +36,18 @@ pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Re
             super::error("InvalidSignature", "Likely malformed signature"),
             StatusCode::BAD_REQUEST,
         ),
+        Ok(OrderCancellationResult::AlreadyCancelled) => (
+            super::error("AlreadyCancelled", "Order is already cancelled"),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(OrderCancellationResult::OrderFullyExecuted) => (
+            super::error("OrderFullyExecuted", "Order is fully executed"),
+            StatusCode::BAD_REQUEST,
+        ),
+        Ok(OrderCancellationResult::OrderExpired) => (
+            super::error("OrderExpired", "Order is expired"),
+            StatusCode::BAD_REQUEST,
+        ),
         Ok(OrderCancellationResult::OrderNotFound) => (
             super::error("OrderNotFound", "order not located in database"),
             StatusCode::NOT_FOUND,
@@ -129,6 +141,18 @@ mod tests {
     async fn cancel_order_response_err() {
         let response =
             cancel_order_response(Ok(OrderCancellationResult::InvalidSignature)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response =
+            cancel_order_response(Ok(OrderCancellationResult::OrderFullyExecuted)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response =
+            cancel_order_response(Ok(OrderCancellationResult::AlreadyCancelled)).into_response();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+        let response =
+            cancel_order_response(Ok(OrderCancellationResult::OrderExpired)).into_response();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
         let response =

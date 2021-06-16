@@ -588,7 +588,7 @@ components:
       properties:
         errorType:
           type: string
-          enum: [InvalidSignature, WrongOwner, OrderNotFound]
+          enum: [InvalidSignature, WrongOwner, OrderNotFound, AlreadyCancelled, OrderFullyExecuted, OrderExpired]
         description:
           type: string
       required:

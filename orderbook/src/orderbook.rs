@@ -9,7 +9,7 @@ use chrono::Utc;
 use futures::TryStreamExt;
 use model::order::{OrderCancellation, OrderCreationPayload};
 use model::{
-    order::{Order, OrderUid, BUY_ETH_ADDRESS},
+    order::{Order, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
@@ -44,6 +44,9 @@ pub enum OrderCancellationResult {
     InvalidSignature,
     WrongOwner,
     OrderNotFound,
+    AlreadyCancelled,
+    OrderFullyExecuted,
+    OrderExpired,
 }
 
 pub struct Orderbook {
@@ -162,14 +165,21 @@ impl Orderbook {
 
         match cancellation.validate(&self.domain_separator) {
             Some(signer) => {
-                if signer == order.order_meta_data.owner {
-                    // order is already known to exist in DB at this point!
-                    self.database
-                        .cancel_order(&order.order_meta_data.uid, Utc::now())
-                        .await?;
-                    Ok(OrderCancellationResult::Cancelled)
-                } else {
-                    Ok(OrderCancellationResult::WrongOwner)
+                match order.order_meta_data.status {
+                    OrderStatus::Fulfilled => Ok(OrderCancellationResult::OrderFullyExecuted),
+                    OrderStatus::Cancelled => Ok(OrderCancellationResult::AlreadyCancelled),
+                    OrderStatus::Expired => Ok(OrderCancellationResult::OrderExpired),
+                    OrderStatus::Open => {
+                        if signer == order.order_meta_data.owner {
+                            // order is already known to exist in DB at this point!
+                            self.database
+                                .cancel_order(&order.order_meta_data.uid, Utc::now())
+                                .await?;
+                            Ok(OrderCancellationResult::Cancelled)
+                        } else {
+                            Ok(OrderCancellationResult::WrongOwner)
+                        }
+                    }
                 }
             }
             None => Ok(OrderCancellationResult::InvalidSignature),
