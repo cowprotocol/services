@@ -1,12 +1,12 @@
 use super::GAS_PRICE_REFRESH_INTERVAL;
 use futures::{stream, Stream, StreamExt};
 use gas_estimation::GasPriceEstimating;
-use std::time::Duration;
+use std::time::Instant;
 
 // Create a never ending stream of gas prices based on checking the estimator in fixed intervals
 // and enforcing the minimum increase. Errors are ignored.
 pub fn gas_price_stream(
-    target_confirm_time: Duration,
+    target_confirm_time: Instant,
     gas_price_cap: f64,
     gas_limit: f64,
     estimator: &dyn GasPriceEstimating,
@@ -20,8 +20,9 @@ pub fn gas_price_stream(
         } else {
             tokio::time::sleep(GAS_PRICE_REFRESH_INTERVAL).await;
         }
+        let remaining_time = target_confirm_time.saturating_duration_since(Instant::now());
         let estimate = estimator
-            .estimate_with_limits(gas_limit, target_confirm_time)
+            .estimate_with_limits(gas_limit, remaining_time)
             .await;
         Some((estimate, false))
     })

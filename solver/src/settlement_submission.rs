@@ -11,7 +11,7 @@ use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use gas_price_stream::gas_price_stream;
 use primitive_types::{H160, U256};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use transaction_retry::RetryResult;
 
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
@@ -80,7 +80,7 @@ pub async fn submit(
         transaction_retry::gas_price_increase::minimum_increase(gas_price.to_f64_lossy())
     });
     let stream = gas_price_stream(
-        target_confirm_time,
+        Instant::now() + target_confirm_time,
         gas_price_cap,
         gas_limit,
         gas,
