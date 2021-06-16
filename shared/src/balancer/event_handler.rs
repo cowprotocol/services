@@ -34,7 +34,7 @@ pub struct PoolCreated {
     pub pool_address: H160,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub struct RegisteredWeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
@@ -728,8 +728,11 @@ mod tests {
             vec![weighted_pools[0].clone()]
         );
         assert_eq!(
-            registry.pools_containing_token_pair(token_pairs[1]),
-            vec![weighted_pools[0].clone(), weighted_pools[1].clone()]
+            registry
+                .pools_containing_token_pair(token_pairs[1])
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            hashset![weighted_pools[0].clone(), weighted_pools[1].clone()]
         );
         assert_eq!(
             registry.pools_containing_token_pair(token_pairs[2]),
