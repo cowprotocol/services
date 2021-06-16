@@ -41,6 +41,15 @@ impl Default for Order {
     }
 }
 
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "camelCase")]
+pub enum OrderStatus {
+    Open,
+    Fulfilled,
+    Cancelled,
+    Expired,
+}
+
 impl Order {
     pub fn from_order_creation(
         order_creation: OrderCreation,
@@ -327,6 +336,7 @@ pub struct OrderMetaData {
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_fee_amount: BigUint,
     pub invalidated: bool,
+    pub status: OrderStatus,
 }
 
 impl Default for OrderMetaData {
@@ -341,6 +351,7 @@ impl Default for OrderMetaData {
             executed_sell_amount_before_fees: Default::default(),
             executed_fee_amount: Default::default(),
             invalidated: Default::default(),
+            status: OrderStatus::Open,
         }
     }
 }
@@ -477,6 +488,7 @@ mod tests {
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
+            "status": "open",
         });
         let expected = Order {
             order_meta_data: OrderMetaData {
@@ -489,6 +501,8 @@ mod tests {
                 executed_sell_amount_before_fees: BigUint::from_bytes_be(&[4]),
                 executed_fee_amount: BigUint::from_bytes_be(&[1]),
                 invalidated: true,
+
+                status: OrderStatus::Open,
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),

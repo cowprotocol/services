@@ -1,11 +1,11 @@
 use super::*;
 use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
-use bigdecimal::BigDecimal;
+use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
 use futures::{stream::TryStreamExt, Stream};
 use model::{
-    order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderUid},
+    order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
     Signature, SigningScheme,
 };
 use primitive_types::H160;
@@ -202,7 +202,31 @@ struct OrdersQueryRow {
 }
 
 impl OrdersQueryRow {
+    fn calculate_status(&self) -> OrderStatus {
+        match self.kind {
+            DbOrderKind::Buy => {
+                if !self.sum_buy.is_zero() && self.sum_buy == self.buy_amount {
+                    return OrderStatus::Fulfilled;
+                }
+            }
+            DbOrderKind::Sell => {
+                if !self.sum_sell.is_zero() && self.sum_sell == self.sell_amount {
+                    return OrderStatus::Fulfilled;
+                }
+            }
+        }
+        if self.invalidated {
+            return OrderStatus::Cancelled;
+        }
+        if self.valid_to < Utc::now().timestamp() {
+            return OrderStatus::Expired;
+        }
+        OrderStatus::Open
+    }
+
     fn into_order(self) -> Result<Order> {
+        let status = self.calculate_status();
+
         let executed_sell_amount = big_decimal_to_big_uint(&self.sum_sell)
             .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?;
         let executed_fee_amount = big_decimal_to_big_uint(&self.sum_fee)
@@ -224,6 +248,7 @@ impl OrdersQueryRow {
             executed_sell_amount_before_fees,
             executed_fee_amount,
             invalidated: self.invalidated,
+            status,
         };
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,
@@ -261,13 +286,162 @@ impl OrdersQueryRow {
 mod tests {
 
     use super::*;
-    use chrono::NaiveDateTime;
+    use chrono::{Duration, NaiveDateTime};
     use futures::StreamExt;
     use num_bigint::BigUint;
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
     use sqlx::Executor;
     use std::collections::HashSet;
+
+    #[test]
+    fn order_status() {
+        let valid_to_timestamp = Utc::now() + Duration::days(1);
+
+        // Open - sell (filled - 0%)
+        let order_row = OrdersQueryRow {
+            uid: vec![0; 56],
+            owner: vec![0; 20],
+            creation_timestamp: Utc::now(),
+            sell_token: vec![1; 20],
+            buy_token: vec![2; 20],
+            sell_amount: BigDecimal::from(1),
+            buy_amount: BigDecimal::from(1),
+            valid_to: valid_to_timestamp.timestamp(),
+            app_data: vec![0; 32],
+            fee_amount: BigDecimal::default(),
+            kind: DbOrderKind::Sell,
+            partially_fillable: true,
+            signature: vec![0; 65],
+            receiver: None,
+            sum_sell: BigDecimal::default(),
+            sum_buy: BigDecimal::default(),
+            sum_fee: BigDecimal::default(),
+            invalidated: false,
+            signing_scheme: DbSigningScheme::Eip712,
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+
+        // Open - sell (almost filled - 99.99%)
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(10_000),
+            sum_sell: BigDecimal::from(9_999),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+
+        // Filled - sell (filled - 100%)
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(1),
+            sum_sell: BigDecimal::from(1),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Fulfilled);
+
+        // Open - buy (filled - 0%)
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(1),
+            sum_buy: BigDecimal::from(0),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+
+        // Open - buy (almost filled - 99.99%)
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(10_000),
+            sum_buy: BigDecimal::from(9_999),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+
+        // Filled - buy (filled - 100%)
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(1),
+            sum_buy: BigDecimal::from(1),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Fulfilled);
+
+        // Cancelled - no fills - sell
+        let order_row = OrdersQueryRow {
+            sum_sell: BigDecimal::default(),
+            sum_buy: BigDecimal::default(),
+            invalidated: true,
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+
+        // Cancelled - partial fill - sell
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(2),
+            sum_sell: BigDecimal::from(1),
+            invalidated: true,
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+
+        // Cancelled - partial fill - buy
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(2),
+            sum_buy: BigDecimal::from(1),
+            invalidated: true,
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+
+        // Expired - no fills
+        let valid_to_yesterday = Utc::now() - Duration::days(1);
+
+        let order_row = OrdersQueryRow {
+            sum_sell: BigDecimal::default(),
+            sum_buy: BigDecimal::default(),
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+
+        // Expired - partial fill - sell
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Sell,
+            sell_amount: BigDecimal::from(2),
+            sum_sell: BigDecimal::from(1),
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+
+        // Expired - partial fill - buy
+        let order_row = OrdersQueryRow {
+            kind: DbOrderKind::Buy,
+            buy_amount: BigDecimal::from(2),
+            sum_buy: BigDecimal::from(1),
+            invalidated: false,
+            valid_to: valid_to_yesterday.timestamp(),
+            ..order_row
+        };
+
+        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+    }
 
     #[tokio::test]
     #[ignore]
@@ -387,11 +561,13 @@ mod tests {
     async fn postgres_filter_orders_by_address() {
         let db = Database::new("postgresql://").unwrap();
         db.clear().await.unwrap();
+
         let orders = vec![
             Order {
                 order_meta_data: OrderMetaData {
                     owner: H160::from_low_u64_be(0),
                     uid: OrderUid([0u8; 56]),
+                    status: OrderStatus::Expired,
                     ..Default::default()
                 },
                 order_creation: OrderCreation {
@@ -405,6 +581,7 @@ mod tests {
                 order_meta_data: OrderMetaData {
                     owner: H160::from_low_u64_be(0),
                     uid: OrderUid([1; 56]),
+                    status: OrderStatus::Expired,
                     ..Default::default()
                 },
                 order_creation: OrderCreation {
@@ -418,6 +595,7 @@ mod tests {
                 order_meta_data: OrderMetaData {
                     owner: H160::from_low_u64_be(2),
                     uid: OrderUid([2u8; 56]),
+                    status: OrderStatus::Expired,
                     ..Default::default()
                 },
                 order_creation: OrderCreation {

@@ -360,6 +360,10 @@ components:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
+    OrderStatus:
+      description: The current order status
+      type: string
+      enum: [open, fulfilled, cancelled, expired]
     OrderCreation:
       description: Data a user provides when creating a new order.
       type: object
@@ -457,6 +461,9 @@ components:
         invalidated:
           description: Has this order been invalidated?
           type: boolean
+        status:
+          description: Order status
+          $ref: "#/components/schemas/OrderStatus"
       required:
         - creationTime
         - owner
