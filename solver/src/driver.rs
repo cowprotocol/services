@@ -430,7 +430,7 @@ impl Driver {
                 tracing::info!("settlement without onchain liquidity");
             }
 
-            tracing::debug!("winning settlement: {:?}", settlement);
+            tracing::info!("winning settlement: {:?}", settlement);
             self.submit_settlement(settlement.clone()).await;
             self.inflight_trades = settlement
                 .settlement
