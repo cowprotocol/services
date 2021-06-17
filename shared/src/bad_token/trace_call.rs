@@ -163,11 +163,15 @@ impl TraceCallDetector {
         let tx = instance.balance_of(recipient).m.tx;
         requests.push(call_request(None, token, tx));
 
+        // 7
+        let tx = instance.approve(recipient, U256::MAX).tx;
+        requests.push(call_request(Some(self.settlement_contract), token, tx));
+
         requests
     }
 
     fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality> {
-        ensure!(traces.len() == 7, "unexpected number of traces");
+        ensure!(traces.len() == 8, "unexpected number of traces");
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
@@ -218,6 +222,13 @@ impl TraceCallDetector {
         }
         if balance_recpient_before + amount != balance_recipient_after {
             return Ok(TokenQuality::bad("balance of recipient does not match"));
+        }
+
+        if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
+            return Ok(TokenQuality::bad(format!(
+                "can't approve max amount: {}",
+                err
+            )));
         }
 
         let _gas_per_transfer = (gas_in + gas_out) / 2;
@@ -369,6 +380,30 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            BlockTrace {
+                output: Default::default(),
+                trace: Some(vec![TransactionTrace {
+                    trace_address: Vec::new(),
+                    subtraces: 0,
+                    action: Action::Call(Call {
+                        from: H160::zero(),
+                        to: H160::zero(),
+                        value: 0.into(),
+                        gas: 0.into(),
+                        input: Bytes(Vec::new()),
+                        call_type: CallType::None,
+                    }),
+                    action_type: ActionType::Call,
+                    result: Some(Res::Call(CallResult {
+                        gas_used: 1.into(),
+                        output: Bytes(Vec::new()),
+                    })),
+                    error: None,
+                }]),
+                vm_trace: None,
+                state_diff: None,
+                transaction_hash: None,
+            },
         ];
 
         let result = TraceCallDetector::handle_response(traces, 1.into()).unwrap();
@@ -493,6 +528,8 @@ mod tests {
             H160(hex!("c7c24fe893c21e8a4ef46eaf31badcab9f362841")),
             H160(hex!("ef5b32486ed432b804a51d129f4d2fbdf18057ec")),
             H160(hex!("2129ff6000b95a973236020bcd2b2006b0d8e019")),
+            // Should be denied because can't approve more than balance
+            H160(hex!("decade1c6bf2cd9fb89afad73e4a519c867adcf5")),
         ];
 
         // Of the deny listed tokens the following are detected as good:
