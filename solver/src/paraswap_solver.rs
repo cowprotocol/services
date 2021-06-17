@@ -20,24 +20,27 @@ use self::api::{DefaultParaswapApi, ParaswapApi, PriceResponse, TransactionBuild
 mod api;
 
 const REFERRER: &str = "GPv2";
+const APPROVAL_RECEIVER: H160 = shared::addr!("b70bc06d2c9bf03b3373799606dc7d39346c06b3");
 
 /// A GPv2 solver that matches GP orders to direct ParaSwap swaps.
-struct ParaswapSolver<F> {
+pub struct ParaswapSolver<F> {
     settlement_contract: GPv2Settlement,
+    solver_address: H160,
     token_info: Arc<dyn TokenInfoFetching>,
     allowance_fetcher: F,
     client: Box<dyn ParaswapApi + Send + Sync>,
 }
 
-impl ParaswapSolver<H160> {
-    #![allow(dead_code)]
+impl ParaswapSolver<GPv2Settlement> {
     pub fn new(
         settlement_contract: GPv2Settlement,
+        solver_address: H160,
         token_info: Arc<dyn TokenInfoFetching>,
     ) -> Self {
-        let allowance_fetcher = settlement_contract.address();
+        let allowance_fetcher = settlement_contract.clone();
         Self {
             settlement_contract,
+            solver_address,
             token_info,
             allowance_fetcher,
             client: Box::new(DefaultParaswapApi::default()),
@@ -54,7 +57,7 @@ impl<F> std::fmt::Debug for ParaswapSolver<F> {
 /// Helper trait to mock the smart contract interaction
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-trait AllowanceFetching: Send + Sync {
+pub trait AllowanceFetching: Send + Sync {
     async fn existing_allowance(&self, token: H160, spender: H160) -> Result<U256>;
 }
 
@@ -77,7 +80,7 @@ where
     async fn settle_order(&self, order: LimitOrder) -> Result<Settlement> {
         let (amount, side) = match order.kind {
             model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
-            model::order::OrderKind::Sell => (order.buy_amount, Side::Sell),
+            model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
         };
         let token_infos = self
             .token_info
@@ -105,35 +108,35 @@ where
         );
 
         // 0.1% slippage
-        let src_amount_with_slippage = price_response
-            .src_amount
-            .checked_mul(1001.into())
+        let dest_amount_with_slippage = price_response
+            .dest_amount
+            .checked_mul(999.into())
             .ok_or_else(|| anyhow!("Overflow during slippage computation"))?
             / 1000;
         let transaction_query = TransactionBuilderQuery {
             src_token: order.sell_token,
             dest_token: order.buy_token,
-            src_amount: src_amount_with_slippage,
-            dest_amount: price_response.dest_amount,
+            src_amount: price_response.src_amount,
+            dest_amount: dest_amount_with_slippage,
             from_decimals: decimals(&order.sell_token)?,
             to_decimals: decimals(&order.buy_token)?,
             price_route: price_response.price_route_raw,
-            user_address: self.settlement_contract.address(),
+            user_address: self.solver_address,
             referrer: REFERRER.to_string(),
         };
         let transaction = self.client.transaction(transaction_query).await?;
 
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => price_response.dest_amount,
-            order.buy_token => src_amount_with_slippage,
+            order.buy_token => price_response.src_amount,
         });
         settlement.with_liquidity(&order, amount)?;
 
         if self
             .allowance_fetcher
-            .existing_allowance(order.sell_token, transaction.to)
+            .existing_allowance(order.sell_token, APPROVAL_RECEIVER)
             .await?
-            < src_amount_with_slippage
+            < price_response.src_amount
         {
             let sell_token_contract = ERC20::at(
                 &self.settlement_contract.raw_instance().web3(),
@@ -143,7 +146,7 @@ where
                 .encoder
                 .append_to_execution_plan(Erc20ApproveInteraction {
                     token: sell_token_contract,
-                    spender: transaction.to,
+                    spender: APPROVAL_RECEIVER,
                     amount: U256::MAX,
                 });
         }
@@ -241,6 +244,7 @@ mod test {
 
         let solver = ParaswapSolver {
             client,
+            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),
@@ -286,6 +290,7 @@ mod test {
 
         let solver = ParaswapSolver {
             client,
+            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),
@@ -363,6 +368,7 @@ mod test {
 
         let solver = ParaswapSolver {
             client,
+            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),

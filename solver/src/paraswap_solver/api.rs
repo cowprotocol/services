@@ -117,8 +117,8 @@ impl<'de> Deserialize<'de> for PriceResponse {
     {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
-        struct Parsed {
-            price_route: PriceRoute,
+        struct ParsedRaw {
+            price_route: Value,
         }
 
         #[derive(Deserialize)]
@@ -136,20 +136,19 @@ impl<'de> Deserialize<'de> for PriceResponse {
             dest_amount: U256,
         }
 
-        let price_route_raw = Value::deserialize(deserializer)?;
-        let parsed =
-            serde_json::from_value::<Parsed>(price_route_raw.clone()).map_err(D::Error::custom)?;
+        let parsed = ParsedRaw::deserialize(deserializer)?;
+        let price_route = serde_json::from_value::<PriceRoute>(parsed.price_route.clone())
+            .map_err(D::Error::custom)?;
         let BestRoute {
             src_amount,
             dest_amount,
-        } = parsed
-            .price_route
+        } = price_route
             .best_route
             .first()
             .cloned()
             .ok_or_else(|| D::Error::custom("No best route"))?;
         Ok(PriceResponse {
-            price_route_raw,
+            price_route_raw: parsed.price_route,
             src_amount,
             dest_amount,
         })

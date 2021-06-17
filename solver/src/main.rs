@@ -176,7 +176,7 @@ async fn main() {
         .expect("failed to get network id");
     let network_name = network_name(&network_id, chain_id);
     let account = Account::Offline(args.private_key, Some(chain_id));
-    let settlement_contract = solver::get_settlement_contract(&web3, account)
+    let settlement_contract = solver::get_settlement_contract(&web3, account.clone())
         .await
         .expect("couldn't load deployed settlement");
     let native_token_contract = WETH9::deployed(&web3)
@@ -276,6 +276,7 @@ async fn main() {
         args.solver_time_limit,
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
+        account.address(),
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

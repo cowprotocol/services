@@ -65,7 +65,7 @@ impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
                     // It could be that the inner solver can't match an order and would
                     // return an error for whatever reason. In that case, we want
                     // to continue trying to solve for other orders.
-                    tracing::warn!("Inner solver error: {}", err);
+                    tracing::warn!("Inner solver error: {:?}", err);
                     None
                 }
             })

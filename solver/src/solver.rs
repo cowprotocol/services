@@ -10,6 +10,7 @@ use crate::{
     liquidity::Liquidity,
     naive_solver::NaiveSolver,
     oneinch_solver::OneInchSolver,
+    paraswap_solver::ParaswapSolver,
     settlement::Settlement,
     single_order_solver::SingleOrderSolver,
 };
@@ -50,6 +51,7 @@ arg_enum! {
         Baseline,
         Mip,
         OneInch,
+        Paraswap,
     }
 }
 
@@ -68,6 +70,7 @@ pub fn create(
     solver_timeout: Duration,
     min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
+    solver_address: H160,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -115,6 +118,11 @@ pub fn create(
                     min_order_size_one_inch,
                 ))
             }
+            SolverType::Paraswap => boxed(SingleOrderSolver::from(ParaswapSolver::new(
+                settlement_contract.clone(),
+                solver_address,
+                token_info_fetcher.clone(),
+            ))),
         })
         .collect()
 }
