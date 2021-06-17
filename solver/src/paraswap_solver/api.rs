@@ -29,12 +29,14 @@ pub struct DefaultParaswapApi {
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse> {
-        reqwest::get(query.into_url())
+        let text = reqwest::get(query.into_url())
             .await
             .context("PriceQuery failed")?
-            .json::<PriceResponse>()
-            .await
-            .context("PriceQuery result parsing failed")
+            .text()
+            .await?;
+
+        serde_json::from_str::<PriceResponse>(&text)
+            .context(format!("PriceQuery result parsing failed: {}", text))
     }
     async fn transaction(
         &self,
@@ -92,6 +94,8 @@ impl PriceQuery {
         url.query_pairs_mut()
             .append_pair("from", &format!("{:#x}", self.from))
             .append_pair("to", &format!("{:#x}", self.to))
+            .append_pair("fromDecimals", &self.from_decimals.to_string())
+            .append_pair("toDecimals", &self.to_decimals.to_string())
             .append_pair("amount", &self.amount.to_string())
             .append_pair("side", side)
             .append_pair("network", "1");
@@ -229,7 +233,7 @@ mod tests {
     #[ignore]
     async fn test_api_e2e() {
         let from = shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
-        let to = shared::addr!("6810e776880C02933D47DB1b9fc05908e5386b96");
+        let to = shared::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
         let price_query = PriceQuery {
             from,
             to,
@@ -282,12 +286,12 @@ mod tests {
             from: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
             to: shared::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
             from_decimals: 18,
-            to_decimals: 18,
+            to_decimals: 8,
             amount: 1_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
         };
 
-        assert_eq!(&query.into_url().to_string(), "https://apiv4.paraswap.io/v2/prices?from=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&to=0x6810e776880c02933d47db1b9fc05908e5386b96&amount=1000000000000000000&side=SELL&network=1");
+        assert_eq!(&query.into_url().to_string(), "https://apiv4.paraswap.io/v2/prices?from=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&to=0x6810e776880c02933d47db1b9fc05908e5386b96&fromDecimals=18&toDecimals=8&amount=1000000000000000000&side=SELL&network=1");
     }
 
     #[test]
