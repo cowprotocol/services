@@ -270,7 +270,7 @@ mod tests {
     use super::*;
     use crate::{
         amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
-        transport::create_test_transport,
+        transport::create_env_test_transport,
     };
     use hex_literal::hex;
     use web3::types::{
@@ -386,7 +386,7 @@ mod tests {
     #[ignore]
     async fn mainnet_tokens() {
         // shared::tracing::initialize("orderbook::bad_token=debug,shared::transport=debug");
-        let http = create_test_transport("https://dev-openethereum.mainnet.gnosisdev.com/");
+        let http = create_env_test_transport();
         let web3 = Web3::new(http);
 
         let base_tokens = &[

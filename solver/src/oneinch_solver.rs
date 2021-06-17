@@ -183,8 +183,9 @@ mod tests {
     use super::*;
     use crate::{liquidity::LimitOrder, testutil};
     use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::H160;
+    use ethcontract::{Web3, H160};
     use model::order::{Order, OrderCreation, OrderKind};
+    use shared::transport::{create_env_test_transport, create_test_transport};
 
     fn dummy_solver() -> OneInchSolver {
         let web3 = testutil::dummy_web3();
@@ -229,7 +230,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn solve_order_on_oneinch() {
-        let web3 = testutil::infura("mainnet");
+        let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
@@ -264,7 +265,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn returns_error_on_non_mainnet() {
-        let web3 = testutil::infura("rinkeby");
+        let web3 = Web3::new(create_test_transport(
+            &std::env::var("NODE_URL_RINKEBY").unwrap(),
+        ));
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 

@@ -30,6 +30,15 @@ where
     MetricTransport::new(transport, Arc::new(NoopTransportMetrics))
 }
 
+/// Like above but takes url from the environment NODE_URL.
+pub fn create_env_test_transport() -> MetricTransport<HttpTransport>
+where
+{
+    let env = std::env::var("NODE_URL").unwrap();
+    let transport = HttpTransport::new(env.parse().unwrap());
+    MetricTransport::new(transport, Arc::new(NoopTransportMetrics))
+}
+
 pub trait TransportMetrics: Send + Sync {
     fn report_query(&self, label: &str, elapsed: Duration);
 }

@@ -131,8 +131,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        let node = "https://dev-openethereum.mainnet.gnosisdev.com";
-        let transport = create_test_transport(node);
+        let node = std::env::var("NODE_URL").unwrap();
+        let transport = create_test_transport(&node);
         let web3 = Web3::new(transport);
         let receiver = current_block_stream(web3, Duration::from_secs(1))
             .await

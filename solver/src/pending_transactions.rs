@@ -30,8 +30,9 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
-        let node = "https://staging-openethereum.mainnet.gnosisdev.com";
-        let transport = DynTransport::new(web3::transports::Http::new(node).unwrap());
+        let transport = DynTransport::new(
+            web3::transports::Http::new(&std::env::var("NODE_URL").unwrap()).unwrap(),
+        );
         let transactions = pending_transactions(&transport).await.unwrap();
         dbg!(transactions.as_slice());
         assert!(!transactions.is_empty());

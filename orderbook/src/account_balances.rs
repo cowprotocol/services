@@ -191,12 +191,12 @@ mod tests {
     use contracts::ERC20Mintable;
     use ethcontract::prelude::Account;
     use hex_literal::hex;
-    use shared::transport::create_test_transport;
+    use shared::transport::create_env_test_transport;
 
     #[tokio::test]
     #[ignore]
     async fn mainnet_can_transfer() {
-        let http = create_test_transport("http://127.0.0.1:8545");
+        let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
@@ -214,7 +214,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_cannot_transfer() {
-        let http = create_test_transport("http://127.0.0.1:8545");
+        let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let allowance = settlement.allowance_manager().call().await.unwrap();
@@ -234,7 +234,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn watch_testnet_balance() {
-        let http = create_test_transport("http://127.0.0.1:8545");
+        let http = create_env_test_transport();
         let web3 = Web3::new(http);
 
         let accounts: Vec<H160> = web3.eth().accounts().await.expect("get accounts failed");
