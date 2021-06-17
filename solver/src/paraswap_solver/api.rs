@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use anyhow::{Context, Result};
 use derivative::Derivative;
 use ethcontract::{H160, U256};
@@ -23,7 +21,8 @@ pub trait ParaswapApi {
     ) -> Result<TransactionBuilderResponse>;
 }
 
-struct DefaultParaswapApi {
+#[derive(Default)]
+pub struct DefaultParaswapApi {
     client: Client,
 }
 
@@ -101,7 +100,7 @@ impl PriceQuery {
 }
 
 /// A Paraswap API price response.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct PriceResponse {
     /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
     pub price_route_raw: Value,
