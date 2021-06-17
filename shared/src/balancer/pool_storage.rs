@@ -203,12 +203,12 @@ impl PoolStorage {
             events.len(),
             delete_from_block_number,
         );
-        self.delete_pools(delete_from_block_number)?;
+        self.delete_pools(delete_from_block_number);
         self.insert_events(events).await?;
         Ok(())
     }
 
-    fn delete_pools(&mut self, delete_from_block_number: u64) -> Result<()> {
+    fn delete_pools(&mut self, delete_from_block_number: u64) {
         self.pools
             .retain(|_, pool| pool.block_created < delete_from_block_number);
         // Note that this could result in an empty set for some tokens.
@@ -219,7 +219,6 @@ impl PoolStorage {
                 .cloned()
                 .collect::<HashSet<H256>>();
         }
-        Ok(())
     }
 
     pub fn last_event_block(&self) -> u64 {
