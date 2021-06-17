@@ -46,11 +46,16 @@ pub struct PoolTokenState {
 pub struct WeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
+    pub swap_fee_percentage: U256,
     pub reserves: HashMap<H160, PoolTokenState>,
 }
 
 impl WeightedPool {
-    pub fn new(pool_data: RegisteredWeightedPool, balances: Vec<U256>) -> Self {
+    pub fn new(
+        pool_data: RegisteredWeightedPool,
+        balances: Vec<U256>,
+        swap_fee_percentage: U256,
+    ) -> Self {
         let mut reserves = HashMap::new();
         // We expect the weight and token indices are aligned with balances returned from EVM query.
         // If necessary we would also pass the tokens along with the query result,
@@ -68,6 +73,7 @@ impl WeightedPool {
         WeightedPool {
             pool_id: pool_data.pool_id,
             pool_address: pool_data.pool_address,
+            swap_fee_percentage,
             reserves,
         }
     }
