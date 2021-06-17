@@ -2,23 +2,19 @@
 #[macro_use]
 mod testutil;
 
-pub mod baseline_solver;
 pub mod driver;
 pub mod encoding;
-pub mod http_solver;
 pub mod interactions;
 pub mod liquidity;
 pub mod liquidity_collector;
 pub mod metrics;
-pub mod naive_solver;
-pub mod oneinch_solver;
+
 pub mod orderbook;
-pub mod paraswap_solver;
+
 pub mod pending_transactions;
 pub mod settlement;
 pub mod settlement_simulation;
 pub mod settlement_submission;
-pub mod single_order_solver;
 pub mod solver;
 mod util;
 

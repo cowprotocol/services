@@ -4,24 +4,28 @@ use std::{
     time::Duration,
 };
 
-use crate::{
-    baseline_solver::BaselineSolver,
-    http_solver::{HttpSolver, SolverConfig},
-    liquidity::Liquidity,
-    naive_solver::NaiveSolver,
-    oneinch_solver::OneInchSolver,
-    paraswap_solver::ParaswapSolver,
-    settlement::Settlement,
-    single_order_solver::SingleOrderSolver,
-};
+use crate::{liquidity::Liquidity, settlement::Settlement};
 use anyhow::Result;
+use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{H160, U256};
+use http_solver::{HttpSolver, SolverConfig};
+use naive_solver::NaiveSolver;
+use oneinch_solver::OneInchSolver;
+use paraswap_solver::ParaswapSolver;
 use reqwest::Url;
 use shared::{
     conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching,
 };
+use single_order_solver::SingleOrderSolver;
 use structopt::clap::arg_enum;
+
+mod baseline_solver;
+mod http_solver;
+mod naive_solver;
+mod oneinch_solver;
+mod paraswap_solver;
+mod single_order_solver;
 
 // For solvers that enforce a timeout internally we set their timeout to the global solver timeout
 // minus this duration to account for additional delay for example from the network.
@@ -125,6 +129,11 @@ pub fn create(
             ))),
         })
         .collect()
+}
+
+/// Returns a naive solver to be used e.g. in e2e tests.
+pub fn naive_solver() -> Box<dyn Solver> {
+    Box::new(NaiveSolver {})
 }
 
 /// Dummy solver returning no settlements

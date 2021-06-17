@@ -203,10 +203,7 @@ fn i128_abs_to_u256(i: i128) -> U256 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        http_solver::model::{ExecutedOrderModel, UpdatedUniswapModel},
-        liquidity::tests::CapturingSettlementHandler,
-    };
+    use crate::liquidity::tests::CapturingSettlementHandler;
     use maplit::hashmap;
     use model::TokenPair;
 

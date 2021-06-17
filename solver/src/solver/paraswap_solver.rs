@@ -6,14 +6,14 @@ use ethcontract::{Bytes, H160, U256};
 use maplit::hashmap;
 use shared::{conversions::U256Ext, token_info::TokenInfoFetching};
 
+use super::single_order_solver::SingleOrderSolving;
 use crate::{
     encoding::EncodedInteraction,
     interactions::Erc20ApproveInteraction,
     liquidity::LimitOrder,
-    paraswap_solver::api::{PriceQuery, Side, TransactionBuilderQuery},
     settlement::{Interaction, Settlement},
-    single_order_solver::SingleOrderSolving,
 };
+use api::{PriceQuery, Side, TransactionBuilderQuery};
 
 use self::api::{DefaultParaswapApi, ParaswapApi, PriceResponse, TransactionBuilderResponse};
 

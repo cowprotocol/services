@@ -192,7 +192,7 @@ async fn eth_integration(web3: Web3) {
             web3: web3.clone(),
         }),
     );
-    let solver = solver::naive_solver::NaiveSolver {};
+    let solver = solver::solver::naive_solver();
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3, weth.address()),
@@ -202,7 +202,7 @@ async fn eth_integration(web3: Web3) {
         gpv2.settlement.clone(),
         liquidity_collector,
         price_estimator,
-        vec![Box::new(solver)],
+        vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(1),
         Duration::from_secs(30),

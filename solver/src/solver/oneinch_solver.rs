@@ -6,12 +6,12 @@
 pub mod api;
 
 use self::api::{Amount, OneInchClient, Slippage, Swap, SwapQuery};
+use super::single_order_solver::SingleOrderSolving;
 use crate::{
     encoding::EncodedInteraction,
     interactions::Erc20ApproveInteraction,
     liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
-    single_order_solver::SingleOrderSolving,
 };
 use anyhow::{ensure, Result};
 use contracts::{GPv2Settlement, ERC20};
@@ -21,7 +21,6 @@ use model::order::OrderKind;
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
-    iter,
 };
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
@@ -36,12 +35,6 @@ pub struct OneInchSolver {
 const MAINNET_CHAIN_ID: u64 = 1;
 
 impl OneInchSolver {
-    /// Creates a new 1Inch solver instance for specified settlement contract
-    /// instance.
-    pub fn new(settlement_contract: GPv2Settlement, chain_id: u64) -> Result<Self> {
-        Self::with_disabled_protocols(settlement_contract, chain_id, iter::empty())
-    }
-
     /// Creates a new 1Inch solver with a list of disabled protocols.
     pub fn with_disabled_protocols(
         settlement_contract: GPv2Settlement,
@@ -186,11 +179,12 @@ mod tests {
     use ethcontract::{Web3, H160};
     use model::order::{Order, OrderCreation, OrderKind};
     use shared::transport::{create_env_test_transport, create_test_transport};
+    use std::iter;
 
     fn dummy_solver() -> OneInchSolver {
         let web3 = testutil::dummy_web3();
         let settlement = GPv2Settlement::at(&web3, H160::zero());
-        OneInchSolver::new(settlement, MAINNET_CHAIN_ID).unwrap()
+        OneInchSolver::with_disabled_protocols(settlement, MAINNET_CHAIN_ID, iter::empty()).unwrap()
     }
 
     #[tokio::test]
@@ -271,6 +265,8 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
-        assert!(OneInchSolver::new(settlement, chain_id).is_err())
+        assert!(
+            OneInchSolver::with_disabled_protocols(settlement, chain_id, iter::empty()).is_err()
+        )
     }
 }
