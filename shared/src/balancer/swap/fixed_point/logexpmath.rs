@@ -2,8 +2,7 @@
 // The original contract code can be found at:
 // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/LogExpMath.sol
 
-#![allow(dead_code)]
-
+use super::super::error::Error;
 use ethcontract::{I256, U256};
 use lazy_static::lazy_static;
 use std::convert::TryFrom;
@@ -75,15 +74,7 @@ fn constant_a_18(i: u32) -> I256 {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub enum Errors {
-    XOutOfBounds,
-    YOutOfBounds,
-    ProductOutOfBounds,
-    InvalidExponent,
-}
-
-pub fn pow(x: Ufixed256x18, y: Ufixed256x18) -> Result<Ufixed256x18, Errors> {
+pub fn pow(x: Ufixed256x18, y: Ufixed256x18) -> Result<Ufixed256x18, Error> {
     if y == U256::zero() {
         return Ok(*UFIXED256X18_ONE);
     }
@@ -93,13 +84,13 @@ pub fn pow(x: Ufixed256x18, y: Ufixed256x18) -> Result<Ufixed256x18, Errors> {
 
     let x_int256 = match I256::try_from(x) {
         Ok(x) => x,
-        Err(_) => return Err(Errors::XOutOfBounds),
+        Err(_) => return Err(Error::XOutOfBounds),
     };
 
     let y_int256 = if y < *MILD_EXPONENT_BOUND {
         I256::try_from(y).unwrap()
     } else {
-        return Err(Errors::YOutOfBounds);
+        return Err(Error::YOutOfBounds);
     };
 
     let mut logx_times_y = if *LN_36_LOWER_BOUND < x_int256 && x_int256 < *LN_36_UPPER_BOUND {
@@ -111,15 +102,15 @@ pub fn pow(x: Ufixed256x18, y: Ufixed256x18) -> Result<Ufixed256x18, Errors> {
     logx_times_y /= *ONE_18;
 
     if !(*MIN_NATURAL_EXPONENT <= logx_times_y && logx_times_y <= *MAX_NATURAL_EXPONENT) {
-        return Err(Errors::ProductOutOfBounds);
+        return Err(Error::ProductOutOfBounds);
     }
 
     exp(logx_times_y).map(|v| v.into_raw())
 }
 
-fn exp(mut x: I256) -> Result<I256, Errors> {
+fn exp(mut x: I256) -> Result<I256, Error> {
     if !(x >= *MIN_NATURAL_EXPONENT && x <= *MAX_NATURAL_EXPONENT) {
-        return Err(Errors::InvalidExponent);
+        return Err(Error::InvalidExponent);
     }
 
     if x < I256::zero() {
@@ -296,19 +287,6 @@ mod tests {
     // Every test has an input vector that can be directly copied into the
     // Hardhat console and custom instructions to print the output vector used
     // in the test code.
-
-    // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/helpers/BalancerErrors.sol
-    impl From<&str> for Errors {
-        fn from(errno: &str) -> Self {
-            match errno.parse::<u16>().unwrap() {
-                6 => Self::XOutOfBounds,
-                7 => Self::YOutOfBounds,
-                8 => Self::ProductOutOfBounds,
-                9 => Self::InvalidExponent,
-                _ => panic!("Unsupported error code"),
-            }
-        }
-    }
 
     #[test]
     fn _ln_success() {
