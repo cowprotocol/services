@@ -77,7 +77,7 @@ impl OneInchSolver {
         &self,
         order: LimitOrder,
         protocols: Option<Vec<String>>,
-    ) -> Result<Settlement> {
+    ) -> Result<Option<Settlement>> {
         debug_assert_eq!(
             order.kind,
             OrderKind::Sell,
@@ -113,10 +113,11 @@ impl OneInchSolver {
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = self.client.get_swap(query).await?;
 
-        ensure!(
-            swap.to_token_amount >= order.buy_amount,
-            "order limit price not respected",
-        );
+        if !swap.to_token_amount >= order.buy_amount {
+            tracing::debug!("Order limit price not respected");
+            return Ok(None);
+        }
+
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => swap.to_token_amount,
             order.buy_token => swap.from_token_amount,
@@ -135,7 +136,7 @@ impl OneInchSolver {
         }
         settlement.encoder.append_to_execution_plan(swap);
 
-        Ok(settlement)
+        Ok(Some(settlement))
     }
 
     fn web3(&self) -> DynWeb3 {
@@ -151,11 +152,11 @@ impl Interaction for Swap {
 
 #[async_trait::async_trait]
 impl SingleOrderSolving for OneInchSolver {
-    async fn settle_order(&self, order: LimitOrder) -> Result<Settlement> {
-        ensure!(
-            order.kind == OrderKind::Sell,
-            "1Inch only supports sell orders"
-        );
+    async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
+        if order.kind != OrderKind::Sell {
+            // 1Inch only supports sell orders
+            return Ok(None);
+        }
         let protocols = self.supported_protocols().await?;
         self.settle_order(order, protocols).await
     }

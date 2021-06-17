@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use contracts::{GPv2Settlement, ERC20};
 use ethcontract::{Bytes, H160, U256};
 use maplit::hashmap;
@@ -77,7 +77,7 @@ impl<F> SingleOrderSolving for ParaswapSolver<F>
 where
     F: AllowanceFetching,
 {
-    async fn settle_order(&self, order: LimitOrder) -> Result<Settlement> {
+    async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
         let (amount, side) = match order.kind {
             model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
             model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
@@ -101,11 +101,13 @@ where
             amount,
             side,
         };
+
+        tracing::debug!("querying Paraswap API with {:?}", price_query);
         let price_response = self.client.price(price_query).await?;
-        ensure!(
-            satisfies_limit_price(&order, &price_response),
-            "Limit price not satisfied"
-        );
+        if !satisfies_limit_price(&order, &price_response) {
+            tracing::debug!("Order limit price not respected");
+            return Ok(None);
+        }
 
         // 0.1% slippage
         let dest_amount_with_slippage = price_response
@@ -151,7 +153,7 @@ where
                 });
         }
         settlement.encoder.append_to_execution_plan(transaction);
-        Ok(settlement)
+        Ok(Some(settlement))
     }
 
     fn name(&self) -> &'static str {
@@ -313,7 +315,11 @@ mod test {
             ..Default::default()
         };
 
-        let result = solver.settle_order(order_passing_limit).await.unwrap();
+        let result = solver
+            .settle_order(order_passing_limit)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(
             result.clearing_prices(),
             &hashmap! {
@@ -322,8 +328,8 @@ mod test {
             }
         );
 
-        let result = solver.settle_order(order_violating_limit).await;
-        assert!(result.is_err());
+        let result = solver.settle_order(order_violating_limit).await.unwrap();
+        assert!(result.is_none());
     }
 
     #[tokio::test]
@@ -383,11 +389,11 @@ mod test {
         };
 
         // On first run we have two main interactions (approve + swap)
-        let result = solver.settle_order(order.clone()).await.unwrap();
+        let result = solver.settle_order(order.clone()).await.unwrap().unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
-        let result = solver.settle_order(order).await.unwrap();
+        let result = solver.settle_order(order).await.unwrap().unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
     }
 }

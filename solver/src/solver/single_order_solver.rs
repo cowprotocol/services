@@ -12,7 +12,7 @@ use crate::{
 /// Implementations of this trait know how to settle a single limit order (not taking advantage of batching multiple orders together)
 pub trait SingleOrderSolving {
     /// Return a settlement for the given limit order (if possible)
-    async fn settle_order(&self, order: LimitOrder) -> Result<Settlement>;
+    async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>>;
 
     fn name(&self) -> &'static str;
 }
@@ -60,12 +60,13 @@ impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
         Ok(settlements
             .into_iter()
             .filter_map(|settlement| match settlement {
-                Ok(settlement) => Some(settlement),
+                Ok(Some(settlement)) => Some(settlement),
+                Ok(None) => None,
                 Err(err) => {
                     // It could be that the inner solver can't match an order and would
                     // return an error for whatever reason. In that case, we want
                     // to continue trying to solve for other orders.
-                    tracing::warn!("Inner solver error: {:?}", err);
+                    tracing::error!("Inner solver error: {:?}", err);
                     None
                 }
             })
