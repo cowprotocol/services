@@ -13,6 +13,7 @@ pub mod metrics;
 pub mod naive_solver;
 pub mod oneinch_solver;
 pub mod orderbook;
+pub mod paraswap_solver;
 pub mod pending_transactions;
 pub mod settlement;
 pub mod settlement_simulation;
