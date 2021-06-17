@@ -59,7 +59,7 @@ fn hashed_signing_message(
 
 impl Signature {
     /// r + s + v
-    pub fn to_bytes(&self) -> [u8; 65] {
+    pub fn to_bytes(self) -> [u8; 65] {
         let mut bytes = [0u8; 65];
         bytes[..32].copy_from_slice(self.r.as_bytes());
         bytes[32..64].copy_from_slice(self.s.as_bytes());

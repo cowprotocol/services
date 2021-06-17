@@ -213,10 +213,10 @@ pub enum BlockNumber {
 }
 
 impl BlockNumber {
-    pub fn to_u64(&self) -> u64 {
+    pub fn to_u64(self) -> u64 {
         match self {
-            BlockNumber::Specific(block) => *block,
-            BlockNumber::Latest(block) => *block,
+            BlockNumber::Specific(block) => block,
+            BlockNumber::Latest(block) => block,
         }
     }
 

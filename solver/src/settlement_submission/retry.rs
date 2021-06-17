@@ -147,20 +147,18 @@ mod tests {
     #[test]
     fn test_is_transaction_failure() {
         // Positives
-        assert_eq!(
-            is_transaction_failure(&ExecutionError::Failure(Default::default())),
-            true
-        );
-        assert_eq!(is_transaction_failure(&ExecutionError::Revert(None)), true);
-        assert_eq!(is_transaction_failure(&ExecutionError::InvalidOpcode), true);
+        assert!(is_transaction_failure(&ExecutionError::Failure(
+            Default::default()
+        )),);
+        assert!(is_transaction_failure(&ExecutionError::Revert(None)));
+        assert!(is_transaction_failure(&ExecutionError::InvalidOpcode));
 
         // Sample negative
-        assert_eq!(
-            is_transaction_failure(&ExecutionError::ConfirmTimeout(Box::new(
-                ethcontract::transaction::TransactionResult::Hash(H256::default())
-            ))),
-            false
-        );
+        assert!(!is_transaction_failure(&ExecutionError::ConfirmTimeout(
+            Box::new(ethcontract::transaction::TransactionResult::Hash(
+                H256::default()
+            ))
+        )));
 
         let method_error =
             MethodError::from_parts("foo".into(), ExecutionError::Failure(Default::default()));

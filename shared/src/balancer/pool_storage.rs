@@ -103,14 +103,14 @@ impl RegisteredWeightedPool {
     ) -> Result<RegisteredWeightedPool> {
         let pool_address = creation.pool_address;
         let pool_data = data_fetcher.get_pool_data(pool_address).await?;
-        return Ok(RegisteredWeightedPool {
+        Ok(RegisteredWeightedPool {
             pool_id: pool_data.pool_id,
             pool_address,
             tokens: pool_data.tokens,
             normalized_weights: pool_data.weights,
             scaling_exponents: pool_data.scaling_exponents,
             block_created,
-        });
+        })
     }
 }
 

@@ -140,10 +140,7 @@ mod tests {
 
     #[test]
     fn deserialize_successful_response() {
-        assert_eq!(
-            response_from_json::<bool>(json!({ "data": true })).unwrap(),
-            true,
-        );
+        assert!(response_from_json::<bool>(json!({ "data": true })).unwrap());
     }
 
     #[test]

@@ -125,7 +125,7 @@ mod tests {
             .map(|t| H160::from_low_u64_be(t as u64))
             .collect();
         let order_ids: Vec<OrderUid> = (0..num_orders).map(|i| OrderUid([i as u8; 56])).collect();
-        return (owners, order_ids);
+        (owners, order_ids)
     }
 
     async fn add_trade(

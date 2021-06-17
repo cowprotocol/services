@@ -188,35 +188,35 @@ mod tests {
 
         // Token A below, equal, above
         let interaction = inner._settle((token_a, 50.into()), (token_b, 100.into()));
-        assert_eq!(interaction.set_allowance, false);
+        assert!(!interaction.set_allowance);
 
         let interaction = inner._settle((token_a, 99.into()), (token_b, 100.into()));
-        assert_eq!(interaction.set_allowance, false);
+        assert!(!interaction.set_allowance);
 
         // Allowance needed because of slippage
         let interaction = inner._settle((token_a, 100.into()), (token_b, 100.into()));
-        assert_eq!(interaction.set_allowance, true);
+        assert!(interaction.set_allowance);
 
         let interaction = inner._settle((token_a, 150.into()), (token_b, 100.into()));
-        assert_eq!(interaction.set_allowance, true);
+        assert!(interaction.set_allowance);
 
         // Token B below, equal, above
         let interaction = inner._settle((token_b, 150.into()), (token_a, 100.into()));
-        assert_eq!(interaction.set_allowance, false);
+        assert!(!interaction.set_allowance);
 
         let interaction = inner._settle((token_b, 199.into()), (token_a, 100.into()));
-        assert_eq!(interaction.set_allowance, false);
+        assert!(!interaction.set_allowance);
 
         // Allowance needed because of slippage
         let interaction = inner._settle((token_b, 200.into()), (token_a, 100.into()));
-        assert_eq!(interaction.set_allowance, true);
+        assert!(interaction.set_allowance);
 
         let interaction = inner._settle((token_b, 250.into()), (token_a, 100.into()));
-        assert_eq!(interaction.set_allowance, true);
+        assert!(interaction.set_allowance);
 
         // Untracked token
         let interaction =
             inner._settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
-        assert_eq!(interaction.set_allowance, true);
+        assert!(interaction.set_allowance);
     }
 }

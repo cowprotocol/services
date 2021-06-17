@@ -473,7 +473,7 @@ mod tests {
 
         // fee is invalid for some uncached token
         let token = H160::from_low_u64_be(2);
-        assert_eq!(fee_estimator.is_valid_fee(token, fee).await, false);
+        assert!(!fee_estimator.is_valid_fee(token, fee).await);
     }
 
     #[tokio::test]
@@ -498,7 +498,7 @@ mod tests {
         let lower_fee = fee - U256::one();
 
         // slightly lower fee is not valid
-        assert_eq!(fee_estimator.is_valid_fee(token, lower_fee).await, false);
+        assert!(!fee_estimator.is_valid_fee(token, lower_fee).await);
 
         // Gas price reduces, and slightly lower fee is now valid
         *gas_price.lock().unwrap() /= 2.0;

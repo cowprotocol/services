@@ -114,9 +114,9 @@ mod tests {
         assert_eq!(result.buy_token, Some(buy));
         assert_eq!(result.sell_token, Some(sell));
         assert_eq!(result.min_valid_to, 2);
-        assert_eq!(result.exclude_fully_executed, false);
-        assert_eq!(result.exclude_invalidated, false);
-        assert_eq!(result.exclude_insufficient_balance, false);
+        assert!(!result.exclude_fully_executed);
+        assert!(!result.exclude_invalidated);
+        assert!(!result.exclude_insufficient_balance);
     }
 
     #[test]

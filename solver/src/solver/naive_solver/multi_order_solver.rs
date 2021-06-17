@@ -642,7 +642,7 @@ mod tests {
         let result = solve(orders.into_iter(), &pool).unwrap();
 
         assert_eq!(result.trades().len(), 2);
-        assert_eq!(is_valid_solution(&result), true);
+        assert!(is_valid_solution(&result));
     }
 
     #[test]
@@ -731,49 +731,44 @@ mod tests {
         };
 
         // Price in the middle is ok
-        assert_eq!(
-            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(1),
                 token_b => to_wei(1)
-            })),
-            true
-        );
+            }
+        )));
 
         // Price at the limit of first order is ok
-        assert_eq!(
-            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(8),
                 token_b => to_wei(10)
-            })),
-            true
-        );
+            }
+        )));
 
         // Price at the limit of second order is ok
-        assert_eq!(
-            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+        assert!(is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(10),
                 token_b => to_wei(9)
-            })),
-            true
-        );
+            }
+        )));
 
         // Price violating first order is not ok
-        assert_eq!(
-            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+        assert!(!is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(7),
                 token_b => to_wei(10)
-            })),
-            false
-        );
+            }
+        )));
 
         // Price violating second order is not ok
-        assert_eq!(
-            is_valid_solution(&settlement_with_prices(maplit::hashmap! {
+        assert!(!is_valid_solution(&settlement_with_prices(
+            maplit::hashmap! {
                 token_a => to_wei(10),
                 token_b => to_wei(8)
-            })),
-            false
-        );
+            }
+        )));
     }
 
     #[test]

@@ -185,53 +185,44 @@ mod test {
 
     #[test]
     fn test_satisfies_limit_price() {
-        assert_eq!(
-            satisfies_limit_price(
-                &LimitOrder {
-                    sell_amount: 100.into(),
-                    buy_amount: 95.into(),
-                    ..Default::default()
-                },
-                &PriceResponse {
-                    src_amount: 100.into(),
-                    dest_amount: 90.into(),
-                    ..Default::default()
-                }
-            ),
-            false
-        );
+        assert!(!satisfies_limit_price(
+            &LimitOrder {
+                sell_amount: 100.into(),
+                buy_amount: 95.into(),
+                ..Default::default()
+            },
+            &PriceResponse {
+                src_amount: 100.into(),
+                dest_amount: 90.into(),
+                ..Default::default()
+            }
+        ));
 
-        assert_eq!(
-            satisfies_limit_price(
-                &LimitOrder {
-                    sell_amount: 100.into(),
-                    buy_amount: 95.into(),
-                    ..Default::default()
-                },
-                &PriceResponse {
-                    src_amount: 100.into(),
-                    dest_amount: 100.into(),
-                    ..Default::default()
-                }
-            ),
-            true
-        );
+        assert!(satisfies_limit_price(
+            &LimitOrder {
+                sell_amount: 100.into(),
+                buy_amount: 95.into(),
+                ..Default::default()
+            },
+            &PriceResponse {
+                src_amount: 100.into(),
+                dest_amount: 100.into(),
+                ..Default::default()
+            }
+        ));
 
-        assert_eq!(
-            satisfies_limit_price(
-                &LimitOrder {
-                    sell_amount: 100.into(),
-                    buy_amount: 95.into(),
-                    ..Default::default()
-                },
-                &PriceResponse {
-                    src_amount: 100.into(),
-                    dest_amount: 95.into(),
-                    ..Default::default()
-                }
-            ),
-            true
-        );
+        assert!(satisfies_limit_price(
+            &LimitOrder {
+                sell_amount: 100.into(),
+                buy_amount: 95.into(),
+                ..Default::default()
+            },
+            &PriceResponse {
+                src_amount: 100.into(),
+                dest_amount: 95.into(),
+                ..Default::default()
+            }
+        ));
     }
 
     #[tokio::test]

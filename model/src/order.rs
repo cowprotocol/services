@@ -624,19 +624,13 @@ mod tests {
     #[test]
     fn order_contains_token_from() {
         let order = Order::default();
-        assert_eq!(
-            order.contains_token_from(&hashset!(order.order_creation.sell_token)),
-            true
-        );
-        assert_eq!(
-            order.contains_token_from(&hashset!(order.order_creation.buy_token)),
-            true
-        );
-        assert_eq!(order.contains_token_from(&HashSet::new()), false);
+        assert!(order.contains_token_from(&hashset!(order.order_creation.sell_token)),);
+        assert!(order.contains_token_from(&hashset!(order.order_creation.buy_token)),);
+        assert!(!order.contains_token_from(&HashSet::new()));
         let other_token = H160::from_low_u64_be(1);
         assert_ne!(other_token, order.order_creation.sell_token);
         assert_ne!(other_token, order.order_creation.buy_token);
-        assert_eq!(order.contains_token_from(&hashset!(other_token)), false);
+        assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
     pub fn h160_from_public_key(key: PublicKey) -> H160 {

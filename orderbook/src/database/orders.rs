@@ -518,7 +518,7 @@ mod tests {
             .try_collect::<Vec<Order>>()
             .await
             .unwrap();
-        assert_eq!(db_orders[0].order_meta_data.invalidated, false);
+        assert!(!db_orders[0].order_meta_data.invalidated);
 
         let cancellation_time =
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
@@ -530,7 +530,7 @@ mod tests {
             .try_collect::<Vec<Order>>()
             .await
             .unwrap();
-        assert_eq!(db_orders[0].order_meta_data.invalidated, true);
+        assert!(db_orders[0].order_meta_data.invalidated);
 
         let query = "SELECT cancellation_timestamp FROM orders;";
         let first_cancellation: CancellationQueryRow =
