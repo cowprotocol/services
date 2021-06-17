@@ -38,6 +38,11 @@ macro_rules! errors_from_codes {
 }
 
 errors_from_codes!(
+    (AddOverflow, 0),
+    (SubOverflow, 1),
+    (MulOverflow, 3),
+    (ZeroDivision, 4),
+    (DivInternal, 5),
     (XOutOfBounds, 6),
     (YOutOfBounds, 7),
     (ProductOutOfBounds, 8),
