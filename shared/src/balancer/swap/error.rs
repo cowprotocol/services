@@ -47,6 +47,8 @@ errors_from_codes!(
     (YOutOfBounds, 7),
     (ProductOutOfBounds, 8),
     (InvalidExponent, 9),
+    (MaxInRatio, 304),
+    (MaxOutRatio, 305),
 );
 
 #[cfg(test)]
