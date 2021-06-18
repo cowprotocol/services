@@ -26,6 +26,7 @@
 //! with how it maintains itself.
 
 pub mod event_handler;
+pub mod graph_api;
 mod info_fetching;
 mod pool_cache;
 pub mod pool_fetching;

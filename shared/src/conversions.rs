@@ -1,7 +1,5 @@
 use anyhow::{ensure, Result};
-use num::{bigint::Sign, Zero};
-use num::{rational::Ratio, BigInt};
-use num::{BigRational, ToPrimitive as _};
+use num::{bigint::Sign, rational::Ratio, BigInt, BigRational, ToPrimitive as _, Zero as _};
 use primitive_types::U256;
 
 pub fn big_rational_to_float(ratio: &BigRational) -> Option<f64> {
@@ -28,6 +26,9 @@ pub fn u256_to_big_rational(input: &U256) -> BigRational {
 }
 
 pub fn big_int_to_u256(input: &BigInt) -> Result<U256> {
+    if input.is_zero() {
+        return Ok(0.into());
+    }
     let (sign, bytes) = input.to_bytes_be();
     ensure!(sign == Sign::Plus, "Negative BigInt to U256 conversion");
     ensure!(bytes.len() <= 32, "BigInt too big for U256 conversion");
@@ -61,5 +62,20 @@ impl U256Ext for U256 {
     }
     fn to_big_rational(&self) -> BigRational {
         u256_to_big_rational(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn big_integer_to_u256() {
+        for val in &[0i32, 42, 1337] {
+            assert_eq!(
+                big_int_to_u256(&BigInt::from(*val)).unwrap(),
+                U256::from(*val),
+            );
+        }
     }
 }

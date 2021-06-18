@@ -5,6 +5,7 @@ use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde_json::{Map, Value};
 use thiserror::Error;
 
 /// A general client for querying subgraphs.
@@ -15,7 +16,7 @@ pub struct SubgraphClient {
 
 lazy_static! {
     pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
-        Url::parse("https://api.thegraph.com/subgraphs/name")
+        Url::parse("https://api.thegraph.com/subgraphs/name/")
             .expect("invalid default Graph API base URL");
 }
 
@@ -33,7 +34,7 @@ impl SubgraphClient {
     ) -> Result<Self> {
         let subgraph_url = base_url
             .into_url()?
-            .join(org.as_ref())?
+            .join(&format!("{}/", org.as_ref()))?
             .join(name.as_ref())?;
         Ok(Self {
             client: default_http_client()?,
@@ -42,13 +43,13 @@ impl SubgraphClient {
     }
 
     /// Performs the specified GraphQL query on the current subgraph.
-    pub async fn query<T>(&self, q: impl AsRef<str>) -> Result<T>
+    pub async fn query<T>(&self, query: &str, variables: Option<Map<String, Value>>) -> Result<T>
     where
         T: DeserializeOwned,
     {
         self.client
             .post(self.subgraph_url.clone())
-            .json(&Query { query: q.as_ref() })
+            .json(&Query { query, variables })
             .send()
             .await?
             .json::<QueryResponse<T>>()
@@ -61,6 +62,7 @@ impl SubgraphClient {
 #[derive(Serialize)]
 struct Query<'a> {
     query: &'a str,
+    variables: Option<Map<String, Value>>,
 }
 
 /// A GraphQL query response.
@@ -121,10 +123,20 @@ mod tests {
             serde_json::to_value(&Query {
                 query: r#"foo {
                 }"#,
+                variables: Some(json_map! {
+                    "foo" => "bar",
+                    "baz" => 42,
+                    "thing" => false,
+                }),
             })
             .unwrap(),
             json!({
                 "query": "foo {\n                }",
+                "variables": {
+                    "foo": "bar",
+                    "baz": 42,
+                    "thing": false,
+                },
             }),
         );
     }

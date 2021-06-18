@@ -10,7 +10,7 @@ use std::ops::RangeInclusive;
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
-const MAX_REORG_BLOCK_COUNT: u64 = 25;
+pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
