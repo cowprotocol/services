@@ -6,17 +6,14 @@ use anyhow::Result;
 use model::TokenPair;
 use std::collections::HashSet;
 
-use crate::balancer::{
-    event_handler::BalancerPoolRegistry,
-    pool_storage::{RegisteredWeightedPool, WeightedPool},
-};
-use crate::pool_fetching::{handle_contract_error, MAX_BATCH_SIZE};
-use crate::recent_block_cache::Block;
+use crate::balancer::pool_cache::{BalancerPoolReserveCache, PoolCacheMetrics, PoolReserveFetcher};
+use crate::balancer::{event_handler::BalancerPoolRegistry, pool_storage::WeightedPool};
+use crate::current_block::CurrentBlockStream;
+use crate::maintenance::Maintaining;
+use crate::recent_block_cache::{Block, CacheConfig, RecentBlockCache};
+use crate::token_info::TokenInfoFetching;
 use crate::Web3;
-use contracts::{BalancerV2Vault, BalancerV2WeightedPool};
-use ethcontract::batch::CallBatch;
-use ethcontract::errors::MethodError;
-use ethcontract::{BlockId, Bytes, H160, U256};
+use std::sync::Arc;
 
 #[async_trait::async_trait]
 pub trait WeightedPoolFetching: Send + Sync {
@@ -28,9 +25,28 @@ pub trait WeightedPoolFetching: Send + Sync {
 }
 
 pub struct BalancerPoolFetcher {
-    pool_registry: BalancerPoolRegistry,
-    vault: BalancerV2Vault,
-    web3: Web3,
+    pool_registry: Arc<BalancerPoolRegistry>,
+    pool_reserve_cache: BalancerPoolReserveCache,
+}
+
+impl BalancerPoolFetcher {
+    pub async fn new(
+        web3: Web3,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
+        config: CacheConfig,
+        block_stream: CurrentBlockStream,
+        metrics: Arc<dyn PoolCacheMetrics>,
+    ) -> Result<Self> {
+        let pool_registry =
+            Arc::new(BalancerPoolRegistry::new(web3.clone(), token_info_fetcher).await?);
+        let reserve_fetcher = PoolReserveFetcher::new(pool_registry.clone(), web3).await?;
+        let pool_reserve_cache =
+            RecentBlockCache::new(config, reserve_fetcher, block_stream, metrics)?;
+        Ok(Self {
+            pool_registry,
+            pool_reserve_cache,
+        })
+    }
 }
 
 #[async_trait::async_trait]
@@ -40,118 +56,21 @@ impl WeightedPoolFetching for BalancerPoolFetcher {
         token_pairs: HashSet<TokenPair>,
         at_block: Block,
     ) -> Result<Vec<WeightedPool>> {
-        let mut batch = CallBatch::new(self.web3.transport());
-        let block = BlockId::Number(at_block.into());
-        let futures = self
+        let pool_ids = self
             .pool_registry
-            .get_pools_containing_token_pairs(token_pairs)
-            .await
-            .into_iter()
-            .map(|registered_pool| {
-                let pool_contract =
-                    BalancerV2WeightedPool::at(&self.web3, registered_pool.pool_address);
-                let swap_fee = pool_contract
-                    .get_swap_fee_percentage()
-                    .block(block)
-                    .batch_call(&mut batch);
-                let reserves = self
-                    .vault
-                    .get_pool_tokens(Bytes(registered_pool.pool_id.0))
-                    .block(block)
-                    .batch_call(&mut batch);
-
-                async move {
-                    #[allow(clippy::eval_order_dependence)]
-                    FetchedWeightedPool {
-                        registered_pool,
-                        swap_fee_percentage: swap_fee.await,
-                        reserves: reserves.await,
-                    }
-                }
-            })
-            .collect::<Vec<_>>();
-        batch.execute_all(MAX_BATCH_SIZE).await;
-
-        let mut results = Vec::new();
-        for future in futures {
-            // Batch has already been executed, so these awaits resolve immediately.
-            results.push(future.await);
-        }
-        handle_results(results)
+            .get_pool_ids_containing_token_pairs(token_pairs)
+            .await;
+        self.pool_reserve_cache.fetch(pool_ids, at_block).await
     }
 }
 
-/// An internal temporary struct used during pool fetching to handle errors.
-struct FetchedWeightedPool {
-    registered_pool: RegisteredWeightedPool,
-    swap_fee_percentage: Result<U256, MethodError>,
-    /// getPoolTokens returns (Tokens, Balances, LastBlockUpdated)
-    reserves: Result<(Vec<H160>, Vec<U256>, U256), MethodError>,
-}
-
-fn handle_results(results: Vec<FetchedWeightedPool>) -> Result<Vec<WeightedPool>> {
-    results
-        .into_iter()
-        .try_fold(Vec::new(), |mut acc, fetched_pool| {
-            let balances = match handle_contract_error(fetched_pool.reserves)? {
-                // We only keep the balances entry of reserves query.
-                Some(reserves) => reserves.1,
-                None => return Ok(acc),
-            };
-            let swap_fee_percentage = match handle_contract_error(fetched_pool.swap_fee_percentage)?
-            {
-                Some(swap_fee) => swap_fee,
-                None => return Ok(acc),
-            };
-            acc.push(WeightedPool::new(
-                fetched_pool.registered_pool,
-                balances,
-                swap_fee_percentage,
-            ));
-            Ok(acc)
-        })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::ethcontract_error;
-
-    #[test]
-    fn pool_fetcher_forwards_node_error() {
-        let results = vec![FetchedWeightedPool {
-            registered_pool: RegisteredWeightedPool::default(),
-            swap_fee_percentage: Ok(U256::zero()),
-            reserves: Err(ethcontract_error::testing_node_error()),
-        }];
-        assert!(handle_results(results).is_err());
-        let results = vec![FetchedWeightedPool {
-            registered_pool: RegisteredWeightedPool::default(),
-            swap_fee_percentage: Err(ethcontract_error::testing_node_error()),
-            reserves: Ok((vec![], vec![], U256::zero())),
-        }];
-        assert!(handle_results(results).is_err());
-    }
-
-    #[test]
-    fn pool_fetcher_skips_contract_error() {
-        let results = vec![
-            FetchedWeightedPool {
-                registered_pool: RegisteredWeightedPool::default(),
-                swap_fee_percentage: Ok(U256::zero()),
-                reserves: Err(ethcontract_error::testing_contract_error()),
-            },
-            FetchedWeightedPool {
-                registered_pool: RegisteredWeightedPool::default(),
-                swap_fee_percentage: Err(ethcontract_error::testing_contract_error()),
-                reserves: Ok((vec![], vec![], U256::zero())),
-            },
-            FetchedWeightedPool {
-                registered_pool: RegisteredWeightedPool::default(),
-                swap_fee_percentage: Ok(U256::zero()),
-                reserves: Ok((vec![], vec![], U256::zero())),
-            },
-        ];
-        assert_eq!(handle_results(results).unwrap().len(), 1);
+#[async_trait::async_trait]
+impl Maintaining for BalancerPoolFetcher {
+    async fn run_maintenance(&self) -> Result<()> {
+        futures::try_join!(
+            self.pool_registry.run_maintenance(),
+            self.pool_reserve_cache.update_cache(),
+        )?;
+        Ok(())
     }
 }

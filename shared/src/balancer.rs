@@ -27,6 +27,7 @@
 
 pub mod event_handler;
 mod info_fetching;
+mod pool_cache;
 pub mod pool_fetching;
 mod pool_storage;
 mod swap;

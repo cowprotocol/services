@@ -33,16 +33,17 @@ use crate::event_handling::EventIndex;
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, H256, U256};
-use itertools::Itertools;
 use model::TokenPair;
 use std::collections::{HashMap, HashSet};
 
+#[derive(Clone)]
 pub struct PoolTokenState {
     pub balance: U256,
     pub weight: U256,
     pub scaling_exponent: u8,
 }
 
+#[derive(Clone)]
 pub struct WeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
@@ -128,10 +129,7 @@ pub struct PoolStorage {
 
 impl PoolStorage {
     /// Returns all pools containing both tokens from `TokenPair`
-    pub fn pools_containing_token_pair(
-        &self,
-        token_pair: TokenPair,
-    ) -> Vec<RegisteredWeightedPool> {
+    pub fn ids_for_pools_containing_token_pair(&self, token_pair: TokenPair) -> HashSet<H256> {
         let empty_set = HashSet::new();
         let pools_0 = self
             .pools_by_token
@@ -141,27 +139,31 @@ impl PoolStorage {
             .pools_by_token
             .get(&token_pair.get().1)
             .unwrap_or(&empty_set);
-        pools_0
-            .intersection(pools_1)
-            .into_iter()
-            .map(|pool_id| {
-                self.pools
-                    .get(pool_id)
-                    .expect("failed iterating over known pools")
-                    .clone()
-            })
-            .collect::<Vec<RegisteredWeightedPool>>()
+        pools_0.intersection(pools_1).copied().collect()
     }
 
     /// Given a collection of `TokenPair`, returns all pools containing at least one of the pairs.
-    pub fn pools_containing_token_pairs(
+    pub fn ids_for_pools_containing_token_pairs(
         &self,
         token_pairs: HashSet<TokenPair>,
-    ) -> Vec<RegisteredWeightedPool> {
+    ) -> HashSet<H256> {
         token_pairs
             .into_iter()
-            .flat_map(|pair| self.pools_containing_token_pair(pair))
-            .unique_by(|pool| pool.pool_id)
+            .flat_map(|pair| self.ids_for_pools_containing_token_pair(pair))
+            .collect()
+    }
+
+    pub fn pools_for(&self, pool_ids: &HashSet<H256>) -> Vec<RegisteredWeightedPool> {
+        self.pools
+            .iter()
+            .filter_map(|(pool_id, pool)| {
+                if pool_ids.contains(pool_id) {
+                    Some(pool)
+                } else {
+                    None
+                }
+            })
+            .cloned()
             .collect()
     }
 
@@ -240,20 +242,31 @@ mod tests {
     use maplit::hashset;
     use mockall::predicate::eq;
 
-    #[tokio::test]
-    async fn insert_events() {
-        let n = 3usize;
-        let pool_ids: Vec<H256> = (0..n).map(|i| H256::from_low_u64_be(i as u64)).collect();
-        let pool_addresses: Vec<H160> = (0..n).map(|i| H160::from_low_u64_be(i as u64)).collect();
-        let tokens: Vec<H160> = (0..n + 1)
+    pub type PoolInitData = (Vec<H256>, Vec<H160>, Vec<H160>, Vec<U256>, Vec<PoolCreated>);
+    fn pool_init_data(start: usize, end: usize) -> PoolInitData {
+        let pool_ids: Vec<H256> = (start..end + 1)
+            .map(|i| H256::from_low_u64_be(i as u64))
+            .collect();
+        let pool_addresses: Vec<H160> = (start..end + 1)
             .map(|i| H160::from_low_u64_be(i as u64))
             .collect();
-        let weights: Vec<U256> = (0..n + 1).map(|i| U256::from(i as u64)).collect();
-        let creation_events: Vec<PoolCreated> = (0..n)
+        let tokens: Vec<H160> = (start..end + 2)
+            .map(|i| H160::from_low_u64_be(i as u64))
+            .collect();
+        let weights: Vec<U256> = (start..end + 2).map(|i| U256::from(i as u64)).collect();
+        let creation_events: Vec<PoolCreated> = (start..end + 1)
             .map(|i| PoolCreated {
                 pool_address: pool_addresses[i],
             })
             .collect();
+
+        (pool_ids, pool_addresses, tokens, weights, creation_events)
+    }
+
+    #[tokio::test]
+    async fn insert_events() {
+        let n = 3usize;
+        let (pool_ids, pool_addresses, tokens, weights, creation_events) = pool_init_data(0, n);
 
         let events: Vec<(EventIndex, PoolCreated)> = vec![
             (EventIndex::new(1, 0), creation_events[0]),
@@ -317,24 +330,9 @@ mod tests {
     async fn replace_events() {
         let start_block = 0;
         let end_block = 5;
+        let (pool_ids, pool_addresses, tokens, weights, creation_events) =
+            pool_init_data(start_block, end_block);
         // Setup all the variables to initialize Balancer Pool State
-        let pool_ids: Vec<H256> = (start_block..end_block + 1)
-            .map(|i| H256::from_low_u64_be(i as u64))
-            .collect();
-        let pool_addresses: Vec<H160> = (start_block..end_block + 1)
-            .map(|i| H160::from_low_u64_be(i as u64))
-            .collect();
-        let tokens: Vec<H160> = (start_block..end_block + 2)
-            .map(|i| H160::from_low_u64_be(i as u64))
-            .collect();
-        let weights: Vec<U256> = (start_block..end_block + 2)
-            .map(|i| U256::from(i as u64))
-            .collect();
-        let creation_events: Vec<PoolCreated> = (start_block..end_block + 1)
-            .map(|i| PoolCreated {
-                pool_address: pool_addresses[i],
-            })
-            .collect();
 
         let converted_events: Vec<(EventIndex, PoolCreated)> = (start_block..end_block + 1)
             .map(|i| (EventIndex::new(i as u64, 0), creation_events[i]))
@@ -448,20 +446,13 @@ mod tests {
     }
 
     #[test]
-    fn pools_containing_token_pairs() {
+    fn ids_for_pools_containing_token_pairs_() {
         let n = 3;
-        let pool_ids: Vec<H256> = (0..n).map(|i| H256::from_low_u64_be(i as u64)).collect();
-        let pool_addresses: Vec<H160> = (0..n)
-            .map(|i| H160::from_low_u64_be(2 * i as u64))
-            .collect();
-        let tokens: Vec<H160> = (0..n)
-            .map(|i| H160::from_low_u64_be(2 * i as u64 + 1))
-            .collect();
+        let (pool_ids, pool_addresses, tokens, _, _) = pool_init_data(0, n);
         let token_pairs: Vec<TokenPair> = (0..n)
             .map(|i| TokenPair::new(tokens[i], tokens[(i + 1) % n]).unwrap())
             .collect();
 
-        // Test the empty registry.
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         // Have to load all expected data into fetcher before it is passed on.
         for i in 0..n {
@@ -477,8 +468,11 @@ mod tests {
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
         let mut registry = PoolStorage::new(Box::new(dummy_data_fetcher));
+        // Test the empty registry.
         for token_pair in token_pairs.iter().take(n) {
-            assert!(registry.pools_containing_token_pair(*token_pair).is_empty());
+            assert!(registry
+                .ids_for_pools_containing_token_pair(*token_pair)
+                .is_empty());
         }
 
         // Now test non-empty pool with standard form.
@@ -523,19 +517,53 @@ mod tests {
         //     }
         // };
 
+        // Testing ids_for_pools_containing_token_pair
         assert_eq!(
-            registry.pools_containing_token_pair(token_pairs[0]),
-            vec![weighted_pools[0].clone()]
+            registry.ids_for_pools_containing_token_pair(token_pairs[0]),
+            hashset! {pool_ids[0]}
         );
-        // This test is non-deterministic by direct comparison because vectors could be returned unordered.
-        let res_pair_1 = registry.pools_containing_token_pair(token_pairs[1]);
-        assert_eq!(res_pair_1.len(), 2);
-        assert!(res_pair_1.contains(&weighted_pools[0]));
-        assert!(res_pair_1.contains(&weighted_pools[1]));
+        assert_eq!(
+            registry.ids_for_pools_containing_token_pair(token_pairs[1]),
+            hashset! { pool_ids[0], pool_ids[1] }
+        );
+        assert_eq!(
+            registry.ids_for_pools_containing_token_pair(token_pairs[2]),
+            hashset! {pool_ids[0]}
+        );
 
+        // Testing pools_for
+        assert!(registry.pools_for(&hashset! {}).is_empty());
         assert_eq!(
-            registry.pools_containing_token_pair(token_pairs[2]),
+            registry.pools_for(&hashset! {pool_ids[0]}),
             vec![weighted_pools[0].clone()]
         );
+        assert_eq!(
+            registry.pools_for(&hashset! {pool_ids[1]}),
+            vec![weighted_pools[1].clone()]
+        );
+        assert_eq!(
+            registry.pools_for(&hashset! {pool_ids[2]}),
+            vec![weighted_pools[2].clone()]
+        );
+        let res_0_1 = registry.pools_for(&hashset! {pool_ids[0], pool_ids[1]});
+        assert_eq!(res_0_1.len(), 2);
+        assert!(res_0_1.contains(&weighted_pools[0]));
+        assert!(res_0_1.contains(&weighted_pools[1]));
+
+        let res_0_2 = registry.pools_for(&hashset! {pool_ids[0], pool_ids[2]});
+        assert_eq!(res_0_2.len(), 2);
+        assert!(res_0_2.contains(&weighted_pools[0]));
+        assert!(res_0_2.contains(&weighted_pools[2]));
+
+        let res_1_2 = registry.pools_for(&hashset! {pool_ids[1], pool_ids[2]});
+        assert_eq!(res_1_2.len(), 2);
+        assert!(res_1_2.contains(&weighted_pools[1]));
+        assert!(res_1_2.contains(&weighted_pools[2]));
+
+        let res_012 = registry.pools_for(&hashset! {pool_ids[0], pool_ids[1], pool_ids[2] });
+        assert_eq!(res_012.len(), 3);
+        assert!(res_012.contains(&weighted_pools[0]));
+        assert!(res_012.contains(&weighted_pools[1]));
+        assert!(res_012.contains(&weighted_pools[2]));
     }
 }
