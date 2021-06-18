@@ -205,12 +205,12 @@ impl OrdersQueryRow {
     fn calculate_status(&self) -> OrderStatus {
         match self.kind {
             DbOrderKind::Buy => {
-                if !self.sum_buy.is_zero() && self.sum_buy == self.buy_amount {
+                if is_buy_order_filled(&self.buy_amount, &self.sum_buy) {
                     return OrderStatus::Fulfilled;
                 }
             }
             DbOrderKind::Sell => {
-                if !self.sum_sell.is_zero() && self.sum_sell == self.sell_amount {
+                if is_sell_order_filled(&self.sell_amount, &self.sum_sell, &self.sum_fee) {
                     return OrderStatus::Fulfilled;
                 }
             }
@@ -282,6 +282,22 @@ impl OrdersQueryRow {
     }
 }
 
+fn is_sell_order_filled(
+    amount: &BigDecimal,
+    executed_amount: &BigDecimal,
+    executed_fee: &BigDecimal,
+) -> bool {
+    if executed_amount.is_zero() {
+        return false;
+    }
+    let total_amount = executed_amount + executed_fee;
+    total_amount == *amount
+}
+
+fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> bool {
+    !executed_amount.is_zero() && *amount == *executed_amount
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -336,8 +352,9 @@ mod tests {
         // Filled - sell (filled - 100%)
         let order_row = OrdersQueryRow {
             kind: DbOrderKind::Sell,
-            sell_amount: BigDecimal::from(1),
+            sell_amount: BigDecimal::from(2),
             sum_sell: BigDecimal::from(1),
+            sum_fee: BigDecimal::from(1),
             ..order_row
         };
 
@@ -388,6 +405,7 @@ mod tests {
             kind: DbOrderKind::Sell,
             sell_amount: BigDecimal::from(2),
             sum_sell: BigDecimal::from(1),
+            sum_fee: BigDecimal::default(),
             invalidated: true,
             ..order_row
         };
