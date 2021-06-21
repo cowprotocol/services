@@ -28,8 +28,10 @@
 //!     current balances of each of the pool's tokens (aka the pool's "reserves").
 //!
 //! Tests included here are those pertaining to the expected functionality of `PoolStorage`
-use crate::balancer::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp};
-use crate::event_handling::EventIndex;
+use crate::{
+    balancer::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp},
+    event_handling::EventIndex,
+};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, H256, U256};
@@ -128,6 +130,14 @@ pub struct PoolStorage {
 }
 
 impl PoolStorage {
+    pub fn new(data_fetcher: Box<dyn PoolInfoFetching>) -> Self {
+        PoolStorage {
+            pools_by_token: Default::default(),
+            pools: Default::default(),
+            data_fetcher,
+        }
+    }
+
     /// Returns all pools containing both tokens from `TokenPair`
     pub fn ids_for_pools_containing_token_pair(&self, token_pair: TokenPair) -> HashSet<H256> {
         let empty_set = HashSet::new();
@@ -165,14 +175,6 @@ impl PoolStorage {
             })
             .cloned()
             .collect()
-    }
-
-    pub fn new(data_fetcher: Box<dyn PoolInfoFetching>) -> Self {
-        PoolStorage {
-            pools_by_token: Default::default(),
-            pools: Default::default(),
-            data_fetcher,
-        }
     }
 
     pub async fn insert_events(&mut self, events: Vec<(EventIndex, PoolCreated)>) -> Result<()> {

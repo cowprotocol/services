@@ -1,13 +1,12 @@
 //! Responsible for conversion of a `pool_address` into `WeightedPoolInfo` which is used by the
 //! event handler to construct a `RegisteredWeightedPool`.
-use crate::balancer::swap::fixed_point::Bfp;
-use crate::pool_fetching::MAX_BATCH_SIZE;
-use crate::token_info::TokenInfoFetching;
-use crate::Web3;
+use crate::{
+    balancer::swap::fixed_point::Bfp, pool_fetching::MAX_BATCH_SIZE, token_info::TokenInfoFetching,
+    Web3,
+};
 use anyhow::{anyhow, Result};
 use contracts::{BalancerV2Vault, BalancerV2WeightedPool};
-use ethcontract::batch::CallBatch;
-use ethcontract::{Bytes, H160, H256};
+use ethcontract::{batch::CallBatch, Bytes, H160, H256};
 use mockall::*;
 use std::sync::Arc;
 

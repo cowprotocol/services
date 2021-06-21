@@ -1,26 +1,25 @@
-use crate::balancer::event_handler::BalancerPoolRegistry;
-use crate::balancer::pool_storage::RegisteredWeightedPool;
-use crate::pool_fetching::{handle_contract_error, MAX_BATCH_SIZE};
 use crate::{
-    balancer::pool_storage::WeightedPool,
+    balancer::{
+        event_handler::BalancerPoolRegistry,
+        pool_storage::{RegisteredWeightedPool, WeightedPool},
+    },
+    pool_fetching::{handle_contract_error, MAX_BATCH_SIZE},
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
     Web3,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, BalancerV2WeightedPool};
-use ethcontract::batch::CallBatch;
-use ethcontract::errors::MethodError;
-use ethcontract::{BlockId, Bytes, H160, H256, U256};
+use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, Bytes, H160, H256, U256};
 use std::{collections::HashSet, sync::Arc};
-
-pub trait PoolCacheMetrics: Send + Sync {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
-}
 
 pub struct PoolReserveFetcher {
     pool_registry: Arc<BalancerPoolRegistry>,
     vault: BalancerV2Vault,
     web3: Web3,
+}
+
+pub trait WeightedPoolCacheMetrics: Send + Sync {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
 }
 
 impl PoolReserveFetcher {
@@ -35,7 +34,7 @@ impl PoolReserveFetcher {
 }
 
 pub type BalancerPoolReserveCache =
-    RecentBlockCache<H256, WeightedPool, PoolReserveFetcher, Arc<dyn PoolCacheMetrics>>;
+    RecentBlockCache<H256, WeightedPool, PoolReserveFetcher, Arc<dyn WeightedPoolCacheMetrics>>;
 
 impl CacheKey<WeightedPool> for H256 {
     fn first_ord() -> Self {
@@ -95,7 +94,7 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
     }
 }
 
-impl CacheMetrics for Arc<dyn PoolCacheMetrics> {
+impl CacheMetrics for Arc<dyn WeightedPoolCacheMetrics> {
     fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
         self.pools_fetched(cache_hits, cache_misses)
     }

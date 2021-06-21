@@ -1,6 +1,8 @@
-use crate::balancer::pool_storage::{PoolTokenState, WeightedPool};
-use crate::baseline_solver::BaselineSolvable;
-use crate::conversions::u256_to_big_int;
+use crate::{
+    balancer::pool_storage::{PoolTokenState, WeightedPool},
+    baseline_solver::BaselineSolvable,
+    conversions::u256_to_big_int,
+};
 use error::Error;
 use ethcontract::{H160, U256};
 use fixed_point::Bfp;
