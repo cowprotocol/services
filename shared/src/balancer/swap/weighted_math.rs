@@ -2,8 +2,6 @@
 //! smart contract. The original contract code can be found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol
 
-#![allow(dead_code)]
-
 use super::error::Error;
 use super::fixed_point::Bfp;
 use ethcontract::U256;

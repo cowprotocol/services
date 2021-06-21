@@ -28,7 +28,7 @@
 //!     current balances of each of the pool's tokens (aka the pool's "reserves").
 //!
 //! Tests included here are those pertaining to the expected functionality of `PoolStorage`
-use crate::balancer::info_fetching::PoolInfoFetching;
+use crate::balancer::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp};
 use crate::event_handling::EventIndex;
 use anyhow::Result;
 use derivative::Derivative;
@@ -39,7 +39,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Clone)]
 pub struct PoolTokenState {
     pub balance: U256,
-    pub weight: U256,
+    pub weight: Bfp,
     pub scaling_exponent: u8,
 }
 
@@ -85,7 +85,7 @@ pub struct RegisteredWeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
     pub tokens: Vec<H160>,
-    pub normalized_weights: Vec<U256>,
+    pub normalized_weights: Vec<Bfp>,
     pub scaling_exponents: Vec<u8>,
     pub block_created: u64,
 }
@@ -238,11 +238,10 @@ impl PoolStorage {
 mod tests {
     use super::*;
     use crate::balancer::info_fetching::{MockPoolInfoFetching, WeightedPoolInfo};
-    use ethcontract::U256;
     use maplit::hashset;
     use mockall::predicate::eq;
 
-    pub type PoolInitData = (Vec<H256>, Vec<H160>, Vec<H160>, Vec<U256>, Vec<PoolCreated>);
+    pub type PoolInitData = (Vec<H256>, Vec<H160>, Vec<H160>, Vec<Bfp>, Vec<PoolCreated>);
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
         let pool_ids: Vec<H256> = (start..end + 1)
             .map(|i| H256::from_low_u64_be(i as u64))
@@ -253,7 +252,7 @@ mod tests {
         let tokens: Vec<H160> = (start..end + 2)
             .map(|i| H160::from_low_u64_be(i as u64))
             .collect();
-        let weights: Vec<U256> = (start..end + 2).map(|i| U256::from(i as u64)).collect();
+        let weights: Vec<Bfp> = (start..end + 2).map(|i| Bfp::from_wei(i.into())).collect();
         let creation_events: Vec<PoolCreated> = (start..end + 1)
             .map(|i| PoolCreated {
                 pool_address: pool_addresses[i],
@@ -356,7 +355,7 @@ mod tests {
         let new_pool_id = H256::from_low_u64_be(43110);
         let new_pool_address = H160::from_low_u64_be(42);
         let new_token = H160::from_low_u64_be(808);
-        let new_weight = U256::from(1337);
+        let new_weight = Bfp::from_wei(1337.into());
         let new_creation = PoolCreated {
             pool_address: new_pool_address,
         };

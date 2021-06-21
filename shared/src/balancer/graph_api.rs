@@ -160,9 +160,7 @@ mod pools_query {
                 },
                 |mut registered_pool, token| {
                     registered_pool.tokens.push(token.address);
-                    registered_pool
-                        .normalized_weights
-                        .push(token.weight.as_uint256());
+                    registered_pool.normalized_weights.push(token.weight);
                     registered_pool.scaling_exponents.push(
                         18u8.checked_sub(token.decimals).ok_or_else(|| {
                             anyhow!("unsupported token with more than 18 decimals")
@@ -304,8 +302,8 @@ mod tests {
                 tokens: vec![H160([2; 20]), H160([3; 20])],
                 scaling_exponents: vec![17, 16],
                 normalized_weights: vec![
-                    1_337_000_000_000_000_000u128.into(),
-                    4_200_000_000_000_000_000u128.into(),
+                    Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
+                    Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
                 ],
                 block_created: 42,
             }

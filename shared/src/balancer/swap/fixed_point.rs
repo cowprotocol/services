@@ -3,8 +3,6 @@
 //! found at:
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/FixedPoint.sol
 
-#![allow(dead_code)]
-
 use super::error::Error;
 use anyhow::{anyhow, bail};
 use ethcontract::U256;

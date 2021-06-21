@@ -1,12 +1,13 @@
 //! Responsible for conversion of a `pool_address` into `WeightedPoolInfo` which is used by the
 //! event handler to construct a `RegisteredWeightedPool`.
+use crate::balancer::swap::fixed_point::Bfp;
 use crate::pool_fetching::MAX_BATCH_SIZE;
 use crate::token_info::TokenInfoFetching;
 use crate::Web3;
 use anyhow::{anyhow, Result};
 use contracts::{BalancerV2Vault, BalancerV2WeightedPool};
 use ethcontract::batch::CallBatch;
-use ethcontract::{Bytes, H160, H256, U256};
+use ethcontract::{Bytes, H160, H256};
 use mockall::*;
 use std::sync::Arc;
 
@@ -14,7 +15,7 @@ use std::sync::Arc;
 pub struct WeightedPoolInfo {
     pub pool_id: H256,
     pub tokens: Vec<H160>,
-    pub weights: Vec<U256>,
+    pub weights: Vec<Bfp>,
     pub scaling_exponents: Vec<u8>,
 }
 
@@ -55,7 +56,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
             .methods()
             .get_pool_tokens(Bytes(pool_id.0))
             .batch_call(&mut batch);
-        let normalized_weights = pool_contract
+        let raw_normalized_weights = pool_contract
             .methods()
             .get_normalized_weights()
             .batch_call(&mut batch);
@@ -76,10 +77,16 @@ impl PoolInfoFetching for PoolInfoFetcher {
             .map(|decimals| 18u8.checked_sub(*decimals))
             .collect::<Option<Vec<_>>>()
             .ok_or_else(|| anyhow!("token with more than 18 decimals"))?;
+
+        let weights = raw_normalized_weights
+            .await?
+            .into_iter()
+            .map(Bfp::from_wei)
+            .collect();
         Ok(WeightedPoolInfo {
             pool_id,
             tokens,
-            weights: normalized_weights.await?,
+            weights,
             scaling_exponents,
         })
     }
