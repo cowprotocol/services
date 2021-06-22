@@ -11,7 +11,9 @@
 use super::pool_storage::RegisteredWeightedPool;
 use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
 use anyhow::{bail, Result};
+use ethcontract::{H160, H256};
 use serde_json::json;
+use std::collections::HashMap;
 
 /// The page size when querying pools.
 #[cfg(not(test))]
@@ -37,18 +39,15 @@ impl BalancerSubgraphClient {
     }
 
     /// Retrieves the list of registered pools from the subgraph.
-    pub async fn get_weighted_pools(&self) -> Result<(u64, Vec<RegisteredWeightedPool>)> {
+    pub async fn get_weighted_pools(&self) -> Result<RegisteredWeightedPools> {
         let block_number = self.get_safe_block().await?;
-        let mut results = Vec::<RegisteredWeightedPool>::new();
-        while {
-            // We do paging by last ID instead of using `skip`. This is the
-            // suggested approach to paging best performance:
-            // <https://thegraph.com/docs/graphql-api#pagination>
-            let last_id = results
-                .last()
-                .map(|pool| json!(pool.pool_id))
-                .unwrap_or_else(|| json!(""));
+        let mut pools_by_factory = HashMap::<H160, Vec<RegisteredWeightedPool>>::new();
 
+        // We do paging by last ID instead of using `skip`. This is the
+        // suggested approach to paging best performance:
+        // <https://thegraph.com/docs/graphql-api#pagination>
+        let mut last_id = H256::default();
+        while {
             let page = self
                 .0
                 .query::<pools_query::Data>(
@@ -56,22 +55,31 @@ impl BalancerSubgraphClient {
                     Some(json_map! {
                         "block" => block_number,
                         "pageSize" => QUERY_PAGE_SIZE,
-                        "lastId" => last_id,
+                        "lastId" => json!(last_id),
                     }),
                 )
                 .await?
                 .pools;
-            let has_next_page = page.len() == QUERY_PAGE_SIZE;
 
-            results.reserve(page.len());
+            let has_next_page = page.len() == QUERY_PAGE_SIZE;
+            if let Some(last_pool) = page.last() {
+                last_id = last_pool.id;
+            }
+
             for pool in page {
-                results.push(pool.into_registered(block_number)?);
+                pools_by_factory
+                    .entry(pool.factory.unwrap_or_default())
+                    .or_default()
+                    .push(pool.into_registered(block_number)?);
             }
 
             has_next_page
         } {}
 
-        Ok((block_number, results))
+        Ok(RegisteredWeightedPools {
+            fetched_block_number: block_number,
+            pools_by_factory,
+        })
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -92,6 +100,20 @@ impl BalancerSubgraphClient {
     }
 }
 
+/// Result of the registered weighted pool query.
+pub struct RegisteredWeightedPools {
+    /// The block number that the data was fetched, and for which the registered
+    /// weighted pools can be considered up to date.
+    pub fetched_block_number: u64,
+    /// The registered pools organized by pool factory.
+    ///
+    /// This allows `Weighted2TokenPool`s and `WeightedPool`s with only two
+    /// tokens to be differentiated from one another.
+    ///
+    /// The pools for address `0` indicate pools created without a factory.
+    pub pools_by_factory: HashMap<H160, Vec<RegisteredWeightedPool>>,
+}
+
 mod pools_query {
     use crate::balancer::{pool_storage::RegisteredWeightedPool, swap::fixed_point::Bfp};
     use anyhow::{anyhow, Result};
@@ -110,6 +132,7 @@ mod pools_query {
             ) {
                 id
                 address
+                factory
                 tokens {
                     address
                     decimals
@@ -129,6 +152,7 @@ mod pools_query {
     pub struct Pool {
         pub id: H256,
         pub address: H160,
+        pub factory: Option<H160>,
         pub tokens: Vec<Token>,
     }
 
@@ -215,6 +239,7 @@ mod tests {
                     {
                         "address": "0x2222222222222222222222222222222222222222",
                         "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                        "factory": "0x5555555555555555555555555555555555555555",
                         "tokens": [
                             {
                                 "address": "0x3333333333333333333333333333333333333333",
@@ -235,6 +260,7 @@ mod tests {
                 pools: vec![Pool {
                     id: H256([0x11; 32]),
                     address: H160([0x22; 20]),
+                    factory: Some(H160([0x55; 20])),
                     tokens: vec![
                         Token {
                             address: H160([0x33; 20]),
@@ -280,6 +306,7 @@ mod tests {
         let pool = Pool {
             id: H256([2; 32]),
             address: H160([1; 20]),
+            factory: None,
             tokens: vec![
                 Token {
                     address: H160([2; 20]),
@@ -317,6 +344,7 @@ mod tests {
         let pool = Pool {
             id: H256([2; 32]),
             address: H160([1; 20]),
+            factory: None,
             tokens: vec![Token {
                 address: H160([2; 20]),
                 decimals: 19,
@@ -330,12 +358,16 @@ mod tests {
     #[ignore]
     async fn balancer_subgraph_query() {
         let client = BalancerSubgraphClient::for_chain(1).unwrap();
-        let (block_number, pools) = client.get_weighted_pools().await.unwrap();
-        println!("{:#?}", pools);
+        let pools = client.get_weighted_pools().await.unwrap();
+        println!("{:#?}", pools.pools_by_factory);
         println!(
             "Retrieved {} total pools at block {}",
-            pools.len(),
-            block_number,
+            pools
+                .pools_by_factory
+                .values()
+                .map(|p| p.len())
+                .sum::<usize>(),
+            pools.fetched_block_number,
         );
     }
 }
