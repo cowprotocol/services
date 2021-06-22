@@ -38,7 +38,7 @@ impl LiquidityCollector {
         Ok(limit_orders
             .into_iter()
             .map(Liquidity::Limit)
-            .chain(amms.into_iter().map(Liquidity::Amm))
+            .chain(amms.into_iter().map(Liquidity::ConstantProduct))
             .collect())
     }
 }

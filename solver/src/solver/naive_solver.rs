@@ -1,7 +1,7 @@
 mod multi_order_solver;
 
 use crate::{
-    liquidity::{AmmOrder, LimitOrder, Liquidity},
+    liquidity::{ConstantProductOrder, LimitOrder, Liquidity},
     settlement::Settlement,
     solver::Solver,
 };
@@ -31,7 +31,7 @@ impl Solver for NaiveSolver {
 
 async fn settle(
     orders: impl Iterator<Item = LimitOrder>,
-    uniswaps: HashMap<TokenPair, AmmOrder>,
+    uniswaps: HashMap<TokenPair, ConstantProductOrder>,
 ) -> Vec<Settlement> {
     // The multi order solver matches as many orders as possible together with one uniswap pool.
     // Settlements between different token pairs are thus independent.
@@ -44,7 +44,7 @@ async fn settle(
 fn settle_pair(
     pair: TokenPair,
     orders: Vec<LimitOrder>,
-    uniswaps: &HashMap<TokenPair, AmmOrder>,
+    uniswaps: &HashMap<TokenPair, ConstantProductOrder>,
 ) -> Option<Settlement> {
     let uniswap = match uniswaps.get(&pair) {
         Some(uniswap) => uniswap,
@@ -73,11 +73,13 @@ fn usable_order(order: &LimitOrder) -> bool {
     !order.sell_amount.is_zero() && !order.buy_amount.is_zero()
 }
 
-fn extract_deepest_amm_liquidity(liquidity: &[Liquidity]) -> HashMap<TokenPair, AmmOrder> {
+fn extract_deepest_amm_liquidity(
+    liquidity: &[Liquidity],
+) -> HashMap<TokenPair, ConstantProductOrder> {
     let mut result = HashMap::new();
     for liquidity in liquidity {
         match liquidity {
-            Liquidity::Amm(order) => {
+            Liquidity::ConstantProduct(order) => {
                 let deepest_so_far = result.entry(order.tokens).or_insert_with(|| order.clone());
                 if deepest_so_far.constant_product() < order.constant_product() {
                     result.insert(order.tokens, order.clone());
@@ -107,21 +109,21 @@ mod tests {
         let handler = CapturingSettlementHandler::arc();
         let liquidity = vec![
             // Deep pool
-            AmmOrder {
+            ConstantProductOrder {
                 tokens: token_pair,
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: handler.clone(),
             },
             // Shallow pool
-            AmmOrder {
+            ConstantProductOrder {
                 tokens: token_pair,
                 reserves: (100, 100),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: handler.clone(),
             },
             // unrelated pool
-            AmmOrder {
+            ConstantProductOrder {
                 tokens: unrelated_token_pair,
                 reserves: (10_000_000, 10_000_000),
                 fee: Ratio::new(3, 1000),
@@ -132,7 +134,7 @@ mod tests {
             &liquidity
                 .iter()
                 .cloned()
-                .map(Liquidity::Amm)
+                .map(Liquidity::ConstantProduct)
                 .collect::<Vec<_>>(),
         );
         assert_eq!(result[&token_pair].reserves, liquidity[0].reserves);

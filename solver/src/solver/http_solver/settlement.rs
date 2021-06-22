@@ -1,6 +1,6 @@
 use super::model::*;
 use crate::{
-    liquidity::{AmmOrder, AmmOrderExecution, LimitOrder},
+    liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
     settlement::Settlement,
 };
 use anyhow::{anyhow, ensure, Result};
@@ -17,7 +17,7 @@ use std::{
 pub struct SettlementContext {
     pub tokens: HashMap<String, H160>,
     pub limit_orders: HashMap<String, LimitOrder>,
-    pub amm_orders: HashMap<String, AmmOrder>,
+    pub constant_product_orders: HashMap<String, ConstantProductOrder>,
 }
 
 pub fn convert_settlement(
@@ -52,7 +52,7 @@ impl ExecutedLimitOrder {
 }
 
 struct ExecutedAmm {
-    order: AmmOrder,
+    order: ConstantProductOrder,
     input: (H160, U256),
     output: (H160, U256),
 }
@@ -61,7 +61,8 @@ impl IntermediateSettlement {
     fn new(settled: SettledBatchAuctionModel, context: SettlementContext) -> Result<Self> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.limit_orders, settled.orders)?;
-        let executed_amms = match_prepared_and_settled_amms(context.amm_orders, settled.uniswaps)?;
+        let executed_amms =
+            match_prepared_and_settled_amms(context.constant_product_orders, settled.uniswaps)?;
         let prices = match_settled_prices(
             &context.tokens,
             executed_limit_orders.as_slice(),
@@ -117,7 +118,7 @@ fn match_prepared_and_settled_orders(
 }
 
 fn match_prepared_and_settled_amms(
-    mut prepared_orders: HashMap<String, AmmOrder>,
+    mut prepared_orders: HashMap<String, ConstantProductOrder>,
     settled_orders: HashMap<String, UpdatedUniswapModel>,
 ) -> Result<Vec<ExecutedAmm>> {
     settled_orders
@@ -228,13 +229,13 @@ mod tests {
         let orders = hashmap! { "lo0".to_string() => limit_order };
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let amm_order = AmmOrder {
+        let constant_product_order = ConstantProductOrder {
             tokens: TokenPair::new(t0, t1).unwrap(),
             reserves: (3, 4),
             fee: 5.into(),
             settlement_handling: amm_handler.clone(),
         };
-        let amms = hashmap! { "amm0".to_string() => amm_order };
+        let constant_product_orders = hashmap! { "amm0".to_string() => constant_product_order };
 
         let executed_order = ExecutedOrderModel {
             exec_buy_amount: 6.into(),
@@ -258,7 +259,7 @@ mod tests {
         let prepared = SettlementContext {
             tokens,
             limit_orders: orders,
-            amm_orders: amms,
+            constant_product_orders,
         };
         let settlement = convert_settlement(settled, prepared).unwrap();
         assert_eq!(

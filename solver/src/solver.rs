@@ -245,7 +245,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let liquidity = vec![
             // Only filter limit orders
-            Liquidity::Amm(Default::default()),
+            Liquidity::ConstantProduct(Default::default()),
             // Orders with high enough amount
             Liquidity::Limit(LimitOrder {
                 sell_amount: 100_000.into(),

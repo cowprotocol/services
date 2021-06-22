@@ -1,6 +1,6 @@
 use crate::{liquidity, settlement::Settlement};
 use anyhow::Result;
-use liquidity::{AmmOrder, AmmOrderExecution, LimitOrder};
+use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
 use model::order::OrderKind;
 use num::{rational::Ratio, BigInt, BigRational};
 use primitive_types::U256;
@@ -36,7 +36,7 @@ impl TokenContext {
 
 pub fn solve(
     orders: impl Iterator<Item = LimitOrder> + Clone,
-    pool: &AmmOrder,
+    pool: &ConstantProductOrder,
 ) -> Option<Settlement> {
     let mut orders: Vec<LimitOrder> = orders.collect();
     while !orders.is_empty() {
@@ -78,7 +78,7 @@ pub fn solve(
 ///
 fn solve_orders(
     orders: impl Iterator<Item = LimitOrder> + Clone,
-    pool: &AmmOrder,
+    pool: &ConstantProductOrder,
     context_a: &TokenContext,
     context_b: &TokenContext,
 ) -> Option<Settlement> {
@@ -116,7 +116,7 @@ fn solve_without_uniswap(
 ///
 fn solve_with_uniswap(
     orders: impl Iterator<Item = LimitOrder> + Clone,
-    pool: &AmmOrder,
+    pool: &ConstantProductOrder,
     shortage: &TokenContext,
     excess: &TokenContext,
 ) -> Option<Settlement> {
@@ -149,7 +149,7 @@ fn solve_with_uniswap(
     Some(settlement)
 }
 
-impl AmmOrder {
+impl ConstantProductOrder {
     fn get_reserve(&self, token: &Address) -> Option<U256> {
         if &self.tokens.get().0 == token {
             Some(self.reserves.0.into())
@@ -163,7 +163,7 @@ impl AmmOrder {
 
 fn split_into_contexts(
     orders: impl Iterator<Item = LimitOrder>,
-    pool: &AmmOrder,
+    pool: &ConstantProductOrder,
 ) -> (TokenContext, TokenContext) {
     let mut contexts = HashMap::new();
     for order in orders {
@@ -312,7 +312,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -372,7 +372,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -428,7 +428,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -488,7 +488,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1000).as_u128(), to_wei(1000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -552,7 +552,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -633,7 +633,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_000).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -679,7 +679,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (to_wei(1_000_001).as_u128(), to_wei(1_000_000).as_u128()),
             fee: Ratio::new(3, 1000),
@@ -805,7 +805,7 @@ mod tests {
         ];
 
         let amm_handler = CapturingSettlementHandler::arc();
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (u128::MAX, u128::MAX),
             fee: Ratio::new(3, 1000),
@@ -848,7 +848,7 @@ mod tests {
             .into(),
         ];
         // Reserves are much smaller than buy amount
-        let pool = AmmOrder {
+        let pool = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (25000075, 2500007500),
             fee: Ratio::new(3, 1000),

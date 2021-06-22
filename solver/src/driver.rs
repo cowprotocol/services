@@ -512,7 +512,7 @@ fn liquidity_with_price(
                 Liquidity::Limit(limit_order) => [limit_order.sell_token, limit_order.buy_token]
                     .iter()
                     .all(|token| prices.contains_key(token)),
-                Liquidity::Amm(_) => true,
+                Liquidity::ConstantProduct(_) => true,
             });
     if !removed_orders.is_empty() {
         tracing::debug!(
@@ -536,7 +536,7 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
 mod tests {
     use super::*;
     use crate::{
-        liquidity::{tests::CapturingSettlementHandler, AmmOrder, LimitOrder},
+        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
         settlement::Trade,
     };
     use maplit::hashmap;
@@ -570,7 +570,7 @@ mod tests {
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".into(),
             }),
-            Liquidity::Amm(AmmOrder {
+            Liquidity::ConstantProduct(ConstantProductOrder {
                 tokens: TokenPair::new(buy_token, native_token).unwrap(),
                 reserves: (1_000_000, 1_000_000),
                 fee: Ratio::new(3, 1000),

@@ -17,7 +17,7 @@ pub mod uniswap;
 #[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
 pub enum Liquidity {
     Limit(LimitOrder),
-    Amm(AmmOrder),
+    ConstantProduct(ConstantProductOrder),
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -106,14 +106,14 @@ impl Default for LimitOrder {
 
 /// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
-pub struct AmmOrder {
+pub struct ConstantProductOrder {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
-impl std::fmt::Debug for AmmOrder {
+impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AMM {:?}", self.tokens)
     }
@@ -125,13 +125,13 @@ pub struct AmmOrderExecution {
     pub output: (H160, U256),
 }
 
-impl AmmOrder {
+impl ConstantProductOrder {
     pub fn constant_product(&self) -> U256 {
         U256::from(self.reserves.0) * U256::from(self.reserves.1)
     }
 }
 
-impl Settleable for AmmOrder {
+impl Settleable for ConstantProductOrder {
     type Execution = AmmOrderExecution;
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
@@ -140,9 +140,9 @@ impl Settleable for AmmOrder {
 }
 
 #[cfg(test)]
-impl Default for AmmOrder {
+impl Default for ConstantProductOrder {
     fn default() -> Self {
-        AmmOrder {
+        ConstantProductOrder {
             tokens: Default::default(),
             reserves: Default::default(),
             fee: Ratio::new(0, 1),

@@ -17,7 +17,7 @@ pub const MAX_HOPS: usize = 2;
 use super::slippage;
 use crate::{interactions::UniswapInteraction, settlement::SettlementEncoder};
 
-use super::{AmmOrder, AmmOrderExecution, LimitOrder, SettlementHandling};
+use super::{AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
@@ -58,7 +58,7 @@ impl UniswapLikeLiquidity {
         &self,
         offchain_orders: impl Iterator<Item = &LimitOrder> + Send + Sync,
         at_block: Block,
-    ) -> Result<Vec<AmmOrder>> {
+    ) -> Result<Vec<ConstantProductOrder>> {
         let mut pools = HashSet::new();
 
         for order in offchain_orders {
@@ -81,7 +81,7 @@ impl UniswapLikeLiquidity {
             tokens.insert(pool.tokens.get().0);
             tokens.insert(pool.tokens.get().1);
 
-            result.push(AmmOrder {
+            result.push(ConstantProductOrder {
                 tokens: pool.tokens,
                 reserves: pool.reserves,
                 fee: pool.fee,
@@ -151,7 +151,7 @@ impl Inner {
     }
 }
 
-impl SettlementHandling<AmmOrder> for Inner {
+impl SettlementHandling<ConstantProductOrder> for Inner {
     // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         encoder.append_to_execution_plan(self._settle(execution.input, execution.output));
