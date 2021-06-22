@@ -128,12 +128,6 @@ impl<'de> Deserialize<'de> for PriceResponse {
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
-            best_route: Vec<BestRoute>,
-        }
-
-        #[derive(Deserialize, Clone)]
-        #[serde(rename_all = "camelCase")]
-        struct BestRoute {
             #[serde(with = "u256_decimal")]
             src_amount: U256,
             #[serde(with = "u256_decimal")]
@@ -141,16 +135,11 @@ impl<'de> Deserialize<'de> for PriceResponse {
         }
 
         let parsed = ParsedRaw::deserialize(deserializer)?;
-        let price_route = serde_json::from_value::<PriceRoute>(parsed.price_route.clone())
-            .map_err(D::Error::custom)?;
-        let BestRoute {
+        let PriceRoute {
             src_amount,
             dest_amount,
-        } = price_route
-            .best_route
-            .first()
-            .cloned()
-            .ok_or_else(|| D::Error::custom("No best route"))?;
+        } = serde_json::from_value::<PriceRoute>(parsed.price_route.clone())
+            .map_err(D::Error::custom)?;
         Ok(PriceResponse {
             price_route_raw: parsed.price_route,
             src_amount,
@@ -232,14 +221,14 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e() {
-        let from = shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
-        let to = shared::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
+        let from = shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let to = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
             from,
             to,
             from_decimals: 18,
             to_decimals: 18,
-            amount: 1_000_000_000_000_000_000u128.into(),
+            amount: 135_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
         };
 
