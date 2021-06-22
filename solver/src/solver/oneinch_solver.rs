@@ -113,7 +113,7 @@ impl OneInchSolver {
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = self.client.get_swap(query).await?;
 
-        if !swap.to_token_amount >= order.buy_amount {
+        if !satisfies_limit_price(&swap, &order) {
             tracing::debug!("Order limit price not respected");
             return Ok(None);
         }
@@ -142,6 +142,10 @@ impl OneInchSolver {
     fn web3(&self) -> DynWeb3 {
         self.settlement_contract.raw_instance().web3()
     }
+}
+
+fn satisfies_limit_price(swap: &Swap, order: &LimitOrder) -> bool {
+    swap.to_token_amount >= order.buy_amount
 }
 
 impl Interaction for Swap {
@@ -220,6 +224,28 @@ mod tests {
         let filtered_protocols = solver.supported_protocols().await.unwrap().unwrap();
 
         assert_eq!(all_protocols[1..], filtered_protocols[..]);
+    }
+
+    #[test]
+    fn test_satisfies_limit_price() {
+        let order = LimitOrder {
+            sell_amount: 1000.into(),
+            buy_amount: 100.into(),
+            ..Default::default()
+        };
+        let swap = Swap {
+            from_token_amount: 1000.into(),
+            to_token_amount: 90.into(),
+            ..Default::default()
+        };
+        assert!(!satisfies_limit_price(&swap, &order));
+
+        let swap = Swap {
+            from_token_amount: 1000.into(),
+            to_token_amount: 110.into(),
+            ..Default::default()
+        };
+        assert!(satisfies_limit_price(&swap, &order));
     }
 
     #[tokio::test]
