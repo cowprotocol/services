@@ -296,6 +296,84 @@ paths:
           description: Token non-existent or no valid price found
         500:
           description: Unexpected internal error while processing the request
+  /api/v1/feeAndQuote/sell:
+    get:
+      description: |
+        For a total available amount of sell_token returns the fee in the sell token and the
+        resulting buy amount after the fee has been deducted.
+        sellAmountBeforeFee is the total amount that is available for the order. From it the fee
+        is deducted and the buy amount is calculated.
+      parameters:
+        - name: sellToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: buyToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: sellAmountBeforeFee
+          in: query
+          schema:
+            $ref: "#/components/schemas/TokenAmount"
+          required: true
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeAndQuoteSellResponse"
+        400:
+          description: Error with the input data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeAndQuoteError"
+        404:
+          description: Token non-existent or not connected to native token
+        500:
+          description: Unexpected internal error while processing the request
+  /api/v1/feeAndQuote/buy:
+    get:
+      description: |
+        For a target buy amount returns the total sell_amount that is needed and how much of it is
+        the fee.
+      parameters:
+        - name: sellToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: buyToken
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: true
+        - name: buyAmountAfterFee
+          in: query
+          schema:
+            $ref: "#/components/schemas/TokenAmount"
+          required: true
+      responses:
+        200:
+          description: ok
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeAndQuoteBuyResponse"
+        400:
+          description: Error with the input data.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeeAndQuoteError"
+        404:
+          description: Token non-existent or not connected to native token
+        500:
+          description: Unexpected internal error while processing the request
 components:
   schemas:
     TransactionHash:
@@ -589,6 +667,33 @@ components:
         errorType:
           type: string
           enum: [InvalidSignature, WrongOwner, OrderNotFound, AlreadyCancelled, OrderFullyExecuted, OrderExpired]
+        description:
+          type: string
+      required:
+        - errorType
+        - description
+    FeeAndQuoteSellResponse:
+      type: object
+      properties:
+        fee:
+          $ref: "#/components/schemas/FeeInformation"
+        buyAmountAfterFee:
+          description: The buy amount after deducting the fee.
+          $ref: "#/components/schemas/TokenAmount"
+    FeeAndQuoteBuyResponse:
+      type: object
+      properties:
+        fee:
+          $ref: "#/components/schemas/FeeInformation"
+        sellAmountBeforeFee:
+          description: The sell amount including the fee.
+          $ref: "#/components/schemas/TokenAmount"
+    FeeAndQuoteError:
+      type: object
+      properties:
+        errorType:
+          type: string
+          enum: ["NoLiquidity", "UnsupportedToken", "AmountIsZero", "SellAmountDoesNotCoverFee"]
         description:
           type: string
       required:

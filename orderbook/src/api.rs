@@ -1,5 +1,6 @@
 mod cancel_order;
 mod create_order;
+mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
 mod get_order_by_uid;
@@ -34,12 +35,16 @@ pub fn handle_all_routes(
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
     let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
-    let fee_info = get_fee_info::get_fee_info(fee_calculator);
+    let fee_info = get_fee_info::get_fee_info(fee_calculator.clone());
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
     let cancel_order = cancel_order::cancel_order(orderbook);
     let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
+    let get_fee_and_quote_sell =
+        get_fee_and_quote::get_fee_and_quote_sell(fee_calculator.clone(), price_estimator.clone());
+    let get_fee_and_quote_buy =
+        get_fee_and_quote::get_fee_and_quote_buy(fee_calculator, price_estimator.clone());
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -61,6 +66,12 @@ pub fn handle_all_routes(
             .or(cancel_order.map(|reply| LabelledReply::new(reply, "cancel_order")))
             .unify()
             .or(get_amount_estimate.map(|reply| LabelledReply::new(reply, "get_amount_estimate")))
+            .unify()
+            .or(get_fee_and_quote_sell
+                .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_sell")))
+            .unify()
+            .or(get_fee_and_quote_buy
+                .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_buy")))
             .unify(),
     );
     routes_with_labels

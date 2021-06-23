@@ -11,7 +11,7 @@ use crate::database::Database;
 use gas_estimation::GasPriceEstimating;
 use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
 
-type Measurement = (U256, DateTime<Utc>);
+pub type Measurement = (U256, DateTime<Utc>);
 
 pub type EthAwareMinFeeCalculator = EthAdapter<MinFeeCalculator>;
 
@@ -32,7 +32,7 @@ pub struct MinFeeCalculator {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait MinFeeCalculating {
+pub trait MinFeeCalculating: Send + Sync {
     // Returns the minimum amount of fee required to accept an order selling the specified order
     // and an expiry date for the estimate.
     // Returns an error if there is some estimation error and Ok(None) if no information about the given
