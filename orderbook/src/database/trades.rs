@@ -1,12 +1,17 @@
 use crate::conversions::{big_decimal_to_big_uint, h160_from_vec, h256_from_vec};
-use crate::database::Database;
+use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::BigDecimal;
 use ethcontract::H160;
-use futures::{stream::TryStreamExt, Stream};
+use futures::stream::{BoxStream, StreamExt, TryStreamExt};
 use model::order::OrderUid;
 use model::trade::Trade;
 use std::convert::TryInto;
+
+#[async_trait::async_trait]
+pub trait TradeRetrieving: Send + Sync {
+    fn trades<'a>(&'a self, filter: &'a TradeFilter) -> BoxStream<'a, Result<Trade>>;
+}
 
 /// Any default value means that this field is unfiltered.
 #[derive(Debug, Default, PartialEq)]
@@ -15,8 +20,8 @@ pub struct TradeFilter {
     pub order_uid: Option<OrderUid>,
 }
 
-impl Database {
-    pub fn trades<'a>(&'a self, filter: &'a TradeFilter) -> impl Stream<Item = Result<Trade>> + 'a {
+impl TradeRetrieving for Postgres {
+    fn trades<'a>(&'a self, filter: &'a TradeFilter) -> BoxStream<'a, Result<Trade>> {
         const QUERY: &str = "\
             SELECT \
                 t.block_number, \
@@ -52,6 +57,7 @@ impl Database {
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: TradesQueryRow| async move { row.into_trade() })
+            .boxed()
     }
 }
 
@@ -108,9 +114,9 @@ impl TradesQueryRow {
 
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    use crate::database::{Event, Settlement as DbSettlement, Trade as DbTrade};
+    use crate::database::events::{Event, Settlement as DbSettlement, Trade as DbTrade};
+    use crate::database::orders::OrderStoring;
     use ethcontract::H256;
     use model::order::{Order, OrderCreation, OrderMetaData};
     use model::trade::Trade;
@@ -129,7 +135,7 @@ mod tests {
     }
 
     async fn add_trade(
-        db: &Database,
+        db: &Postgres,
         owner: H160,
         order_uid: OrderUid,
         event_index: EventIndex,
@@ -143,7 +149,7 @@ mod tests {
             owner,
             ..Default::default()
         };
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             event_index,
             Event::Trade(DbTrade {
                 order_uid,
@@ -156,7 +162,7 @@ mod tests {
     }
 
     async fn add_order_and_trade(
-        db: &Database,
+        db: &Postgres,
         owner: H160,
         order_uid: OrderUid,
         event_index: EventIndex,
@@ -176,7 +182,7 @@ mod tests {
         add_trade(db, owner, order_uid, event_index, tx_hash).await
     }
 
-    async fn assert_trades(db: &Database, filter: &TradeFilter, expected: &[Trade]) {
+    async fn assert_trades(db: &Postgres, filter: &TradeFilter, expected: &[Trade]) {
         let filtered = db
             .trades(&filter)
             .try_collect::<HashSet<Trade>>()
@@ -190,7 +196,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_without_filter() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
@@ -212,7 +218,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_owner_filter() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(3, 2).await;
 
@@ -262,7 +268,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_order_uid_filter() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let (owners, order_ids) = generate_owners_and_order_ids(2, 3).await;
@@ -313,7 +319,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trade_without_matching_order() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let (owners, order_ids) = generate_owners_and_order_ids(1, 1).await;
@@ -347,12 +353,12 @@ mod tests {
 
     // Testing Trades with settlements
     async fn add_settlement(
-        db: &Database,
+        db: &Postgres,
         event_index: EventIndex,
         solver: H160,
         transaction_hash: H256,
     ) -> DbSettlement {
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             event_index,
             Event::Settlement(DbSettlement {
                 solver,
@@ -370,7 +376,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_having_same_settlement_with_and_without_orders() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
@@ -416,7 +422,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_same_settlement_no_orders() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
@@ -462,7 +468,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_trades_with_two_settlements_in_same_block() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;

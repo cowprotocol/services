@@ -1,15 +1,12 @@
-mod events;
-mod fees;
-mod orders;
-mod trades;
+pub mod events;
+pub mod fees;
+pub mod orders;
+pub mod trades;
 
 use anyhow::Result;
+use futures::stream::BoxStream;
 use sqlx::{Executor, PgPool, Row};
 use std::collections::HashMap;
-
-pub use events::*;
-pub use orders::OrderFilter;
-pub use trades::TradeFilter;
 
 // TODO: There is remaining optimization potential by implementing sqlx encoding and decoding for
 // U256 directly instead of going through BigDecimal. This is not very important as this is fast
@@ -26,25 +23,13 @@ const ALL_TABLES: [&str; 5] = [
 
 // The pool uses an Arc internally.
 #[derive(Clone)]
-pub struct Database {
+pub struct Postgres {
     pool: PgPool,
-}
-
-#[derive(Debug)]
-pub enum InsertionError {
-    DuplicatedRecord,
-    DbError(sqlx::Error),
-}
-
-impl From<sqlx::Error> for InsertionError {
-    fn from(err: sqlx::Error) -> Self {
-        Self::DbError(err)
-    }
 }
 
 // The implementation is split up into several modules which contain more public methods.
 
-impl Database {
+impl Postgres {
     pub fn new(uri: &str) -> Result<Self> {
         Ok(Self {
             pool: PgPool::connect_lazy(uri)?,
@@ -79,11 +64,12 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::orders::OrderStoring;
 
     #[tokio::test]
     #[ignore]
     async fn postgres_count_rows_in_tables_works() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let counts = db.count_rows_in_tables().await.unwrap();

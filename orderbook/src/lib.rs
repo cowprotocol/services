@@ -7,10 +7,10 @@ pub mod fee;
 pub mod metrics;
 pub mod orderbook;
 
-use crate::database::Database;
 use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
+use database::trades::TradeRetrieving;
 use fee::EthAwareMinFeeCalculator;
 use metrics::Metrics;
 use model::DomainSeparator;
@@ -23,7 +23,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 
 pub fn serve_task(
-    database: Database,
+    database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,

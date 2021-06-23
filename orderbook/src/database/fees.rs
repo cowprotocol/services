@@ -1,4 +1,4 @@
-use super::{orders::DbOrderKind, Database};
+use super::{orders::DbOrderKind, Postgres};
 use crate::conversions::*;
 use crate::fee::MinFeeStoring;
 
@@ -10,7 +10,7 @@ use model::order::OrderKind;
 use shared::maintenance::Maintaining;
 
 #[async_trait::async_trait]
-impl MinFeeStoring for Database {
+impl MinFeeStoring for Postgres {
     async fn save_fee_measurement(
         &self,
         sell_token: H160,
@@ -72,7 +72,7 @@ impl MinFeeStoring for Database {
     }
 }
 
-impl Database {
+impl Postgres {
     pub async fn remove_expired_fee_measurements(&self, max_expiry: DateTime<Utc>) -> Result<()> {
         const QUERY: &str = "DELETE FROM min_fee_measurements WHERE expiration_timestamp < $1;";
         sqlx::query(QUERY)
@@ -85,7 +85,7 @@ impl Database {
 }
 
 #[async_trait::async_trait]
-impl Maintaining for Database {
+impl Maintaining for Postgres {
     async fn run_maintenance(&self) -> Result<()> {
         self.remove_expired_fee_measurements(Utc::now())
             .await
@@ -95,14 +95,13 @@ impl Maintaining for Database {
 
 #[cfg(test)]
 mod tests {
-    use chrono::Duration;
-
     use super::*;
+    use chrono::Duration;
 
     #[tokio::test]
     #[ignore]
     async fn save_and_load_fee_measurements() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let now = Utc::now();

@@ -8,9 +8,13 @@ mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
 
-use crate::metrics::{end_request, LabelledReply, Metrics};
-use crate::{database::Database, metrics::start_request};
-use crate::{fee::EthAwareMinFeeCalculator, orderbook::Orderbook};
+use crate::{
+    database::trades::TradeRetrieving,
+    fee::EthAwareMinFeeCalculator,
+    metrics::start_request,
+    metrics::{end_request, LabelledReply, Metrics},
+    orderbook::Orderbook,
+};
 use anyhow::Error as anyhowError;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
@@ -26,7 +30,7 @@ use warp::{
 };
 
 pub fn handle_all_routes(
-    database: Database,
+    database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,

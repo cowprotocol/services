@@ -1,15 +1,12 @@
-use std::collections::HashMap;
-
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
+use gas_estimation::GasPriceEstimating;
 use model::order::{OrderKind, BUY_ETH_ADDRESS};
 use primitive_types::{H160, U256};
+use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
-
-use crate::database::Database;
-use gas_estimation::GasPriceEstimating;
-use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
 
 pub type Measurement = (U256, DateTime<Utc>);
 
@@ -24,7 +21,7 @@ pub struct MinFeeCalculator {
     price_estimator: Arc<dyn PriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
     native_token: H160,
-    measurements: Box<dyn MinFeeStoring>,
+    measurements: Arc<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     discount_factor: f64,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -108,7 +105,7 @@ impl EthAwareMinFeeCalculator {
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
-        database: Database,
+        measurements: Arc<dyn MinFeeStoring>,
         discount_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
@@ -117,7 +114,7 @@ impl EthAwareMinFeeCalculator {
                 price_estimator,
                 gas_estimator,
                 native_token,
-                database,
+                measurements,
                 discount_factor,
                 bad_token_detector,
             ),
@@ -158,7 +155,7 @@ impl MinFeeCalculator {
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
-        database: Database,
+        measurements: Arc<dyn MinFeeStoring>,
         discount_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
@@ -166,7 +163,7 @@ impl MinFeeCalculator {
             price_estimator,
             gas_estimator,
             native_token,
-            measurements: Box::new(database),
+            measurements,
             now: Box::new(Utc::now),
             discount_factor,
             bad_token_detector,
@@ -437,7 +434,7 @@ mod tests {
                 gas_estimator,
                 price_estimator,
                 native_token: Default::default(),
-                measurements: Box::new(InMemoryFeeStore::default()),
+                measurements: Arc::new(InMemoryFeeStore::default()),
                 now,
                 discount_factor: 1.0,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
@@ -517,7 +514,7 @@ mod tests {
             price_estimator,
             gas_estimator: gas_price_estimator,
             native_token: Default::default(),
-            measurements: Box::new(InMemoryFeeStore::default()),
+            measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             discount_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),

@@ -1,7 +1,6 @@
 use crate::{
     account_balances::BalanceFetching,
-    database::OrderFilter,
-    database::{Database, InsertionError},
+    database::orders::{InsertionError, OrderFilter, OrderStoring},
     fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
 };
 use anyhow::Result;
@@ -51,7 +50,7 @@ pub enum OrderCancellationResult {
 
 pub struct Orderbook {
     domain_separator: DomainSeparator,
-    database: Database,
+    database: Arc<dyn OrderStoring>,
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<EthAwareMinFeeCalculator>,
     min_order_validity_period: Duration,
@@ -62,7 +61,7 @@ pub struct Orderbook {
 impl Orderbook {
     pub fn new(
         domain_separator: DomainSeparator,
-        database: Database,
+        database: Arc<dyn OrderStoring>,
         balance_fetcher: Box<dyn BalanceFetching>,
         fee_validator: Arc<EthAwareMinFeeCalculator>,
         min_order_validity_period: Duration,

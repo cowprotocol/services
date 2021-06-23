@@ -6,7 +6,7 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    database::{Database, OrderFilter},
+    database::{orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
     metrics::Metrics,
@@ -98,7 +98,7 @@ struct Arguments {
     pub pool_cache_lru_size: usize,
 }
 
-pub async fn database_metrics(metrics: Arc<Metrics>, database: Database) -> ! {
+pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
     loop {
         match database.count_rows_in_tables().await {
             Ok(counts) => {
@@ -147,7 +147,8 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let database = Database::new(args.db_url.as_str()).expect("failed to create database");
+    let database =
+        Arc::new(Postgres::new(args.db_url.as_str()).expect("failed to create database"));
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
@@ -159,8 +160,11 @@ async fn main() {
         None
     };
 
-    let event_updater =
-        EventUpdater::new(settlement_contract.clone(), database.clone(), sync_start);
+    let event_updater = EventUpdater::new(
+        settlement_contract.clone(),
+        database.as_ref().clone(),
+        sync_start,
+    );
     let balance_fetcher =
         Web3BalanceFetcher::new(web3.clone(), gp_allowance, settlement_contract.address());
 
@@ -270,7 +274,7 @@ async fn main() {
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![
             orderbook.clone(),
-            Arc::new(database.clone()),
+            database.clone(),
             Arc::new(event_updater),
             pool_fetcher,
         ],
@@ -288,7 +292,7 @@ async fn main() {
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(metrics, database));
+    let db_metrics_task = task::spawn(database_metrics(metrics, database.as_ref().clone()));
 
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),

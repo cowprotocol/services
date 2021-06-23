@@ -1,5 +1,5 @@
 use crate::api::convert_get_orders_error_to_reply;
-use crate::database::OrderFilter;
+use crate::database::orders::OrderFilter;
 use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::{Order, OrderUid};

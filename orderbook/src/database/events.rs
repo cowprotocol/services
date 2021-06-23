@@ -1,4 +1,4 @@
-use super::Database;
+use super::Postgres;
 use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
 use contracts::gpv2_settlement::{
@@ -11,8 +11,8 @@ use contracts::gpv2_settlement::{
 use ethcontract::{Event as EthContractEvent, EventMetadata, H160, H256, U256};
 use futures::FutureExt;
 use model::order::OrderUid;
-use shared::event_handling::EventIndex;
-use sqlx::{Connection, Executor, Postgres, Transaction};
+use shared::event_handling::{EventIndex, EventStoring};
+use sqlx::{Connection, Executor, Transaction};
 use std::convert::TryInto;
 
 #[derive(Debug)]
@@ -41,8 +41,72 @@ pub struct Settlement {
     pub transaction_hash: H256,
 }
 
-impl Database {
-    pub async fn block_number_of_most_recent_event(&self) -> Result<u64> {
+impl Postgres {
+    // All insertions happen in one transaction.
+    pub async fn append_events_(&self, events: Vec<(EventIndex, Event)>) -> Result<()> {
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move {
+                    append_events(transaction, events.as_slice())
+                        .await
+                        .context("append_events failed")
+                }
+                .boxed()
+            })
+            .await?;
+        Ok(())
+    }
+
+    // The deletion and all insertions happen in one transaction.
+    pub async fn replace_events_(
+        &self,
+        delete_from_block_number: u64,
+        events: Vec<(EventIndex, Event)>,
+    ) -> Result<()> {
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move {
+                    delete_events(transaction, delete_from_block_number)
+                        .await
+                        .context("delete_events failed")?;
+                    append_events(transaction, events.as_slice())
+                        .await
+                        .context("insert_events failed")
+                }
+                .boxed()
+            })
+            .await?;
+        Ok(())
+    }
+}
+
+pub fn contract_to_db_events(
+    contract_events: Vec<EthContractEvent<ContractEvent>>,
+) -> Result<Vec<(EventIndex, Event)>> {
+    contract_events
+        .into_iter()
+        .filter_map(|EthContractEvent { data, meta }| {
+            let meta = match meta {
+                Some(meta) => meta,
+                None => return Some(Err(anyhow!("event without metadata"))),
+            };
+            match data {
+                ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)),
+                ContractEvent::Settlement(event) => Some(Ok(convert_settlement(&event, &meta))),
+                ContractEvent::OrderInvalidated(event) => Some(convert_invalidation(&event, &meta)),
+                // TODO: handle new events
+                ContractEvent::Interaction(_) => None,
+                ContractEvent::PreSignature(_) => None,
+            }
+        })
+        .collect::<Result<Vec<_>>>()
+}
+
+#[async_trait::async_trait]
+impl EventStoring<ContractEvent> for Postgres {
+    async fn last_event_block(&self) -> Result<u64> {
         const QUERY: &str = "\
             SELECT GREATEST( \
                 (SELECT COALESCE(MAX(block_number), 0) FROM trades), \
@@ -55,73 +119,22 @@ impl Database {
         block_number.try_into().context("block number is negative")
     }
 
-    // All insertions happen in one transaction.
-    pub async fn insert_events(&self, events: Vec<(EventIndex, Event)>) -> Result<()> {
-        let mut connection = self.pool.acquire().await?;
-        connection
-            .transaction(move |transaction| {
-                async move {
-                    insert_events(transaction, events.as_slice())
-                        .await
-                        .context("insert_events failed")
-                }
-                .boxed()
-            })
-            .await?;
-        Ok(())
+    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
+        self.append_events_(contract_to_db_events(events)?).await
     }
 
-    // The deletion and all insertions happen in one transaction.
-    pub async fn replace_events(
-        &self,
-        delete_from_block_number: u64,
-        events: Vec<(EventIndex, Event)>,
+    async fn replace_events(
+        &mut self,
+        events: Vec<EthContractEvent<ContractEvent>>,
+        range: std::ops::RangeInclusive<shared::event_handling::BlockNumber>,
     ) -> Result<()> {
-        let mut connection = self.pool.acquire().await?;
-        connection
-            .transaction(move |transaction| {
-                async move {
-                    delete_events(transaction, delete_from_block_number)
-                        .await
-                        .context("delete_events failed")?;
-                    insert_events(transaction, events.as_slice())
-                        .await
-                        .context("insert_events failed")
-                }
-                .boxed()
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub fn contract_to_db_events(
-        &self,
-        contract_events: Vec<EthContractEvent<ContractEvent>>,
-    ) -> Result<Vec<(EventIndex, Event)>> {
-        contract_events
-            .into_iter()
-            .filter_map(|EthContractEvent { data, meta }| {
-                let meta = match meta {
-                    Some(meta) => meta,
-                    None => return Some(Err(anyhow!("event without metadata"))),
-                };
-                match data {
-                    ContractEvent::Trade(event) => Some(convert_trade(&event, &meta)),
-                    ContractEvent::Settlement(event) => Some(Ok(convert_settlement(&event, &meta))),
-                    ContractEvent::OrderInvalidated(event) => {
-                        Some(convert_invalidation(&event, &meta))
-                    }
-                    // TODO: handle new events
-                    ContractEvent::Interaction(_) => None,
-                    ContractEvent::PreSignature(_) => None,
-                }
-            })
-            .collect::<Result<Vec<_>>>()
+        self.replace_events_(range.start().to_u64(), contract_to_db_events(events)?)
+            .await
     }
 }
 
 async fn delete_events(
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut Transaction<'_, sqlx::Postgres>,
     delete_from_block_number: u64,
 ) -> Result<(), sqlx::Error> {
     const QUERY_INVALIDATION: &str = "DELETE FROM invalidations WHERE block_number >= $1;";
@@ -142,8 +155,8 @@ async fn delete_events(
     Ok(())
 }
 
-async fn insert_events(
-    transaction: &mut Transaction<'_, Postgres>,
+async fn append_events(
+    transaction: &mut Transaction<'_, sqlx::Postgres>,
     events: &[(EventIndex, Event)],
 ) -> Result<(), sqlx::Error> {
     // TODO: there might be a more efficient way to do this like execute_many or COPY but my
@@ -160,7 +173,7 @@ async fn insert_events(
 }
 
 async fn insert_invalidation(
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut Transaction<'_, sqlx::Postgres>,
     index: &EventIndex,
     event: &Invalidation,
 ) -> Result<(), sqlx::Error> {
@@ -182,7 +195,7 @@ async fn insert_invalidation(
 }
 
 async fn insert_trade(
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut Transaction<'_, sqlx::Postgres>,
     index: &EventIndex,
     event: &Trade,
 ) -> Result<(), sqlx::Error> {
@@ -204,7 +217,7 @@ async fn insert_trade(
 }
 
 async fn insert_settlement(
-    transaction: &mut Transaction<'_, Postgres>,
+    transaction: &mut Transaction<'_, sqlx::Postgres>,
     index: &EventIndex,
     event: &Settlement,
 ) -> Result<(), sqlx::Error> {
@@ -275,12 +288,12 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_events() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 0);
+        assert_eq!(db.last_event_block().await.unwrap(), 0);
 
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 1,
                 log_index: 0,
@@ -289,9 +302,9 @@ mod tests {
         )])
         .await
         .unwrap();
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 1);
+        assert_eq!(db.last_event_block().await.unwrap(), 1);
 
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 2,
                 log_index: 0,
@@ -300,9 +313,9 @@ mod tests {
         )])
         .await
         .unwrap();
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 2);
+        assert_eq!(db.last_event_block().await.unwrap(), 2);
 
-        db.replace_events(
+        db.replace_events_(
             0,
             vec![(
                 EventIndex {
@@ -314,12 +327,12 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 3);
+        assert_eq!(db.last_event_block().await.unwrap(), 3);
 
-        db.replace_events(2, vec![]).await.unwrap();
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 0);
+        db.replace_events_(2, vec![]).await.unwrap();
+        assert_eq!(db.last_event_block().await.unwrap(), 0);
 
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 1,
                 log_index: 2,
@@ -332,19 +345,19 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 1);
+        assert_eq!(db.last_event_block().await.unwrap(), 1);
 
-        db.replace_events(1, vec![]).await.unwrap();
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 0);
+        db.replace_events_(1, vec![]).await.unwrap();
+        assert_eq!(db.last_event_block().await.unwrap(), 0);
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_repeated_event_insert_ignored() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         for _ in 0..2 {
-            db.insert_events(vec![(
+            db.append_events_(vec![(
                 EventIndex {
                     block_number: 2,
                     log_index: 0,
@@ -353,7 +366,7 @@ mod tests {
             )])
             .await
             .unwrap();
-            db.insert_events(vec![(
+            db.append_events_(vec![(
                 EventIndex {
                     block_number: 2,
                     log_index: 1,
@@ -362,7 +375,7 @@ mod tests {
             )])
             .await
             .unwrap();
-            db.insert_events(vec![(
+            db.append_events_(vec![(
                 EventIndex {
                     block_number: 2,
                     log_index: 2,
@@ -372,6 +385,6 @@ mod tests {
             .await
             .unwrap();
         }
-        assert_eq!(db.block_number_of_most_recent_event().await.unwrap(), 2);
+        assert_eq!(db.last_event_block().await.unwrap(), 2);
     }
 }

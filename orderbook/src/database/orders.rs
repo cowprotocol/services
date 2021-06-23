@@ -3,7 +3,7 @@ use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
-use futures::{stream::TryStreamExt, Stream};
+use futures::{stream::TryStreamExt, StreamExt};
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
     Signature, SigningScheme,
@@ -11,8 +11,15 @@ use model::{
 use primitive_types::H160;
 use std::{borrow::Cow, convert::TryInto};
 
+#[async_trait::async_trait]
+pub trait OrderStoring: Send + Sync {
+    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
+    async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
+    fn orders<'a>(&'a self, filter: &'a OrderFilter) -> BoxStream<'a, Result<Order>>;
+}
+
 /// Any default value means that this field is unfiltered.
-#[derive(Default)]
+#[derive(Clone, Copy, Default)]
 pub struct OrderFilter {
     pub min_valid_to: u32,
     pub owner: Option<H160>,
@@ -73,8 +80,21 @@ impl DbSigningScheme {
     }
 }
 
-impl Database {
-    pub async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
+#[derive(Debug)]
+pub enum InsertionError {
+    DuplicatedRecord,
+    DbError(sqlx::Error),
+}
+
+impl From<sqlx::Error> for InsertionError {
+    fn from(err: sqlx::Error) -> Self {
+        Self::DbError(err)
+    }
+}
+
+#[async_trait::async_trait]
+impl OrderStoring for Postgres {
+    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
         const QUERY: &str = "\
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
@@ -113,7 +133,7 @@ impl Database {
             })
     }
 
-    pub async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
+    async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
         // We do not overwrite previously cancelled orders,
         // but this query does allow the user to soft cancel
         // an order that has already been invalidated on-chain.
@@ -131,7 +151,7 @@ impl Database {
             .map(|_| ())
     }
 
-    pub fn orders<'a>(&'a self, filter: &'a OrderFilter) -> impl Stream<Item = Result<Order>> + 'a {
+    fn orders<'a>(&'a self, filter: &'a OrderFilter) -> BoxStream<'a, Result<Order>> {
         // The `or`s in the `where` clause are there so that each filter is ignored when not set.
         // We use a subquery instead of a `having` clause in the inner query because we would not be
         // able to use the `sum_*` columns there.
@@ -175,6 +195,7 @@ impl Database {
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
+            .boxed()
     }
 }
 
@@ -300,7 +321,7 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 
 #[cfg(test)]
 mod tests {
-
+    use super::events::*;
     use super::*;
     use chrono::{Duration, NaiveDateTime};
     use futures::StreamExt;
@@ -464,7 +485,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_insert_same_order_twice_fails() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let order = Order::default();
         db.insert_order(&order).await.unwrap();
@@ -477,7 +498,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         for signing_scheme in &[SigningScheme::Eip712, SigningScheme::EthSign] {
             db.clear().await.unwrap();
             let filter = OrderFilter::default();
@@ -524,7 +545,7 @@ mod tests {
             cancellation_timestamp: DateTime<Utc>,
         }
 
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let filter = OrderFilter::default();
         assert!(db.orders(&filter).boxed().next().await.is_none());
@@ -577,7 +598,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_filter_orders_by_address() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let orders = vec![
@@ -628,7 +649,7 @@ mod tests {
             db.insert_order(order).await.unwrap();
         }
 
-        async fn assert_orders(db: &Database, filter: &OrderFilter, expected: &[Order]) {
+        async fn assert_orders(db: &Postgres, filter: &OrderFilter, expected: &[Order]) {
             let filtered = db
                 .orders(&filter)
                 .try_collect::<HashSet<Order>>()
@@ -705,7 +726,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_filter_orders_by_fully_executed() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let order = Order {
@@ -738,7 +759,7 @@ mod tests {
             BigUint::from(0u8)
         );
 
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 0,
                 log_index: 0,
@@ -757,7 +778,7 @@ mod tests {
             BigUint::from(3u8)
         );
 
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 1,
                 log_index: 0,
@@ -777,7 +798,7 @@ mod tests {
         );
 
         // The order disappears because it is fully executed.
-        db.insert_events(vec![(
+        db.append_events_(vec![(
             EventIndex {
                 block_number: 2,
                 log_index: 0,
@@ -813,7 +834,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
         let order = Order {
@@ -826,7 +847,7 @@ mod tests {
         db.insert_order(&order).await.unwrap();
 
         for i in 0..10 {
-            db.insert_events(vec![(
+            db.append_events_(vec![(
                 EventIndex {
                     block_number: i,
                     log_index: 0,
@@ -857,7 +878,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn postgres_filter_orders_by_invalidated() {
-        let db = Database::new("postgresql://").unwrap();
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
