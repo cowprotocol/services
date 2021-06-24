@@ -2568,6 +2568,7 @@ dependencies = [
  "hex-literal",
  "itertools 0.10.1",
  "jsonrpc-core",
+ "lazy_static",
  "maplit",
  "mockall",
  "model",

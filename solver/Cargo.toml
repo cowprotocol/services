@@ -26,6 +26,7 @@ hex = "0.4"
 hex-literal = "0.3"
 itertools = "0.10"
 jsonrpc-core = "17.0"
+lazy_static = "1.4"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
