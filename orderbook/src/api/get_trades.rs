@@ -1,4 +1,3 @@
-use super::H160Wrapper;
 use crate::api::convert_get_trades_error_to_reply;
 use crate::database::trades::TradeFilter;
 use crate::database::trades::TradeRetrieving;
@@ -7,6 +6,7 @@ use futures::TryStreamExt;
 use model::order::OrderUid;
 use model::trade::Trade;
 use serde::Deserialize;
+use shared::H160Wrapper;
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::reply::{Json, WithStatus};

@@ -1,11 +1,10 @@
-use super::H160Wrapper;
-use crate::api::convert_get_orders_error_to_reply;
-use crate::database::orders::OrderFilter;
-use crate::orderbook::Orderbook;
+use crate::{
+    api::convert_get_orders_error_to_reply, database::orders::OrderFilter, orderbook::Orderbook,
+};
 use anyhow::Result;
 use model::order::Order;
 use serde::Deserialize;
-use shared::time::now_in_epoch_seconds;
+use shared::{time::now_in_epoch_seconds, H160Wrapper};
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,

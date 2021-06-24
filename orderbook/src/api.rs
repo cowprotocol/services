@@ -16,13 +16,10 @@ use crate::{
     orderbook::Orderbook,
 };
 use anyhow::Error as anyhowError;
-use hex::{FromHex, FromHexError};
-use model::h160_hexadecimal;
-use primitive_types::H160;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use shared::price_estimate::PriceEstimating;
-use std::{convert::Infallible, str::FromStr, sync::Arc};
+use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
@@ -131,18 +128,6 @@ pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {
 pub fn convert_get_trades_error_to_reply(err: anyhowError) -> WithStatus<Json> {
     tracing::error!(?err, "get_trades error");
     with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
-}
-
-/// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
-#[derive(Deserialize)]
-#[serde(transparent)]
-struct H160Wrapper(#[serde(with = "h160_hexadecimal")] H160);
-impl FromStr for H160Wrapper {
-    type Err = FromHexError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let s = s.strip_prefix("0x").unwrap_or(s);
-        Ok(H160Wrapper(H160(FromHex::from_hex(s)?)))
-    }
 }
 
 #[cfg(test)]
