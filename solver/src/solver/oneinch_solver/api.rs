@@ -4,7 +4,7 @@
 //! <https://docs.1inch.io/api/quote-swap>
 //! <https://api.1inch.exchange/swagger/ethereum/>
 
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use ethcontract::{H160, U256};
 use reqwest::{Client, IntoUrl, Url};
 use serde::{
@@ -252,6 +252,16 @@ pub struct OneInchClient {
     base_url: Url,
 }
 
+async fn logged_query<D>(client: &Client, url: Url) -> Result<D>
+where
+    D: for<'de> Deserialize<'de>,
+{
+    tracing::debug!("Query 1inch API for url {}", url);
+    let response = client.get(url).send().await?.text().await;
+    tracing::debug!("Response from 1inch API: {:?}", response);
+    serde_json::from_str(&response?).context("1inch result parsing failed")
+}
+
 impl OneInchClient {
     /// Create a new 1Inch HTTP API client with the specified base URL.
     pub fn new(base_url: impl IntoUrl) -> Result<Self> {
@@ -263,13 +273,7 @@ impl OneInchClient {
 
     /// Retrieves a swap for the specified parameters from the 1Inch API.
     pub async fn get_swap(&self, query: SwapQuery) -> Result<Swap> {
-        Ok(self
-            .client
-            .get(query.into_url(&self.base_url))
-            .send()
-            .await?
-            .json()
-            .await?)
+        logged_query(&self.client, query.into_url(&self.base_url)).await
     }
 
     /// Retrieves the address of the spender to use for token approvals.
@@ -278,7 +282,7 @@ impl OneInchClient {
             .base_url
             .join("v3.0/1/approve/spender")
             .expect("unexpectedly invalid URL");
-        Ok(self.client.get(url).send().await?.json().await?)
+        logged_query(&self.client, url).await
     }
 
     /// Retrieves a list of the on-chain protocols supported by 1Inch.
@@ -287,7 +291,7 @@ impl OneInchClient {
             .base_url
             .join("v3.0/1/protocols")
             .expect("unexpectedly invalid URL");
-        Ok(self.client.get(url).send().await?.json().await?)
+        logged_query(&self.client, url).await
     }
 }
 

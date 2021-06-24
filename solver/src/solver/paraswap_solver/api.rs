@@ -34,6 +34,7 @@ impl ParaswapApi for DefaultParaswapApi {
             .context("PriceQuery failed")?
             .text()
             .await?;
+        tracing::debug!("Response from Paraswap API (price): {}", text);
 
         serde_json::from_str::<PriceResponse>(&text)
             .context(format!("PriceQuery result parsing failed: {}", text))
@@ -49,6 +50,8 @@ impl ParaswapApi for DefaultParaswapApi {
             .context("TransactionBuilderQuery failed")?
             .text()
             .await?;
+        tracing::debug!("Response from Paraswap API (transaction): {}", text);
+
         serde_json::from_str::<TransactionBuilderResponse>(&text).context(format!(
             "TransactionBuilderQuery result parsing failed: {}",
             text
