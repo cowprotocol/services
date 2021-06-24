@@ -1,6 +1,7 @@
 pub mod dummy;
 pub mod http;
 pub mod instrumented;
+pub mod mock;
 
 use self::{
     http::HttpTransport,
