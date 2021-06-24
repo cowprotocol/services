@@ -1,5 +1,5 @@
 use anyhow::Result;
-use prometheus::{HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts, Registry};
+use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts, Registry};
 use shared::{pool_cache::PoolCacheMetrics, transport::TransportMetrics};
 use std::{
     convert::Infallible,
@@ -16,6 +16,7 @@ pub struct Metrics {
     rpc_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
+    database_queries: HistogramVec,
 }
 
 impl Metrics {
@@ -52,12 +53,20 @@ impl Metrics {
         )?;
         registry.register(Box::new(pool_cache_misses.clone()))?;
 
+        let opts = HistogramOpts::new(
+            "gp_v2_api_database_queries",
+            "Sql queries to our postgresql database.",
+        );
+        let database_queries = HistogramVec::new(opts, &["type"]).unwrap();
+        registry.register(Box::new(database_queries.clone()))?;
+
         Ok(Self {
             api_requests,
             db_table_row_count,
             rpc_requests,
             pool_cache_hits,
             pool_cache_misses,
+            database_queries,
         })
     }
 
@@ -80,6 +89,12 @@ impl PoolCacheMetrics for Metrics {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
         self.pool_cache_hits.inc_by(cache_hits as u64);
         self.pool_cache_misses.inc_by(cache_misses as u64);
+    }
+}
+
+impl crate::database::instrumented::Metrics for Metrics {
+    fn database_query_histogram(&self, label: &str) -> Histogram {
+        self.database_queries.with_label_values(&[label])
     }
 }
 

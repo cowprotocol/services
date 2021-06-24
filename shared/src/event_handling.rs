@@ -33,7 +33,7 @@ where
 /// Databases: might transform, filter and classify which events are inserted
 /// HashSet: For less persistent (in memory) storing, insert events into a set.
 #[async_trait::async_trait]
-pub trait EventStoring<T> {
+pub trait EventStoring<T>: Send + Sync {
     /// Returns ok, on successful execution, otherwise an appropriate error
     ///
     /// # Arguments

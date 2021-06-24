@@ -6,7 +6,7 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    database::{orders::OrderFilter, Postgres},
+    database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
     metrics::Metrics,
@@ -147,8 +147,11 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
-    let database =
-        Arc::new(Postgres::new(args.db_url.as_str()).expect("failed to create database"));
+    let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
+    let database = Arc::new(database::instrumented::Instrumented::new(
+        postgres.clone(),
+        metrics.clone(),
+    ));
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
@@ -292,7 +295,7 @@ async fn main() {
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(metrics, database.as_ref().clone()));
+    let db_metrics_task = task::spawn(database_metrics(metrics, postgres));
 
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),
