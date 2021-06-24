@@ -6,6 +6,7 @@ use crate::{
     balancer::{
         event_handler::BalancerPoolRegistry,
         pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
+        pool_init::PoolInitializing,
         pool_storage::WeightedPool,
     },
     current_block::CurrentBlockStream,
@@ -35,13 +36,15 @@ pub struct BalancerPoolFetcher {
 impl BalancerPoolFetcher {
     pub async fn new(
         web3: Web3,
+        pool_initializer: impl PoolInitializing,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn WeightedPoolCacheMetrics>,
     ) -> Result<Self> {
-        let pool_registry =
-            Arc::new(BalancerPoolRegistry::new(web3.clone(), token_info_fetcher).await?);
+        let pool_registry = Arc::new(
+            BalancerPoolRegistry::new(web3.clone(), pool_initializer, token_info_fetcher).await?,
+        );
         let reserve_fetcher = PoolReserveFetcher::new(pool_registry.clone(), web3).await?;
         let pool_reserve_cache =
             RecentBlockCache::new(config, reserve_fetcher, block_stream, metrics)?;

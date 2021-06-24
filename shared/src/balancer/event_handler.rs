@@ -15,9 +15,9 @@
 use crate::{
     balancer::{
         info_fetching::PoolInfoFetcher,
+        pool_init::PoolInitializing,
         pool_storage::{PoolCreated, PoolStorage, RegisteredWeightedPool},
     },
-    current_block::BlockRetrieving,
     event_handling::{BlockNumber, EventHandler, EventIndex, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
@@ -30,7 +30,7 @@ use contracts::{
     balancer_v2_weighted_pool_factory::{self, Event as WeightedPoolFactoryEvent},
     BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
 };
-use ethcontract::{common::DeploymentInformation, Event as EthContractEvent, H256};
+use ethcontract::{Event as EthContractEvent, H256};
 use model::TokenPair;
 use std::{collections::HashSet, ops::RangeInclusive, sync::Arc};
 use tokio::sync::Mutex;
@@ -50,31 +50,41 @@ pub struct BalancerPoolRegistry {
 impl BalancerPoolRegistry {
     /// Deployed Pool Factories are loaded internally from the provided `web3` which is also used
     /// together with `token_info_fetcher` to construct a `PoolInfoFetcher` for each Event Handler.
-    pub async fn new(web3: Web3, token_info_fetcher: Arc<dyn TokenInfoFetching>) -> Result<Self> {
+    pub async fn new(
+        web3: Web3,
+        pool_initializer: impl PoolInitializing,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
+    ) -> Result<Self> {
         let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
         let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
-        let deployment_block_weighted_pool =
-            get_deployment_block(weighted_pool_factory.deployment_information(), &web3).await;
-        let deployment_block_two_token_pool =
-            get_deployment_block(two_token_pool_factory.deployment_information(), &web3).await;
+
+        let initial_pools = pool_initializer.initialize_pools().await?;
+
         let weighted_pool_updater = Mutex::new(EventHandler::new(
             web3.clone(),
             BalancerV2WeightedPoolFactoryContract(weighted_pool_factory),
-            PoolStorage::new(Box::new(PoolInfoFetcher {
-                web3: web3.clone(),
-                token_info_fetcher: token_info_fetcher.clone(),
-            })),
-            deployment_block_weighted_pool,
+            PoolStorage::new(
+                initial_pools.weighted_pools,
+                Box::new(PoolInfoFetcher {
+                    web3: web3.clone(),
+                    token_info_fetcher: token_info_fetcher.clone(),
+                }),
+            ),
+            Some(initial_pools.fetched_block_number),
         ));
         let two_token_pool_updater = Mutex::new(EventHandler::new(
             web3.clone(),
             BalancerV2WeightedPool2TokensFactoryContract(two_token_pool_factory),
-            PoolStorage::new(Box::new(PoolInfoFetcher {
-                web3,
-                token_info_fetcher,
-            })),
-            deployment_block_two_token_pool,
+            PoolStorage::new(
+                initial_pools.weighted_2token_pools,
+                Box::new(PoolInfoFetcher {
+                    web3: web3.clone(),
+                    token_info_fetcher: token_info_fetcher.clone(),
+                }),
+            ),
+            Some(initial_pools.fetched_block_number),
         ));
+
         Ok(Self {
             weighted_pool_updater,
             two_token_pool_updater,
@@ -118,19 +128,6 @@ impl BalancerPoolRegistry {
             .pools_for(pool_ids);
         pool_set_1.extend(pool_set_2);
         pool_set_1
-    }
-}
-
-async fn get_deployment_block(
-    deployment_info: Option<DeploymentInformation>,
-    web3: &Web3,
-) -> Option<u64> {
-    match deployment_info {
-        Some(DeploymentInformation::BlockNumber(block_number)) => Some(block_number),
-        Some(DeploymentInformation::TransactionHash(hash)) => {
-            Some(web3.block_number_from_tx_hash(hash).await.ok()?)
-        }
-        None => None,
     }
 }
 

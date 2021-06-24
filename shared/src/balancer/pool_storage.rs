@@ -130,12 +130,32 @@ pub struct PoolStorage {
 }
 
 impl PoolStorage {
-    pub fn new(data_fetcher: Box<dyn PoolInfoFetching>) -> Self {
+    pub fn new(
+        initial_pools: Vec<RegisteredWeightedPool>,
+        data_fetcher: Box<dyn PoolInfoFetching>,
+    ) -> Self {
+        let mut pools_by_token = HashMap::<_, HashSet<_>>::new();
+        let mut pools = HashMap::new();
+        for pool in initial_pools {
+            for token in &pool.tokens {
+                pools_by_token
+                    .entry(*token)
+                    .or_default()
+                    .insert(pool.pool_id);
+            }
+            pools.insert(pool.pool_id, pool);
+        }
+
         PoolStorage {
-            pools_by_token: Default::default(),
-            pools: Default::default(),
+            pools_by_token,
+            pools,
             data_fetcher,
         }
+    }
+
+    #[cfg(test)]
+    fn empty(data_fetcher: Box<dyn PoolInfoFetching>) -> Self {
+        Self::new(vec![], data_fetcher)
     }
 
     /// Returns all pools containing both tokens from `TokenPair`
@@ -240,7 +260,7 @@ impl PoolStorage {
 mod tests {
     use super::*;
     use crate::balancer::info_fetching::{MockPoolInfoFetching, WeightedPoolInfo};
-    use maplit::hashset;
+    use maplit::{hashmap, hashset};
     use mockall::predicate::eq;
 
     pub type PoolInitData = (Vec<H256>, Vec<H160>, Vec<H160>, Vec<Bfp>, Vec<PoolCreated>);
@@ -262,6 +282,47 @@ mod tests {
             .collect();
 
         (pool_ids, pool_addresses, tokens, weights, creation_events)
+    }
+
+    #[test]
+    fn initialize_storage() {
+        let storage = PoolStorage::new(
+            vec![
+                RegisteredWeightedPool {
+                    pool_id: H256([1; 32]),
+                    pool_address: H160([1; 20]),
+                    tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
+                    scaling_exponents: vec![0, 0],
+                    normalized_weights: vec![
+                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                    ],
+                    block_created: 0,
+                },
+                RegisteredWeightedPool {
+                    pool_id: H256([2; 32]),
+                    pool_address: H160([2; 20]),
+                    tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x77; 20])],
+                    scaling_exponents: vec![0, 0],
+                    normalized_weights: vec![
+                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                        Bfp::from_wei(500_000_000_000_000_000u128.into()),
+                    ],
+                    block_created: 0,
+                },
+            ],
+            Box::new(MockPoolInfoFetching::new()),
+        );
+
+        assert_eq!(
+            storage.pools_by_token,
+            hashmap! {
+                H160([0x11; 20]) => hashset![H256([1; 32]), H256([2; 32])],
+                H160([0x22; 20]) => hashset![H256([1; 32])],
+                H160([0x33; 20]) => hashset![H256([2; 32])],
+                H160([0x77; 20]) => hashset![H256([2; 32])],
+            }
+        );
     }
 
     #[tokio::test]
@@ -289,7 +350,7 @@ mod tests {
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
 
-        let mut pool_store = PoolStorage::new(Box::new(dummy_data_fetcher));
+        let mut pool_store = PoolStorage::empty(Box::new(dummy_data_fetcher));
         pool_store.insert_events(events).await.unwrap();
         // Note that it is never expected that blocks for events will differ,
         // but in this test block_created for the pool is the first block it receives.
@@ -374,11 +435,7 @@ mod tests {
                 })
             });
 
-        let mut pool_store = PoolStorage {
-            pools_by_token: Default::default(),
-            pools: Default::default(),
-            data_fetcher: Box::new(dummy_data_fetcher),
-        };
+        let mut pool_store = PoolStorage::empty(Box::new(dummy_data_fetcher));
         pool_store.insert_events(converted_events).await.unwrap();
         // Let the tests begin!
         assert_eq!(pool_store.last_event_block(), end_block as u64);
@@ -468,7 +525,7 @@ mod tests {
                 .with(eq(pool_addresses[i]))
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
-        let mut registry = PoolStorage::new(Box::new(dummy_data_fetcher));
+        let mut registry = PoolStorage::empty(Box::new(dummy_data_fetcher));
         // Test the empty registry.
         for token_pair in token_pairs.iter().take(n) {
             assert!(registry

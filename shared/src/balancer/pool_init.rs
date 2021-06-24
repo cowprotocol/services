@@ -15,6 +15,7 @@ use ethcontract::{Artifact, H160};
 pub struct BalancerRegisteredPools {
     pub weighted_pools: Vec<RegisteredWeightedPool>,
     pub weighted_2token_pools: Vec<RegisteredWeightedPool>,
+    pub fetched_block_number: u64,
 }
 
 #[async_trait::async_trait]
@@ -86,6 +87,7 @@ where
                     self.chain_id,
                 )?)
                 .unwrap_or_default(),
+            fetched_block_number: pools.fetched_block_number,
         };
 
         // Log an error in order to trigger an alert. This will allow us to make
@@ -171,7 +173,7 @@ mod tests {
                         pool(5),
                     ],
                 },
-                fetched_block_number: 0,
+                fetched_block_number: 42,
             })
         });
 
@@ -185,6 +187,7 @@ mod tests {
             BalancerRegisteredPools {
                 weighted_pools: vec![pool(1), pool(2)],
                 weighted_2token_pools: vec![pool(3)],
+                fetched_block_number: 42,
             },
         );
     }
