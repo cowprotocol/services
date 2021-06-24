@@ -52,12 +52,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    macro_rules! dummy_contract {
-        ($contract:ident, $addr:expr) => {
-            $contract::at(&$crate::testutil::dummy_web3(), $addr.into())
-        };
-    }
+    use shared::dummy_contract;
 
     #[test]
     fn encode_unwrap_weth() {

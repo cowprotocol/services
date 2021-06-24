@@ -133,15 +133,16 @@ fn executed_buy_amount(order: &Order, executed_amount: U256, price: Price) -> Op
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::{settlement::tests::assert_settlement_encoded_with, testutil};
+    use crate::settlement::tests::assert_settlement_encoded_with;
     use maplit::{hashmap, hashset};
     use model::order::OrderCreation;
     use model::DomainSeparator;
+    use shared::dummy_contract;
 
     #[test]
     fn eth_buy_liquidity_is_assigned_to_weth() {
         let native_token_address = H160([0x42; 20]);
-        let native_token = WETH9::at(&testutil::dummy_web3(), native_token_address);
+        let native_token = dummy_contract!(WETH9, native_token_address);
         let order = Order {
             order_creation: OrderCreation {
                 buy_token: BUY_ETH_ADDRESS,
@@ -159,7 +160,7 @@ pub mod tests {
     fn non_eth_buy_liquidity_stays_put() {
         let buy_token = H160([0x21; 20]);
         let native_token_address = H160([0x42; 20]);
-        let native_token = WETH9::at(&testutil::dummy_web3(), native_token_address);
+        let native_token = dummy_contract!(WETH9, native_token_address);
         let order = Order {
             order_creation: OrderCreation {
                 buy_token,
@@ -217,7 +218,7 @@ pub mod tests {
     fn adds_unwrap_interaction_for_sell_order_with_eth_flag() {
         let native_token_address = H160([0x42; 20]);
         let sell_token = H160([0x21; 20]);
-        let native_token = WETH9::at(&testutil::dummy_web3(), native_token_address);
+        let native_token = dummy_contract!(WETH9, native_token_address);
 
         let executed_amount = U256::from(1337);
         let prices = hashmap! {
@@ -262,7 +263,7 @@ pub mod tests {
     fn adds_unwrap_interaction_for_buy_order_with_eth_flag() {
         let native_token_address = H160([0x42; 20]);
         let sell_token = H160([0x21; 20]);
-        let native_token = WETH9::at(&testutil::dummy_web3(), native_token_address);
+        let native_token = dummy_contract!(WETH9, native_token_address);
         let executed_amount = U256::from(1337);
         let prices = hashmap! {
             native_token.address() => U256::from(1),
@@ -305,7 +306,7 @@ pub mod tests {
     fn does_not_add_unwrap_interaction_for_order_without_eth_flag() {
         let native_token_address = H160([0x42; 20]);
         let sell_token = H160([0x21; 20]);
-        let native_token = WETH9::at(&testutil::dummy_web3(), native_token_address);
+        let native_token = dummy_contract!(WETH9, native_token_address);
         let not_buy_eth_address = H160([0xff; 20]);
         assert_ne!(not_buy_eth_address, BUY_ETH_ADDRESS);
 

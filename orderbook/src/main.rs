@@ -23,7 +23,6 @@ use shared::{
         trace_call::TraceCallDetector,
     },
     current_block::current_block_stream,
-    http_transport::HttpTransport,
     maintenance::ServiceMaintenance,
     pool_aggregating::{self, PoolAggregator},
     pool_cache::PoolCache,
@@ -31,6 +30,7 @@ use shared::{
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     transport::create_instrumented_transport,
+    transport::http::HttpTransport,
 };
 use std::{
     collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,

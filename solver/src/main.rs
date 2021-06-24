@@ -6,7 +6,6 @@ use reqwest::Url;
 use shared::{
     bad_token::list_based::ListBasedDetector,
     current_block::current_block_stream,
-    http_transport::HttpTransport,
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
     network::network_name,
@@ -18,6 +17,7 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     transport::create_instrumented_transport,
+    transport::http::HttpTransport,
 };
 use solver::{
     driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,

@@ -16,3 +16,10 @@ macro_rules! json_map {
         map
     }}
 }
+
+#[macro_export]
+macro_rules! dummy_contract {
+    ($contract:ident, $addr:expr) => {
+        $contract::at(&$crate::transport::dummy::web3(), $addr.into())
+    };
+}

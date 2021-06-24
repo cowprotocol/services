@@ -57,9 +57,9 @@ impl UniswapInteraction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil;
     use contracts::IUniswapLikeRouter;
     use hex_literal::hex;
+    use shared::transport::dummy;
 
     fn u8_as_32_bytes_be(u: u8) -> [u8; 32] {
         let mut result = [0u8; 32];
@@ -74,11 +74,9 @@ mod tests {
         let token_in = H160::from_low_u64_be(7);
         let token_out = 8;
         let payout_to = 9u8;
-        let router = IUniswapLikeRouter::at(&testutil::dummy_web3(), H160::from_low_u64_be(4));
-        let settlement = GPv2Settlement::at(
-            &testutil::dummy_web3(),
-            H160::from_low_u64_be(payout_to as u64),
-        );
+        let router = IUniswapLikeRouter::at(&dummy::web3(), H160::from_low_u64_be(4));
+        let settlement =
+            GPv2Settlement::at(&dummy::web3(), H160::from_low_u64_be(payout_to as u64));
         let interaction = UniswapInteraction {
             router: router.clone(),
             settlement,

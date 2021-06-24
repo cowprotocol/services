@@ -1,6 +1,6 @@
 use anyhow::Result;
 use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts, Registry};
-use shared::{pool_cache::PoolCacheMetrics, transport::TransportMetrics};
+use shared::{pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics};
 use std::{
     convert::Infallible,
     sync::Arc,

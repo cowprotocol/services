@@ -1,16 +1,10 @@
-#[cfg(test)]
-#[macro_use]
-mod testutil;
-
 pub mod driver;
 pub mod encoding;
 pub mod interactions;
 pub mod liquidity;
 pub mod liquidity_collector;
 pub mod metrics;
-
 pub mod orderbook;
-
 pub mod pending_transactions;
 pub mod settlement;
 pub mod settlement_simulation;

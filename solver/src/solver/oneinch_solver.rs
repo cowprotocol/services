@@ -179,15 +179,15 @@ impl Display for OneInchSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{liquidity::LimitOrder, testutil};
+    use crate::liquidity::LimitOrder;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160};
     use model::order::{Order, OrderCreation, OrderKind};
-    use shared::transport::{create_env_test_transport, create_test_transport};
+    use shared::transport::{create_env_test_transport, create_test_transport, dummy};
     use std::iter;
 
     fn dummy_solver() -> OneInchSolver {
-        let web3 = testutil::dummy_web3();
+        let web3 = dummy::web3();
         let settlement = GPv2Settlement::at(&web3, H160::zero());
         OneInchSolver::with_disabled_protocols(settlement, MAINNET_CHAIN_ID, iter::empty()).unwrap()
     }

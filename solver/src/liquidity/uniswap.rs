@@ -1,3 +1,5 @@
+use super::{slippage, AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
+use crate::{interactions::UniswapInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
 use ethcontract::batch::CallBatch;
@@ -13,11 +15,6 @@ use std::sync::{Arc, Mutex};
 
 const MAX_BATCH_SIZE: usize = 100;
 pub const MAX_HOPS: usize = 2;
-
-use super::slippage;
-use crate::{interactions::UniswapInteraction, settlement::SettlementEncoder};
-
-use super::{AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
@@ -162,11 +159,11 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil;
+    use shared::transport::dummy;
 
     impl Inner {
         fn new(allowances: HashMap<H160, U256>) -> Self {
-            let web3 = testutil::dummy_web3();
+            let web3 = dummy::web3();
             Self {
                 router: IUniswapLikeRouter::at(&web3, H160::zero()),
                 gpv2_settlement: GPv2Settlement::at(&web3, H160::zero()),

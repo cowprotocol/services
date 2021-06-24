@@ -36,14 +36,13 @@ impl OrderBookApi {
 #[cfg(test)]
 pub mod test_util {
     use super::*;
-    use crate::testutil;
-    use ethcontract::H160;
+    use shared::dummy_contract;
 
     // cargo test real_orderbook -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn real_orderbook() {
-        let native_token = testutil::dummy_weth(H160([0x42; 20]));
+        let native_token = dummy_contract!(WETH9, [0x42; 20]);
         let api = OrderBookApi::new(
             Url::parse("http://localhost:8080").unwrap(),
             Duration::from_secs(10),

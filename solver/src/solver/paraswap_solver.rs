@@ -181,9 +181,11 @@ mod test {
 
     use super::api::MockParaswapApi;
     use super::*;
-    use crate::testutil;
     use mockall::Sequence;
-    use shared::token_info::{MockTokenInfoFetching, TokenInfo};
+    use shared::{
+        dummy_contract,
+        token_info::{MockTokenInfoFetching, TokenInfo},
+    };
 
     #[test]
     fn test_satisfies_limit_price() {
@@ -242,7 +244,7 @@ mod test {
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
-            settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
         };
 
         let order = LimitOrder::default();
@@ -288,7 +290,7 @@ mod test {
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
-            settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
         };
 
         let order_passing_limit = LimitOrder {
@@ -370,7 +372,7 @@ mod test {
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
-            settlement_contract: GPv2Settlement::at(&testutil::dummy_web3(), H160::zero()),
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
         };
 
         let order = LimitOrder {

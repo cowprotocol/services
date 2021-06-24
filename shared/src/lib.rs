@@ -1,9 +1,3 @@
-use ethcontract::H160;
-use hex::{FromHex, FromHexError};
-use model::h160_hexadecimal;
-use serde::Deserialize;
-use std::str::FromStr;
-
 #[macro_use]
 pub mod macros;
 
@@ -18,7 +12,6 @@ pub mod ethcontract_error;
 pub mod event_handling;
 pub mod gas_price_estimation;
 pub mod http;
-pub mod http_transport;
 pub mod maintenance;
 pub mod metrics;
 pub mod network;
@@ -36,7 +29,14 @@ pub mod tracing;
 pub mod transport;
 pub mod web3_traits;
 
-pub type Web3 = web3::Web3<transport::MetricTransport<crate::http_transport::HttpTransport>>;
+use ethcontract::H160;
+use hex::{FromHex, FromHexError};
+use model::h160_hexadecimal;
+use serde::Deserialize;
+use std::str::FromStr;
+
+pub type Web3 =
+    web3::Web3<transport::instrumented::MetricTransport<transport::http::HttpTransport>>;
 
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
 #[derive(Deserialize)]
