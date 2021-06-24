@@ -148,6 +148,10 @@ struct Arguments {
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
     gas_price_cap: f64,
+
+    /// The slippage tolerance we apply to the price quoted by Paraswap
+    #[structopt(long, env, default_value = "10")]
+    paraswap_slippage_bps: usize,
 }
 
 #[tokio::main]
@@ -277,6 +281,7 @@ async fn main() {
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         account.address(),
+        args.paraswap_slippage_bps,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

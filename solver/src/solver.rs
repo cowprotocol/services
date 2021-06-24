@@ -75,6 +75,7 @@ pub fn create(
     min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
     solver_address: H160,
+    paraswap_slippage_bps: usize,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -126,6 +127,7 @@ pub fn create(
                 settlement_contract.clone(),
                 solver_address,
                 token_info_fetcher.clone(),
+                paraswap_slippage_bps,
             ))),
         })
         .collect()
