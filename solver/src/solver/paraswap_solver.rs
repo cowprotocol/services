@@ -114,16 +114,31 @@ where
             return Ok(None);
         }
 
-        let dest_amount_with_slippage = price_response
-            .dest_amount
-            .checked_mul((10000 - self.slippage_bps).into())
-            .ok_or_else(|| anyhow!("Overflow during slippage computation"))?
-            / 10000;
+        let (src_amount, dest_amount) = match order.kind {
+            // Buy orders apply slippage to src amount, dest amount unchanged
+            model::order::OrderKind::Buy => (
+                price_response
+                    .src_amount
+                    .checked_mul((10000 + self.slippage_bps).into())
+                    .ok_or_else(|| anyhow!("Overflow during slippage computation"))?
+                    / 10000,
+                price_response.dest_amount,
+            ),
+            // Sell orders apply slippage to dest amount, src amount unchanged
+            model::order::OrderKind::Sell => (
+                price_response.src_amount,
+                price_response
+                    .dest_amount
+                    .checked_mul((10000 - self.slippage_bps).into())
+                    .ok_or_else(|| anyhow!("Overflow during slippage computation"))?
+                    / 10000,
+            ),
+        };
         let transaction_query = TransactionBuilderQuery {
             src_token: order.sell_token,
             dest_token: order.buy_token,
-            src_amount: price_response.src_amount,
-            dest_amount: dest_amount_with_slippage,
+            src_amount,
+            dest_amount,
             from_decimals: decimals(&order.sell_token)?,
             to_decimals: decimals(&order.buy_token)?,
             price_route: price_response.price_route_raw,
@@ -415,10 +430,25 @@ mod test {
         });
 
         // Check slippage is applied to PriceResponse
-        client.expect_transaction().returning(|transaction| {
-            assert_eq!(transaction.dest_amount, 89.into());
-            Ok(Default::default())
-        });
+        let mut seq = Sequence::new();
+        client
+            .expect_transaction()
+            .times(1)
+            .returning(|transaction| {
+                assert_eq!(transaction.src_amount, 100.into());
+                assert_eq!(transaction.dest_amount, 89.into());
+                Ok(Default::default())
+            })
+            .in_sequence(&mut seq);
+        client
+            .expect_transaction()
+            .times(1)
+            .returning(|transaction| {
+                assert_eq!(transaction.src_amount, 110.into());
+                assert_eq!(transaction.dest_amount, 99.into());
+                Ok(Default::default())
+            })
+            .in_sequence(&mut seq);
 
         allowance_fetcher
             .expect_existing_allowance()
@@ -440,7 +470,7 @@ mod test {
             slippage_bps: 1000, // 10%
         };
 
-        let order = LimitOrder {
+        let sell_order = LimitOrder {
             sell_token,
             buy_token,
             sell_amount: 100.into(),
@@ -449,8 +479,20 @@ mod test {
             ..Default::default()
         };
 
-        let result = solver.settle_order(order).await.unwrap();
+        let result = solver.settle_order(sell_order).await.unwrap();
         // Actual assertion is inside the client's `expect_transaction` mock
-        assert!(result.is_some(),);
+        assert!(result.is_some());
+
+        let buy_order = LimitOrder {
+            sell_token,
+            buy_token,
+            sell_amount: 100.into(),
+            buy_amount: 90.into(),
+            kind: model::order::OrderKind::Buy,
+            ..Default::default()
+        };
+        let result = solver.settle_order(buy_order).await.unwrap();
+        // Actual assertion is inside the client's `expect_transaction` mock
+        assert!(result.is_some());
     }
 }
