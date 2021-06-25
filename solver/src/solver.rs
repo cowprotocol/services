@@ -108,13 +108,12 @@ pub fn create(
                 fee_discount_factor,
             )),
             SolverType::OneInch => {
-                let one_inch_solver: SingleOrderSolver<OneInchSolver> =
-                    OneInchSolver::with_disabled_protocols(
-                        settlement_contract.clone(),
-                        chain_id,
-                        disabled_one_inch_protocols.clone(),
-                    )?
-                    .into();
+                let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(
+                    settlement_contract.clone(),
+                    chain_id,
+                    disabled_one_inch_protocols.clone(),
+                )?
+                .into();
                 // We only want to use 1Inch for high value orders
                 boxed(SellVolumeFilteringSolver::new(
                     Box::new(one_inch_solver),
