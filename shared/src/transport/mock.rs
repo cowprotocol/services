@@ -1,10 +1,10 @@
 //! Mockable Web3 transport implementation.
 
-use anyhow::{Error, Result};
 use ethcontract::{
     futures::future::{self, Ready},
     jsonrpc::{Call, Id, MethodCall, Params},
     web3::{self, BatchTransport, RequestId, Transport},
+    Web3,
 };
 use serde_json::Value;
 use std::{
@@ -15,12 +15,19 @@ use std::{
     },
 };
 
+pub fn web3() -> Web3<MockTransport> {
+    Web3::new(MockTransport::new())
+}
+
 /// An intermediate trait used for `mockall` to automatically generate a mock
 /// transport for us.
 #[mockall::automock]
 pub trait MockableTransport {
-    fn execute(&self, method: String, params: Vec<Value>) -> Result<Value>;
-    fn execute_batch(&self, requests: Vec<(String, Vec<Value>)>) -> Result<Vec<Result<Value>>>;
+    fn execute(&self, method: String, params: Vec<Value>) -> web3::Result<Value>;
+    fn execute_batch(
+        &self,
+        requests: Vec<(String, Vec<Value>)>,
+    ) -> web3::Result<Vec<web3::Result<Value>>>;
 }
 
 #[derive(Clone, Default)]
@@ -49,7 +56,7 @@ impl Debug for MockTransport {
 }
 
 impl Transport for MockTransport {
-    type Out = Ready<Result<Value, web3::Error>>;
+    type Out = Ready<web3::Result<Value>>;
 
     fn prepare(&self, method: &str, params: Vec<Value>) -> (RequestId, Call) {
         let id = self.0.current_id.fetch_add(1, Ordering::SeqCst);
@@ -66,13 +73,13 @@ impl Transport for MockTransport {
 
     fn send(&self, _: RequestId, call: Call) -> Self::Out {
         let (method, params) = extract_call(call);
-        let response = self.mock().execute(method, params).map_err(transport_err);
+        let response = self.mock().execute(method, params);
         future::ready(response)
     }
 }
 
 impl BatchTransport for MockTransport {
-    type Batch = Ready<Result<Vec<Result<Value, web3::Error>>, web3::Error>>;
+    type Batch = Ready<web3::Result<Vec<web3::Result<Value>>>>;
 
     fn send_batch<T>(&self, requests: T) -> Self::Batch
     where
@@ -82,16 +89,7 @@ impl BatchTransport for MockTransport {
             .into_iter()
             .map(|(_, call)| extract_call(call))
             .collect();
-        let responses = self
-            .mock()
-            .execute_batch(batch)
-            .map(|responses| {
-                responses
-                    .into_iter()
-                    .map(|response| response.map_err(transport_err))
-                    .collect()
-            })
-            .map_err(transport_err);
+        let responses = self.mock().execute_batch(batch);
         future::ready(responses)
     }
 }
@@ -107,14 +105,9 @@ fn extract_call(call: Call) -> (String, Vec<Value>) {
     }
 }
 
-fn transport_err(error: Error) -> web3::Error {
-    web3::Error::Transport(error.to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
     use mockall::predicate::*;
     use serde_json::json;
 
@@ -154,7 +147,7 @@ mod tests {
                 Ok(vec![
                     Ok(json!("hello")),
                     Ok(json!("world")),
-                    Err(anyhow!("bad")),
+                    Err(web3::Error::Transport("bad".to_string())),
                 ])
             });
 

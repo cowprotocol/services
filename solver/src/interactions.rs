@@ -1,3 +1,4 @@
+pub mod allowances;
 mod balancer;
 mod erc20;
 mod uniswap;
