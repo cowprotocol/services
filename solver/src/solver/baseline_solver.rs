@@ -73,7 +73,7 @@ impl BaselineSolver {
         for liquidity in liquidity {
             let user_order = match liquidity {
                 Liquidity::Limit(order) => order,
-                Liquidity::ConstantProduct(_) => continue,
+                Liquidity::ConstantProduct(_) | Liquidity::WeightedProduct(_) => continue,
             };
 
             let solution = match self.settle_order(&user_order, &amm_map) {

@@ -31,5 +31,5 @@ mod info_fetching;
 mod pool_cache;
 pub mod pool_fetching;
 pub mod pool_init;
-mod pool_storage;
-mod swap;
+pub mod pool_storage;
+pub mod swap;

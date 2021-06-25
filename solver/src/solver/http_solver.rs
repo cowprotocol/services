@@ -105,11 +105,12 @@ impl HttpSolver {
             .iter()
             .flat_map(|liquidity| match liquidity {
                 Liquidity::Limit(order) => {
-                    std::iter::once(order.sell_token).chain(std::iter::once(order.buy_token))
+                    vec![order.sell_token, order.buy_token]
                 }
                 Liquidity::ConstantProduct(amm) => {
-                    std::iter::once(amm.tokens.get().0).chain(std::iter::once(amm.tokens.get().1))
+                    vec![amm.tokens.get().0, amm.tokens.get().1]
                 }
+                _ => vec![],
             })
             .collect::<HashSet<_>>()
             .into_iter()
@@ -347,6 +348,7 @@ fn split_liquidity(liquidity: Vec<Liquidity>) -> (Vec<LimitOrder>, Vec<ConstantP
         match order {
             Liquidity::Limit(order) => limit_orders.push(order),
             Liquidity::ConstantProduct(order) => constant_product_orders.push(order),
+            Liquidity::WeightedProduct(_) => (), // TODO - include something here.
         }
     }
     (limit_orders, constant_product_orders)

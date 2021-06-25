@@ -8,6 +8,8 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 
 #[cfg(test)]
 use model::order::Order;
+use shared::balancer::pool_storage::PoolTokenState;
+use std::collections::HashMap;
 
 pub mod offchain_orderbook;
 pub mod slippage;
@@ -18,6 +20,7 @@ pub mod uniswap;
 pub enum Liquidity {
     Limit(LimitOrder),
     ConstantProduct(ConstantProductOrder),
+    WeightedProduct(WeightedProductOrder),
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -29,7 +32,7 @@ pub trait Settleable {
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self>;
 }
 
-/// Specifies how a liquidity exectution gets encoded into a settlement.
+/// Specifies how a liquidity execution gets encoded into a settlement.
 pub trait SettlementHandling<L>: Send + Sync
 where
     L: Settleable,
@@ -116,7 +119,21 @@ pub struct ConstantProductOrder {
 
 impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "AMM {:?}", self.tokens)
+        write!(f, "Constant Product AMM {:?}", self.tokens)
+    }
+}
+
+/// 2 sided weighted product automated market maker with weighted reserves and a trading fee (e.g. BalancerV2)
+#[derive(Clone)]
+pub struct WeightedProductOrder {
+    pub reserves: HashMap<H160, PoolTokenState>,
+    pub fee: Ratio<u32>,
+    pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl std::fmt::Debug for WeightedProductOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Weighted Product AMM {:?}", self.reserves.keys())
     }
 }
 
@@ -140,11 +157,30 @@ impl Settleable for ConstantProductOrder {
     }
 }
 
+impl Settleable for WeightedProductOrder {
+    type Execution = AmmOrderExecution;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
+        &*self.settlement_handling
+    }
+}
+
 #[cfg(test)]
 impl Default for ConstantProductOrder {
     fn default() -> Self {
         ConstantProductOrder {
             tokens: Default::default(),
+            reserves: Default::default(),
+            fee: Ratio::new(0, 1),
+            settlement_handling: tests::CapturingSettlementHandler::arc(),
+        }
+    }
+}
+
+#[cfg(test)]
+impl Default for WeightedProductOrder {
+    fn default() -> Self {
+        WeightedProductOrder {
             reserves: Default::default(),
             fee: Ratio::new(0, 1),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
@@ -165,7 +201,7 @@ pub mod tests {
     }
 
     // Manual implementation seems to be needed as `derive(Default)` adds an
-    // uneeded `L::Execution: Default` type bound.
+    // unneeded `L::Execution: Default` type bound.
     impl<L> Default for CapturingSettlementHandler<L>
     where
         L: Settleable,
