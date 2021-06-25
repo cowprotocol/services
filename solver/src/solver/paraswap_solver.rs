@@ -105,9 +105,7 @@ where
             side,
         };
 
-        tracing::debug!("querying Paraswap API with {:?}", price_query);
         let price_response = self.client.price(price_query).await?;
-        tracing::debug!("got response {:?}", price_response);
 
         if !satisfies_limit_price(&order, &price_response) {
             tracing::debug!("Order limit price not respected");

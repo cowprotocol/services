@@ -29,7 +29,9 @@ pub struct DefaultParaswapApi {
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse> {
-        let text = reqwest::get(query.into_url())
+        let url = query.into_url();
+        tracing::debug!("Querying Paraswap API (price) for url {}", url);
+        let text = reqwest::get(url)
             .await
             .context("PriceQuery failed")?
             .text()
@@ -43,6 +45,7 @@ impl ParaswapApi for DefaultParaswapApi {
         &self,
         query: TransactionBuilderQuery,
     ) -> Result<TransactionBuilderResponse> {
+        tracing::debug!("Querying Paraswap API (transaction) with {:?}", query);
         let text = query
             .into_request(&self.client)
             .send()
@@ -185,6 +188,7 @@ impl TransactionBuilderQuery {
             .expect("unexpectedly invalid URL segment");
         url.query_pairs_mut().append_pair("skipChecks", "true");
 
+        tracing::debug!("Paraswap API (transaction) query url: {}", url);
         client.post(url).json(&self)
     }
 }
