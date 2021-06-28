@@ -267,6 +267,7 @@ async fn main() {
     )
     .await;
     let solver = solver::solver::create(
+        web3.clone(),
         args.solvers,
         base_tokens,
         native_token_contract.address(),

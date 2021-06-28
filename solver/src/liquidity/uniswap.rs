@@ -1,8 +1,13 @@
 use super::{slippage, AmmOrderExecution, ConstantProductOrder, LimitOrder, SettlementHandling};
-use crate::{interactions::UniswapInteraction, settlement::SettlementEncoder};
+use crate::{
+    interactions::{
+        allowances::{AllowanceManager, AllowanceManaging, Allowances, Approval},
+        UniswapInteraction,
+    },
+    settlement::SettlementEncoder,
+};
 use anyhow::Result;
-use contracts::{GPv2Settlement, IUniswapLikeRouter, ERC20};
-use ethcontract::batch::CallBatch;
+use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::{path_candidates, token_path_to_pair_path},
@@ -10,16 +15,15 @@ use shared::{
     recent_block_cache::Block,
     Web3,
 };
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
-const MAX_BATCH_SIZE: usize = 100;
 pub const MAX_HOPS: usize = 2;
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
-    web3: Web3,
+    settlement_allowances: Box<dyn AllowanceManaging>,
     base_tokens: HashSet<H160>,
 }
 
@@ -27,7 +31,7 @@ struct Inner {
     router: IUniswapLikeRouter,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement contract
-    allowances: Mutex<HashMap<H160, U256>>,
+    allowances: Mutex<Allowances>,
 }
 
 impl UniswapLikeLiquidity {
@@ -38,14 +42,18 @@ impl UniswapLikeLiquidity {
         web3: Web3,
         pool_fetcher: Arc<dyn PoolFetching>,
     ) -> Self {
+        let router_address = router.address();
+        let settlement_allowances =
+            Box::new(AllowanceManager::new(web3, gpv2_settlement.address()));
+
         Self {
             inner: Arc::new(Inner {
                 router,
                 gpv2_settlement,
-                allowances: Mutex::new(HashMap::new()),
+                allowances: Mutex::new(Allowances::empty(router_address)),
             }),
-            web3,
             pool_fetcher,
+            settlement_allowances,
             base_tokens,
         }
     }
@@ -85,73 +93,61 @@ impl UniswapLikeLiquidity {
                 settlement_handling: self.inner.clone(),
             })
         }
-        self.cache_allowances(tokens.into_iter()).await;
+        self.cache_allowances(tokens).await?;
         Ok(result)
     }
 
-    async fn cache_allowances(&self, tokens: impl Iterator<Item = H160>) {
-        let mut batch = CallBatch::new(self.web3.transport());
-        let results: Vec<_> = tokens
-            .map(|token| {
-                let allowance = ERC20::at(&self.web3, token)
-                    .allowance(
-                        self.inner.gpv2_settlement.address(),
-                        self.inner.router.address(),
-                    )
-                    .batch_call(&mut batch);
-                (token, allowance)
-            })
-            .collect();
-
-        let _ = batch.execute_all(MAX_BATCH_SIZE).await;
-
-        // await before acquiring lock so we can use std::sync::mutex (async::mutex wouldn't allow AmmSettlementHandling to be non-blocking)
-        let mut token_and_allowance = Vec::with_capacity(results.len());
-        for (pair, allowance) in results {
-            token_and_allowance.push((pair, allowance.await.unwrap_or_default()));
-        }
+    async fn cache_allowances(&self, tokens: HashSet<H160>) -> Result<()> {
+        let router = self.inner.router.address();
+        let allowances = self
+            .settlement_allowances
+            .get_allowances(tokens, router)
+            .await?;
 
         self.inner
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .extend(token_and_allowance);
+            .extend(allowances)?;
+
+        Ok(())
     }
 }
 
 impl Inner {
-    fn _settle(
+    fn settle(
         &self,
         (token_in, amount_in): (H160, U256),
         (token_out, amount_out): (H160, U256),
-    ) -> UniswapInteraction {
+    ) -> (Approval, UniswapInteraction) {
         let amount_in_with_slippage = slippage::amount_plus_max_slippage(amount_in);
-        let set_allowance = self
+        let approval = self
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
-            .get(&token_in)
-            .cloned()
-            .unwrap_or_default()
-            < amount_in_with_slippage;
+            .approve_token_or_default(token_in, amount_in_with_slippage);
 
-        UniswapInteraction {
-            router: self.router.clone(),
-            settlement: self.gpv2_settlement.clone(),
-            set_allowance,
-            // Apply fixed slippage tolerance in case balances change between solution finding and mining
-            amount_out,
-            amount_in_max: amount_in_with_slippage,
-            token_in,
-            token_out,
-        }
+        (
+            approval,
+            UniswapInteraction {
+                router: self.router.clone(),
+                settlement: self.gpv2_settlement.clone(),
+                // Apply fixed slippage tolerance in case balances change between solution finding and mining
+                amount_out,
+                amount_in_max: amount_in_with_slippage,
+                token_in,
+                token_out,
+            },
+        )
     }
 }
 
 impl SettlementHandling<ConstantProductOrder> for Inner {
     // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
-        encoder.append_to_execution_plan(self._settle(execution.input, execution.output));
+        let (approval, swap) = self.settle(execution.input, execution.output);
+        encoder.append_to_execution_plan(approval);
+        encoder.append_to_execution_plan(swap);
         Ok(())
     }
 }
@@ -159,15 +155,15 @@ impl SettlementHandling<ConstantProductOrder> for Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use shared::transport::dummy;
+    use shared::dummy_contract;
+    use std::collections::HashMap;
 
     impl Inner {
         fn new(allowances: HashMap<H160, U256>) -> Self {
-            let web3 = dummy::web3();
             Self {
-                router: IUniswapLikeRouter::at(&web3, H160::zero()),
-                gpv2_settlement: GPv2Settlement::at(&web3, H160::zero()),
-                allowances: Mutex::new(allowances),
+                router: dummy_contract!(IUniswapLikeRouter, H160::zero()),
+                gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
+                allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
             }
         }
     }
@@ -184,36 +180,36 @@ mod tests {
         let inner = Inner::new(allowances);
 
         // Token A below, equal, above
-        let interaction = inner._settle((token_a, 50.into()), (token_b, 100.into()));
-        assert!(!interaction.set_allowance);
+        let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()));
+        assert_eq!(approval, Approval::AllowanceSufficient);
 
-        let interaction = inner._settle((token_a, 99.into()), (token_b, 100.into()));
-        assert!(!interaction.set_allowance);
+        let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()));
+        assert_eq!(approval, Approval::AllowanceSufficient);
 
         // Allowance needed because of slippage
-        let interaction = inner._settle((token_a, 100.into()), (token_b, 100.into()));
-        assert!(interaction.set_allowance);
+        let (approval, _) = inner.settle((token_a, 100.into()), (token_b, 100.into()));
+        assert_ne!(approval, Approval::AllowanceSufficient);
 
-        let interaction = inner._settle((token_a, 150.into()), (token_b, 100.into()));
-        assert!(interaction.set_allowance);
+        let (approval, _) = inner.settle((token_a, 150.into()), (token_b, 100.into()));
+        assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Token B below, equal, above
-        let interaction = inner._settle((token_b, 150.into()), (token_a, 100.into()));
-        assert!(!interaction.set_allowance);
+        let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()));
+        assert_eq!(approval, Approval::AllowanceSufficient);
 
-        let interaction = inner._settle((token_b, 199.into()), (token_a, 100.into()));
-        assert!(!interaction.set_allowance);
+        let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()));
+        assert_eq!(approval, Approval::AllowanceSufficient);
 
         // Allowance needed because of slippage
-        let interaction = inner._settle((token_b, 200.into()), (token_a, 100.into()));
-        assert!(interaction.set_allowance);
+        let (approval, _) = inner.settle((token_b, 200.into()), (token_a, 100.into()));
+        assert_ne!(approval, Approval::AllowanceSufficient);
 
-        let interaction = inner._settle((token_b, 250.into()), (token_a, 100.into()));
-        assert!(interaction.set_allowance);
+        let (approval, _) = inner.settle((token_b, 250.into()), (token_a, 100.into()));
+        assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Untracked token
-        let interaction =
-            inner._settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
-        assert!(interaction.set_allowance);
+        let (approval, _) =
+            inner.settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()));
+        assert_ne!(approval, Approval::AllowanceSufficient);
     }
 }

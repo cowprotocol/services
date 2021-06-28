@@ -5,7 +5,7 @@
 use crate::{
     encoding::EncodedInteraction, interactions::Erc20ApproveInteraction, settlement::Interaction,
 };
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashset;
@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 const MAX_BATCH_SIZE: usize = 100;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait AllowanceManaging {
+pub trait AllowanceManaging: Send + Sync {
     /// Retrieves allowances of the specified tokens for a given spender.
     ///
     /// This can be used to cache allowances for a bunch of tokens so that they
@@ -24,11 +24,7 @@ pub trait AllowanceManaging {
 
     /// Returns the approval interaction for the specified token and spender for
     /// at least the specified amount.
-    async fn get_approval(&self, token: H160, spender: H160, amount: U256) -> Result<Approval> {
-        self.get_allowances(hashset![token], spender)
-            .await?
-            .approve_token(token, amount)
-    }
+    async fn get_approval(&self, token: H160, spender: H160, amount: U256) -> Result<Approval>;
 }
 
 pub struct Allowances {
@@ -42,6 +38,10 @@ impl Allowances {
             spender,
             allowances,
         }
+    }
+
+    pub fn empty(spender: H160) -> Self {
+        Self::new(spender, HashMap::new())
     }
 
     /// Gets the approval interaction for the specified token and amount.
@@ -58,8 +58,29 @@ impl Allowances {
                 spender: self.spender,
             }
         } else {
-            Approval::Sufficient
+            Approval::AllowanceSufficient
         })
+    }
+
+    /// Gets the token approval, unconditionally approving in case the token
+    /// allowance is missing.
+    pub fn approve_token_or_default(&self, token: H160, amount: U256) -> Approval {
+        self.approve_token(token, amount)
+            .unwrap_or(Approval::Approve {
+                token,
+                spender: self.spender,
+            })
+    }
+
+    /// Extends the allowance cache with another.
+    pub fn extend(&mut self, other: Self) -> Result<()> {
+        ensure!(
+            self.spender == other.spender,
+            "failed to extend allowance cache for different spender"
+        );
+        self.allowances.extend(other.allowances);
+
+        Ok(())
     }
 }
 
@@ -68,7 +89,7 @@ impl Allowances {
 pub enum Approval {
     /// The exisisting allowance is sufficient, so no additional `approve` is
     /// required.
-    Sufficient,
+    AllowanceSufficient,
 
     /// An ERC20 approve is needed. This interaction always approves U256::MAX
     /// in order to save gas by allowing approvals to be used over multiple
@@ -79,7 +100,7 @@ pub enum Approval {
 impl Interaction for Approval {
     fn encode(&self) -> Vec<EncodedInteraction> {
         match self {
-            Approval::Sufficient => vec![],
+            Approval::AllowanceSufficient => vec![],
             Approval::Approve { token, spender } => {
                 // Use a "dummy" contract - unfortunately `ethcontract` doesn't
                 // allow you use the generated contract intances to encode
@@ -118,6 +139,12 @@ impl AllowanceManaging for AllowanceManager {
             spender,
             fetch_allowances(self.web3.clone(), tokens, self.owner, spender).await?,
         ))
+    }
+
+    async fn get_approval(&self, token: H160, spender: H160, amount: U256) -> Result<Approval> {
+        self.get_allowances(hashset![token], spender)
+            .await?
+            .approve_token(token, amount)
     }
 }
 
@@ -198,11 +225,11 @@ mod tests {
 
         assert_eq!(
             allowances.approve_token(token, 42.into()).unwrap(),
-            Approval::Sufficient
+            Approval::AllowanceSufficient
         );
         assert_eq!(
             allowances.approve_token(token, 100.into()).unwrap(),
-            Approval::Sufficient
+            Approval::AllowanceSufficient
         );
     }
 
@@ -238,8 +265,57 @@ mod tests {
     }
 
     #[test]
+    fn approval_or_default_for_missing_token() {
+        let spender = H160([0x01; 20]);
+        let token = H160([0x02; 20]);
+        let allowances = Allowances::new(spender, hashmap! {});
+
+        assert_eq!(
+            allowances.approve_token_or_default(token, 1337.into()),
+            Approval::Approve { token, spender }
+        );
+    }
+
+    #[test]
+    fn extend_allowances_cache() {
+        let mut allowances = Allowances::new(
+            H160([0x01; 20]),
+            hashmap! {
+                H160([0x11; 20]) => U256::from(1),
+                H160([0x12; 20]) => U256::from(2),
+            },
+        );
+        allowances
+            .extend(Allowances::new(
+                H160([0x01; 20]),
+                hashmap! {
+                    H160([0x11; 20]) => U256::from(42),
+                    H160([0x13; 20]) => U256::from(3),
+                },
+            ))
+            .unwrap();
+
+        assert_eq!(
+            allowances.allowances,
+            hashmap! {
+                H160([0x11; 20]) => U256::from(42),
+                H160([0x12; 20]) => U256::from(2),
+                H160([0x13; 20]) => U256::from(3),
+            },
+        );
+    }
+
+    #[test]
+    fn error_extending_allowances_for_different_spenders() {
+        let mut allowances = Allowances::empty(H160([0x01; 20]));
+        assert!(allowances
+            .extend(Allowances::empty(H160([0x02; 20])))
+            .is_err());
+    }
+
+    #[test]
     fn approval_encode_interaction() {
-        assert_eq!(Approval::Sufficient.encode(), vec![]);
+        assert_eq!(Approval::AllowanceSufficient.encode(), vec![]);
 
         let token = H160([0x01; 20]);
         let spender = H160([0x02; 20]);

@@ -6,39 +6,45 @@
 pub mod api;
 
 use self::api::{Amount, OneInchClient, Slippage, Swap, SwapQuery};
-use super::{paraswap_solver::AllowanceFetching, single_order_solver::SingleOrderSolving};
+use super::single_order_solver::SingleOrderSolving;
 use crate::{
     encoding::EncodedInteraction,
-    interactions::Erc20ApproveInteraction,
+    interactions::allowances::{AllowanceManager, AllowanceManaging},
     liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
     solver::oneinch_solver::api::OneInchClientImpl,
 };
 use anyhow::{ensure, Result};
-use contracts::{GPv2Settlement, ERC20};
-use ethcontract::{dyns::DynWeb3, Bytes, U256};
+use contracts::GPv2Settlement;
+use derivative::Derivative;
+use ethcontract::Bytes;
 use maplit::hashmap;
 use model::order::OrderKind;
+use shared::Web3;
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
 };
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
-#[derive(Debug)]
-pub struct OneInchSolver<F> {
+#[derive(Derivative)]
+#[derivative(Debug)]
+pub struct OneInchSolver {
     settlement_contract: GPv2Settlement,
-    client: Box<dyn OneInchClient>,
     disabled_protocols: HashSet<String>,
-    allowance_fetcher: F,
+    #[derivative(Debug = "ignore")]
+    client: Box<dyn OneInchClient>,
+    #[derivative(Debug = "ignore")]
+    allowance_fetcher: Box<dyn AllowanceManaging>,
 }
 
 /// Chain ID for Mainnet.
 const MAINNET_CHAIN_ID: u64 = 1;
 
-impl OneInchSolver<GPv2Settlement> {
+impl OneInchSolver {
     /// Creates a new 1Inch solver with a list of disabled protocols.
     pub fn with_disabled_protocols(
+        web3: Web3,
         settlement_contract: GPv2Settlement,
         chain_id: u64,
         disabled_protocols: impl IntoIterator<Item = String>,
@@ -48,19 +54,17 @@ impl OneInchSolver<GPv2Settlement> {
             "1Inch solver only supported on Mainnet",
         );
 
+        let settlement_address = settlement_contract.address();
         Ok(Self {
-            allowance_fetcher: settlement_contract.clone(),
             settlement_contract,
-            client: Box::new(OneInchClientImpl::default()),
             disabled_protocols: disabled_protocols.into_iter().collect(),
+            client: Box::new(OneInchClientImpl::default()),
+            allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
         })
     }
 }
 
-impl<F> OneInchSolver<F>
-where
-    F: AllowanceFetching,
-{
+impl OneInchSolver {
     /// Gets the list of supported protocols for the 1Inch solver.
     async fn supported_protocols(&self) -> Result<Option<Vec<String>>> {
         let protocols = if self.disabled_protocols.is_empty() {
@@ -93,12 +97,10 @@ where
         );
 
         let spender = self.client.get_spender().await?;
-        let sell_token = ERC20::at(&self.web3(), order.sell_token);
-
         // Fetching allowance before making the SwapQuery so that the Swap info is as recent as possible
-        let existing_allowance = self
+        let approval = self
             .allowance_fetcher
-            .existing_allowance(order.sell_token, spender.address)
+            .get_approval(order.sell_token, spender.address, order.sell_amount)
             .await?;
 
         let query = SwapQuery {
@@ -135,22 +137,10 @@ where
 
         settlement.with_liquidity(&order, order.sell_amount)?;
 
-        if existing_allowance < order.sell_amount {
-            settlement
-                .encoder
-                .append_to_execution_plan(Erc20ApproveInteraction {
-                    token: sell_token,
-                    spender: spender.address,
-                    amount: U256::MAX,
-                });
-        }
+        settlement.encoder.append_to_execution_plan(approval);
         settlement.encoder.append_to_execution_plan(swap);
 
         Ok(Some(settlement))
-    }
-
-    fn web3(&self) -> DynWeb3 {
-        self.settlement_contract.raw_instance().web3()
     }
 }
 
@@ -165,10 +155,7 @@ impl Interaction for Swap {
 }
 
 #[async_trait::async_trait]
-impl<F> SingleOrderSolving for OneInchSolver<F>
-where
-    F: AllowanceFetching,
-{
+impl SingleOrderSolving for OneInchSolver {
     async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
         if order.kind != OrderKind::Sell {
             // 1Inch only supports sell orders
@@ -183,7 +170,7 @@ where
     }
 }
 
-impl<F> Display for OneInchSolver<F> {
+impl Display for OneInchSolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "OneInchSolver")
     }
@@ -191,57 +178,67 @@ impl<F> Display for OneInchSolver<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::api::MockOneInchClient;
-    use super::*;
-    use crate::liquidity::LimitOrder;
-    use crate::solver::oneinch_solver::api::Protocols;
-    use crate::solver::oneinch_solver::api::Spender;
-    use crate::solver::paraswap_solver::MockAllowanceFetching;
+    use super::{api::MockOneInchClient, *};
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        liquidity::LimitOrder,
+        solver::oneinch_solver::api::Protocols,
+        solver::oneinch_solver::api::Spender,
+    };
     use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::{Web3, H160};
+    use ethcontract::{Web3, H160, U256};
     use maplit::hashset;
-    use mockall::Sequence;
+    use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderCreation, OrderKind};
-    use shared::transport::{create_env_test_transport, dummy};
+    use shared::{
+        dummy_contract,
+        transport::{create_env_test_transport, create_test_transport},
+    };
     use std::iter;
 
-    impl std::fmt::Debug for MockOneInchClient {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.write_str("MockOneInchClient")
+    fn dummy_solver(
+        client: MockOneInchClient,
+        allowance_fetcher: MockAllowanceManaging,
+    ) -> OneInchSolver {
+        let settlement_contract = dummy_contract!(GPv2Settlement, H160::zero());
+        OneInchSolver {
+            settlement_contract,
+            disabled_protocols: HashSet::new(),
+            client: Box::new(client),
+            allowance_fetcher: Box::new(allowance_fetcher),
         }
-    }
-
-    fn dummy_solver() -> OneInchSolver<GPv2Settlement> {
-        let web3 = dummy::web3();
-        let settlement = GPv2Settlement::at(&web3, H160::zero());
-        OneInchSolver::with_disabled_protocols(settlement, MAINNET_CHAIN_ID, iter::empty()).unwrap()
     }
 
     #[tokio::test]
     async fn ignores_buy_orders() {
-        assert!(dummy_solver()
-            .settle_order(LimitOrder {
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },)
-            .await
-            .unwrap()
-            .is_none());
+        assert!(
+            dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
+                .settle_order(LimitOrder {
+                    kind: OrderKind::Buy,
+                    ..Default::default()
+                },)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
     async fn returns_none_when_no_protocols_are_disabled() {
-        let protocols = dummy_solver().supported_protocols().await.unwrap();
+        let protocols = dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
+            .supported_protocols()
+            .await
+            .unwrap();
         assert!(protocols.is_none());
     }
 
     #[tokio::test]
     async fn test_satisfies_limit_price() {
-        let mut client = Box::new(MockOneInchClient::new());
-        let mut allowance_fetcher = MockAllowanceFetching::new();
+        let mut client = MockOneInchClient::new();
+        let mut allowance_fetcher = MockAllowanceManaging::new();
 
         let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
 
         client.expect_get_spender().returning(|| {
             Ok(Spender {
@@ -251,21 +248,16 @@ mod tests {
         client.expect_get_swap().returning(|_| {
             Ok(Swap {
                 from_token_amount: 100.into(),
-                to_token_amount: 100.into(),
+                to_token_amount: 99.into(),
                 ..Default::default()
             })
         });
 
         allowance_fetcher
-            .expect_existing_allowance()
-            .returning(|_, _| Ok(U256::zero()));
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
-        let solver = OneInchSolver {
-            settlement_contract: GPv2Settlement::at(&dummy::web3(), H160::zero()),
-            client,
-            disabled_protocols: Default::default(),
-            allowance_fetcher,
-        };
+        let solver = dummy_solver(client, allowance_fetcher);
 
         let order_passing_limit = LimitOrder {
             sell_token,
@@ -291,6 +283,10 @@ mod tests {
             .unwrap();
         assert_eq!(
             result.clearing_prices(),
+            // Note that prices are the inverted amounts. Another way to look at
+            // it is if the swap requires 100 sell token to get only 99 buy
+            // token, then the sell token is worth less (i.e. lower price) than
+            // the buy token.
             &hashmap! {
                 sell_token => 99.into(),
                 buy_token => 100.into(),
@@ -303,12 +299,12 @@ mod tests {
 
     #[tokio::test]
     async fn filters_disabled_protocols() {
-        let mut client = Box::new(MockOneInchClient::new());
-        let mut allowance_fetcher = MockAllowanceFetching::new();
+        let mut client = MockOneInchClient::new();
+        let mut allowance_fetcher = MockAllowanceManaging::new();
 
         allowance_fetcher
-            .expect_existing_allowance()
-            .returning(|_, _| Ok(U256::zero()));
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
         client.expect_get_protocols().returning(|| {
             Ok(Protocols {
@@ -330,10 +326,8 @@ mod tests {
         });
 
         let solver = OneInchSolver {
-            settlement_contract: GPv2Settlement::at(&dummy::web3(), H160::zero()),
-            client,
-            disabled_protocols: hashset! { "BadProtocol".into() },
-            allowance_fetcher,
+            disabled_protocols: hashset!["BadProtocol".to_string(), "VeryBadProtocol".to_string()],
+            ..dummy_solver(client, allowance_fetcher)
         };
 
         // Limit price violated. Actual assert is happening in `expect_get_swap()`
@@ -350,17 +344,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_sets_allowance_if_necessary() {
-        let mut client = Box::new(MockOneInchClient::new());
-        let mut allowance_fetcher = MockAllowanceFetching::new();
+        let mut client = MockOneInchClient::new();
+        let mut allowance_fetcher = MockAllowanceManaging::new();
 
         let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+        let spender = H160::from_low_u64_be(3);
 
-        client.expect_get_spender().returning(|| {
-            Ok(Spender {
-                address: H160::zero(),
-            })
-        });
+        client
+            .expect_get_spender()
+            .returning(move || Ok(Spender { address: spender }));
         client.expect_get_swap().returning(|_| {
             Ok(Swap {
                 from_token_amount: 100.into(),
@@ -372,22 +365,24 @@ mod tests {
         // On first invocation no prior allowance, then max allowance set.
         let mut seq = Sequence::new();
         allowance_fetcher
-            .expect_existing_allowance()
+            .expect_get_approval()
             .times(1)
-            .returning(|_, _| Ok(U256::zero()))
+            .with(eq(sell_token), eq(spender), eq(U256::from(100)))
+            .returning(move |_, _, _| {
+                Ok(Approval::Approve {
+                    token: sell_token,
+                    spender,
+                })
+            })
             .in_sequence(&mut seq);
         allowance_fetcher
-            .expect_existing_allowance()
+            .expect_get_approval()
             .times(1)
-            .returning(|_, _| Ok(U256::max_value()))
+            .with(eq(sell_token), eq(spender), eq(U256::from(100)))
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
-        let solver = OneInchSolver {
-            settlement_contract: GPv2Settlement::at(&dummy::web3(), H160::zero()),
-            client,
-            disabled_protocols: Default::default(),
-            allowance_fetcher,
-        };
+        let solver = dummy_solver(client, allowance_fetcher);
 
         let order = LimitOrder {
             sell_token,
@@ -409,11 +404,13 @@ mod tests {
 
     #[test]
     fn returns_error_on_non_mainnet() {
+        let web3 = Web3::new(create_test_transport("http://never.used"));
         let chain_id = 42;
-        let settlement = GPv2Settlement::at(&dummy::web3(), H160::zero());
+        let settlement = dummy_contract!(GPv2Settlement, H160::zero());
 
         assert!(
-            OneInchSolver::with_disabled_protocols(settlement, chain_id, iter::empty()).is_err()
+            OneInchSolver::with_disabled_protocols(web3, settlement, chain_id, iter::empty())
+                .is_err()
         )
     }
 
@@ -427,9 +424,13 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver =
-            OneInchSolver::with_disabled_protocols(settlement, chain_id, vec!["PMM1".to_string()])
-                .unwrap();
+        let solver = OneInchSolver::with_disabled_protocols(
+            web3,
+            settlement,
+            chain_id,
+            vec!["PMM1".to_string()],
+        )
+        .unwrap();
         let settlement = solver
             .settle_order_with_protocols(
                 Order {
@@ -447,6 +448,7 @@ mod tests {
                 None,
             )
             .await
+            .unwrap()
             .unwrap();
 
         println!("{:#?}", settlement);
