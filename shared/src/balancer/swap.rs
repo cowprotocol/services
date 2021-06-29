@@ -43,14 +43,14 @@ impl WeightedPool {
     fn add_swap_fee_amount(&self, amount: U256) -> Result<U256, Error> {
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BasePool.sol#L454-L457
         Bfp::from_wei(amount)
-            .div_up(Bfp::from_wei(self.swap_fee_percentage).complement())
+            .div_up(self.swap_fee_percentage.complement())
             .map(|amount_with_fees| amount_with_fees.as_uint256())
     }
 
     fn subtract_swap_fee_amount(&self, amount: U256) -> Result<U256, Error> {
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BasePool.sol#L462-L466
         let amount = Bfp::from_wei(amount);
-        let fee_amount = amount.mul_up(Bfp::from_wei(self.swap_fee_percentage))?;
+        let fee_amount = amount.mul_up(self.swap_fee_percentage)?;
         amount
             .sub(fee_amount)
             .map(|amount_without_fees| amount_without_fees.as_uint256())
@@ -163,7 +163,7 @@ mod tests {
             pool_id: Default::default(),
             pool_address: H160::zero(),
             reserves,
-            swap_fee_percentage,
+            swap_fee_percentage: Bfp::from_wei(swap_fee_percentage),
         }
     }
 

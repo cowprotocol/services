@@ -2,7 +2,7 @@ use crate::{
     bad_token::BadTokenDetecting,
     baseline_solver::{
         estimate_buy_amount, estimate_sell_amount, estimate_spot_price, path_candidates,
-        token_path_to_pair_path,
+        token_path_to_pair_path, DEFAULT_MAX_HOPS,
     },
     conversions::U256Ext,
     pool_fetching::{Pool, PoolFetching},
@@ -20,8 +20,6 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error;
-
-const MAX_HOPS: usize = 2;
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
@@ -315,7 +313,8 @@ impl BaselinePriceEstimator {
         CompareFn: Fn(U256, &[H160], &HashMap<TokenPair, Vec<Pool>>) -> O,
         O: Ord,
     {
-        let path_candidates = path_candidates(sell_token, buy_token, &self.base_tokens, MAX_HOPS);
+        let path_candidates =
+            path_candidates(sell_token, buy_token, &self.base_tokens, DEFAULT_MAX_HOPS);
         let all_pairs = path_candidates
             .iter()
             .flat_map(|candidate| token_path_to_pair_path(candidate).into_iter())

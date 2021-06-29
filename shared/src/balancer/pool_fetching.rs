@@ -19,6 +19,7 @@ use anyhow::Result;
 use model::TokenPair;
 use std::{collections::HashSet, sync::Arc};
 
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait WeightedPoolFetching: Send + Sync {
     async fn fetch(

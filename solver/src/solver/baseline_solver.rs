@@ -6,15 +6,14 @@ use num::BigRational;
 use shared::{
     baseline_solver::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, BaselineSolvable,
+        DEFAULT_MAX_HOPS,
     },
     pool_fetching::Pool,
 };
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-    liquidity::{
-        uniswap::MAX_HOPS, AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity,
-    },
+    liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity},
     settlement::Settlement,
     solver::Solver,
 };
@@ -106,7 +105,7 @@ impl BaselineSolver {
             order.sell_token,
             order.buy_token,
             &self.base_tokens,
-            MAX_HOPS,
+            DEFAULT_MAX_HOPS,
         );
 
         let (path, executed_sell_amount, executed_buy_amount) = match order.kind {

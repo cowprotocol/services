@@ -1,19 +1,19 @@
-use crate::settlement::SettlementEncoder;
-use anyhow::Result;
-use model::{order::OrderKind, TokenPair};
-use num::rational::Ratio;
-use primitive_types::{H160, U256};
-use std::sync::Arc;
-use strum_macros::{AsStaticStr, EnumVariantNames};
-
-#[cfg(test)]
-use model::order::Order;
-use shared::balancer::pool_storage::PoolTokenState;
-use std::collections::HashMap;
-
+pub mod balancer;
 pub mod offchain_orderbook;
 pub mod slippage;
 pub mod uniswap;
+
+use crate::settlement::SettlementEncoder;
+use anyhow::Result;
+#[cfg(test)]
+use model::order::Order;
+use model::{order::OrderKind, TokenPair};
+use num::{rational::Ratio, BigRational};
+use primitive_types::{H160, U256};
+use shared::balancer::pool_storage::PoolTokenState;
+use std::collections::HashMap;
+use std::sync::Arc;
+use strum_macros::{AsStaticStr, EnumVariantNames};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
@@ -127,7 +127,7 @@ impl std::fmt::Debug for ConstantProductOrder {
 #[derive(Clone)]
 pub struct WeightedProductOrder {
     pub reserves: HashMap<H160, PoolTokenState>,
-    pub fee: Ratio<u32>,
+    pub fee: BigRational,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
@@ -171,7 +171,7 @@ impl Default for ConstantProductOrder {
         ConstantProductOrder {
             tokens: Default::default(),
             reserves: Default::default(),
-            fee: Ratio::new(0, 1),
+            fee: num::Zero::zero(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
         }
     }
@@ -182,7 +182,7 @@ impl Default for WeightedProductOrder {
     fn default() -> Self {
         WeightedProductOrder {
             reserves: Default::default(),
-            fee: Ratio::new(0, 1),
+            fee: num::Zero::zero(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
         }
     }

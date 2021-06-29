@@ -2,6 +2,7 @@ use crate::{
     balancer::{
         event_handler::BalancerPoolRegistry,
         pool_storage::{RegisteredWeightedPool, WeightedPool},
+        swap::fixed_point::Bfp,
     },
     pool_fetching::{handle_contract_error, MAX_BATCH_SIZE},
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
@@ -125,7 +126,7 @@ fn handle_results(results: Vec<FetchedWeightedPool>) -> Result<Vec<WeightedPool>
             acc.push(WeightedPool::new(
                 fetched_pool.registered_pool,
                 balances,
-                swap_fee_percentage,
+                Bfp::from_wei(swap_fee_percentage),
             ));
             Ok(acc)
         })

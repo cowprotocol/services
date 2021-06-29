@@ -10,15 +10,13 @@ use anyhow::Result;
 use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use primitive_types::{H160, U256};
 use shared::{
-    baseline_solver::{path_candidates, token_path_to_pair_path},
+    baseline_solver::{path_candidates, token_path_to_pair_path, DEFAULT_MAX_HOPS},
     pool_fetching::PoolFetching,
     recent_block_cache::Block,
     Web3,
 };
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
-
-pub const MAX_HOPS: usize = 2;
 
 pub struct UniswapLikeLiquidity {
     inner: Arc<Inner>,
@@ -71,7 +69,7 @@ impl UniswapLikeLiquidity {
                 order.sell_token,
                 order.buy_token,
                 &self.base_tokens,
-                MAX_HOPS,
+                DEFAULT_MAX_HOPS,
             );
             pools.extend(
                 path_candidates

@@ -38,18 +38,18 @@ use ethcontract::{H160, H256, U256};
 use model::TokenPair;
 use std::collections::{HashMap, HashSet};
 
-#[derive(Clone)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PoolTokenState {
     pub balance: U256,
     pub weight: Bfp,
     pub scaling_exponent: u8,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
-    pub swap_fee_percentage: U256,
+    pub swap_fee_percentage: Bfp,
     pub reserves: HashMap<H160, PoolTokenState>,
 }
 
@@ -57,7 +57,7 @@ impl WeightedPool {
     pub fn new(
         pool_data: RegisteredWeightedPool,
         balances: Vec<U256>,
-        swap_fee_percentage: U256,
+        swap_fee_percentage: Bfp,
     ) -> Self {
         let mut reserves = HashMap::new();
         // We expect the weight and token indices are aligned with balances returned from EVM query.
