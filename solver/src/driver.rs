@@ -137,7 +137,7 @@ impl Driver {
         .into_iter()
     }
 
-    async fn submit_settlement(&self, rated_settlement: RatedSettlement) {
+    async fn submit_settlement(&self, rated_settlement: RatedSettlement) -> Result<()> {
         let SettlementWithSolver { name, settlement } = rated_settlement.clone().settlement;
         let trades = settlement.trades().to_vec();
         match settlement_submission::submit(
@@ -154,6 +154,7 @@ impl Driver {
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
                 self.metrics.settlement_submitted(true, name);
+                Ok(())
             }
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
@@ -168,6 +169,7 @@ impl Driver {
                     tracing::error!("Failed to submit settlement: {:?}", err)
                 };
                 self.metrics.settlement_submitted(false, name);
+                Err(err)
             }
         }
     }
@@ -415,6 +417,8 @@ impl Driver {
         let rated_settlements = self
             .rate_settlements(settlements, &estimated_prices, gas_price_wei)
             .await;
+
+        self.inflight_trades.clear();
         if let Some(mut settlement) = rated_settlements
             .clone()
             .into_iter()
@@ -431,14 +435,15 @@ impl Driver {
             }
 
             tracing::info!("winning settlement: {:?}", settlement);
-            self.submit_settlement(settlement.clone()).await;
-            self.inflight_trades = settlement
-                .settlement
-                .settlement
-                .trades()
-                .iter()
-                .map(|t| t.order.order_meta_data.uid)
-                .collect::<HashSet<OrderUid>>();
+            if self.submit_settlement(settlement.clone()).await.is_ok() {
+                self.inflight_trades = settlement
+                    .settlement
+                    .settlement
+                    .trades()
+                    .iter()
+                    .map(|t| t.order.order_meta_data.uid)
+                    .collect::<HashSet<OrderUid>>();
+            }
 
             self.report_matched_but_unsettled_orders(
                 &Settlement::from(settlement),
