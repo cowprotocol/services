@@ -22,7 +22,7 @@ impl LiquidityCollector {
             .get_liquidity(inflight_trades)
             .await
             .context("failed to get orderbook")?;
-        tracing::debug!("got {} orders", limit_orders.len());
+        tracing::info!("got {} orders: {:?}", limit_orders.len(), limit_orders);
 
         let mut amms = vec![];
         for liquidity in self.uniswap_like_liquidity.iter() {
