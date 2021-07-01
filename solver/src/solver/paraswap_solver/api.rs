@@ -46,7 +46,10 @@ impl ParaswapApi for DefaultParaswapApi {
         &self,
         query: TransactionBuilderQuery,
     ) -> Result<TransactionBuilderResponse> {
-        tracing::debug!("Querying Paraswap API (transaction) with {:?}", query);
+        tracing::debug!(
+            "Querying Paraswap API (transaction) with {}",
+            serde_json::to_string(&query).unwrap()
+        );
         let text = query
             .into_request(&self.client)
             .send()
@@ -111,7 +114,7 @@ impl PriceQuery {
 }
 
 /// A Paraswap API price response.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize)]
 pub struct PriceResponse {
     /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
     pub price_route_raw: Value,
@@ -218,9 +221,8 @@ pub struct TransactionBuilderResponse {
 
 #[cfg(test)]
 mod tests {
-    use reqwest::StatusCode;
-
     use super::*;
+    use reqwest::StatusCode;
 
     #[tokio::test]
     #[ignore]
@@ -243,7 +245,10 @@ mod tests {
             .await
             .expect("Response is not json");
 
-        println!("Price Response: {:?}", &price_response,);
+        println!(
+            "Price Response: {}",
+            serde_json::to_string_pretty(&price_response).unwrap()
+        );
 
         let transaction_query = TransactionBuilderQuery {
             src_token: from,
@@ -257,6 +262,11 @@ mod tests {
             user_address: shared::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
             referrer: "GPv2".to_string(),
         };
+
+        println!(
+            "Transaction Query: {}",
+            serde_json::to_string_pretty(&transaction_query).unwrap()
+        );
 
         let client = Client::new();
         let transaction_response = transaction_query
