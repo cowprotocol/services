@@ -3,47 +3,14 @@
 //! For more information on the HTTP API, consult:
 //! <https://docs.1inch.io/api/quote-swap>
 //! <https://api.1inch.exchange/swagger/ethereum/>
-
+use crate::solver::solver_utils::{deserialize_prefixed_hex, Slippage};
 use anyhow::{ensure, Context, Result};
 use ethcontract::{H160, U256};
+use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
-use serde::{
-    de::{Deserializer, Error as _},
-    Deserialize,
-};
+use serde::Deserialize;
 use shared::http::default_http_client;
-use std::{
-    borrow::Cow,
-    fmt::{self, Display, Formatter},
-};
-
-/// A slippage amount.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
-pub struct Slippage(f64);
-
-impl Slippage {
-    /// Creates a slippage amount from the specified percentage.
-    pub fn percentage(amount: f64) -> Result<Self> {
-        // 1Inch API only accepts a slippage from 0 to 50.
-        ensure!(
-            (0. ..=50.).contains(&amount),
-            "slippage outside of [0%, 50%] range"
-        );
-        Ok(Slippage(amount))
-    }
-
-    /// Creates a slippage amount from the specified basis points.
-    pub fn basis_points(bps: u16) -> Result<Self> {
-        let percent = (bps as f64) / 100.;
-        Slippage::percentage(percent)
-    }
-}
-
-impl Display for Slippage {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
+use std::fmt::{self, Display, Formatter};
 
 /// Parts to split a swap.
 ///
@@ -159,9 +126,9 @@ impl SwapQuery {
 pub struct Swap {
     pub from_token: Token,
     pub to_token: Token,
-    #[serde(deserialize_with = "deserialize_decimal_u256")]
+    #[serde(with = "u256_decimal")]
     pub from_token_amount: U256,
-    #[serde(deserialize_with = "deserialize_decimal_u256")]
+    #[serde(with = "u256_decimal")]
     pub to_token_amount: U256,
     pub protocols: Vec<Vec<Vec<Protocol>>>,
     pub tx: Transaction,
@@ -194,9 +161,9 @@ pub struct Transaction {
     pub to: H160,
     #[serde(deserialize_with = "deserialize_prefixed_hex")]
     pub data: Vec<u8>,
-    #[serde(deserialize_with = "deserialize_decimal_u256")]
+    #[serde(with = "u256_decimal")]
     pub value: U256,
-    #[serde(deserialize_with = "deserialize_decimal_u256")]
+    #[serde(with = "u256_decimal")]
     pub gas_price: U256,
     pub gas: u64,
 }
@@ -213,26 +180,6 @@ impl std::fmt::Debug for Transaction {
             .finish()
     }
 }
-
-fn deserialize_decimal_u256<'de, D>(deserializer: D) -> Result<U256, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let decimal_str = Cow::<str>::deserialize(deserializer)?;
-    U256::from_dec_str(&*decimal_str).map_err(D::Error::custom)
-}
-
-fn deserialize_prefixed_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let prefixed_hex_str = Cow::<str>::deserialize(deserializer)?;
-    let hex_str = prefixed_hex_str
-        .strip_prefix("0x")
-        .ok_or_else(|| D::Error::custom("hex missing '0x' prefix"))?;
-    hex::decode(hex_str).map_err(D::Error::custom)
-}
-
 /// Approve spender response.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Spender {
@@ -322,7 +269,7 @@ mod tests {
     #[test]
     fn slippage_from_basis_points() {
         assert_eq!(
-            Slippage::basis_points(50).unwrap(),
+            Slippage::percentage_from_basis_points(50).unwrap(),
             Slippage::percentage(0.5).unwrap(),
         )
     }
@@ -349,7 +296,7 @@ mod tests {
             to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             amount: 1_000_000_000_000_000_000u128.into(),
             from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::basis_points(50).unwrap(),
+            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
             protocols: None,
             disable_estimate: None,
             complexity_level: None,
@@ -378,7 +325,7 @@ mod tests {
             to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             amount: 1_000_000_000_000_000_000u128.into(),
             from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::basis_points(50).unwrap(),
+            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
             protocols: Some(vec!["WETH".to_string(), "UNISWAP_V3".to_string()]),
             disable_estimate: Some(true),
             complexity_level: Some(Amount::new(1).unwrap()),
@@ -533,7 +480,7 @@ mod tests {
                 to_token_address: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
                 amount: 1_000_000_000_000_000_000u128.into(),
                 from_address: shared::addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::basis_points(50).unwrap(),
+                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
                 protocols: None,
                 disable_estimate: None,
                 complexity_level: None,
@@ -555,7 +502,7 @@ mod tests {
                 to_token_address: shared::addr!("a3BeD4E1c75D00fa6f4E5E6922DB7261B5E9AcD2"),
                 amount: 100_000_000_000_000_000_000u128.into(),
                 from_address: shared::addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::basis_points(50).unwrap(),
+                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
                 protocols: Some(vec!["WETH".to_string(), "UNISWAP_V2".to_string()]),
                 disable_estimate: Some(true),
                 complexity_level: Some(Amount::new(2).unwrap()),

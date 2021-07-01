@@ -4,6 +4,7 @@ use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{H160, U256};
 use http_solver::{HttpSolver, SolverConfig};
+use matcha_solver::MatchaSolver;
 use naive_solver::NaiveSolver;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
@@ -21,10 +22,12 @@ use structopt::clap::arg_enum;
 
 mod baseline_solver;
 mod http_solver;
+mod matcha_solver;
 mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;
 mod single_order_solver;
+mod solver_utils;
 
 // For solvers that enforce a timeout internally we set their timeout to the global solver timeout
 // minus this duration to account for additional delay for example from the network.
@@ -55,6 +58,7 @@ arg_enum! {
         Mip,
         OneInch,
         Paraswap,
+        Matcha,
     }
 }
 
@@ -122,6 +126,11 @@ pub fn create(
                     native_token,
                     min_order_size_one_inch,
                 ))
+            }
+            SolverType::Matcha => {
+                let matcha_solver =
+                    MatchaSolver::new(web3.clone(), settlement_contract.clone(), chain_id).unwrap();
+                boxed(SingleOrderSolver::from(matcha_solver))
             }
             SolverType::Paraswap => boxed(SingleOrderSolver::from(ParaswapSolver::new(
                 web3.clone(),

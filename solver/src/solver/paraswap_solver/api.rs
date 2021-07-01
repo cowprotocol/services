@@ -1,3 +1,4 @@
+use crate::solver::solver_utils::debug_bytes;
 use anyhow::{Context, Result};
 use derivative::Derivative;
 use ethcontract::{H160, U256};
@@ -213,10 +214,6 @@ pub struct TransactionBuilderResponse {
     /// the suggested gas price
     #[serde(with = "u256_decimal")]
     pub gas_price: U256,
-}
-
-fn debug_bytes(bytes: &Bytes, formatter: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
 }
 
 #[cfg(test)]

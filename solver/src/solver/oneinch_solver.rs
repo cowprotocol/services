@@ -4,9 +4,9 @@
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
 pub mod api;
-
-use self::api::{Amount, OneInchClient, Slippage, Swap, SwapQuery};
+use self::api::{Amount, OneInchClient, Swap, SwapQuery};
 use super::single_order_solver::SingleOrderSolving;
+use super::solver_utils::Slippage;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
@@ -108,7 +108,7 @@ impl OneInchSolver {
             to_token_address: order.buy_token,
             amount: order.sell_amount,
             from_address: self.settlement_contract.address(),
-            slippage: Slippage::basis_points(MAX_SLIPPAGE_BPS).unwrap(),
+            slippage: Slippage::percentage_from_basis_points(MAX_SLIPPAGE_BPS).unwrap(),
             protocols,
             // Disable balance/allowance checks, as the settlement contract
             // does not hold balances to traded tokens.
@@ -178,13 +178,12 @@ impl Display for OneInchSolver {
 
 #[cfg(test)]
 mod tests {
+
     use super::{api::MockOneInchClient, *};
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        liquidity::LimitOrder,
-        solver::oneinch_solver::api::Protocols,
-        solver::oneinch_solver::api::Spender,
-    };
+    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
+    use crate::liquidity::LimitOrder;
+    use crate::solver::oneinch_solver::api::Protocols;
+    use crate::solver::oneinch_solver::api::Spender;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use maplit::hashset;
