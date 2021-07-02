@@ -21,7 +21,7 @@ itertools = "0.10"
 lazy_static = "1.4.0"
 lru = "0.6"
 maplit = "1.0"
-mockall = "0.9"
+mockall = "0.10"
 model = { path = "../model" }
 num = "0.4"
 num-bigint = "0.3"

@@ -48,4 +48,4 @@ web3 = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 secp256k1 = "0.20"
-mockall = "0.9"
+mockall = "0.10"

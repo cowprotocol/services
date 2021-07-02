@@ -49,4 +49,4 @@ web3 = { version = "0.16", default-features = false }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"
-mockall = "0.9"
+mockall = "0.10"

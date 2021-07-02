@@ -33,7 +33,6 @@ use std::{
 
 /// A trait used to define `RecentBlockCache` updating behaviour.
 #[async_trait::async_trait]
-#[mockall::automock]
 pub trait CacheFetching<K, V> {
     async fn fetch_values(&self, keys: HashSet<K>, block: Block) -> Result<Vec<V>>;
 }
