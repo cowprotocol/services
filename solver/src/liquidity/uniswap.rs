@@ -11,8 +11,8 @@ use contracts::{GPv2Settlement, IUniswapLikeRouter};
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::{path_candidates, token_path_to_pair_path, DEFAULT_MAX_HOPS},
-    pool_fetching::PoolFetching,
     recent_block_cache::Block,
+    sources::uniswap::pool_fetching::PoolFetching,
     Web3,
 };
 use std::collections::HashSet;

@@ -10,7 +10,7 @@ use model::order::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
-use shared::balancer::pool_storage::PoolTokenState;
+use shared::sources::balancer::pool_fetching::PoolTokenState;
 use std::collections::HashMap;
 use std::sync::Arc;
 use strum_macros::{AsStaticStr, EnumVariantNames};

@@ -8,8 +8,7 @@ use model::{
 use secp256k1::SecretKey;
 use serde_json::json;
 use shared::{
-    amm_pair_provider::UniswapPairProvider,
-    pool_fetching::PoolFetcher,
+    sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     token_list::{Token, TokenList},
     Web3,
 };

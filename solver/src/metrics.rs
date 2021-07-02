@@ -8,7 +8,9 @@ use model::order::Order;
 use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
 };
-use shared::{pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics};
+use shared::{
+    sources::uniswap::pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics,
+};
 use strum::{AsStaticRef, VariantNames};
 
 use crate::liquidity::Liquidity;

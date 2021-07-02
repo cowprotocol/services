@@ -16,7 +16,6 @@ use orderbook::{
 use primitive_types::H160;
 use prometheus::Registry;
 use shared::{
-    amm_pair_provider::AmmPairProvider,
     bad_token::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
@@ -24,11 +23,17 @@ use shared::{
     },
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
-    pool_aggregating::{self, PoolAggregator},
-    pool_cache::PoolCache,
-    pool_fetching::{PoolFetcher, PoolFetching},
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
+    sources::{
+        self,
+        uniswap::{
+            pair_provider::AmmPairProvider,
+            pool_cache::PoolCache,
+            pool_fetching::{PoolFetcher, PoolFetching},
+        },
+        PoolAggregator,
+    },
     transport::create_instrumented_transport,
     transport::http::HttpTransport,
 };
@@ -184,7 +189,7 @@ async fn main() {
     let pair_providers: Vec<Arc<dyn AmmPairProvider>> = stream::iter(args.shared.baseline_sources)
         .then(|source| {
             let web3 = web3.clone();
-            async move { pool_aggregating::pair_provider(source, chain_id, &web3).await }
+            async move { sources::pair_provider(source, chain_id, &web3).await }
         })
         .collect()
         .await;

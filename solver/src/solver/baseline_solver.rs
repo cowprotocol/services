@@ -8,7 +8,7 @@ use shared::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, BaselineSolvable,
         DEFAULT_MAX_HOPS,
     },
-    pool_fetching::Pool,
+    sources::uniswap::pool_fetching::Pool,
 };
 use std::collections::{HashMap, HashSet};
 

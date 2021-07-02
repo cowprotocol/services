@@ -1,6 +1,7 @@
 use super::{BadTokenDetecting, TokenQuality};
 use crate::{
-    amm_pair_provider::AmmPairProvider, ethcontract_error::EthcontractErrorType, trace_many, Web3,
+    ethcontract_error::EthcontractErrorType, sources::uniswap::pair_provider::AmmPairProvider,
+    trace_many, Web3,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
@@ -280,7 +281,7 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
 mod tests {
     use super::*;
     use crate::{
-        amm_pair_provider::{SushiswapPairProvider, UniswapPairProvider},
+        sources::uniswap::pair_provider::{SushiswapPairProvider, UniswapPairProvider},
         transport::create_env_test_transport,
     };
     use hex_literal::hex;

@@ -1,5 +1,5 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
-use crate::{gas_price_estimation::GasEstimatorType, pool_aggregating::BaselineSource};
+use crate::{gas_price_estimation::GasEstimatorType, sources::BaselineSource};
 use ethcontract::{H160, U256};
 use std::{
     num::{NonZeroU64, ParseFloatError},

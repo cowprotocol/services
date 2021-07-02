@@ -7,7 +7,10 @@ use model::{
 };
 use secp256k1::SecretKey;
 use serde_json::json;
-use shared::{amm_pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher, Web3};
+use shared::{
+    sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
+    Web3,
+};
 use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,

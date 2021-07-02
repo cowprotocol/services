@@ -3,21 +3,70 @@
 //! their `token_balances` and the `PoolFetcher` returns all up-to-date `WeightedPools`
 //! to be consumed by external users (e.g. Price Estimators and Solvers).
 use crate::{
-    balancer::{
-        event_handler::BalancerPoolRegistry,
-        pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
-        pool_init::PoolInitializing,
-        pool_storage::WeightedPool,
-    },
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
+    sources::balancer::{
+        event_handler::BalancerPoolRegistry,
+        pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
+        pool_init::PoolInitializing,
+        pool_storage::RegisteredWeightedPool,
+        swap::fixed_point::Bfp,
+    },
     token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::Result;
+use ethcontract::{H160, H256, U256};
 use model::TokenPair;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolTokenState {
+    pub balance: U256,
+    pub weight: Bfp,
+    pub scaling_exponent: u8,
+}
+
+#[derive(Clone, Debug)]
+pub struct WeightedPool {
+    pub pool_id: H256,
+    pub pool_address: H160,
+    pub swap_fee_percentage: Bfp,
+    pub reserves: HashMap<H160, PoolTokenState>,
+}
+
+impl WeightedPool {
+    pub fn new(
+        pool_data: RegisteredWeightedPool,
+        balances: Vec<U256>,
+        swap_fee_percentage: Bfp,
+    ) -> Self {
+        let mut reserves = HashMap::new();
+        // We expect the weight and token indices are aligned with balances returned from EVM query.
+        // If necessary we would also pass the tokens along with the query result,
+        // use them and fetch the weights from the registry by token address.
+        for (i, balance) in balances.into_iter().enumerate() {
+            reserves.insert(
+                pool_data.tokens[i],
+                PoolTokenState {
+                    balance,
+                    weight: pool_data.normalized_weights[i],
+                    scaling_exponent: pool_data.scaling_exponents[i],
+                },
+            );
+        }
+        WeightedPool {
+            pool_id: pool_data.pool_id,
+            pool_address: pool_data.pool_address,
+            swap_fee_percentage,
+            reserves,
+        }
+    }
+}
 
 #[mockall::automock]
 #[async_trait::async_trait]

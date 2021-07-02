@@ -1,9 +1,13 @@
-use crate::pool_fetching::{Pool, PoolFetching};
-use crate::Web3;
-use crate::{
-    amm_pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider},
-    recent_block_cache::Block,
+//! Top-level module organizing all baseline liquidity sources.
+
+pub mod balancer;
+pub mod uniswap;
+
+use self::uniswap::{
+    pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider},
+    pool_fetching::{Pool, PoolFetching},
 };
+use crate::{recent_block_cache::Block, Web3};
 use anyhow::Result;
 use model::TokenPair;
 use std::collections::HashSet;

@@ -204,7 +204,7 @@ pub fn relevant_token_pairs(
 mod tests {
     use super::*;
     use crate::conversions::big_rational_to_float;
-    use crate::pool_fetching::Pool;
+    use crate::sources::uniswap::pool_fetching::Pool;
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
     use model::TokenPair;

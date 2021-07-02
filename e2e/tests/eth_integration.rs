@@ -7,7 +7,8 @@ use model::{
 use secp256k1::SecretKey;
 use serde_json::json;
 use shared::{
-    amm_pair_provider::UniswapPairProvider, maintenance::Maintaining, pool_fetching::PoolFetcher,
+    maintenance::Maintaining,
+    sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     Web3,
 };
 use solver::{

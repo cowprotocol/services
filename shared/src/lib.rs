@@ -1,10 +1,8 @@
 #[macro_use]
 pub mod macros;
 
-pub mod amm_pair_provider;
 pub mod arguments;
 pub mod bad_token;
-pub mod balancer;
 pub mod baseline_solver;
 pub mod conversions;
 pub mod current_block;
@@ -15,11 +13,9 @@ pub mod http;
 pub mod maintenance;
 pub mod metrics;
 pub mod network;
-pub mod pool_aggregating;
-pub mod pool_cache;
-pub mod pool_fetching;
 pub mod price_estimate;
 pub mod recent_block_cache;
+pub mod sources;
 pub mod subgraph;
 pub mod time;
 pub mod token_info;

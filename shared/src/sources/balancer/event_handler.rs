@@ -13,14 +13,14 @@
 //! *Note that* when loading pool from a cold start synchronization can take quite long, but is
 //! otherwise as quick as possible (i.e. taking advantage of as much cached information as possible).
 use crate::{
-    balancer::{
+    event_handling::{BlockNumber, EventHandler, EventIndex, EventStoring},
+    impl_event_retrieving,
+    maintenance::Maintaining,
+    sources::balancer::{
         info_fetching::PoolInfoFetcher,
         pool_init::PoolInitializing,
         pool_storage::{PoolCreated, PoolStorage, RegisteredWeightedPool},
     },
-    event_handling::{BlockNumber, EventHandler, EventIndex, EventStoring},
-    impl_event_retrieving,
-    maintenance::Maintaining,
     token_info::TokenInfoFetching,
     Web3,
 };

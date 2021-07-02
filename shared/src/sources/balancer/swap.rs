@@ -1,7 +1,7 @@
 use crate::{
-    balancer::pool_storage::{PoolTokenState, WeightedPool},
     baseline_solver::BaselineSolvable,
     conversions::u256_to_big_int,
+    sources::balancer::pool_fetching::{PoolTokenState, WeightedPool},
 };
 use error::Error;
 use ethcontract::{H160, U256};

@@ -9,11 +9,16 @@ use shared::{
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
     network::network_name,
-    pool_aggregating::{self, BaselineSource, PoolAggregator},
-    pool_cache::PoolCache,
-    pool_fetching::{PoolFetcher, PoolFetching},
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
+    sources::{
+        self,
+        uniswap::{
+            pool_cache::PoolCache,
+            pool_fetching::{PoolFetcher, PoolFetching},
+        },
+        BaselineSource, PoolAggregator,
+    },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     transport::create_instrumented_transport,
@@ -229,8 +234,7 @@ async fn main() {
                 let current_block_stream = current_block_stream.clone();
                 let metrics = metrics.clone();
                 async move {
-                    let pair_provider =
-                        pool_aggregating::pair_provider(source, chain_id, &web3).await;
+                    let pair_provider = sources::pair_provider(source, chain_id, &web3).await;
                     let fetcher = Box::new(PoolFetcher {
                         pair_provider,
                         web3,

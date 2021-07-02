@@ -14,9 +14,9 @@ use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{H160, H256};
 use shared::{
-    balancer::pool_fetching::WeightedPoolFetching,
     baseline_solver::{relevant_token_pairs, DEFAULT_MAX_HOPS},
     recent_block_cache::Block,
+    sources::balancer::pool_fetching::WeightedPoolFetching,
 };
 use std::{collections::HashSet, sync::Arc};
 
@@ -124,11 +124,10 @@ mod tests {
     use model::TokenPair;
     use num::BigRational;
     use shared::{
-        balancer::{
-            pool_fetching::MockWeightedPoolFetching,
-            pool_storage::{PoolTokenState, WeightedPool},
-        },
         dummy_contract,
+        sources::balancer::pool_fetching::{
+            MockWeightedPoolFetching, PoolTokenState, WeightedPool,
+        },
     };
 
     fn dummy_contracts() -> Arc<Contracts> {

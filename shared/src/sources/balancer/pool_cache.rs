@@ -1,11 +1,12 @@
 use crate::{
-    balancer::{
-        event_handler::BalancerPoolRegistry,
-        pool_storage::{RegisteredWeightedPool, WeightedPool},
-        swap::fixed_point::Bfp,
-    },
-    pool_fetching::{handle_contract_error, MAX_BATCH_SIZE},
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
+    sources::{
+        balancer::{
+            event_handler::BalancerPoolRegistry, pool_fetching::WeightedPool,
+            pool_storage::RegisteredWeightedPool, swap::fixed_point::Bfp,
+        },
+        uniswap::pool_fetching::{handle_contract_error, MAX_BATCH_SIZE},
+    },
     Web3,
 };
 use anyhow::Result;

@@ -5,8 +5,8 @@ use crate::{
         token_path_to_pair_path, DEFAULT_MAX_HOPS,
     },
     conversions::U256Ext,
-    pool_fetching::{Pool, PoolFetching},
     recent_block_cache::Block,
+    sources::uniswap::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
@@ -410,7 +410,7 @@ mod tests {
     use super::*;
     use crate::{
         gas_price_estimation::FakeGasPriceEstimator,
-        pool_fetching::{Pool, PoolFetching},
+        sources::uniswap::pool_fetching::{Pool, PoolFetching},
     };
 
     struct FakePoolFetcher(Vec<Pool>);

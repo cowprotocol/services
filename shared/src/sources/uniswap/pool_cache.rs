@@ -1,10 +1,10 @@
 use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
-    pool_fetching::{Pool, PoolFetching},
     recent_block_cache::{
         Block, CacheConfig, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache,
     },
+    sources::uniswap::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::Result;
 use model::TokenPair;

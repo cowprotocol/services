@@ -10,14 +10,14 @@ use orderbook::{
 };
 use prometheus::Registry;
 use shared::{
-    amm_pair_provider::UniswapPairProvider,
     bad_token::list_based::ListBasedDetector,
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
-    pool_cache::PoolCache,
-    pool_fetching::PoolFetcher,
     price_estimate::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
+    sources::uniswap::{
+        pair_provider::UniswapPairProvider, pool_cache::PoolCache, pool_fetching::PoolFetcher,
+    },
     Web3,
 };
 use solver::orderbook::OrderBookApi;

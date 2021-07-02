@@ -115,7 +115,7 @@ pub struct RegisteredWeightedPools {
 }
 
 mod pools_query {
-    use crate::balancer::{pool_storage::RegisteredWeightedPool, swap::fixed_point::Bfp};
+    use crate::sources::balancer::{pool_storage::RegisteredWeightedPool, swap::fixed_point::Bfp};
     use anyhow::{anyhow, Result};
     use ethcontract::{H160, H256};
     use serde::Deserialize;
@@ -226,7 +226,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::balancer::swap::fixed_point::Bfp;
+    use crate::sources::balancer::swap::fixed_point::Bfp;
     use ethcontract::{H160, H256};
 
     #[test]

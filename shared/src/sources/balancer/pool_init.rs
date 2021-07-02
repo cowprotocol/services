@@ -3,7 +3,7 @@
 //! This module contains a component used to initialize Balancer pool registries
 //! with existing data in order to reduce the "cold start" time of the service.
 
-use crate::balancer::{
+use crate::sources::balancer::{
     graph_api::{BalancerSubgraphClient, RegisteredWeightedPools},
     pool_storage::RegisteredWeightedPool,
 };
@@ -121,7 +121,7 @@ fn deployment_address(artifact: &Artifact, chain_id: u64) -> Result<H160> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::balancer::swap::fixed_point::Bfp;
+    use crate::sources::balancer::swap::fixed_point::Bfp;
     use anyhow::bail;
     use ethcontract::H256;
     use maplit::hashmap;
