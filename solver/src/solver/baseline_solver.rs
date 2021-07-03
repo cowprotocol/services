@@ -1,3 +1,10 @@
+use crate::{
+    liquidity::{
+        AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity, WeightedProductOrder,
+    },
+    settlement::Settlement,
+    solver::Solver,
+};
 use anyhow::Result;
 use ethcontract::{H160, U256};
 use maplit::hashmap;
@@ -8,15 +15,16 @@ use shared::{
         estimate_buy_amount, estimate_sell_amount, path_candidates, BaselineSolvable,
         DEFAULT_MAX_HOPS,
     },
-    sources::uniswap::pool_fetching::Pool,
+    sources::{
+        balancer::swap::{fixed_point::Bfp, WeightedPoolRef},
+        uniswap::pool_fetching::Pool,
+    },
 };
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    convert::TryFrom as _,
+};
 
-use crate::{
-    liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity},
-    settlement::Settlement,
-    solver::Solver,
-};
 pub struct BaselineSolver {
     base_tokens: HashSet<H160>,
 }
@@ -47,6 +55,32 @@ impl BaselineSolvable for ConstantProductOrder {
 
     fn gas_cost(&self) -> usize {
         amm_to_pool(self).gas_cost()
+    }
+}
+
+impl BaselineSolvable for WeightedProductOrder {
+    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_amount_out(out_token, in_amount, in_token)
+    }
+
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_amount_in(in_token, out_amount, out_token)
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_spot_price(base_token, quote_token)
+    }
+
+    fn gas_cost(&self) -> usize {
+        amm_to_weighted_pool(self)
+            .map(|pool| pool.gas_cost())
+            .unwrap_or_default()
     }
 }
 
@@ -179,6 +213,13 @@ fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
         reserves: amm.reserves,
         fee: amm.fee,
     }
+}
+
+fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> Result<WeightedPoolRef> {
+    Ok(WeightedPoolRef {
+        reserves: &amm.reserves,
+        swap_fee_percentage: Bfp::try_from(&amm.fee)?,
+    })
 }
 
 #[cfg(test)]

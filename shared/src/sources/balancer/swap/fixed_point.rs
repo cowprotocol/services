@@ -4,12 +4,13 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/FixedPoint.sol
 
 use super::error::Error;
-use crate::conversions::u256_to_big_int;
-use anyhow::{anyhow, bail};
+use crate::conversions::{big_int_to_u256, u256_to_big_int};
+use anyhow::{anyhow, bail, ensure, Result};
 use ethcontract::U256;
 use lazy_static::lazy_static;
-use num::BigRational;
+use num::{BigInt, BigRational};
 use std::{
+    convert::TryFrom,
     fmt::{self, Debug, Formatter},
     str::FromStr,
 };
@@ -26,12 +27,14 @@ pub struct Bfp(U256);
 
 lazy_static! {
     static ref ONE_18: U256 = U256::exp10(18);
+    static ref ONE_18_BIGINT: BigInt = u256_to_big_int(&*ONE_18);
     static ref ZERO: Bfp = Bfp(U256::zero());
     static ref EPSILON: Bfp = Bfp(U256::one());
     static ref ONE: Bfp = Bfp(*ONE_18);
     static ref MAX_POW_RELATIVE_ERROR: Bfp = Bfp(10000_usize.into());
 }
 
+#[cfg(test)]
 impl From<usize> for Bfp {
     fn from(num: usize) -> Self {
         Self(U256::from(num).checked_mul(*ONE_18).unwrap())
@@ -44,6 +47,19 @@ impl From<Bfp> for BigRational {
             u256_to_big_int(&num.as_uint256()),
             u256_to_big_int(&*ONE_18),
         )
+    }
+}
+
+impl<'a> TryFrom<&'a BigRational> for Bfp {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a BigRational) -> Result<Self> {
+        let scaled = value * &*ONE_18_BIGINT;
+        ensure!(
+            scaled.is_integer(),
+            "remaining fractional component after scaling to fixed point"
+        );
+        Ok(Bfp(big_int_to_u256(&scaled.to_integer())?))
     }
 }
 
@@ -311,6 +327,12 @@ mod tests {
     }
 
     #[test]
+    fn bfp_big_rational_round_trip() {
+        let value = "0.5".parse::<Bfp>().unwrap();
+        assert_eq!(Bfp::try_from(&BigRational::from(value)).unwrap(), value);
+    }
+
+    #[test]
     fn bfp_to_big_rational() {
         assert_eq!(BigRational::from(Bfp::zero()), BigRational::zero());
         assert_eq!(BigRational::from(Bfp::one()), BigRational::one());
@@ -333,5 +355,41 @@ mod tests {
             BigRational::from("0.4".parse::<Bfp>().unwrap()),
             BigRational::new(BigInt::from(2), BigInt::from(5))
         );
+    }
+
+    #[test]
+    fn big_rational_to_bfp() {
+        assert_eq!(Bfp::try_from(&BigRational::zero()).unwrap(), Bfp::zero());
+        assert_eq!(Bfp::try_from(&BigRational::one()).unwrap(), Bfp::one());
+        assert_eq!(
+            Bfp::try_from(&BigRational::new(500.into(), 1.into())).unwrap(),
+            "500.0".parse().unwrap(),
+        );
+        assert_eq!(
+            Bfp::try_from(&BigRational::new(4.into(), 10.into())).unwrap(),
+            "0.4".parse().unwrap(),
+        );
+        assert_eq!(
+            Bfp::try_from(&BigRational::new(
+                u256_to_big_int(&U256::MAX),
+                BigInt::from(1_000_000_000_000_000_000u64)
+            ))
+            .unwrap(),
+            Bfp::from_wei(U256::MAX),
+        );
+    }
+
+    #[test]
+    fn big_rational_to_bfp_non_representable() {
+        assert!(Bfp::try_from(&BigRational::new(2.into(), 3.into())).is_err());
+    }
+
+    #[test]
+    fn big_rational_to_bfp_overflow() {
+        assert!(Bfp::try_from(&BigRational::new(
+            u256_to_big_int(&U256::MAX) + 1,
+            BigInt::from(1_000_000_000_000_000_000u64)
+        ))
+        .is_err());
     }
 }

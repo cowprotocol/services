@@ -7,6 +7,7 @@ use error::Error;
 use ethcontract::{H160, U256};
 use fixed_point::Bfp;
 use num::{BigRational, CheckedDiv};
+use std::collections::HashMap;
 use weighted_math::{calc_in_given_out, calc_out_given_in};
 
 mod error;
@@ -39,7 +40,14 @@ impl PoolTokenState {
     }
 }
 
-impl WeightedPool {
+/// Weighted pool data as a reference used for computing input and output
+/// amounts.
+pub struct WeightedPoolRef<'a> {
+    pub reserves: &'a HashMap<H160, PoolTokenState>,
+    pub swap_fee_percentage: Bfp,
+}
+
+impl WeightedPoolRef<'_> {
     fn add_swap_fee_amount(&self, amount: U256) -> Result<U256, Error> {
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BasePool.sol#L454-L457
         Bfp::from_wei(amount)
@@ -57,7 +65,7 @@ impl WeightedPool {
     }
 }
 
-impl BaselineSolvable for WeightedPool {
+impl BaselineSolvable for WeightedPoolRef<'_> {
     fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
@@ -131,6 +139,35 @@ impl BaselineSolvable for WeightedPool {
 
     fn gas_cost(&self) -> usize {
         BALANCER_SWAP_GAS_COST
+    }
+}
+
+impl WeightedPool {
+    fn as_pool_ref(&self) -> WeightedPoolRef {
+        WeightedPoolRef {
+            reserves: &self.reserves,
+            swap_fee_percentage: self.swap_fee_percentage,
+        }
+    }
+}
+
+impl BaselineSolvable for WeightedPool {
+    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+        self.as_pool_ref()
+            .get_amount_out(out_token, in_amount, in_token)
+    }
+
+    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+        self.as_pool_ref()
+            .get_amount_in(in_token, out_amount, out_token)
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        self.as_pool_ref().get_spot_price(base_token, quote_token)
+    }
+
+    fn gas_cost(&self) -> usize {
+        self.as_pool_ref().gas_cost()
     }
 }
 
