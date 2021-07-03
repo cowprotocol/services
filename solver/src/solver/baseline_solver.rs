@@ -40,47 +40,61 @@ impl Solver for BaselineSolver {
     }
 }
 
-impl BaselineSolvable for ConstantProductOrder {
-    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
-        amm_to_pool(self).get_amount_out(out_token, in_amount, in_token)
-    }
-
-    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
-        amm_to_pool(self).get_amount_in(in_token, out_amount, out_token)
-    }
-
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        amm_to_pool(self).get_spot_price(base_token, quote_token)
-    }
-
-    fn gas_cost(&self) -> usize {
-        amm_to_pool(self).gas_cost()
-    }
+/// A type representing all possible AMM orders that are considered as on-chain
+/// liquidity by the baseline solver.
+#[derive(Debug, Clone)]
+struct Amm {
+    tokens: TokenPair,
+    order: AmmOrder,
 }
 
-impl BaselineSolvable for WeightedProductOrder {
+#[derive(Debug, Clone)]
+enum AmmOrder {
+    ConstantProduct(ConstantProductOrder),
+    WeightedProduct(WeightedProductOrder),
+}
+
+impl BaselineSolvable for Amm {
     fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_amount_out(out_token, in_amount, in_token)
+        match &self.order {
+            AmmOrder::ConstantProduct(order) => {
+                amm_to_pool(order).get_amount_out(out_token, in_amount, in_token)
+            }
+            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
+                .ok()?
+                .get_amount_out(out_token, in_amount, in_token),
+        }
     }
 
     fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_amount_in(in_token, out_amount, out_token)
+        match &self.order {
+            AmmOrder::ConstantProduct(order) => {
+                amm_to_pool(&order).get_amount_in(in_token, out_amount, out_token)
+            }
+            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
+                .ok()?
+                .get_amount_in(in_token, out_amount, out_token),
+        }
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_spot_price(base_token, quote_token)
+        match &self.order {
+            AmmOrder::ConstantProduct(order) => {
+                amm_to_pool(order).get_spot_price(base_token, quote_token)
+            }
+            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
+                .ok()?
+                .get_spot_price(base_token, quote_token),
+        }
     }
 
     fn gas_cost(&self) -> usize {
-        amm_to_weighted_pool(self)
-            .map(|pool| pool.gas_cost())
-            .unwrap_or_default()
+        match &self.order {
+            AmmOrder::ConstantProduct(order) => amm_to_pool(order).gas_cost(),
+            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
+                .map(|pool| pool.gas_cost())
+                .unwrap_or_default(),
+        }
     }
 }
 
@@ -90,35 +104,46 @@ impl BaselineSolver {
     }
 
     fn solve(&self, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
-        let mut amm_map: HashMap<_, Vec<_>> = HashMap::new();
-        for liquidity in &liquidity {
-            if let Liquidity::ConstantProduct(cpo) = liquidity {
-                let entry = amm_map.entry(cpo.tokens).or_default();
-                entry.push(cpo.clone())
-            }
-        }
+        let (user_orders, amm_map) = liquidity.into_iter().fold(
+            (Vec::new(), HashMap::<_, Vec<_>>::new()),
+            |(mut user_orders, mut amm_map), liquidity| {
+                match liquidity {
+                    Liquidity::Limit(order) => user_orders.push(order),
+                    Liquidity::ConstantProduct(order) => {
+                        amm_map.entry(order.tokens).or_default().push(Amm {
+                            tokens: order.tokens,
+                            order: AmmOrder::ConstantProduct(order),
+                        });
+                    }
+                    Liquidity::WeightedProduct(order) => {
+                        for tokens in order.token_pairs() {
+                            amm_map.entry(tokens).or_default().push(Amm {
+                                tokens,
+                                order: AmmOrder::WeightedProduct(order.clone()),
+                            });
+                        }
+                    }
+                }
+                (user_orders, amm_map)
+            },
+        );
 
         // We assume that individual settlements do not move the amm pools significantly when
         // returning multiple settlements.
         let mut settlements = Vec::new();
 
         // Return a solution for the first settle-able user order
-        for liquidity in liquidity {
-            let user_order = match liquidity {
-                Liquidity::Limit(order) => order,
-                Liquidity::ConstantProduct(_) | Liquidity::WeightedProduct(_) => continue,
-            };
-
-            let solution = match self.settle_order(&user_order, &amm_map) {
+        for order in user_orders {
+            let solution = match self.settle_order(&order, &amm_map) {
                 Some(solution) => solution,
                 None => continue,
             };
 
             // Check limit price
-            if solution.executed_buy_amount >= user_order.buy_amount
-                && solution.executed_sell_amount <= user_order.sell_amount
+            if solution.executed_buy_amount >= order.buy_amount
+                && solution.executed_sell_amount <= order.sell_amount
             {
-                match solution.into_settlement(&user_order) {
+                match solution.into_settlement(&order) {
                     Ok(settlement) => settlements.push(settlement),
                     Err(err) => {
                         tracing::error!("baseline_solver failed to create settlement: {:?}", err)
@@ -133,7 +158,7 @@ impl BaselineSolver {
     fn settle_order(
         &self,
         order: &LimitOrder,
-        pools: &HashMap<TokenPair, Vec<ConstantProductOrder>>,
+        amms: &HashMap<TokenPair, Vec<Amm>>,
     ) -> Option<Solution> {
         let candidates = path_candidates(
             order.sell_token,
@@ -146,16 +171,16 @@ impl BaselineSolver {
             model::order::OrderKind::Buy => {
                 let best = candidates
                     .iter()
-                    .filter_map(|path| estimate_sell_amount(order.buy_amount, path, &pools))
+                    .filter_map(|path| estimate_sell_amount(order.buy_amount, path, &amms))
                     .min_by_key(|estimate| estimate.value)?;
                 (best.path, best.value, order.buy_amount)
             }
             model::order::OrderKind::Sell => {
                 let best = candidates
                     .iter()
-                    .filter_map(|path| estimate_buy_amount(order.sell_amount, path, &pools))
+                    .filter_map(|path| estimate_buy_amount(order.sell_amount, path, &amms))
                     .max_by_key(|estimate| estimate.value)?;
-                (best.path.clone(), order.sell_amount, best.value)
+                (best.path, order.sell_amount, best.value)
             }
         };
         Some(Solution {
@@ -172,7 +197,7 @@ impl BaselineSolver {
 }
 
 struct Solution {
-    path: Vec<ConstantProductOrder>,
+    path: Vec<Amm>,
     executed_sell_amount: U256,
     executed_buy_amount: U256,
 }
@@ -192,13 +217,14 @@ impl Solution {
             let buy_amount = amm
                 .get_amount_out(buy_token, sell_amount, sell_token)
                 .expect("Path was found, so amount must be calculateable");
-            settlement.with_liquidity(
-                &amm,
-                AmmOrderExecution {
-                    input: (sell_token, sell_amount),
-                    output: (buy_token, buy_amount),
-                },
-            )?;
+            let execution = AmmOrderExecution {
+                input: (sell_token, sell_amount),
+                output: (buy_token, buy_amount),
+            };
+            match &amm.order {
+                AmmOrder::ConstantProduct(order) => settlement.with_liquidity(order, execution),
+                AmmOrder::WeightedProduct(order) => settlement.with_liquidity(order, execution),
+            }?;
             sell_amount = buy_amount;
             sell_token = buy_token;
         }

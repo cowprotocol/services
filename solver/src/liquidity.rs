@@ -131,6 +131,26 @@ pub struct WeightedProductOrder {
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
+impl WeightedProductOrder {
+    pub fn token_pairs(&self) -> Vec<TokenPair> {
+        // The `HashMap` docs specifically say that we can't rely on ordering
+        // of keys (even across multiple calls). So, first collect all tokens
+        // into a collection and then use it to make the final enumeration with
+        // all token pair permutations.
+        let tokens = self.reserves.keys().collect::<Vec<_>>();
+        tokens
+            .iter()
+            .enumerate()
+            .flat_map(|(i, &token_a)| {
+                tokens[i + 1..].iter().map(move |&token_b| {
+                    TokenPair::new(*token_a, *token_b)
+                        .expect("unexpected duplicate key in hash map")
+                })
+            })
+            .collect()
+    }
+}
+
 impl std::fmt::Debug for WeightedProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Weighted Product AMM {:?}", self.reserves.keys())
@@ -191,6 +211,7 @@ impl Default for WeightedProductOrder {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use maplit::hashmap;
     use std::sync::Mutex;
 
     pub struct CapturingSettlementHandler<L>
@@ -265,6 +286,40 @@ pub mod tests {
         assert_eq!(
             simple_limit_order(OrderKind::Buy, 1, 2).full_execution_amount(),
             2.into(),
+        );
+    }
+
+    #[test]
+    fn weighted_pool_enumerate_token_pairs() {
+        let token_state = PoolTokenState {
+            balance: 0.into(),
+            weight: "0.25".parse().unwrap(),
+            scaling_exponent: 0,
+        };
+        let pool = WeightedProductOrder {
+            reserves: hashmap! {
+                H160([0x11; 20]) => token_state.clone(),
+                H160([0x22; 20]) => token_state.clone(),
+                H160([0x33; 20]) => token_state.clone(),
+                H160([0x44; 20]) => token_state,
+            },
+            ..Default::default()
+        };
+
+        // Sort pairs for deterministic order in the result for testing.
+        let mut pairs = pool.token_pairs();
+        pairs.sort();
+
+        assert_eq!(
+            pairs,
+            vec![
+                TokenPair::new(H160([0x11; 20]), H160([0x22; 20])).unwrap(),
+                TokenPair::new(H160([0x11; 20]), H160([0x33; 20])).unwrap(),
+                TokenPair::new(H160([0x11; 20]), H160([0x44; 20])).unwrap(),
+                TokenPair::new(H160([0x22; 20]), H160([0x33; 20])).unwrap(),
+                TokenPair::new(H160([0x22; 20]), H160([0x44; 20])).unwrap(),
+                TokenPair::new(H160([0x33; 20]), H160([0x44; 20])).unwrap(),
+            ]
         );
     }
 }
