@@ -6,6 +6,7 @@ edition = "2018"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
+bigdecimal = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
 ethabi = "14.0"
 enum-utils = "0.1"
@@ -13,6 +14,7 @@ hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"
+num = "0.4"
 num-bigint = "0.3"
 primitive-types = { version = "0.9" }
 secp256k1 = "0.20"

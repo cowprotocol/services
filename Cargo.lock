@@ -1529,6 +1529,7 @@ dependencies = [
 name = "model"
 version = "0.1.0"
 dependencies = [
+ "bigdecimal",
  "chrono",
  "enum-utils",
  "ethabi",
@@ -1536,6 +1537,7 @@ dependencies = [
  "hex-literal",
  "lazy_static",
  "maplit",
+ "num",
  "num-bigint 0.3.2",
  "primitive-types",
  "secp256k1",
