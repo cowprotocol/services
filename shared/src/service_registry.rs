@@ -80,13 +80,43 @@ pub trait ServiceInitializable: Sized {
     fn init(registry: &ServiceRegistry) -> Self;
 }
 
+impl<T> ServiceInitializable for T
+where
+    T: Default + Sized,
+{
+    fn init(_: &ServiceRegistry) -> Self {
+        T::default()
+    }
+}
+
 pub trait ServiceLinkable<T: ?Sized> {
     fn as_link(self: Arc<Self>) -> Arc<T>;
+}
+
+#[macro_export]
+macro_rules! impl_service_linkable {
+    ($impl:ident => $trait:ident) => {
+        impl ServiceLinkable<dyn $trait> for $impl {
+            fn as_link(self: Arc<Self>) -> Arc<dyn $trait> {
+                self
+            }
+        }
+    };
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        bad_token::{BadTokenDetecting, MockBadTokenDetecting, TokenQuality},
+        gas_price_estimation::FakeGasPriceEstimator,
+        price_estimate::{BaselinePriceEstimator, PriceEstimating},
+        sources::uniswap::pool_fetching::{MockPoolFetching, PoolFetching},
+    };
+    use ethcontract::H160;
+    use gas_estimation::GasPriceEstimating;
+    use model::order::OrderKind;
+    use std::collections::HashSet;
 
     trait Fooable: Send + Sync {
         fn foo(&self) -> i32;
@@ -103,11 +133,7 @@ mod tests {
             Foo
         }
     }
-    impl ServiceLinkable<dyn Fooable> for Foo {
-        fn as_link(self: Arc<Self>) -> Arc<dyn Fooable> {
-            self
-        }
-    }
+    impl_service_linkable!(Foo => Fooable);
 
     struct Bar(Arc<dyn Fooable>);
     impl Bar {
@@ -132,5 +158,58 @@ mod tests {
 
         assert_eq!(registry.get::<dyn Fooable>().foo(), 42);
         assert_eq!(registry.get::<Bar>().magic(), 1337);
+    }
+
+    impl_service_linkable!(MockPoolFetching => PoolFetching);
+    impl_service_linkable!(FakeGasPriceEstimator => GasPriceEstimating);
+    impl_service_linkable!(MockBadTokenDetecting => BadTokenDetecting);
+    impl_service_linkable!(BaselinePriceEstimator => PriceEstimating);
+
+    // This would represent the command line arguments.
+    struct Options {
+        base_tokens: HashSet<H160>,
+        native_token: H160,
+    }
+
+    impl ServiceInitializable for BaselinePriceEstimator {
+        fn init(registry: &ServiceRegistry) -> Self {
+            let options = registry.get::<Options>();
+            Self::new(
+                registry.get(),
+                registry.get(),
+                options.base_tokens.clone(),
+                registry.get(),
+                options.native_token,
+            )
+        }
+    }
+
+    #[tokio::test]
+    async fn register_balancer_component_with_mocks() {
+        let mut token_detector = MockBadTokenDetecting::new();
+        token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+
+        let mut registry = ServiceRegistry::default();
+        registry
+            .add(Options {
+                base_tokens: Default::default(),
+                native_token: Default::default(),
+            })
+            .add(token_detector)
+            .link::<MockBadTokenDetecting, dyn BadTokenDetecting>()
+            .register_as::<MockPoolFetching, dyn PoolFetching>()
+            .register_as::<FakeGasPriceEstimator, dyn GasPriceEstimating>()
+            .register_as::<BaselinePriceEstimator, dyn PriceEstimating>();
+
+        let estimator = registry.get::<dyn PriceEstimating>();
+        assert_eq!(
+            estimator
+                .estimate_price(H160::zero(), H160::zero(), 1.into(), OrderKind::Sell)
+                .await
+                .unwrap(),
+            num::one(),
+        );
     }
 }

@@ -17,6 +17,7 @@ const POOL_SWAP_GAS_COST: usize = 60_000;
 /// `reserve_a` refers to the reserve of the excluded token.
 type RelativeReserves = (U256, U256, H160);
 
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>>;
