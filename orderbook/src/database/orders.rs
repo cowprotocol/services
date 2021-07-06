@@ -311,7 +311,7 @@ fn is_sell_order_filled(
     if executed_amount.is_zero() {
         return false;
     }
-    let total_amount = executed_amount + executed_fee;
+    let total_amount = executed_amount - executed_fee;
     total_amount == *amount
 }
 
@@ -374,7 +374,7 @@ mod tests {
         let order_row = OrdersQueryRow {
             kind: DbOrderKind::Sell,
             sell_amount: BigDecimal::from(2),
-            sum_sell: BigDecimal::from(1),
+            sum_sell: BigDecimal::from(3),
             sum_fee: BigDecimal::from(1),
             ..order_row
         };
