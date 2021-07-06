@@ -267,11 +267,11 @@ impl Driver {
                 "{} settlement simulation failed at submission and block {}:\n{:?}",
                 settlement.name,
                 current_block_during_liquidity_fetch,
-                error_at_earlier_block
+                error_at_earlier_block,
             );
             // This is an additional debug log so that the log message doesn't get too long as
             // settlement information is recoverable through tenderly anyway.
-            tracing::warn!("settlement failure for: \n{:#?}", settlement,);
+            tracing::warn!("settlement failure for: \n{:#?}", settlement);
         }
     }
 

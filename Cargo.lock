@@ -2587,6 +2587,7 @@ dependencies = [
  "structopt",
  "strum",
  "strum_macros",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",

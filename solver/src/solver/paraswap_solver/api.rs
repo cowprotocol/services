@@ -5,6 +5,7 @@ use ethcontract::{H160, U256};
 use reqwest::{Client, RequestBuilder, Url};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
+use thiserror::Error;
 
 use model::u256_decimal;
 use web3::types::Bytes;
@@ -19,7 +20,7 @@ pub trait ParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
-    ) -> Result<TransactionBuilderResponse>;
+    ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
 #[derive(Default)]
@@ -45,24 +46,70 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
-    ) -> Result<TransactionBuilderResponse> {
-        tracing::debug!(
-            "Querying Paraswap API (transaction) with {}",
-            serde_json::to_string(&query).unwrap()
-        );
-        let text = query
-            .into_request(&self.client)
-            .send()
-            .await
-            .context("TransactionBuilderQuery failed")?
-            .text()
-            .await?;
-        tracing::debug!("Response from Paraswap API (transaction): {}", text);
+    ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
+        let query_str = serde_json::to_string(&query).unwrap();
+        let response_result = query.into_request(&self.client).send().await;
+        match response_result {
+            Ok(response) => match response.text().await {
+                Ok(response_text) => parse_paraswap_response_text(&response_text, &query_str),
+                Err(text_fetch_err) => Err(ParaswapResponseError::TextFetch(text_fetch_err)),
+            },
+            Err(send_err) => Err(ParaswapResponseError::Send(send_err)),
+        }
+    }
+}
 
-        serde_json::from_str::<TransactionBuilderResponse>(&text).context(format!(
-            "TransactionBuilderQuery result parsing failed: {}",
-            text
-        ))
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawResponse {
+    ResponseOk(TransactionBuilderResponse),
+    ResponseErr { error: String },
+}
+
+#[derive(Error, Debug)]
+pub enum ParaswapResponseError {
+    // Represents a failure with transaction builder query
+    #[error("ERROR_BUILDING_TRANSACTION from query {0}")]
+    BuildingTransaction(String),
+
+    // Occurs when the price changes between the time the price was queried and this request
+    #[error("Suspected Rate Change - Please Retry!")]
+    PriceChange,
+
+    // Connectivity or non-response error
+    #[error("Failed on send")]
+    Send(reqwest::Error),
+
+    // Recovered Response but failed on async call of response.text()
+    #[error(transparent)]
+    TextFetch(reqwest::Error),
+
+    #[error("{0}")]
+    UnknownParaswapError(String),
+
+    #[error(transparent)]
+    DeserializeError(#[from] serde_json::Error),
+}
+
+fn parse_paraswap_response_text(
+    response_text: &str,
+    query_str: &str,
+) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
+    match serde_json::from_str::<RawResponse>(response_text) {
+        Ok(RawResponse::ResponseOk(response)) => Ok(response),
+        Ok(RawResponse::ResponseErr { error: message }) => match &message[..] {
+            "ERROR_BUILDING_TRANSACTION" => Err(ParaswapResponseError::BuildingTransaction(
+                query_str.parse().unwrap(),
+            )),
+            "It seems like the rate has changed, please re-query the latest Price" => {
+                Err(ParaswapResponseError::PriceChange)
+            }
+            _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
+                "uncatalogued error message {}",
+                message
+            ))),
+        },
+        Err(err) => Err(ParaswapResponseError::DeserializeError(err)),
     }
 }
 
@@ -483,5 +530,69 @@ mod tests {
 
         assert_eq!(result.src_amount, 100_000_000_000_000_000u128.into());
         assert_eq!(result.dest_amount, 1_444_292_761_374_042_400u128.into());
+    }
+
+    #[test]
+    fn paraswap_response_handling() {
+        assert!(matches!(
+            parse_paraswap_response_text("hello", "there"),
+            Err(ParaswapResponseError::DeserializeError(_))
+        ));
+
+        assert!(matches!(
+            parse_paraswap_response_text("{\"error\": \"Never seen this before\"}", "there"),
+            Err(ParaswapResponseError::UnknownParaswapError(_))
+        ));
+
+        assert!(matches!(
+            parse_paraswap_response_text("{\"error\": \"It seems like the rate has changed, please re-query the latest Price\"}", "there"),
+            Err(ParaswapResponseError::PriceChange)
+        ));
+
+        assert!(matches!(
+            parse_paraswap_response_text("{\"error\": \"ERROR_BUILDING_TRANSACTION\"}", "there"),
+            Err(ParaswapResponseError::BuildingTransaction(_))
+        ));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn transaction_response_error() {
+        let from = shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let to = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let price_query = PriceQuery {
+            from,
+            to,
+            from_decimals: 18,
+            to_decimals: 18,
+            amount: 135_000_000_000_000_000_000u128.into(),
+            side: Side::Sell,
+        };
+
+        let price_response: PriceResponse = reqwest::get(price_query.into_url())
+            .await
+            .expect("price query failed")
+            .json()
+            .await
+            .expect("Response is not json");
+
+        let api = DefaultParaswapApi {
+            client: Client::new(),
+        };
+
+        let good_query = TransactionBuilderQuery {
+            src_token: from,
+            dest_token: to,
+            src_amount: price_response.src_amount,
+            // 10% slippage
+            dest_amount: price_response.dest_amount * 90 / 100,
+            from_decimals: 18,
+            to_decimals: 18,
+            price_route: price_response.price_route_raw,
+            user_address: shared::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            referrer: "GPv2".to_string(),
+        };
+
+        assert!(api.transaction(good_query).await.is_ok());
     }
 }
