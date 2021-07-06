@@ -15,6 +15,7 @@ pub mod metrics;
 pub mod network;
 pub mod price_estimate;
 pub mod recent_block_cache;
+pub mod service_registry;
 pub mod sources;
 pub mod subgraph;
 pub mod time;
