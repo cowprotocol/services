@@ -7,9 +7,14 @@ use crate::sources::balancer::{
     graph_api::{BalancerSubgraphClient, RegisteredWeightedPools},
     pool_storage::RegisteredWeightedPool,
 };
-use anyhow::{anyhow, Result};
-use contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory};
-use ethcontract::{Artifact, H160};
+use anyhow::{anyhow, bail, Result};
+use contracts::{
+    BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+};
+use ethcontract::{
+    common::{truffle::Network, DeploymentInformation},
+    Artifact, H160,
+};
 
 #[derive(Debug, Default, PartialEq)]
 pub struct BalancerRegisteredPools {
@@ -27,12 +32,52 @@ pub trait PoolInitializing: Send + Sync {
 ///
 /// This can be used to index all pools from events instead of relying on the
 /// Balancer subgraph for example.
-pub struct EmptyPoolInitializer;
+pub struct EmptyPoolInitializer(u64);
 
 #[async_trait::async_trait]
 impl PoolInitializing for EmptyPoolInitializer {
     async fn initialize_pools(&self) -> Result<BalancerRegisteredPools> {
-        Ok(Default::default())
+        let fetched_block_number = deployment_block(BalancerV2Vault::artifact(), self.0).await?;
+        Ok(BalancerRegisteredPools {
+            fetched_block_number,
+            ..Default::default()
+        })
+    }
+}
+
+/// The default Balancer pool initializer.
+pub enum DefaultPoolInitializer {
+    Subgraph(SubgraphPoolInitializer),
+    Empty(EmptyPoolInitializer),
+}
+
+impl DefaultPoolInitializer {
+    pub fn new(chain_id: u64) -> Result<Self> {
+        const MAINNET_CHAIN_ID: u64 = 1;
+
+        Ok(if chain_id == MAINNET_CHAIN_ID {
+            DefaultPoolInitializer::Subgraph(SubgraphPoolInitializer::new(chain_id)?)
+        } else {
+            // Balancer subgraph seems to only correctly index pool info on
+            // chains where it supports archive nodes (because of the required
+            // `eth_call`s). This means we can only use the pure Subgraph
+            // initializer on Mainnet - the only network with archive node
+            // support at the moment.
+            DefaultPoolInitializer::Empty(EmptyPoolInitializer(chain_id))
+        })
+    }
+}
+
+#[async_trait::async_trait]
+impl PoolInitializing for DefaultPoolInitializer {
+    async fn initialize_pools(&self) -> Result<BalancerRegisteredPools> {
+        let registered_pools = match self {
+            DefaultPoolInitializer::Subgraph(inner) => inner.initialize_pools().await,
+            DefaultPoolInitializer::Empty(inner) => inner.initialize_pools().await,
+        }?;
+
+        tracing::debug!("initialized registered pools {:?}", registered_pools);
+        Ok(registered_pools)
     }
 }
 
@@ -60,19 +105,6 @@ impl PoolInitializing for SubgraphPoolInitializer {
 struct SubgraphPoolInitializerInner<S> {
     chain_id: u64,
     client: S,
-}
-
-#[cfg_attr(test, mockall::automock)]
-#[async_trait::async_trait]
-trait BalancerSubgraph: Send + Sync {
-    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools>;
-}
-
-#[async_trait::async_trait]
-impl BalancerSubgraph for BalancerSubgraphClient {
-    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools> {
-        self.get_weighted_pools().await
-    }
 }
 
 impl<S> SubgraphPoolInitializerInner<S>
@@ -110,8 +142,21 @@ where
     }
 }
 
-fn deployment_address(artifact: &Artifact, chain_id: u64) -> Result<H160> {
-    Ok(artifact
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+trait BalancerSubgraph: Send + Sync {
+    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools>;
+}
+
+#[async_trait::async_trait]
+impl BalancerSubgraph for BalancerSubgraphClient {
+    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools> {
+        self.get_weighted_pools().await
+    }
+}
+
+fn deployment(artifact: &Artifact, chain_id: u64) -> Result<&Network> {
+    artifact
         .networks
         .get(&chain_id.to_string())
         // Note that we are conflating network IDs with chain IDs. In general
@@ -123,8 +168,29 @@ fn deployment_address(artifact: &Artifact, chain_id: u64) -> Result<H160> {
                 artifact.contract_name,
                 chain_id,
             )
-        })?
-        .address)
+        })
+}
+
+fn deployment_address(artifact: &Artifact, chain_id: u64) -> Result<H160> {
+    Ok(deployment(artifact, chain_id)?.address)
+}
+
+async fn deployment_block(artifact: &Artifact, chain_id: u64) -> Result<u64> {
+    let deployment_info = deployment(artifact, chain_id)?
+        .deployment_information
+        .ok_or_else(|| {
+            anyhow!(
+                "missing deployment information for {}",
+                artifact.contract_name
+            )
+        })?;
+
+    match deployment_info {
+        DeploymentInformation::BlockNumber(block) => Ok(block),
+        DeploymentInformation::TransactionHash(tx) => {
+            bail!("missing deployment block number for {}", tx)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -137,10 +203,20 @@ mod tests {
 
     #[tokio::test]
     async fn initializes_empty_pools() {
+        let initializer = EmptyPoolInitializer(4);
         assert_eq!(
-            EmptyPoolInitializer.initialize_pools().await.unwrap(),
-            BalancerRegisteredPools::default()
+            initializer.initialize_pools().await.unwrap(),
+            BalancerRegisteredPools {
+                fetched_block_number: 8441702,
+                ..Default::default()
+            }
         );
+    }
+
+    #[tokio::test]
+    async fn empty_initializer_errors_on_missing_deployment() {
+        let initializer = EmptyPoolInitializer(999);
+        assert!(initializer.initialize_pools().await.is_err());
     }
 
     #[tokio::test]

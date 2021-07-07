@@ -28,9 +28,8 @@ fn main() {
             .add_deployment(
                 4,
                 addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
-                Some(tx(
-                    "0x5fe65a242760f7f32b582dc402a081791d57ea561474617fcd0e763c995cfec7",
-                )),
+                // <https://rinkeby.etherscan.io/tx/0x5fe65a242760f7f32b582dc402a081791d57ea561474617fcd0e763c995cfec7>
+                Some(DeploymentInformation::BlockNumber(8441702)),
             )
     });
     generate_contract_with_config("BalancerV2WeightedPoolFactory", |builder| {

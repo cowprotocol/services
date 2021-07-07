@@ -9,7 +9,7 @@ use crate::{
     sources::balancer::{
         event_handler::BalancerPoolRegistry,
         pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
-        pool_init::PoolInitializing,
+        pool_init::DefaultPoolInitializer,
         pool_storage::RegisteredWeightedPool,
         swap::fixed_point::Bfp,
     },
@@ -85,13 +85,14 @@ pub struct BalancerPoolFetcher {
 
 impl BalancerPoolFetcher {
     pub async fn new(
+        chain_id: u64,
         web3: Web3,
-        pool_initializer: impl PoolInitializing,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn WeightedPoolCacheMetrics>,
     ) -> Result<Self> {
+        let pool_initializer = DefaultPoolInitializer::new(chain_id)?;
         let pool_registry = Arc::new(
             BalancerPoolRegistry::new(web3.clone(), pool_initializer, token_info_fetcher).await?,
         );

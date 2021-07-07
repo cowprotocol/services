@@ -12,7 +12,7 @@ use shared::{
     recent_block_cache::CacheConfig,
     sources::{
         self,
-        balancer::{pool_fetching::BalancerPoolFetcher, pool_init::SubgraphPoolInitializer},
+        balancer::pool_fetching::BalancerPoolFetcher,
         uniswap::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
@@ -264,9 +264,8 @@ async fn main() {
     {
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
+                chain_id,
                 web3.clone(),
-                SubgraphPoolInitializer::new(chain_id)
-                    .expect("failed to create Balancer pool initializer"),
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
