@@ -9,7 +9,10 @@ use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
 };
 use shared::{
-    sources::uniswap::pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics,
+    sources::{
+        balancer::pool_cache::WeightedPoolCacheMetrics, uniswap::pool_cache::PoolCacheMetrics,
+    },
+    transport::instrumented::TransportMetrics,
 };
 use strum::{AsStaticRef, VariantNames};
 
@@ -199,6 +202,15 @@ impl TransportMetrics for Metrics {
 
 impl PoolCacheMetrics for Metrics {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        self.pool_cache_hits.inc_by(cache_hits as u64);
+        self.pool_cache_misses.inc_by(cache_misses as u64);
+    }
+}
+
+impl WeightedPoolCacheMetrics for Metrics {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        // We may want to distinguish cache metrics between the different
+        // liquidity sources in the future, for now just use the same counters.
         self.pool_cache_hits.inc_by(cache_hits as u64);
         self.pool_cache_misses.inc_by(cache_misses as u64);
     }

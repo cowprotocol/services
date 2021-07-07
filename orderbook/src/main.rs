@@ -1,5 +1,4 @@
 use contracts::{GPv2Settlement, WETH9};
-use futures::{stream, StreamExt};
 use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
@@ -28,7 +27,6 @@ use shared::{
     sources::{
         self,
         uniswap::{
-            pair_provider::AmmPairProvider,
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
         },
@@ -186,13 +184,11 @@ async fn main() {
         .expect("failed to create gas price estimator"),
     );
 
-    let pair_providers: Vec<Arc<dyn AmmPairProvider>> = stream::iter(args.shared.baseline_sources)
-        .then(|source| {
-            let web3 = web3.clone();
-            async move { sources::pair_provider(source, chain_id, &web3).await }
-        })
-        .collect()
-        .await;
+    let pair_providers = sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
 
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.

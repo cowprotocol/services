@@ -39,6 +39,15 @@ impl PoolInitializing for EmptyPoolInitializer {
 /// A pool initializer that uses the Balancer subgraph.
 pub struct SubgraphPoolInitializer(SubgraphPoolInitializerInner<BalancerSubgraphClient>);
 
+impl SubgraphPoolInitializer {
+    pub fn new(chain_id: u64) -> Result<Self> {
+        Ok(Self(SubgraphPoolInitializerInner {
+            chain_id,
+            client: BalancerSubgraphClient::for_chain(chain_id)?,
+        }))
+    }
+}
+
 #[async_trait::async_trait]
 impl PoolInitializing for SubgraphPoolInitializer {
     async fn initialize_pools(&self) -> Result<BalancerRegisteredPools> {

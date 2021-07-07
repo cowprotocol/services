@@ -10,8 +10,10 @@ use self::uniswap::{
 use crate::{recent_block_cache::Block, Web3};
 use anyhow::Result;
 use model::TokenPair;
-use std::collections::HashSet;
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 use structopt::clap::arg_enum;
 
 arg_enum! {
@@ -19,27 +21,34 @@ arg_enum! {
     pub enum BaselineSource {
         Uniswap,
         Sushiswap,
+        BalancerV2,
     }
 }
 
-pub async fn pair_provider(
-    source: BaselineSource,
+pub async fn pair_providers(
+    sources: &[BaselineSource],
     chain_id: u64,
     web3: &Web3,
-) -> Arc<dyn AmmPairProvider> {
-    match source {
-        BaselineSource::Uniswap => Arc::new(UniswapPairProvider {
-            factory: contracts::UniswapV2Factory::deployed(web3)
-                .await
-                .expect("couldn't load deployed uniswap router"),
-            chain_id,
-        }),
-        BaselineSource::Sushiswap => Arc::new(SushiswapPairProvider {
-            factory: contracts::SushiswapV2Factory::deployed(web3)
-                .await
-                .expect("couldn't load deployed sushiswap router"),
-        }),
+) -> HashMap<BaselineSource, Arc<dyn AmmPairProvider>> {
+    let mut providers = HashMap::new();
+    for source in sources.iter().copied() {
+        let provider: Arc<dyn AmmPairProvider> = match source {
+            BaselineSource::Uniswap => Arc::new(UniswapPairProvider {
+                factory: contracts::UniswapV2Factory::deployed(web3)
+                    .await
+                    .expect("couldn't load deployed uniswap router"),
+                chain_id,
+            }),
+            BaselineSource::Sushiswap => Arc::new(SushiswapPairProvider {
+                factory: contracts::SushiswapV2Factory::deployed(web3)
+                    .await
+                    .expect("couldn't load deployed sushiswap router"),
+            }),
+            BaselineSource::BalancerV2 => continue,
+        };
+        providers.insert(source, provider);
     }
+    providers
 }
 
 pub struct PoolAggregator {

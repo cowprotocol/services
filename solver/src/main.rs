@@ -1,6 +1,5 @@
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
-use futures::{stream, StreamExt};
 use prometheus::Registry;
 use reqwest::Url;
 use shared::{
@@ -13,6 +12,7 @@ use shared::{
     recent_block_cache::CacheConfig,
     sources::{
         self,
+        balancer::{pool_fetching::BalancerPoolFetcher, pool_init::SubgraphPoolInitializer},
         uniswap::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
@@ -25,8 +25,11 @@ use shared::{
     transport::http::HttpTransport,
 };
 use solver::{
-    driver::Driver, liquidity::uniswap::UniswapLikeLiquidity,
-    liquidity_collector::LiquidityCollector, metrics::Metrics, solver::SolverType,
+    driver::Driver,
+    liquidity::{balancer::BalancerV2Liquidity, uniswap::UniswapLikeLiquidity},
+    liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
+    solver::SolverType,
 };
 use std::{collections::HashMap, iter::FromIterator as _};
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -228,25 +231,24 @@ async fn main() {
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
     };
     let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        stream::iter(args.shared.baseline_sources)
-            .then(|source| {
-                let web3 = web3.clone();
-                let current_block_stream = current_block_stream.clone();
-                let metrics = metrics.clone();
-                async move {
-                    let pair_provider = sources::pair_provider(source, chain_id, &web3).await;
-                    let fetcher = Box::new(PoolFetcher {
-                        pair_provider,
-                        web3,
-                    });
-                    let pool_cache =
-                        PoolCache::new(cache_config, fetcher, current_block_stream, metrics)
-                            .expect("failed to create pool cache");
-                    (source, Arc::new(pool_cache))
-                }
+        sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
+            .await
+            .into_iter()
+            .map(|(source, pair_provider)| {
+                let fetcher = Box::new(PoolFetcher {
+                    pair_provider,
+                    web3: web3.clone(),
+                });
+                let pool_cache = PoolCache::new(
+                    cache_config,
+                    fetcher,
+                    current_block_stream.clone(),
+                    metrics.clone(),
+                )
+                .expect("failed to create pool cache");
+                (source, Arc::new(pool_cache))
             })
-            .collect()
-            .await;
+            .collect();
 
     let pool_aggregator = Arc::new(PoolAggregator {
         pool_fetchers: pool_caches
@@ -254,6 +256,36 @@ async fn main() {
             .map(|cache| cache.clone() as Arc<dyn PoolFetching>)
             .collect(),
     });
+
+    let (balancer_pool_maintainer, balancer_v2_liquidity) = if args
+        .shared
+        .baseline_sources
+        .contains(&BaselineSource::BalancerV2)
+    {
+        let balancer_pool_fetcher = Arc::new(
+            BalancerPoolFetcher::new(
+                web3.clone(),
+                SubgraphPoolInitializer::new(chain_id)
+                    .expect("failed to create Balancer pool initializer"),
+                token_info_fetcher.clone(),
+                cache_config,
+                current_block_stream.clone(),
+                metrics.clone(),
+            )
+            .await
+            .expect("failed to create Balancer pool fetcher"),
+        );
+        (
+            Some(balancer_pool_fetcher.clone() as Arc<dyn Maintaining>),
+            Some(
+                BalancerV2Liquidity::new(web3.clone(), balancer_pool_fetcher, base_tokens.clone())
+                    .await
+                    .expect("failed to create Balancer V2 liquidity"),
+            ),
+        )
+    } else {
+        (None, None)
+    };
 
     let price_estimator = Arc::new(BaselinePriceEstimator::new(
         pool_aggregator,
@@ -292,6 +324,7 @@ async fn main() {
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity,
         orderbook_api,
+        balancer_v2_liquidity,
     };
     let market_makable_token_list = TokenList::from_url(&args.market_makable_token_list, chain_id)
         .await
@@ -322,6 +355,7 @@ async fn main() {
         maintainers: pool_caches
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
+            .chain(balancer_pool_maintainer)
             .collect(),
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
@@ -363,6 +397,7 @@ async fn build_amm_artifacts(
                     value.clone(),
                 ));
             }
+            BaselineSource::BalancerV2 => (),
         }
     }
     res

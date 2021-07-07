@@ -28,7 +28,7 @@
 pub mod event_handler;
 pub mod graph_api;
 mod info_fetching;
-mod pool_cache;
+pub mod pool_cache;
 pub mod pool_fetching;
 pub mod pool_init;
 pub mod pool_storage;

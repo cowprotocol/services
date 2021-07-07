@@ -2,7 +2,7 @@
 
 use crate::{
     interactions::{
-        allowances::{AllowanceManaging, Allowances},
+        allowances::{AllowanceManager, AllowanceManaging, Allowances},
         BalancerSwapGivenOutInteraction,
     },
     liquidity::{
@@ -10,19 +10,28 @@ use crate::{
     },
     settlement::SettlementEncoder,
 };
-use anyhow::Result;
+use anyhow::{Context as _, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::{H160, H256};
 use shared::{
     baseline_solver::{relevant_token_pairs, DEFAULT_MAX_HOPS},
     recent_block_cache::Block,
     sources::balancer::pool_fetching::WeightedPoolFetching,
+    Web3,
 };
 use std::{collections::HashSet, sync::Arc};
 
 struct Contracts {
     settlement: GPv2Settlement,
     vault: BalancerV2Vault,
+}
+
+impl Contracts {
+    async fn new(web3: &Web3) -> Result<Self> {
+        let settlement = GPv2Settlement::deployed(web3).await?;
+        let vault = BalancerV2Vault::deployed(web3).await?;
+        Ok(Self { settlement, vault })
+    }
 }
 
 /// A liquidity provider for Balancer V2 weighted pools.
@@ -34,6 +43,24 @@ pub struct BalancerV2Liquidity {
 }
 
 impl BalancerV2Liquidity {
+    pub async fn new(
+        web3: Web3,
+        pool_fetcher: Arc<dyn WeightedPoolFetching>,
+        base_tokens: HashSet<H160>,
+    ) -> Result<Self> {
+        let contracts = Contracts::new(&web3)
+            .await
+            .context("missing Balancer V2 contract deployement")?;
+        let allowance_manager = AllowanceManager::new(web3, contracts.settlement.address());
+
+        Ok(Self {
+            contracts: Arc::new(contracts),
+            pool_fetcher,
+            allowance_manager: Box::new(allowance_manager),
+            base_tokens,
+        })
+    }
+
     /// Returns relevant Balancer V2 weighted pools given a list of off-chain
     /// orders.
     pub async fn get_liquidity(
