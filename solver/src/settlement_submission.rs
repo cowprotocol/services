@@ -1,3 +1,4 @@
+pub mod archerapi;
 mod gas_price_stream;
 pub mod retry;
 
