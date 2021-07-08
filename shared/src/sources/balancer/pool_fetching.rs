@@ -8,6 +8,7 @@ use crate::{
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
     sources::balancer::{
         event_handler::BalancerPoolRegistry,
+        info_fetching::PoolInfoFetcher,
         pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
         pool_init::DefaultPoolInitializer,
         pool_storage::RegisteredWeightedPool,
@@ -92,10 +93,13 @@ impl BalancerPoolFetcher {
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn WeightedPoolCacheMetrics>,
     ) -> Result<Self> {
-        let pool_initializer = DefaultPoolInitializer::new(chain_id)?;
-        let pool_registry = Arc::new(
-            BalancerPoolRegistry::new(web3.clone(), pool_initializer, token_info_fetcher).await?,
-        );
+        let pool_info = Arc::new(PoolInfoFetcher {
+            web3: web3.clone(),
+            token_info_fetcher: token_info_fetcher.clone(),
+        });
+        let pool_initializer = DefaultPoolInitializer::new(chain_id, pool_info.clone())?;
+        let pool_registry =
+            Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);
         let reserve_fetcher = PoolReserveFetcher::new(pool_registry.clone(), web3).await?;
         let pool_reserve_cache =
             RecentBlockCache::new(config, reserve_fetcher, block_stream, metrics)?;
