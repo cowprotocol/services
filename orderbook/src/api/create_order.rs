@@ -74,6 +74,13 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             ),
             StatusCode::BAD_REQUEST,
         ),
+        Ok(AddOrderResult::SameBuyAndSellToken) => (
+            super::error(
+                "SameBuyAndSellToken",
+                "Buy token is the same as the sell token.",
+            ),
+            StatusCode::BAD_REQUEST,
+        ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
     };
     warp::reply::with_status(body, status_code)

@@ -35,6 +35,7 @@ pub enum AddOrderResult {
     InsufficientFee,
     UnsupportedToken(H160),
     TransferEthToContract,
+    SameBuyAndSellToken,
 }
 
 #[derive(Debug)]
@@ -81,6 +82,9 @@ impl Orderbook {
 
     pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
         let order = payload.order_creation;
+        if order.sell_token == order.buy_token {
+            return Ok(AddOrderResult::SameBuyAndSellToken);
+        }
         if order.valid_to
             < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
         {

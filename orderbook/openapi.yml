@@ -655,6 +655,7 @@ components:
               TransferEthToContract,
               UnsupportedToken,
               WrongOwner,
+              SameBuyAndSellToken,
             ]
         description:
           type: string
