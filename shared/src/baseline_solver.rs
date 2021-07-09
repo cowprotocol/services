@@ -12,10 +12,10 @@ type PathCandidate = Vec<H160>;
 
 pub trait BaselineSolvable {
     // Given the desired output token, the amount and token input, return the expected amount of output token.
-    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256>;
+    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256>;
 
     // Given the input token, the amount and token we want output, return the required amount of input token that needs to be provided.
-    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256>;
+    fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256>;
 
     // Returns the current price as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18.
     // E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD), the spot price is 125/100.
@@ -63,7 +63,7 @@ pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
                     .map(|liquidity| {
                         (
                             liquidity,
-                            liquidity.get_amount_out(*current, amount, previous),
+                            liquidity.get_amount_out(*current, (amount, previous)),
                         )
                     })
                     .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(&amount_b))?;
@@ -99,7 +99,7 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
                     .map(|liquidity| {
                         (
                             liquidity,
-                            liquidity.get_amount_in(*current, amount, previous),
+                            liquidity.get_amount_in(*current, (amount, previous)),
                         )
                     })
                     .min_by(|(_, amount_a), (_, amount_b)| {

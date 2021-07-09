@@ -66,7 +66,7 @@ impl WeightedPoolRef<'_> {
 }
 
 impl BaselineSolvable for WeightedPoolRef<'_> {
-    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L62-L75
@@ -87,7 +87,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         .flatten()
     }
 
-    fn get_amount_in(&self, out_token: H160, out_amount: U256, in_token: H160) -> Option<U256> {
+    fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
@@ -152,14 +152,12 @@ impl WeightedPool {
 }
 
 impl BaselineSolvable for WeightedPool {
-    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
-        self.as_pool_ref()
-            .get_amount_out(out_token, in_amount, in_token)
+    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+        self.as_pool_ref().get_amount_out(out_token, input)
     }
 
-    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
-        self.as_pool_ref()
-            .get_amount_in(in_token, out_amount, out_token)
+    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+        self.as_pool_ref().get_amount_in(in_token, output)
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
@@ -222,7 +220,7 @@ mod tests {
         );
 
         assert_eq!(
-            b.get_amount_out(crv, 227_937_106_828_652_254_870_i128.into(), sdvecrv_dao)
+            b.get_amount_out(crv, (227_937_106_828_652_254_870_i128.into(), sdvecrv_dao))
                 .unwrap(),
             488_192_591_864_344_551_330_i128.into()
         );
@@ -243,7 +241,8 @@ mod tests {
         );
 
         assert_eq!(
-            b.get_amount_in(tusd, 5_000_000_i128.into(), weth).unwrap(),
+            b.get_amount_in(weth, (5_000_000_i128.into(), tusd))
+                .unwrap(),
             1_225_715_511_430_411_i128.into()
         );
     }

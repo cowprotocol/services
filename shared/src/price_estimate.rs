@@ -678,7 +678,7 @@ mod tests {
         let amount_in = amount_in.into();
         BigRational::new(
             amount_in.to_big_int(),
-            pool.get_amount_out(token_out, amount_in, token_in)
+            pool.get_amount_out(token_out, (amount_in, token_in))
                 .unwrap()
                 .as_u128()
                 .into(),

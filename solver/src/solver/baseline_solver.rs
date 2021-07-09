@@ -55,25 +55,21 @@ enum AmmOrder {
 }
 
 impl BaselineSolvable for Amm {
-    fn get_amount_out(&self, out_token: H160, in_amount: U256, in_token: H160) -> Option<U256> {
+    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => {
-                amm_to_pool(order).get_amount_out(out_token, in_amount, in_token)
-            }
+            AmmOrder::ConstantProduct(order) => amm_to_pool(order).get_amount_out(out_token, input),
             AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
                 .ok()?
-                .get_amount_out(out_token, in_amount, in_token),
+                .get_amount_out(out_token, input),
         }
     }
 
-    fn get_amount_in(&self, in_token: H160, out_amount: U256, out_token: H160) -> Option<U256> {
+    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => {
-                amm_to_pool(&order).get_amount_in(in_token, out_amount, out_token)
-            }
+            AmmOrder::ConstantProduct(order) => amm_to_pool(&order).get_amount_in(in_token, output),
             AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
                 .ok()?
-                .get_amount_in(in_token, out_amount, out_token),
+                .get_amount_in(in_token, output),
         }
     }
 
@@ -215,7 +211,7 @@ impl Solution {
         for amm in self.path {
             let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
             let buy_amount = amm
-                .get_amount_out(buy_token, sell_amount, sell_token)
+                .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculateable");
             let execution = AmmOrderExecution {
                 input: (sell_token, sell_amount),
