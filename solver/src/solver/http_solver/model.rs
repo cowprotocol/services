@@ -92,6 +92,7 @@ pub struct FeeModel {
 #[derive(Debug, Deserialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
+    #[serde(default)]
     pub amms: HashMap<usize, UpdatedAmmModel>,
     pub ref_token: H160,
     pub prices: HashMap<H160, Price>,
@@ -366,5 +367,33 @@ mod tests {
           }
         });
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn decode_empty_solution() {
+        let empty_solution = r#"
+            {
+                "tokens": {
+                    "0xa7d1c04faf998f9161fc9f800a99a809b84cfc9d": {
+                        "decimals": 18,
+                        "alias": null,
+                        "normalize_priority": 0
+                    },
+                    "0xc778417e063141139fce010982780140aa0cd5ab": {
+                        "decimals": 18,
+                        "alias": null,
+                        "normalize_priority": 1
+                    }
+                },
+                "orders": {},
+                "metadata": {},
+                "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                "prices": {
+                    "0xa7d1c04faf998f9161fc9f800a99a809b84cfc9d": "1039670252129038",
+                    "0xc778417e063141139fce010982780140aa0cd5ab": "1000000000000000000"
+                }
+            }
+        "#;
+        assert!(serde_json::from_str::<SettledBatchAuctionModel>(empty_solution).is_ok());
     }
 }
