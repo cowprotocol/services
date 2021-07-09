@@ -278,11 +278,15 @@ impl HttpSolver {
         let weighted_product_orders = self.map_amm_orders_for_solver(orders.2);
         let token_models = self.token_models(&token_infos, &price_estimates);
         let order_models = self.order_models(&limit_orders, gas_price);
-        let amm_models = self.amm_models(
-            &constant_product_orders,
-            &weighted_product_orders,
-            gas_price,
-        );
+        let amm_models = self
+            .amm_models(
+                &constant_product_orders,
+                &weighted_product_orders,
+                gas_price,
+            )
+            .into_iter()
+            .filter(|(_, model)| model.has_sufficient_reserves())
+            .collect();
         let model = BatchAuctionModel {
             tokens: token_models,
             orders: order_models,
