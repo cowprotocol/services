@@ -162,6 +162,7 @@ dependencies = [
  "num-bigint 0.3.2",
  "num-integer",
  "num-traits",
+ "serde",
 ]
 
 [[package]]
@@ -2560,6 +2561,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bigdecimal",
  "chrono",
  "contracts",
  "derivative",

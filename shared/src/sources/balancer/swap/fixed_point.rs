@@ -34,7 +34,6 @@ lazy_static! {
     static ref MAX_POW_RELATIVE_ERROR: Bfp = Bfp(10000_usize.into());
 }
 
-#[cfg(test)]
 impl From<usize> for Bfp {
     fn from(num: usize) -> Self {
         Self(U256::from(num).checked_mul(*ONE_18).unwrap())
