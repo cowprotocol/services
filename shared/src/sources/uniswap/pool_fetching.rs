@@ -14,7 +14,7 @@ pub const MAX_BATCH_SIZE: usize = 100;
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
 lazy_static::lazy_static! {
-    static ref POOL_MAX_RESERVES: U256 = U256::from((1u128 << 96) - 1);
+    static ref POOL_MAX_RESERVES: U256 = U256::from((1u128 << 112) - 1);
 }
 
 /// This type denotes `(reserve_a, reserve_b, token_b)` where
