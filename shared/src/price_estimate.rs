@@ -432,7 +432,7 @@ mod tests {
         let token_b = H160::from_low_u64_be(2);
         let pool = Pool::uniswap(
             TokenPair::new(token_a, token_b).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
@@ -499,7 +499,7 @@ mod tests {
         let token_b = H160::from_low_u64_be(2);
         let pool = Pool::uniswap(
             TokenPair::new(token_a, token_b).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
@@ -529,11 +529,11 @@ mod tests {
         let token_c = H160::from_low_u64_be(3);
         let pool_ab = Pool::uniswap(
             TokenPair::new(token_a, token_b).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
         let pool_bc = Pool::uniswap(
             TokenPair::new(token_b, token_c).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool_ab, pool_bc]));
@@ -583,7 +583,7 @@ mod tests {
         let token_b = H160::from_low_u64_be(2);
         let pool_ab = Pool::uniswap(
             TokenPair::new(token_a, token_b).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool_ab]));
         let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token_a]));
@@ -646,7 +646,7 @@ mod tests {
 
         let pool = Pool::uniswap(
             TokenPair::new(token_a, token_b).unwrap(),
-            (10u128.pow(30), 10u128.pow(29)),
+            (10u128.pow(28), 10u128.pow(27)),
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
