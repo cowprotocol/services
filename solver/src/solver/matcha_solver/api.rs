@@ -5,7 +5,7 @@
 //! <https://api.0x.org/>
 
 use crate::solver::solver_utils::{debug_bytes, deserialize_decimal_f64, Slippage};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
@@ -116,13 +116,16 @@ impl DefaultMatchaApi {
 impl MatchaApi for DefaultMatchaApi {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse> {
-        Ok(self
+        let text: String = self
             .client
             .get(query.into_url(&self.base_url))
             .send()
-            .await?
-            .json()
-            .await?)
+            .await
+            .context("SwapQuery failed")?
+            .text()
+            .await?;
+        serde_json::from_str::<SwapResponse>(&text)
+            .context(format!("SwapQuery result parsing failed: {}", text))
     }
 }
 
