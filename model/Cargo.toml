@@ -8,6 +8,7 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 bigdecimal = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+derivative = "2.2"
 ethabi = "14.0"
 enum-utils = "0.1"
 hex = { version = "0.4", default-features = false }

@@ -7,9 +7,10 @@ use crate::{
     DomainSeparator, Signature, SigningScheme, TokenPair,
 };
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
+use derivative::Derivative;
 use hex_literal::hex;
 use num_bigint::BigUint;
-use primitive_types::{H160, U256};
+use primitive_types::{H160, H256, U256};
 use secp256k1::key::ONE_KEY;
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
@@ -164,7 +165,8 @@ impl OrderBuilder {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Derivative, Deserialize, Serialize, Hash)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     #[serde(with = "h160_hexadecimal")]
@@ -179,6 +181,7 @@ pub struct OrderCreation {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
+    #[derivative(Debug(format_with = "debug_app_data"))]
     #[serde(with = "appdata_hexadecimal")]
     pub app_data: [u8; 32],
     #[serde(with = "u256_decimal")]
@@ -318,7 +321,8 @@ impl OrderCancellation {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize, Hash)]
+#[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetaData {
     pub creation_date: DateTime<Utc>,
@@ -327,12 +331,16 @@ pub struct OrderMetaData {
     pub uid: OrderUid,
     #[serde_as(as = "Option<DecimalU256>")]
     pub available_balance: Option<U256>,
+    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_buy_amount: BigUint,
+    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_sell_amount: BigUint,
+    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_sell_amount_before_fees: BigUint,
+    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_fee_amount: BigUint,
     pub invalidated: bool,
@@ -450,6 +458,20 @@ impl Default for OrderKind {
     fn default() -> Self {
         Self::Buy
     }
+}
+
+pub fn debug_app_data(
+    app_data: &[u8; 32],
+    formatter: &mut std::fmt::Formatter,
+) -> Result<(), std::fmt::Error> {
+    formatter.write_fmt(format_args!("{:?}", H256(*app_data)))
+}
+
+pub fn debug_biguint_to_string(
+    value: &BigUint,
+    formatter: &mut std::fmt::Formatter,
+) -> Result<(), std::fmt::Error> {
+    formatter.write_fmt(format_args!("{}", value))
 }
 
 #[cfg(test)]
@@ -665,5 +687,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(owner, h160_from_public_key(public_key));
+    }
+
+    #[test]
+    #[ignore]
+    fn debug_order_data() {
+        dbg!(Order::default());
     }
 }
