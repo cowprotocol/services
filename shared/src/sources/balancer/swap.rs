@@ -63,10 +63,48 @@ impl WeightedPoolRef<'_> {
             .sub(fee_amount)
             .map(|amount_without_fees| amount_without_fees.as_uint256())
     }
-}
 
-impl BaselineSolvable for WeightedPoolRef<'_> {
-    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+    fn unchecked_get_amount_in(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
+        // Note that the output of this function does not depend on the pool
+        // specialization. All contract branches compute this amount with:
+        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
+        let in_reserves = self.reserves.get(&in_token)?;
+        let out_reserves = self.reserves.get(&out_token)?;
+
+        let amount_in_before_fee = calc_in_given_out(
+            in_reserves.upscaled_balance()?,
+            in_reserves.weight,
+            out_reserves.upscaled_balance()?,
+            out_reserves.weight,
+            out_reserves.upscale(out_amount)?,
+        )
+        .ok()
+        .map(|bfp| in_reserves.downscale(bfp))
+        .flatten()?;
+
+        self.add_swap_fee_amount(amount_in_before_fee).ok()
+    }
+
+    fn checked_get_amount_in(
+        &self,
+        in_token: H160,
+        (out_amount, out_token): (U256, H160),
+    ) -> Option<U256> {
+        let in_amount = self.unchecked_get_amount_in(in_token, (out_amount, out_token))?;
+        // We double check that resulting amount in can symmetrically provide an amount out.
+        self.unchecked_get_amount_out(out_token, (in_amount, in_token))?;
+        Some(in_amount)
+    }
+
+    fn unchecked_get_amount_out(
+        &self,
+        out_token: H160,
+        (in_amount, in_token): (U256, H160),
+    ) -> Option<U256> {
         // Note that the output of this function does not depend on the pool
         // specialization. All contract branches compute this amount with:
         // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L62-L75
@@ -87,25 +125,25 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         .flatten()
     }
 
+    fn checked_get_amount_out(
+        &self,
+        out_token: H160,
+        (in_amount, in_token): (U256, H160),
+    ) -> Option<U256> {
+        let out_amount = self.unchecked_get_amount_out(out_token, (in_amount, in_token))?;
+        // We double check that resulting amount out can symmetrically provide an amount in.
+        self.unchecked_get_amount_in(in_token, (out_amount, out_token))?;
+        Some(out_amount)
+    }
+}
+
+impl BaselineSolvable for WeightedPoolRef<'_> {
+    fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
+        self.checked_get_amount_out(out_token, (in_amount, in_token))
+    }
+
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
-        // Note that the output of this function does not depend on the pool
-        // specialization. All contract branches compute this amount with:
-        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BaseMinimalSwapInfoPool.sol#L75-L88
-        let in_reserves = self.reserves.get(&in_token)?;
-        let out_reserves = self.reserves.get(&out_token)?;
-
-        let amount_in = calc_in_given_out(
-            in_reserves.upscaled_balance()?,
-            in_reserves.weight,
-            out_reserves.upscaled_balance()?,
-            out_reserves.weight,
-            out_reserves.upscale(out_amount)?,
-        )
-        .ok()
-        .map(|bfp| in_reserves.downscale(bfp))
-        .flatten()?;
-
-        self.add_swap_fee_amount(amount_in).ok()
+        self.checked_get_amount_in(in_token, (out_amount, out_token))
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {

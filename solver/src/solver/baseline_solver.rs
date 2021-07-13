@@ -212,7 +212,7 @@ impl Solution {
             let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
             let buy_amount = amm
                 .get_amount_out(buy_token, (sell_amount, sell_token))
-                .expect("Path was found, so amount must be calculateable");
+                .expect("Path was found, so amount must be calculable");
             let execution = AmmOrderExecution {
                 input: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
@@ -246,15 +246,15 @@ fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> Result<WeightedPoolRef> {
 
 #[cfg(test)]
 mod tests {
-    use maplit::hashset;
-    use model::order::OrderKind;
-    use num::rational::Ratio;
-
+    use super::*;
     use crate::liquidity::{
         tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
     };
+    use maplit::hashset;
+    use model::order::OrderKind;
+    use num::rational::Ratio;
+    use shared::{addr, sources::balancer::pool_fetching::PoolTokenState};
 
-    use super::*;
     #[test]
     fn finds_best_route_sell_order() {
         let sell_token = H160::from_low_u64_be(1);
@@ -504,5 +504,53 @@ mod tests {
 
         let solver = BaselineSolver::new(hashset! {});
         assert_eq!(solver.solve(liquidity).len(), 1);
+    }
+
+    #[test]
+    fn does_not_panic_when_building_solution() {
+        // Regression test for https://github.com/gnosis/gp-v2-services/issues/838
+        let liquidity = vec![
+            Liquidity::Limit(LimitOrder {
+                sell_token: addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"),
+                buy_token: addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
+                sell_amount: 1_741_103_528_769_588_955_u128.into(),
+                buy_amount: 500_000_000_000_000_000_000_u128.into(),
+                kind: OrderKind::Buy,
+                partially_fillable: false,
+                fee_amount: 3_429_706_374_800_940_u128.into(),
+                settlement_handling: CapturingSettlementHandler::arc(),
+                id: "Crash Bandicoot".to_string(),
+            }),
+            Liquidity::ConstantProduct(ConstantProductOrder {
+                tokens: TokenPair::new(
+                    addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
+                    addr!("c778417e063141139fce010982780140aa0cd5ab"),
+                )
+                .unwrap(),
+                reserves: (596_652_163_418_904_202_462_071, 225_949_669_025_168_181_644),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            }),
+            Liquidity::WeightedProduct(WeightedProductOrder {
+                reserves: hashmap! {
+                    addr!("c778417e063141139fce010982780140aa0cd5ab") => PoolTokenState {
+                        balance: 799_086_982_149_629_058_u128.into(),
+                        weight: "0.5".parse().unwrap(),
+                        scaling_exponent: 0,
+                    },
+                    addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => PoolTokenState {
+                        balance: 1_251_682_293_173_877_359_u128.into(),
+                        weight: "0.5".parse().unwrap(),
+                        scaling_exponent: 0,
+                    },
+                },
+                fee: Ratio::new(1.into(), 1000.into()),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            }),
+        ];
+
+        let solver =
+            BaselineSolver::new(hashset![addr!("c778417e063141139fce010982780140aa0cd5ab")]);
+        assert_eq!(solver.solve(liquidity).len(), 0);
     }
 }
