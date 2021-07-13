@@ -5,18 +5,21 @@ use self::api::{
     TransactionBuilderResponse,
 };
 use super::single_order_solver::SingleOrderSolving;
+use crate::solver::paraswap_solver::api::ParaswapResponseError;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Error, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::{Bytes, H160};
+use ethcontract::{Bytes, H160, U256};
 use maplit::hashmap;
+use shared::token_info::TokenInfo;
 use shared::{conversions::U256Ext, token_info::TokenInfoFetching, Web3};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 const REFERRER: &str = "GPv2";
@@ -57,40 +60,120 @@ impl ParaswapSolver {
     }
 }
 
+#[derive(Debug)]
+struct SettlementError {
+    inner: anyhow::Error,
+    retryable: bool,
+}
+
+impl From<anyhow::Error> for SettlementError {
+    fn from(err: Error) -> Self {
+        SettlementError {
+            inner: err,
+            retryable: false,
+        }
+    }
+}
+
+impl From<ParaswapResponseError> for SettlementError {
+    fn from(err: ParaswapResponseError) -> Self {
+        SettlementError {
+            inner: anyhow!("Paraswap Response Error {:?}", err),
+            retryable: matches!(
+                err,
+                ParaswapResponseError::PriceChange | ParaswapResponseError::BuildingTransaction(_)
+            ),
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl SingleOrderSolving for ParaswapSolver {
     async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
-        let (amount, side) = match order.kind {
-            model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
-            model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
-        };
-        let token_infos = self
+        let max_retries = 2;
+        for _ in 0..max_retries {
+            match self.try_settle_order(order.clone()).await {
+                Ok(settlement) => return Ok(settlement),
+                Err(err) if err.retryable => {
+                    tracing::debug!("Retrying Paraswap settlement due to: {:?}", &err);
+                    continue;
+                }
+                Err(err) => return Err(err.inner),
+            }
+        }
+        // One last attempt, else throw converted error
+        self.try_settle_order(order).await.map_err(|err| err.inner)
+    }
+
+    fn name(&self) -> &'static str {
+        "ParaSwap"
+    }
+}
+
+impl ParaswapSolver {
+    async fn try_settle_order(
+        &self,
+        order: LimitOrder,
+    ) -> Result<Option<Settlement>, SettlementError> {
+        let token_info = self
             .token_info
             .get_token_infos(&[order.sell_token, order.buy_token])
             .await;
-        let decimals = |token: &H160| {
-            token_infos
-                .get(token)
-                .and_then(|info| info.decimals.map(usize::from))
-                .ok_or_else(|| anyhow!("decimals for token {:?} not found", token))
+        let (price_response, amount) = self.get_price_for_order(&order, &token_info).await?;
+        if !satisfies_limit_price(&order, &price_response) {
+            tracing::debug!("Order limit price not respected");
+            return Ok(None);
+        }
+        let transaction_query =
+            self.transaction_query_from(&order, &price_response, &token_info)?;
+        let transaction = self.client.transaction(transaction_query).await?;
+        let mut settlement = Settlement::new(hashmap! {
+            order.sell_token => price_response.dest_amount,
+            order.buy_token => price_response.src_amount,
+        });
+        settlement.with_liquidity(&order, amount)?;
+
+        settlement.encoder.append_to_execution_plan(
+            self.allowance_fetcher
+                .get_approval(
+                    order.sell_token,
+                    APPROVAL_RECEIVER,
+                    price_response.src_amount,
+                )
+                .await?,
+        );
+        settlement.encoder.append_to_execution_plan(transaction);
+        Ok(Some(settlement))
+    }
+
+    async fn get_price_for_order(
+        &self,
+        order: &LimitOrder,
+        token_info: &HashMap<H160, TokenInfo>,
+    ) -> Result<(PriceResponse, U256)> {
+        let (amount, side) = match order.kind {
+            model::order::OrderKind::Buy => (order.buy_amount, Side::Buy),
+            model::order::OrderKind::Sell => (order.sell_amount, Side::Sell),
         };
 
         let price_query = PriceQuery {
             from: order.sell_token,
             to: order.buy_token,
-            from_decimals: decimals(&order.sell_token)?,
-            to_decimals: decimals(&order.buy_token)?,
+            from_decimals: decimals(token_info, &order.sell_token)?,
+            to_decimals: decimals(token_info, &order.buy_token)?,
             amount,
             side,
         };
-
         let price_response = self.client.price(price_query).await?;
+        Ok((price_response, amount))
+    }
 
-        if !satisfies_limit_price(&order, &price_response) {
-            tracing::debug!("Order limit price not respected");
-            return Ok(None);
-        }
-
+    fn transaction_query_from(
+        &self,
+        order: &LimitOrder,
+        price_response: &PriceResponse,
+        token_info: &HashMap<H160, TokenInfo>,
+    ) -> Result<TransactionBuilderQuery> {
         let (src_amount, dest_amount) = match order.kind {
             // Buy orders apply slippage to src amount, dest amount unchanged
             model::order::OrderKind::Buy => (
@@ -111,41 +194,26 @@ impl SingleOrderSolving for ParaswapSolver {
                     / 10000,
             ),
         };
-        let transaction_query = TransactionBuilderQuery {
+        let query = TransactionBuilderQuery {
             src_token: order.sell_token,
             dest_token: order.buy_token,
             src_amount,
             dest_amount,
-            from_decimals: decimals(&order.sell_token)?,
-            to_decimals: decimals(&order.buy_token)?,
-            price_route: price_response.price_route_raw,
+            from_decimals: decimals(token_info, &order.sell_token)?,
+            to_decimals: decimals(token_info, &order.buy_token)?,
+            price_route: price_response.clone().price_route_raw,
             user_address: self.solver_address,
             referrer: REFERRER.to_string(),
         };
-        let transaction = self.client.transaction(transaction_query).await?;
-
-        let mut settlement = Settlement::new(hashmap! {
-            order.sell_token => price_response.dest_amount,
-            order.buy_token => price_response.src_amount,
-        });
-        settlement.with_liquidity(&order, amount)?;
-
-        settlement.encoder.append_to_execution_plan(
-            self.allowance_fetcher
-                .get_approval(
-                    order.sell_token,
-                    APPROVAL_RECEIVER,
-                    price_response.src_amount,
-                )
-                .await?,
-        );
-        settlement.encoder.append_to_execution_plan(transaction);
-        Ok(Some(settlement))
+        Ok(query)
     }
+}
 
-    fn name(&self) -> &'static str {
-        "ParaSwap"
-    }
+fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<usize> {
+    token_info
+        .get(token)
+        .and_then(|info| info.decimals.map(usize::from))
+        .ok_or_else(|| anyhow!("decimals for token {:?} not found", token))
 }
 
 impl Interaction for TransactionBuilderResponse {
@@ -509,5 +577,175 @@ mod tests {
             .unwrap();
 
         println!("{:#?}", settlement);
+    }
+
+    #[tokio::test]
+    async fn settle_order_retry_until_succeeds() {
+        let mut client = Box::new(MockParaswapApi::new());
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        let mut token_info = MockTokenInfoFetching::new();
+
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        client.expect_price().returning(|_| {
+            Ok(PriceResponse {
+                ..Default::default()
+            })
+        });
+        let mut seq = Sequence::new();
+        client
+            .expect_transaction()
+            .times(2)
+            .returning(|_| {
+                // Retryable error
+                Err(ParaswapResponseError::BuildingTransaction(String::new()))
+            })
+            .in_sequence(&mut seq);
+        client
+            .expect_transaction()
+            .times(1)
+            .returning(|_| {
+                Ok(TransactionBuilderResponse {
+                    chain_id: 0,
+                    ..Default::default()
+                })
+            })
+            .in_sequence(&mut seq);
+
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        token_info.expect_get_token_infos().returning(move |_| {
+            hashmap! {
+                sell_token => TokenInfo { decimals: Some(18)},
+                buy_token => TokenInfo { decimals: Some(18)},
+            }
+        });
+
+        let solver = ParaswapSolver {
+            client,
+            solver_address: Default::default(),
+            token_info: Arc::new(token_info),
+            allowance_fetcher,
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
+            slippage_bps: 1000, // 10%
+        };
+
+        let order = LimitOrder {
+            sell_token,
+            buy_token,
+            ..Default::default()
+        };
+        assert!(solver.settle_order(order.clone()).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn settle_order_retry_until_exceeds() {
+        let mut client = Box::new(MockParaswapApi::new());
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        let mut token_info = MockTokenInfoFetching::new();
+
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        client.expect_price().returning(|_| {
+            Ok(PriceResponse {
+                ..Default::default()
+            })
+        });
+        let mut seq = Sequence::new();
+        client
+            .expect_transaction()
+            .times(2)
+            .returning(|_| {
+                // Retryable error
+                Err(ParaswapResponseError::BuildingTransaction(String::new()))
+            })
+            .in_sequence(&mut seq);
+        client
+            .expect_transaction()
+            .times(1)
+            .returning(|_| {
+                // Retryable error on last attempt.
+                Err(ParaswapResponseError::PriceChange)
+            })
+            .in_sequence(&mut seq);
+
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        token_info.expect_get_token_infos().returning(move |_| {
+            hashmap! {
+                sell_token => TokenInfo { decimals: Some(18)},
+                buy_token => TokenInfo { decimals: Some(18)},
+            }
+        });
+
+        let solver = ParaswapSolver {
+            client,
+            solver_address: Default::default(),
+            token_info: Arc::new(token_info),
+            allowance_fetcher,
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
+            slippage_bps: 1000, // 10%
+        };
+
+        let order = LimitOrder {
+            sell_token,
+            buy_token,
+            ..Default::default()
+        };
+        assert!(solver.settle_order(order.clone()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn settle_order_unretryable_error() {
+        let mut client = Box::new(MockParaswapApi::new());
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        let mut token_info = MockTokenInfoFetching::new();
+
+        let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
+
+        client.expect_price().returning(|_| {
+            Ok(PriceResponse {
+                ..Default::default()
+            })
+        });
+        client.expect_transaction().times(1).returning(|_| {
+            // Non-retryable error
+            Err(ParaswapResponseError::UnknownParaswapError(String::new()))
+        });
+
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        token_info.expect_get_token_infos().returning(move |_| {
+            hashmap! {
+                sell_token => TokenInfo { decimals: Some(18)},
+                buy_token => TokenInfo { decimals: Some(18)},
+            }
+        });
+
+        let solver = ParaswapSolver {
+            client,
+            solver_address: Default::default(),
+            token_info: Arc::new(token_info),
+            allowance_fetcher,
+            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
+            slippage_bps: 1000, // 10%
+        };
+
+        let order = LimitOrder {
+            sell_token,
+            buy_token,
+            ..Default::default()
+        };
+
+        assert!(solver.settle_order(order).await.is_err());
     }
 }
