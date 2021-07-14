@@ -59,6 +59,7 @@ arg_enum! {
         OneInch,
         Paraswap,
         Matcha,
+        Quasimodo,
     }
 }
 
@@ -69,6 +70,7 @@ pub fn create(
     base_tokens: HashSet<H160>,
     native_token: H160,
     mip_solver_url: Url,
+    quasimodo_solver_url: Url,
     settlement_contract: &GPv2Settlement,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     price_estimator: Arc<dyn PriceEstimating>,
@@ -92,25 +94,31 @@ pub fn create(
         .checked_sub(TIMEOUT_SAFETY_BUFFER)
         .expect("solver_timeout too low");
 
+    // Helper function to create http solver instances.
+    let create_http_solver = |url: Url| -> HttpSolver {
+        HttpSolver::new(
+            url,
+            None,
+            SolverConfig {
+                max_nr_exec_orders: 100,
+                time_limit: time_limit.as_secs() as u32,
+            },
+            native_token,
+            token_info_fetcher.clone(),
+            price_estimator.clone(),
+            network_id.clone(),
+            chain_id,
+            fee_discount_factor,
+        )
+    };
+
     solvers
         .into_iter()
         .map(|solver_type| match solver_type {
             SolverType::Naive => boxed(NaiveSolver {}),
             SolverType::Baseline => boxed(BaselineSolver::new(base_tokens.clone())),
-            SolverType::Mip => boxed(HttpSolver::new(
-                mip_solver_url.clone(),
-                None,
-                SolverConfig {
-                    max_nr_exec_orders: 100,
-                    time_limit: time_limit.as_secs() as u32,
-                },
-                native_token,
-                token_info_fetcher.clone(),
-                price_estimator.clone(),
-                network_id.clone(),
-                chain_id,
-                fee_discount_factor,
-            )),
+            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone())),
+            SolverType::Quasimodo => boxed(create_http_solver(quasimodo_solver_url.clone())),
             SolverType::OneInch => {
                 let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(
                     web3.clone(),

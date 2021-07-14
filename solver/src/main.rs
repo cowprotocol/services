@@ -48,6 +48,14 @@ struct Arguments {
     #[structopt(long, env = "MIP_SOLVER_URL", default_value = "http://localhost:8000")]
     mip_solver_url: Url,
 
+    /// The API endpoint to call the mip v2 solver
+    #[structopt(
+        long,
+        env = "QUASIMODO_SOLVER_URL",
+        default_value = "http://localhost:8000"
+    )]
+    quasimodo_solver_url: Url,
+
     /// The timeout for the API endpoint to fetch the orderbook
     #[structopt(
         long,
@@ -307,6 +315,7 @@ async fn main() {
         base_tokens,
         native_token_contract.address(),
         args.mip_solver_url,
+        args.quasimodo_solver_url,
         &settlement_contract,
         token_info_fetcher,
         price_estimator.clone(),
