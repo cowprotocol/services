@@ -13,8 +13,8 @@ use contracts::{
     BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
 };
 use ethcontract::{
-    common::{truffle::Network, DeploymentInformation},
-    Artifact, H160,
+    common::{contract::Network, DeploymentInformation},
+    Contract, H160,
 };
 use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use std::sync::Arc;
@@ -40,7 +40,8 @@ pub struct EmptyPoolInitializer(u64);
 #[async_trait::async_trait]
 impl PoolInitializing for EmptyPoolInitializer {
     async fn initialize_pools(&self) -> Result<BalancerRegisteredPools> {
-        let fetched_block_number = deployment_block(BalancerV2Vault::artifact(), self.0).await?;
+        let fetched_block_number =
+            deployment_block(BalancerV2Vault::raw_contract(), self.0).await?;
         Ok(BalancerRegisteredPools {
             fetched_block_number,
             ..Default::default()
@@ -120,14 +121,14 @@ where
             weighted_pools: pools
                 .pools_by_factory
                 .remove(&deployment_address(
-                    BalancerV2WeightedPoolFactory::artifact(),
+                    BalancerV2WeightedPoolFactory::raw_contract(),
                     self.chain_id,
                 )?)
                 .unwrap_or_default(),
             weighted_2token_pools: pools
                 .pools_by_factory
                 .remove(&deployment_address(
-                    BalancerV2WeightedPool2TokensFactory::artifact(),
+                    BalancerV2WeightedPool2TokensFactory::raw_contract(),
                     self.chain_id,
                 )?)
                 .unwrap_or_default(),
@@ -195,7 +196,7 @@ where
                     pools
                         .pools_by_factory
                         .remove(&deployment_address(
-                            BalancerV2WeightedPoolFactory::artifact(),
+                            BalancerV2WeightedPoolFactory::raw_contract(),
                             self.chain_id,
                         )?)
                         .unwrap_or_default(),
@@ -207,7 +208,7 @@ where
                     pools
                         .pools_by_factory
                         .remove(&deployment_address(
-                            BalancerV2WeightedPool2TokensFactory::artifact(),
+                            BalancerV2WeightedPool2TokensFactory::raw_contract(),
                             self.chain_id,
                         )?)
                         .unwrap_or_default(),
@@ -257,35 +258,24 @@ impl BalancerSubgraph for BalancerSubgraphClient {
     }
 }
 
-fn deployment(artifact: &Artifact, chain_id: u64) -> Result<&Network> {
-    artifact
+fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
+    contract
         .networks
         .get(&chain_id.to_string())
         // Note that we are conflating network IDs with chain IDs. In general
         // they cannot be considered the same, but for the networks that we
         // support (xDAI, Rinkeby and Mainnet) they are.
-        .ok_or_else(|| {
-            anyhow!(
-                "missing {} deployment for {}",
-                artifact.contract_name,
-                chain_id,
-            )
-        })
+        .ok_or_else(|| anyhow!("missing {} deployment for {}", contract.name, chain_id))
 }
 
-fn deployment_address(artifact: &Artifact, chain_id: u64) -> Result<H160> {
-    Ok(deployment(artifact, chain_id)?.address)
+fn deployment_address(contract: &Contract, chain_id: u64) -> Result<H160> {
+    Ok(deployment(contract, chain_id)?.address)
 }
 
-async fn deployment_block(artifact: &Artifact, chain_id: u64) -> Result<u64> {
-    let deployment_info = deployment(artifact, chain_id)?
+async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
+    let deployment_info = deployment(contract, chain_id)?
         .deployment_information
-        .ok_or_else(|| {
-            anyhow!(
-                "missing deployment information for {}",
-                artifact.contract_name
-            )
-        })?;
+        .ok_or_else(|| anyhow!("missing deployment information for {}", contract.name))?;
 
     match deployment_info {
         DeploymentInformation::BlockNumber(block) => Ok(block),
@@ -330,9 +320,12 @@ mod tests {
         let chain_id = 1;
 
         let weighted_factory =
-            deployment_address(BalancerV2WeightedPoolFactory::artifact(), chain_id).unwrap();
-        let weighted_2token_factory =
-            deployment_address(BalancerV2WeightedPool2TokensFactory::artifact(), chain_id).unwrap();
+            deployment_address(BalancerV2WeightedPoolFactory::raw_contract(), chain_id).unwrap();
+        let weighted_2token_factory = deployment_address(
+            BalancerV2WeightedPool2TokensFactory::raw_contract(),
+            chain_id,
+        )
+        .unwrap();
 
         fn pool(seed: u8) -> RegisteredWeightedPool {
             RegisteredWeightedPool {
@@ -387,8 +380,11 @@ mod tests {
     async fn supports_empty_and_missing_factories() {
         let chain_id = 4;
 
-        let weighted_2token_factory =
-            deployment_address(BalancerV2WeightedPool2TokensFactory::artifact(), chain_id).unwrap();
+        let weighted_2token_factory = deployment_address(
+            BalancerV2WeightedPool2TokensFactory::raw_contract(),
+            chain_id,
+        )
+        .unwrap();
 
         let mut subgraph = MockBalancerSubgraph::new();
         subgraph.expect_weighted_pools().returning(move || {
@@ -453,9 +449,12 @@ mod tests {
         let chain_id = 1;
 
         let weighted_factory =
-            deployment_address(BalancerV2WeightedPoolFactory::artifact(), chain_id).unwrap();
-        let weighted_2token_factory =
-            deployment_address(BalancerV2WeightedPool2TokensFactory::artifact(), chain_id).unwrap();
+            deployment_address(BalancerV2WeightedPoolFactory::raw_contract(), chain_id).unwrap();
+        let weighted_2token_factory = deployment_address(
+            BalancerV2WeightedPool2TokensFactory::raw_contract(),
+            chain_id,
+        )
+        .unwrap();
 
         let mut subgraph = MockBalancerSubgraph::new();
         subgraph.expect_weighted_pools().returning(move || {

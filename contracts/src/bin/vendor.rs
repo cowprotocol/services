@@ -132,7 +132,7 @@ impl VendorContext<'_> {
     fn github(&self, name: &str, path: &str) -> Result<&Self> {
         self.vendor_source(
             name,
-            Source::http(format!("https://raw.githubusercontent.com/{}", path))?,
+            Source::http(&format!("https://raw.githubusercontent.com/{}", path))?,
         )
     }
 
