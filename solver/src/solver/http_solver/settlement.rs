@@ -147,6 +147,9 @@ fn match_prepared_and_settled_amms(
 )> {
     let mut constant_product_executions = vec![];
     let mut weighted_product_executions = vec![];
+    // Recall, prepared amm for weighted products are shifted by the constant product amms
+    // We declare this outside before prepared_constant_product_orders is mutated.
+    let shift = prepared_constant_product_orders.len();
     for (index, settled) in settled_orders
         .into_iter()
         .filter(|(_, settled)| settled.is_non_trivial())
@@ -162,8 +165,6 @@ fn match_prepared_and_settled_amms(
             (settled.buy_token, settled.exec_buy_amount),
             (settled.sell_token, settled.exec_sell_amount),
         );
-        // Recall, prepared amm for weighted products are shifted by the constant product amms
-        let shift = prepared_constant_product_orders.len();
         if index < shift && prepared_constant_product_orders.contains_key(&index) {
             constant_product_executions.push(ExecutedConstantProductAmms {
                 order: prepared_constant_product_orders.remove(&index).unwrap(),
@@ -275,7 +276,7 @@ mod tests {
             fee: BigRational::new(3.into(), 1.into()),
             settlement_handling: wp_amm_handler.clone(),
         };
-        let weighted_product_orders = hashmap! { 1 => weighted_product_order };
+        let weighted_product_orders = hashmap! { 0 => weighted_product_order };
 
         let executed_order = ExecutedOrderModel {
             exec_buy_amount: 6.into(),
@@ -444,6 +445,20 @@ mod tests {
                             "exec_plan": {
                                 "sequence": 0,
                                 "position": 1
+                            }
+                        }
+                    ]
+                },
+                "1": {
+                    "execution": [
+                        {
+                            "sell_token": "0xc778417e063141139fce010982780140aa0cd5ab",
+                            "buy_token": "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353",
+                            "exec_sell_amount": "1",
+                            "exec_buy_amount": "2",
+                            "exec_plan": {
+                                "sequence": 0,
+                                "position": 2
                             }
                         }
                     ]
