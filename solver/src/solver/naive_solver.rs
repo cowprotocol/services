@@ -6,10 +6,19 @@ use crate::{
     solver::Solver,
 };
 use anyhow::Result;
+use ethcontract::Account;
 use model::TokenPair;
 use std::collections::HashMap;
 
-pub struct NaiveSolver;
+pub struct NaiveSolver {
+    account: Account,
+}
+
+impl NaiveSolver {
+    pub fn new(account: Account) -> Self {
+        Self { account }
+    }
+}
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {
@@ -22,6 +31,10 @@ impl Solver for NaiveSolver {
                 _ => None,
             });
         Ok(settle(limit_orders, uniswaps).await)
+    }
+
+    fn account(&self) -> &Account {
+        &self.account
     }
 
     fn name(&self) -> &'static str {

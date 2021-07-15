@@ -9,7 +9,7 @@ use crate::{
 };
 use ::model::order::OrderKind;
 use anyhow::{ensure, Context, Result};
-use ethcontract::U256;
+use ethcontract::{Account, U256};
 use futures::join;
 use lazy_static::lazy_static;
 use num::{BigInt, BigRational, ToPrimitive};
@@ -59,6 +59,7 @@ impl SolverConfig {
 }
 
 pub struct HttpSolver {
+    account: Account,
     base: Url,
     client: Client,
     api_key: Option<String>,
@@ -74,6 +75,7 @@ pub struct HttpSolver {
 impl HttpSolver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        account: Account,
         base: Url,
         api_key: Option<String>,
         config: SolverConfig,
@@ -87,6 +89,7 @@ impl HttpSolver {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
         Self {
+            account,
             base,
             client,
             api_key,
@@ -451,6 +454,10 @@ impl Solver for HttpSolver {
         settlement::convert_settlement(settled, context).map(|settlement| vec![settlement])
     }
 
+    fn account(&self) -> &Account {
+        &self.account
+    }
+
     fn name(&self) -> &'static str {
         "HTTPSolver"
     }
@@ -461,6 +468,7 @@ mod tests {
     use super::*;
     use crate::liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder};
     use ::model::TokenPair;
+    use ethcontract::Address;
     use maplit::hashmap;
     use num::rational::Ratio;
     use shared::price_estimate::mocks::FakePriceEstimator;
@@ -499,6 +507,7 @@ mod tests {
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
+            Account::Local(Address::default(), None),
             url.parse().unwrap(),
             None,
             SolverConfig {

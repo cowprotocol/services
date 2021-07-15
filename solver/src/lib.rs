@@ -10,6 +10,8 @@ pub mod settlement;
 pub mod settlement_simulation;
 pub mod settlement_submission;
 pub mod solver;
+#[cfg(test)]
+mod test;
 mod util;
 
 use anyhow::Result;

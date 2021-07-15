@@ -24,7 +24,7 @@ use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
 use crate::solver::matcha_solver::api::MatchaApi;
 use anyhow::{ensure, Result};
 use contracts::GPv2Settlement;
-use ethcontract::Bytes;
+use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 
 use super::single_order_solver::SingleOrderSolving;
@@ -44,6 +44,7 @@ pub const STANDARD_MATCHA_SLIPPAGE_BPS: u16 = 5;
 
 /// A GPv2 solver that matches GP orders to direct Matcha swaps.
 pub struct MatchaSolver {
+    account: Account,
     client: Box<dyn MatchaApi + Send + Sync>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
 }
@@ -52,13 +53,19 @@ pub struct MatchaSolver {
 const MAINNET_CHAIN_ID: u64 = 1;
 
 impl MatchaSolver {
-    pub fn new(web3: Web3, settlement_contract: GPv2Settlement, chain_id: u64) -> Result<Self> {
+    pub fn new(
+        account: Account,
+        web3: Web3,
+        settlement_contract: GPv2Settlement,
+        chain_id: u64,
+    ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
             "Matcha solver only supported on Mainnet",
         );
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
         Ok(Self {
+            account,
             allowance_fetcher: Box::new(allowance_fetcher),
             client: Box::new(DefaultMatchaApi::default()),
         })
@@ -133,6 +140,10 @@ impl SingleOrderSolving for MatchaSolver {
         Ok(Some(settlement))
     }
 
+    fn account(&self) -> &Account {
+        &self.account
+    }
+
     fn name(&self) -> &'static str {
         "Matcha"
     }
@@ -157,6 +168,7 @@ mod tests {
     use crate::liquidity::tests::CapturingSettlementHandler;
     use crate::liquidity::LimitOrder;
     use crate::solver::matcha_solver::api::MockMatchaApi;
+    use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use mockall::predicate::*;
@@ -174,7 +186,7 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = MatchaSolver::new(web3, settlement, chain_id).unwrap();
+        let solver = MatchaSolver::new(account(), web3, settlement, chain_id).unwrap();
         let settlement = solver
             .settle_order(
                 Order {
@@ -206,7 +218,7 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = MatchaSolver::new(web3, settlement, chain_id).unwrap();
+        let solver = MatchaSolver::new(account(), web3, settlement, chain_id).unwrap();
         let settlement = solver
             .settle_order(
                 Order {
@@ -261,6 +273,7 @@ mod tests {
             });
 
         let solver = MatchaSolver {
+            account: account(),
             client,
             allowance_fetcher,
         };
@@ -346,7 +359,7 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
-        assert!(MatchaSolver::new(web3, settlement, chain_id).is_err())
+        assert!(MatchaSolver::new(account(), web3, settlement, chain_id).is_err())
     }
 
     #[tokio::test]
@@ -390,6 +403,7 @@ mod tests {
             .in_sequence(&mut seq);
 
         let solver = MatchaSolver {
+            account: account(),
             client,
             allowance_fetcher,
         };
@@ -435,6 +449,7 @@ mod tests {
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
         let solver = MatchaSolver {
+            account: account(),
             client,
             allowance_fetcher,
         };

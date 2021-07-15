@@ -17,7 +17,7 @@ use crate::{
 use anyhow::{ensure, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::Bytes;
+use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use shared::Web3;
@@ -30,6 +30,7 @@ use std::{
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct OneInchSolver {
+    account: Account,
     settlement_contract: GPv2Settlement,
     disabled_protocols: HashSet<String>,
     #[derivative(Debug = "ignore")]
@@ -44,6 +45,7 @@ const MAINNET_CHAIN_ID: u64 = 1;
 impl OneInchSolver {
     /// Creates a new 1Inch solver with a list of disabled protocols.
     pub fn with_disabled_protocols(
+        account: Account,
         web3: Web3,
         settlement_contract: GPv2Settlement,
         chain_id: u64,
@@ -56,6 +58,7 @@ impl OneInchSolver {
 
         let settlement_address = settlement_contract.address();
         Ok(Self {
+            account,
             settlement_contract,
             disabled_protocols: disabled_protocols.into_iter().collect(),
             client: Box::new(OneInchClientImpl::default()),
@@ -165,6 +168,10 @@ impl SingleOrderSolving for OneInchSolver {
         self.settle_order_with_protocols(order, protocols).await
     }
 
+    fn account(&self) -> &Account {
+        &self.account
+    }
+
     fn name(&self) -> &'static str {
         "1Inch"
     }
@@ -178,12 +185,12 @@ impl Display for OneInchSolver {
 
 #[cfg(test)]
 mod tests {
-
     use super::{api::MockOneInchClient, *};
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use crate::liquidity::LimitOrder;
     use crate::solver::oneinch_solver::api::Protocols;
     use crate::solver::oneinch_solver::api::Spender;
+    use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use maplit::hashset;
@@ -201,6 +208,7 @@ mod tests {
     ) -> OneInchSolver {
         let settlement_contract = dummy_contract!(GPv2Settlement, H160::zero());
         OneInchSolver {
+            account: account(),
             settlement_contract,
             disabled_protocols: HashSet::new(),
             client: Box::new(client),
@@ -407,10 +415,14 @@ mod tests {
         let chain_id = 42;
         let settlement = dummy_contract!(GPv2Settlement, H160::zero());
 
-        assert!(
-            OneInchSolver::with_disabled_protocols(web3, settlement, chain_id, iter::empty())
-                .is_err()
+        assert!(OneInchSolver::with_disabled_protocols(
+            account(),
+            web3,
+            settlement,
+            chain_id,
+            iter::empty()
         )
+        .is_err())
     }
 
     #[tokio::test]
@@ -424,6 +436,7 @@ mod tests {
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let solver = OneInchSolver::with_disabled_protocols(
+            account(),
             web3,
             settlement,
             chain_id,

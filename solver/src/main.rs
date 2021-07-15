@@ -310,6 +310,7 @@ async fn main() {
     )
     .await;
     let solver = solver::solver::create(
+        account,
         web3.clone(),
         args.solvers,
         base_tokens,
@@ -325,7 +326,6 @@ async fn main() {
         args.solver_time_limit,
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
-        account.address(),
         args.paraswap_slippage_bps,
     )
     .expect("failure creating solvers");

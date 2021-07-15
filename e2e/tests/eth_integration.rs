@@ -47,13 +47,13 @@ async fn eth_integration(web3: Web3) {
         .as_u64();
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
-    let solver = Account::Local(accounts[0], None);
+    let solver_account = Account::Local(accounts[0], None);
     let trader_buy_eth_a =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_A_PK).unwrap(), None);
     let trader_buy_eth_b =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
 
-    let gpv2 = GPv2::fetch(&web3, &solver).await;
+    let gpv2 = GPv2::fetch(&web3, &solver_account).await;
     let UniswapContracts {
         uniswap_factory,
         uniswap_router,
@@ -61,31 +61,40 @@ async fn eth_integration(web3: Web3) {
 
     // Create & Mint tokens to trade
     let token = deploy_mintable_token(&web3).await;
-    tx!(solver, token.mint(solver.address(), to_wei(100_000)));
-    tx!(solver, token.mint(trader_buy_eth_a.address(), to_wei(50)));
-    tx!(solver, token.mint(trader_buy_eth_b.address(), to_wei(50)));
+    tx!(
+        solver_account,
+        token.mint(solver_account.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token.mint(trader_buy_eth_a.address(), to_wei(50))
+    );
+    tx!(
+        solver_account,
+        token.mint(trader_buy_eth_b.address(), to_wei(50))
+    );
 
     let weth = WETH9::builder(&web3)
         .deploy()
         .await
         .expect("WETH deployment failed");
-    tx_value!(solver, to_wei(100_000), weth.deposit());
+    tx_value!(solver_account, to_wei(100_000), weth.deposit());
 
     // Create and fund Uniswap pool
     tx!(
-        solver,
+        solver_account,
         uniswap_factory.create_pair(token.address(), weth.address())
     );
     tx!(
-        solver,
+        solver_account,
         token.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
-        solver,
+        solver_account,
         weth.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
-        solver,
+        solver_account,
         uniswap_router.add_liquidity(
             token.address(),
             weth.address(),
@@ -93,7 +102,7 @@ async fn eth_integration(web3: Web3) {
             to_wei(100_000),
             0_u64.into(),
             0_u64.into(),
-            solver.address(),
+            solver_account.address(),
             U256::max_value(),
         )
     );
@@ -193,7 +202,7 @@ async fn eth_integration(web3: Web3) {
             web3: web3.clone(),
         }),
     );
-    let solver = solver::solver::naive_solver();
+    let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3, weth.address()),

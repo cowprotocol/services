@@ -2,7 +2,7 @@ use crate::{liquidity::Liquidity, settlement::Settlement};
 use anyhow::Result;
 use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
-use ethcontract::{H160, U256};
+use ethcontract::{Account, H160, U256};
 use http_solver::{HttpSolver, SolverConfig};
 use matcha_solver::MatchaSolver;
 use naive_solver::NaiveSolver;
@@ -40,11 +40,14 @@ const TIMEOUT_SAFETY_BUFFER: Duration = Duration::from_secs(5);
 /// The `name` method is included for logging purposes.
 #[async_trait::async_trait]
 pub trait Solver {
-    // The returned settlements should be independent (for example not reusing the same user
-    // order) so that they can be merged by the driver at its leisure.
+    /// The returned settlements should be independent (for example not reusing the same user
+    /// order) so that they can be merged by the driver at its leisure.
     async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>>;
 
-    // Displayable name of the solver. Defaults to the type name.
+    /// Solver's account that should be used to submit settlements.
+    fn account(&self) -> &Account;
+
+    /// Displayable name of the solver. Defaults to the type name.
     fn name(&self) -> &'static str {
         std::any::type_name::<Self>()
     }
@@ -65,6 +68,7 @@ arg_enum! {
 
 #[allow(clippy::too_many_arguments)]
 pub fn create(
+    account: Account,
     web3: Web3,
     solvers: Vec<SolverType>,
     base_tokens: HashSet<H160>,
@@ -80,7 +84,6 @@ pub fn create(
     solver_timeout: Duration,
     min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
-    solver_address: H160,
     paraswap_slippage_bps: usize,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
@@ -97,6 +100,7 @@ pub fn create(
     // Helper function to create http solver instances.
     let create_http_solver = |url: Url| -> HttpSolver {
         HttpSolver::new(
+            account.clone(),
             url,
             None,
             SolverConfig {
@@ -115,12 +119,15 @@ pub fn create(
     solvers
         .into_iter()
         .map(|solver_type| match solver_type {
-            SolverType::Naive => boxed(NaiveSolver {}),
-            SolverType::Baseline => boxed(BaselineSolver::new(base_tokens.clone())),
+            SolverType::Naive => boxed(NaiveSolver::new(account.clone())),
+            SolverType::Baseline => {
+                boxed(BaselineSolver::new(account.clone(), base_tokens.clone()))
+            }
             SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone())),
             SolverType::Quasimodo => boxed(create_http_solver(quasimodo_solver_url.clone())),
             SolverType::OneInch => {
                 let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(
+                    account.clone(),
                     web3.clone(),
                     settlement_contract.clone(),
                     chain_id,
@@ -136,14 +143,20 @@ pub fn create(
                 ))
             }
             SolverType::Matcha => {
-                let matcha_solver =
-                    MatchaSolver::new(web3.clone(), settlement_contract.clone(), chain_id).unwrap();
+                let matcha_solver = MatchaSolver::new(
+                    account.clone(),
+                    web3.clone(),
+                    settlement_contract.clone(),
+                    chain_id,
+                )
+                .unwrap();
                 boxed(SingleOrderSolver::from(matcha_solver))
             }
             SolverType::Paraswap => boxed(SingleOrderSolver::from(ParaswapSolver::new(
+                account.clone(),
                 web3.clone(),
                 settlement_contract.clone(),
-                solver_address,
+                account.address(),
                 token_info_fetcher.clone(),
                 paraswap_slippage_bps,
             ))),
@@ -152,17 +165,8 @@ pub fn create(
 }
 
 /// Returns a naive solver to be used e.g. in e2e tests.
-pub fn naive_solver() -> Box<dyn Solver> {
-    Box::new(NaiveSolver {})
-}
-
-/// Dummy solver returning no settlements
-pub struct NoopSolver();
-#[async_trait::async_trait]
-impl Solver for NoopSolver {
-    async fn solve(&self, _: Vec<Liquidity>, _: f64) -> Result<Vec<Settlement>> {
-        Ok(Vec::new())
-    }
+pub fn naive_solver(account: Account) -> Box<dyn Solver> {
+    Box::new(NaiveSolver::new(account))
 }
 
 /// A solver that remove limit order below a certain threshold and
@@ -246,6 +250,10 @@ impl Solver for SellVolumeFilteringSolver {
         self.inner.solve(filtered_liquidity, gas_price).await
     }
 
+    fn account(&self) -> &Account {
+        self.inner.account()
+    }
+
     fn name(&self) -> &'static str {
         self.inner.name()
     }
@@ -259,6 +267,19 @@ mod tests {
     use crate::liquidity::LimitOrder;
 
     use super::*;
+
+    /// Dummy solver returning no settlements
+    pub struct NoopSolver();
+    #[async_trait::async_trait]
+    impl Solver for NoopSolver {
+        async fn solve(&self, _: Vec<Liquidity>, _: f64) -> Result<Vec<Settlement>> {
+            Ok(Vec::new())
+        }
+
+        fn account(&self) -> &Account {
+            unimplemented!()
+        }
+    }
 
     #[tokio::test]
     async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {

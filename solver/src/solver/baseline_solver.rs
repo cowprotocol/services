@@ -6,7 +6,7 @@ use crate::{
     solver::Solver,
 };
 use anyhow::Result;
-use ethcontract::{H160, U256};
+use ethcontract::{Account, H160, U256};
 use maplit::hashmap;
 use model::TokenPair;
 use num::BigRational;
@@ -26,6 +26,7 @@ use std::{
 };
 
 pub struct BaselineSolver {
+    account: Account,
     base_tokens: HashSet<H160>,
 }
 
@@ -33,6 +34,10 @@ pub struct BaselineSolver {
 impl Solver for BaselineSolver {
     async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
         Ok(self.solve(liquidity))
+    }
+
+    fn account(&self) -> &Account {
+        &self.account
     }
 
     fn name(&self) -> &'static str {
@@ -95,8 +100,11 @@ impl BaselineSolvable for Amm {
 }
 
 impl BaselineSolver {
-    pub fn new(base_tokens: HashSet<H160>) -> Self {
-        Self { base_tokens }
+    pub fn new(account: Account, base_tokens: HashSet<H160>) -> Self {
+        Self {
+            account,
+            base_tokens,
+        }
     }
 
     fn solve(&self, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
@@ -250,6 +258,7 @@ mod tests {
     use crate::liquidity::{
         tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
     };
+    use crate::test::account;
     use maplit::hashset;
     use model::order::OrderKind;
     use num::rational::Ratio;
@@ -328,7 +337,7 @@ mod tests {
         let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
         liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
 
-        let solver = BaselineSolver::new(hashset! { native_token});
+        let solver = BaselineSolver::new(account(), hashset! { native_token });
         let result = solver.must_solve(liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -433,7 +442,7 @@ mod tests {
         let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
         liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
 
-        let solver = BaselineSolver::new(hashset! { native_token});
+        let solver = BaselineSolver::new(account(), hashset! { native_token });
         let result = solver.must_solve(liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -502,7 +511,7 @@ mod tests {
         let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
         liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
 
-        let solver = BaselineSolver::new(hashset! {});
+        let solver = BaselineSolver::new(account(), hashset! {});
         assert_eq!(solver.solve(liquidity).len(), 1);
     }
 
@@ -549,8 +558,10 @@ mod tests {
             }),
         ];
 
-        let solver =
-            BaselineSolver::new(hashset![addr!("c778417e063141139fce010982780140aa0cd5ab")]);
+        let solver = BaselineSolver::new(
+            account(),
+            hashset![addr!("c778417e063141139fce010982780140aa0cd5ab")],
+        );
         assert_eq!(solver.solve(liquidity).len(), 0);
     }
 }

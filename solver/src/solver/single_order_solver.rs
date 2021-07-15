@@ -7,6 +7,7 @@ use crate::{
     settlement::Settlement,
     solver::Solver,
 };
+use ethcontract::Account;
 
 #[async_trait::async_trait]
 /// Implementations of this trait know how to settle a single limit order (not taking advantage of batching multiple orders together)
@@ -14,7 +15,13 @@ pub trait SingleOrderSolving {
     /// Return a settlement for the given limit order (if possible)
     async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>>;
 
-    fn name(&self) -> &'static str;
+    /// Solver's account that should be used to submit settlements.
+    fn account(&self) -> &Account;
+
+    /// Displayable name of the solver. Defaults to the type name.
+    fn name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
 }
 
 /// Maximum number of sell orders to consider for settlements.
@@ -71,6 +78,10 @@ impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
                 }
             })
             .collect())
+    }
+
+    fn account(&self) -> &Account {
+        self.inner.account()
     }
 
     fn name(&self) -> &'static str {

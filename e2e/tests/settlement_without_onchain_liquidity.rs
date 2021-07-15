@@ -156,7 +156,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             web3: web3.clone(),
         }),
     );
-    let solver = solver::solver::naive_solver();
+    let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3, native_token),

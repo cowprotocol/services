@@ -7,6 +7,7 @@ use super::driver::solver_settlements::RatedSettlement;
 use crate::{encoding::EncodedSettlement, pending_transactions::Fee};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
+use ethcontract::dyns::DynWeb3;
 use ethcontract::{dyns::DynTransport, errors::ExecutionError, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
@@ -101,7 +102,7 @@ pub async fn submit(
 async fn transaction_count(contract: &GPv2Settlement) -> Result<U256> {
     let defaults = contract.defaults();
     let address = defaults.from.as_ref().unwrap().address();
-    let web3 = contract.raw_instance().web3();
+    let web3: DynWeb3 = contract.raw_instance().web3();
     let count = web3.eth().transaction_count(address, None).await?;
     Ok(count)
 }

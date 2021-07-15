@@ -15,7 +15,7 @@ use crate::{
 use anyhow::{anyhow, Error, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
-use ethcontract::{Bytes, H160, U256};
+use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
 use shared::token_info::TokenInfo;
 use shared::{conversions::U256Ext, token_info::TokenInfoFetching, Web3};
@@ -29,6 +29,7 @@ const APPROVAL_RECEIVER: H160 = shared::addr!("b70bc06d2c9bf03b3373799606dc7d393
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct ParaswapSolver {
+    account: Account,
     settlement_contract: GPv2Settlement,
     solver_address: H160,
     #[derivative(Debug = "ignore")]
@@ -42,6 +43,7 @@ pub struct ParaswapSolver {
 
 impl ParaswapSolver {
     pub fn new(
+        account: Account,
         web3: Web3,
         settlement_contract: GPv2Settlement,
         solver_address: H160,
@@ -50,6 +52,7 @@ impl ParaswapSolver {
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
         Self {
+            account,
             settlement_contract,
             solver_address,
             token_info,
@@ -103,6 +106,10 @@ impl SingleOrderSolving for ParaswapSolver {
         }
         // One last attempt, else throw converted error
         self.try_settle_order(order).await.map_err(|err| err.inner)
+    }
+
+    fn account(&self) -> &Account {
+        &self.account
     }
 
     fn name(&self) -> &'static str {
@@ -232,6 +239,7 @@ fn satisfies_limit_price(order: &LimitOrder, response: &PriceResponse) -> bool {
 mod tests {
     use super::{api::MockParaswapApi, *};
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
+    use crate::test::account;
     use contracts::WETH9;
     use ethcontract::U256;
     use mockall::predicate::*;
@@ -297,6 +305,7 @@ mod tests {
             .return_const(HashMap::new());
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -344,6 +353,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -434,6 +444,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -509,6 +520,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -555,7 +567,8 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = ParaswapSolver::new(web3, settlement, solver, token_info_fetcher, 0);
+        let solver =
+            ParaswapSolver::new(account(), web3, settlement, solver, token_info_fetcher, 0);
 
         let settlement = solver
             .settle_order(
@@ -625,6 +638,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -685,6 +699,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
@@ -732,6 +747,7 @@ mod tests {
         });
 
         let solver = ParaswapSolver {
+            account: account(),
             client,
             solver_address: Default::default(),
             token_info: Arc::new(token_info),
