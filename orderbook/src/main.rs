@@ -18,7 +18,9 @@ use shared::{
     bad_token::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
-        trace_call::TraceCallDetector,
+        trace_call::{
+            AmmPairProviderFinder, BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
+        },
     },
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
@@ -198,9 +200,21 @@ async fn main() {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens;
 
+    let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
+        .iter()
+        .map(|provider| -> Arc<dyn TokenOwnerFinding> {
+            Arc::new(AmmPairProviderFinder {
+                inner: provider.clone(),
+                base_tokens: base_tokens.iter().copied().collect(),
+            })
+        })
+        .collect();
+    if let Some(finder) = BalancerVaultFinder::new(&web3).await.unwrap() {
+        finders.push(Arc::new(finder));
+    }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
-        pools: pair_providers.clone(),
+        finders,
         base_tokens: base_tokens.clone(),
         settlement_contract: settlement_contract.address(),
     };

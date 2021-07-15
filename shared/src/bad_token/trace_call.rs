@@ -6,7 +6,8 @@ use crate::{
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{
-    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
+    batch::CallBatch, dyns::DynTransport, errors::DeployError, transaction::TransactionBuilder,
+    PrivateKey,
 };
 use model::TokenPair;
 use primitive_types::{H160, U256};
@@ -15,6 +16,57 @@ use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
 };
+
+/// To detect bad tokens we need to find some address on the network that owns the token so that we
+/// can use it in our simulations.
+#[async_trait::async_trait]
+pub trait TokenOwnerFinding: Send + Sync {
+    /// Find candidate addresses that might own the token.
+    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
+}
+
+pub struct AmmPairProviderFinder {
+    pub inner: Arc<dyn AmmPairProvider>,
+    pub base_tokens: Vec<H160>,
+}
+
+#[async_trait::async_trait]
+impl TokenOwnerFinding for AmmPairProviderFinder {
+    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+        Ok(self
+            .base_tokens
+            .iter()
+            .filter_map(|&base_token| TokenPair::new(base_token, token))
+            .map(|pair| self.inner.pair_address(&pair))
+            .collect())
+    }
+}
+
+/// The balancer vault contract contains all the balances of all pools.
+pub struct BalancerVaultFinder {
+    address: H160,
+}
+
+impl BalancerVaultFinder {
+    /// Ok(None) if the vault isn't deployed on this network.
+    /// Err if communication with the node failed.
+    pub async fn new(web3: &Web3) -> Result<Option<Self>> {
+        match contracts::BalancerV2Vault::deployed(web3).await {
+            Ok(contract) => Ok(Some(Self {
+                address: contract.address(),
+            })),
+            Err(DeployError::NotFound(_)) => Ok(None),
+            Err(err) => Err(err.into()),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl TokenOwnerFinding for BalancerVaultFinder {
+    async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
+        Ok(vec![self.address])
+    }
+}
 
 /// Detects whether a token is "bad" (works in unexpected ways that are problematic for solving) by
 /// simulating several transfers of a token. To find an initial address to transfer from we use
@@ -25,7 +77,7 @@ use web3::{
 /// - a transfer loses total balance
 pub struct TraceCallDetector {
     pub web3: Web3,
-    pub pools: Vec<Arc<dyn AmmPairProvider>>,
+    pub finders: Vec<Arc<dyn TokenOwnerFinding>>,
     pub base_tokens: HashSet<H160>,
     pub settlement_contract: H160,
 }
@@ -86,16 +138,24 @@ impl TraceCallDetector {
     // Ok(None) if there is no pool or getting the balance fails.
     // Ok(address, balance) for an address that has this amount of balance of the token.
     async fn find_largest_pool_owning_token(&self, token: H160) -> Result<Option<(H160, U256)>> {
+        let mut candidates = HashSet::new();
+        for result in futures::future::join_all(
+            self.finders
+                .iter()
+                .map(|finder| finder.find_candidate_owners(token)),
+        )
+        .await
+        {
+            candidates.extend(match result {
+                Ok(candidates) => candidates,
+                Err(err) => {
+                    tracing::error!("token owner finding failed: {:?}", err);
+                    continue;
+                }
+            });
+        }
+
         const BATCH_SIZE: usize = 100;
-
-        let pairs = self
-            .base_tokens
-            .iter()
-            .filter_map(move |&base_token| TokenPair::new(base_token, token));
-        let candidates = pairs
-            .flat_map(|pair| self.pools.iter().map(move |pool| pool.pair_address(&pair)))
-            .collect::<HashSet<_>>();
-
         let instance = ERC20::at(&self.web3, token);
         let mut batch = CallBatch::new(self.web3.transport());
         let futures = candidates
@@ -552,15 +612,23 @@ mod tests {
             factory: contracts::UniswapV2Factory::deployed(&web3).await.unwrap(),
             chain_id,
         });
+        let uniswap = Arc::new(AmmPairProviderFinder {
+            inner: uniswap,
+            base_tokens: base_tokens.to_vec(),
+        });
         let sushiswap = Arc::new(SushiswapPairProvider {
             factory: contracts::SushiswapV2Factory::deployed(&web3)
                 .await
                 .unwrap(),
         });
+        let sushiswap = Arc::new(AmmPairProviderFinder {
+            inner: sushiswap,
+            base_tokens: base_tokens.to_vec(),
+        });
         let token_cache = TraceCallDetector {
             web3,
             settlement_contract: settlement.address(),
-            pools: vec![uniswap, sushiswap],
+            finders: vec![uniswap, sushiswap],
             base_tokens: base_tokens.iter().copied().collect(),
         };
 
