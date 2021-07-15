@@ -140,7 +140,7 @@ impl Driver {
     async fn submit_settlement(&self, rated_settlement: RatedSettlement) -> Result<()> {
         let SettlementWithSolver { name, settlement } = rated_settlement.clone().settlement;
         let trades = settlement.trades().to_vec();
-        match settlement_submission::submit(
+        match settlement_submission::public_mempool::submit(
             &self.settlement_contract,
             self.gas_price_estimator.as_ref(),
             self.target_confirm_time,

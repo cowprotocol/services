@@ -1,4 +1,4 @@
-use super::EncodedSettlement;
+use crate::encoding::EncodedSettlement;
 use anyhow::Result;
 use contracts::GPv2Settlement;
 use ethcontract::{
