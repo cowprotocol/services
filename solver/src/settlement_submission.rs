@@ -1,4 +1,5 @@
-pub mod archerapi;
+pub mod archer_api;
+pub mod archer_settlement;
 mod gas_price_stream;
 pub mod public_mempool;
 pub mod retry;

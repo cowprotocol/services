@@ -19,7 +19,7 @@ arg_enum! {
 }
 
 #[derive(Clone)]
-struct Client(reqwest::Client);
+pub struct Client(pub reqwest::Client);
 
 #[async_trait::async_trait]
 impl Transport for Client {
