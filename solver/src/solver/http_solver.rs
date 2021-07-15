@@ -261,7 +261,7 @@ impl HttpSolver {
         let (token_infos, price_estimates) = join!(
             self.token_info_fetcher.get_token_infos(tokens.as_slice()),
             self.price_estimator
-                .estimate_prices(tokens.as_slice(), tokens[0])
+                .estimate_prices(tokens.as_slice(), self.native_token)
         );
 
         let price_estimates: HashMap<H160, Result<BigRational, _>> =
