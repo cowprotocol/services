@@ -195,6 +195,7 @@ mod tests {
                         scaling_exponent: 0,
                     },
                 },
+                paused: true,
             },
             WeightedPool {
                 pool_id: H256([0x91; 32]),
@@ -212,6 +213,7 @@ mod tests {
                         scaling_exponent: 0,
                     },
                 },
+                paused: true,
             },
         ];
 

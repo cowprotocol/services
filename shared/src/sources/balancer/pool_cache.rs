@@ -74,13 +74,17 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
                     .get_pool_tokens(Bytes(registered_pool.pool_id.0))
                     .block(block)
                     .batch_call(&mut batch);
-
+                let paused_state = pool_contract
+                    .get_paused_state()
+                    .block(block)
+                    .batch_call(&mut batch);
                 async move {
                     #[allow(clippy::eval_order_dependence)]
                     FetchedWeightedPool {
                         registered_pool,
                         swap_fee_percentage: swap_fee.await,
                         reserves: reserves.await,
+                        paused_state: paused_state.await,
                     }
                 }
             })
@@ -108,6 +112,8 @@ struct FetchedWeightedPool {
     swap_fee_percentage: Result<U256, MethodError>,
     /// getPoolTokens returns (Tokens, Balances, LastBlockUpdated)
     reserves: Result<(Vec<H160>, Vec<U256>, U256), MethodError>,
+    /// getPausedState returns (paused, pauseWindowEndTime, bufferPeriodEndTime)
+    paused_state: Result<(bool, U256, U256), MethodError>,
 }
 
 fn handle_results(results: Vec<FetchedWeightedPool>) -> Result<Vec<WeightedPool>> {
@@ -124,10 +130,16 @@ fn handle_results(results: Vec<FetchedWeightedPool>) -> Result<Vec<WeightedPool>
                 Some(swap_fee) => swap_fee,
                 None => return Ok(acc),
             };
+            let paused = match handle_contract_error(fetched_pool.paused_state)? {
+                // We only keep the boolean value regarding whether the pool is paused or not
+                Some(state) => state.0,
+                None => return Ok(acc),
+            };
             acc.push(WeightedPool::new(
                 fetched_pool.registered_pool,
                 balances,
                 Bfp::from_wei(swap_fee_percentage),
+                paused,
             ));
             Ok(acc)
         })
@@ -144,12 +156,14 @@ mod tests {
             registered_pool: RegisteredWeightedPool::default(),
             swap_fee_percentage: Ok(U256::zero()),
             reserves: Err(ethcontract_error::testing_node_error()),
+            paused_state: Ok((true, U256::zero(), U256::zero())),
         }];
         assert!(handle_results(results).is_err());
         let results = vec![FetchedWeightedPool {
             registered_pool: RegisteredWeightedPool::default(),
             swap_fee_percentage: Err(ethcontract_error::testing_node_error()),
             reserves: Ok((vec![], vec![], U256::zero())),
+            paused_state: Ok((true, U256::zero(), U256::zero())),
         }];
         assert!(handle_results(results).is_err());
     }
@@ -161,16 +175,19 @@ mod tests {
                 registered_pool: RegisteredWeightedPool::default(),
                 swap_fee_percentage: Ok(U256::zero()),
                 reserves: Err(ethcontract_error::testing_contract_error()),
+                paused_state: Ok((true, U256::zero(), U256::zero())),
             },
             FetchedWeightedPool {
                 registered_pool: RegisteredWeightedPool::default(),
                 swap_fee_percentage: Err(ethcontract_error::testing_contract_error()),
                 reserves: Ok((vec![], vec![], U256::zero())),
+                paused_state: Ok((true, U256::zero(), U256::zero())),
             },
             FetchedWeightedPool {
                 registered_pool: RegisteredWeightedPool::default(),
                 swap_fee_percentage: Ok(U256::zero()),
                 reserves: Ok((vec![], vec![], U256::zero())),
+                paused_state: Ok((true, U256::zero(), U256::zero())),
             },
         ];
         assert_eq!(handle_results(results).unwrap().len(), 1);
