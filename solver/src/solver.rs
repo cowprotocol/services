@@ -98,8 +98,9 @@ pub fn create(
         .expect("solver_timeout too low");
 
     // Helper function to create http solver instances.
-    let create_http_solver = |url: Url| -> HttpSolver {
+    let create_http_solver = |url: Url, name: &'static str| -> HttpSolver {
         HttpSolver::new(
+            name,
             account.clone(),
             url,
             None,
@@ -123,8 +124,11 @@ pub fn create(
             SolverType::Baseline => {
                 boxed(BaselineSolver::new(account.clone(), base_tokens.clone()))
             }
-            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone())),
-            SolverType::Quasimodo => boxed(create_http_solver(quasimodo_solver_url.clone())),
+            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone(), &"Mip")),
+            SolverType::Quasimodo => boxed(create_http_solver(
+                quasimodo_solver_url.clone(),
+                &"Quasimodo",
+            )),
             SolverType::OneInch => {
                 let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(
                     account.clone(),

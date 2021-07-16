@@ -59,6 +59,7 @@ impl SolverConfig {
 }
 
 pub struct HttpSolver {
+    name: &'static str,
     account: Account,
     base: Url,
     client: Client,
@@ -75,6 +76,7 @@ pub struct HttpSolver {
 impl HttpSolver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
+        name: &'static str,
         account: Account,
         base: Url,
         api_key: Option<String>,
@@ -89,6 +91,7 @@ impl HttpSolver {
         // Unwrap because we cannot handle client creation failing.
         let client = Client::builder().build().unwrap();
         Self {
+            name,
             account,
             base,
             client,
@@ -459,7 +462,7 @@ impl Solver for HttpSolver {
     }
 
     fn name(&self) -> &'static str {
-        "HTTPSolver"
+        &self.name
     }
 }
 
@@ -507,6 +510,7 @@ mod tests {
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
+            &"Test Solver",
             Account::Local(Address::default(), None),
             url.parse().unwrap(),
             None,
