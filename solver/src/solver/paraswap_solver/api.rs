@@ -132,8 +132,10 @@ pub struct PriceQuery {
     pub to_decimals: usize,
     /// amount of source token (in the smallest denomination, e.g. for ETH - 10**18)
     pub amount: U256,
-    // Type of order
+    /// Type of order
     pub side: Side,
+    /// The list of DEXs to exclude from the computed price route.
+    pub exclude_dexs: Option<Vec<String>>,
 }
 
 impl PriceQuery {
@@ -156,6 +158,12 @@ impl PriceQuery {
             .append_pair("amount", &self.amount.to_string())
             .append_pair("side", side)
             .append_pair("network", "1");
+
+        if let Some(dexs) = &self.exclude_dexs {
+            url.query_pairs_mut()
+                .append_pair("excludeDEXS", &dexs.join(","));
+        }
+
         url
     }
 }
@@ -283,6 +291,7 @@ mod tests {
             to_decimals: 18,
             amount: 135_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
+            exclude_dexs: None,
         };
 
         let price_response: PriceResponse = reqwest::get(price_query.into_url())
@@ -342,6 +351,7 @@ mod tests {
             to_decimals: 18,
             amount: 1_800_000_000_000_000_000_000u128.into(),
             side: Side::Buy,
+            exclude_dexs: Some(vec!["ParaSwapPool4".to_string()]),
         };
 
         let price_response: PriceResponse = reqwest::get(price_query.into_url())
@@ -390,9 +400,10 @@ mod tests {
             to_decimals: 8,
             amount: 1_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
+            exclude_dexs: Some(vec!["Foo".to_string(), "Bar".to_string()]),
         };
 
-        assert_eq!(&query.into_url().to_string(), "https://apiv4.paraswap.io/v2/prices?from=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&to=0x6810e776880c02933d47db1b9fc05908e5386b96&fromDecimals=18&toDecimals=8&amount=1000000000000000000&side=SELL&network=1");
+        assert_eq!(&query.into_url().to_string(), "https://apiv4.paraswap.io/v2/prices?from=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&to=0x6810e776880c02933d47db1b9fc05908e5386b96&fromDecimals=18&toDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
     }
 
     #[test]
@@ -567,6 +578,7 @@ mod tests {
             to_decimals: 18,
             amount: 135_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
+            exclude_dexs: None,
         };
 
         let price_response: PriceResponse = reqwest::get(price_query.into_url())

@@ -168,6 +168,12 @@ struct Arguments {
     /// The slippage tolerance we apply to the price quoted by Paraswap
     #[structopt(long, env, default_value = "10")]
     paraswap_slippage_bps: usize,
+
+    /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
+    /// DEX (representing a private market maker) is disabled as it increases
+    /// price by 1% if built transactions don't actually get executed.
+    #[structopt(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
+    disabled_paraswap_dexs: Vec<String>,
 }
 
 #[tokio::main]
@@ -327,6 +333,7 @@ async fn main() {
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
+        args.disabled_paraswap_dexs,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
