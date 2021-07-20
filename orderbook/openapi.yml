@@ -399,7 +399,7 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/AppDataJson"
-    /api/v1/app_data/{AppDataHash}:
+  /api/v1/app_data/{AppDataHash}:
     get:
       summary: Get existing app_data via hash.
       parameters:
