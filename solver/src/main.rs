@@ -34,7 +34,7 @@ use solver::{
 };
 use std::{collections::HashMap, iter::FromIterator as _};
 use std::{collections::HashSet, sync::Arc, time::Duration};
-use structopt::StructOpt;
+use structopt::{clap::arg_enum, StructOpt};
 
 #[derive(Debug, StructOpt)]
 struct Arguments {
@@ -176,11 +176,13 @@ struct Arguments {
     #[structopt(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
     disabled_paraswap_dexs: Vec<String>,
 
-    /// The authorization for the archer api. If set the archer network will be used to submit
-    /// settlement transactions. If not set then transactions are sent out the normal way through
-    /// the node.
+    /// The authorization for the archer api.
     #[structopt(long, env)]
     archer_authorization: Option<String>,
+
+    /// How to to submit settlement transactions.
+    #[structopt(long, env, default_value = "PublicMempool")]
+    transaction_strategy: TransactionStrategyArg,
 
     /// The maximum time we spend trying to settle a transaction through the archer network before
     /// going to back to solving.
@@ -190,6 +192,14 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     max_archer_submission_seconds: Duration,
+}
+
+arg_enum! {
+    #[derive(Debug)]
+    pub enum TransactionStrategyArg {
+        PublicMempool,
+        ArcherNetwork,
+    }
 }
 
 #[tokio::main]
@@ -368,12 +378,15 @@ async fn main() {
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         gas_price_cap: args.gas_price_cap,
-        transaction_strategy: match args.archer_authorization {
-            Some(auth) => TransactionStrategy::ArcherNetwork {
-                archer_api: ArcherApi::new(auth),
+        transaction_strategy: match args.transaction_strategy {
+            TransactionStrategyArg::PublicMempool => TransactionStrategy::PublicMempool,
+            TransactionStrategyArg::ArcherNetwork => TransactionStrategy::ArcherNetwork {
+                archer_api: ArcherApi::new(
+                    args.archer_authorization
+                        .expect("missing archer authorization"),
+                ),
                 max_confirm_time: args.max_archer_submission_seconds,
             },
-            None => TransactionStrategy::PublicMempool,
         },
     };
     let mut driver = Driver::new(
