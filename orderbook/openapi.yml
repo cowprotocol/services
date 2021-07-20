@@ -374,6 +374,51 @@ paths:
           description: Token non-existent or not connected to native token
         500:
           description: Unexpected internal error while processing the request
+  /api/v1/app_data:
+    post:
+      summary: Create a new app_data or just get the hash for an app_data.
+      responses:
+        200:
+          description: AppData was already available.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        201:
+          description: AppData has been created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppDataHash"
+        500:
+          description: Error adding a the appData
+      requestBody:
+        description: The AppData to create.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppDataJson"
+    /api/v1/app_data/{AppDataHash}:
+    get:
+      summary: Get existing app_data via hash.
+      parameters:
+        - in: path
+          name: AppDataHash
+          schema:
+            $ref: "#/components/schemas/AppDataHash"
+          required: true
+      responses:
+        200:
+          description: AppData
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AppDataJson"
+        404:
+          description: AppData was not found
 components:
   schemas:
     TransactionHash:
@@ -506,6 +551,22 @@ components:
         - partiallyFillable
         - signature
         - signingScheme
+    AppDataJson:
+      description: |
+       Extra data for transporting app data and referrer for each order-placement. 
+       The data is supposed to be provided as a valid json.
+      type: object
+      properties:
+        appCode: 
+          description: Individual code per UI.
+          type: string
+        version:
+          description: Version encoding used.
+          type: string
+        metaData: 
+          description: Additional MetaData.
+          type: object
+          $ref: "#/components/schemas/MetaDataJson"
     OrderMetaData:
       description: |
         Extra order data that is returned to users when querying orders
@@ -626,6 +687,18 @@ components:
         - sellAmountBeforeFees
         - buyAmount
         - transactionHash
+    AppDataHash:
+      description: |
+        Unique identifier for the AppData: The 32 bytes sha hash encoded as hex with `0x` prefix.
+      type: string
+    MetaDataJson:
+      description: |
+       Extra meta data of the app data.
+      type: object
+      properties:
+        referrer: 
+          description: Referrer as 32 bytes with additional 0x prefix.
+          type: string
     UID:
       description: |
         Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.

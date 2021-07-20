@@ -1,5 +1,7 @@
 mod cancel_order;
+mod create_app_data;
 mod create_order;
+mod get_app_data_by_hash;
 mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
@@ -9,7 +11,6 @@ mod get_solvable_orders;
 mod get_trades;
 
 use crate::{
-    database::trades::TradeRetrieving,
     fee::EthAwareMinFeeCalculator,
     metrics::start_request,
     metrics::{end_request, LabelledReply, Metrics},
@@ -27,7 +28,7 @@ use warp::{
 };
 
 pub fn handle_all_routes(
-    database: Arc<dyn TradeRetrieving>,
+    database: Arc<super::database::instrumented::Instrumented>,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
@@ -35,6 +36,8 @@ pub fn handle_all_routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
+    let create_app_data = create_app_data::create_app_data(database.clone());
+    let get_app_data_hash = get_app_data_by_hash::get_app_data_by_hash(database.clone());
     let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
     let fee_info = get_fee_info::get_fee_info(fee_calculator.clone());
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
@@ -53,6 +56,10 @@ pub fn handle_all_routes(
     let routes_with_labels = warp::path!("api" / "v1" / ..).and(
         (create_order.map(|reply| LabelledReply::new(reply, "create_order")))
             .or(get_orders.map(|reply| LabelledReply::new(reply, "get_orders")))
+            .unify()
+            .or(create_app_data.map(|reply| LabelledReply::new(reply, "create_app_data")))
+            .unify()
+            .or(get_app_data_hash.map(|reply| LabelledReply::new(reply, "get_app_data_hash")))
             .unify()
             .or(fee_info.map(|reply| LabelledReply::new(reply, "fee_info")))
             .unify()
@@ -118,6 +125,11 @@ fn internal_error() -> Json {
         error_type: "InternalServerError",
         description: "",
     })
+}
+
+pub fn convert_get_app_data_error_to_reply(err: anyhowError) -> WithStatus<Json> {
+    tracing::error!(?err, "get_app_data error");
+    with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
 }
 
 pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {

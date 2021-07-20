@@ -287,7 +287,7 @@ async fn main() {
 
     let serve_task = serve_task(
         database.clone(),
-        orderbook.clone(),
+        orderbook,
         fee_calculator,
         price_estimator,
         args.bind_address,

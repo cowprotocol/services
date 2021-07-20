@@ -25,9 +25,10 @@ pub mod tracing;
 pub mod transport;
 pub mod web3_traits;
 
-use ethcontract::H160;
+use ethcontract::{H160, H256};
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
+use model::h256_hexadecimal;
 use serde::Deserialize;
 use std::str::FromStr;
 
@@ -43,5 +44,17 @@ impl FromStr for H160Wrapper {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let s = s.strip_prefix("0x").unwrap_or(s);
         Ok(H160Wrapper(H160(FromHex::from_hex(s)?)))
+    }
+}
+
+/// Wraps H256 with FromStr and Deserialize that can handle a `0x` prefix.
+#[derive(Deserialize)]
+#[serde(transparent)]
+pub struct H256Wrapper(#[serde(with = "h256_hexadecimal")] pub H256);
+impl FromStr for H256Wrapper {
+    type Err = FromHexError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.strip_prefix("0x").unwrap_or(s);
+        Ok(H256Wrapper(H256(FromHex::from_hex(s)?)))
     }
 }

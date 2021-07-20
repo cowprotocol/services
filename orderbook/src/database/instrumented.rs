@@ -1,4 +1,4 @@
-use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
+use super::{app_data::AppDataStoring, orders::OrderStoring, trades::TradeRetrieving, Postgres};
 use crate::fee::MinFeeStoring;
 use prometheus::Histogram;
 use shared::{event_handling::EventStoring, maintenance::Maintaining};
@@ -123,6 +123,26 @@ impl OrderStoring for Instrumented {
         filter: &'a super::orders::OrderFilter,
     ) -> futures::stream::BoxStream<'a, anyhow::Result<model::order::Order>> {
         self.inner.orders(filter)
+    }
+}
+
+#[async_trait::async_trait]
+impl AppDataStoring for Instrumented {
+    async fn insert_app_data(
+        &self,
+        app_data: &model::app_data::AppData,
+    ) -> anyhow::Result<primitive_types::H256, super::app_data::InsertionError> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("insert_app_data")
+            .start_timer();
+        self.inner.insert_app_data(app_data).await
+    }
+    fn app_data<'a>(
+        &'a self,
+        filter: &'a super::app_data::AppDataFilter,
+    ) -> futures::stream::BoxStream<'a, anyhow::Result<model::app_data::AppData>> {
+        self.inner.app_data(filter)
     }
 }
 

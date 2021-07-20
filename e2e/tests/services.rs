@@ -134,11 +134,15 @@ impl OrderbookServices {
             .await
             .expect("Could not get chainId")
             .as_u64();
-        let db = Arc::new(Postgres::new("postgresql://").unwrap());
+        let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
+        let database = Arc::new(orderbook::database::instrumented::Instrumented::new(
+            db.clone(),
+            metrics.clone(),
+        ));
         let event_updater = Arc::new(EventUpdater::new(
             gpv2.settlement.clone(),
-            db.as_ref().clone(),
+            database.as_ref().clone(),
             None,
         ));
         let pair_provider = Arc::new(UniswapPairProvider {
@@ -176,13 +180,13 @@ impl OrderbookServices {
             price_estimator.clone(),
             gas_estimator,
             native_token,
-            db.clone(),
+            database.clone(),
             1.0,
             bad_token_detector.clone(),
         ));
         let orderbook = Arc::new(Orderbook::new(
             gpv2.domain_separator,
-            db.clone(),
+            database.clone(),
             Box::new(Web3BalanceFetcher::new(
                 web3.clone(),
                 gpv2.allowance,
@@ -194,10 +198,10 @@ impl OrderbookServices {
             Box::new(web3.clone()),
         ));
         let maintenance = ServiceMaintenance {
-            maintainers: vec![orderbook.clone(), db.clone(), event_updater],
+            maintainers: vec![orderbook.clone(), database.clone(), event_updater],
         };
         orderbook::serve_task(
-            db.clone(),
+            database,
             orderbook,
             fee_calculator,
             price_estimator.clone(),
