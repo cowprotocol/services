@@ -1,5 +1,6 @@
 //! Contains models that are shared between the orderbook and the solver.
 
+pub mod app_data;
 pub mod appdata_hexadecimal;
 pub mod h160_hexadecimal;
 pub mod order;
