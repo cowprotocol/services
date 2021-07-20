@@ -29,6 +29,7 @@ use solver::{
     liquidity::{balancer::BalancerV2Liquidity, uniswap::UniswapLikeLiquidity},
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
+    settlement_submission::{archer_api::ArcherApi, SolutionSubmitter, TransactionStrategy},
     solver::SolverType,
 };
 use std::{collections::HashMap, iter::FromIterator as _};
@@ -174,6 +175,21 @@ struct Arguments {
     /// price by 1% if built transactions don't actually get executed.
     #[structopt(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
     disabled_paraswap_dexs: Vec<String>,
+
+    /// The authorization for the archer api. If set the archer network will be used to submit
+    /// settlement transactions. If not set then transactions are sent out the normal way through
+    /// the node.
+    #[structopt(long, env)]
+    archer_authorization: Option<String>,
+
+    /// The maximum time we spend trying to settle a transaction through the archer network before
+    /// going to back to solving.
+    #[structopt(
+        long,
+        default_value = "60",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    max_archer_submission_seconds: Duration,
 }
 
 #[tokio::main]
@@ -316,7 +332,7 @@ async fn main() {
     )
     .await;
     let solver = solver::solver::create(
-        account,
+        account.clone(),
         web3.clone(),
         args.solvers,
         base_tokens,
@@ -345,13 +361,27 @@ async fn main() {
         .await
         .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
         .ok();
+    let solution_submitter = SolutionSubmitter {
+        web3: web3.clone(),
+        contract: settlement_contract.clone(),
+        account,
+        gas_price_estimator: gas_price_estimator.clone(),
+        target_confirm_time: args.target_confirm_time,
+        gas_price_cap: args.gas_price_cap,
+        transaction_strategy: match args.archer_authorization {
+            Some(auth) => TransactionStrategy::ArcherNetwork {
+                archer_api: ArcherApi::new(auth),
+                max_confirm_time: args.max_archer_submission_seconds,
+            },
+            None => TransactionStrategy::PublicMempool,
+        },
+    };
     let mut driver = Driver::new(
         settlement_contract,
         liquidity_collector,
         price_estimator,
         solver,
         gas_price_estimator,
-        args.target_confirm_time,
         args.settle_interval,
         native_token_contract.address(),
         args.min_order_age,
@@ -360,10 +390,10 @@ async fn main() {
         network_id,
         args.max_merged_settlements,
         args.solver_time_limit,
-        args.gas_price_cap,
         market_makable_token_list,
         current_block_stream.clone(),
         args.shared.fee_discount_factor,
+        solution_submitter,
     );
 
     let maintainer = ServiceMaintenance {

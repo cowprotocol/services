@@ -7,7 +7,7 @@ use ethcontract::{
     jsonrpc::types::Error as RpcError,
     transaction::{confirm::ConfirmParams, ResolveCondition},
     web3::error::Error as Web3Error,
-    GasPrice,
+    Account, GasPrice,
 };
 use primitive_types::U256;
 use transaction_retry::{TransactionResult, TransactionSending};
@@ -57,6 +57,7 @@ pub struct SettlementSender<'a> {
     pub nonce: U256,
     pub gas_limit: f64,
     pub settlement: EncodedSettlement,
+    pub account: Account,
 }
 #[async_trait::async_trait]
 impl<'a> TransactionSending for SettlementSender<'a> {
@@ -66,7 +67,8 @@ impl<'a> TransactionSending for SettlementSender<'a> {
         let mut method = settle_method_builder(self.contract, self.settlement.clone())
             .nonce(self.nonce)
             .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)))
-            .gas(U256::from_f64_lossy(self.gas_limit));
+            .gas(U256::from_f64_lossy(self.gas_limit))
+            .from(self.account.clone());
         method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
         let result = method.send().await.map(|_| ());
         SettleResult(result)

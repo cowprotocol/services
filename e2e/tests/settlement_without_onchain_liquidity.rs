@@ -14,7 +14,7 @@ use shared::{
 };
 use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics,
+    metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -156,7 +156,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             web3: web3.clone(),
         }),
     );
-    let solver = solver::solver::naive_solver(solver_account);
+    let solver = solver::solver::naive_solver(solver_account.clone());
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3, native_token),
@@ -177,7 +177,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
-        Duration::from_secs(1),
         Duration::from_secs(30),
         native_token,
         Duration::from_secs(0),
@@ -186,10 +185,18 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         network_id,
         1,
         Duration::from_secs(10),
-        f64::MAX,
         Some(market_makable_token_list),
         block_stream,
         1.0,
+        SolutionSubmitter {
+            web3: web3.clone(),
+            contract: gpv2.settlement.clone(),
+            account: solver_account,
+            gas_price_estimator: Arc::new(web3.clone()),
+            target_confirm_time: Duration::from_secs(1),
+            gas_price_cap: f64::MAX,
+            transaction_strategy: solver::settlement_submission::TransactionStrategy::PublicMempool,
+        },
     );
     driver.single_run().await.unwrap();
 

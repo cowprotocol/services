@@ -3,13 +3,10 @@ use super::{
     retry::{CancelSender, SettlementSender},
     ESTIMATE_GAS_LIMIT_FACTOR,
 };
-use crate::{
-    driver::solver_settlements::RatedSettlement, encoding::EncodedSettlement,
-    pending_transactions::Fee,
-};
+use crate::{encoding::EncodedSettlement, pending_transactions::Fee, settlement::Settlement};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{dyns::DynTransport, Web3};
+use ethcontract::{dyns::DynTransport, Account, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::{H160, U256};
@@ -18,13 +15,14 @@ use transaction_retry::RetryResult;
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.
 pub async fn submit(
+    account: Account,
     contract: &GPv2Settlement,
     gas: &dyn GasPriceEstimating,
     target_confirm_time: Duration,
     gas_price_cap: f64,
-    settlement: RatedSettlement,
+    settlement: Settlement,
+    gas_estimate: U256,
 ) -> Result<()> {
-    let gas_estimate = settlement.gas_estimate;
     let settlement: EncodedSettlement = settlement.into();
 
     let nonce = transaction_count(contract)
@@ -49,6 +47,7 @@ pub async fn submit(
         nonce,
         gas_limit,
         settlement,
+        account,
     };
     // We never cancel.
     let cancel_future = std::future::pending::<CancelSender>();

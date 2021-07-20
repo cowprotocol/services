@@ -8,7 +8,7 @@ use crate::{
     metrics::SolverMetrics,
     settlement::Settlement,
     settlement_simulation,
-    settlement_submission::{self, retry::is_transaction_failure},
+    settlement_submission::{self, retry::is_transaction_failure, SolutionSubmitter},
     solver::Solver,
 };
 use anyhow::{anyhow, Context, Error, Result};
@@ -39,7 +39,6 @@ pub struct Driver {
     price_estimator: Arc<dyn PriceEstimating>,
     solver: Vec<Box<dyn Solver>>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
-    target_confirm_time: Duration,
     settle_interval: Duration,
     native_token: H160,
     min_order_age: Duration,
@@ -48,11 +47,11 @@ pub struct Driver {
     network_id: String,
     max_merged_settlements: usize,
     solver_time_limit: Duration,
-    gas_price_cap: f64,
     market_makable_token_list: Option<TokenList>,
     inflight_trades: HashSet<OrderUid>,
     block_stream: CurrentBlockStream,
     fee_discount_factor: f64,
+    solution_submitter: SolutionSubmitter,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -62,7 +61,6 @@ impl Driver {
         price_estimator: Arc<dyn PriceEstimating>,
         solver: Vec<Box<dyn Solver>>,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
-        target_confirm_time: Duration,
         settle_interval: Duration,
         native_token: H160,
         min_order_age: Duration,
@@ -71,10 +69,10 @@ impl Driver {
         network_id: String,
         max_merged_settlements: usize,
         solver_time_limit: Duration,
-        gas_price_cap: f64,
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
         fee_discount_factor: f64,
+        solution_submitter: SolutionSubmitter,
     ) -> Self {
         Self {
             settlement_contract,
@@ -82,7 +80,6 @@ impl Driver {
             price_estimator,
             solver,
             gas_price_estimator,
-            target_confirm_time,
             settle_interval,
             native_token,
             min_order_age,
@@ -91,11 +88,11 @@ impl Driver {
             network_id,
             max_merged_settlements,
             solver_time_limit,
-            gas_price_cap,
             market_makable_token_list,
             inflight_trades: HashSet::new(),
             block_stream,
             fee_discount_factor,
+            solution_submitter,
         }
     }
 
@@ -140,14 +137,10 @@ impl Driver {
     async fn submit_settlement(&self, rated_settlement: RatedSettlement) -> Result<()> {
         let SettlementWithSolver { name, settlement } = rated_settlement.clone().settlement;
         let trades = settlement.trades().to_vec();
-        match settlement_submission::public_mempool::submit(
-            &self.settlement_contract,
-            self.gas_price_estimator.as_ref(),
-            self.target_confirm_time,
-            self.gas_price_cap,
-            rated_settlement,
-        )
-        .await
+        match self
+            .solution_submitter
+            .settle(settlement, rated_settlement.gas_estimate)
+            .await
         {
             Ok(_) => {
                 trades

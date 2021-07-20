@@ -36,22 +36,19 @@ use futures::FutureExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::{H256, U256};
 use shared::Web3;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant, SystemTime},
-};
+use std::time::{Duration, Instant, SystemTime};
 use web3::types::TransactionId;
 
-pub struct ArcherSolutionSubmitter {
-    pub web3: Web3,
-    pub contract: GPv2Settlement,
-    pub account: Account,
-    pub archer_api: ArcherApi,
-    pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
+pub struct ArcherSolutionSubmitter<'a> {
+    pub web3: &'a Web3,
+    pub contract: &'a GPv2Settlement,
+    pub account: &'a Account,
+    pub archer_api: &'a ArcherApi,
+    pub gas_price_estimator: &'a dyn GasPriceEstimating,
     pub gas_price_cap: f64,
 }
 
-impl ArcherSolutionSubmitter {
+impl<'a> ArcherSolutionSubmitter<'a> {
     /// Submit a settlement to the contract, updating the transaction with gas prices if they increase.
     ///
     /// Goes through the archerdao network so that failing transactions do not get mined and thus do
@@ -356,11 +353,11 @@ mod tests {
                 .unwrap();
 
         let submitter = ArcherSolutionSubmitter {
-            web3,
-            contract,
-            account,
-            archer_api,
-            gas_price_estimator: Arc::new(gas_price_estimator),
+            web3: &web3,
+            contract: &contract,
+            account: &account,
+            archer_api: &archer_api,
+            gas_price_estimator: &gas_price_estimator,
             gas_price_cap,
         };
 
