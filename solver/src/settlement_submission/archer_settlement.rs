@@ -308,6 +308,7 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::GasNowGasStation;
     use hex_literal::hex;
+    use reqwest::Client;
     use shared::transport::create_env_test_transport;
 
     #[tokio::test]
@@ -341,7 +342,10 @@ mod tests {
         let contract = crate::get_settlement_contract(&web3, account.clone())
             .await
             .unwrap();
-        let archer_api = ArcherApi::new(std::env::var("ARCHER_AUTHORIZATION").unwrap());
+        let archer_api = ArcherApi::new(
+            std::env::var("ARCHER_AUTHORIZATION").unwrap(),
+            Client::new(),
+        );
         let gas_price_estimator =
             GasNowGasStation::new(shared::gas_price_estimation::Client(reqwest::Client::new()));
         let gas_price_cap = 100e9;

@@ -11,7 +11,6 @@ use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
-use shared::http::default_http_client;
 use web3::types::Bytes;
 
 /// A Matcha API quote query parameters.
@@ -103,10 +102,12 @@ pub struct DefaultMatchaApi {
 }
 
 impl DefaultMatchaApi {
+    pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
+
     /// Create a new 1Inch HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl) -> Result<Self> {
+    pub fn new(base_url: impl IntoUrl, client: Client) -> Result<Self> {
         Ok(Self {
-            client: default_http_client()?,
+            client,
             base_url: base_url.into_url()?,
         })
     }
@@ -129,12 +130,6 @@ impl MatchaApi for DefaultMatchaApi {
     }
 }
 
-impl Default for DefaultMatchaApi {
-    fn default() -> Self {
-        Self::new("https://api.0x.org/").expect("unexpected error parsing URL")
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,7 +137,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e() {
-        let matcha_client = DefaultMatchaApi::default();
+        let matcha_client =
+            DefaultMatchaApi::new(DefaultMatchaApi::DEFAULT_URL, Client::new()).unwrap();
         let sell_token = shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
         let buy_token = shared::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
         let swap_query = SwapQuery {

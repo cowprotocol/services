@@ -87,9 +87,8 @@ impl HttpSolver {
         network_id: String,
         chain_id: u64,
         fee_discount_factor: f64,
+        client: Client,
     ) -> Self {
-        // Unwrap because we cannot handle client creation failing.
-        let client = Client::builder().build().unwrap();
         Self {
             name,
             account,
@@ -524,6 +523,7 @@ mod tests {
             "mock_network_id".to_string(),
             0,
             1.,
+            Client::new(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![

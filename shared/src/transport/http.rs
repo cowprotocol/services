@@ -25,11 +25,7 @@ struct Inner {
 }
 
 impl HttpTransport {
-    pub fn new(url: Url) -> Self {
-        Self::with_client(Client::new(), url)
-    }
-
-    pub fn with_client(client: Client, url: Url) -> Self {
+    pub fn new(client: Client, url: Url) -> Self {
         Self {
             client,
             inner: Arc::new(Inner {

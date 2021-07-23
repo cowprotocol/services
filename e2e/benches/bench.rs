@@ -3,6 +3,7 @@ use std::time::Duration;
 use criterion::{criterion_group, criterion_main, Criterion};
 use ethcontract::U256;
 use rand::seq::SliceRandom as _;
+use reqwest::Client;
 use shared::token_list::TokenList;
 use tokio::runtime::Runtime;
 
@@ -12,7 +13,7 @@ const BASE_URL: &str = "http://localhost:8080/api/v1";
 pub fn criterion_benchmark(c: &mut Criterion) {
     let rt = Runtime::new().unwrap();
     let token_list = rt
-        .block_on(TokenList::from_url(TOKEN_LIST, 1))
+        .block_on(TokenList::from_url(TOKEN_LIST, 1, Client::new()))
         .expect("Failed to fetch token list");
 
     let mut group = c.benchmark_group("e2e API requests");

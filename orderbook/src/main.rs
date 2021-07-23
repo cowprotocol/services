@@ -126,8 +126,12 @@ async fn main() {
     let registry = Registry::default();
     let metrics = Arc::new(Metrics::new(&registry).unwrap());
 
-    let transport =
-        create_instrumented_transport(HttpTransport::new(args.shared.node_url), metrics.clone());
+    let client = shared::http_client(args.shared.http_timeout);
+
+    let transport = create_instrumented_transport(
+        HttpTransport::new(client.clone(), args.shared.node_url),
+        metrics.clone(),
+    );
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
@@ -178,7 +182,7 @@ async fn main() {
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            &reqwest::Client::new(),
+            client.clone(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )

@@ -8,6 +8,7 @@ use self::{
     instrumented::{MetricTransport, TransportMetrics},
 };
 use ethcontract::web3::Transport;
+use reqwest::Client;
 use std::{convert::TryInto as _, sync::Arc, time::Duration};
 
 /// Convenience method to create our standard instrumented transport
@@ -31,7 +32,7 @@ impl TransportMetrics for NoopTransportMetrics {
 pub fn create_test_transport(url: &str) -> MetricTransport<HttpTransport>
 where
 {
-    let transport = HttpTransport::new(url.try_into().unwrap());
+    let transport = HttpTransport::new(Client::new(), url.try_into().unwrap());
     MetricTransport::new(transport, Arc::new(NoopTransportMetrics))
 }
 
@@ -40,6 +41,6 @@ pub fn create_env_test_transport() -> MetricTransport<HttpTransport>
 where
 {
     let env = std::env::var("NODE_URL").unwrap();
-    let transport = HttpTransport::new(env.parse().unwrap());
+    let transport = HttpTransport::new(Client::new(), env.parse().unwrap());
     MetricTransport::new(transport, Arc::new(NoopTransportMetrics))
 }

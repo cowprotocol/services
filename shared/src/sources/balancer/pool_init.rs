@@ -17,6 +17,7 @@ use ethcontract::{
     Contract, H160,
 };
 use futures::stream::{self, StreamExt as _, TryStreamExt as _};
+use reqwest::Client;
 use std::sync::Arc;
 
 #[derive(Debug, Default, PartialEq)]
@@ -56,18 +57,24 @@ pub enum DefaultPoolInitializer {
 }
 
 impl DefaultPoolInitializer {
-    pub fn new(chain_id: u64, pool_info: Arc<dyn PoolInfoFetching>) -> Result<Self> {
+    pub fn new(
+        chain_id: u64,
+        pool_info: Arc<dyn PoolInfoFetching>,
+        client: Client,
+    ) -> Result<Self> {
         const MAINNET_CHAIN_ID: u64 = 1;
 
         Ok(if chain_id == MAINNET_CHAIN_ID {
-            DefaultPoolInitializer::Subgraph(SubgraphPoolInitializer::new(chain_id)?)
+            DefaultPoolInitializer::Subgraph(SubgraphPoolInitializer::new(chain_id, client)?)
         } else {
             // Balancer subgraph seems to only correctly index pool info on
             // chains where it supports archive nodes (because of the required
             // `eth_call`s). This means we can only use the pure Subgraph
             // initializer on Mainnet - the only network with archive node
             // support at the moment.
-            DefaultPoolInitializer::Fetched(FetchedPoolInitializer::new(chain_id, pool_info)?)
+            DefaultPoolInitializer::Fetched(FetchedPoolInitializer::new(
+                chain_id, pool_info, client,
+            )?)
         })
     }
 }
@@ -89,10 +96,10 @@ impl PoolInitializing for DefaultPoolInitializer {
 pub struct SubgraphPoolInitializer(SubgraphPoolInitializerInner<BalancerSubgraphClient>);
 
 impl SubgraphPoolInitializer {
-    pub fn new(chain_id: u64) -> Result<Self> {
+    pub fn new(chain_id: u64, client: Client) -> Result<Self> {
         Ok(Self(SubgraphPoolInitializerInner {
             chain_id,
-            client: BalancerSubgraphClient::for_chain(chain_id)?,
+            client: BalancerSubgraphClient::for_chain(chain_id, client)?,
         }))
     }
 }
@@ -154,11 +161,15 @@ where
 pub struct FetchedPoolInitializer(FetchedPoolInitializerInner<BalancerSubgraphClient>);
 
 impl FetchedPoolInitializer {
-    pub fn new(chain_id: u64, pool_info: Arc<dyn PoolInfoFetching>) -> Result<Self> {
+    pub fn new(
+        chain_id: u64,
+        pool_info: Arc<dyn PoolInfoFetching>,
+        client: Client,
+    ) -> Result<Self> {
         Ok(Self(FetchedPoolInitializerInner {
             chain_id,
             pool_info,
-            client: BalancerSubgraphClient::for_chain(chain_id)?,
+            client: BalancerSubgraphClient::for_chain(chain_id, client)?,
         }))
     }
 }

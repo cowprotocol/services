@@ -20,6 +20,7 @@ use crate::{
 use anyhow::Result;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
+use reqwest::Client;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -95,12 +96,13 @@ impl BalancerPoolFetcher {
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn WeightedPoolCacheMetrics>,
+        client: Client,
     ) -> Result<Self> {
         let pool_info = Arc::new(PoolInfoFetcher {
             web3: web3.clone(),
             token_info_fetcher: token_info_fetcher.clone(),
         });
-        let pool_initializer = DefaultPoolInitializer::new(chain_id, pool_info.clone())?;
+        let pool_initializer = DefaultPoolInitializer::new(chain_id, pool_info.clone(), client)?;
         let pool_registry =
             Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);
         let reserve_fetcher = PoolReserveFetcher::new(pool_registry.clone(), web3).await?;

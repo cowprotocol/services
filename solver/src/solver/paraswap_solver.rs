@@ -17,6 +17,7 @@ use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
+use reqwest::Client;
 use shared::token_info::TokenInfo;
 use shared::{conversions::U256Ext, token_info::TokenInfoFetching, Web3};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ pub struct ParaswapSolver {
 }
 
 impl ParaswapSolver {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         account: Account,
         web3: Web3,
@@ -51,6 +53,7 @@ impl ParaswapSolver {
         token_info: Arc<dyn TokenInfoFetching>,
         slippage_bps: usize,
         disabled_paraswap_dexs: Vec<String>,
+        client: Client,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
         Self {
@@ -59,7 +62,7 @@ impl ParaswapSolver {
             solver_address,
             token_info,
             allowance_fetcher: Box::new(allowance_fetcher),
-            client: Box::new(DefaultParaswapApi::default()),
+            client: Box::new(DefaultParaswapApi { client }),
             slippage_bps,
             disabled_paraswap_dexs,
         }
@@ -249,6 +252,7 @@ mod tests {
     use mockall::predicate::*;
     use mockall::Sequence;
     use model::order::{Order, OrderCreation, OrderKind};
+    use reqwest::Client;
     use shared::{
         dummy_contract,
         token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
@@ -583,6 +587,7 @@ mod tests {
             token_info_fetcher,
             0,
             vec![],
+            Client::new(),
         );
 
         let settlement = solver

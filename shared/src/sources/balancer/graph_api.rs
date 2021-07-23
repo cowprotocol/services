@@ -12,6 +12,7 @@ use super::pool_storage::RegisteredWeightedPool;
 use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
 use anyhow::{bail, Result};
 use ethcontract::{H160, H256};
+use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -29,13 +30,17 @@ pub struct BalancerSubgraphClient(SubgraphClient);
 
 impl BalancerSubgraphClient {
     /// Creates a new Balancer subgraph client for the specified chain ID.
-    pub fn for_chain(chain_id: u64) -> Result<Self> {
+    pub fn for_chain(chain_id: u64, client: Client) -> Result<Self> {
         let subgraph_name = match chain_id {
             1 => "balancer-v2",
             4 => "balancer-rinkeby-v2",
             _ => bail!("unsupported chain {}", chain_id),
         };
-        Ok(Self(SubgraphClient::new("balancer-labs", subgraph_name)?))
+        Ok(Self(SubgraphClient::new(
+            "balancer-labs",
+            subgraph_name,
+            client,
+        )?))
     }
 
     /// Retrieves the list of registered pools from the subgraph.
@@ -357,7 +362,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn balancer_subgraph_query() {
-        let client = BalancerSubgraphClient::for_chain(1).unwrap();
+        let client = BalancerSubgraphClient::for_chain(1, Client::new()).unwrap();
         let pools = client.get_weighted_pools().await.unwrap();
         println!("{:#?}", pools.pools_by_factory);
         println!(

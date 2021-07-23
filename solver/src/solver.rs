@@ -8,7 +8,7 @@ use matcha_solver::MatchaSolver;
 use naive_solver::NaiveSolver;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
-use reqwest::Url;
+use reqwest::{Client, Url};
 use shared::{
     conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching, Web3,
 };
@@ -86,6 +86,7 @@ pub fn create(
     disabled_one_inch_protocols: Vec<String>,
     paraswap_slippage_bps: usize,
     disabled_paraswap_dexs: Vec<String>,
+    client: Client,
 ) -> Result<Vec<Box<dyn Solver>>> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -115,6 +116,7 @@ pub fn create(
             network_id.clone(),
             chain_id,
             fee_discount_factor,
+            client.clone(),
         )
     };
 
@@ -137,6 +139,7 @@ pub fn create(
                     settlement_contract.clone(),
                     chain_id,
                     disabled_one_inch_protocols.clone(),
+                    client.clone(),
                 )?
                 .into();
                 // We only want to use 1Inch for high value orders
@@ -153,6 +156,7 @@ pub fn create(
                     web3.clone(),
                     settlement_contract.clone(),
                     chain_id,
+                    client.clone(),
                 )
                 .unwrap();
                 boxed(SingleOrderSolver::from(matcha_solver))
@@ -165,6 +169,7 @@ pub fn create(
                 token_info_fetcher.clone(),
                 paraswap_slippage_bps,
                 disabled_paraswap_dexs.clone(),
+                client.clone(),
             ))),
         })
         .collect()

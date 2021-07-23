@@ -1,6 +1,5 @@
 //! A module implementing a client for querying subgraphs.
 
-use crate::http::default_http_client;
 use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use reqwest::{Client, IntoUrl, Url};
@@ -22,8 +21,8 @@ lazy_static! {
 
 impl SubgraphClient {
     /// Creates a new subgraph client from the specified organization and name.
-    pub fn new(org: impl AsRef<str>, name: impl AsRef<str>) -> Result<Self> {
-        Self::with_base_url(DEFAULT_GRAPH_API_BASE_URL.clone(), org, name)
+    pub fn new(org: impl AsRef<str>, name: impl AsRef<str>, client: Client) -> Result<Self> {
+        Self::with_base_url(DEFAULT_GRAPH_API_BASE_URL.clone(), org, name, client)
     }
 
     /// Creates a new subgraph client with the specified base URL.
@@ -31,13 +30,14 @@ impl SubgraphClient {
         base_url: impl IntoUrl,
         org: impl AsRef<str>,
         name: impl AsRef<str>,
+        client: Client,
     ) -> Result<Self> {
         let subgraph_url = base_url
             .into_url()?
             .join(&format!("{}/", org.as_ref()))?
             .join(name.as_ref())?;
         Ok(Self {
-            client: default_http_client()?,
+            client,
             subgraph_url,
         })
     }

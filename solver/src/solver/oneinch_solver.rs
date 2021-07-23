@@ -20,6 +20,7 @@ use derivative::Derivative;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
+use reqwest::Client;
 use shared::Web3;
 use std::{
     collections::HashSet,
@@ -50,6 +51,7 @@ impl OneInchSolver {
         settlement_contract: GPv2Settlement,
         chain_id: u64,
         disabled_protocols: impl IntoIterator<Item = String>,
+        client: Client,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -61,7 +63,10 @@ impl OneInchSolver {
             account,
             settlement_contract,
             disabled_protocols: disabled_protocols.into_iter().collect(),
-            client: Box::new(OneInchClientImpl::default()),
+            client: Box::new(OneInchClientImpl::new(
+                OneInchClientImpl::DEFAULT_URL,
+                client,
+            )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
         })
     }
@@ -420,7 +425,8 @@ mod tests {
             web3,
             settlement,
             chain_id,
-            iter::empty()
+            iter::empty(),
+            Client::new(),
         )
         .is_err())
     }
@@ -441,6 +447,7 @@ mod tests {
             settlement,
             chain_id,
             vec!["PMM1".to_string()],
+            Client::new(),
         )
         .unwrap();
         let settlement = solver

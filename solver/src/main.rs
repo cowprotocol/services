@@ -57,15 +57,6 @@ struct Arguments {
     )]
     quasimodo_solver_url: Url,
 
-    /// The timeout for the API endpoint to fetch the orderbook
-    #[structopt(
-        long,
-        env = "ORDERBOOK_TIMEOUT",
-        default_value = "10",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    orderbook_timeout: Duration,
-
     /// The private key used by the driver to sign transactions.
     #[structopt(short = "k", long, env = "PRIVATE_KEY", hide_env_values = true)]
     private_key: PrivateKey,
@@ -211,9 +202,12 @@ async fn main() {
     let registry = Registry::default();
     let metrics = Arc::new(Metrics::new(&registry).expect("Couldn't register metrics"));
 
-    // TODO: custom transport that allows setting timeout
-    let transport =
-        create_instrumented_transport(HttpTransport::new(args.shared.node_url), metrics.clone());
+    let client = shared::http_client(args.shared.http_timeout);
+
+    let transport = create_instrumented_transport(
+        HttpTransport::new(client.clone(), args.shared.node_url),
+        metrics.clone(),
+    );
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
         .eth()
@@ -236,8 +230,8 @@ async fn main() {
         .expect("couldn't load deployed native token");
     let orderbook_api = solver::orderbook::OrderBookApi::new(
         args.orderbook_url,
-        args.orderbook_timeout,
         native_token_contract.clone(),
+        client.clone(),
     );
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.
@@ -248,7 +242,7 @@ async fn main() {
     })));
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            &reqwest::Client::new(),
+            client.clone(),
             &web3,
             args.shared.gas_estimators.as_slice(),
         )
@@ -310,6 +304,7 @@ async fn main() {
                 cache_config,
                 current_block_stream.clone(),
                 metrics.clone(),
+                client.clone(),
             )
             .await
             .expect("failed to create Balancer pool fetcher"),
@@ -360,6 +355,7 @@ async fn main() {
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
         args.disabled_paraswap_dexs,
+        client.clone(),
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
@@ -367,10 +363,11 @@ async fn main() {
         orderbook_api,
         balancer_v2_liquidity,
     };
-    let market_makable_token_list = TokenList::from_url(&args.market_makable_token_list, chain_id)
-        .await
-        .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
-        .ok();
+    let market_makable_token_list =
+        TokenList::from_url(&args.market_makable_token_list, chain_id, client.clone())
+            .await
+            .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
+            .ok();
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -384,6 +381,7 @@ async fn main() {
                 archer_api: ArcherApi::new(
                     args.archer_authorization
                         .expect("missing archer authorization"),
+                    client.clone(),
                 ),
                 max_confirm_time: args.max_archer_submission_seconds,
             },

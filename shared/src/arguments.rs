@@ -20,14 +20,13 @@ pub struct Arguments {
     #[structopt(long, env = "NODE_URL", default_value = "http://localhost:8545")]
     pub node_url: Url,
 
-    /// Timeout for web3 operations on the node in seconds.
+    /// Timeout for all http requests.
     #[structopt(
             long,
-            env = "NODE_TIMEOUT",
             default_value = "10",
             parse(try_from_str = duration_from_seconds),
         )]
-    pub node_timeout: Duration,
+    pub http_timeout: Duration,
 
     /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
     /// fails. Individual estimators support different networks.

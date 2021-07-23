@@ -9,6 +9,7 @@ use orderbook::{
     fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
 };
 use prometheus::Registry;
+use reqwest::Client;
 use shared::{
     bad_token::list_based::ListBasedDetector,
     current_block::{current_block_stream, CurrentBlockStream},
@@ -52,8 +53,8 @@ pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
     let weth = WETH9::at(&web3, weth_address);
     solver::orderbook::OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
-        std::time::Duration::from_secs(10),
         weth,
+        Client::new(),
     )
 }
 

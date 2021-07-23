@@ -1,7 +1,6 @@
 use contracts::WETH9;
 use model::order::Order;
 use reqwest::{Client, Url};
-use std::time::Duration;
 
 pub struct OrderBookApi {
     base: Url,
@@ -11,9 +10,7 @@ pub struct OrderBookApi {
 
 impl OrderBookApi {
     /// base: protocol and host of the url. example: `https://example.com`
-    pub fn new(base: Url, request_timeout: Duration, native_token: WETH9) -> Self {
-        // Unwrap because we cannot handle client creation failing.
-        let client = Client::builder().timeout(request_timeout).build().unwrap();
+    pub fn new(base: Url, native_token: WETH9, client: Client) -> Self {
         Self {
             base,
             client,
@@ -45,8 +42,8 @@ pub mod test_util {
         let native_token = dummy_contract!(WETH9, [0x42; 20]);
         let api = OrderBookApi::new(
             Url::parse("http://localhost:8080").unwrap(),
-            Duration::from_secs(10),
             native_token,
+            Client::new(),
         );
         let orders = api.get_orders().await.unwrap();
         println!("{:?}", orders);

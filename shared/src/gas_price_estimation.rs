@@ -38,11 +38,11 @@ impl Transport for Client {
 }
 
 pub async fn create_priority_estimator(
-    client: &reqwest::Client,
+    client: reqwest::Client,
     web3: &Web3,
     estimator_types: &[GasEstimatorType],
 ) -> Result<impl GasPriceEstimating> {
-    let client = Client(client.clone());
+    let client = Client(client);
     let network_id = web3.net().version().await?;
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
     for estimator_type in estimator_types {

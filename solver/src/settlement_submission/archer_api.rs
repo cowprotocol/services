@@ -13,9 +13,9 @@ pub struct ArcherApi {
 }
 
 impl ArcherApi {
-    pub fn new(authorization: String) -> Self {
+    pub fn new(authorization: String, client: Client) -> Self {
         Self {
-            client: Client::new(),
+            client,
             authorization,
         }
     }

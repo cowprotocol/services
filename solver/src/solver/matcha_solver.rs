@@ -26,6 +26,7 @@ use anyhow::{ensure, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
+use reqwest::Client;
 
 use super::single_order_solver::SingleOrderSolving;
 
@@ -58,6 +59,7 @@ impl MatchaSolver {
         web3: Web3,
         settlement_contract: GPv2Settlement,
         chain_id: u64,
+        client: Client,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -67,7 +69,10 @@ impl MatchaSolver {
         Ok(Self {
             account,
             allowance_fetcher: Box::new(allowance_fetcher),
-            client: Box::new(DefaultMatchaApi::default()),
+            client: Box::new(DefaultMatchaApi::new(
+                DefaultMatchaApi::DEFAULT_URL,
+                client,
+            )?),
         })
     }
 }
@@ -186,7 +191,8 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = MatchaSolver::new(account(), web3, settlement, chain_id).unwrap();
+        let solver =
+            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
         let settlement = solver
             .settle_order(
                 Order {
@@ -218,7 +224,8 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = MatchaSolver::new(account(), web3, settlement, chain_id).unwrap();
+        let solver =
+            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
         let settlement = solver
             .settle_order(
                 Order {
@@ -359,7 +366,7 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
-        assert!(MatchaSolver::new(account(), web3, settlement, chain_id).is_err())
+        assert!(MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).is_err())
     }
 
     #[tokio::test]

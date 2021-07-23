@@ -23,9 +23,8 @@ pub trait ParaswapApi {
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError>;
 }
 
-#[derive(Default)]
 pub struct DefaultParaswapApi {
-    client: Client,
+    pub client: Client,
 }
 
 #[async_trait::async_trait]
