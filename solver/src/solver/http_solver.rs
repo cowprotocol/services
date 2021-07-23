@@ -22,6 +22,7 @@ use shared::{
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
+    time::Duration,
 };
 
 // Estimates from multivariate linear regression here:
@@ -71,6 +72,7 @@ pub struct HttpSolver {
     network_id: String,
     chain_id: u64,
     fee_discount_factor: f64,
+    timeout: Duration,
 }
 
 impl HttpSolver {
@@ -88,6 +90,7 @@ impl HttpSolver {
         chain_id: u64,
         fee_discount_factor: f64,
         client: Client,
+        timeout: Duration,
     ) -> Self {
         Self {
             name,
@@ -102,6 +105,7 @@ impl HttpSolver {
             network_id,
             chain_id,
             fee_discount_factor,
+            timeout,
         }
     }
 
@@ -319,7 +323,7 @@ impl HttpSolver {
 
         self.config.add_to_query(&mut url);
         let query = url.query().map(ToString::to_string).unwrap_or_default();
-        let mut request = self.client.post(url);
+        let mut request = self.client.post(url).timeout(self.timeout);
         if let Some(api_key) = &self.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);
@@ -524,6 +528,7 @@ mod tests {
             0,
             1.,
             Client::new(),
+            Duration::MAX,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![
