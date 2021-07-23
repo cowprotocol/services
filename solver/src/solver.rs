@@ -117,6 +117,7 @@ pub fn create(
             chain_id,
             fee_discount_factor,
             client.clone(),
+            solver_timeout,
         )
     };
 
