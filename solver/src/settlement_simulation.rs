@@ -1,8 +1,11 @@
 use crate::encoding::EncodedSettlement;
 use anyhow::{Error, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder};
+use ethcontract::{
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, GasPrice,
+};
 use futures::FutureExt;
+use primitive_types::U256;
 use shared::Web3;
 use web3::types::{BlockId, BlockNumber};
 
@@ -25,12 +28,14 @@ pub async fn simulate_settlements(
     web3: &Web3,
     network_id: &str,
     block: Block,
+    gas_price: f64,
 ) -> Result<Vec<Result<()>>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
         .map(|settlement| {
             let method =
-                crate::settlement_submission::retry::settle_method_builder(contract, settlement);
+                crate::settlement_submission::retry::settle_method_builder(contract, settlement)
+                    .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)));
             let transaction_builder = method.tx.clone();
             let view = method.view().block(match block {
                 Block::FixedWithTenderly(block) => BlockId::Number(block.into()),
@@ -113,6 +118,7 @@ mod tests {
             &web3,
             network_id.as_str(),
             Block::FixedWithTenderly(block),
+            0.0,
         )
         .await;
         let _ = dbg!(result);

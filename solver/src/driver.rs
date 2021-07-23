@@ -167,7 +167,11 @@ impl Driver {
         }
     }
 
-    async fn can_settle_without_liquidity(&self, settlement: &RatedSettlement) -> Result<bool> {
+    async fn can_settle_without_liquidity(
+        &self,
+        settlement: &RatedSettlement,
+        gas_price_wei: f64,
+    ) -> Result<bool> {
         // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
         if !self
             .market_makable_token_list
@@ -184,6 +188,7 @@ impl Driver {
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
+            gas_price_wei,
         )
         .await
         .context("failed to simulate settlement")?;
@@ -194,6 +199,7 @@ impl Driver {
     async fn simulate_settlements(
         &self,
         settlements: Vec<SettlementWithSolver>,
+        gas_price_wei: f64,
     ) -> Result<(
         Vec<SettlementWithSolver>,
         Vec<(SettlementWithSolver, Error)>,
@@ -206,6 +212,7 @@ impl Driver {
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
+            gas_price_wei,
         )
         .await
         .context("failed to simulate settlements")?;
@@ -228,6 +235,7 @@ impl Driver {
         &self,
         errors: Vec<(SettlementWithSolver, Error)>,
         current_block_during_liquidity_fetch: u64,
+        gas_price_wei: f64,
     ) {
         let simulations = match settlement_simulation::simulate_settlements(
             errors
@@ -237,6 +245,7 @@ impl Driver {
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::FixedWithTenderly(current_block_during_liquidity_fetch),
+            gas_price_wei,
         )
         .await
         {
@@ -393,7 +402,9 @@ impl Driver {
             &mut settlements,
         );
 
-        let (settlements, errors) = self.simulate_settlements(settlements).await?;
+        let (settlements, errors) = self
+            .simulate_settlements(settlements, gas_price_wei)
+            .await?;
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             settlements.len(),
@@ -419,7 +430,7 @@ impl Driver {
         {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
-                .can_settle_without_liquidity(&settlement)
+                .can_settle_without_liquidity(&settlement, gas_price_wei)
                 .await
                 .unwrap_or(false)
             {
@@ -445,7 +456,7 @@ impl Driver {
         }
 
         // Happens after settlement submission so that we do not delay it.
-        self.report_simulation_errors(errors, current_block_during_liquidity_fetch)
+        self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price_wei)
             .await;
 
         Ok(())
