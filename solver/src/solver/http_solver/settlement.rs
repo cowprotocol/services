@@ -8,10 +8,7 @@ use anyhow::{anyhow, ensure, Result};
 use itertools::Itertools;
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    iter,
-};
+use std::collections::{hash_map::Entry, HashMap};
 
 // To send an instance to the solver we need to identify tokens and orders through strings. This
 // struct combines the created model and a mapping of those identifiers to their original value.
@@ -75,11 +72,7 @@ impl IntermediateSettlement {
             context.weighted_product_orders,
             settled.amms,
         )?;
-        let prices = match_settled_prices(
-            executed_limit_orders.as_slice(),
-            executed_amms.as_slice(),
-            settled.prices,
-        )?;
+        let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         Ok(Self {
             executed_limit_orders,
             executed_amms,
@@ -184,28 +177,12 @@ fn match_prepared_and_settled_amms(
 
 fn match_settled_prices(
     executed_limit_orders: &[ExecutedLimitOrder],
-    executed_amms: &[ExecutedAmm],
     solver_prices: HashMap<H160, Price>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
     let executed_tokens = executed_limit_orders
         .iter()
-        .flat_map(|order| {
-            iter::once(order.order.buy_token).chain(iter::once(order.order.sell_token))
-        })
-        .chain(
-            executed_amms
-                .iter()
-                .flat_map(|executed_amm| match &executed_amm.order {
-                    ExecutedOrder::ConstantProduct(cp_order) => {
-                        let pair = cp_order.tokens;
-                        vec![pair.get().0, pair.get().1]
-                    }
-                    ExecutedOrder::WeightedProduct(wp_order) => {
-                        wp_order.reserves.keys().copied().collect::<Vec<H160>>()
-                    }
-                }),
-        );
+        .flat_map(|order| vec![order.order.buy_token, order.order.sell_token]);
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices
