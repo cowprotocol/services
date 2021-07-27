@@ -34,8 +34,7 @@ pub fn convert_settlement(
 // the error checking up front and then working with a more convenient representation.
 struct IntermediateSettlement {
     executed_limit_orders: Vec<ExecutedLimitOrder>,
-    executed_constant_product_amms: Vec<ExecutedConstantProductAmms>,
-    executed_weighted_product_amms: Vec<ExecutedWeightedProductAmms>,
+    executed_amms: Vec<ExecutedAmm>,
     prices: HashMap<H160, U256>,
 }
 
@@ -54,16 +53,17 @@ impl ExecutedLimitOrder {
     }
 }
 
-struct ExecutedConstantProductAmms {
-    order: ConstantProductOrder,
+#[derive(Clone)]
+struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
+    order: ExecutedOrder,
 }
 
-struct ExecutedWeightedProductAmms {
-    order: WeightedProductOrder,
-    input: (H160, U256),
-    output: (H160, U256),
+#[derive(Clone)]
+enum ExecutedOrder {
+    ConstantProduct(ConstantProductOrder),
+    WeightedProduct(WeightedProductOrder),
 }
 
 impl IntermediateSettlement {
@@ -77,13 +77,12 @@ impl IntermediateSettlement {
         )?;
         let prices = match_settled_prices(
             executed_limit_orders.as_slice(),
-            (executed_amms.0.as_slice(), executed_amms.1.as_slice()),
+            executed_amms.as_slice(),
             settled.prices,
         )?;
         Ok(Self {
             executed_limit_orders,
-            executed_constant_product_amms: executed_amms.0,
-            executed_weighted_product_amms: executed_amms.1,
+            executed_amms,
             prices,
         })
     }
@@ -93,23 +92,19 @@ impl IntermediateSettlement {
         for order in self.executed_limit_orders.iter() {
             settlement.with_liquidity(&order.order, order.executed_amount())?;
         }
-        for amm in self.executed_constant_product_amms.iter() {
-            settlement.with_liquidity(
-                &amm.order,
-                AmmOrderExecution {
-                    input: amm.input,
-                    output: amm.output,
-                },
-            )?;
-        }
-        for amm in self.executed_weighted_product_amms.iter() {
-            settlement.with_liquidity(
-                &amm.order,
-                AmmOrderExecution {
-                    input: amm.input,
-                    output: amm.output,
-                },
-            )?;
+        for executed_amm in self.executed_amms.iter() {
+            let execution = AmmOrderExecution {
+                input: executed_amm.input,
+                output: executed_amm.output,
+            };
+            match &executed_amm.order {
+                ExecutedOrder::ConstantProduct(liquidity) => {
+                    settlement.with_liquidity(liquidity, execution)?
+                }
+                ExecutedOrder::WeightedProduct(liquidity) => {
+                    settlement.with_liquidity(liquidity, execution)?
+                }
+            }
         }
         Ok(settlement)
     }
@@ -141,12 +136,8 @@ fn match_prepared_and_settled_amms(
     mut prepared_constant_product_orders: HashMap<usize, ConstantProductOrder>,
     mut prepared_weighted_product_orders: HashMap<usize, WeightedProductOrder>,
     settled_orders: HashMap<usize, UpdatedAmmModel>,
-) -> Result<(
-    Vec<ExecutedConstantProductAmms>,
-    Vec<ExecutedWeightedProductAmms>,
-)> {
-    let mut constant_product_executions = vec![];
-    let mut weighted_product_executions = vec![];
+) -> Result<Vec<ExecutedAmm>> {
+    let mut amm_executions = vec![];
     // Recall, prepared amm for weighted products are shifted by the constant product amms
     // We declare this outside before prepared_constant_product_orders is mutated.
     let shift = prepared_constant_product_orders.len();
@@ -166,17 +157,21 @@ fn match_prepared_and_settled_amms(
             (settled.sell_token, settled.exec_sell_amount),
         );
         if index < shift && prepared_constant_product_orders.contains_key(&index) {
-            constant_product_executions.push(ExecutedConstantProductAmms {
-                order: prepared_constant_product_orders.remove(&index).unwrap(),
+            amm_executions.push(ExecutedAmm {
+                order: ExecutedOrder::ConstantProduct(
+                    prepared_constant_product_orders.remove(&index).unwrap(),
+                ),
                 input,
                 output,
             });
         } else if index >= shift && prepared_weighted_product_orders.contains_key(&(index - shift))
         {
-            weighted_product_executions.push(ExecutedWeightedProductAmms {
-                order: prepared_weighted_product_orders
-                    .remove(&(index - shift))
-                    .unwrap(),
+            amm_executions.push(ExecutedAmm {
+                order: ExecutedOrder::WeightedProduct(
+                    prepared_weighted_product_orders
+                        .remove(&(index - shift))
+                        .unwrap(),
+                ),
                 input,
                 output,
             });
@@ -184,15 +179,12 @@ fn match_prepared_and_settled_amms(
             return Err(anyhow!("Invalid AMM {}", index));
         }
     }
-    Ok((constant_product_executions, weighted_product_executions))
+    Ok(amm_executions)
 }
 
 fn match_settled_prices(
     executed_limit_orders: &[ExecutedLimitOrder],
-    executed_amms: (
-        &[ExecutedConstantProductAmms],
-        &[ExecutedWeightedProductAmms],
-    ),
+    executed_amms: &[ExecutedAmm],
     solver_prices: HashMap<H160, Price>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
@@ -201,12 +193,18 @@ fn match_settled_prices(
         .flat_map(|order| {
             iter::once(order.order.buy_token).chain(iter::once(order.order.sell_token))
         })
-        .chain(executed_amms.0.iter().flat_map(|amm| amm.order.tokens))
         .chain(
             executed_amms
-                .1
                 .iter()
-                .flat_map(|amm| amm.order.reserves.keys().copied().collect::<Vec<H160>>()),
+                .flat_map(|executed_amm| match &executed_amm.order {
+                    ExecutedOrder::ConstantProduct(cp_order) => {
+                        let pair = cp_order.tokens;
+                        vec![pair.get().0, pair.get().1]
+                    }
+                    ExecutedOrder::WeightedProduct(wp_order) => {
+                        wp_order.reserves.keys().copied().collect::<Vec<H160>>()
+                    }
+                }),
         );
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
@@ -524,31 +522,45 @@ mod tests {
             solution_response.amms,
         );
         assert!(matched_settlements.is_ok());
-        let (prepared_cps, prepared_wps) = matched_settlements.unwrap();
-
-        assert_eq!(prepared_cps[0].order.tokens, cpo_0.tokens);
-        assert_eq!(prepared_cps[0].order.reserves, cpo_0.reserves);
-        assert_eq!(prepared_cps[0].order.fee, cpo_0.fee);
+        let prepared_amms = matched_settlements.unwrap();
+        let executed_cp_order: ConstantProductOrder;
+        let executed_wp_order: WeightedProductOrder;
+        match prepared_amms[0].order.clone() {
+            ExecutedOrder::ConstantProduct(_) => {
+                panic!("Expected WeightedProductOrder!");
+            }
+            ExecutedOrder::WeightedProduct(order) => {
+                executed_wp_order = order;
+            }
+        }
+        match prepared_amms[1].order.clone() {
+            ExecutedOrder::ConstantProduct(order) => {
+                executed_cp_order = order;
+            }
+            ExecutedOrder::WeightedProduct(_) => {
+                panic!("Expected ConstantProductOrder!")
+            }
+        }
+        assert_eq!(executed_cp_order.tokens, cpo_0.tokens);
+        assert_eq!(executed_cp_order.reserves, cpo_0.reserves);
+        assert_eq!(executed_cp_order.fee, cpo_0.fee);
         assert_eq!(
-            prepared_cps[0].input,
+            prepared_amms[1].input,
             (token_b, U256::from(354009510372389956u128))
         );
         assert_eq!(
-            prepared_cps[0].output,
+            prepared_amms[1].output,
             (token_a, U256::from(932415220613609833982u128))
         );
 
+        assert_eq!(executed_wp_order.reserves, weighted_product_order.reserves);
+        assert_eq!(executed_wp_order.fee, weighted_product_order.fee);
         assert_eq!(
-            prepared_wps[0].order.reserves,
-            weighted_product_order.reserves
-        );
-        assert_eq!(prepared_wps[0].order.fee, weighted_product_order.fee);
-        assert_eq!(
-            prepared_wps[0].input,
+            prepared_amms[0].input,
             (token_c, U256::from(996570293625184642u128))
         );
         assert_eq!(
-            prepared_wps[0].output,
+            prepared_amms[0].output,
             (token_b, U256::from(354009510372384890u128))
         );
     }

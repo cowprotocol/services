@@ -120,7 +120,7 @@ pub struct SettledBatchAuctionModel {
 impl SettledBatchAuctionModel {
     pub fn has_execution_plan(&self) -> bool {
         // Its a bit weird that we expect all entries to contain an execution plan. Could make
-        // exec_plan not optional and assert that the vector of execution updates is non-empty
+        // execution plan required and assert that the vector of execution updates is non-empty
         self.amms
             .values()
             .flat_map(|u| &u.execution)
