@@ -102,6 +102,7 @@ impl Driver {
                 Ok(()) => tracing::debug!("single run finished ok"),
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
+            self.metrics.runloop_completed();
             tokio::time::sleep(self.settle_interval).await;
         }
     }

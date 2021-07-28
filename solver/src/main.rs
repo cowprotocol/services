@@ -396,7 +396,7 @@ async fn main() {
         args.settle_interval,
         native_token_contract.address(),
         args.min_order_age,
-        metrics,
+        metrics.clone(),
         web3,
         network_id,
         args.max_merged_settlements,
@@ -416,7 +416,7 @@ async fn main() {
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
-    serve_metrics(registry, ([0, 0, 0, 0], args.metrics_port).into());
+    serve_metrics(registry, metrics, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await;
 }
 

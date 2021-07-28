@@ -1,5 +1,6 @@
 use std::{
     convert::TryInto,
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -9,6 +10,7 @@ use prometheus::{
     HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts, Registry,
 };
 use shared::{
+    metrics::LivenessChecking,
     sources::{
         balancer::pool_cache::WeightedPoolCacheMetrics, uniswap::pool_cache::PoolCacheMetrics,
     },
@@ -18,6 +20,9 @@ use strum::{AsStaticRef, VariantNames};
 
 use crate::liquidity::Liquidity;
 
+/// The maximum time between the completion of two run loops. If exceeded the service will be considered unhealthy.
+const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
+
 pub trait SolverMetrics {
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, start: Instant);
@@ -26,6 +31,7 @@ pub trait SolverMetrics {
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, successful: bool, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
+    fn runloop_completed(&self);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -40,6 +46,7 @@ pub struct Metrics {
     transport_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
+    last_runloop_completed: Mutex<Instant>,
 }
 
 impl Metrics {
@@ -128,6 +135,7 @@ impl Metrics {
             transport_requests,
             pool_cache_hits,
             pool_cache_misses,
+            last_runloop_completed: Mutex::new(Instant::now()),
         })
     }
 }
@@ -190,6 +198,13 @@ impl SolverMetrics for Metrics {
     fn orders_matched_but_not_settled(&self, count: usize) {
         self.matched_but_unsettled_orders.inc_by(count as u64);
     }
+
+    fn runloop_completed(&self) {
+        *self
+            .last_runloop_completed
+            .lock()
+            .expect("thread holding mutex panicked") = Instant::now();
+    }
 }
 
 impl TransportMetrics for Metrics {
@@ -216,6 +231,18 @@ impl WeightedPoolCacheMetrics for Metrics {
     }
 }
 
+#[async_trait::async_trait]
+impl LivenessChecking for Metrics {
+    async fn is_alive(&self) -> bool {
+        Instant::now().duration_since(
+            *self
+                .last_runloop_completed
+                .lock()
+                .expect("thread holding mutex panicked"),
+        ) <= MAX_RUNLOOP_DURATION
+    }
+}
+
 #[derive(Default)]
 pub struct NoopMetrics {}
 
@@ -227,6 +254,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: bool, _: &'static str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
+    fn runloop_completed(&self) {}
 }
 
 #[cfg(test)]

@@ -13,8 +13,8 @@ use model::{
 };
 use primitive_types::{H160, U256};
 use shared::{
-    bad_token::BadTokenDetecting, maintenance::Maintaining, time::now_in_epoch_seconds,
-    web3_traits::CodeFetching,
+    bad_token::BadTokenDetecting, maintenance::Maintaining, metrics::LivenessChecking,
+    time::now_in_epoch_seconds, web3_traits::CodeFetching,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -227,6 +227,13 @@ impl Maintaining for Orderbook {
     async fn run_maintenance(&self) -> Result<()> {
         self.balance_fetcher.update().await;
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl LivenessChecking for Orderbook {
+    async fn is_alive(&self) -> bool {
+        self.get_solvable_orders().await.is_ok()
     }
 }
 

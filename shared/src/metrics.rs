@@ -1,12 +1,21 @@
 use prometheus::{Encoder, Registry};
-use std::net::SocketAddr;
+use std::{convert::Infallible, net::SocketAddr, sync::Arc};
 use tokio::task::{self, JoinHandle};
 use warp::{Filter, Rejection, Reply};
 
 pub const DEFAULT_METRICS_PORT: u16 = 9586;
 
-pub fn serve_metrics(registry: Registry, address: SocketAddr) -> JoinHandle<()> {
-    let filter = handle_metrics(registry);
+#[async_trait::async_trait]
+pub trait LivenessChecking: Send + Sync {
+    async fn is_alive(&self) -> bool;
+}
+
+pub fn serve_metrics(
+    registry: Registry,
+    liveness: Arc<dyn LivenessChecking>,
+    address: SocketAddr,
+) -> JoinHandle<()> {
+    let filter = handle_metrics(registry).or(handle_liveness(liveness));
     tracing::info!(%address, "serving metrics");
     task::spawn(warp::serve(filter).bind(address))
 }
@@ -27,6 +36,22 @@ pub fn handle_metrics(
                 tracing::error!("metrics could not be from_utf8'd: {}", e);
                 String::default()
             }
+        }
+    })
+}
+
+fn handle_liveness(
+    liveness_checker: Arc<dyn LivenessChecking>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    warp::path("liveness").and_then(move || {
+        let liveness_checker = liveness_checker.clone();
+        async move {
+            let status = if liveness_checker.is_alive().await {
+                warp::http::StatusCode::OK
+            } else {
+                warp::http::StatusCode::SERVICE_UNAVAILABLE
+            };
+            Result::<_, Infallible>::Ok(warp::reply::with_status(warp::reply(), status))
         }
     })
 }

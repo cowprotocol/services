@@ -33,7 +33,7 @@ pub fn serve_task(
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
-        orderbook,
+        orderbook.clone(),
         fee_calculator,
         price_estimator,
         metrics,
@@ -44,7 +44,7 @@ pub fn serve_task(
 
     tracing::info!(%metrics_address, "serving metrics");
     metrics_address.set_port(DEFAULT_METRICS_PORT);
-    serve_metrics(registry, metrics_address)
+    serve_metrics(registry, orderbook, metrics_address)
 }
 
 /**
