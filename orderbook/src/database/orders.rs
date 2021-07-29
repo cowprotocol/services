@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
 use futures::{stream::TryStreamExt, StreamExt};
+use hex_literal::hex;
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
     Signature, SigningScheme,
@@ -56,6 +57,30 @@ impl DbOrderKind {
     }
 }
 
+/// Location for which the sellAmount should be drawn upon order fulfilment
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "BalanceFrom")]
+#[sqlx(rename_all = "snake_case")]
+pub enum DbBalanceFrom {
+    /// Direct ERC20 allowances to the Vault relayer contract
+    Erc20,
+    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    Internal,
+    /// Internal balances to the Vault with GPv2 relayer approval
+    External,
+}
+
+/// Location for which the buyAmount should be transferred to order's receiver to upon fulfilment
+#[derive(sqlx::Type)]
+#[sqlx(type_name = "BalanceTo")]
+#[sqlx(rename_all = "snake_case")]
+pub enum DbBalanceTo {
+    /// Pay trade proceeds as an ERC20 token transfer
+    Erc20,
+    /// Pay trade proceeds as a Vault internal balance transfer
+    Internal,
+}
+
 #[derive(sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
@@ -98,8 +123,8 @@ impl OrderStoring for Postgres {
         const QUERY: &str = "\
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
-                valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme) \
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);";
+                valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme, settlement_contract, balance_from, balance_to) \
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18);";
         let receiver = order
             .order_creation
             .receiver
@@ -120,6 +145,11 @@ impl OrderStoring for Postgres {
             .bind(order.order_creation.partially_fillable)
             .bind(order.order_creation.signature.to_bytes().as_ref())
             .bind(DbSigningScheme::from(order.order_creation.signing_scheme))
+            // TODO - remove these in https://github.com/gnosis/gp-v2-services/issues/900
+            .bind(H160::from_slice(&hex!("3328f5f2cEcAF00a2443082B657CedEAf70bfAEf")).as_bytes())
+            .bind(DbBalanceFrom::Erc20)
+            .bind(DbBalanceTo::Erc20)
+            // End above TODO
             .execute(&self.pool)
             .await
             .map(|_| ())

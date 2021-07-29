@@ -671,7 +671,7 @@ mod tests {
             .with_sell_amount(100.into())
             .with_buy_token(H160::zero())
             .with_buy_amount(80.into())
-            .with_valid_to(u32::max_value())
+            .with_valid_to(u32::MAX)
             .with_kind(OrderKind::Sell)
             .sign_with(&DomainSeparator::default(), SecretKeyRef::from(&sk))
             .build();
