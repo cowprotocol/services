@@ -51,6 +51,7 @@ pub enum OrderCancellationResult {
 
 pub struct Orderbook {
     domain_separator: DomainSeparator,
+    settlement_contract: H160,
     database: Arc<dyn OrderStoring>,
     balance_fetcher: Box<dyn BalanceFetching>,
     fee_validator: Arc<EthAwareMinFeeCalculator>,
@@ -60,8 +61,10 @@ pub struct Orderbook {
 }
 
 impl Orderbook {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         domain_separator: DomainSeparator,
+        settlement_contract: H160,
         database: Arc<dyn OrderStoring>,
         balance_fetcher: Box<dyn BalanceFetching>,
         fee_validator: Arc<EthAwareMinFeeCalculator>,
@@ -71,6 +74,7 @@ impl Orderbook {
     ) -> Self {
         Self {
             domain_separator,
+            settlement_contract,
             database,
             balance_fetcher,
             fee_validator,
@@ -97,7 +101,11 @@ impl Orderbook {
         {
             return Ok(AddOrderResult::InsufficientFee);
         }
-        let order = match Order::from_order_creation(order, &self.domain_separator) {
+        let order = match Order::from_order_creation(
+            order,
+            &self.domain_separator,
+            self.settlement_contract,
+        ) {
             Some(order) => order,
             None => return Ok(AddOrderResult::InvalidSignature),
         };

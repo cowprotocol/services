@@ -347,6 +347,7 @@ pub mod tests {
                 ..Default::default()
             },
             &DomainSeparator::default(),
+            H160::default(),
         )
         .unwrap();
         assert!(inflight_order_filter(
@@ -364,6 +365,7 @@ pub mod tests {
                 ..Default::default()
             },
             &DomainSeparator::default(),
+            H160::default(),
         )
         .unwrap();
         let adjusted_order = inflight_order_filter(

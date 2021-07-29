@@ -438,6 +438,14 @@ components:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
+    SellTokenBalance:
+      description: Where should the sell token be drawn from?
+      type: string
+      enum: [ erc20, internal, external ]
+    BuyTokenBalance:
+      description: Where should the buy token be transfered to?
+      type: string
+      enum: [ erc20, internal ]
     OrderStatus:
       description: The current order status
       type: string
@@ -486,6 +494,12 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
+        sellTokenBalance:
+          $ref: "#/components/schemas/SellTokenBalance"
+          default: "erc20"
+        buyTokenBalance:
+          $ref: "#/components/schemas/BuyTokenBalance"
+          default: "erc20"
         from:
           description: |
             If set, the backend enforces that this address matches what is decoded as the signer of

@@ -38,7 +38,12 @@ pub struct Order {
 
 impl Default for Order {
     fn default() -> Self {
-        Self::from_order_creation(OrderCreation::default(), &DomainSeparator::default()).unwrap()
+        Self::from_order_creation(
+            OrderCreation::default(),
+            &DomainSeparator::default(),
+            H160::default(),
+        )
+        .unwrap()
     }
 }
 
@@ -55,6 +60,7 @@ impl Order {
     pub fn from_order_creation(
         order_creation: OrderCreation,
         domain: &DomainSeparator,
+        settlement_contract: H160,
     ) -> Option<Self> {
         let owner = order_creation.signature.validate(
             order_creation.signing_scheme,
@@ -66,6 +72,7 @@ impl Order {
                 creation_date: chrono::offset::Utc::now(),
                 owner,
                 uid: order_creation.uid(domain, &owner),
+                settlement_contract,
                 ..Default::default()
             },
             order_creation,
@@ -190,6 +197,10 @@ pub struct OrderCreation {
     pub partially_fillable: bool,
     pub signature: Signature,
     pub signing_scheme: SigningScheme,
+    #[serde(default)]
+    pub sell_token_balance: BalanceFrom,
+    #[serde(default)]
+    pub buy_token_balance: BalanceTo,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -215,6 +226,8 @@ impl Default for OrderCreation {
             partially_fillable: Default::default(),
             signing_scheme: SigningScheme::Eip712,
             signature: Default::default(),
+            sell_token_balance: Default::default(),
+            buy_token_balance: Default::default(),
         };
         result.signature = Signature::sign(
             result.signing_scheme,
@@ -345,6 +358,8 @@ pub struct OrderMetaData {
     pub executed_fee_amount: BigUint,
     pub invalidated: bool,
     pub status: OrderStatus,
+    #[serde(with = "h160_hexadecimal")]
+    pub settlement_contract: H160,
 }
 
 impl Default for OrderMetaData {
@@ -360,6 +375,7 @@ impl Default for OrderMetaData {
             executed_fee_amount: Default::default(),
             invalidated: Default::default(),
             status: OrderStatus::Open,
+            settlement_contract: H160::default(),
         }
     }
 }
@@ -460,6 +476,42 @@ impl Default for OrderKind {
     }
 }
 
+/// Location for which the sellAmount should be drawn upon order fulfilment
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[enumeration(case_insensitive)]
+#[serde(rename_all = "snake_case")]
+pub enum BalanceFrom {
+    /// Direct ERC20 allowances to the Vault relayer contract
+    Erc20,
+    /// ERC20 allowances to the Vault with GPv2 relayer approval
+    Internal,
+    /// Internal balances to the Vault with GPv2 relayer approval
+    External,
+}
+
+impl Default for BalanceFrom {
+    fn default() -> Self {
+        Self::Erc20
+    }
+}
+
+/// Location for which the buyAmount should be transferred to order's receiver to upon fulfilment
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[enumeration(case_insensitive)]
+#[serde(rename_all = "snake_case")]
+pub enum BalanceTo {
+    /// Pay trade proceeds as an ERC20 token transfer
+    Erc20,
+    /// Pay trade proceeds as a Vault internal balance transfer
+    Internal,
+}
+
+impl Default for BalanceTo {
+    fn default() -> Self {
+        Self::Erc20
+    }
+}
+
 pub fn debug_app_data(
     app_data: &[u8; 32],
     formatter: &mut std::fmt::Formatter,
@@ -511,6 +563,9 @@ mod tests {
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
             "signingScheme": "eip712",
             "status": "open",
+            "settlementContract": "0x0000000000000000000000000000000000000002",
+            "sellTokenBalance": "external",
+            "buyTokenBalance": "internal",
         });
         let expected = Order {
             order_meta_data: OrderMetaData {
@@ -523,8 +578,8 @@ mod tests {
                 executed_sell_amount_before_fees: BigUint::from_bytes_be(&[4]),
                 executed_fee_amount: BigUint::from_bytes_be(&[1]),
                 invalidated: true,
-
                 status: OrderStatus::Open,
+                settlement_contract: H160::from_low_u64_be(2),
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),
@@ -549,6 +604,8 @@ mod tests {
                     .unwrap(),
                 },
                 signing_scheme: SigningScheme::Eip712,
+                sell_token_balance: BalanceFrom::External,
+                buy_token_balance: BalanceTo::Internal,
             },
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
@@ -588,6 +645,8 @@ mod tests {
                 partially_fillable: false,
                 signature: Signature::from_bytes(&signature),
                 signing_scheme: *signing_scheme,
+                sell_token_balance: Default::default(),
+                buy_token_balance: Default::default(),
             };
 
             let uid = order.uid(&domain_separator, &expected_owner);

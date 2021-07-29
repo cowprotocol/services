@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
 use futures::{stream::TryStreamExt, StreamExt};
-use hex_literal::hex;
+use model::order::{BalanceFrom, BalanceTo};
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
     Signature, SigningScheme,
@@ -70,6 +70,23 @@ pub enum DbBalanceFrom {
     External,
 }
 
+impl DbBalanceFrom {
+    pub fn from(order_kind: BalanceFrom) -> Self {
+        match order_kind {
+            BalanceFrom::Erc20 => Self::Erc20,
+            BalanceFrom::Internal => Self::Internal,
+            BalanceFrom::External => Self::External,
+        }
+    }
+    fn into(self) -> BalanceFrom {
+        match self {
+            Self::Erc20 => BalanceFrom::Erc20,
+            Self::Internal => BalanceFrom::Internal,
+            Self::External => BalanceFrom::External,
+        }
+    }
+}
+
 /// Location for which the buyAmount should be transferred to order's receiver to upon fulfilment
 #[derive(sqlx::Type)]
 #[sqlx(type_name = "BalanceTo")]
@@ -79,6 +96,21 @@ pub enum DbBalanceTo {
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
+}
+
+impl DbBalanceTo {
+    pub fn from(order_kind: BalanceTo) -> Self {
+        match order_kind {
+            BalanceTo::Erc20 => Self::Erc20,
+            BalanceTo::Internal => Self::Internal,
+        }
+    }
+    fn into(self) -> BalanceTo {
+        match self {
+            Self::Erc20 => BalanceTo::Erc20,
+            Self::Internal => BalanceTo::Internal,
+        }
+    }
 }
 
 #[derive(sqlx::Type)]
@@ -145,11 +177,9 @@ impl OrderStoring for Postgres {
             .bind(order.order_creation.partially_fillable)
             .bind(order.order_creation.signature.to_bytes().as_ref())
             .bind(DbSigningScheme::from(order.order_creation.signing_scheme))
-            // TODO - remove these in https://github.com/gnosis/gp-v2-services/issues/900
-            .bind(H160::from_slice(&hex!("3328f5f2cEcAF00a2443082B657CedEAf70bfAEf")).as_bytes())
-            .bind(DbBalanceFrom::Erc20)
-            .bind(DbBalanceTo::Erc20)
-            // End above TODO
+            .bind(order.order_meta_data.settlement_contract.as_bytes())
+            .bind(DbBalanceFrom::from(order.order_creation.sell_token_balance))
+            .bind(DbBalanceTo::from(order.order_creation.buy_token_balance))
             .execute(&self.pool)
             .await
             .map(|_| ())
@@ -190,7 +220,8 @@ impl OrderStoring for Postgres {
             SELECT \
                 o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, \
                 o.buy_amount, o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, \
-                o.signature, o.receiver, o.signing_scheme, \
+                o.signature, o.receiver, o.signing_scheme, o.settlement_contract, o.balance_from, \
+                o.balance_to, \
                 COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
                 COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
                 COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
@@ -250,6 +281,9 @@ struct OrdersQueryRow {
     invalidated: bool,
     receiver: Option<Vec<u8>>,
     signing_scheme: DbSigningScheme,
+    settlement_contract: Vec<u8>,
+    balance_from: DbBalanceFrom,
+    balance_to: DbBalanceTo,
 }
 
 impl OrdersQueryRow {
@@ -300,6 +334,7 @@ impl OrdersQueryRow {
             executed_fee_amount,
             invalidated: self.invalidated,
             status,
+            settlement_contract: h160_from_vec(self.settlement_contract)?,
         };
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,
@@ -325,6 +360,8 @@ impl OrdersQueryRow {
                     .map_err(|_| anyhow!("signature has wrong length"))?,
             ),
             signing_scheme: self.signing_scheme.into(),
+            sell_token_balance: self.balance_from.into(),
+            buy_token_balance: self.balance_to.into(),
         };
         Ok(Order {
             order_meta_data,
@@ -386,6 +423,9 @@ mod tests {
             sum_fee: BigDecimal::default(),
             invalidated: false,
             signing_scheme: DbSigningScheme::Eip712,
+            settlement_contract: vec![0; 20],
+            balance_from: DbBalanceFrom::External,
+            balance_to: DbBalanceTo::Internal,
         };
 
         assert_eq!(order_row.calculate_status(), OrderStatus::Open);
@@ -554,6 +594,8 @@ mod tests {
                     partially_fillable: true,
                     signature: Default::default(),
                     signing_scheme: *signing_scheme,
+                    sell_token_balance: BalanceFrom::Erc20,
+                    buy_token_balance: BalanceTo::Internal,
                 },
             };
             db.insert_order(&order).await.unwrap();

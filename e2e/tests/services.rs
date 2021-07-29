@@ -183,6 +183,7 @@ impl OrderbookServices {
         ));
         let orderbook = Arc::new(Orderbook::new(
             gpv2.domain_separator,
+            gpv2.settlement.address(),
             db.clone(),
             Box::new(Web3BalanceFetcher::new(
                 web3.clone(),
