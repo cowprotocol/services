@@ -2,7 +2,7 @@ CREATE TABLE app_data (
     app_data_hash bytea PRIMARY KEY,
     app_code bytea,
     referrer bytea,
-    file_blob bytea NOT NULL
+    file_blob jsonb NOT NULL
 );
 -- Get a specific referral.
 CREATE INDEX referrer ON app_data USING BTREE (referrer);

@@ -4,6 +4,7 @@ use futures::stream::TryStreamExt;
 use futures::StreamExt;
 use model::app_data::AppDataBlob;
 use primitive_types::{H160, H256};
+use serde_json::json;
 use std::borrow::Cow;
 
 #[async_trait::async_trait]
@@ -71,7 +72,7 @@ impl AppDataStoring for Postgres {
                     .referrer
                     .as_ref(),
             )
-            .bind(app_data_str.0.as_bytes())
+            .bind(json!(app_data_str.0))
             .execute(&self.pool)
             .await
             .map(|_| ())
@@ -124,13 +125,12 @@ impl AppDataStoring for Postgres {
 
 #[derive(sqlx::FromRow)]
 struct AppDataQueryRow {
-    file_blob: Vec<u8>,
+    file_blob: serde_json::value::Value,
 }
 
 impl AppDataQueryRow {
     fn into_app_data_blob(self) -> Result<AppDataBlob> {
-        let file_blob = String::from_utf8(self.file_blob)?;
-        Ok(AppDataBlob(file_blob))
+        Ok(AppDataBlob(self.file_blob))
     }
 }
 
@@ -156,7 +156,7 @@ mod tests {
             }
         }
         );
-        let app_data_blob = AppDataBlob(serde_json::to_string(&json).unwrap());
+        let app_data_blob = AppDataBlob(json);
         db.insert_app_data(&app_data_blob).await.unwrap();
         match db.insert_app_data(&app_data_blob).await {
             Err(InsertionError::DuplicatedRecord(_hash)) => (),
@@ -183,7 +183,7 @@ mod tests {
             }
         }
         );
-        let app_data_blob = AppDataBlob(serde_json::to_string(&json).unwrap());
+        let app_data_blob = AppDataBlob(json);
         db.insert_app_data(&app_data_blob).await.unwrap();
         let new_filter = AppDataFilter {
             app_data_hash: Some(app_data_blob.sha_hash().unwrap()),
@@ -210,7 +210,7 @@ mod tests {
             }
         }
         );
-        let app_data_blob = AppDataBlob(serde_json::to_string(&json).unwrap());
+        let app_data_blob = AppDataBlob(json);
         let new_filter = AppDataFilter {
             app_data_hash: None,
             referrer: Some(
@@ -225,6 +225,34 @@ mod tests {
             ),
         };
         db.insert_app_data(&app_data_blob).await.unwrap();
+        assert_eq!(
+            *db.app_data(&new_filter)
+                .try_collect::<Vec<_>>()
+                .await
+                .unwrap()
+                .first()
+                .unwrap(),
+            app_data_blob
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_app_data_roundtrip_with_minimal_data() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        let filter = AppDataFilter::default();
+        assert!(db.app_data(&filter).boxed().next().await.is_none());
+        let json = json!(
+        {
+            "appCode": serde_json::value::Value::Null,
+            "version": "1.0.0",
+            "metadata": serde_json::value::Value::Null
+        }
+        );
+        let app_data_blob = AppDataBlob(json);
+        db.insert_app_data(&app_data_blob).await.unwrap();
+        let new_filter = AppDataFilter::default();
         assert_eq!(
             *db.app_data(&new_filter)
                 .try_collect::<Vec<_>>()
