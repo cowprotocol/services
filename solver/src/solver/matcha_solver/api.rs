@@ -13,6 +13,10 @@ use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use web3::types::Bytes;
 
+// Matcha requires an address as an affiliate.
+// Hence we hand over the settlement contract address
+const AFFILIATE_ADDRESS: &str = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
+
 /// A Matcha API quote query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
@@ -64,6 +68,8 @@ impl SwapQuery {
             url.query_pairs_mut()
                 .append_pair("skipValidation", &skip_validation.to_string());
         }
+        url.query_pairs_mut()
+            .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
         url
     }
 }
@@ -174,7 +180,8 @@ mod tests {
                     ?sellToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
                     &buyToken=0x111111111117dc0aa78b770fa6a738034120c302\
                     &slippagePercentage=0.003\
-                    &sellAmount=1000000000000000000",
+                    &sellAmount=1000000000000000000\
+                    &affiliateAddress=0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
         );
     }
 
@@ -198,7 +205,8 @@ mod tests {
                     &buyToken=0x111111111117dc0aa78b770fa6a738034120c302\
                     &slippagePercentage=0.003\
                     &buyAmount=1000000000000000000\
-                    &skipValidation=true",
+                    &skipValidation=true\
+                    &affiliateAddress=0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
         );
     }
 
