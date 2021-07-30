@@ -148,12 +148,12 @@ impl Settlement {
 
     /// Returns the currently encoded trades.
     pub fn trades(&self) -> &[Trade] {
-        &self.encoder.trades()
+        self.encoder.trades()
     }
 
     // Computes the total surplus of all protocol trades (in wei ETH).
     pub fn total_surplus(&self, external_prices: &HashMap<H160, BigRational>) -> BigRational {
-        match self.encoder.total_surplus(&external_prices) {
+        match self.encoder.total_surplus(external_prices) {
             Some(value) => value,
             None => {
                 tracing::error!("Overflow computing objective value for: {:?}", self);

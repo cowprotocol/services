@@ -42,7 +42,7 @@ pub fn solve(
     while !orders.is_empty() {
         let (context_a, context_b) = split_into_contexts(orders.clone().into_iter(), pool);
         if let Some(valid_solution) =
-            solve_orders(orders.clone().into_iter(), &pool, &context_a, &context_b)
+            solve_orders(orders.clone().into_iter(), pool, &context_a, &context_b)
                 .filter(is_valid_solution)
         {
             return Some(valid_solution);
@@ -82,12 +82,12 @@ fn solve_orders(
     context_a: &TokenContext,
     context_b: &TokenContext,
 ) -> Option<Settlement> {
-    if context_a.is_excess_after_fees(&context_b, pool.fee) {
-        solve_with_uniswap(orders, pool, &context_b, &context_a)
-    } else if context_b.is_excess_after_fees(&context_a, pool.fee) {
-        solve_with_uniswap(orders, pool, &context_a, &context_b)
+    if context_a.is_excess_after_fees(context_b, pool.fee) {
+        solve_with_uniswap(orders, pool, context_b, context_a)
+    } else if context_b.is_excess_after_fees(context_a, pool.fee) {
+        solve_with_uniswap(orders, pool, context_a, context_b)
     } else {
-        solve_without_uniswap(orders, &context_a, &context_b).ok()
+        solve_without_uniswap(orders, context_a, context_b).ok()
     }
 }
 
@@ -120,8 +120,8 @@ fn solve_with_uniswap(
     shortage: &TokenContext,
     excess: &TokenContext,
 ) -> Option<Settlement> {
-    let uniswap_out = compute_uniswap_out(&shortage, &excess, pool.fee)?;
-    let uniswap_in = compute_uniswap_in(uniswap_out.clone(), &shortage, &excess, pool.fee);
+    let uniswap_out = compute_uniswap_out(shortage, excess, pool.fee)?;
+    let uniswap_in = compute_uniswap_in(uniswap_out.clone(), shortage, excess, pool.fee);
 
     let uniswap_out = big_rational_to_u256(&uniswap_out).ok()?;
     let uniswap_in = big_rational_to_u256(&uniswap_in).ok()?;

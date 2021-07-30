@@ -35,7 +35,7 @@ pub async fn submit(
         .expect("no default sender address")
         .address();
     let web3 = contract.raw_instance().web3();
-    let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, &address, nonce)
+    let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, address, nonce)
         .await
         .context("failed to get pending gas price")?;
 

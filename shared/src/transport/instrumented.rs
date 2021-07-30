@@ -69,7 +69,7 @@ where
         let start = Instant::now();
         self.inner
             .send_batch(requests)
-            .inspect(move |_| metrics.report_query(&"batch", start.elapsed()))
+            .inspect(move |_| metrics.report_query("batch", start.elapsed()))
             .boxed()
     }
 }

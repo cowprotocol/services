@@ -162,7 +162,7 @@ impl HttpSolver {
         let order_cost = self.order_cost(gas_price);
         let mut result: HashMap<usize, OrderModel> = HashMap::new();
         for (index, order) in orders {
-            let order_fee = self.order_fee(&order);
+            let order_fee = self.order_fee(order);
             let order = OrderModel {
                 sell_token: order.sell_token,
                 buy_token: order.buy_token,
@@ -465,7 +465,7 @@ impl Solver for HttpSolver {
     }
 
     fn name(&self) -> &'static str {
-        &self.name
+        self.name
     }
 }
 
@@ -513,7 +513,7 @@ mod tests {
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
-            &"Test Solver",
+            "Test Solver",
             Account::Local(Address::default(), None),
             url.parse().unwrap(),
             None,

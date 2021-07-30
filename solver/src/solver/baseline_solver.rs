@@ -71,7 +71,7 @@ impl BaselineSolvable for Amm {
 
     fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => amm_to_pool(&order).get_amount_in(in_token, output),
+            AmmOrder::ConstantProduct(order) => amm_to_pool(order).get_amount_in(in_token, output),
             AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
                 .ok()?
                 .get_amount_in(in_token, output),
@@ -175,14 +175,14 @@ impl BaselineSolver {
             model::order::OrderKind::Buy => {
                 let best = candidates
                     .iter()
-                    .filter_map(|path| estimate_sell_amount(order.buy_amount, path, &amms))
+                    .filter_map(|path| estimate_sell_amount(order.buy_amount, path, amms))
                     .min_by_key(|estimate| estimate.value)?;
                 (best.path, best.value, order.buy_amount)
             }
             model::order::OrderKind::Sell => {
                 let best = candidates
                     .iter()
-                    .filter_map(|path| estimate_buy_amount(order.sell_amount, path, &amms))
+                    .filter_map(|path| estimate_buy_amount(order.sell_amount, path, amms))
                     .max_by_key(|estimate| estimate.value)?;
                 (best.path, order.sell_amount, best.value)
             }

@@ -66,7 +66,7 @@ pub fn estimate_buy_amount<'a, L: BaselineSolvable>(
                             liquidity.get_amount_out(*current, (amount, previous)),
                         )
                     })
-                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(&amount_b))?;
+                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(amount_b))?;
                 path.push(best_liquidity);
                 Some((amount?, *current, path))
             },
@@ -135,7 +135,7 @@ pub fn estimate_spot_price<'a, L: BaselineSolvable>(
                     .get(&TokenPair::new(*current, previous)?)?
                     .iter()
                     .map(|liquidity| (liquidity, liquidity.get_spot_price(previous, *current)))
-                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(&amount_b))?;
+                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(amount_b))?;
                 path.push(best_liquidity);
                 Some((price_so_far * price?, *current, path))
             },

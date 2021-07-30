@@ -128,10 +128,10 @@ pub fn create(
             SolverType::Baseline => {
                 boxed(BaselineSolver::new(account.clone(), base_tokens.clone()))
             }
-            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone(), &"Mip")),
+            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone(), "Mip")),
             SolverType::Quasimodo => boxed(create_http_solver(
                 quasimodo_solver_url.clone(),
-                &"Quasimodo",
+                "Quasimodo",
             )),
             SolverType::OneInch => {
                 let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(

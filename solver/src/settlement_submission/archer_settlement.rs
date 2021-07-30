@@ -110,7 +110,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
             );
 
             loop {
-                if let Some(hash) = find_mined_transaction(&self.web3, &transactions).await {
+                if let Some(hash) = find_mined_transaction(self.web3, &transactions).await {
                     tracing::info!("found mined transaction {}", hash);
                     return Ok(Some(hash));
                 }
@@ -211,7 +211,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
                 .append_to_execution_plan(block_coinbase::PayBlockCoinbase {
                     amount: tx_gas_cost_in_ether_wei,
                 });
-            let method = super::retry::settle_method_builder(&self.contract, settlement.into())
+            let method = super::retry::settle_method_builder(self.contract, settlement.into())
                 .from(self.account.clone())
                 .nonce(nonce)
                 // Wouldn't work because the function isn't payable.

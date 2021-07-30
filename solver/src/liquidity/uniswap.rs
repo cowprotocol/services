@@ -74,7 +74,7 @@ impl UniswapLikeLiquidity {
             pools.extend(
                 path_candidates
                     .iter()
-                    .flat_map(|candidate| token_path_to_pair_path(&candidate).into_iter()),
+                    .flat_map(|candidate| token_path_to_pair_path(candidate).into_iter()),
             );
         }
 

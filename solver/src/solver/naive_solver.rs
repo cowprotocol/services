@@ -66,7 +66,7 @@ fn settle_pair(
             return None;
         }
     };
-    multi_order_solver::solve(orders.into_iter(), &uniswap)
+    multi_order_solver::solve(orders.into_iter(), uniswap)
 }
 
 fn organize_orders_by_token_pair(

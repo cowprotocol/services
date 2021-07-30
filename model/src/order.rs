@@ -643,7 +643,7 @@ mod tests {
                 fee_amount: hex!("0de0b6b3a7640000").as_ref().into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                signature: Signature::from_bytes(&signature),
+                signature: Signature::from_bytes(signature),
                 signing_scheme: *signing_scheme,
                 sell_token_balance: Default::default(),
                 buy_token_balance: Default::default(),
@@ -679,7 +679,7 @@ mod tests {
         ] {
             let cancellation = OrderCancellation {
                 order_uid: OrderUid(hex!("2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a")),
-                signature: Signature::from_bytes(&signature),
+                signature: Signature::from_bytes(signature),
                 signing_scheme: *signing_scheme,
             };
             let owner = cancellation.validate(&domain_separator).unwrap();

@@ -184,7 +184,7 @@ mod tests {
 
     async fn assert_trades(db: &Postgres, filter: &TradeFilter, expected: &[Trade]) {
         let filtered = db
-            .trades(&filter)
+            .trades(filter)
             .try_collect::<HashSet<Trade>>()
             .await
             .unwrap();
