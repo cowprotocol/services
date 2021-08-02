@@ -255,19 +255,30 @@ impl OrderCreation {
 
 // EIP-712
 impl OrderCreation {
-    // See https://github.com/gnosis/gp-v2-contracts/blob/main/src/contracts/libraries/GPv2Encoding.sol
-    pub const ORDER_TYPE_HASH: [u8; 32] =
-        hex!("d604be04a8c6d2df582ec82eba9b65ce714008acbf9122dd95e499569c8f1a80");
+    // See <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/src/contracts/libraries/GPv2Order.sol>
+    pub const TYPE_HASH: [u8; 32] =
+        hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
+
     // keccak256("sell")
-    const ORDER_KIND_SELL: [u8; 32] =
+    const KIND_SELL: [u8; 32] =
         hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
     // keccak256("buy")
-    const ORDER_KIND_BUY: [u8; 32] =
+    const KIND_BUY: [u8; 32] =
         hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
 
+    // keccak256("erc20")
+    const BALANCE_ERC20: [u8; 32] =
+        hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
+    // keccak256("external")
+    const BALANCE_EXTERNAL: [u8; 32] =
+        hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
+    // keccak256("internal")
+    const BALANCE_INTERNAL: [u8; 32] =
+        hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
+
     pub fn hash_struct(&self) -> [u8; 32] {
-        let mut hash_data = [0u8; 352];
-        hash_data[0..32].copy_from_slice(&Self::ORDER_TYPE_HASH);
+        let mut hash_data = [0u8; 416];
+        hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
         // Some slots are not assigned (stay 0) because all values are extended to 256 bits.
         hash_data[44..64].copy_from_slice(self.sell_token.as_fixed_bytes());
         hash_data[76..96].copy_from_slice(self.buy_token.as_fixed_bytes());
@@ -279,10 +290,19 @@ impl OrderCreation {
         hash_data[224..256].copy_from_slice(&self.app_data);
         self.fee_amount.to_big_endian(&mut hash_data[256..288]);
         hash_data[288..320].copy_from_slice(match self.kind {
-            OrderKind::Sell => &Self::ORDER_KIND_SELL,
-            OrderKind::Buy => &Self::ORDER_KIND_BUY,
+            OrderKind::Sell => &Self::KIND_SELL,
+            OrderKind::Buy => &Self::KIND_BUY,
         });
         hash_data[351] = self.partially_fillable as u8;
+        hash_data[352..384].copy_from_slice(match self.sell_token_balance {
+            SellTokenSource::Erc20 => &Self::BALANCE_ERC20,
+            SellTokenSource::External => &Self::BALANCE_EXTERNAL,
+            SellTokenSource::Internal => &Self::BALANCE_INTERNAL,
+        });
+        hash_data[384..416].copy_from_slice(match self.buy_token_balance {
+            BuyTokenDestination::Erc20 => &Self::BALANCE_ERC20,
+            BuyTokenDestination::Internal => &Self::BALANCE_INTERNAL,
+        });
         signing::keccak256(&hash_data)
     }
 }
@@ -316,12 +336,12 @@ impl Default for OrderCancellation {
 // EIP-712
 impl OrderCancellation {
     // keccak256("OrderCancellation(bytes orderUid)")
-    const ORDER_CANCELLATION_TYPE_HASH: [u8; 32] =
+    const TYPE_HASH: [u8; 32] =
         hex!("7b41b3a6e2b3cae020a3b2f9cdc997e0d420643957e7fea81747e984e47c88ec");
 
     pub fn hash_struct(&self) -> [u8; 32] {
         let mut hash_data = [0u8; 64];
-        hash_data[0..32].copy_from_slice(&Self::ORDER_CANCELLATION_TYPE_HASH);
+        hash_data[0..32].copy_from_slice(&Self::TYPE_HASH);
         hash_data[32..64].copy_from_slice(&signing::keccak256(&self.order_uid.0));
         signing::keccak256(&hash_data)
     }
@@ -614,43 +634,49 @@ mod tests {
         assert_eq!(serialized, value);
     }
 
-    // these two signature tests have been created by printing the order and signature information
     // from the test `should recover signing address for all supported ECDSA-based schemes` in
-    // https://github.com/gnosis/gp-v2-contracts/blob/main/test/GPv2Signing.test.ts .
+    // <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/test/GPv2Signing.test.ts#L280>.
     #[test]
     fn order_creation_signature() {
         let domain_separator = DomainSeparator(hex!(
             "74e0b11bd18120612556bae4578cfd3a254d7e2495f543c569a92ff5794d9b09"
         ));
         let expected_owner = H160(hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8"));
-        let expected_uid = OrderUid(hex!("f308e6d59020614692e6d60e53689343e8aa9a3e21670da7e3153aecc5500e6a70997970c51812dc3a010c7d01b50e0d17dc79c8ffffffff"));
-
-        let eip712_signature = hex!("32f1261f1a30c4f9b3e7d17f572ded5c5f4077edce0c105d82c87fd63ae1f9a93bc8e28b1fe390fa45af8217e90c7cf506996c06cdeae9d18f51444e3520d17c1c");
-        let ethsign_signature = hex!("cca651a8260b08f318ffd8cd397919368a604836d17322cc4a7ab18eb9d8186e2f73a5b9d6a4a19816771caa776e0a37506d8f3ad2cc2327d4c3709eb66058031c");
 
         for (signing_scheme, signature) in &[
-            (SigningScheme::Eip712, eip712_signature),
-            (SigningScheme::EthSign, ethsign_signature),
+            (
+                SigningScheme::Eip712,
+                hex!(
+                    "59c0f5c151071c1320575f6da826a6c276525bbe733234bad1afb2879657d65d
+                     2afe6812746f4cc97f28f3a5dfdbfc7087511695d23da5e9792cd7ed6c9ddeb7
+                     1c"
+                ),
+            ),
+            (
+                SigningScheme::EthSign,
+                hex!(
+                    "bf3bc5a9b60d08dc05768320553ba59a6f301d985903618cfc002e8a61cb78b5
+                     5d4a474a43a60193d90cda35ff2764f3913b47e5b5b87770064f549fe871afcc
+                     1b"
+                ),
+            ),
         ] {
             let order = OrderCreation {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
                 receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
-                sell_amount: hex!("0246ddf97976680000").as_ref().into(),
-                buy_amount: hex!("b98bc829a6f90000").as_ref().into(),
-                valid_to: 4294967295,
+                sell_amount: 0x0246ddf97976680000_u128.into(),
+                buy_amount: 0xb98bc829a6f90000_u128.into(),
+                valid_to: 0xffffffff,
                 app_data: hex!("0000000000000000000000000000000000000000000000000000000000000000"),
-                fee_amount: hex!("0de0b6b3a7640000").as_ref().into(),
+                fee_amount: 0x0de0b6b3a7640000_u128.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
-                signature: Signature::from_bytes(signature),
+                sell_token_balance: SellTokenSource::Erc20,
+                buy_token_balance: BuyTokenDestination::Erc20,
                 signing_scheme: *signing_scheme,
-                sell_token_balance: Default::default(),
-                buy_token_balance: Default::default(),
+                signature: Signature::from_bytes(signature),
             };
-
-            let uid = order.uid(&domain_separator, &expected_owner);
-            assert_eq!(uid, expected_uid);
 
             let owner = order
                 .signature
@@ -660,8 +686,41 @@ mod tests {
         }
     }
 
-    // from the test `should recover signing address for all supported signing schemes` in
-    // https://github.com/gnosis/gp-v2-contracts/blob/main/test/sign.test.ts .
+    // from the test `should compute order unique identifier` in
+    // <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/test/GPv2Signing.test.ts#L143>
+    #[test]
+    fn compute_order_uid() {
+        let domain_separator = DomainSeparator(hex!(
+            "74e0b11bd18120612556bae4578cfd3a254d7e2495f543c569a92ff5794d9b09"
+        ));
+        let owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8").into();
+        let order = OrderCreation {
+            sell_token: hex!("0101010101010101010101010101010101010101").into(),
+            buy_token: hex!("0202020202020202020202020202020202020202").into(),
+            receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
+            sell_amount: 0x0246ddf97976680000_u128.into(),
+            buy_amount: 0xb98bc829a6f90000_u128.into(),
+            valid_to: 0xffffffff,
+            app_data: hex!("0000000000000000000000000000000000000000000000000000000000000000"),
+            fee_amount: 0x0de0b6b3a7640000_u128.into(),
+            kind: OrderKind::Sell,
+            partially_fillable: false,
+            sell_token_balance: SellTokenSource::Erc20,
+            buy_token_balance: BuyTokenDestination::Erc20,
+            // Other properties are not considered in the order UID.
+            ..Default::default()
+        };
+
+        assert_eq!(
+            order.uid(&domain_separator, &owner).0,
+            hex!(
+                "0e45d31fd31b28c26031cdd81b35a8938b2ccca2cc425fcf440fd3bfed1eede9
+                 70997970c51812dc3a010c7d01b50e0d17dc79c8
+                 ffffffff"
+            ),
+        );
+    }
+
     #[test]
     fn order_cancellation_signature_typed_data() {
         let domain_separator = DomainSeparator(hex!(
