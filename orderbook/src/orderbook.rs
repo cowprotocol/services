@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use futures::TryStreamExt;
-use model::order::{OrderCancellation, OrderCreationPayload};
+use model::order::{BuyTokenDestination, OrderCancellation, OrderCreationPayload, SellTokenSource};
 use model::{
     order::{Order, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
@@ -36,6 +36,8 @@ pub enum AddOrderResult {
     UnsupportedToken(H160),
     TransferEthToContract,
     SameBuyAndSellToken,
+    UnsupportedBuyTokenDestination(BuyTokenDestination),
+    UnsupportedSellTokenSource(SellTokenSource),
 }
 
 #[derive(Debug)]
@@ -86,6 +88,19 @@ impl Orderbook {
 
     pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
         let order = payload.order_creation;
+
+        // Temporary - reject new order types until last stage of balancer integration
+        if order.buy_token_balance != BuyTokenDestination::Erc20 {
+            return Ok(AddOrderResult::UnsupportedBuyTokenDestination(
+                order.buy_token_balance,
+            ));
+        }
+        if order.sell_token_balance != SellTokenSource::Erc20 {
+            return Ok(AddOrderResult::UnsupportedSellTokenSource(
+                order.sell_token_balance,
+            ));
+        }
+
         if order.sell_token == order.buy_token {
             return Ok(AddOrderResult::SameBuyAndSellToken);
         }

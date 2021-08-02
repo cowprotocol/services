@@ -670,6 +670,8 @@ components:
               UnsupportedToken,
               WrongOwner,
               SameBuyAndSellToken,
+              UnsupportedBuyTokenDestination,
+              UnsupportedSellTokenSource,
             ]
         description:
           type: string
