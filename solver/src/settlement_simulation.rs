@@ -37,10 +37,17 @@ pub async fn simulate_settlements(
                 crate::settlement_submission::retry::settle_method_builder(contract, settlement)
                     .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)));
             let transaction_builder = method.tx.clone();
-            let view = method.view().block(match block {
-                Block::FixedWithTenderly(block) => BlockId::Number(block.into()),
-                Block::LatestWithoutTenderly => BlockId::Number(BlockNumber::Latest),
-            });
+            let view = method
+                .view()
+                .block(match block {
+                    Block::FixedWithTenderly(block) => BlockId::Number(block.into()),
+                    Block::LatestWithoutTenderly => BlockId::Number(BlockNumber::Latest),
+                })
+                // Since we now supply the gas price for the simulation, make sure to also
+                // set a gas limit so we don't get failed simulations because of insufficient
+                // solver balance for the default ~150M gas limit. Limit to around the
+                // block gas limit (since we can't fit more anyway).
+                .gas(15_000_000.into());
             (view.batch_call(&mut batch), transaction_builder)
         })
         .collect::<Vec<_>>();
