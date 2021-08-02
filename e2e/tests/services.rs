@@ -50,7 +50,7 @@ pub fn to_wei(base: u32) -> U256 {
 }
 
 pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
-    let weth = WETH9::at(&web3, weth_address);
+    let weth = WETH9::at(web3, weth_address);
     solver::orderbook::OrderBookApi::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
         weth,
@@ -65,7 +65,7 @@ pub struct GPv2 {
 }
 impl GPv2 {
     pub async fn fetch(web3: &Web3, designated_solver: &Account) -> Self {
-        let settlement = solver::get_settlement_contract(&web3, designated_solver.clone())
+        let settlement = solver::get_settlement_contract(web3, designated_solver.clone())
             .await
             .expect("Failed to load deployed GPv2Settlement");
         let allowance = settlement
@@ -95,10 +95,10 @@ pub struct UniswapContracts {
 }
 impl UniswapContracts {
     pub async fn fetch(web3: &Web3) -> Self {
-        let uniswap_factory = UniswapV2Factory::deployed(&web3)
+        let uniswap_factory = UniswapV2Factory::deployed(web3)
             .await
             .expect("Failed to load deployed UniswapFactory");
-        let uniswap_router = UniswapV2Router02::deployed(&web3)
+        let uniswap_router = UniswapV2Router02::deployed(web3)
             .await
             .expect("Failed to load deployed UniswapRouter");
         Self {
