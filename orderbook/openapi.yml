@@ -438,11 +438,11 @@ components:
       description: Is this a buy order or sell order?
       type: string
       enum: [buy, sell]
-    SellTokenBalance:
+    SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
       enum: [ erc20, internal, external ]
-    BuyTokenBalance:
+    BuyTokenDestination:
       description: Where should the buy token be transfered to?
       type: string
       enum: [ erc20, internal ]
@@ -494,11 +494,11 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
-        sellTokenBalance:
-          $ref: "#/components/schemas/SellTokenBalance"
+        sellTokenSource:
+          $ref: "#/components/schemas/SellTokenSource"
           default: "erc20"
-        buyTokenBalance:
-          $ref: "#/components/schemas/BuyTokenBalance"
+        buyTokenDestination:
+          $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
         from:
           description: |

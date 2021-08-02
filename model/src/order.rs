@@ -198,9 +198,9 @@ pub struct OrderCreation {
     pub signature: Signature,
     pub signing_scheme: SigningScheme,
     #[serde(default)]
-    pub sell_token_balance: BalanceFrom,
+    pub sell_token_balance: SellTokenSource,
     #[serde(default)]
-    pub buy_token_balance: BalanceTo,
+    pub buy_token_balance: BuyTokenDestination,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -476,11 +476,11 @@ impl Default for OrderKind {
     }
 }
 
-/// Location for which the sellAmount should be drawn upon order fulfilment
+/// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
 #[enumeration(case_insensitive)]
 #[serde(rename_all = "snake_case")]
-pub enum BalanceFrom {
+pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
     Erc20,
     /// ERC20 allowances to the Vault with GPv2 relayer approval
@@ -489,24 +489,24 @@ pub enum BalanceFrom {
     External,
 }
 
-impl Default for BalanceFrom {
+impl Default for SellTokenSource {
     fn default() -> Self {
         Self::Erc20
     }
 }
 
-/// Location for which the buyAmount should be transferred to order's receiver to upon fulfilment
+/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
 #[enumeration(case_insensitive)]
 #[serde(rename_all = "snake_case")]
-pub enum BalanceTo {
+pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
 }
 
-impl Default for BalanceTo {
+impl Default for BuyTokenDestination {
     fn default() -> Self {
         Self::Erc20
     }
@@ -604,8 +604,8 @@ mod tests {
                     .unwrap(),
                 },
                 signing_scheme: SigningScheme::Eip712,
-                sell_token_balance: BalanceFrom::External,
-                buy_token_balance: BalanceTo::Internal,
+                sell_token_balance: SellTokenSource::External,
+                buy_token_balance: BuyTokenDestination::Internal,
             },
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
