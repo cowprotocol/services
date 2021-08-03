@@ -78,6 +78,9 @@ pub enum ParaswapResponseError {
     #[error("Too much slippage on quote - Please Retry!")]
     TooMuchSlippageOnQuote,
 
+    #[error("Error getParaSwapPool - From Price Route {0}")]
+    GetParaswapPool(String),
+
     // Connectivity or non-response error
     #[error("Failed on send")]
     Send(reqwest::Error),
@@ -109,6 +112,9 @@ fn parse_paraswap_response_text(
             "Too much slippage on quote, please try again" => {
                 Err(ParaswapResponseError::TooMuchSlippageOnQuote)
             }
+            "Error getParaSwapPool" => Err(ParaswapResponseError::GetParaswapPool(
+                query_str.parse().unwrap(),
+            )),
             _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
                 "uncatalogued error message {}",
                 message
