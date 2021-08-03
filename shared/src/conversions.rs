@@ -51,9 +51,12 @@ impl<T: num::Integer + Clone> RatioExt<T> for Ratio<T> {
     }
 }
 
-pub trait U256Ext {
+pub trait U256Ext: Sized {
     fn to_big_int(&self) -> BigInt;
     fn to_big_rational(&self) -> BigRational;
+
+    fn checked_ceil_div(&self, other: &Self) -> Option<Self>;
+    fn ceil_div(&self, other: &Self) -> Self;
 }
 
 impl U256Ext for U256 {
@@ -62,6 +65,15 @@ impl U256Ext for U256 {
     }
     fn to_big_rational(&self) -> BigRational {
         u256_to_big_rational(self)
+    }
+
+    fn checked_ceil_div(&self, other: &Self) -> Option<Self> {
+        self.checked_add(other.checked_sub(1.into())?)?
+            .checked_div(*other)
+    }
+    fn ceil_div(&self, other: &Self) -> Self {
+        self.checked_ceil_div(other)
+            .expect("ceiling division arithmetic error")
     }
 }
 

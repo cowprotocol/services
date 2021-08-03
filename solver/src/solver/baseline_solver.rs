@@ -59,42 +59,76 @@ enum AmmOrder {
     WeightedProduct(WeightedProductOrder),
 }
 
+impl BaselineSolvable for ConstantProductOrder {
+    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+        amm_to_pool(self).get_amount_out(out_token, input)
+    }
+
+    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+        amm_to_pool(self).get_amount_in(in_token, output)
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        amm_to_pool(self).get_spot_price(base_token, quote_token)
+    }
+
+    fn gas_cost(&self) -> usize {
+        amm_to_pool(self).gas_cost()
+    }
+}
+
+impl BaselineSolvable for WeightedProductOrder {
+    fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_amount_out(out_token, input)
+    }
+
+    fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_amount_in(in_token, output)
+    }
+
+    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
+        amm_to_weighted_pool(self)
+            .ok()?
+            .get_spot_price(base_token, quote_token)
+    }
+
+    fn gas_cost(&self) -> usize {
+        amm_to_weighted_pool(self)
+            .map(|pool| pool.gas_cost())
+            .unwrap_or_default()
+    }
+}
+
 impl BaselineSolvable for Amm {
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => amm_to_pool(order).get_amount_out(out_token, input),
-            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
-                .ok()?
-                .get_amount_out(out_token, input),
+            AmmOrder::ConstantProduct(order) => order.get_amount_out(out_token, input),
+            AmmOrder::WeightedProduct(order) => order.get_amount_out(out_token, input),
         }
     }
 
     fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => amm_to_pool(order).get_amount_in(in_token, output),
-            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
-                .ok()?
-                .get_amount_in(in_token, output),
+            AmmOrder::ConstantProduct(order) => order.get_amount_in(in_token, output),
+            AmmOrder::WeightedProduct(order) => order.get_amount_in(in_token, output),
         }
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => {
-                amm_to_pool(order).get_spot_price(base_token, quote_token)
-            }
-            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
-                .ok()?
-                .get_spot_price(base_token, quote_token),
+            AmmOrder::ConstantProduct(order) => order.get_spot_price(base_token, quote_token),
+            AmmOrder::WeightedProduct(order) => order.get_spot_price(base_token, quote_token),
         }
     }
 
     fn gas_cost(&self) -> usize {
         match &self.order {
-            AmmOrder::ConstantProduct(order) => amm_to_pool(order).gas_cost(),
-            AmmOrder::WeightedProduct(order) => amm_to_weighted_pool(order)
-                .map(|pool| pool.gas_cost())
-                .unwrap_or_default(),
+            AmmOrder::ConstantProduct(order) => order.gas_cost(),
+            AmmOrder::WeightedProduct(order) => order.gas_cost(),
         }
     }
 }

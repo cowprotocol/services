@@ -67,11 +67,11 @@ async fn eth_integration(web3: Web3) {
     );
     tx!(
         solver_account,
-        token.mint(trader_buy_eth_a.address(), to_wei(50))
+        token.mint(trader_buy_eth_a.address(), to_wei(51))
     );
     tx!(
         solver_account,
-        token.mint(trader_buy_eth_b.address(), to_wei(50))
+        token.mint(trader_buy_eth_b.address(), to_wei(51))
     );
 
     let weth = WETH9::builder(&web3)
@@ -108,8 +108,8 @@ async fn eth_integration(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(50)));
-    tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(50)));
+    tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(51)));
+    tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(51)));
 
     let native_token = weth.address();
     let OrderbookServices {
@@ -149,6 +149,7 @@ async fn eth_integration(web3: Web3) {
         .with_kind(OrderKind::Buy)
         .with_sell_token(token.address())
         .with_sell_amount(to_wei(50))
+        .with_fee_amount(to_wei(1))
         .with_buy_token(BUY_ETH_ADDRESS)
         .with_buy_amount(to_wei(49))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
@@ -169,6 +170,7 @@ async fn eth_integration(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .with_sell_token(token.address())
         .with_sell_amount(to_wei(50))
+        .with_fee_amount(to_wei(1))
         .with_buy_token(BUY_ETH_ADDRESS)
         .with_buy_amount(to_wei(49))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
@@ -250,7 +252,7 @@ async fn eth_integration(web3: Web3) {
     assert_eq!(eth_balance(trader_buy_eth_a).await, to_wei(49));
     assert_eq!(
         eth_balance(trader_buy_eth_b).await,
-        U256::from(49_800_747_827_208_136_743u128)
+        U256::from(49_800_747_827_208_136_744_u128)
     );
 
     // Drive orderbook in order to check that all orders were settled

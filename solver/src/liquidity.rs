@@ -11,6 +11,8 @@ use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
 use shared::sources::balancer::pool_fetching::PoolTokenState;
+#[cfg(test)]
+use shared::sources::uniswap::pool_fetching::Pool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use strum_macros::{AsStaticStr, EnumVariantNames};
@@ -120,6 +122,18 @@ pub struct ConstantProductOrder {
 impl std::fmt::Debug for ConstantProductOrder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Constant Product AMM {:?}", self.tokens)
+    }
+}
+
+#[cfg(test)]
+impl From<Pool> for ConstantProductOrder {
+    fn from(pool: Pool) -> Self {
+        Self {
+            tokens: pool.tokens,
+            reserves: pool.reserves,
+            fee: pool.fee,
+            settlement_handling: tests::CapturingSettlementHandler::arc(),
+        }
     }
 }
 

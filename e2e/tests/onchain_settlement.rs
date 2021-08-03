@@ -67,7 +67,7 @@ async fn onchain_settlement(web3: Web3) {
     );
     tx!(
         solver_account,
-        token_a.mint(trader_a.address(), to_wei(100))
+        token_a.mint(trader_a.address(), to_wei(101))
     );
 
     let token_b = deploy_mintable_token(&web3).await;
@@ -75,10 +75,7 @@ async fn onchain_settlement(web3: Web3) {
         solver_account,
         token_b.mint(solver_account.address(), to_wei(100_000))
     );
-    tx!(
-        solver_account,
-        token_b.mint(trader_b.address(), to_wei(100))
-    );
+    tx!(solver_account, token_b.mint(trader_b.address(), to_wei(51)));
 
     // Create and fund Uniswap pool
     tx!(
@@ -108,8 +105,8 @@ async fn onchain_settlement(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(100)));
-    tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(100)));
+    tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(101)));
+    tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(51)));
 
     // Place Orders
     let native_token = token_a.address();
@@ -124,6 +121,7 @@ async fn onchain_settlement(web3: Web3) {
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
         .with_sell_amount(to_wei(100))
+        .with_fee_amount(to_wei(1))
         .with_buy_token(token_b.address())
         .with_buy_amount(to_wei(80))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
@@ -145,6 +143,7 @@ async fn onchain_settlement(web3: Web3) {
     let order_b = OrderBuilder::default()
         .with_sell_token(token_b.address())
         .with_sell_amount(to_wei(50))
+        .with_fee_amount(to_wei(1))
         .with_buy_token(token_a.address())
         .with_buy_amount(to_wei(40))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
@@ -220,14 +219,14 @@ async fn onchain_settlement(web3: Web3) {
         .call()
         .await
         .expect("Couldn't fetch TokenB's balance");
-    assert_eq!(balance, U256::from(99_650_498_453_042_316_810u128));
+    assert_eq!(balance, U256::from(99_650_498_453_042_316_811_u128));
 
     let balance = token_a
         .balance_of(trader_b.address())
         .call()
         .await
         .expect("Couldn't fetch TokenA's balance");
-    assert_eq!(balance, U256::from(50_175_363_672_226_073_522u128));
+    assert_eq!(balance, U256::from(50_175_363_672_226_073_523_u128));
 
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();

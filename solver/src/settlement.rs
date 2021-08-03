@@ -5,10 +5,10 @@ use crate::{
     liquidity::Settleable,
 };
 use anyhow::Result;
-use model::order::Order;
+use model::order::{Order, OrderKind};
 use num::{BigRational, Signed, Zero};
 use primitive_types::{H160, U256};
-use shared::conversions::U256Ext;
+use shared::conversions::U256Ext as _;
 use std::collections::HashMap;
 
 pub use settlement_encoder::SettlementEncoder;
@@ -19,6 +19,15 @@ pub struct Trade {
     pub sell_token_index: usize,
     pub buy_token_index: usize,
     pub executed_amount: U256,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct TradeExecution {
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee_amount: U256,
 }
 
 impl Trade {
@@ -60,6 +69,34 @@ impl Trade {
                 .checked_mul(self.executed_amount)?
                 .checked_div(order.sell_amount),
         }
+    }
+
+    /// Computes and returns the executed trade amounts given sell and buy prices.
+    pub fn executed_amounts(&self, sell_price: U256, buy_price: U256) -> Option<TradeExecution> {
+        let order = &self.order.order_creation;
+        let (sell_amount, buy_amount) = match order.kind {
+            OrderKind::Sell => {
+                let sell_amount = self.executed_amount;
+                let buy_amount = sell_amount
+                    .checked_mul(sell_price)?
+                    .checked_ceil_div(&buy_price)?;
+                (sell_amount, buy_amount)
+            }
+            OrderKind::Buy => {
+                let buy_amount = self.executed_amount;
+                let sell_amount = buy_amount.checked_mul(buy_price)?.checked_div(sell_price)?;
+                (sell_amount, buy_amount)
+            }
+        };
+        let fee_amount = self.executed_fee()?;
+
+        Some(TradeExecution {
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
+            sell_amount,
+            buy_amount,
+            fee_amount,
+        })
     }
 
     /// Encodes the settlement trade as a tuple, as expected by the smart
@@ -149,6 +186,20 @@ impl Settlement {
     /// Returns the currently encoded trades.
     pub fn trades(&self) -> &[Trade] {
         self.encoder.trades()
+    }
+
+    /// Returns an iterator of all executed trades.
+    pub fn executed_trades(&self) -> impl Iterator<Item = TradeExecution> + '_ {
+        self.trades()
+            .iter()
+            .map(move |trade| {
+                let order = &trade.order.order_creation;
+                trade.executed_amounts(
+                    self.clearing_price(order.sell_token)?,
+                    self.clearing_price(order.buy_token)?,
+                )
+            })
+            .map(|execution| execution.expect("invalid trade was added to encoder"))
     }
 
     // Computes the total surplus of all protocol trades (in wei ETH).
@@ -275,7 +326,86 @@ pub mod tests {
     }
 
     #[test]
-    pub fn total_surplus() {
+    fn sell_order_executed_amounts() {
+        let trade = Trade {
+            order: Order {
+                order_creation: OrderCreation {
+                    kind: OrderKind::Sell,
+                    sell_amount: 10.into(),
+                    buy_amount: 6.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            executed_amount: 5.into(),
+            ..Default::default()
+        };
+        let sell_price = 3.into();
+        let buy_price = 4.into();
+        let execution = trade.executed_amounts(sell_price, buy_price).unwrap();
+
+        assert_eq!(execution.sell_amount, 5.into());
+        assert_eq!(execution.buy_amount, 4.into()); // round up!
+    }
+
+    #[test]
+    fn buy_order_executed_amounts() {
+        let trade = Trade {
+            order: Order {
+                order_creation: OrderCreation {
+                    kind: OrderKind::Buy,
+                    sell_amount: 10.into(),
+                    buy_amount: 6.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            executed_amount: 5.into(),
+            ..Default::default()
+        };
+        let sell_price = 3.into();
+        let buy_price = 4.into();
+        let execution = trade.executed_amounts(sell_price, buy_price).unwrap();
+
+        assert_eq!(execution.sell_amount, 6.into()); // round down!
+        assert_eq!(execution.buy_amount, 5.into());
+    }
+
+    #[test]
+    fn trade_order_executed_amounts_overflow() {
+        for kind in [OrderKind::Sell, OrderKind::Buy] {
+            let order = Order {
+                order_creation: OrderCreation {
+                    kind,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            // mul
+            let trade = Trade {
+                order: order.clone(),
+                executed_amount: U256::MAX,
+                ..Default::default()
+            };
+            let sell_price = U256::from(2);
+            let buy_price = U256::one();
+            assert!(trade.executed_amounts(sell_price, buy_price).is_none());
+
+            // div
+            let trade = Trade {
+                order,
+                executed_amount: U256::one(),
+                ..Default::default()
+            };
+            let sell_price = U256::one();
+            let buy_price = U256::zero();
+            assert!(trade.executed_amounts(sell_price, buy_price).is_none());
+        }
+    }
+
+    #[test]
+    fn total_surplus() {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
 
