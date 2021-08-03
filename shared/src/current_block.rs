@@ -105,7 +105,7 @@ where
             .eth()
             .block_number()
             .await
-            .context("failed to get current block")?
+            .context("failed to get current block number")?
             .as_u64())
     }
 

@@ -24,7 +24,7 @@ impl LiquidityCollector {
             .orderbook_api
             .get_liquidity(inflight_trades)
             .await
-            .context("failed to get orderbook")?;
+            .context("failed to get orderbook liquidity")?;
         tracing::info!("got {} orders: {:?}", limit_orders.len(), limit_orders);
 
         let mut amms = vec![];
@@ -33,7 +33,7 @@ impl LiquidityCollector {
                 liquidity
                     .get_liquidity(limit_orders.iter(), at_block)
                     .await
-                    .context("failed to get pool")?
+                    .context("failed to get UniswapLike liquidity")?
                     .into_iter()
                     .map(Liquidity::ConstantProduct),
             );
