@@ -69,7 +69,7 @@ impl GPv2 {
             .await
             .expect("Failed to load deployed GPv2Settlement");
         let allowance = settlement
-            .allowance_manager()
+            .vault_relayer()
             .call()
             .await
             .expect("Couldn't get allowance manager address");

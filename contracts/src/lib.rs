@@ -1,6 +1,7 @@
 #[cfg(feature = "bin")]
 pub mod paths;
 
+include!(concat!(env!("OUT_DIR"), "/BalancerV2Authorizer.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
 include!(concat!(

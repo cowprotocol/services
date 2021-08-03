@@ -27,16 +27,24 @@ fn run() -> Result<()> {
     vendor
         .full()
         .github(
+            "BalancerV2Authorizer",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
+             pkg/deployments/deployed/mainnet/Authorizer.json",
+        )?
+        .github(
             "BalancerV2Vault",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/Vault.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
+             pkg/deployments/deployed/mainnet/Vault.json",
         )?
         .github(
             "BalancerV2WeightedPoolFactory",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/WeightedPoolFactory.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
+             pkg/deployments/deployed/mainnet/WeightedPoolFactory.json",
         )?
         .github(
             "BalancerV2WeightedPool2TokensFactory",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
+             pkg/deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
         )?
         .npm(
             "ERC20Mintable",
@@ -46,12 +54,12 @@ fn run() -> Result<()> {
             "GPv2AllowListAuthentication",
             // We use `_Implementation` because the use of a proxy contract makes
             // deploying  for the e2e tests more cumbersome.
-            "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.15/\
+            "@gnosis.pm/gp-v2-contracts@1.0.1/\
              deployments/mainnet/GPv2AllowListAuthentication_Implementation.json",
         )?
         .npm(
             "GPv2Settlement",
-            "@gnosis.pm/gp-v2-contracts@0.0.1-alpha.15/deployments/mainnet/GPv2Settlement.json",
+            "@gnosis.pm/gp-v2-contracts@1.0.1/deployments/mainnet/GPv2Settlement.json",
         )?
         .npm(
             "UniswapV2Factory",
@@ -67,7 +75,8 @@ fn run() -> Result<()> {
         .abi_only()
         .github(
             "BalancerV2WeightedPool",
-            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/pkg/deployments/extra-abis/WeightedPool.json",
+            "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
+             pkg/deployments/extra-abis/WeightedPool.json",
         )?
         .npm(
             "ERC20",

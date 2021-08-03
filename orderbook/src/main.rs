@@ -137,10 +137,10 @@ async fn main() {
         .await
         .expect("Couldn't load deployed settlement");
     let gp_allowance = settlement_contract
-        .allowance_manager()
+        .vault_relayer()
         .call()
         .await
-        .expect("Couldn't get allowance manager address");
+        .expect("Couldn't get vault relayer address");
     let native_token = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");

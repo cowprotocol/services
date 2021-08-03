@@ -35,7 +35,7 @@ pub trait BalanceFetching: Send + Sync {
 
 pub struct Web3BalanceFetcher {
     web3: Web3,
-    allowance_manager: H160,
+    vault_relayer: H160,
     settlement_contract: H160,
     // Mapping of address, token to balance, allowance
     balances: Mutex<HashMap<SubscriptionKey, SubscriptionValue>>,
@@ -54,10 +54,10 @@ struct SubscriptionValue {
 }
 
 impl Web3BalanceFetcher {
-    pub fn new(web3: Web3, allowance_manager: H160, settlement_contract: H160) -> Self {
+    pub fn new(web3: Web3, vault_relayer: H160, settlement_contract: H160) -> Self {
         Self {
             web3,
-            allowance_manager,
+            vault_relayer,
             settlement_contract,
             balances: Default::default(),
         }
@@ -89,7 +89,7 @@ impl Web3BalanceFetcher {
                         .balance_of(subscription.owner)
                         .batch_call(&mut batch),
                     instance
-                        .allowance(subscription.owner, self.allowance_manager)
+                        .allowance(subscription.owner, self.vault_relayer)
                         .batch_call(&mut batch),
                     std::future::ready(subscription),
                 )
@@ -123,7 +123,7 @@ impl Web3BalanceFetcher {
             .data
             .unwrap();
         let call_request = CallRequest {
-            from: Some(self.allowance_manager),
+            from: Some(self.vault_relayer),
             to: Some(token),
             data: Some(calldata),
             ..Default::default()
@@ -199,7 +199,7 @@ mod tests {
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let allowance = settlement.allowance_manager().call().await.unwrap();
+        let allowance = settlement.vault_relayer().call().await.unwrap();
         let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
         let owner = H160(hex!("07c2af75788814BA7e5225b2F5c951eD161cB589"));
         let token = H160(hex!("dac17f958d2ee523a2206206994597c13d831ec7"));
@@ -217,7 +217,7 @@ mod tests {
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let allowance = settlement.allowance_manager().call().await.unwrap();
+        let allowance = settlement.vault_relayer().call().await.unwrap();
         let fetcher = Web3BalanceFetcher::new(web3, allowance, settlement.address());
         let owner = H160(hex!("78045485dc4ad96f60937dad4b01b118958761ae"));
         // Token takes a fee.

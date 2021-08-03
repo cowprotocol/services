@@ -5,7 +5,7 @@
 use anyhow::{anyhow, bail, Context as _, Result};
 use contracts::*;
 use env_logger::Env;
-use ethcontract::{Address, Http, Web3};
+use ethcontract::{Address, Http, Web3, U256};
 use filetime::FileTime;
 use std::{
     fs,
@@ -33,6 +33,7 @@ async fn run() -> Result<()> {
     wait_for_node(&web3).await?;
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
+    let admin = accounts[0];
 
     macro_rules! deploy {
             ($contract:ident) => { deploy!($contract ()) };
@@ -60,24 +61,38 @@ async fn run() -> Result<()> {
             }};
         }
 
-    log::info!("deploying Uniswap contracts");
+    log::info!("deploying WETH");
     let weth = deploy!(ERC20Mintable() as "WETH9");
+
+    log::info!("deploying Balancer V2");
+    let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
+    let balancer_vault = deploy!(BalancerV2Vault(
+        balancer_authorizer.address(),
+        weth.address(),
+        U256::from(0),
+        U256::from(0),
+    ));
+
+    log::info!("deploying Uniswap");
     let uniswap_factory = deploy!(UniswapV2Factory(accounts[0]));
     deploy!(UniswapV2Router02(uniswap_factory.address(), weth.address()));
 
-    log::info!("deploying exchange contracts");
+    log::info!("deploying Gnosis Protocol V2");
     let gp_authentication = deploy!(GPv2AllowListAuthentication);
     gp_authentication
-        .initialize_manager(accounts[0])
+        .initialize_manager(admin)
         .send()
         .await
         .expect("failed to initialize manager");
     gp_authentication
-        .add_solver(accounts[0])
+        .add_solver(admin)
         .send()
         .await
         .expect("Failed to allow list account 0");
-    deploy!(GPv2Settlement(gp_authentication.address()));
+    deploy!(GPv2Settlement(
+        gp_authentication.address(),
+        balancer_vault.address(),
+    ));
 
     touch_build_script()
 }
