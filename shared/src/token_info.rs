@@ -32,12 +32,11 @@ pub trait TokenInfoFetching: Send + Sync {
 #[async_trait]
 impl TokenInfoFetching for TokenInfoFetcher {
     async fn get_token_infos(&self, addresses: &[H160]) -> HashMap<H160, TokenInfo> {
-        let web3 = Web3::new(self.web3.transport().clone());
         let mut batch = CallBatch::new(self.web3.transport());
         let futures = addresses
             .iter()
             .map(|address| {
-                let erc20 = ERC20::at(&web3, *address);
+                let erc20 = ERC20::at(&self.web3, *address);
                 erc20.methods().decimals().batch_call(&mut batch)
             })
             .collect::<Vec<_>>();

@@ -3,7 +3,7 @@ use anyhow::Result;
 use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{Account, H160, U256};
-use http_solver::{HttpSolver, SolverConfig};
+use http_solver::{buffers::BufferRetriever, HttpSolver, SolverConfig};
 use matcha_solver::MatchaSolver;
 use naive_solver::NaiveSolver;
 use oneinch_solver::OneInchSolver;
@@ -99,6 +99,10 @@ pub fn create(
         .checked_sub(TIMEOUT_SAFETY_BUFFER)
         .expect("solver_timeout too low");
 
+    let buffer_retriever = Arc::new(BufferRetriever::new(
+        web3.clone(),
+        settlement_contract.address(),
+    ));
     // Helper function to create http solver instances.
     let create_http_solver = |url: Url, name: &'static str| -> HttpSolver {
         HttpSolver::new(
@@ -113,6 +117,7 @@ pub fn create(
             native_token,
             token_info_fetcher.clone(),
             price_estimator.clone(),
+            buffer_retriever.clone(),
             network_id.clone(),
             chain_id,
             fee_discount_factor,
