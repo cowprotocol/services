@@ -5,12 +5,13 @@
 //! <https://api.0x.org/>
 
 use crate::solver::solver_utils::{debug_bytes, deserialize_decimal_f64, Slippage};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
+use thiserror::Error;
 use web3::types::Bytes;
 
 // Matcha requires an address as an affiliate.
@@ -75,7 +76,7 @@ impl SwapQuery {
 }
 
 /// A Matcha API swap response.
-#[derive(Clone, Derivative, Deserialize, PartialEq)]
+#[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct SwapResponse {
@@ -97,7 +98,7 @@ pub struct SwapResponse {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait MatchaApi {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse>;
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, MatchaResponseError>;
 }
 
 /// Matcha API Client implementation.
@@ -119,20 +120,60 @@ impl DefaultMatchaApi {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum RawResponse {
+    ResponseOk(SwapResponse),
+    ResponseErr { error: String },
+}
+
+#[derive(Error, Debug)]
+pub enum MatchaResponseError {
+    #[error("ServerError from query {0}")]
+    ServerError(String),
+
+    #[error("uncatalogued error message: {0}")]
+    UnknownMatchaError(String),
+
+    #[error(transparent)]
+    DeserializeError(#[from] serde_json::Error),
+
+    // Recovered Response but failed on async call of response.text()
+    #[error(transparent)]
+    TextFetch(reqwest::Error),
+
+    // Connectivity or non-response error
+    #[error("Failed on send")]
+    Send(reqwest::Error),
+}
+
 #[async_trait::async_trait]
 impl MatchaApi for DefaultMatchaApi {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse> {
-        let text: String = self
-            .client
-            .get(query.into_url(&self.base_url))
-            .send()
-            .await
-            .context("SwapQuery failed")?
-            .text()
-            .await?;
-        serde_json::from_str::<SwapResponse>(&text)
-            .context(format!("SwapQuery result parsing failed: {}", text))
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, MatchaResponseError> {
+        let query_str = format!("{:?}", &query);
+        let response_result = self.client.get(query.into_url(&self.base_url)).send().await;
+        match response_result {
+            Ok(response) => match response.text().await {
+                Ok(response_text) => parse_matcha_response_text(&response_text, &query_str),
+                Err(text_fetch_err) => Err(MatchaResponseError::TextFetch(text_fetch_err)),
+            },
+            Err(send_err) => Err(MatchaResponseError::Send(send_err)),
+        }
+    }
+}
+
+fn parse_matcha_response_text(
+    response_text: &str,
+    query: &str,
+) -> Result<SwapResponse, MatchaResponseError> {
+    match serde_json::from_str::<RawResponse>(response_text) {
+        Ok(RawResponse::ResponseOk(response)) => Ok(response),
+        Ok(RawResponse::ResponseErr { error: message }) => match &message[..] {
+            "Server Error" => Err(MatchaResponseError::ServerError(format!("{:?}", query))),
+            _ => Err(MatchaResponseError::UnknownMatchaError(message)),
+        },
+        Err(err) => Err(MatchaResponseError::DeserializeError(err)),
     }
 }
 
@@ -156,9 +197,8 @@ mod tests {
             skip_validation: Some(true),
         };
 
-        let price_response: SwapResponse = matcha_client.get_swap(swap_query).await.unwrap();
-
-        println!("Price Response: {:?}", &price_response);
+        let price_response = matcha_client.get_swap(swap_query).await;
+        assert!(price_response.is_ok());
     }
 
     #[test]

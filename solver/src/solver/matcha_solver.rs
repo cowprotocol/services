@@ -21,8 +21,8 @@ pub mod api;
 
 use super::solver_utils::Slippage;
 use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
-use crate::solver::matcha_solver::api::MatchaApi;
-use anyhow::{ensure, Result};
+use crate::solver::matcha_solver::api::{MatchaApi, MatchaResponseError};
+use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
@@ -31,6 +31,7 @@ use reqwest::Client;
 use super::single_order_solver::SingleOrderSolving;
 
 use self::api::{DefaultMatchaApi, SwapQuery, SwapResponse};
+use crate::solver::solver_utils::SettlementError;
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
@@ -80,54 +81,67 @@ impl MatchaSolver {
 #[async_trait::async_trait]
 impl SingleOrderSolving for MatchaSolver {
     async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
-        let swap = match order.kind {
-            OrderKind::Sell => {
-                let query = SwapQuery {
-                    sell_token: order.sell_token,
-                    buy_token: order.buy_token,
-                    sell_amount: Some(order.sell_amount),
-                    buy_amount: None,
-                    slippage_percentage: Slippage::number_from_basis_points(
-                        STANDARD_MATCHA_SLIPPAGE_BPS,
-                    )
-                    .unwrap(),
-                    skip_validation: Some(true),
-                };
-
-                tracing::debug!("querying Matcha swap api with {:?}", query);
-                let swap = self.client.get_swap(query).await?;
-                tracing::debug!("proposed Matcha swap is {:?}", swap);
-
-                if swap.buy_amount < order.buy_amount {
-                    tracing::debug!("Order limit price not respected");
-                    return Ok(None);
+        let max_retries = 2;
+        for _ in 0..max_retries {
+            match self.try_settle_order(order.clone()).await {
+                Ok(settlement) => return Ok(settlement),
+                Err(err) if err.retryable => {
+                    tracing::debug!("Retrying Matcha settlement due to: {:?}", &err);
+                    continue;
                 }
-                swap
+                Err(err) => return Err(err.inner),
             }
-            OrderKind::Buy => {
-                let query = SwapQuery {
-                    sell_token: order.sell_token,
-                    buy_token: order.buy_token,
-                    sell_amount: None,
-                    buy_amount: Some(order.buy_amount),
-                    slippage_percentage: Slippage::number_from_basis_points(
-                        STANDARD_MATCHA_SLIPPAGE_BPS,
-                    )
-                    .unwrap(),
-                    skip_validation: Some(true),
-                };
+        }
+        // One last attempt, else throw converted error
+        self.try_settle_order(order).await.map_err(|err| err.inner)
+    }
 
-                tracing::debug!("querying Matcha swap api with {:?}", query);
-                let swap = self.client.get_swap(query).await?;
-                tracing::debug!("proposed Matcha swap is {:?}", swap);
+    fn account(&self) -> &Account {
+        &self.account
+    }
 
-                if swap.sell_amount > order.sell_amount {
-                    tracing::debug!("Order limit price not respected");
-                    return Ok(None);
-                }
-                swap
-            }
+    fn name(&self) -> &'static str {
+        "Matcha"
+    }
+}
+
+impl From<MatchaResponseError> for SettlementError {
+    fn from(err: MatchaResponseError) -> Self {
+        SettlementError {
+            inner: anyhow!("Matcha Response Error {:?}", err),
+            retryable: matches!(err, MatchaResponseError::ServerError(_)),
+        }
+    }
+}
+
+impl MatchaSolver {
+    async fn try_settle_order(
+        &self,
+        order: LimitOrder,
+    ) -> Result<Option<Settlement>, SettlementError> {
+        let (buy_amount, sell_amount) = match order.kind {
+            OrderKind::Buy => (Some(order.buy_amount), None),
+            OrderKind::Sell => (None, Some(order.sell_amount)),
         };
+        let query = SwapQuery {
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
+            sell_amount,
+            buy_amount,
+            slippage_percentage: Slippage::number_from_basis_points(STANDARD_MATCHA_SLIPPAGE_BPS)
+                .unwrap(),
+            skip_validation: Some(true),
+        };
+
+        tracing::debug!("querying Matcha swap api with {:?}", query);
+        let swap = self.client.get_swap(query).await?;
+        tracing::debug!("proposed Matcha swap is {:?}", swap);
+
+        if !swap_respects_limit_price(&swap, &order) {
+            tracing::debug!("Order limit price not respected");
+            return Ok(None);
+        }
+
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => swap.buy_amount,
             order.buy_token => swap.sell_amount,
@@ -144,13 +158,12 @@ impl SingleOrderSolving for MatchaSolver {
         settlement.encoder.append_to_execution_plan(swap);
         Ok(Some(settlement))
     }
+}
 
-    fn account(&self) -> &Account {
-        &self.account
-    }
-
-    fn name(&self) -> &'static str {
-        "Matcha"
+fn swap_respects_limit_price(swap: &SwapResponse, order: &LimitOrder) -> bool {
+    match order.kind {
+        OrderKind::Buy => swap.sell_amount <= order.sell_amount,
+        OrderKind::Sell => swap.buy_amount >= order.buy_amount,
     }
 }
 
@@ -494,5 +507,102 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(handler.calls(), vec![4321.into()]);
+    }
+
+    #[tokio::test]
+    async fn settle_order_retry_until_succeeds() {
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        let mut client = Box::new(MockMatchaApi::new());
+        let mut seq = Sequence::new();
+        client
+            .expect_get_swap()
+            .times(2)
+            .returning(|_| {
+                // Retryable error
+                Err(MatchaResponseError::ServerError(String::new()))
+            })
+            .in_sequence(&mut seq);
+        client
+            .expect_get_swap()
+            .times(1)
+            .returning(|_| {
+                Ok(SwapResponse {
+                    ..Default::default()
+                })
+            })
+            .in_sequence(&mut seq);
+
+        let solver = MatchaSolver {
+            account: account(),
+            client,
+            allowance_fetcher,
+        };
+
+        let order = LimitOrder {
+            ..Default::default()
+        };
+        assert!(solver.settle_order(order).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn settle_order_retry_until_exceeds() {
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        let mut client = Box::new(MockMatchaApi::new());
+        let mut seq = Sequence::new();
+        client
+            .expect_get_swap()
+            .times(3)
+            .returning(|_| {
+                // Retryable error
+                Err(MatchaResponseError::ServerError(String::new()))
+            })
+            .in_sequence(&mut seq);
+        let solver = MatchaSolver {
+            account: account(),
+            client,
+            allowance_fetcher,
+        };
+        let order = LimitOrder {
+            ..Default::default()
+        };
+        assert!(solver.settle_order(order).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn settle_order_unretryable_error() {
+        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
+        allowance_fetcher
+            .expect_get_approval()
+            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+
+        let mut client = Box::new(MockMatchaApi::new());
+        let mut seq = Sequence::new();
+        client
+            .expect_get_swap()
+            .times(1)
+            .returning(|_| {
+                // Non-Retryable error
+                Err(MatchaResponseError::UnknownMatchaError(String::new()))
+            })
+            .in_sequence(&mut seq);
+
+        let solver = MatchaSolver {
+            account: account(),
+            client,
+            allowance_fetcher,
+        };
+
+        let order = LimitOrder {
+            ..Default::default()
+        };
+        assert!(solver.settle_order(order).await.is_err());
     }
 }

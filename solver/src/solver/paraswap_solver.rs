@@ -6,13 +6,14 @@ use self::api::{
 };
 use super::single_order_solver::SingleOrderSolving;
 use crate::solver::paraswap_solver::api::ParaswapResponseError;
+use crate::solver::solver_utils::SettlementError;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, Error, Result};
+use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes, H160, U256};
@@ -65,21 +66,6 @@ impl ParaswapSolver {
             client: Box::new(DefaultParaswapApi { client }),
             slippage_bps,
             disabled_paraswap_dexs,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct SettlementError {
-    inner: anyhow::Error,
-    retryable: bool,
-}
-
-impl From<anyhow::Error> for SettlementError {
-    fn from(err: Error) -> Self {
-        SettlementError {
-            inner: err,
-            retryable: false,
         }
     }
 }
