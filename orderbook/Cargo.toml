@@ -21,9 +21,9 @@ bigdecimal = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 either = "1.0"
-ethcontract = { version = "0.13.1", default-features = false }
+ethcontract = { version = "0.14.0", default-features = false }
 futures = "0.3.16"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.2.0", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.0", features = ["web3_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 maplit = "1.0"
@@ -44,7 +44,7 @@ tokio = { version = "1.9", features = ["macros", "rt-multi-thread", "sync", "tim
 tracing = "0.1"
 url = "2.2"
 warp = "0.3"
-web3 = { version = "0.16", default-features = false }
+web3 = { version = "0.17", default-features = false }
 
 [dev-dependencies]
 secp256k1 = "0.20"

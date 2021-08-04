@@ -717,9 +717,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb1a6aadd606b3b67db0b633c58a0c4c53e451c15fcd7d19310d4e70ea52a0cb"
+checksum = "372c5c5a2d07745fd271b3249ac58b91364d62f386a23de85878d487f95bd764"
 dependencies = [
  "arrayvec 0.7.1",
  "ethcontract-common",
@@ -740,9 +740,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-common"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fcbca652571fb9bad74da74506cdbaa4d764c2c334f5e4099a66f2f4ba9aa1a5"
+checksum = "1398231b1b8c21ec3e4e8da2fd501357de132e289bff2fa44f9735107e499db3"
 dependencies = [
  "ethabi",
  "hex",
@@ -756,9 +756,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-generate"
-version = "0.13.1"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e7d8cee6759d3cf3afa4430871090816b307b3b044fc6df0bd33b0ddb33b5039"
+checksum = "4aaf6bcd00c0c8f77bf1b871b08a7730a5e470a1d8325e78855decbed3c0719f"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -972,7 +972,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.2.0#c31b6e891593eb659bd994b46b62f7e229e8d76b"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.0#4b489006d0eec7333a36fb0909c459bd0347dd4c"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -980,7 +980,10 @@ dependencies = [
  "log",
  "primitive-types",
  "serde",
+ "serde_json",
  "serde_with",
+ "tracing",
+ "url",
  "web3",
 ]
 
@@ -1311,9 +1314,9 @@ dependencies = [
 
 [[package]]
 name = "jsonrpc-core"
-version = "17.1.0"
+version = "18.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4467ab6dfa369b69e52bd0692e480c4d117410538526a57a304a0f2250fd95e"
+checksum = "14f7f76aef2d054868398427f6c54943cf3d1caa9a7ec7d0c38d69df97a965eb"
 dependencies = [
  "futures",
  "futures-executor",
@@ -3394,9 +3397,9 @@ dependencies = [
 
 [[package]]
 name = "web3"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bc4c18ae15621f764fab919f7e4a83d87163494cbc3460884debef7c6bc1bc6b"
+checksum = "cd24abe6f2b68e0677f843059faea87bcbd4892e39f02886f366d8222c3c540d"
 dependencies = [
  "arrayvec 0.5.2",
  "base64",
