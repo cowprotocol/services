@@ -1,11 +1,14 @@
 use crate::Web3;
 use anyhow::{anyhow, Context, Result};
 use gas_estimation::{
-    EthGasStation, GasNowGasStation, GasPriceEstimating, GnosisSafeGasStation,
+    EthGasStation, GasNowWebSocketGasStation, GasPriceEstimating, GnosisSafeGasStation,
     PriorityGasPriceEstimating, Transport,
 };
 use serde::de::DeserializeOwned;
-use std::sync::{Arc, Mutex};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use structopt::clap::arg_enum;
 
 arg_enum! {
@@ -57,7 +60,15 @@ pub async fn create_priority_estimator(
                 if !is_mainnet(&network_id) {
                     return Err(anyhow!("GasNow only supports mainnet"));
                 }
-                estimators.push(Box::new(GasNowGasStation::new(client.clone())))
+                let max_update_age = Duration::from_secs(30);
+                let mut estimator = GasNowWebSocketGasStation::new(max_update_age);
+                if tokio::time::timeout(Duration::from_secs(15), estimator.wait_for_first_update())
+                    .await
+                    .is_err()
+                {
+                    return Err(anyhow!("gas now estimator did not initialize in time"));
+                };
+                estimators.push(Box::new(estimator));
             }
             GasEstimatorType::GnosisSafe => estimators.push(Box::new(
                 GnosisSafeGasStation::with_network_id(&network_id, client.clone())?,
