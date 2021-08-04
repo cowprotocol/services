@@ -494,10 +494,10 @@ components:
           $ref: "#/components/schemas/Signature"
         signingScheme:
           $ref: "#/components/schemas/SigningScheme"
-        sellTokenSource:
+        sellTokenBalance:
           $ref: "#/components/schemas/SellTokenSource"
           default: "erc20"
-        buyTokenDestination:
+        buyTokenBalance:
           $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
         from:
