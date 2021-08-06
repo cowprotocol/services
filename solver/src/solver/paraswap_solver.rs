@@ -17,6 +17,7 @@ use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes, H160, U256};
+use itertools::Itertools;
 use maplit::hashmap;
 use reqwest::Client;
 use shared::token_info::TokenInfo;
@@ -89,18 +90,31 @@ impl From<ParaswapResponseError> for SettlementError {
 impl SingleOrderSolving for ParaswapSolver {
     async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
         let max_retries = 2;
+        let mut errors = vec![];
         for _ in 0..max_retries {
             match self.try_settle_order(order.clone()).await {
                 Ok(settlement) => return Ok(settlement),
                 Err(err) if err.retryable => {
                     tracing::debug!("Retrying Paraswap settlement due to: {:?}", &err);
+                    errors.push(err.inner);
                     continue;
                 }
                 Err(err) => return Err(err.inner),
             }
         }
         // One last attempt, else throw converted error
-        self.try_settle_order(order).await.map_err(|err| err.inner)
+        self.try_settle_order(order).await.map_err(|err| {
+            errors.push(err.inner);
+            anyhow!(format!(
+                "Paraswap Errored after {} attempts. Accumulated errors follow \n{}",
+                max_retries + 1,
+                errors
+                    .iter()
+                    .enumerate()
+                    .map(|(i, err)| format!("Attempt {}: {}", i + 1, err.to_string()))
+                    .join("\n")
+            ))
+        })
     }
 
     fn account(&self) -> &Account {
@@ -685,7 +699,9 @@ mod tests {
             .times(2)
             .returning(|_| {
                 // Retryable error
-                Err(ParaswapResponseError::BuildingTransaction(String::new()))
+                Err(ParaswapResponseError::BuildingTransaction(String::from(
+                    "Couldn't buidl tx!",
+                )))
             })
             .in_sequence(&mut seq);
         client
