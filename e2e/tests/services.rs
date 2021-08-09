@@ -194,6 +194,7 @@ impl OrderbookServices {
             Duration::from_secs(120),
             bad_token_detector,
             Box::new(web3.clone()),
+            WETH9::at(web3, native_token),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![orderbook.clone(), db.clone(), event_updater],

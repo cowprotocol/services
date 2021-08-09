@@ -293,6 +293,7 @@ async fn main() {
         args.min_order_validity_period,
         bad_token_detector,
         Box::new(web3.clone()),
+        native_token.clone(),
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![
