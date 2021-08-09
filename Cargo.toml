@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "alerter",
     "contracts",
     "e2e",
     "model",
@@ -9,6 +10,7 @@ members = [
 ]
 
 default-members = [
+    "alerter",
     "contracts",
     "model",
     "orderbook",

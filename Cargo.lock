@@ -48,6 +48,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "alerter"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "model",
+ "primitive-types",
+ "reqwest",
+ "serde",
+ "shared",
+ "structopt",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
 name = "ansi_term"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
