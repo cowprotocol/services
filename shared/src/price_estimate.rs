@@ -81,8 +81,12 @@ pub trait PriceEstimating: Send + Sync {
     ) -> Vec<Result<BigRational, PriceEstimationError>> {
         join_all(tokens.iter().map(|token| async move {
             if *token != denominator_token {
-                self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
-                    .await
+                let r = self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
+                    .await;
+                if r.is_ok() {
+                    println!("price({:?})={:?} [{}]", *token, r, denominator_token);
+                }
+                r
             } else {
                 Ok(num::one())
             }

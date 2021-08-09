@@ -193,6 +193,7 @@ arg_enum! {
     }
 }
 
+#[allow(unreachable_code)]
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
@@ -329,6 +330,13 @@ async fn main() {
         Arc::new(ListBasedDetector::deny_list(Vec::new())),
         native_token_contract.address(),
     ));
+    use hex_literal::hex;
+    let sell_token = H160::from_slice(&hex!("6b175474e89094c44da98b954eedeac495271d0f"));
+    let buy_token = H160::from_slice(&hex!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"));
+    let estimate = price_estimator.best_execution_spot_price(sell_token, buy_token).await;
+    println!("{:?}", estimate);
+    return;
+
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         settlement_contract.clone(),
