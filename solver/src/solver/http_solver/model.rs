@@ -116,7 +116,7 @@ pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
     pub amms: HashMap<usize, UpdatedAmmModel>,
-    pub ref_token: H160,
+    pub ref_token: Option<H160>,
     pub prices: HashMap<H160, Price>,
 }
 
@@ -421,5 +421,22 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(empty_solution).is_ok());
+    }
+
+    #[test]
+    fn decode_trivial_solution_without_ref_token() {
+        let x = r#"
+            {
+                "tokens": {},
+                "orders": {},
+                "metadata": {
+                    "environment": null
+                },
+                "ref_token": null,
+                "prices": {},
+                "uniswaps": {}
+            }
+        "#;
+        assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
     }
 }

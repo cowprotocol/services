@@ -285,7 +285,7 @@ mod tests {
         let settled = SettledBatchAuctionModel {
             orders: hashmap! { 0 => executed_order },
             amms: hashmap! { 0 => updated_uniswap, 1 => updated_balancer },
-            ref_token: t0,
+            ref_token: Some(t0),
             prices: hashmap! { t0 => Price(10.0), t1 => Price(11.0) },
         };
 
