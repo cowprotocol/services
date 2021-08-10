@@ -122,8 +122,8 @@ impl DefaultMatchaApi {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum RawResponse {
-    ResponseOk(SwapResponse),
+enum RawResponse<Ok> {
+    ResponseOk(Ok),
     ResponseErr { reason: String },
 }
 
@@ -152,14 +152,16 @@ impl MatchaApi for DefaultMatchaApi {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, MatchaResponseError> {
         let query_str = format!("{:?}", &query);
-        let response_result = self.client.get(query.into_url(&self.base_url)).send().await;
-        match response_result {
-            Ok(response) => match response.text().await {
-                Ok(response_text) => parse_matcha_response_text(&response_text, &query_str),
-                Err(text_fetch_err) => Err(MatchaResponseError::TextFetch(text_fetch_err)),
-            },
-            Err(send_err) => Err(MatchaResponseError::Send(send_err)),
-        }
+        let response_text = self
+            .client
+            .get(query.into_url(&self.base_url))
+            .send()
+            .await
+            .map_err(MatchaResponseError::Send)?
+            .text()
+            .await
+            .map_err(MatchaResponseError::TextFetch)?;
+        parse_matcha_response_text(&response_text, &query_str)
     }
 }
 
@@ -167,7 +169,7 @@ fn parse_matcha_response_text(
     response_text: &str,
     query: &str,
 ) -> Result<SwapResponse, MatchaResponseError> {
-    match serde_json::from_str::<RawResponse>(response_text) {
+    match serde_json::from_str::<RawResponse<SwapResponse>>(response_text) {
         Ok(RawResponse::ResponseOk(response)) => Ok(response),
         Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
             "Server Error" => Err(MatchaResponseError::ServerError(format!("{:?}", query))),

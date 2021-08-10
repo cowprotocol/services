@@ -1,5 +1,5 @@
 use crate::solver::solver_utils::debug_bytes;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use reqwest::{Client, RequestBuilder, Url};
@@ -16,7 +16,7 @@ const BASE_URL: &str = "https://apiv4.paraswap.io";
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait ParaswapApi {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse>;
+    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
@@ -29,45 +29,69 @@ pub struct DefaultParaswapApi {
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
-    async fn price(&self, query: PriceQuery) -> Result<PriceResponse> {
+    async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
+        let query_str = format!("{:?}", &query);
         let url = query.into_url();
         tracing::debug!("Querying Paraswap API (price) for url {}", url);
-        let text = reqwest::get(url)
+        let response_text = reqwest::get(url)
             .await
-            .context("PriceQuery failed")?
+            .map_err(ParaswapResponseError::Send)?
             .text()
-            .await?;
-        tracing::debug!("Response from Paraswap API (price): {}", text);
-
-        serde_json::from_str::<PriceResponse>(&text)
-            .context(format!("PriceQuery result parsing failed: {}", text))
+            .await
+            .map_err(ParaswapResponseError::TextFetch)?;
+        tracing::debug!("Response from Paraswap API (price): {}", response_text);
+        let raw_response = serde_json::from_str::<RawResponse<PriceResponse>>(&response_text)
+            .map_err(ParaswapResponseError::DeserializeError)?;
+        match raw_response {
+            RawResponse::ResponseOk(response) => Ok(response),
+            RawResponse::ResponseErr { error: message } => match &message[..] {
+                "computePrice Error" => Err(ParaswapResponseError::ComputePrice(
+                    query_str.parse().unwrap(),
+                )),
+                "No routes found with enough liquidity" => {
+                    Err(ParaswapResponseError::InsufficientLiquidity)
+                }
+                _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
+                    "uncatalogued Price Query error message {}",
+                    message
+                ))),
+            },
+        }
     }
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
         let query_str = serde_json::to_string(&query).unwrap();
-        let response_result = query.into_request(&self.client).send().await;
-        match response_result {
-            Ok(response) => match response.text().await {
-                Ok(response_text) => parse_paraswap_response_text(&response_text, &query_str),
-                Err(text_fetch_err) => Err(ParaswapResponseError::TextFetch(text_fetch_err)),
-            },
-            Err(send_err) => Err(ParaswapResponseError::Send(send_err)),
-        }
+        let response_text = query
+            .into_request(&self.client)
+            .send()
+            .await
+            .map_err(ParaswapResponseError::Send)?
+            .text()
+            .await
+            .map_err(ParaswapResponseError::TextFetch)?;
+        parse_paraswap_response_text(&response_text, &query_str)
     }
 }
 
 #[derive(Deserialize)]
 #[serde(untagged)]
-enum RawResponse {
-    ResponseOk(TransactionBuilderResponse),
+pub enum RawResponse<Ok> {
+    ResponseOk(Ok),
     ResponseErr { error: String },
 }
 
 #[derive(Error, Debug)]
 pub enum ParaswapResponseError {
-    // Represents a failure with transaction builder query
+    // Represents a failure with Price query
+    #[error("computePrice Error from query {0}")]
+    ComputePrice(String),
+
+    #[error("No routes found with enough liquidity")]
+    InsufficientLiquidity,
+
+    // Represents a failure with TransactionBuilder query
     #[error("ERROR_BUILDING_TRANSACTION from query {0}")]
     BuildingTransaction(String),
 
@@ -100,7 +124,7 @@ fn parse_paraswap_response_text(
     response_text: &str,
     query_str: &str,
 ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
-    match serde_json::from_str::<RawResponse>(response_text) {
+    match serde_json::from_str::<RawResponse<TransactionBuilderResponse>>(response_text) {
         Ok(RawResponse::ResponseOk(response)) => Ok(response),
         Ok(RawResponse::ResponseErr { error: message }) => match &message[..] {
             "ERROR_BUILDING_TRANSACTION" => Err(ParaswapResponseError::BuildingTransaction(
