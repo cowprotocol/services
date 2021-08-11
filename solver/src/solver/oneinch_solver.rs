@@ -91,8 +91,7 @@ impl OneInchSolver {
         Ok(protocols)
     }
 
-    /// Settles a single sell order against a 1Inch swap using the spcified
-    /// protocols.
+    /// Settles a single sell order against a 1Inch swap using the specified protocols.
     async fn settle_order_with_protocols(
         &self,
         order: LimitOrder,

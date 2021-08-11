@@ -28,6 +28,7 @@ use std::{
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderResult {
     Added(OrderUid),
+    BannedUser(H160),
     WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
@@ -64,6 +65,7 @@ pub struct Orderbook {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     code_fetcher: Box<dyn CodeFetching>,
     native_token: WETH9,
+    banned_users: Vec<H160>,
 }
 
 impl Orderbook {
@@ -78,6 +80,7 @@ impl Orderbook {
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         code_fetcher: Box<dyn CodeFetching>,
         native_token: WETH9,
+        banned_users: Vec<H160>,
     ) -> Self {
         Self {
             domain_separator,
@@ -89,6 +92,7 @@ impl Orderbook {
             bad_token_detector,
             code_fetcher,
             native_token,
+            banned_users,
         }
     }
 
@@ -130,8 +134,14 @@ impl Orderbook {
             Some(order) => order,
             None => return Ok(AddOrderResult::InvalidSignature),
         };
-        if matches!(payload.from, Some(from) if from != order.order_meta_data.owner) {
-            return Ok(AddOrderResult::WrongOwner(order.order_meta_data.owner));
+
+        let owner = order.order_meta_data.owner;
+        if self.banned_users.contains(&owner) {
+            return Ok(AddOrderResult::BannedUser(owner));
+        }
+
+        if matches!(payload.from, Some(from) if from != owner) {
+            return Ok(AddOrderResult::WrongOwner(owner));
         }
 
         for &token in &[
@@ -149,11 +159,7 @@ impl Orderbook {
         };
         if !self
             .balance_fetcher
-            .can_transfer(
-                order.order_creation.sell_token,
-                order.order_meta_data.owner,
-                min_balance,
-            )
+            .can_transfer(order.order_creation.sell_token, owner, min_balance)
             .await
             .unwrap_or(false)
         {
@@ -173,7 +179,7 @@ impl Orderbook {
             _ => (),
         }
         self.balance_fetcher
-            .register(order.order_meta_data.owner, order.order_creation.sell_token)
+            .register(owner, order.order_creation.sell_token)
             .await;
         Ok(AddOrderResult::Added(order.order_meta_data.uid))
     }

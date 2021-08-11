@@ -93,6 +93,10 @@ struct Arguments {
     #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
+    /// List of account addresses to be denied from order creation
+    #[structopt(long, env = "BANNED_USERS", use_delimiter = true)]
+    pub banned_users: Vec<H160>,
+
     /// List of token addresses that shoud be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
     #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
@@ -294,6 +298,7 @@ async fn main() {
         bad_token_detector,
         Box::new(web3.clone()),
         native_token.clone(),
+        args.banned_users,
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![

@@ -669,6 +669,7 @@ components:
               TransferEthToContract,
               UnsupportedToken,
               WrongOwner,
+              BannedUser,
               SameBuyAndSellToken,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
