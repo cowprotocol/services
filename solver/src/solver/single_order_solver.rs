@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use anyhow::Result;
 use futures::future;
 use rand::prelude::SliceRandom;
@@ -41,7 +43,12 @@ impl<I: SingleOrderSolving> From<I> for SingleOrderSolver<I> {
 
 #[async_trait::async_trait]
 impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
-    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        _gas_price: f64,
+        deadline: Instant,
+    ) -> Result<Vec<Settlement>> {
         let mut orders = liquidity
             .into_iter()
             .filter_map(|liquidity| match liquidity {
@@ -56,20 +63,22 @@ impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
             orders.shuffle(&mut rand::thread_rng());
         }
 
-        let settlements = future::join_all(
-            orders
-                .into_iter()
-                .take(MAX_SETTLEMENTS)
-                .map(|order| self.inner.settle_order(order)),
-        )
-        .await;
+        let settlements =
+            future::join_all(orders.into_iter().take(MAX_SETTLEMENTS).map(|order| {
+                tokio::time::timeout_at(deadline.into(), self.inner.settle_order(order))
+            }))
+            .await;
 
         Ok(settlements
             .into_iter()
             .filter_map(|settlement| match settlement {
-                Ok(Some(settlement)) => Some(settlement),
-                Ok(None) => None,
-                Err(err) => {
+                Err(_deadline) => {
+                    tracing::error!("inner solver {:?} timeout", self.name());
+                    None
+                }
+                Ok(Ok(Some(settlement))) => Some(settlement),
+                Ok(Ok(None)) => None,
+                Ok(Err(err)) => {
                     // It could be that the inner solver can't match an order and would
                     // return an error for whatever reason. In that case, we want
                     // to continue trying to solve for other orders.

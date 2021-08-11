@@ -8,7 +8,7 @@ use crate::{
 use anyhow::Result;
 use ethcontract::Account;
 use model::TokenPair;
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 pub struct NaiveSolver {
     account: Account,
@@ -22,7 +22,12 @@ impl NaiveSolver {
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        _gas_price: f64,
+        _deadline: Instant,
+    ) -> Result<Vec<Settlement>> {
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         let limit_orders = liquidity
             .into_iter()

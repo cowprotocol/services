@@ -10,7 +10,7 @@ use crate::{
     solver::Solver,
 };
 use ::model::order::OrderKind;
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
 use futures::join;
@@ -19,13 +19,14 @@ use num::{BigInt, BigRational, ToPrimitive};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use shared::{
+    measure_time,
     price_estimate::{PriceEstimating, PriceEstimationError},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 // Estimates from multivariate linear regression here:
@@ -47,18 +48,14 @@ lazy_static! {
 #[derive(Debug, Default)]
 pub struct SolverConfig {
     pub max_nr_exec_orders: u32,
-    pub time_limit: u32,
-    // TODO: add more parameters that we want to set
 }
 
 impl SolverConfig {
     fn add_to_query(&self, url: &mut Url) {
-        url.query_pairs_mut()
-            .append_pair(
-                "max_nr_exec_orders",
-                self.max_nr_exec_orders.to_string().as_str(),
-            )
-            .append_pair("time_limit", self.time_limit.to_string().as_str());
+        url.query_pairs_mut().append_pair(
+            "max_nr_exec_orders",
+            self.max_nr_exec_orders.to_string().as_str(),
+        );
     }
 }
 
@@ -76,7 +73,6 @@ pub struct HttpSolver {
     network_id: String,
     chain_id: u64,
     fee_discount_factor: f64,
-    timeout: Duration,
 }
 
 impl HttpSolver {
@@ -95,7 +91,6 @@ impl HttpSolver {
         chain_id: u64,
         fee_discount_factor: f64,
         client: Client,
-        timeout: Duration,
     ) -> Self {
         Self {
             name,
@@ -111,7 +106,6 @@ impl HttpSolver {
             network_id,
             chain_id,
             fee_discount_factor,
-            timeout,
         }
     }
 
@@ -273,10 +267,19 @@ impl HttpSolver {
         let tokens = self.map_tokens_for_solver(liquidity.as_slice());
 
         let (token_infos, price_estimates, mut buffers_result) = join!(
-            self.token_info_fetcher.get_token_infos(tokens.as_slice()),
-            self.price_estimator
-                .estimate_prices(tokens.as_slice(), self.native_token),
-            self.buffer_retriever.get_buffers(tokens.as_slice())
+            measure_time(
+                self.token_info_fetcher.get_token_infos(tokens.as_slice()),
+                |duration| tracing::debug!("get_token_infos took {} s", duration.as_secs_f32()),
+            ),
+            measure_time(
+                self.price_estimator
+                    .estimate_prices(tokens.as_slice(), self.native_token),
+                |duration| tracing::debug!("estimate_prices took {} s", duration.as_secs_f32()),
+            ),
+            measure_time(
+                self.buffer_retriever.get_buffers(tokens.as_slice()),
+                |duration| tracing::debug!("get_buffers took {} s", duration.as_secs_f32()),
+            ),
         );
 
         let buffers: HashMap<_, _> = buffers_result
@@ -344,18 +347,33 @@ impl HttpSolver {
         Ok((model, context))
     }
 
-    async fn send(&self, model: &BatchAuctionModel) -> Result<SettledBatchAuctionModel> {
+    async fn send(
+        &self,
+        model: &BatchAuctionModel,
+        deadline: Instant,
+    ) -> Result<SettledBatchAuctionModel> {
+        // The timeout we give to the solver is one second less than the deadline to make up for
+        // overhead from the network.
+        let timeout_buffer = Duration::from_secs(1);
+        let timeout = deadline
+            .checked_duration_since(Instant::now() + timeout_buffer)
+            .ok_or_else(|| anyhow!("no time left to send request"))?;
+
         let mut url = self.base.clone();
         url.set_path("/solve");
 
         let instance_name = self.generate_instance_name();
         tracing::info!("http solver instance name is {}", instance_name);
         url.query_pairs_mut()
-            .append_pair("instance_name", &instance_name);
+            .append_pair("instance_name", &instance_name)
+            .append_pair("time_limit", &timeout.as_secs().to_string());
 
         self.config.add_to_query(&mut url);
         let query = url.query().map(ToString::to_string).unwrap_or_default();
-        let mut request = self.client.post(url).timeout(self.timeout);
+        // The default Client created in main has a short http request timeout which we might
+        // exceed. We remove it here because the solver already internally enforces the timeout and
+        // the driver code that calls us also enforces the timeout.
+        let mut request = self.client.post(url).timeout(Duration::from_secs(u64::MAX));
         if let Some(api_key) = &self.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);
@@ -478,13 +496,18 @@ fn remove_orders_without_native_connection(
 
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        gas_price: f64,
+        deadline: Instant,
+    ) -> Result<Vec<Settlement>> {
         let has_limit_orders = liquidity.iter().any(|l| matches!(l, Liquidity::Limit(_)));
         if !has_limit_orders {
             return Ok(Vec::new());
         };
         let (model, context) = self.prepare_model(liquidity, gas_price).await?;
-        let settled = self.send(&model).await?;
+        let settled = self.send(&model, deadline).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
             return Ok(Vec::new());
@@ -563,7 +586,6 @@ mod tests {
             None,
             SolverConfig {
                 max_nr_exec_orders: 100,
-                time_limit: 100,
             },
             H160::zero(),
             mock_token_info_fetcher,
@@ -573,7 +595,6 @@ mod tests {
             0,
             1.,
             Client::new(),
-            Duration::MAX,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![
@@ -596,7 +617,10 @@ mod tests {
             }),
         ];
         let (model, _context) = solver.prepare_model(orders, gas_price).await.unwrap();
-        let settled = solver.send(&model).await.unwrap();
+        let settled = solver
+            .send(&model, Instant::now() + Duration::from_secs(u64::MAX))
+            .await
+            .unwrap();
         dbg!(&settled);
 
         let exec_order = settled.orders.values().next().unwrap();

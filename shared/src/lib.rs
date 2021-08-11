@@ -28,7 +28,11 @@ use ethcontract::H160;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
 use serde::Deserialize;
-use std::{str::FromStr, time::Duration};
+use std::{
+    future::Future,
+    str::FromStr,
+    time::{Duration, Instant},
+};
 
 pub type Web3 =
     web3::Web3<transport::instrumented::MetricTransport<transport::http::HttpTransport>>;
@@ -52,4 +56,13 @@ pub fn http_client(timeout: Duration) -> reqwest::Client {
         .user_agent("gp-v2-services/2.0.0")
         .build()
         .unwrap()
+}
+
+/// Run a future and callback with the time the future took. The call back can for example log the
+/// time.
+pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce(Duration)) -> T {
+    let start = Instant::now();
+    let result = future.await;
+    timer(start.elapsed());
+    result
 }

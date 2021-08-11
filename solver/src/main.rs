@@ -350,7 +350,6 @@ async fn main() {
         network_name.to_string(),
         chain_id,
         args.shared.fee_discount_factor,
-        args.solver_time_limit,
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,

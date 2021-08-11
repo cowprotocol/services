@@ -113,14 +113,15 @@ impl Driver {
         liquidity: Vec<Liquidity>,
         gas_price: f64,
     ) -> impl Iterator<Item = (&'static str, Result<Vec<Settlement>>)> {
+        let deadline = Instant::now() + self.solver_time_limit;
         join_all(self.solver.iter().map(|solver| {
             let liquidity = liquidity.clone();
             let metrics = &self.metrics;
             async move {
                 let start_time = Instant::now();
-                let result = match tokio::time::timeout(
-                    self.solver_time_limit,
-                    solver.solve(liquidity, gas_price),
+                let result = match tokio::time::timeout_at(
+                    deadline.into(),
+                    solver.solve(liquidity, gas_price, deadline),
                 )
                 .await
                 {

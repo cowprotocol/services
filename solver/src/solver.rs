@@ -16,7 +16,7 @@ use single_order_solver::SingleOrderSolver;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Duration,
+    time::Instant,
 };
 use structopt::clap::arg_enum;
 
@@ -29,10 +29,6 @@ mod paraswap_solver;
 mod single_order_solver;
 mod solver_utils;
 
-// For solvers that enforce a timeout internally we set their timeout to the global solver timeout
-// minus this duration to account for additional delay for example from the network.
-const TIMEOUT_SAFETY_BUFFER: Duration = Duration::from_secs(5);
-
 /// Interface that all solvers must implement
 /// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
 /// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
@@ -42,7 +38,12 @@ const TIMEOUT_SAFETY_BUFFER: Duration = Duration::from_secs(5);
 pub trait Solver {
     /// The returned settlements should be independent (for example not reusing the same user
     /// order) so that they can be merged by the driver at its leisure.
-    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>>;
+    async fn solve(
+        &self,
+        orders: Vec<Liquidity>,
+        gas_price: f64,
+        deadline: Instant,
+    ) -> Result<Vec<Settlement>>;
 
     /// Solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
@@ -81,7 +82,6 @@ pub fn create(
     network_id: String,
     chain_id: u64,
     fee_discount_factor: f64,
-    solver_timeout: Duration,
     min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
     paraswap_slippage_bps: usize,
@@ -94,10 +94,6 @@ pub fn create(
     fn boxed(solver: impl Solver + 'static) -> Result<Box<dyn Solver>> {
         Ok(Box::new(solver))
     }
-
-    let time_limit = solver_timeout
-        .checked_sub(TIMEOUT_SAFETY_BUFFER)
-        .expect("solver_timeout too low");
 
     let buffer_retriever = Arc::new(BufferRetriever::new(
         web3.clone(),
@@ -112,7 +108,6 @@ pub fn create(
             None,
             SolverConfig {
                 max_nr_exec_orders: 100,
-                time_limit: time_limit.as_secs() as u32,
             },
             native_token,
             token_info_fetcher.clone(),
@@ -122,7 +117,6 @@ pub fn create(
             chain_id,
             fee_discount_factor,
             client.clone(),
-            solver_timeout,
         )
     };
 
@@ -257,14 +251,21 @@ impl SellVolumeFilteringSolver {
 
 #[async_trait::async_trait]
 impl Solver for SellVolumeFilteringSolver {
-    async fn solve(&self, orders: Vec<Liquidity>, gas_price: f64) -> Result<Vec<Settlement>> {
+    async fn solve(
+        &self,
+        orders: Vec<Liquidity>,
+        gas_price: f64,
+        deadline: Instant,
+    ) -> Result<Vec<Settlement>> {
         let original_length = orders.len();
         let filtered_liquidity = self.filter_liquidity(orders).await;
         tracing::info!(
             "Filtered {} orders because on insufficient volume",
             original_length - filtered_liquidity.len()
         );
-        self.inner.solve(filtered_liquidity, gas_price).await
+        self.inner
+            .solve(filtered_liquidity, gas_price, deadline)
+            .await
     }
 
     fn account(&self) -> &Account {
@@ -289,7 +290,7 @@ mod tests {
     pub struct NoopSolver();
     #[async_trait::async_trait]
     impl Solver for NoopSolver {
-        async fn solve(&self, _: Vec<Liquidity>, _: f64) -> Result<Vec<Settlement>> {
+        async fn solve(&self, _: Vec<Liquidity>, _: f64, _: Instant) -> Result<Vec<Settlement>> {
             Ok(Vec::new())
         }
 

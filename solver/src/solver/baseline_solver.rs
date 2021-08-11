@@ -23,6 +23,7 @@ use shared::{
 use std::{
     collections::{HashMap, HashSet},
     convert::TryFrom as _,
+    time::Instant,
 };
 
 pub struct BaselineSolver {
@@ -32,7 +33,12 @@ pub struct BaselineSolver {
 
 #[async_trait::async_trait]
 impl Solver for BaselineSolver {
-    async fn solve(&self, liquidity: Vec<Liquidity>, _gas_price: f64) -> Result<Vec<Settlement>> {
+    async fn solve(
+        &self,
+        liquidity: Vec<Liquidity>,
+        _gas_price: f64,
+        _deadline: Instant,
+    ) -> Result<Vec<Settlement>> {
         Ok(self.solve(liquidity))
     }
 
