@@ -11,6 +11,22 @@ use web3::types::{BlockId, BlockNumber};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
+/// The maximum amount the base gas fee can increase from one block to the other.
+///
+/// This is derived from [EIP-1559](https://github.com/ethereum/EIPs/blob/master/EIPS/eip-1559.md):
+/// ```text
+/// BASE_FEE_MAX_CHANGE_DENOMINATOR = 8
+/// base_fee_per_gas_delta = max(parent_base_fee_per_gas * gas_used_delta // parent_gas_target // BASE_FEE_MAX_CHANGE_DENOMINATOR, 1)
+/// ```
+///
+/// Because the elasticity factor is 2, this means that the highes possible `gas_used_delta == parent_gas_target`.
+/// Therefore, the highest possible `base_fee_per_gas_delta` is `parent_base_fee_per_gas / 8`.
+///
+/// Example of this in action:
+/// [Block 12998225](https://etherscan.io/block/12998225) with base fee of `43.353224173` and ~100% over the gas target.
+/// Next [block 12998226](https://etherscan.io/block/12998226) has base fee of `48.771904644` which is an increase of ~12.5%.
+const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
+
 pub enum Block {
     // Simulate the transactions at this block and attach a tenderly link to errors.
     FixedWithTenderly(u64),
@@ -33,9 +49,15 @@ pub async fn simulate_settlements(
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
         .map(|settlement| {
+            // Increase the gas price by the highest possible base gas fee increase. This
+            // is done because the between retrieving the gas price and executing the simulation,
+            // a block may have been mined that increases the base gas fee and causes the
+            // `eth_call` simulation to fail with `max fee per gas less than block base fee`.
+            let gas_price =
+                GasPrice::Value(U256::from_f64_lossy(gas_price * MAX_BASE_GAS_FEE_INCREASE));
             let method =
                 crate::settlement_submission::retry::settle_method_builder(contract, settlement)
-                    .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)));
+                    .gas_price(gas_price);
             let transaction_builder = method.tx.clone();
             let view = method
                 .view()
