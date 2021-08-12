@@ -33,7 +33,7 @@ serde = "1.0"
 anyhow = { version = "1.0", optional = true }
 env_logger = { version = "0.9", optional = true }
 ethcontract-generate = { version = "0.14.0", optional = true}
-filetime = { version = "0.2.14", optional = true }
+filetime = { version = "0.2.15", optional = true }
 log = { version = "0.4", optional = true }
 serde_json = { version = "1.0", optional = true }
 tokio = { version = "1.9", optional = true, features = ["macros", "rt-multi-thread", "time"] }
