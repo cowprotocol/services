@@ -135,8 +135,8 @@ pub enum MatchaResponseError {
     #[error("uncatalogued error message: {0}")]
     UnknownMatchaError(String),
 
-    #[error(transparent)]
-    DeserializeError(#[from] serde_json::Error),
+    #[error("Error({0}) for response {1}")]
+    DeserializeError(serde_json::Error, String),
 
     // Recovered Response but failed on async call of response.text()
     #[error(transparent)]
@@ -175,7 +175,10 @@ fn parse_matcha_response_text(
             "Server Error" => Err(MatchaResponseError::ServerError(format!("{:?}", query))),
             _ => Err(MatchaResponseError::UnknownMatchaError(message)),
         },
-        Err(err) => Err(MatchaResponseError::DeserializeError(err)),
+        Err(err) => Err(MatchaResponseError::DeserializeError(
+            err,
+            response_text.parse().unwrap(),
+        )),
     }
 }
 
