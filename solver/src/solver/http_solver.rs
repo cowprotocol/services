@@ -72,7 +72,7 @@ pub struct HttpSolver {
     buffer_retriever: Arc<dyn BufferRetrieving>,
     network_id: String,
     chain_id: u64,
-    fee_discount_factor: f64,
+    fee_subsidy_factor: f64,
 }
 
 impl HttpSolver {
@@ -89,7 +89,7 @@ impl HttpSolver {
         buffer_retriever: Arc<dyn BufferRetrieving>,
         network_id: String,
         chain_id: u64,
-        fee_discount_factor: f64,
+        fee_subsidy_factor: f64,
         client: Client,
     ) -> Self {
         Self {
@@ -105,7 +105,7 @@ impl HttpSolver {
             buffer_retriever,
             network_id,
             chain_id,
-            fee_discount_factor,
+            fee_subsidy_factor,
         }
     }
 
@@ -418,7 +418,8 @@ impl HttpSolver {
     }
 
     fn order_fee(&self, order: &LimitOrder) -> U256 {
-        let ceiled_div = (order.fee_amount.to_f64_lossy() / self.fee_discount_factor).ceil();
+        let ceiled_div =
+            (order.fee_amount.to_f64_lossy() / (1f64 - self.fee_subsidy_factor)).ceil();
         U256::from_f64_lossy(ceiled_div)
     }
 

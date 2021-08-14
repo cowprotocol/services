@@ -49,9 +49,9 @@ pub struct Arguments {
     #[structopt(long, env = "BASE_TOKENS", use_delimiter = true)]
     pub base_tokens: Vec<H160>,
 
-    /// Fee discount factor: 1 means no discount, 0.9 means 10% discount.
-    #[structopt(long, env = "FEE_DISCOUNT_FACTOR", default_value = "1")]
-    pub fee_discount_factor: f64,
+    /// Gas Fee Subsidy: 0 means no subsidy, 0.9 means 90% subsidized.
+    #[structopt(long, env = "FEE_SUBSIDY_FACTOR", default_value = "0")]
+    pub fee_subsidy_factor: f64,
 
     /// Which Liquidity sources to be used by Price Estimator.
     #[structopt(
@@ -88,6 +88,15 @@ pub struct Arguments {
         parse(try_from_str = duration_from_seconds),
     )]
     pub block_stream_poll_interval_seconds: Duration,
+}
+
+impl Arguments {
+    pub fn validate(&self) {
+        assert!(
+            0f64 <= self.fee_subsidy_factor && self.fee_subsidy_factor <= 1f64,
+            "Fee subsidy must be in the range [0, 1]"
+        );
+    }
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

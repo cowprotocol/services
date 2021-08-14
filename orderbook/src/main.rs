@@ -97,7 +97,7 @@ struct Arguments {
     #[structopt(long, env = "BANNED_USERS", use_delimiter = true)]
     pub banned_users: Vec<H160>,
 
-    /// List of token addresses that shoud be allowed regardless of whether the bad token detector
+    /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
     #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
@@ -125,7 +125,8 @@ pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
 async fn main() {
     let args = Arguments::from_args();
     shared::tracing::initialize(args.shared.log_filter.as_str());
-    tracing::info!("running order book with {:#?}", args);
+    args.shared.validate();
+    tracing::info!("running order book with validated {:#?}", args);
 
     let registry = Registry::default();
     let metrics = Arc::new(Metrics::new(&registry).unwrap());
@@ -284,7 +285,7 @@ async fn main() {
         gas_price_estimator,
         native_token.address(),
         database.clone(),
-        args.shared.fee_discount_factor,
+        args.shared.fee_subsidy_factor,
         bad_token_detector.clone(),
     ));
 

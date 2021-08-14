@@ -81,7 +81,7 @@ pub fn create(
     price_estimator: Arc<dyn PriceEstimating>,
     network_id: String,
     chain_id: u64,
-    fee_discount_factor: f64,
+    fee_subsidy_factor: f64,
     min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
     paraswap_slippage_bps: usize,
@@ -115,7 +115,7 @@ pub fn create(
             buffer_retriever.clone(),
             network_id.clone(),
             chain_id,
-            fee_discount_factor,
+            fee_subsidy_factor,
             client.clone(),
         )
     };
