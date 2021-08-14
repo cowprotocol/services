@@ -178,7 +178,7 @@ impl OrderbookServices {
             gas_estimator,
             native_token,
             db.clone(),
-            1.0,
+            0.0,
             bad_token_detector.clone(),
         ));
         let orderbook = Arc::new(Orderbook::new(

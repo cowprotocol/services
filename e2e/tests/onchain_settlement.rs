@@ -200,7 +200,7 @@ async fn onchain_settlement(web3: Web3) {
         Duration::from_secs(30),
         None,
         block_stream,
-        1.0,
+        0.0,
         SolutionSubmitter {
             web3: web3.clone(),
             contract: gpv2.settlement.clone(),
