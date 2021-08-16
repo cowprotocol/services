@@ -29,13 +29,15 @@ mod paraswap_solver;
 mod single_order_solver;
 mod solver_utils;
 
-/// Interface that all solvers must implement
+/// Interface that all solvers must implement.
+///
 /// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
 /// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
-/// would like to include/process (i.e. those already supported here or their own private sources)
-/// The `name` method is included for logging purposes.
+/// would like to process, including their own private sources.
 #[async_trait::async_trait]
 pub trait Solver {
+    /// Runs the solver.
+    ///
     /// The returned settlements should be independent (for example not reusing the same user
     /// order) so that they can be merged by the driver at its leisure.
     async fn solve(
@@ -45,13 +47,13 @@ pub trait Solver {
         deadline: Instant,
     ) -> Result<Vec<Settlement>>;
 
-    /// Solver's account that should be used to submit settlements.
+    /// Returns solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
 
-    /// Displayable name of the solver. Defaults to the type name.
-    fn name(&self) -> &'static str {
-        std::any::type_name::<Self>()
-    }
+    /// Returns displayable name of the solver.
+    ///
+    /// This method is used for logging and metrics collection.
+    fn name(&self) -> &'static str;
 }
 
 arg_enum! {
@@ -296,6 +298,10 @@ mod tests {
 
         fn account(&self) -> &Account {
             unimplemented!()
+        }
+
+        fn name(&self) -> &'static str {
+            "NoopSolver"
         }
     }
 
