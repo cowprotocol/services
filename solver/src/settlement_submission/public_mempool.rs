@@ -23,19 +23,16 @@ pub async fn submit(
     settlement: Settlement,
     gas_estimate: U256,
 ) -> Result<()> {
+    let address = account.address();
     let settlement: EncodedSettlement = settlement.into();
 
-    let nonce = transaction_count(contract)
+    let web3 = contract.raw_instance().web3();
+    let nonce = web3
+        .eth()
+        .transaction_count(address, None)
         .await
         .context("failed to get transaction_count")?;
-    let address = &contract
-        .defaults()
-        .from
-        .clone()
-        .expect("no default sender address")
-        .address();
-    let web3 = contract.raw_instance().web3();
-    let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, address, nonce)
+    let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, &address, nonce)
         .await
         .context("failed to get pending gas price")?;
 
@@ -83,14 +80,6 @@ pub async fn submit(
         }
         _ => unreachable!(),
     }
-}
-
-async fn transaction_count(contract: &GPv2Settlement) -> Result<U256> {
-    let defaults = contract.defaults();
-    let address = defaults.from.as_ref().unwrap().address();
-    let web3 = contract.raw_instance().web3();
-    let count = web3.eth().transaction_count(address, None).await?;
-    Ok(count)
 }
 
 async fn recover_gas_price_from_pending_transaction(

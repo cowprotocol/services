@@ -191,6 +191,7 @@ impl Driver {
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
+            &self.solution_submitter.account,
         )
         .await
         .context("failed to simulate settlement")?;
@@ -215,6 +216,7 @@ impl Driver {
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
+            &self.solution_submitter.account,
         )
         .await
         .context("failed to simulate settlements")?;
@@ -248,6 +250,7 @@ impl Driver {
             &self.network_id,
             settlement_simulation::Block::FixedWithTenderly(current_block_during_liquidity_fetch),
             gas_price_wei,
+            &self.solution_submitter.account,
         )
         .await
         {

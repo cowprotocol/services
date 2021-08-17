@@ -2,7 +2,7 @@ use crate::encoding::EncodedSettlement;
 use anyhow::{Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
-    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, GasPrice,
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, Account, GasPrice,
 };
 use futures::FutureExt;
 use primitive_types::U256;
@@ -45,6 +45,7 @@ pub async fn simulate_settlements(
     network_id: &str,
     block: Block,
     gas_price: f64,
+    account: &Account,
 ) -> Result<Vec<Result<()>>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
@@ -57,7 +58,8 @@ pub async fn simulate_settlements(
                 GasPrice::Value(U256::from_f64_lossy(gas_price * MAX_BASE_GAS_FEE_INCREASE));
             let method =
                 crate::settlement_submission::retry::settle_method_builder(contract, settlement)
-                    .gas_price(gas_price);
+                    .gas_price(gas_price)
+                    .from(account.clone());
             let transaction_builder = method.tx.clone();
             let view = method
                 .view()
@@ -122,11 +124,8 @@ mod tests {
         let web3 = Web3::new(transport);
         let block = web3.eth().block_number().await.unwrap().as_u64();
         let network_id = web3.net().version().await.unwrap();
-        let mut contract = GPv2Settlement::deployed(&web3).await.unwrap();
-        contract.defaults_mut().from = Some(Account::Offline(
-            PrivateKey::from_raw([1; 32]).unwrap(),
-            None,
-        ));
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
         let settlements = vec![
             EncodedSettlement {
                 tokens: Default::default(),
@@ -148,6 +147,7 @@ mod tests {
             network_id.as_str(),
             Block::FixedWithTenderly(block),
             0.0,
+            &account,
         )
         .await;
         let _ = dbg!(result);
