@@ -312,11 +312,9 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contracts::{BalancerV2Authorizer, ERC20Mintable};
-    use ethcontract::Bytes;
+    use contracts::{vault, BalancerV2Authorizer, ERC20Mintable};
     use hex_literal::hex;
     use shared::transport::create_env_test_transport;
-    use web3::signing;
 
     #[tokio::test]
     #[ignore]
@@ -441,13 +439,6 @@ mod tests {
         );
     }
 
-    fn role_id(target: H160, signature: [u8; 4]) -> Bytes<[u8; 32]> {
-        let mut data = [0u8; 36];
-        data[12..32].copy_from_slice(&target.0);
-        data[32..36].copy_from_slice(&signature);
-        Bytes(signing::keccak256(&data))
-    }
-
     #[tokio::test]
     #[ignore]
     async fn can_transfer_testnet_vault_external_balance() {
@@ -497,15 +488,9 @@ mod tests {
             .unwrap());
 
         // Set authorization for allowance target to act as a Vault relayer
-        const MANAGE_USER_BALANCE: &[u8; 4] = b"\x0e\x8e\x3e\x84";
-        authorizer
-            .grant_role(
-                role_id(vault.address(), *MANAGE_USER_BALANCE),
-                allowance_target.address(),
-            )
-            .send()
+        vault::grant_required_roles(authorizer, vault.address(), allowance_target.address())
             .await
-            .expect("failed to add role for allowance target");
+            .unwrap();
         // Give the trader some balance
         token
             .mint(trader.address(), 100.into())
