@@ -13,12 +13,13 @@ use std::collections::HashMap;
 // enough anyway.
 
 // The names of all tables we use in the db.
-const ALL_TABLES: [&str; 5] = [
+const ALL_TABLES: [&str; 6] = [
     "orders",
     "trades",
     "invalidations",
     "min_fee_measurements",
     "settlements",
+    "presignatures",
 ];
 
 // The pool uses an Arc internally.
@@ -73,7 +74,7 @@ mod tests {
         db.clear().await.unwrap();
 
         let counts = db.count_rows_in_tables().await.unwrap();
-        assert_eq!(counts.len(), 5);
+        assert_eq!(counts.len(), 6);
         assert!(counts.iter().all(|(_, count)| *count == 0));
 
         db.insert_order(&Default::default()).await.unwrap();
