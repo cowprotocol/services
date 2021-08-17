@@ -34,8 +34,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub type Web3 =
-    web3::Web3<transport::instrumented::MetricTransport<transport::http::HttpTransport>>;
+pub type Web3Transport = transport::instrumented::MetricTransport<transport::http::HttpTransport>;
+pub type Web3 = web3::Web3<Web3Transport>;
 
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
 #[derive(Deserialize)]

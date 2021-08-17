@@ -1,4 +1,4 @@
-use contracts::{GPv2Settlement, WETH9};
+use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
 use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
@@ -141,7 +141,7 @@ async fn main() {
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
-    let gp_allowance = settlement_contract
+    let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
         .await
@@ -155,6 +155,27 @@ async fn main() {
         .await
         .expect("Could not get chainId")
         .as_u64();
+
+    let network = web3
+        .net()
+        .version()
+        .await
+        .expect("Failed to retrieve network version ID");
+    let vault = if BalancerV2Vault::raw_contract()
+        .networks
+        .contains_key(&network)
+    {
+        Some(
+            BalancerV2Vault::deployed(&web3)
+                .await
+                .expect("couldn't load deployed vault contract"),
+        )
+    } else {
+        // The Vault is not deployed on all networks we support, so allow it
+        // to be `None` for those networks.
+        tracing::warn!("No Balancer V2 Vault support for network {}", network);
+        None
+    };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
@@ -182,8 +203,12 @@ async fn main() {
         database.as_ref().clone(),
         sync_start,
     );
-    let balance_fetcher =
-        Web3BalanceFetcher::new(web3.clone(), gp_allowance, settlement_contract.address());
+    let balance_fetcher = Web3BalanceFetcher::new(
+        web3.clone(),
+        vault,
+        vault_relayer,
+        settlement_contract.address(),
+    );
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(

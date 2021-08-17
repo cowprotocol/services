@@ -105,7 +105,10 @@ impl Orderbook {
                 order.buy_token_balance,
             ));
         }
-        if order.sell_token_balance != SellTokenSource::Erc20 {
+        if !matches!(
+            order.sell_token_balance,
+            SellTokenSource::Erc20 | SellTokenSource::External
+        ) {
             return Ok(AddOrderResult::UnsupportedSellTokenSource(
                 order.sell_token_balance,
             ));
@@ -159,7 +162,12 @@ impl Orderbook {
         };
         if !self
             .balance_fetcher
-            .can_transfer(order.order_creation.sell_token, owner, min_balance)
+            .can_transfer(
+                order.order_creation.sell_token,
+                owner,
+                min_balance,
+                order.order_creation.sell_token_balance,
+            )
             .await
             .unwrap_or(false)
         {
@@ -179,7 +187,11 @@ impl Orderbook {
             _ => (),
         }
         self.balance_fetcher
-            .register(owner, order.order_creation.sell_token)
+            .register(
+                owner,
+                order.order_creation.sell_token,
+                order.order_creation.sell_token_balance,
+            )
             .await;
         Ok(AddOrderResult::Added(order.order_meta_data.uid))
     }
@@ -296,12 +308,16 @@ async fn filter_unsupported_tokens(
 async fn track_and_get_balances(
     fetcher: &dyn BalanceFetching,
     orders: &[Order],
-) -> HashMap<(H160, H160), U256> {
-    let mut balances = HashMap::<(H160, H160), U256>::new();
-    let mut untracked = HashSet::<(H160, H160)>::new();
+) -> HashMap<(H160, H160, SellTokenSource), U256> {
+    let mut balances = HashMap::<(H160, H160, SellTokenSource), U256>::new();
+    let mut untracked = HashSet::<(H160, H160, SellTokenSource)>::new();
     for order in orders {
-        let key = (order.order_meta_data.owner, order.order_creation.sell_token);
-        match fetcher.get_balance(key.0, key.1) {
+        let key = (
+            order.order_meta_data.owner,
+            order.order_creation.sell_token,
+            order.order_creation.sell_token_balance,
+        );
+        match fetcher.get_balance(key.0, key.1, key.2) {
             Some(balance) => {
                 balances.insert(key, balance);
             }
@@ -315,15 +331,22 @@ async fn track_and_get_balances(
         .await;
     balances.extend(untracked.into_iter().filter_map(|key| {
         fetcher
-            .get_balance(key.0, key.1)
+            .get_balance(key.0, key.1, key.2)
             .map(|balance| (key, balance))
     }));
     balances
 }
 
-fn set_available_balances(orders: &mut [Order], balances: &HashMap<(H160, H160), U256>) {
+fn set_available_balances(
+    orders: &mut [Order],
+    balances: &HashMap<(H160, H160, SellTokenSource), U256>,
+) {
     for order in orders.iter_mut() {
-        let key = &(order.order_meta_data.owner, order.order_creation.sell_token);
+        let key = &(
+            order.order_meta_data.owner,
+            order.order_creation.sell_token,
+            order.order_creation.sell_token_balance,
+        );
         order.order_meta_data.available_balance = balances.get(key).cloned();
     }
 }
@@ -331,11 +354,18 @@ fn set_available_balances(orders: &mut [Order], balances: &HashMap<(H160, H160),
 // The order book has to make a choice for which orders to include when a user has multiple orders
 // selling the same token but not enough balance for all of them.
 // Assumes balance fetcher is already tracking all balances.
-fn solvable_orders(mut orders: Vec<Order>, balances: &HashMap<(H160, H160), U256>) -> Vec<Order> {
-    let mut orders_map = HashMap::<(H160, H160), Vec<Order>>::new();
+fn solvable_orders(
+    mut orders: Vec<Order>,
+    balances: &HashMap<(H160, H160, SellTokenSource), U256>,
+) -> Vec<Order> {
+    let mut orders_map = HashMap::<(H160, H160, SellTokenSource), Vec<Order>>::new();
     orders.sort_by_key(|order| std::cmp::Reverse(order.order_meta_data.creation_date));
     for order in orders {
-        let key = (order.order_meta_data.owner, order.order_creation.sell_token);
+        let key = (
+            order.order_meta_data.owner,
+            order.order_creation.sell_token,
+            order.order_creation.sell_token_balance,
+        );
         orders_map.entry(key).or_default().push(order);
     }
 
@@ -422,6 +452,7 @@ mod tests {
             Order {
                 order_creation: OrderCreation {
                     sell_token: another_sell_token,
+                    sell_token_balance: SellTokenSource::External,
                     ..Default::default()
                 },
                 ..Default::default()
@@ -431,21 +462,29 @@ mod tests {
 
         balance_fetcher
             .expect_get_balance()
-            .with(eq(owner), eq(a_sell_token))
+            .with(eq(owner), eq(a_sell_token), eq(SellTokenSource::Erc20))
             .return_const(Some(a_balance));
 
         // Not having a balance for the second order, should trigger a register_many only for this token
         let mut seq = Sequence::new();
         balance_fetcher
             .expect_get_balance()
-            .with(eq(owner), eq(another_sell_token))
+            .with(
+                eq(owner),
+                eq(another_sell_token),
+                eq(SellTokenSource::External),
+            )
             .times(1)
             .in_sequence(&mut seq)
             .return_const(None);
 
         balance_fetcher
             .expect_register_many()
-            .with(eq(vec![(owner, another_sell_token)]))
+            .with(eq(vec![(
+                owner,
+                another_sell_token,
+                SellTokenSource::External,
+            )]))
             .times(1)
             .in_sequence(&mut seq)
             .returning(|_| ());
@@ -453,7 +492,11 @@ mod tests {
         // Once registered, we can return the balance
         balance_fetcher
             .expect_get_balance()
-            .with(eq(owner), eq(another_sell_token))
+            .with(
+                eq(owner),
+                eq(another_sell_token),
+                eq(SellTokenSource::External),
+            )
             .times(1)
             .in_sequence(&mut seq)
             .return_const(Some(another_balance));
@@ -462,8 +505,8 @@ mod tests {
         assert_eq!(
             balances,
             hashmap! {
-                (owner, a_sell_token) => a_balance,
-                (owner, another_sell_token) => another_balance
+                (owner, a_sell_token, SellTokenSource::Erc20) => a_balance,
+                (owner, another_sell_token, SellTokenSource::External) => another_balance
             }
         );
     }

@@ -1,4 +1,6 @@
-use contracts::{ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9};
+use contracts::{
+    BalancerV2Vault, ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9,
+};
 use ethcontract::{
     prelude::{Account, U256},
     H160,
@@ -59,12 +61,16 @@ pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
 }
 
 pub struct GPv2 {
+    pub vault: BalancerV2Vault,
     pub settlement: GPv2Settlement,
     pub allowance: H160,
     pub domain_separator: DomainSeparator,
 }
 impl GPv2 {
     pub async fn fetch(web3: &Web3, designated_solver: &Account) -> Self {
+        let vault = BalancerV2Vault::deployed(web3)
+            .await
+            .expect("Failed to load deployed BalancerV2Vault");
         let settlement = solver::get_settlement_contract(web3, designated_solver.clone())
             .await
             .expect("Failed to load deployed GPv2Settlement");
@@ -82,6 +88,7 @@ impl GPv2 {
                 .0,
         );
         Self {
+            vault,
             settlement,
             allowance,
             domain_separator,
@@ -187,6 +194,7 @@ impl OrderbookServices {
             db.clone(),
             Box::new(Web3BalanceFetcher::new(
                 web3.clone(),
+                Some(gpv2.vault.clone()),
                 gpv2.allowance,
                 gpv2.settlement.address(),
             )),
