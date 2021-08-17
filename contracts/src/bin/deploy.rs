@@ -62,7 +62,7 @@ async fn run() -> Result<()> {
         }
 
     log::info!("deploying WETH");
-    let weth = deploy!(ERC20Mintable() as "WETH9");
+    let weth = deploy!(WETH9());
 
     log::info!("deploying Balancer V2");
     let balancer_authorizer = deploy!(BalancerV2Authorizer(admin));
@@ -84,15 +84,30 @@ async fn run() -> Result<()> {
         .send()
         .await
         .expect("failed to initialize manager");
+    let settlement = deploy!(GPv2Settlement(
+        gp_authentication.address(),
+        balancer_vault.address(),
+    ));
+
+    log::info!("adding solver {:?}", admin);
     gp_authentication
         .add_solver(admin)
         .send()
         .await
-        .expect("Failed to allow list account 0");
-    deploy!(GPv2Settlement(
-        gp_authentication.address(),
+        .expect("failed to allow list account 0");
+
+    log::info!("authorizing Vault relayer");
+    vault::grant_required_roles(
+        balancer_authorizer,
         balancer_vault.address(),
-    ));
+        settlement
+            .vault_relayer()
+            .call()
+            .await
+            .expect("failed to retrieve Vault relayer contract address"),
+    )
+    .await
+    .expect("failed to authorize Vault relayer");
 
     touch_build_script()
 }

@@ -1,4 +1,4 @@
-use contracts::{IUniswapLikeRouter, WETH9};
+use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
     order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
@@ -74,10 +74,7 @@ async fn eth_integration(web3: Web3) {
         token.mint(trader_buy_eth_b.address(), to_wei(51))
     );
 
-    let weth = WETH9::builder(&web3)
-        .deploy()
-        .await
-        .expect("WETH deployment failed");
+    let weth = gpv2.native_token.clone();
     tx_value!(solver_account, to_wei(100_000), weth.deposit());
 
     // Create and fund Uniswap pool
@@ -111,13 +108,12 @@ async fn eth_integration(web3: Web3) {
     tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(51)));
     tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(51)));
 
-    let native_token = weth.address();
     let OrderbookServices {
         maintenance,
         price_estimator,
         block_stream,
         ..
-    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
+    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
 
@@ -218,7 +214,7 @@ async fn eth_integration(web3: Web3) {
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
-        native_token,
+        weth.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),

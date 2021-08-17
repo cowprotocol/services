@@ -59,21 +59,14 @@ async fn onchain_settlement(web3: Web3) {
         uniswap_router,
     } = UniswapContracts::fetch(&web3).await;
 
-    // Create & Mint tokens to trade
+    // Create tokens to trade
     let token_a = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token_a.mint(solver_account.address(), to_wei(100_000))
-    );
+    let token_b = deploy_mintable_token(&web3).await;
+
+    // Fund trader accounts
     tx!(
         solver_account,
         token_a.mint(trader_a.address(), to_wei(101))
-    );
-
-    let token_b = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token_b.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(solver_account, token_b.mint(trader_b.address(), to_wei(51)));
 
@@ -81,6 +74,14 @@ async fn onchain_settlement(web3: Web3) {
     tx!(
         solver_account,
         uniswap_factory.create_pair(token_a.address(), token_b.address())
+    );
+    tx!(
+        solver_account,
+        token_a.mint(solver_account.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_b.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
@@ -104,17 +105,47 @@ async fn onchain_settlement(web3: Web3) {
         )
     );
 
+    // Create and fund pools for fee connections.
+    for token in [&token_a, &token_b] {
+        tx!(
+            solver_account,
+            token.mint(solver_account.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            token.approve(uniswap_router.address(), to_wei(100_000))
+        );
+        tx_value!(solver_account, to_wei(100_000), gpv2.native_token.deposit());
+        tx!(
+            solver_account,
+            gpv2.native_token
+                .approve(uniswap_router.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            uniswap_router.add_liquidity(
+                token.address(),
+                gpv2.native_token.address(),
+                to_wei(100_000),
+                to_wei(100_000),
+                0_u64.into(),
+                0_u64.into(),
+                solver_account.address(),
+                U256::max_value(),
+            )
+        );
+    }
+
     // Approve GPv2 for trading
     tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(101)));
     tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(51)));
 
     // Place Orders
-    let native_token = token_a.address();
     let OrderbookServices {
         price_estimator,
         maintenance,
         block_stream,
-    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory, native_token).await;
+    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
 
@@ -180,7 +211,7 @@ async fn onchain_settlement(web3: Web3) {
     let solver = solver::solver::naive_solver(solver_account.clone());
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
-        orderbook_api: create_orderbook_api(&web3, native_token),
+        orderbook_api: create_orderbook_api(&web3, gpv2.native_token.address()),
         balancer_v2_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
@@ -191,7 +222,7 @@ async fn onchain_settlement(web3: Web3) {
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
-        native_token,
+        gpv2.native_token.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
@@ -231,7 +262,7 @@ async fn onchain_settlement(web3: Web3) {
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
 
-    let orders = create_orderbook_api(&web3, native_token)
+    let orders = create_orderbook_api(&web3, gpv2.native_token.address())
         .get_orders()
         .await
         .unwrap();

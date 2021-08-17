@@ -142,6 +142,16 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_sell_token_balance(mut self, balance: SellTokenSource) -> Self {
+        self.0.order_creation.sell_token_balance = balance;
+        self
+    }
+
+    pub fn with_buy_token_balance(mut self, balance: BuyTokenDestination) -> Self {
+        self.0.order_creation.buy_token_balance = balance;
+        self
+    }
+
     pub fn with_creation_date(mut self, creation_date: DateTime<Utc>) -> Self {
         self.0.order_meta_data.creation_date = creation_date;
         self

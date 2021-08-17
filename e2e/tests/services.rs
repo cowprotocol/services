@@ -5,6 +5,7 @@ use ethcontract::{
     prelude::{Account, U256},
     H160,
 };
+use maplit::hashset;
 use model::DomainSeparator;
 use orderbook::{
     account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
@@ -24,7 +25,7 @@ use shared::{
     Web3,
 };
 use solver::orderbook::OrderBookApi;
-use std::{collections::HashSet, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
+use std::{num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
@@ -63,9 +64,11 @@ pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
 pub struct GPv2 {
     pub vault: BalancerV2Vault,
     pub settlement: GPv2Settlement,
+    pub native_token: WETH9,
     pub allowance: H160,
     pub domain_separator: DomainSeparator,
 }
+
 impl GPv2 {
     pub async fn fetch(web3: &Web3, designated_solver: &Account) -> Self {
         let vault = BalancerV2Vault::deployed(web3)
@@ -78,7 +81,7 @@ impl GPv2 {
             .vault_relayer()
             .call()
             .await
-            .expect("Couldn't get allowance manager address");
+            .expect("Couldn't get vault relayer address");
         let domain_separator = DomainSeparator(
             settlement
                 .domain_separator()
@@ -87,9 +90,13 @@ impl GPv2 {
                 .expect("Couldn't query domain separator")
                 .0,
         );
+        let native_token = WETH9::deployed(web3)
+            .await
+            .expect("Couldn't get deployed WETH contract");
         Self {
             vault,
             settlement,
+            native_token,
             allowance,
             domain_separator,
         }
@@ -127,13 +134,9 @@ pub struct OrderbookServices {
     pub maintenance: ServiceMaintenance,
     pub block_stream: CurrentBlockStream,
 }
+
 impl OrderbookServices {
-    pub async fn new(
-        web3: &Web3,
-        gpv2: &GPv2,
-        uniswap_factory: &UniswapV2Factory,
-        native_token: H160,
-    ) -> Self {
+    pub async fn new(web3: &Web3, gpv2: &GPv2, uniswap_factory: &UniswapV2Factory) -> Self {
         let registry = Registry::default();
         let metrics = Arc::new(Metrics::new(&registry).unwrap());
         let chain_id = web3
@@ -173,17 +176,18 @@ impl OrderbookServices {
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());
         let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
+        let base_tokens = hashset![gpv2.native_token.address()];
         let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Arc::new(pool_fetcher),
             gas_estimator.clone(),
-            HashSet::new(),
+            base_tokens,
             bad_token_detector.clone(),
-            native_token,
+            gpv2.native_token.address(),
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
             gas_estimator,
-            native_token,
+            gpv2.native_token.address(),
             db.clone(),
             0.0,
             bad_token_detector.clone(),
@@ -202,7 +206,7 @@ impl OrderbookServices {
             Duration::from_secs(120),
             bad_token_detector,
             Box::new(web3.clone()),
-            WETH9::at(web3, native_token),
+            gpv2.native_token.clone(),
             vec![],
         ));
         let maintenance = ServiceMaintenance {
