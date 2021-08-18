@@ -28,7 +28,6 @@ use std::{
 #[derive(Debug, Eq, PartialEq)]
 pub enum AddOrderResult {
     Added(OrderUid),
-    BannedUser(H160),
     WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
@@ -140,7 +139,7 @@ impl Orderbook {
 
         let owner = order.order_meta_data.owner;
         if self.banned_users.contains(&owner) {
-            return Ok(AddOrderResult::BannedUser(owner));
+            return Ok(AddOrderResult::Forbidden);
         }
 
         if matches!(payload.from, Some(from) if from != owner) {

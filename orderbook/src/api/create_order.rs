@@ -37,10 +37,6 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             ),
             StatusCode::BAD_REQUEST,
         ),
-        Ok(AddOrderResult::BannedUser(owner)) => (
-            super::error("BannedUser", format!("User account banned {}", owner)),
-            StatusCode::BAD_REQUEST,
-        ),
         Ok(AddOrderResult::DuplicatedOrder) => (
             super::error("DuplicatedOrder", "order already exists"),
             StatusCode::BAD_REQUEST,
