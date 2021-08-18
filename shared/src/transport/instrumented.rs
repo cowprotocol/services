@@ -28,7 +28,7 @@ impl<T: Transport> MetricTransport<T> {
 impl<T> Transport for MetricTransport<T>
 where
     T: Transport,
-    <T as Transport>::Out: Send + 'static,
+    T::Out: Send + 'static,
 {
     type Out = BoxFuture<'static, error::Result<Value>>;
 
@@ -57,7 +57,7 @@ impl<T> BatchTransport for MetricTransport<T>
 where
     T: BatchTransport,
     T::Batch: Send + 'static,
-    <T as Transport>::Out: Send + 'static,
+    T::Out: Send + 'static,
 {
     type Batch = BoxFuture<'static, error::Result<Vec<error::Result<Value>>>>;
 

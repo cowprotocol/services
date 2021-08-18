@@ -24,6 +24,7 @@ pub mod tracing;
 pub mod transport;
 pub mod web3_traits;
 
+use ethcontract::dyns::{DynTransport, DynWeb3};
 use ethcontract::H160;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
@@ -34,8 +35,8 @@ use std::{
     time::{Duration, Instant},
 };
 
-pub type Web3Transport = transport::instrumented::MetricTransport<transport::http::HttpTransport>;
-pub type Web3 = web3::Web3<Web3Transport>;
+pub type Web3Transport = DynTransport;
+pub type Web3 = DynWeb3;
 
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
 #[derive(Deserialize)]
