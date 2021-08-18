@@ -227,6 +227,7 @@ struct Arguments {
     /// Minimum time without a trade before alerting.
     #[structopt(
         long,
+        env,
         default_value = "600",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
@@ -235,6 +236,7 @@ struct Arguments {
     /// Minimum age a matchable order must have before alerting.
     #[structopt(
         long,
+        env,
         default_value = "180",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
@@ -243,6 +245,7 @@ struct Arguments {
     /// Do not repeat the alert more often than this.
     #[structopt(
         long,
+        env,
         default_value = "1800",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
@@ -250,10 +253,10 @@ struct Arguments {
 
     /// How many errors in the update loop (fetching solvable orders or querying matcha) in a row
     /// must happen before we alert about them.
-    #[structopt(long, default_value = "5")]
+    #[structopt(long, env, default_value = "5")]
     errors_in_a_row_before_alert: u32,
 
-    #[structopt(long, default_value = "https://protocol-mainnet.gnosis.io")]
+    #[structopt(long, env, default_value = "https://protocol-mainnet.gnosis.io")]
     orderbook_api: String,
 }
 
