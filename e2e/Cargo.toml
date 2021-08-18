@@ -12,7 +12,7 @@ harness = false
 [dev-dependencies]
 contracts = { path = "../contracts" }
 criterion = "0.3"
-ethcontract = { version = "0.14.0",  default-features = false }
+ethcontract = { version = "0.15.1",  default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"

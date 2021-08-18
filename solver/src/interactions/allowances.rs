@@ -156,6 +156,7 @@ async fn fetch_allowances<T>(
 ) -> Result<HashMap<H160, U256>>
 where
     T: ethcontract::web3::BatchTransport + Send + Sync + 'static,
+    T::Batch: Send,
     T::Out: Send,
 {
     let mut batch = CallBatch::new(web3.transport());

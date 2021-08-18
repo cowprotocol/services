@@ -12,7 +12,7 @@ async-trait = "0.1"
 atty = "0.2"
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { version = "0.14.0", default-features = false }
+ethcontract = { version = "0.15.1", default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.1", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
