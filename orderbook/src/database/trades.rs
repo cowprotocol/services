@@ -3,14 +3,14 @@ use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::BigDecimal;
 use ethcontract::H160;
-use futures::stream::{BoxStream, StreamExt, TryStreamExt};
+use futures::stream::TryStreamExt;
 use model::order::OrderUid;
 use model::trade::Trade;
 use std::convert::TryInto;
 
 #[async_trait::async_trait]
 pub trait TradeRetrieving: Send + Sync {
-    fn trades<'a>(&'a self, filter: &'a TradeFilter) -> BoxStream<'a, Result<Trade>>;
+    async fn trades(&self, filter: &TradeFilter) -> Result<Vec<Trade>>;
 }
 
 /// Any default value means that this field is unfiltered.
@@ -20,8 +20,9 @@ pub struct TradeFilter {
     pub order_uid: Option<OrderUid>,
 }
 
+#[async_trait::async_trait]
 impl TradeRetrieving for Postgres {
-    fn trades<'a>(&'a self, filter: &'a TradeFilter) -> BoxStream<'a, Result<Trade>> {
+    async fn trades(&self, filter: &TradeFilter) -> Result<Vec<Trade>> {
         const QUERY: &str = "\
             SELECT \
                 t.block_number, \
@@ -57,7 +58,8 @@ impl TradeRetrieving for Postgres {
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: TradesQueryRow| async move { row.into_trade() })
-            .boxed()
+            .try_collect()
+            .await
     }
 }
 
@@ -185,9 +187,10 @@ mod tests {
     async fn assert_trades(db: &Postgres, filter: &TradeFilter, expected: &[Trade]) {
         let filtered = db
             .trades(filter)
-            .try_collect::<HashSet<Trade>>()
             .await
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
         let expected = expected.iter().cloned().collect::<HashSet<_>>();
         assert_eq!(filtered, expected);
     }

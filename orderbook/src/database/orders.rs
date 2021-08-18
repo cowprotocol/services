@@ -3,7 +3,7 @@ use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
-use futures::{stream::TryStreamExt, StreamExt};
+use futures::stream::TryStreamExt;
 use model::order::{BuyTokenDestination, SellTokenSource};
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
@@ -16,7 +16,7 @@ use std::{borrow::Cow, convert::TryInto};
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
-    fn orders<'a>(&'a self, filter: &'a OrderFilter) -> BoxStream<'a, Result<Order>>;
+    async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
 }
 
 /// Any default value means that this field is unfiltered.
@@ -216,7 +216,7 @@ impl OrderStoring for Postgres {
             .map(|_| ())
     }
 
-    fn orders<'a>(&'a self, filter: &'a OrderFilter) -> BoxStream<'a, Result<Order>> {
+    async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
         // The `or`s in the `where` clause are there so that each filter is ignored when not set.
         // We use a subquery instead of a `having` clause in the inner query because we would not be
         // able to use the `sum_*` columns there.
@@ -261,7 +261,8 @@ impl OrderStoring for Postgres {
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
-            .boxed()
+            .try_collect()
+            .await
     }
 }
 
@@ -396,7 +397,6 @@ mod tests {
     use super::events::*;
     use super::*;
     use chrono::{Duration, NaiveDateTime};
-    use futures::StreamExt;
     use num_bigint::BigUint;
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
@@ -577,7 +577,7 @@ mod tests {
         for signing_scheme in &[SigningScheme::Eip712, SigningScheme::EthSign] {
             db.clear().await.unwrap();
             let filter = OrderFilter::default();
-            assert!(db.orders(&filter).boxed().next().await.is_none());
+            assert!(db.orders(&filter).await.unwrap().is_empty());
             let order = Order {
                 order_meta_data: OrderMetaData {
                     creation_date: DateTime::<Utc>::from_utc(
@@ -604,13 +604,7 @@ mod tests {
                 },
             };
             db.insert_order(&order).await.unwrap();
-            assert_eq!(
-                db.orders(&filter)
-                    .try_collect::<Vec<Order>>()
-                    .await
-                    .unwrap(),
-                vec![order]
-            );
+            assert_eq!(db.orders(&filter).await.unwrap(), vec![order]);
         }
     }
 
@@ -625,15 +619,11 @@ mod tests {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
         let filter = OrderFilter::default();
-        assert!(db.orders(&filter).boxed().next().await.is_none());
+        assert!(db.orders(&filter).await.unwrap().is_empty());
 
         let order = Order::default();
         db.insert_order(&order).await.unwrap();
-        let db_orders = db
-            .orders(&filter)
-            .try_collect::<Vec<Order>>()
-            .await
-            .unwrap();
+        let db_orders = db.orders(&filter).await.unwrap();
         assert!(!db_orders[0].order_meta_data.invalidated);
 
         let cancellation_time =
@@ -641,11 +631,7 @@ mod tests {
         db.cancel_order(&order.order_meta_data.uid, cancellation_time)
             .await
             .unwrap();
-        let db_orders = db
-            .orders(&filter)
-            .try_collect::<Vec<Order>>()
-            .await
-            .unwrap();
+        let db_orders = db.orders(&filter).await.unwrap();
         assert!(db_orders[0].order_meta_data.invalidated);
 
         let query = "SELECT cancellation_timestamp FROM orders;";
@@ -729,9 +715,10 @@ mod tests {
         async fn assert_orders(db: &Postgres, filter: &OrderFilter, expected: &[Order]) {
             let filtered = db
                 .orders(filter)
-                .try_collect::<HashSet<Order>>()
                 .await
-                .unwrap();
+                .unwrap()
+                .into_iter()
+                .collect::<HashSet<_>>();
             let expected = expected.iter().cloned().collect::<HashSet<_>>();
             assert_eq!(filtered, expected);
         }
@@ -824,13 +811,14 @@ mod tests {
                     exclude_fully_executed,
                     ..Default::default()
                 })
-                .boxed()
-                .next()
                 .await
+                .unwrap()
+                .into_iter()
+                .next()
             }
         };
 
-        let order = get_order(true).await.unwrap().unwrap();
+        let order = get_order(true).await.unwrap();
         assert_eq!(
             order.order_meta_data.executed_sell_amount,
             BigUint::from(0u8)
@@ -849,7 +837,7 @@ mod tests {
         )])
         .await
         .unwrap();
-        let order = get_order(true).await.unwrap().unwrap();
+        let order = get_order(true).await.unwrap();
         assert_eq!(
             order.order_meta_data.executed_sell_amount,
             BigUint::from(3u8)
@@ -868,7 +856,7 @@ mod tests {
         )])
         .await
         .unwrap();
-        let order = get_order(true).await.unwrap().unwrap();
+        let order = get_order(true).await.unwrap();
         assert_eq!(
             order.order_meta_data.executed_sell_amount,
             BigUint::from(9u8),
@@ -891,7 +879,7 @@ mod tests {
         assert!(get_order(true).await.is_none());
 
         // If we include fully executed orders it is there.
-        let order = get_order(false).await.unwrap().unwrap();
+        let order = get_order(false).await.unwrap();
         assert_eq!(
             order.order_meta_data.executed_sell_amount,
             BigUint::from(10u8)
@@ -941,10 +929,10 @@ mod tests {
 
         let order = db
             .orders(&OrderFilter::default())
-            .boxed()
-            .next()
             .await
             .unwrap()
+            .into_iter()
+            .next()
             .unwrap();
 
         let expected = u256_to_big_uint(&U256::MAX) * BigUint::from(10u8);
@@ -968,16 +956,13 @@ mod tests {
         db.insert_order(&order).await.unwrap();
 
         let is_order_valid = || async {
-            db.orders(&OrderFilter {
+            !db.orders(&OrderFilter {
                 exclude_invalidated: true,
                 ..Default::default()
             })
-            .boxed()
-            .next()
             .await
-            .transpose()
             .unwrap()
-            .is_some()
+            .is_empty()
         };
 
         assert!(is_order_valid().await);

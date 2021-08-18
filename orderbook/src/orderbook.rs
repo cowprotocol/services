@@ -6,7 +6,6 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use contracts::WETH9;
-use futures::TryStreamExt;
 use model::order::{
     BuyTokenDestination, OrderCancellation, OrderCreation, OrderCreationPayload, SellTokenSource,
 };
@@ -236,7 +235,7 @@ impl Orderbook {
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
-        let mut orders = self.database.orders(filter).try_collect::<Vec<_>>().await?;
+        let mut orders = self.database.orders(filter).await?;
         let balances =
             track_and_get_balances(self.balance_fetcher.as_ref(), orders.as_slice()).await;
         // The meaning of the available balance field is different depending on whether we return

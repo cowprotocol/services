@@ -118,20 +118,29 @@ impl OrderStoring for Instrumented {
         self.inner.cancel_order(order_uid, now).await
     }
 
-    fn orders<'a>(
-        &'a self,
-        filter: &'a super::orders::OrderFilter,
-    ) -> futures::stream::BoxStream<'a, anyhow::Result<model::order::Order>> {
-        self.inner.orders(filter)
+    async fn orders(
+        &self,
+        filter: &super::orders::OrderFilter,
+    ) -> anyhow::Result<Vec<model::order::Order>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("orders")
+            .start_timer();
+        self.inner.orders(filter).await
     }
 }
 
+#[async_trait::async_trait]
 impl TradeRetrieving for Instrumented {
-    fn trades<'a>(
-        &'a self,
-        filter: &'a super::trades::TradeFilter,
-    ) -> futures::stream::BoxStream<'a, anyhow::Result<model::trade::Trade>> {
-        self.inner.trades(filter)
+    async fn trades(
+        &self,
+        filter: &super::trades::TradeFilter,
+    ) -> anyhow::Result<Vec<model::trade::Trade>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("trades")
+            .start_timer();
+        self.inner.trades(filter).await
     }
 }
 

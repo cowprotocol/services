@@ -2,7 +2,6 @@ use crate::api::convert_get_trades_error_to_reply;
 use crate::database::trades::TradeFilter;
 use crate::database::trades::TradeRetrieving;
 use anyhow::Result;
-use futures::TryStreamExt;
 use model::order::OrderUid;
 use model::trade::Trade;
 use serde::Deserialize;
@@ -66,7 +65,7 @@ pub fn get_trades(
         async move {
             match request_result {
                 Ok(trade_filter) => {
-                    let result = database.trades(&trade_filter).try_collect::<Vec<_>>().await;
+                    let result = database.trades(&trade_filter).await;
                     Result::<_, Infallible>::Ok(get_trades_response(result))
                 }
                 Err(TradeFilterError::InvalidFilter(msg)) => {

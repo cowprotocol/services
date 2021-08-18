@@ -5,7 +5,6 @@ pub mod orders;
 pub mod trades;
 
 use anyhow::Result;
-use futures::stream::BoxStream;
 use sqlx::{Executor, PgPool, Row};
 use std::collections::HashMap;
 
