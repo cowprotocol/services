@@ -93,35 +93,20 @@ impl BadTokenDetecting for TraceCallDetector {
 
 impl TraceCallDetector {
     pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
-        let instance = ERC20::at(&self.web3, token);
-        let decimals = match instance.decimals().call().await {
-            Ok(decimals) => decimals,
-            Err(err) => {
-                return match EthcontractErrorType::classify(&err) {
-                    EthcontractErrorType::Node => Err(err.into()),
-                    EthcontractErrorType::Contract => {
-                        Ok(TokenQuality::bad("failed to get decimals"))
-                    }
-                }
+        let (take_from, amount) = match self.find_largest_pool_owning_token(token).await? {
+            Some((address, balance)) => {
+                tracing::debug!(
+                    "testing token {:?} with pool {:?} amount {}",
+                    token,
+                    address,
+                    balance
+                );
+                (address, balance)
             }
-        };
-        let amount = match U256::from(10).checked_pow(decimals.into()) {
-            Some(amount) => {
-                tracing::debug!("testing token {:?} with amount {}", token, amount);
-                amount
-            }
-            None => return Ok(TokenQuality::bad("decimals too large")),
+            None => return Ok(TokenQuality::bad("no pool")),
         };
 
-        let take_from = match self.find_largest_pool_owning_token(token).await? {
-            Some((address, balance)) if balance > amount => {
-                tracing::debug!("testing token {:?} with pool {:?}", token, address);
-                address
-            }
-            _ => return Ok(TokenQuality::bad("no pool with enough balance")),
-        };
-
-        // We transfer one unit (base on decimals) of the token from the amm pool into the
+        // We transfer the full available amount of the token from the amm pool into the
         // settlement contract and then to an arbitrary address.
         // Note that gas use can depend on the recipient because for the standard implementation
         // sending to an address that does not have any balance yet (implicitly 0) causes an
@@ -171,6 +156,7 @@ impl TraceCallDetector {
         for future in futures {
             let (address, result) = future.await;
             let balance = match result {
+                Ok(balance) if balance.is_zero() => continue,
                 Ok(balance) => balance,
                 Err(err) => {
                     return match EthcontractErrorType::classify(&err) {
