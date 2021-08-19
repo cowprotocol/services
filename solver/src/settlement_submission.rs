@@ -8,7 +8,7 @@ use crate::{encoding::EncodedSettlement, settlement::Settlement};
 use anyhow::{anyhow, Result};
 use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
-use ethcontract::{errors::ExecutionError, Account};
+use ethcontract::{errors::ExecutionError, Account, TransactionHash};
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
@@ -52,9 +52,16 @@ pub enum TransactionStrategy {
 }
 
 impl SolutionSubmitter {
-    /// Ok if transaction got mined in time.
-    /// Err if took too long or other inner errors.
-    pub async fn settle(&self, settlement: Settlement, gas_estimate: U256) -> Result<()> {
+    /// Submits a settlement transaction to the blockchain, returning the hash
+    /// of the successfully mined transaction.
+    ///
+    /// Errors if the transaction timed out, or an inner error was encountered
+    /// during submission.
+    pub async fn settle(
+        &self,
+        settlement: Settlement,
+        gas_estimate: U256,
+    ) -> Result<TransactionHash> {
         match &self.transaction_strategy {
             TransactionStrategy::PublicMempool => {
                 public_mempool::submit(
@@ -89,7 +96,7 @@ impl SolutionSubmitter {
                     )
                     .await;
                 match result {
-                    Ok(Some(_)) => Ok(()),
+                    Ok(Some(hash)) => Ok(hash),
                     Ok(None) => Err(anyhow!("transaction did not get mined in time")),
                     Err(err) => Err(err),
                 }
