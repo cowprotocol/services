@@ -176,6 +176,31 @@ paths:
                 $ref: "#/components/schemas/LegacyFeeInformation"
         404:
           description: sellToken non-existent
+  /api/v1/presignatures:
+    get:
+      summary: Get available Presignatures.
+      description: |
+        At least one of owner or order_uid has to be set.
+      parameters:
+        - name: owner
+          in: query
+          schema:
+            $ref: "#/components/schemas/Address"
+          required: false
+        - name: orderUid
+          in: query
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: false
+      responses:
+        200:
+          description: all valid presignatures
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Presignature"
   /api/v1/trades:
     get:
       summary: Get existing Trades.
@@ -627,6 +652,33 @@ components:
           description: "Hash of the corresponding settlement transaction containing the trade (if available)."
           $ref: "#/components/schemas/TransactionHash"
           nullable: true
+      required:
+        - blockNumber
+        - logIndex
+        - orderUid
+        - owner
+        - signed
+    Presignature:
+      description: |
+        Data describing a signature for an order that has been signed with an onchain presignature.
+        Invalidated signatures are not returned by this query.
+      type: object
+      properties:
+        blockNumber:
+          description: "Block in which the most recent presigning transaction was executed."
+          type: integer
+        logIndex:
+          description: "Index at which the transaction was included in the block."
+          type: integer
+        owner:
+          description: "Address of order owner (i.e., address of signer)."
+          $ref: "#/components/schemas/Address"
+        orderUid:
+          description: "Unique ID of the order matched by this trade."
+          $ref: "#/components/schemas/UID"
+        signed:
+          description: "Whether the order was signed. Currently, it is always set to true."
+          type: boolean
       required:
         - blockNumber
         - logIndex

@@ -1,4 +1,6 @@
-use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
+use super::{
+    orders::OrderStoring, presignatures::PreSignatureRetrieving, trades::TradeRetrieving, Postgres,
+};
 use crate::fee::MinFeeStoring;
 use prometheus::Histogram;
 use shared::{event_handling::EventStoring, maintenance::Maintaining};
@@ -160,6 +162,14 @@ impl TradeRetrieving for Instrumented {
             .database_query_histogram("trades")
             .start_timer();
         self.inner.trades(filter).await
+    }
+}
+impl PreSignatureRetrieving for Instrumented {
+    fn presignatures<'a>(
+        &'a self,
+        filter: &'a super::presignatures::PreSignatureFilter,
+    ) -> futures::stream::BoxStream<'a, anyhow::Result<model::presignature::PreSignature>> {
+        self.inner.presignatures(filter)
     }
 }
 

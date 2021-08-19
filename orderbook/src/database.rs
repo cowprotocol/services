@@ -2,11 +2,15 @@ pub mod events;
 pub mod fees;
 pub mod instrumented;
 pub mod orders;
+pub mod presignatures;
 pub mod trades;
 
 use anyhow::Result;
+use presignatures::PreSignatureRetrieving;
 use sqlx::{Executor, PgPool, Row};
 use std::collections::HashMap;
+use std::sync::Arc;
+use trades::TradeRetrieving;
 
 // TODO: There is remaining optimization potential by implementing sqlx encoding and decoding for
 // U256 directly instead of going through BigDecimal. This is not very important as this is fast
@@ -59,6 +63,19 @@ impl Postgres {
             result.insert(table, self.count_rows_in_table(table).await?);
         }
         Ok(result)
+    }
+}
+
+pub trait DataRetrieving: PreSignatureRetrieving + TradeRetrieving {
+    fn as_presignature_retrieving(self: Arc<Self>) -> Arc<dyn PreSignatureRetrieving>;
+    fn as_trade_retrieving(self: Arc<Self>) -> Arc<dyn TradeRetrieving>;
+}
+impl<T: PreSignatureRetrieving + TradeRetrieving + 'static> DataRetrieving for T {
+    fn as_presignature_retrieving(self: Arc<Self>) -> Arc<dyn PreSignatureRetrieving> {
+        self
+    }
+    fn as_trade_retrieving(self: Arc<Self>) -> Arc<dyn TradeRetrieving> {
+        self
     }
 }
 
