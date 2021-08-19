@@ -144,7 +144,8 @@ impl Driver {
             .settle(settlement, rated_settlement.gas_estimate)
             .await
         {
-            Ok(_) => {
+            Ok(hash) => {
+                tracing::info!("Successfully submitted {} settlement: {:?}", name, hash);
                 trades
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
@@ -159,9 +160,9 @@ impl Driver {
                     .map(|e| is_transaction_failure(&e.inner))
                     .unwrap_or(false)
                 {
-                    tracing::warn!("Failed to submit settlement: {:?}", err)
+                    tracing::warn!("Failed to submit {} settlement: {:?}", name, err)
                 } else {
-                    tracing::error!("Failed to submit settlement: {:?}", err)
+                    tracing::error!("Failed to submit {} settlement: {:?}", name, err)
                 };
                 self.metrics.settlement_submitted(false, name);
                 Err(err)

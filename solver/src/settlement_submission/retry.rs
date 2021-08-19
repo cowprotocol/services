@@ -7,7 +7,7 @@ use ethcontract::{
     jsonrpc::types::Error as RpcError,
     transaction::{confirm::ConfirmParams, ResolveCondition},
     web3::error::Error as Web3Error,
-    Account, GasPrice,
+    Account, GasPrice, TransactionHash,
 };
 use primitive_types::U256;
 use transaction_retry::{TransactionResult, TransactionSending};
@@ -41,7 +41,8 @@ pub fn is_transaction_failure(error: &ExecutionError) -> bool {
         || matches!(error, ExecutionError::InvalidOpcode)
 }
 
-pub struct SettleResult(pub Result<(), MethodError>);
+pub struct SettleResult(pub Result<TransactionHash, MethodError>);
+
 impl TransactionResult for SettleResult {
     fn was_mined(&self) -> bool {
         if let Err(err) = &self.0 {
@@ -59,9 +60,11 @@ pub struct SettlementSender<'a> {
     pub settlement: EncodedSettlement,
     pub account: Account,
 }
+
 #[async_trait::async_trait]
 impl<'a> TransactionSending for SettlementSender<'a> {
     type Output = SettleResult;
+
     async fn send(&self, gas_price: f64) -> Self::Output {
         tracing::info!("submitting solution transaction at gas price {}", gas_price);
         let mut method = settle_method_builder(self.contract, self.settlement.clone())
@@ -70,7 +73,7 @@ impl<'a> TransactionSending for SettlementSender<'a> {
             .gas(U256::from_f64_lossy(self.gas_limit))
             .from(self.account.clone());
         method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
-        let result = method.send().await.map(|_| ());
+        let result = method.send().await.map(|tx| tx.hash());
         SettleResult(result)
     }
 }
@@ -124,7 +127,7 @@ mod tests {
             data: None,
         }));
 
-        let result = SettleResult(Ok(()));
+        let result = SettleResult(Ok(H256([0xcd; 32])));
         assert!(result.was_mined());
 
         let result = SettleResult(Err(MethodError::from_parts(

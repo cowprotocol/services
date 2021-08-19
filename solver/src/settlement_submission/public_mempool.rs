@@ -6,7 +6,7 @@ use super::{
 use crate::{encoding::EncodedSettlement, pending_transactions::Fee, settlement::Settlement};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{dyns::DynTransport, Account, Web3};
+use ethcontract::{dyns::DynTransport, Account, TransactionHash, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::{H160, U256};
@@ -22,7 +22,7 @@ pub async fn submit(
     gas_price_cap: f64,
     settlement: Settlement,
     gas_estimate: U256,
-) -> Result<()> {
+) -> Result<TransactionHash> {
     let address = account.address();
     let settlement: EncodedSettlement = settlement.into();
 
