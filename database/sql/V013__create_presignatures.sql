@@ -8,6 +8,6 @@ CREATE TABLE presignatures (
     PRIMARY KEY (block_number, log_index)
 );
 
-CREATE INDEX order_uid ON presignatures USING HASH (order_uid);
+CREATE INDEX most_recent_with_orderuid ON presignatures USING BTREE (order_uid, block_number DESC, log_index DESC);
 -- Get a specific user's presignature.
 CREATE INDEX presignature_owner ON presignatures USING HASH (owner);
