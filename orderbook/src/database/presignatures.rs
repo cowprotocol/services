@@ -28,7 +28,7 @@ impl PreSignatureRetrieving for Postgres {
                 t.owner, \
                 t.order_uid, \
                 t.signed \
-            FROM presignatures t \
+            FROM presignature_events t \
             WHERE \
                 ($1 IS NULL OR t.owner = $1) \
             AND \
