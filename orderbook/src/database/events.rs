@@ -120,7 +120,7 @@ impl EventStoring<ContractEvent> for Postgres {
                 (SELECT COALESCE(MAX(block_number), 0) FROM trades), \
                 (SELECT COALESCE(MAX(block_number), 0) FROM settlements), \
                 (SELECT COALESCE(MAX(block_number), 0) FROM invalidations), \
-                (SELECT COALESCE(MAX(block_number), 0) FROM presignatures));";
+                (SELECT COALESCE(MAX(block_number), 0) FROM presignature_events));";
         let block_number: i64 = sqlx::query_scalar(QUERY)
             .fetch_one(&self.pool)
             .await
@@ -161,7 +161,7 @@ async fn delete_events(
         .execute(sqlx::query(QUERY_SETTLEMENTS).bind(delete_from_block_number as i64))
         .await?;
 
-    const QUERY_PRESIGNATURES: &str = "DELETE FROM presignatures WHERE block_number >= $1;";
+    const QUERY_PRESIGNATURES: &str = "DELETE FROM presignature_events WHERE block_number >= $1;";
     transaction
         .execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number as i64))
         .await?;
@@ -257,7 +257,7 @@ async fn insert_presignature(
     event: &PreSignature,
 ) -> Result<(), sqlx::Error> {
     const QUERY: &str = "\
-        INSERT INTO presignatures (block_number, log_index, owner, order_uid, signed) VALUES ($1, $2, $3, $4, $5) \
+        INSERT INTO presignature_events (block_number, log_index, owner, order_uid, signed) VALUES ($1, $2, $3, $4, $5) \
         ON CONFLICT DO NOTHING;";
     transaction
         .execute(

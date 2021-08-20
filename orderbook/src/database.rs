@@ -19,7 +19,7 @@ const ALL_TABLES: [&str; 6] = [
     "invalidations",
     "min_fee_measurements",
     "settlements",
-    "presignatures",
+    "presignature_events",
 ];
 
 // The pool uses an Arc internally.
