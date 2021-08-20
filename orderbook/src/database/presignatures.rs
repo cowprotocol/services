@@ -2,19 +2,13 @@ use crate::conversions::h160_from_vec;
 use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
 use ethcontract::H160;
-use futures::{
-    future,
-    stream::{BoxStream, StreamExt, TryStreamExt},
-};
+use futures::{future, stream::TryStreamExt};
 use model::{order::OrderUid, presignature::PreSignature};
 use std::convert::TryInto;
 
 #[async_trait::async_trait]
 pub trait PreSignatureRetrieving: Send + Sync {
-    fn presignatures<'a>(
-        &'a self,
-        filter: &'a PreSignatureFilter,
-    ) -> BoxStream<'a, Result<PreSignature>>;
+    async fn presignatures(&self, filter: &PreSignatureFilter) -> Result<Vec<PreSignature>>;
 }
 
 /// Any default value means that this field is unfiltered.
@@ -24,11 +18,9 @@ pub struct PreSignatureFilter {
     pub order_uid: Option<OrderUid>,
 }
 
+#[async_trait::async_trait]
 impl PreSignatureRetrieving for Postgres {
-    fn presignatures<'a>(
-        &'a self,
-        filter: &'a PreSignatureFilter,
-    ) -> BoxStream<'a, Result<PreSignature>> {
+    async fn presignatures(&self, filter: &PreSignatureFilter) -> Result<Vec<PreSignature>> {
         const QUERY: &str = "\
             SELECT DISTINCT ON (t.order_uid) \
                 t.block_number, \
@@ -44,15 +36,15 @@ impl PreSignatureRetrieving for Postgres {
             ORDER BY \
                 t.order_uid, t.block_number DESC, t.log_index DESC;";
 
-        let result = sqlx::query_as(QUERY)
+        sqlx::query_as(QUERY)
             .bind(filter.owner.as_ref().map(|h160| h160.as_bytes()))
             .bind(filter.order_uid.as_ref().map(|uid| uid.0.as_ref()))
             .fetch(&self.pool)
             .err_into()
             .try_filter(|r: &PreSignaturesQueryRow| future::ready(r.signed))
-            .and_then(|row: PreSignaturesQueryRow| async move { row.into_presignature() });
-
-        result.boxed()
+            .and_then(|row: PreSignaturesQueryRow| async move { row.into_presignature() })
+            .try_collect()
+            .await
     }
 }
 
@@ -131,9 +123,10 @@ mod tests {
     ) {
         let filtered = db
             .presignatures(filter)
-            .try_collect::<HashSet<PreSignature>>()
             .await
-            .unwrap();
+            .unwrap()
+            .into_iter()
+            .collect::<HashSet<_>>();
         let expected = expected.iter().cloned().collect::<HashSet<_>>();
         assert_eq!(filtered, expected);
     }

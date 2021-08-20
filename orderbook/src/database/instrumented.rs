@@ -164,12 +164,17 @@ impl TradeRetrieving for Instrumented {
         self.inner.trades(filter).await
     }
 }
+#[async_trait::async_trait]
 impl PreSignatureRetrieving for Instrumented {
-    fn presignatures<'a>(
-        &'a self,
-        filter: &'a super::presignatures::PreSignatureFilter,
-    ) -> futures::stream::BoxStream<'a, anyhow::Result<model::presignature::PreSignature>> {
-        self.inner.presignatures(filter)
+    async fn presignatures(
+        &self,
+        filter: &super::presignatures::PreSignatureFilter,
+    ) -> anyhow::Result<Vec<model::presignature::PreSignature>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("presignatures")
+            .start_timer();
+        self.inner.presignatures(filter).await
     }
 }
 

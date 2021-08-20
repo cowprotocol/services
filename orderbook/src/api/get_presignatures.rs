@@ -2,7 +2,6 @@ use crate::api::convert_get_presignatures_error_to_reply;
 use crate::database::presignatures::PreSignatureFilter;
 use crate::database::presignatures::PreSignatureRetrieving;
 use anyhow::Result;
-use futures::TryStreamExt;
 use model::order::OrderUid;
 use model::presignature::PreSignature;
 use serde::Deserialize;
@@ -69,10 +68,7 @@ pub fn get_presignatures(
         async move {
             match request_result {
                 Ok(presignatures) => {
-                    let result = database
-                        .presignatures(&presignatures)
-                        .try_collect::<Vec<_>>()
-                        .await;
+                    let result = database.presignatures(&presignatures).await;
                     Result::<_, Infallible>::Ok(get_presignatures_response(result))
                 }
                 Err(PreSignatureFilterError::InvalidFilter(msg)) => {
