@@ -111,13 +111,15 @@ pub struct FeeModel {
     pub token: H160,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
     pub amms: HashMap<usize, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
-    pub prices: HashMap<H160, Price>,
+    #[serde_as(as = "HashMap<_, DecimalU256>")]
+    pub prices: HashMap<H160, U256>,
 }
 
 impl SettledBatchAuctionModel {
@@ -130,9 +132,6 @@ impl SettledBatchAuctionModel {
             .all(|u| u.exec_plan.is_some())
     }
 }
-
-#[derive(Debug, Deserialize)]
-pub struct Price(#[serde(with = "serde_with::rust::display_fromstr")] pub f64);
 
 #[derive(Debug, Serialize)]
 pub struct MetadataModel {
