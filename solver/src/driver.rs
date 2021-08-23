@@ -1,8 +1,8 @@
 pub mod solver_settlements;
 
-use self::solver_settlements::{RatedSettlement, SettlementWithSolver};
+use self::solver_settlements::RatedSettlement;
+use crate::solver::{SettlementWithSolver, Solvers};
 use crate::{
-    chain,
     liquidity::Liquidity,
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
@@ -37,7 +37,7 @@ pub struct Driver {
     settlement_contract: GPv2Settlement,
     liquidity_collector: LiquidityCollector,
     price_estimator: Arc<dyn PriceEstimating>,
-    solver: Vec<Box<dyn Solver>>,
+    solvers: Solvers,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     settle_interval: Duration,
     native_token: H160,
@@ -59,7 +59,7 @@ impl Driver {
         settlement_contract: GPv2Settlement,
         liquidity_collector: LiquidityCollector,
         price_estimator: Arc<dyn PriceEstimating>,
-        solver: Vec<Box<dyn Solver>>,
+        solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
         native_token: H160,
@@ -78,7 +78,7 @@ impl Driver {
             settlement_contract,
             liquidity_collector,
             price_estimator,
-            solver,
+            solvers,
             gas_price_estimator,
             settle_interval,
             native_token,
@@ -112,9 +112,9 @@ impl Driver {
         &self,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
-    ) -> impl Iterator<Item = (&'static str, Result<Vec<Settlement>>)> {
+    ) -> Vec<(Arc<dyn Solver>, Result<Vec<Settlement>>)> {
         let deadline = Instant::now() + self.solver_time_limit;
-        join_all(self.solver.iter().map(|solver| {
+        join_all(self.solvers.iter().map(|solver| {
             let liquidity = liquidity.clone();
             let metrics = &self.metrics;
             async move {
@@ -129,22 +129,30 @@ impl Driver {
                     Err(_timeout) => Err(anyhow!("solver timed out")),
                 };
                 metrics.settlement_computed(solver.name(), start_time);
-                (solver.name(), result)
+                (solver.clone(), result)
             }
         }))
         .await
-        .into_iter()
     }
 
-    async fn submit_settlement(&self, rated_settlement: RatedSettlement) -> Result<()> {
-        let SettlementWithSolver { name, settlement } = rated_settlement.clone().settlement;
+    async fn submit_settlement(
+        &self,
+        solver: Arc<dyn Solver>,
+        rated_settlement: RatedSettlement,
+    ) -> Result<()> {
+        let settlement = rated_settlement.settlement;
         let trades = settlement.trades().to_vec();
         match self
             .solution_submitter
-            .settle(settlement, rated_settlement.gas_estimate)
+            .settle(
+                settlement,
+                rated_settlement.gas_estimate,
+                solver.account().clone(),
+            )
             .await
         {
             Ok(hash) => {
+                let name = solver.name();
                 tracing::info!("Successfully submitted {} settlement: {:?}", name, hash);
                 trades
                     .iter()
@@ -155,6 +163,7 @@ impl Driver {
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
+                let name = solver.name();
                 if err
                     .downcast_ref::<MethodError>()
                     .map(|e| is_transaction_failure(&e.inner))
@@ -172,6 +181,7 @@ impl Driver {
 
     async fn can_settle_without_liquidity(
         &self,
+        solver: Arc<dyn Solver>,
         settlement: &RatedSettlement,
         gas_price_wei: f64,
     ) -> Result<bool> {
@@ -179,20 +189,19 @@ impl Driver {
         if !self
             .market_makable_token_list
             .as_ref()
-            .map(|list| is_only_selling_trusted_tokens(&settlement.settlement.settlement, list))
+            .map(|list| is_only_selling_trusted_tokens(&settlement.settlement, list))
             .unwrap_or(false)
         {
             return Ok(false);
         }
 
         let simulations = settlement_simulation::simulate_settlements(
-            chain![settlement.without_onchain_liquidity().into()],
+            [(solver, settlement.settlement.without_onchain_liquidity())].iter(),
             &self.settlement_contract,
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
-            &self.solution_submitter.account,
         )
         .await
         .context("failed to simulate settlement")?;
@@ -209,15 +218,12 @@ impl Driver {
         Vec<(SettlementWithSolver, Error)>,
     )> {
         let simulations = settlement_simulation::simulate_settlements(
-            settlements
-                .iter()
-                .map(|settlement| settlement.settlement.clone().into()),
+            settlements.iter(),
             &self.settlement_contract,
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
-            &self.solution_submitter.account,
         )
         .await
         .context("failed to simulate settlements")?;
@@ -238,20 +244,17 @@ impl Driver {
     // the block has changed just as were were querying the node.
     async fn report_simulation_errors(
         &self,
-        errors: Vec<(SettlementWithSolver, Error)>,
+        errors: &[(SettlementWithSolver, Error)],
         current_block_during_liquidity_fetch: u64,
         gas_price_wei: f64,
     ) {
         let simulations = match settlement_simulation::simulate_settlements(
-            errors
-                .iter()
-                .map(|(settlement, _)| settlement.clone().into()),
+            errors.iter().map(|(settlement, _)| settlement),
             &self.settlement_contract,
             &self.web3,
             &self.network_id,
             settlement_simulation::Block::FixedWithTenderly(current_block_during_liquidity_fetch),
             gas_price_wei,
-            &self.solution_submitter.account,
         )
         .await
         {
@@ -266,14 +269,14 @@ impl Driver {
             }
         };
 
-        for ((settlement, _previous_error), result) in errors.into_iter().zip(simulations) {
+        for (((solver, settlement), _previous_error), result) in errors.iter().zip(simulations) {
             let error_at_earlier_block = match result {
                 Ok(()) => continue,
                 Err(err) => err,
             };
             tracing::error!(
                 "{} settlement simulation failed at submission and block {}:\n{:?}",
-                settlement.name,
+                solver.name(),
                 current_block_during_liquidity_fetch,
                 error_at_earlier_block,
             );
@@ -288,7 +291,7 @@ impl Driver {
     fn report_matched_but_unsettled_orders(
         &self,
         submitted: &Settlement,
-        all: impl Iterator<Item = Settlement>,
+        all: impl Iterator<Item = RatedSettlement>,
     ) {
         let submitted: HashSet<_> = submitted
             .trades()
@@ -296,7 +299,7 @@ impl Driver {
             .map(|trade| trade.order.order_meta_data.uid)
             .collect();
         let all_matched: HashSet<_> = all
-            .flat_map(|solution| solution.trades().to_vec())
+            .flat_map(|solution| solution.settlement.trades().to_vec())
             .map(|trade| trade.order.order_meta_data.uid)
             .collect();
         let matched_but_not_settled: HashSet<_> = all_matched.difference(&submitted).collect();
@@ -310,7 +313,7 @@ impl Driver {
         settlements: Vec<SettlementWithSolver>,
         prices: &HashMap<H160, BigRational>,
         gas_price_wei: f64,
-    ) -> Vec<RatedSettlement> {
+    ) -> Vec<(Arc<dyn Solver>, RatedSettlement)> {
         use futures::stream::StreamExt;
 
         // Normalize gas_price_wei to the native token price in the prices vector.
@@ -320,18 +323,17 @@ impl Driver {
                 .expect("Price of native token must be known.");
 
         futures::stream::iter(settlements)
-            .filter_map(|settlement| async {
-                let surplus = settlement.settlement.total_surplus(prices);
+            .filter_map(|(solver, settlement)| async {
+                let surplus = settlement.total_surplus(prices);
                 // Because of a potential fee discount, the solver fees may by themselves not be sufficient to make a solution economically viable (leading to a negative objective value)
                 // We therefore reverse apply the fee discount to simulate unsubsidized fees for ranking.
-                let unsubsidized_solver_fees = settlement.settlement.total_fees(prices) / BigRational::from_float(1f64 - self.fee_subsidy_factor).expect("Discount factor is not a rational");
+                let unsubsidized_solver_fees = settlement.total_fees(prices) / BigRational::from_float(1f64 - self.fee_subsidy_factor).expect("Discount factor is not a rational");
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
-                    &settlement.settlement.clone().into(),
+                    &settlement.clone().into(),
                 )
                 .await
                 .ok()?;
-                let solver_name = settlement.name;
                 let rated_settlement = RatedSettlement {
                     settlement,
                     surplus,
@@ -341,13 +343,13 @@ impl Driver {
                 };
                 tracing::info!(
                     "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
-                    solver_name,
+                    solver.name(),
                     rated_settlement.objective_value(),
                     rated_settlement.surplus,
                     rated_settlement.gas_estimate,
                     rated_settlement.gas_price,
                 );
-                Some(rated_settlement)
+                Some((solver, rated_settlement))
             })
             .collect::<Vec<_>>()
             .await
@@ -381,47 +383,56 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {}", gas_price_wei);
 
-        let settlements = self
-            .run_solvers(liquidity, gas_price_wei)
-            .await
-            .filter_map(solver_settlements::filter_bad_settlements)
-            .inspect(|(name, settlements)| {
-                for settlement in settlements.iter() {
-                    tracing::debug!("solver {} found solution:\n {:?}", name, settlement);
+        let mut solver_settlements = Vec::new();
+
+        for (solver, settlements) in self.run_solvers(liquidity, gas_price_wei).await {
+            let name = solver.name();
+
+            let mut settlements = match settlements {
+                Ok(settlement) => settlement,
+                Err(err) => {
+                    tracing::error!("solver {} error: {:?}", name, err);
+                    continue;
                 }
-            });
+            };
 
-        let mut settlements = settlements
-            .map(|(name, settlements)| {
-                solver_settlements::merge_settlements(
-                    self.max_merged_settlements,
-                    &estimated_prices,
-                    name,
-                    settlements,
-                )
-            })
-            .flat_map(|settlements| -> Vec<SettlementWithSolver> { settlements.into() })
-            .collect::<Vec<_>>();
+            solver_settlements::filter_empty_settlements(&mut settlements);
 
-        solver_settlements::filter_settlements_without_old_orders(
-            self.min_order_age,
-            &mut settlements,
-        );
+            for settlement in &settlements {
+                tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
+            }
+
+            solver_settlements::merge_settlements(
+                self.max_merged_settlements,
+                &estimated_prices,
+                &mut settlements,
+            );
+
+            solver_settlements::filter_settlements_without_old_orders(
+                self.min_order_age,
+                &mut settlements,
+            );
+
+            solver_settlements.reserve(settlements.len());
+            for settlement in settlements {
+                solver_settlements.push((solver.clone(), settlement))
+            }
+        }
 
         let (settlements, errors) = self
-            .simulate_settlements(settlements, gas_price_wei)
+            .simulate_settlements(solver_settlements, gas_price_wei)
             .await?;
+
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             settlements.len(),
             errors.len()
         );
-        for settlement in &settlements {
-            self.metrics
-                .settlement_simulation_succeeded(settlement.name);
+        for (solver, _) in &settlements {
+            self.metrics.settlement_simulation_succeeded(solver.name());
         }
-        for (settlement, _) in &errors {
-            self.metrics.settlement_simulation_failed(settlement.name);
+        for ((solver, _), _) in &errors {
+            self.metrics.settlement_simulation_failed(solver.name());
         }
 
         let rated_settlements = self
@@ -429,25 +440,28 @@ impl Driver {
             .await;
 
         self.inflight_trades.clear();
-        if let Some(mut settlement) = rated_settlements
+        if let Some((solver, mut settlement)) = rated_settlements
             .clone()
             .into_iter()
-            .max_by(|a, b| a.objective_value().cmp(&b.objective_value()))
+            .max_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()))
         {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
-                .can_settle_without_liquidity(&settlement, gas_price_wei)
+                .can_settle_without_liquidity(solver.clone(), &settlement, gas_price_wei)
                 .await
                 .unwrap_or(false)
             {
-                settlement = settlement.without_onchain_liquidity();
+                settlement.settlement = settlement.settlement.without_onchain_liquidity();
                 tracing::info!("settlement without onchain liquidity");
             }
 
             tracing::info!("winning settlement: {:?}", settlement);
-            if self.submit_settlement(settlement.clone()).await.is_ok() {
+            if self
+                .submit_settlement(solver, settlement.clone())
+                .await
+                .is_ok()
+            {
                 self.inflight_trades = settlement
-                    .settlement
                     .settlement
                     .trades()
                     .iter()
@@ -456,13 +470,13 @@ impl Driver {
             }
 
             self.report_matched_but_unsettled_orders(
-                &Settlement::from(settlement),
-                rated_settlements.into_iter().map(Settlement::from),
+                &settlement.settlement,
+                rated_settlements.into_iter().map(|(_, solution)| solution),
             );
         }
 
         // Happens after settlement submission so that we do not delay it.
-        self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price_wei)
+        self.report_simulation_errors(&errors, current_block_during_liquidity_fetch, gas_price_wei)
             .await;
 
         Ok(())

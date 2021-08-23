@@ -35,7 +35,7 @@ mod solver_utils;
 /// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
 /// would like to process, including their own private sources.
 #[async_trait::async_trait]
-pub trait Solver {
+pub trait Solver: 'static {
     /// Runs the solver.
     ///
     /// The returned settlements should be independent (for example not reusing the same user
@@ -55,6 +55,12 @@ pub trait Solver {
     /// This method is used for logging and metrics collection.
     fn name(&self) -> &'static str;
 }
+
+/// A vector of solvers.
+pub type Solvers = Vec<Arc<dyn Solver>>;
+
+/// A single settlement and a solver that've produced it.
+pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement);
 
 arg_enum! {
     #[derive(Debug)]
@@ -89,12 +95,12 @@ pub fn create(
     paraswap_slippage_bps: usize,
     disabled_paraswap_dexs: Vec<String>,
     client: Client,
-) -> Result<Vec<Box<dyn Solver>>> {
+) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
     #[allow(clippy::unnecessary_wraps)]
-    fn boxed(solver: impl Solver + 'static) -> Result<Box<dyn Solver>> {
-        Ok(Box::new(solver))
+    fn shared(solver: impl Solver + 'static) -> Result<Arc<dyn Solver>> {
+        Ok(Arc::new(solver))
     }
 
     let buffer_retriever = Arc::new(BufferRetriever::new(
@@ -125,12 +131,12 @@ pub fn create(
     solvers
         .into_iter()
         .map(|solver_type| match solver_type {
-            SolverType::Naive => boxed(NaiveSolver::new(account.clone())),
+            SolverType::Naive => shared(NaiveSolver::new(account.clone())),
             SolverType::Baseline => {
-                boxed(BaselineSolver::new(account.clone(), base_tokens.clone()))
+                shared(BaselineSolver::new(account.clone(), base_tokens.clone()))
             }
-            SolverType::Mip => boxed(create_http_solver(mip_solver_url.clone(), "Mip")),
-            SolverType::Quasimodo => boxed(create_http_solver(
+            SolverType::Mip => shared(create_http_solver(mip_solver_url.clone(), "Mip")),
+            SolverType::Quasimodo => shared(create_http_solver(
                 quasimodo_solver_url.clone(),
                 "Quasimodo",
             )),
@@ -145,7 +151,7 @@ pub fn create(
                 )?
                 .into();
                 // We only want to use 1Inch for high value orders
-                boxed(SellVolumeFilteringSolver::new(
+                shared(SellVolumeFilteringSolver::new(
                     Box::new(one_inch_solver),
                     price_estimator.clone(),
                     native_token,
@@ -161,9 +167,9 @@ pub fn create(
                     client.clone(),
                 )
                 .unwrap();
-                boxed(SingleOrderSolver::from(matcha_solver))
+                shared(SingleOrderSolver::from(matcha_solver))
             }
-            SolverType::Paraswap => boxed(SingleOrderSolver::from(ParaswapSolver::new(
+            SolverType::Paraswap => shared(SingleOrderSolver::from(ParaswapSolver::new(
                 account.clone(),
                 web3.clone(),
                 settlement_contract.clone(),
@@ -178,8 +184,8 @@ pub fn create(
 }
 
 /// Returns a naive solver to be used e.g. in e2e tests.
-pub fn naive_solver(account: Account) -> Box<dyn Solver> {
-    Box::new(NaiveSolver::new(account))
+pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
+    Arc::new(NaiveSolver::new(account))
 }
 
 /// A solver that remove limit order below a certain threshold and

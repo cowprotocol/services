@@ -35,7 +35,6 @@ pub async fn estimate_gas(
 pub struct SolutionSubmitter {
     pub web3: Web3,
     pub contract: GPv2Settlement,
-    pub account: Account,
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
     // for gas price estimation
     pub target_confirm_time: Duration,
@@ -61,11 +60,12 @@ impl SolutionSubmitter {
         &self,
         settlement: Settlement,
         gas_estimate: U256,
+        account: Account,
     ) -> Result<TransactionHash> {
         match &self.transaction_strategy {
             TransactionStrategy::PublicMempool => {
                 public_mempool::submit(
-                    self.account.clone(),
+                    account,
                     &self.contract,
                     self.gas_price_estimator.as_ref(),
                     self.target_confirm_time,
@@ -82,7 +82,7 @@ impl SolutionSubmitter {
                 let submitter = ArcherSolutionSubmitter {
                     web3: &self.web3,
                     contract: &self.contract,
-                    account: &self.account,
+                    account: &account,
                     archer_api,
                     gas_price_estimator: self.gas_price_estimator.as_ref(),
                     gas_price_cap: self.gas_price_cap,

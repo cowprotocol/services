@@ -12,7 +12,6 @@ pub mod settlement_submission;
 pub mod solver;
 #[cfg(test)]
 mod test;
-mod util;
 
 use anyhow::Result;
 use ethcontract::{contract::MethodDefaults, Account};

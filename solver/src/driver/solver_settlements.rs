@@ -1,5 +1,4 @@
-use crate::{encoding::EncodedSettlement, settlement::Settlement};
-use anyhow::Result;
+use crate::settlement::Settlement;
 use ethcontract::U256;
 use num::BigRational;
 use primitive_types::H160;
@@ -8,72 +7,14 @@ use std::{collections::HashMap, time::Duration};
 
 // Return None if the result is an error or there are no settlements remaining after removing
 // settlements with no trades.
-pub fn filter_bad_settlements(
-    (solver_name, solver_result): (&'static str, Result<Vec<Settlement>>),
-) -> Option<(&'static str, Vec<Settlement>)> {
-    let mut settlements = match solver_result {
-        Ok(settlements) => settlements,
-        Err(err) => {
-            tracing::error!("solver {} error: {:?}", solver_name, err);
-            return None;
-        }
-    };
+pub fn filter_empty_settlements(settlements: &mut Vec<Settlement>) {
     settlements.retain(|settlement| !settlement.trades().is_empty());
-    if settlements.is_empty() {
-        return None;
-    }
-    Some((solver_name, settlements))
-}
-
-// A single solver produces multiple settlements
-#[derive(Debug)]
-pub struct SolverWithSettlements {
-    pub name: &'static str,
-    pub settlements: Vec<Settlement>,
-}
-
-impl From<SolverWithSettlements> for Vec<SettlementWithSolver> {
-    fn from(instance: SolverWithSettlements) -> Self {
-        let name = instance.name;
-        instance
-            .settlements
-            .into_iter()
-            .map(|settlement| SettlementWithSolver { name, settlement })
-            .collect()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SettlementWithSolver {
-    pub name: &'static str,
-    pub settlement: Settlement,
-}
-
-impl From<SettlementWithSolver> for EncodedSettlement {
-    fn from(instance: SettlementWithSolver) -> Self {
-        instance.settlement.into()
-    }
-}
-
-impl From<SettlementWithSolver> for Settlement {
-    fn from(instance: SettlementWithSolver) -> Self {
-        instance.settlement
-    }
-}
-
-impl SettlementWithSolver {
-    pub fn without_onchain_liquidity(&self) -> Self {
-        Self {
-            name: self.name,
-            settlement: self.settlement.without_onchain_liquidity(),
-        }
-    }
 }
 
 // Each individual settlement has an objective value.
 #[derive(Debug, Clone)]
 pub struct RatedSettlement {
-    pub settlement: SettlementWithSolver,
+    pub settlement: Settlement,
     pub surplus: BigRational,     // In wei.
     pub solver_fees: BigRational, // In wei.
     pub gas_estimate: U256,       // In gas units.
@@ -104,37 +45,12 @@ impl RatedSettlement {
     }
 }
 
-impl From<RatedSettlement> for EncodedSettlement {
-    fn from(instance: RatedSettlement) -> Self {
-        instance.settlement.into()
-    }
-}
-
-impl From<RatedSettlement> for Settlement {
-    fn from(instance: RatedSettlement) -> Self {
-        instance.settlement.into()
-    }
-}
-
-impl RatedSettlement {
-    pub fn without_onchain_liquidity(&self) -> Self {
-        RatedSettlement {
-            settlement: self.settlement.without_onchain_liquidity(),
-            surplus: self.surplus.clone(),
-            solver_fees: self.solver_fees.clone(),
-            gas_estimate: self.gas_estimate, // TODO: This becomes an overestimate!
-            gas_price: self.gas_price.clone(),
-        }
-    }
-}
-
 // Takes the settlements of a single solver and adds a merged settlement.
 pub fn merge_settlements(
     max_merged_settlements: usize,
     prices: &HashMap<H160, BigRational>,
-    name: &'static str,
-    mut settlements: Vec<Settlement>,
-) -> SolverWithSettlements {
+    settlements: &mut Vec<Settlement>,
+) {
     settlements.sort_by_cached_key(|a| -a.total_surplus(prices));
 
     if let Some(settlement) =
@@ -142,7 +58,6 @@ pub fn merge_settlements(
     {
         settlements.push(settlement);
     }
-    SolverWithSettlements { name, settlements }
 }
 
 // Goes through the settlements in order and tries to merge a number of them. Keeps going on merge
@@ -176,13 +91,12 @@ fn merge_at_most_settlements(
 
 pub fn filter_settlements_without_old_orders(
     min_order_age: Duration,
-    settlements: &mut Vec<SettlementWithSolver>,
+    settlements: &mut Vec<Settlement>,
 ) {
     let settle_orders_older_than =
         chrono::offset::Utc::now() - chrono::Duration::from_std(min_order_age).unwrap();
     settlements.retain(|settlement| {
         settlement
-            .settlement
             .trades()
             .iter()
             .any(|trade| trade.order.order_meta_data.creation_date <= settle_orders_older_than)
@@ -236,12 +150,12 @@ mod tests {
             Settlement::with_trades(prices.clone(), vec![trade(executed_amount, order_uid)])
         };
 
-        let settlements = vec![
+        let mut settlements = vec![
             settlement(1.into(), 1),
             settlement(2.into(), 2),
             settlement(3.into(), 3),
         ];
-        let settlements = merge_settlements(2, &prices_rational, "", settlements).settlements;
+        merge_settlements(2, &prices_rational, &mut settlements);
 
         assert_eq!(settlements.len(), 4);
         assert!(settlements.iter().any(|settlement| {

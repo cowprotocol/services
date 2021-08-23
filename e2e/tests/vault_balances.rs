@@ -147,7 +147,7 @@ async fn vault_balances(web3: Web3) {
             web3: web3.clone(),
         }),
     );
-    let solver = solver::solver::naive_solver(solver_account.clone());
+    let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         orderbook_api: create_orderbook_api(&web3, gpv2.native_token.address()),
@@ -174,7 +174,6 @@ async fn vault_balances(web3: Web3) {
         SolutionSubmitter {
             web3: web3.clone(),
             contract: gpv2.settlement.clone(),
-            account: solver_account,
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,

@@ -371,7 +371,6 @@ async fn main() {
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
-        account,
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         gas_price_cap: args.gas_price_cap,

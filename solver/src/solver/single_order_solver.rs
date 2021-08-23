@@ -46,7 +46,7 @@ impl<I: SingleOrderSolving> From<I> for SingleOrderSolver<I> {
 }
 
 #[async_trait::async_trait]
-impl<I: SingleOrderSolving + Send + Sync> Solver for SingleOrderSolver<I> {
+impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver<I> {
     async fn solve(
         &self,
         liquidity: Vec<Liquidity>,
