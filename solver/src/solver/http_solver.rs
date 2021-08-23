@@ -347,6 +347,7 @@ impl HttpSolver {
         Ok((model, context))
     }
 
+    #[allow(unreachable_code)]
     async fn send(
         &self,
         model: &BatchAuctionModel,
@@ -401,8 +402,13 @@ impl HttpSolver {
             status,
             context()
         );
-        serde_json::from_str(text.as_str())
-            .with_context(|| format!("failed to decode response json, {}", context()))
+
+        println!("Received response: {:#?}", text);
+        let r:Result<SettledBatchAuctionModel, anyhow::Error> = serde_json::from_str(text.as_str())
+            .with_context(|| format!("failed to decode response json, {}", context()));
+        println!("Prices: {:#?}", r.unwrap().prices);
+        std::process::exit(0);
+        r
     }
 
     fn order_cost(&self, gas_price: f64) -> U256 {
