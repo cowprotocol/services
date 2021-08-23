@@ -28,10 +28,9 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use reqwest::Client;
 
-use super::single_order_solver::SingleOrderSolving;
+use super::single_order_solver::{SettlementError, SingleOrderSolving};
 
 use self::api::{DefaultMatchaApi, SwapQuery, SwapResponse};
-use crate::solver::solver_utils::SettlementError;
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
@@ -80,41 +79,6 @@ impl MatchaSolver {
 
 #[async_trait::async_trait]
 impl SingleOrderSolving for MatchaSolver {
-    async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
-        let max_retries = 2;
-        for _ in 0..max_retries {
-            match self.try_settle_order(order.clone()).await {
-                Ok(settlement) => return Ok(settlement),
-                Err(err) if err.retryable => {
-                    tracing::debug!("Retrying Matcha settlement due to: {:?}", &err);
-                    continue;
-                }
-                Err(err) => return Err(err.inner),
-            }
-        }
-        // One last attempt, else throw converted error
-        self.try_settle_order(order).await.map_err(|err| err.inner)
-    }
-
-    fn account(&self) -> &Account {
-        &self.account
-    }
-
-    fn name(&self) -> &'static str {
-        "Matcha"
-    }
-}
-
-impl From<MatchaResponseError> for SettlementError {
-    fn from(err: MatchaResponseError) -> Self {
-        SettlementError {
-            inner: anyhow!("Matcha Response Error {:?}", err),
-            retryable: matches!(err, MatchaResponseError::ServerError(_)),
-        }
-    }
-}
-
-impl MatchaSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
@@ -158,6 +122,23 @@ impl MatchaSolver {
         settlement.encoder.append_to_execution_plan(swap);
         Ok(Some(settlement))
     }
+
+    fn account(&self) -> &Account {
+        &self.account
+    }
+
+    fn name(&self) -> &'static str {
+        "Matcha"
+    }
+}
+
+impl From<MatchaResponseError> for SettlementError {
+    fn from(err: MatchaResponseError) -> Self {
+        SettlementError {
+            inner: anyhow!("Matcha Response Error {:?}", err),
+            retryable: matches!(err, MatchaResponseError::ServerError(_)),
+        }
+    }
 }
 
 fn swap_respects_limit_price(swap: &SwapResponse, order: &LimitOrder) -> bool {
@@ -186,6 +167,7 @@ mod tests {
     use crate::liquidity::tests::CapturingSettlementHandler;
     use crate::liquidity::LimitOrder;
     use crate::solver::matcha_solver::api::MockMatchaApi;
+    use crate::solver::single_order_solver::SingleOrderSolver;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
@@ -204,8 +186,9 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver =
-            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
+        let solver = SingleOrderSolver::from(
+            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap(),
+        );
         let settlement = solver
             .settle_order(
                 Order {
@@ -213,7 +196,7 @@ mod tests {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),
-                        buy_amount: 1u128.into(),
+                        buy_amount: 2u128.into(),
                         kind: OrderKind::Sell,
                         ..Default::default()
                     },
@@ -237,8 +220,9 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver =
-            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
+        let solver = SingleOrderSolver::from(
+            MatchaSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap(),
+        );
         let settlement = solver
             .settle_order(
                 Order {
@@ -292,11 +276,11 @@ mod tests {
                 })
             });
 
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
 
         let buy_order_passing_limit = LimitOrder {
             sell_token,
@@ -422,11 +406,11 @@ mod tests {
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
 
         let order = LimitOrder {
             sell_token,
@@ -468,11 +452,11 @@ mod tests {
             .expect_get_approval()
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
 
         let order = LimitOrder {
             sell_token,
@@ -536,11 +520,11 @@ mod tests {
             })
             .in_sequence(&mut seq);
 
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
 
         let order = LimitOrder {
             ..Default::default()
@@ -565,11 +549,11 @@ mod tests {
                 Err(MatchaResponseError::ServerError(String::new()))
             })
             .in_sequence(&mut seq);
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
         let order = LimitOrder {
             ..Default::default()
         };
@@ -594,11 +578,11 @@ mod tests {
             })
             .in_sequence(&mut seq);
 
-        let solver = MatchaSolver {
+        let solver = SingleOrderSolver::from(MatchaSolver {
             account: account(),
             client,
             allowance_fetcher,
-        };
+        });
 
         let order = LimitOrder {
             ..Default::default()

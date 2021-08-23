@@ -5,7 +5,7 @@
 
 pub mod api;
 use self::api::{Amount, OneInchClient, Swap, SwapQuery};
-use super::single_order_solver::SingleOrderSolving;
+use super::single_order_solver::{SettlementError, SingleOrderSolving};
 use super::solver_utils::Slippage;
 use crate::{
     encoding::EncodedInteraction,
@@ -96,7 +96,7 @@ impl OneInchSolver {
         &self,
         order: LimitOrder,
         protocols: Option<Vec<String>>,
-    ) -> Result<Option<Settlement>> {
+    ) -> Result<Option<Settlement>, SettlementError> {
         debug_assert_eq!(
             order.kind,
             OrderKind::Sell,
@@ -163,7 +163,10 @@ impl Interaction for Swap {
 
 #[async_trait::async_trait]
 impl SingleOrderSolving for OneInchSolver {
-    async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
+    async fn try_settle_order(
+        &self,
+        order: LimitOrder,
+    ) -> Result<Option<Settlement>, SettlementError> {
         if order.kind != OrderKind::Sell {
             // 1Inch only supports sell orders
             return Ok(None);
@@ -194,6 +197,7 @@ mod tests {
     use crate::liquidity::LimitOrder;
     use crate::solver::oneinch_solver::api::Protocols;
     use crate::solver::oneinch_solver::api::Spender;
+    use crate::solver::SingleOrderSolver;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
@@ -222,16 +226,17 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_buy_orders() {
-        assert!(
-            dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
-                .settle_order(LimitOrder {
-                    kind: OrderKind::Buy,
-                    ..Default::default()
-                },)
-                .await
-                .unwrap()
-                .is_none()
-        );
+        assert!(SingleOrderSolver::from(dummy_solver(
+            MockOneInchClient::new(),
+            MockAllowanceManaging::new()
+        ))
+        .settle_order(LimitOrder {
+            kind: OrderKind::Buy,
+            ..Default::default()
+        },)
+        .await
+        .unwrap()
+        .is_none());
     }
 
     #[tokio::test]
@@ -268,7 +273,7 @@ mod tests {
             .expect_get_approval()
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
-        let solver = dummy_solver(client, allowance_fetcher);
+        let solver = SingleOrderSolver::from(dummy_solver(client, allowance_fetcher));
 
         let order_passing_limit = LimitOrder {
             sell_token,
@@ -336,10 +341,10 @@ mod tests {
             })
         });
 
-        let solver = OneInchSolver {
+        let solver = SingleOrderSolver::from(OneInchSolver {
             disabled_protocols: hashset!["BadProtocol".to_string(), "VeryBadProtocol".to_string()],
             ..dummy_solver(client, allowance_fetcher)
-        };
+        });
 
         // Limit price violated. Actual assert is happening in `expect_get_swap()`
         assert!(solver
@@ -393,7 +398,7 @@ mod tests {
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
-        let solver = dummy_solver(client, allowance_fetcher);
+        let solver = SingleOrderSolver::from(dummy_solver(client, allowance_fetcher));
 
         let order = LimitOrder {
             sell_token,

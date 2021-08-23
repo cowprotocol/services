@@ -1,4 +1,4 @@
-use anyhow::{ensure, Error, Result};
+use anyhow::{ensure, Result};
 use serde::{
     de::{Deserializer, Error as _},
     Deserialize,
@@ -68,19 +68,4 @@ pub fn debug_bytes(
     formatter: &mut std::fmt::Formatter,
 ) -> Result<(), std::fmt::Error> {
     formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
-}
-
-#[derive(Debug)]
-pub struct SettlementError {
-    pub inner: anyhow::Error,
-    pub retryable: bool,
-}
-
-impl From<anyhow::Error> for SettlementError {
-    fn from(err: Error) -> Self {
-        SettlementError {
-            inner: err,
-            retryable: false,
-        }
-    }
 }
