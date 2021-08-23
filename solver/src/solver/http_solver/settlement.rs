@@ -4,7 +4,7 @@ use crate::{
     liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
     settlement::Settlement,
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
@@ -177,7 +177,7 @@ fn match_prepared_and_settled_amms(
 
 fn match_settled_prices(
     executed_limit_orders: &[ExecutedLimitOrder],
-    solver_prices: HashMap<H160, Price>,
+    solver_prices: HashMap<H160, U256>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
     let executed_tokens = executed_limit_orders
@@ -187,10 +187,8 @@ fn match_settled_prices(
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices
                 .get(&token)
-                .ok_or_else(|| anyhow!("invalid token {}", token))?
-                .0;
-            ensure!(price.is_finite() && price > 0.0, "invalid price {}", price);
-            entry.insert(U256::from_f64_lossy(price));
+                .ok_or_else(|| anyhow!("invalid token {}", token))?;
+            entry.insert(*price);
         }
     }
     Ok(prices)
@@ -286,7 +284,7 @@ mod tests {
             orders: hashmap! { 0 => executed_order },
             amms: hashmap! { 0 => updated_uniswap, 1 => updated_balancer },
             ref_token: Some(t0),
-            prices: hashmap! { t0 => Price(10.0), t1 => Price(11.0) },
+            prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
         };
 
         let prepared = SettlementContext {
