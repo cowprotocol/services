@@ -32,7 +32,7 @@ use crate::{
     event_handling::EventIndex,
     sources::balancer::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp},
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use derivative::Derivative;
 use ethcontract::{H160, H256};
 use model::TokenPair;
@@ -80,6 +80,46 @@ impl RegisteredWeightedPool {
         data_fetcher: &dyn PoolInfoFetching,
     ) -> Result<RegisteredWeightedPool> {
         Self::new(block_created, creation.pool_address, data_fetcher).await
+    }
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct RegisteredStablePool {
+    pub pool_id: H256,
+    pub pool_address: H160,
+    pub tokens: Vec<H160>,
+    pub scaling_exponents: Vec<u8>,
+    pub block_created: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RegisteredPool {
+    Weighted(RegisteredWeightedPool),
+    Stable(RegisteredStablePool),
+}
+
+impl RegisteredPool {
+    pub fn block_created(&self) -> u64 {
+        match self {
+            RegisteredPool::Weighted(pool) => pool.block_created,
+            RegisteredPool::Stable(pool) => pool.block_created,
+        }
+    }
+
+    pub fn try_into_weighted(self) -> Result<RegisteredWeightedPool> {
+        if let RegisteredPool::Weighted(pool) = self {
+            Ok(pool)
+        } else {
+            Err(anyhow!("Not a weighted pool!"))
+        }
+    }
+
+    pub fn try_into_stable(self) -> Result<RegisteredStablePool> {
+        if let RegisteredPool::Stable(pool) = self {
+            Ok(pool)
+        } else {
+            Err(anyhow!("Not a stable pool!"))
+        }
     }
 }
 
@@ -248,6 +288,55 @@ mod tests {
             .collect();
 
         (pool_ids, pool_addresses, tokens, weights, creation_events)
+    }
+
+    #[test]
+    fn registered_pool_block_created() {
+        let registered_weighted_pool = RegisteredPool::Weighted(RegisteredWeightedPool {
+            pool_id: Default::default(),
+            pool_address: Default::default(),
+            tokens: vec![],
+            normalized_weights: vec![],
+            scaling_exponents: vec![],
+            block_created: 6,
+        });
+
+        let registered_stable_pool = RegisteredPool::Stable(RegisteredStablePool {
+            pool_id: Default::default(),
+            pool_address: Default::default(),
+            tokens: vec![],
+            scaling_exponents: vec![],
+            block_created: 4,
+        });
+
+        assert_eq!(registered_weighted_pool.block_created(), 6);
+        assert_eq!(registered_stable_pool.block_created(), 4);
+    }
+
+    #[test]
+    fn registered_pool_try_into() {
+        let registered_weighted_pool = RegisteredPool::Weighted(RegisteredWeightedPool {
+            pool_id: Default::default(),
+            pool_address: Default::default(),
+            tokens: vec![],
+            normalized_weights: vec![],
+            scaling_exponents: vec![],
+            block_created: 0,
+        });
+
+        assert!(registered_weighted_pool.clone().try_into_weighted().is_ok());
+        assert!(registered_weighted_pool.try_into_stable().is_err());
+
+        let registered_stable_pool = RegisteredPool::Stable(RegisteredStablePool {
+            pool_id: Default::default(),
+            pool_address: Default::default(),
+            tokens: vec![],
+            scaling_exponents: vec![],
+            block_created: 0,
+        });
+
+        assert!(registered_stable_pool.clone().try_into_stable().is_ok());
+        assert!(registered_stable_pool.try_into_weighted().is_err());
     }
 
     #[test]

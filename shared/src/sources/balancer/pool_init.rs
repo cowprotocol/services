@@ -4,7 +4,7 @@
 //! with existing data in order to reduce the "cold start" time of the service.
 
 use crate::sources::balancer::{
-    graph_api::{BalancerSubgraphClient, RegisteredWeightedPools},
+    graph_api::{BalancerSubgraphClient, RegisteredPools},
     info_fetching::PoolInfoFetching,
     pool_storage::RegisteredWeightedPool,
 };
@@ -123,7 +123,7 @@ where
     S: BalancerSubgraph,
 {
     async fn initialize_pools_inner(&self) -> Result<BalancerRegisteredPools> {
-        let mut pools = self.client.weighted_pools().await?;
+        let mut pools = self.client.registered_pools().await?;
         let result = BalancerRegisteredPools {
             weighted_pools: pools
                 .pools_by_factory
@@ -131,14 +131,20 @@ where
                     BalancerV2WeightedPoolFactory::raw_contract(),
                     self.chain_id,
                 )?)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|pool| pool.try_into_weighted().ok())
+                .collect(),
             weighted_2token_pools: pools
                 .pools_by_factory
                 .remove(&deployment_address(
                     BalancerV2WeightedPool2TokensFactory::raw_contract(),
                     self.chain_id,
                 )?)
-                .unwrap_or_default(),
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|pool| pool.try_into_weighted().ok())
+                .collect(),
             fetched_block_number: pools.fetched_block_number,
         };
 
@@ -194,7 +200,7 @@ where
     S: BalancerSubgraph,
 {
     async fn initialize_pools_inner(&self) -> Result<BalancerRegisteredPools> {
-        let mut pools = self.client.weighted_pools().await?;
+        let mut pools = self.client.registered_pools().await?;
 
         // For subgraphs on networks without an archive node (all the testnets)
         // the results from the query will all have missing token data, so fetch
@@ -210,7 +216,10 @@ where
                             BalancerV2WeightedPoolFactory::raw_contract(),
                             self.chain_id,
                         )?)
-                        .unwrap_or_default(),
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|pool| pool.try_into_weighted().ok())
+                        .collect(),
                     pools.fetched_block_number,
                 )
                 .await?,
@@ -222,7 +231,10 @@ where
                             BalancerV2WeightedPool2TokensFactory::raw_contract(),
                             self.chain_id,
                         )?)
-                        .unwrap_or_default(),
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|pool| pool.try_into_weighted().ok())
+                        .collect(),
                     pools.fetched_block_number,
                 )
                 .await?,
@@ -259,13 +271,13 @@ where
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 trait BalancerSubgraph: Send + Sync {
-    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools>;
+    async fn registered_pools(&self) -> Result<RegisteredPools>;
 }
 
 #[async_trait::async_trait]
 impl BalancerSubgraph for BalancerSubgraphClient {
-    async fn weighted_pools(&self) -> Result<RegisteredWeightedPools> {
-        self.get_weighted_pools().await
+    async fn registered_pools(&self) -> Result<RegisteredPools> {
+        self.get_registered_pools().await
     }
 }
 
@@ -299,8 +311,10 @@ async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sources::balancer::pool_storage::RegisteredStablePool;
     use crate::sources::balancer::{
         info_fetching::{MockPoolInfoFetching, WeightedPoolInfo},
+        pool_storage::RegisteredPool,
         swap::fixed_point::Bfp,
     };
     use anyhow::bail;
@@ -338,7 +352,7 @@ mod tests {
         )
         .unwrap();
 
-        fn pool(seed: u8) -> RegisteredWeightedPool {
+        fn weighted_pool(seed: u8) -> RegisteredWeightedPool {
             RegisteredWeightedPool {
                 pool_id: H256([seed; 32]),
                 pool_address: H160([seed; 20]),
@@ -352,20 +366,30 @@ mod tests {
             }
         }
 
+        fn stable_pool(seed: u8) -> RegisteredStablePool {
+            RegisteredStablePool {
+                pool_id: H256([seed; 32]),
+                pool_address: H160([seed; 20]),
+                tokens: vec![H160([seed; 20]), H160([seed + 1; 20])],
+                scaling_exponents: vec![0, 0],
+                block_created: seed as _,
+            }
+        }
+
         let mut subgraph = MockBalancerSubgraph::new();
-        subgraph.expect_weighted_pools().returning(move || {
-            Ok(RegisteredWeightedPools {
+        subgraph.expect_registered_pools().returning(move || {
+            Ok(RegisteredPools {
                 pools_by_factory: hashmap! {
                     weighted_factory => vec![
-                        pool(1),
-                        pool(2),
+                        RegisteredPool::Weighted(weighted_pool(1)),
+                        RegisteredPool::Weighted(weighted_pool(2)),
                     ],
                     weighted_2token_factory => vec![
-                        pool(3),
+                        RegisteredPool::Weighted(weighted_pool(3)),
                     ],
                     addr!("0102030405060708091011121314151617181920") => vec![
-                        pool(4),
-                        pool(5),
+                        RegisteredPool::Weighted(weighted_pool(4)),
+                        RegisteredPool::Stable(stable_pool(5)),
                     ],
                 },
                 fetched_block_number: 42,
@@ -380,8 +404,8 @@ mod tests {
         assert_eq!(
             initializer.initialize_pools_inner().await.unwrap(),
             BalancerRegisteredPools {
-                weighted_pools: vec![pool(1), pool(2)],
-                weighted_2token_pools: vec![pool(3)],
+                weighted_pools: vec![weighted_pool(1), weighted_pool(2)],
+                weighted_2token_pools: vec![weighted_pool(3)],
                 fetched_block_number: 42,
             },
         );
@@ -398,8 +422,8 @@ mod tests {
         .unwrap();
 
         let mut subgraph = MockBalancerSubgraph::new();
-        subgraph.expect_weighted_pools().returning(move || {
-            Ok(RegisteredWeightedPools {
+        subgraph.expect_registered_pools().returning(move || {
+            Ok(RegisteredPools {
                 pools_by_factory: hashmap! {
                     weighted_2token_factory => vec![],
                 },
@@ -424,7 +448,7 @@ mod tests {
 
         let mut subgraph = MockBalancerSubgraph::new();
         subgraph
-            .expect_weighted_pools()
+            .expect_registered_pools()
             .returning(move || bail!("test error"));
 
         let initializer = SubgraphPoolInitializerInner {
@@ -440,8 +464,8 @@ mod tests {
         let chain_id = 999;
 
         let mut subgraph = MockBalancerSubgraph::new();
-        subgraph.expect_weighted_pools().returning(|| {
-            Ok(RegisteredWeightedPools {
+        subgraph.expect_registered_pools().returning(|| {
+            Ok(RegisteredPools {
                 pools_by_factory: hashmap! {},
                 fetched_block_number: 0,
             })
@@ -468,33 +492,33 @@ mod tests {
         .unwrap();
 
         let mut subgraph = MockBalancerSubgraph::new();
-        subgraph.expect_weighted_pools().returning(move || {
-            Ok(RegisteredWeightedPools {
+        subgraph.expect_registered_pools().returning(move || {
+            Ok(RegisteredPools {
                 pools_by_factory: hashmap! {
-                    weighted_factory => vec![RegisteredWeightedPool {
+                    weighted_factory => vec![RegisteredPool::Weighted(RegisteredWeightedPool {
                         pool_id: H256([1; 32]),
                         pool_address: H160([1; 20]),
                         tokens: vec![],
                         scaling_exponents: vec![],
                         normalized_weights: vec![],
                         block_created: 42,
-                    }],
-                    weighted_2token_factory => vec![RegisteredWeightedPool {
+                    })],
+                    weighted_2token_factory => vec![RegisteredPool::Weighted(RegisteredWeightedPool {
                         pool_id: H256([2; 32]),
                         pool_address: H160([2; 20]),
                         tokens: vec![],
                         scaling_exponents: vec![],
                         normalized_weights: vec![],
                         block_created: 42,
-                    }],
-                    addr!("0102030405060708091011121314151617181920") => vec![RegisteredWeightedPool {
+                    })],
+                    addr!("0102030405060708091011121314151617181920") => vec![RegisteredPool::Weighted(RegisteredWeightedPool {
                         pool_id: H256([3; 32]),
                         pool_address: H160([3; 20]),
                         tokens: vec![],
                         scaling_exponents: vec![],
                         normalized_weights: vec![],
                         block_created: 42,
-                    }],
+                    })],
                 },
                 fetched_block_number: 42,
             })
