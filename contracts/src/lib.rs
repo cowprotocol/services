@@ -5,6 +5,7 @@ pub mod vault;
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Authorizer.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
 include!(concat!(
     env!("OUT_DIR"),
     "/BalancerV2WeightedPoolFactory.rs"
@@ -13,6 +14,7 @@ include!(concat!(
     env!("OUT_DIR"),
     "/BalancerV2WeightedPool2TokensFactory.rs"
 ));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20Mintable.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2AllowListAuthentication.rs"));
@@ -97,6 +99,7 @@ mod tests {
             assert_has_deployment_address!(BalancerV2Vault for *network);
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
+            assert_has_deployment_address!(BalancerV2StablePoolFactory for *network);
         }
     }
 
@@ -117,6 +120,7 @@ mod tests {
             assert_has_deployment_information!(BalancerV2Vault for *network);
             assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
+            assert_has_deployment_information!(BalancerV2StablePoolFactory for *network);
         }
     }
 }

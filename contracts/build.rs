@@ -86,7 +86,35 @@ fn main() {
                 },
             )
     });
+    generate_contract_with_config("BalancerV2StablePoolFactory", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_stable_pool_factory")
+            .add_network(
+                "1",
+                Network {
+                    address: addr("0xc66ba2b6595d3613ccab350c886ace23866ede24"),
+                    deployment_information: Some(tx(
+                        "0xfd417511f3902a304cca51023e8e771de22ffa7f30b9c8650ec5757328ab89a6",
+                    )),
+                },
+            )
+            .add_network(
+                "4",
+                Network {
+                    address: addr("0xc66ba2b6595d3613ccab350c886ace23866ede24"),
+                    deployment_information: Some(tx(
+                        "26ccac4bd7af78607107489fa05868a68291b5e6f217f6829fc3767d8926264a",
+                    )),
+                },
+            )
+    });
     generate_contract("BalancerV2WeightedPool");
+    generate_contract_with_config("BalancerV2StablePool", |builder| {
+        builder.add_method_alias(
+            "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),uint256[],uint256,uint256)",
+            "on_swap_with_balances"
+        )
+    });
     generate_contract("ERC20");
     generate_contract("ERC20Mintable");
     generate_contract("GPv2AllowListAuthentication");

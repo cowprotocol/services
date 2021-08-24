@@ -46,6 +46,10 @@ fn run() -> Result<()> {
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
              pkg/deployments/deployed/mainnet/WeightedPool2TokensFactory.json",
         )?
+        .github(
+            "BalancerV2StablePoolFactory",
+            "balancer-labs/balancer-v2-monorepo/stable-deployment/pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
+        )?
         .npm(
             "ERC20Mintable",
             "@openzeppelin/contracts@2.5.0/build/contracts/ERC20Mintable.json",
@@ -77,6 +81,10 @@ fn run() -> Result<()> {
             "BalancerV2WeightedPool",
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
              pkg/deployments/extra-abis/WeightedPool.json",
+        )?
+        .github(
+            "BalancerV2StablePool",
+            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/abis/StablePool.json",
         )?
         .npm(
             "ERC20",
