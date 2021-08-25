@@ -218,7 +218,6 @@ fn satisfies_limit_price(order: &LimitOrder, response: &PriceResponse) -> bool {
 mod tests {
     use super::{api::MockParaswapApi, *};
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use crate::solver::SingleOrderSolver;
     use crate::test::account;
     use contracts::WETH9;
     use ethcontract::U256;
@@ -285,7 +284,7 @@ mod tests {
             .expect_get_token_infos()
             .return_const(HashMap::new());
 
-        let solver = SingleOrderSolver::from(ParaswapSolver {
+        let solver = ParaswapSolver {
             account: account(),
             client,
             solver_address: Default::default(),
@@ -294,10 +293,10 @@ mod tests {
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
             slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
-        });
+        };
 
         let order = LimitOrder::default();
-        let result = solver.settle_order(order).await;
+        let result = solver.try_settle_order(order).await;
 
         // This implicitly checks that we don't call the API is its mock doesn't have any expectations and would panic
         assert!(result.is_err());
@@ -334,7 +333,7 @@ mod tests {
             }
         });
 
-        let solver = SingleOrderSolver::from(ParaswapSolver {
+        let solver = ParaswapSolver {
             account: account(),
             client,
             solver_address: Default::default(),
@@ -343,7 +342,7 @@ mod tests {
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
             slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
-        });
+        };
 
         let order_passing_limit = LimitOrder {
             sell_token,
@@ -363,7 +362,7 @@ mod tests {
         };
 
         let result = solver
-            .settle_order(order_passing_limit)
+            .try_settle_order(order_passing_limit)
             .await
             .unwrap()
             .unwrap();
@@ -375,7 +374,10 @@ mod tests {
             }
         );
 
-        let result = solver.settle_order(order_violating_limit).await.unwrap();
+        let result = solver
+            .try_settle_order(order_violating_limit)
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -426,7 +428,7 @@ mod tests {
             }
         });
 
-        let solver = SingleOrderSolver::from(ParaswapSolver {
+        let solver = ParaswapSolver {
             account: account(),
             client,
             solver_address: Default::default(),
@@ -435,7 +437,7 @@ mod tests {
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
             slippage_bps: 10,
             disabled_paraswap_dexs: vec![],
-        });
+        };
 
         let order = LimitOrder {
             sell_token,
@@ -446,11 +448,15 @@ mod tests {
         };
 
         // On first run we have two main interactions (approve + swap)
-        let result = solver.settle_order(order.clone()).await.unwrap().unwrap();
+        let result = solver
+            .try_settle_order(order.clone())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
-        let result = solver.settle_order(order).await.unwrap().unwrap();
+        let result = solver.try_settle_order(order).await.unwrap().unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
     }
 
@@ -503,7 +509,7 @@ mod tests {
             }
         });
 
-        let solver = SingleOrderSolver::from(ParaswapSolver {
+        let solver = ParaswapSolver {
             account: account(),
             client,
             solver_address: Default::default(),
@@ -512,7 +518,7 @@ mod tests {
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
             slippage_bps: 1000, // 10%
             disabled_paraswap_dexs: vec![],
-        });
+        };
 
         let sell_order = LimitOrder {
             sell_token,
@@ -523,7 +529,7 @@ mod tests {
             ..Default::default()
         };
 
-        let result = solver.settle_order(sell_order).await.unwrap();
+        let result = solver.try_settle_order(sell_order).await.unwrap();
         // Actual assertion is inside the client's `expect_transaction` mock
         assert!(result.is_some());
 
@@ -535,7 +541,7 @@ mod tests {
             kind: model::order::OrderKind::Buy,
             ..Default::default()
         };
-        let result = solver.settle_order(buy_order).await.unwrap();
+        let result = solver.try_settle_order(buy_order).await.unwrap();
         // Actual assertion is inside the client's `expect_transaction` mock
         assert!(result.is_some());
     }
@@ -552,7 +558,7 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver = SingleOrderSolver::from(ParaswapSolver::new(
+        let solver = ParaswapSolver::new(
             account(),
             web3,
             settlement,
@@ -561,10 +567,10 @@ mod tests {
             0,
             vec![],
             Client::new(),
-        ));
+        );
 
         let settlement = solver
-            .settle_order(
+            .try_settle_order(
                 Order {
                     order_creation: OrderCreation {
                         sell_token: weth.address(),
@@ -583,183 +589,5 @@ mod tests {
             .unwrap();
 
         println!("{:#?}", settlement);
-    }
-
-    #[tokio::test]
-    async fn settle_order_retry_until_succeeds() {
-        let mut client = Box::new(MockParaswapApi::new());
-        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
-        let mut token_info = MockTokenInfoFetching::new();
-
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        client.expect_price().returning(|_| {
-            Ok(PriceResponse {
-                ..Default::default()
-            })
-        });
-        let mut seq = Sequence::new();
-        client
-            .expect_transaction()
-            .times(2)
-            .returning(|_| {
-                // Retryable error
-                Err(ParaswapResponseError::BuildingTransaction(String::new()))
-            })
-            .in_sequence(&mut seq);
-        client
-            .expect_transaction()
-            .times(1)
-            .returning(|_| {
-                Ok(TransactionBuilderResponse {
-                    chain_id: 0,
-                    ..Default::default()
-                })
-            })
-            .in_sequence(&mut seq);
-
-        allowance_fetcher
-            .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
-
-        token_info.expect_get_token_infos().returning(move |_| {
-            hashmap! {
-                sell_token => TokenInfo { decimals: Some(18)},
-                buy_token => TokenInfo { decimals: Some(18)},
-            }
-        });
-
-        let solver = SingleOrderSolver::from(ParaswapSolver {
-            account: account(),
-            client,
-            solver_address: Default::default(),
-            token_info: Arc::new(token_info),
-            allowance_fetcher,
-            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 1000, // 10%
-            disabled_paraswap_dexs: Vec::new(),
-        });
-
-        let order = LimitOrder {
-            sell_token,
-            buy_token,
-            ..Default::default()
-        };
-        assert!(solver.settle_order(order.clone()).await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn settle_order_retry_until_exceeds() {
-        let mut client = Box::new(MockParaswapApi::new());
-        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
-        let mut token_info = MockTokenInfoFetching::new();
-
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        client.expect_price().returning(|_| {
-            Ok(PriceResponse {
-                ..Default::default()
-            })
-        });
-        let mut seq = Sequence::new();
-        client
-            .expect_transaction()
-            .times(2)
-            .returning(|_| {
-                // Retryable error
-                Err(ParaswapResponseError::BuildingTransaction(String::from(
-                    "Couldn't buidl tx!",
-                )))
-            })
-            .in_sequence(&mut seq);
-        client
-            .expect_transaction()
-            .times(1)
-            .returning(|_| {
-                // Retryable error on last attempt.
-                Err(ParaswapResponseError::PriceChange)
-            })
-            .in_sequence(&mut seq);
-
-        allowance_fetcher
-            .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
-
-        token_info.expect_get_token_infos().returning(move |_| {
-            hashmap! {
-                sell_token => TokenInfo { decimals: Some(18)},
-                buy_token => TokenInfo { decimals: Some(18)},
-            }
-        });
-
-        let solver = SingleOrderSolver::from(ParaswapSolver {
-            account: account(),
-            client,
-            solver_address: Default::default(),
-            token_info: Arc::new(token_info),
-            allowance_fetcher,
-            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 1000, // 10%
-            disabled_paraswap_dexs: Vec::new(),
-        });
-
-        let order = LimitOrder {
-            sell_token,
-            buy_token,
-            ..Default::default()
-        };
-        assert!(solver.settle_order(order.clone()).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn settle_order_unretryable_error() {
-        let mut client = Box::new(MockParaswapApi::new());
-        let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
-        let mut token_info = MockTokenInfoFetching::new();
-
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        client.expect_price().returning(|_| {
-            Ok(PriceResponse {
-                ..Default::default()
-            })
-        });
-        client.expect_transaction().times(1).returning(|_| {
-            // Non-retryable error
-            Err(ParaswapResponseError::UnknownParaswapError(String::new()))
-        });
-
-        allowance_fetcher
-            .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
-
-        token_info.expect_get_token_infos().returning(move |_| {
-            hashmap! {
-                sell_token => TokenInfo { decimals: Some(18)},
-                buy_token => TokenInfo { decimals: Some(18)},
-            }
-        });
-
-        let solver = SingleOrderSolver::from(ParaswapSolver {
-            account: account(),
-            client,
-            solver_address: Default::default(),
-            token_info: Arc::new(token_info),
-            allowance_fetcher,
-            settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
-            slippage_bps: 1000, // 10%
-            disabled_paraswap_dexs: Vec::new(),
-        });
-
-        let order = LimitOrder {
-            sell_token,
-            buy_token,
-            ..Default::default()
-        };
-
-        assert!(solver.settle_order(order).await.is_err());
     }
 }

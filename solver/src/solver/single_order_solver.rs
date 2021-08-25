@@ -1,17 +1,17 @@
-use std::time::Instant;
-
-use anyhow::{anyhow, Error, Result};
-use futures::future;
-use rand::prelude::SliceRandom;
-
 use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
     solver::Solver,
 };
+use anyhow::{Error, Result};
 use ethcontract::Account;
-use itertools::Itertools;
+use rand::prelude::SliceRandom;
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 /// Implementations of this trait know how to settle a single limit order (not taking advantage of batching multiple orders together)
 pub trait SingleOrderSolving {
@@ -28,12 +28,6 @@ pub trait SingleOrderSolving {
         std::any::type_name::<Self>()
     }
 }
-
-/// Maximum number of sell orders to consider for settlements.
-///
-/// This is mostly out of concern to avoid rate limiting and because
-/// requests may a non-trivial amount of time.
-const MAX_SETTLEMENTS: usize = 5;
 
 pub struct SingleOrderSolver<I> {
     inner: I,
@@ -59,40 +53,31 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
                 Liquidity::Limit(order) => Some(order),
                 _ => None,
             })
-            .collect::<Vec<_>>();
+            .collect::<VecDeque<_>>();
+        // Randomize which orders we start with to prevent us getting stuck on bad orders.
+        orders.make_contiguous().shuffle(&mut rand::thread_rng());
 
-        // Randomize which orders we take, this prevents this solver "getting
-        // stuck" on bad orders.
-        if orders.len() > MAX_SETTLEMENTS {
-            orders.shuffle(&mut rand::thread_rng());
-        }
-
-        let settlements = future::join_all(
-            orders
-                .into_iter()
-                .take(MAX_SETTLEMENTS)
-                .map(|order| tokio::time::timeout_at(deadline.into(), self.settle_order(order))),
-        )
-        .await;
-
-        Ok(settlements
-            .into_iter()
-            .filter_map(|settlement| match settlement {
-                Err(_deadline) => {
-                    tracing::error!("inner solver {:?} timeout", self.name());
-                    None
+        let mut settlements = Vec::new();
+        let settle = async {
+            while let Some(order) = orders.pop_front() {
+                match self.inner.try_settle_order(order.clone()).await {
+                    Ok(settlement) => settlements.extend(settlement),
+                    Err(err) => {
+                        let name = self.inner.name();
+                        if err.retryable {
+                            tracing::warn!("Solver {} benign error: {:?}", name, &err);
+                            orders.push_back(order);
+                        } else {
+                            tracing::error!("Solver {} hard error: {:?}", name, &err);
+                        }
+                    }
                 }
-                Ok(Ok(Some(settlement))) => Some(settlement),
-                Ok(Ok(None)) => None,
-                Ok(Err(err)) => {
-                    // It could be that the inner solver can't match an order and would
-                    // return an error for whatever reason. In that case, we want
-                    // to continue trying to solve for other orders.
-                    tracing::error!("{} inner solver error: {:?}", self.name(), err);
-                    None
-                }
-            })
-            .collect())
+            }
+        };
+
+        // Subtract a small amount of time to ensure that the driver doesn't reach the deadline first.
+        let _ = tokio::time::timeout_at((deadline - Duration::from_secs(1)).into(), settle).await;
+        Ok(settlements)
     }
 
     fn account(&self) -> &Account {
@@ -101,40 +86,6 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
 
     fn name(&self) -> &'static str {
         self.inner.name()
-    }
-}
-
-impl<I: SingleOrderSolving + Send + Sync> SingleOrderSolver<I> {
-    /// Return a settlement for the given limit order (if possible)
-    pub async fn settle_order(&self, order: LimitOrder) -> Result<Option<Settlement>> {
-        let solver_name = self.inner.name();
-        let max_retries = 2;
-        let mut errors = vec![];
-        for _ in 0..max_retries {
-            match self.inner.try_settle_order(order.clone()).await {
-                Ok(settlement) => return Ok(settlement),
-                Err(err) if err.retryable => {
-                    tracing::debug!("Retrying {} settlement due to: {:?}", solver_name, &err);
-                    errors.push(err.inner);
-                    continue;
-                }
-                Err(err) => return Err(err.inner),
-            }
-        }
-        // One last attempt, else throw converted error
-        self.inner.try_settle_order(order).await.map_err(|err| {
-            errors.push(err.inner);
-            anyhow!(format!(
-                "{} Errored after {} attempts. Accumulated errors follow \n{}",
-                solver_name,
-                max_retries + 1,
-                errors
-                    .iter()
-                    .enumerate()
-                    .map(|(i, err)| format!("Attempt {}: {}", i + 1, err.to_string()))
-                    .join("\n")
-            ))
-        })
     }
 }
 
@@ -150,5 +101,123 @@ impl From<anyhow::Error> for SettlementError {
             inner: err,
             retryable: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::liquidity::tests::CapturingSettlementHandler;
+    use anyhow::anyhow;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn uses_inner_solver() {
+        let mut inner = MockSingleOrderSolving::new();
+        inner
+            .expect_try_settle_order()
+            .times(2)
+            .returning(|_| Ok(Some(Settlement::new(Default::default()))));
+
+        let solver: SingleOrderSolver<_> = inner.into();
+        let handler = Arc::new(CapturingSettlementHandler::default());
+        let order = LimitOrder {
+            id: Default::default(),
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: Default::default(),
+            fee_amount: Default::default(),
+            settlement_handling: handler.clone(),
+        };
+        let orders = vec![
+            Liquidity::Limit(LimitOrder {
+                id: 0.to_string(),
+                ..order.clone()
+            }),
+            Liquidity::Limit(LimitOrder {
+                id: 1.to_string(),
+                ..order.clone()
+            }),
+        ];
+
+        let settlements = solver
+            .solve(orders, 0., Instant::now() + Duration::from_secs(10))
+            .await
+            .unwrap();
+        assert_eq!(settlements.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn retries_retryable() {
+        let mut inner = MockSingleOrderSolving::new();
+        inner.expect_name().return_const("");
+        let mut call_count = 0u32;
+        inner
+            .expect_try_settle_order()
+            .times(2)
+            .returning(move |_| {
+                dbg!();
+                let result = match call_count {
+                    0 => Err(SettlementError {
+                        inner: anyhow!(""),
+                        retryable: true,
+                    }),
+                    1 => Ok(None),
+                    _ => unreachable!(),
+                };
+                call_count += 1;
+                result
+            });
+
+        let solver: SingleOrderSolver<_> = inner.into();
+        let handler = Arc::new(CapturingSettlementHandler::default());
+        let order = Liquidity::Limit(LimitOrder {
+            id: Default::default(),
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: Default::default(),
+            fee_amount: Default::default(),
+            settlement_handling: handler.clone(),
+        });
+        solver
+            .solve(vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn does_not_retry_unretryable() {
+        let mut inner = MockSingleOrderSolving::new();
+        inner.expect_name().return_const("");
+        inner.expect_try_settle_order().times(1).returning(|_| {
+            Err(SettlementError {
+                inner: anyhow!(""),
+                retryable: false,
+            })
+        });
+
+        let solver: SingleOrderSolver<_> = inner.into();
+        let handler = Arc::new(CapturingSettlementHandler::default());
+        let order = Liquidity::Limit(LimitOrder {
+            id: Default::default(),
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: Default::default(),
+            fee_amount: Default::default(),
+            settlement_handling: handler.clone(),
+        });
+        solver
+            .solve(vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .await
+            .unwrap();
     }
 }

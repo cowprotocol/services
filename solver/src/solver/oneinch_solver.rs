@@ -100,7 +100,7 @@ impl OneInchSolver {
         debug_assert_eq!(
             order.kind,
             OrderKind::Sell,
-            "only sell orders should be passed to settle_order"
+            "only sell orders should be passed to try_settle_order"
         );
 
         let spender = self.client.get_spender().await?;
@@ -197,7 +197,6 @@ mod tests {
     use crate::liquidity::LimitOrder;
     use crate::solver::oneinch_solver::api::Protocols;
     use crate::solver::oneinch_solver::api::Spender;
-    use crate::solver::SingleOrderSolver;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
@@ -226,17 +225,16 @@ mod tests {
 
     #[tokio::test]
     async fn ignores_buy_orders() {
-        assert!(SingleOrderSolver::from(dummy_solver(
-            MockOneInchClient::new(),
-            MockAllowanceManaging::new()
-        ))
-        .settle_order(LimitOrder {
-            kind: OrderKind::Buy,
-            ..Default::default()
-        },)
-        .await
-        .unwrap()
-        .is_none());
+        assert!(
+            dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
+                .try_settle_order(LimitOrder {
+                    kind: OrderKind::Buy,
+                    ..Default::default()
+                },)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[tokio::test]
@@ -273,7 +271,7 @@ mod tests {
             .expect_get_approval()
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
 
-        let solver = SingleOrderSolver::from(dummy_solver(client, allowance_fetcher));
+        let solver = dummy_solver(client, allowance_fetcher);
 
         let order_passing_limit = LimitOrder {
             sell_token,
@@ -293,7 +291,7 @@ mod tests {
         };
 
         let result = solver
-            .settle_order(order_passing_limit)
+            .try_settle_order(order_passing_limit)
             .await
             .unwrap()
             .unwrap();
@@ -309,7 +307,10 @@ mod tests {
             }
         );
 
-        let result = solver.settle_order(order_violating_limit).await.unwrap();
+        let result = solver
+            .try_settle_order(order_violating_limit)
+            .await
+            .unwrap();
         assert!(result.is_none());
     }
 
@@ -341,14 +342,14 @@ mod tests {
             })
         });
 
-        let solver = SingleOrderSolver::from(OneInchSolver {
+        let solver = OneInchSolver {
             disabled_protocols: hashset!["BadProtocol".to_string(), "VeryBadProtocol".to_string()],
             ..dummy_solver(client, allowance_fetcher)
-        });
+        };
 
         // Limit price violated. Actual assert is happening in `expect_get_swap()`
         assert!(solver
-            .settle_order(LimitOrder {
+            .try_settle_order(LimitOrder {
                 kind: OrderKind::Sell,
                 buy_amount: U256::max_value(),
                 ..Default::default()
@@ -398,7 +399,7 @@ mod tests {
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
-        let solver = SingleOrderSolver::from(dummy_solver(client, allowance_fetcher));
+        let solver = dummy_solver(client, allowance_fetcher);
 
         let order = LimitOrder {
             sell_token,
@@ -410,11 +411,15 @@ mod tests {
         };
 
         // On first run we have two main interactions (approve + swap)
-        let result = solver.settle_order(order.clone()).await.unwrap().unwrap();
+        let result = solver
+            .try_settle_order(order.clone())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
-        let result = solver.settle_order(order).await.unwrap().unwrap();
+        let result = solver.try_settle_order(order).await.unwrap().unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
     }
 
