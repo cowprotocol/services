@@ -53,7 +53,7 @@ async fn eth_integration(web3: Web3) {
     let trader_buy_eth_b =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
 
-    let gpv2 = GPv2::fetch(&web3, &solver_account).await;
+    let gpv2 = GPv2::fetch(&web3).await;
     let UniswapContracts {
         uniswap_factory,
         uniswap_router,

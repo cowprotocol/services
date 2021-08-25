@@ -51,7 +51,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
 
-    let gpv2 = GPv2::fetch(&web3, &solver_account).await;
+    let gpv2 = GPv2::fetch(&web3).await;
     let UniswapContracts {
         uniswap_factory,
         uniswap_router,

@@ -1,10 +1,7 @@
 use contracts::{
     BalancerV2Vault, ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9,
 };
-use ethcontract::{
-    prelude::{Account, U256},
-    H160,
-};
+use ethcontract::{prelude::U256, H160};
 use maplit::hashset;
 use model::DomainSeparator;
 use orderbook::{
@@ -69,11 +66,11 @@ pub struct GPv2 {
 }
 
 impl GPv2 {
-    pub async fn fetch(web3: &Web3, designated_solver: &Account) -> Self {
+    pub async fn fetch(web3: &Web3) -> Self {
         let vault = BalancerV2Vault::deployed(web3)
             .await
             .expect("Failed to load deployed BalancerV2Vault");
-        let settlement = solver::get_settlement_contract(web3, designated_solver.clone())
+        let settlement = solver::get_settlement_contract(web3)
             .await
             .expect("Failed to load deployed GPv2Settlement");
         let allowance = settlement

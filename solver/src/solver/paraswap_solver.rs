@@ -32,7 +32,6 @@ const APPROVAL_RECEIVER: H160 = shared::addr!("b70bc06d2c9bf03b3373799606dc7d393
 pub struct ParaswapSolver {
     account: Account,
     settlement_contract: GPv2Settlement,
-    solver_address: H160,
     #[derivative(Debug = "ignore")]
     token_info: Arc<dyn TokenInfoFetching>,
     #[derivative(Debug = "ignore")]
@@ -49,7 +48,6 @@ impl ParaswapSolver {
         account: Account,
         web3: Web3,
         settlement_contract: GPv2Settlement,
-        solver_address: H160,
         token_info: Arc<dyn TokenInfoFetching>,
         slippage_bps: usize,
         disabled_paraswap_dexs: Vec<String>,
@@ -59,7 +57,6 @@ impl ParaswapSolver {
         Self {
             account,
             settlement_contract,
-            solver_address,
             token_info,
             allowance_fetcher: Box::new(allowance_fetcher),
             client: Box::new(DefaultParaswapApi { client }),
@@ -188,7 +185,7 @@ impl ParaswapSolver {
             from_decimals: decimals(token_info, &order.sell_token)?,
             to_decimals: decimals(token_info, &order.buy_token)?,
             price_route: price_response.clone().price_route_raw,
-            user_address: self.solver_address,
+            user_address: self.account.address(),
             referrer: REFERRER.to_string(),
         };
         Ok(query)
@@ -287,7 +284,6 @@ mod tests {
         let solver = ParaswapSolver {
             account: account(),
             client,
-            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
@@ -336,7 +332,6 @@ mod tests {
         let solver = ParaswapSolver {
             account: account(),
             client,
-            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
@@ -431,7 +426,6 @@ mod tests {
         let solver = ParaswapSolver {
             account: account(),
             client,
-            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
@@ -512,7 +506,6 @@ mod tests {
         let solver = ParaswapSolver {
             account: account(),
             client,
-            solver_address: Default::default(),
             token_info: Arc::new(token_info),
             allowance_fetcher,
             settlement_contract: dummy_contract!(GPv2Settlement, H160::zero()),
@@ -551,8 +544,6 @@ mod tests {
     async fn solve_order_on_paraswap() {
         let web3 = Web3::new(create_env_test_transport());
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
-        // Pretend the settlement contract is solving for itself
-        let solver = settlement.address();
         let token_info_fetcher = Arc::new(TokenInfoFetcher { web3: web3.clone() });
 
         let weth = WETH9::deployed(&web3).await.unwrap();
@@ -562,7 +553,6 @@ mod tests {
             account(),
             web3,
             settlement,
-            solver,
             token_info_fetcher,
             0,
             vec![],

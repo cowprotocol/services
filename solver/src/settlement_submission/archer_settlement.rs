@@ -339,9 +339,7 @@ mod tests {
         assert_eq!(chain_id, 1);
         let private_key: PrivateKey = std::env::var("PRIVATE_KEY").unwrap().parse().unwrap();
         let account = Account::Offline(private_key, Some(chain_id));
-        let contract = crate::get_settlement_contract(&web3, account.clone())
-            .await
-            .unwrap();
+        let contract = crate::get_settlement_contract(&web3).await.unwrap();
         let archer_api = ArcherApi::new(
             std::env::var("ARCHER_AUTHORIZATION").unwrap(),
             Client::new(),
