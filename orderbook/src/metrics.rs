@@ -1,5 +1,6 @@
 use anyhow::Result;
-use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts, Registry};
+use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts};
+use shared::metrics::get_metrics_registry;
 use shared::{
     sources::uniswap::pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics,
 };
@@ -22,41 +23,43 @@ pub struct Metrics {
 }
 
 impl Metrics {
-    pub fn new(registry: &Registry) -> Result<Self> {
+    pub fn new() -> Result<Self> {
+        let registry = get_metrics_registry();
+
         let opts = HistogramOpts::new(
-            "gp_v2_api_requests",
+            "requests",
             "API Request durations labelled by route and response status code",
         );
         let api_requests = HistogramVec::new(opts, &["response", "request_type"]).unwrap();
         registry.register(Box::new(api_requests.clone()))?;
 
         let db_table_row_count = IntGaugeVec::new(
-            Opts::new("gp_v2_api_table_rows", "Number of rows in db tables."),
+            Opts::new("table_rows", "Number of rows in db tables."),
             &["table"],
         )?;
         registry.register(Box::new(db_table_row_count.clone()))?;
 
         let opts = HistogramOpts::new(
-            "gp_v2_api_transport_requests",
+            "transport_requests",
             "RPC Request durations labelled by method",
         );
         let rpc_requests = HistogramVec::new(opts, &["method"]).unwrap();
         registry.register(Box::new(rpc_requests.clone()))?;
 
         let pool_cache_hits = IntCounter::new(
-            "gp_v2_api_pool_cache_hits",
+            "pool_cache_hits",
             "Number of cache hits in the pool fetcher cache.",
         )?;
         registry.register(Box::new(pool_cache_hits.clone()))?;
 
         let pool_cache_misses = IntCounter::new(
-            "gp_v2_api_pool_cache_misses",
+            "pool_cache_misses",
             "Number of cache misses in the pool fetcher cache.",
         )?;
         registry.register(Box::new(pool_cache_misses.clone()))?;
 
         let opts = HistogramOpts::new(
-            "gp_v2_api_database_queries",
+            "database_queries",
             "Sql queries to our postgresql database.",
         );
         let database_queries = HistogramVec::new(opts, &["type"]).unwrap();

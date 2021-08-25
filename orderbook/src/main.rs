@@ -13,7 +13,7 @@ use orderbook::{
     serve_task, verify_deployed_contract_constants,
 };
 use primitive_types::H160;
-use prometheus::Registry;
+use shared::metrics::setup_metrics_registry;
 use shared::{
     bad_token::{
         cache::CachingDetector,
@@ -128,8 +128,8 @@ async fn main() {
     args.shared.validate();
     tracing::info!("running order book with validated {:#?}", args);
 
-    let registry = Registry::default();
-    let metrics = Arc::new(Metrics::new(&registry).unwrap());
+    setup_metrics_registry(Some("gp_v2_api".into()), None);
+    let metrics = Arc::new(Metrics::new().unwrap());
 
     let client = shared::http_client(args.shared.http_timeout);
 
@@ -342,7 +342,6 @@ async fn main() {
         fee_calculator,
         price_estimator,
         args.bind_address,
-        registry,
         metrics.clone(),
     );
     let maintenance_task =

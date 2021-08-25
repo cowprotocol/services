@@ -1,7 +1,7 @@
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
-use prometheus::Registry;
 use reqwest::Url;
+use shared::metrics::setup_metrics_registry;
 use shared::{
     bad_token::list_based::ListBasedDetector,
     current_block::current_block_stream,
@@ -200,8 +200,8 @@ async fn main() {
     args.shared.validate();
     tracing::info!("running solver with validated {:#?}", args);
 
-    let registry = Registry::default();
-    let metrics = Arc::new(Metrics::new(&registry).expect("Couldn't register metrics"));
+    setup_metrics_registry(Some("gp_v2_solver".into()), None);
+    let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
 
     let client = shared::http_client(args.shared.http_timeout);
 
@@ -415,7 +415,7 @@ async fn main() {
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
 
-    serve_metrics(registry, metrics, ([0, 0, 0, 0], args.metrics_port).into());
+    serve_metrics(metrics, ([0, 0, 0, 0], args.metrics_port).into());
     driver.run_forever().await;
 }
 

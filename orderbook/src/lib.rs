@@ -14,7 +14,6 @@ use database::trades::TradeRetrieving;
 use fee::EthAwareMinFeeCalculator;
 use metrics::Metrics;
 use model::DomainSeparator;
-use prometheus::Registry;
 use shared::{
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     price_estimate::PriceEstimating,
@@ -28,7 +27,6 @@ pub fn serve_task(
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
     address: SocketAddr,
-    registry: Registry,
     metrics: Arc<Metrics>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
@@ -44,7 +42,7 @@ pub fn serve_task(
 
     tracing::info!(%metrics_address, "serving metrics");
     metrics_address.set_port(DEFAULT_METRICS_PORT);
-    serve_metrics(registry, orderbook, metrics_address)
+    serve_metrics(orderbook, metrics_address)
 }
 
 /**

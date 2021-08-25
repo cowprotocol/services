@@ -2570,6 +2570,7 @@ dependencies = [
  "model",
  "num",
  "num-bigint 0.3.2",
+ "once_cell",
  "primitive-types",
  "prometheus",
  "regex",
