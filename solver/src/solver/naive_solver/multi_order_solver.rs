@@ -277,7 +277,7 @@ fn compute_uniswap_in(
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
     for trade in solution.trades().iter() {
-        let order = trade.order.order_creation;
+        let order = &trade.order.order_creation;
         let buy_token_price = solution
             .clearing_price(order.buy_token)
             .expect("Solution should contain clearing price for buy token");

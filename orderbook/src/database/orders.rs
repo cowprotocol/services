@@ -7,7 +7,7 @@ use futures::stream::TryStreamExt;
 use model::order::{BuyTokenDestination, SellTokenSource};
 use model::{
     order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
-    Signature, SigningScheme,
+    signature::{Signature, SigningScheme},
 };
 use primitive_types::H160;
 use std::{borrow::Cow, convert::TryInto};
@@ -177,7 +177,9 @@ impl OrderStoring for Postgres {
             .bind(DbOrderKind::from(order.order_creation.kind))
             .bind(order.order_creation.partially_fillable)
             .bind(order.order_creation.signature.to_bytes().as_ref())
-            .bind(DbSigningScheme::from(order.order_creation.signing_scheme))
+            .bind(DbSigningScheme::from(
+                order.order_creation.signature.scheme(),
+            ))
             .bind(order.order_meta_data.settlement_contract.as_bytes())
             .bind(DbSellTokenSource::from(
                 order.order_creation.sell_token_balance,
@@ -342,6 +344,7 @@ impl OrdersQueryRow {
             status,
             settlement_contract: h160_from_vec(self.settlement_contract)?,
         };
+        let signing_scheme = self.signing_scheme.into();
         let order_creation = OrderCreation {
             sell_token: h160_from_vec(self.sell_token)?,
             buy_token: h160_from_vec(self.buy_token)?,
@@ -360,12 +363,12 @@ impl OrdersQueryRow {
             kind: self.kind.into(),
             partially_fillable: self.partially_fillable,
             signature: Signature::from_bytes(
+                signing_scheme,
                 &self
                     .signature
                     .try_into()
-                    .map_err(|_| anyhow!("signature has wrong length"))?,
+                    .map_err(|_| anyhow!("invalid signature"))?,
             ),
-            signing_scheme: self.signing_scheme.into(),
             sell_token_balance: self.sell_token_balance.into(),
             buy_token_balance: self.buy_token_balance.into(),
         };
@@ -597,8 +600,7 @@ mod tests {
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: true,
-                    signature: Default::default(),
-                    signing_scheme: *signing_scheme,
+                    signature: Signature::default_with(*signing_scheme),
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Internal,
                 },

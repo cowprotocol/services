@@ -1,10 +1,10 @@
 use crate::api::extract_payload;
 use crate::orderbook::{OrderCancellationResult, Orderbook};
 use anyhow::Result;
-use model::Signature;
+use model::signature::EcdsaSignature;
 use model::{
     order::{OrderCancellation, OrderUid},
-    SigningScheme,
+    signature::EcdsaSigningScheme,
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
@@ -13,8 +13,8 @@ use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct CancellationPayload {
-    signature: Signature,
-    signing_scheme: SigningScheme,
+    signature: EcdsaSignature,
+    signing_scheme: EcdsaSigningScheme,
 }
 
 pub fn cancel_order_request(
@@ -99,7 +99,7 @@ mod tests {
             }))
             .unwrap(),
             CancellationPayload {
-                signature: Signature {
+                signature: EcdsaSignature {
                     r: H256(hex!(
                         "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
                     )),
@@ -108,7 +108,7 @@ mod tests {
                     )),
                     v: 27,
                 },
-                signing_scheme: SigningScheme::Eip712,
+                signing_scheme: EcdsaSigningScheme::Eip712,
             },
         );
     }

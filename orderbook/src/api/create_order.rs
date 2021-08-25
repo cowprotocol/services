@@ -97,12 +97,13 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
 pub fn create_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    create_order_request().and_then(move |order_payload| {
+    create_order_request().and_then(move |order_payload: OrderCreationPayload| {
         let orderbook = orderbook.clone();
         async move {
+            let order_payload_clone = order_payload.clone();
             let result = orderbook.add_order(order_payload).await;
             if let Err(err) = &result {
-                tracing::error!(?err, ?order_payload, "add_order error");
+                tracing::error!(?err, ?order_payload_clone, "add_order error");
             }
             Result::<_, Infallible>::Ok(create_order_response(result))
         }

@@ -2,7 +2,7 @@ use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
     order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
-    SigningScheme,
+    signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
@@ -149,11 +149,12 @@ async fn eth_integration(web3: Web3) {
         .with_buy_token(BUY_ETH_ADDRESS)
         .with_buy_amount(to_wei(49))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
+            EcdsaSigningScheme::Eip712,
             &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_A_PK).unwrap()),
         )
+        .unwrap()
         .build()
         .order_creation;
     let placement = client
@@ -170,11 +171,12 @@ async fn eth_integration(web3: Web3) {
         .with_buy_token(BUY_ETH_ADDRESS)
         .with_buy_amount(to_wei(49))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .with_signing_scheme(SigningScheme::Eip712)
         .sign_with(
+            EcdsaSigningScheme::Eip712,
             &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_B_PK).unwrap()),
         )
+        .unwrap()
         .build()
         .order_creation;
     let placement = client

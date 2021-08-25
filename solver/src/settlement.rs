@@ -58,7 +58,7 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/gnosis/gp-v2-contracts/blob/964f1eb76f366f652db7f4c2cb5ff9bfa26eb2cd/src/contracts/GPv2Settlement.sol#L370-L371
     pub fn executed_fee(&self) -> Option<U256> {
-        let order = self.order.order_creation;
+        let order = &self.order.order_creation;
         match order.kind {
             model::order::OrderKind::Buy => order
                 .fee_amount
