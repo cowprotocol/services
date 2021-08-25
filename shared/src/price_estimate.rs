@@ -37,7 +37,7 @@ pub trait PriceEstimating: Send + Sync {
     /// The resulting price is how many units of sell_token needs to be sold for one unit of
     /// buy_token (sell_amount / buy_amount).
     /// If amount is 0 then kind is ignored and the result is how many units of buy token you get
-    /// from selling one unit of sell token (buy_amount / sell_amount).
+    /// from selling one atom of sell token (buy_amount / sell_amount).
     async fn estimate_price(
         &self,
         sell_token: H160,
@@ -71,23 +71,66 @@ pub trait PriceEstimating: Send + Sync {
             })
     }
 
+    // Default is to estimate prices with 1 atom of native token (i.e. spot prices)
+    fn amount_to_estimate_prices_with(
+        &self
+    ) -> U256 {
+        1.into()
+    }
+
     // Returns a vector of (rational) prices for the given tokens denominated
     // in denominator_token or an error in case there is an error computing any
     // of the prices in the vector.
-    async fn estimate_prices(
+    async fn estimate_prices_0(
         &self,
         tokens: &[H160],
         denominator_token: H160,
     ) -> Vec<Result<BigRational, PriceEstimationError>> {
         join_all(tokens.iter().map(|token| async move {
             if *token != denominator_token {
-                self.estimate_price(*token, denominator_token, U256::zero(), OrderKind::Buy)
+                self.estimate_price(*token, denominator_token, 0.into(), OrderKind::Sell)
                     .await
             } else {
                 Ok(num::one())
             }
         }))
         .await
+    }
+
+    // Returns a vector of (rational) prices for the given tokens denominated
+    // in denominator_token or an error in case there is an error computing any
+    // of the prices in the vector.
+    async fn estimate_prices_1(
+        &self,
+        tokens: &[H160],
+        denominator_token: H160,
+        amount:U256,
+    ) -> Vec<Result<BigRational, PriceEstimationError>> {
+        // let amount = self.amount_to_estimate_prices_with();
+        join_all(tokens.iter().map(|token| async move {
+            if *token != denominator_token {
+                self.estimate_price(denominator_token, *token, amount, OrderKind::Sell)
+                    .await
+            } else {
+                Ok(num::one())
+            }
+        }))
+        .await
+    }
+
+    async fn estimate_prices(
+        &self,
+        tokens: &[H160],
+        denominator_token: H160,
+    ) -> Vec<Result<BigRational, PriceEstimationError>> {
+        let prices0 = self.estimate_prices_0(tokens, denominator_token).await;
+        let prices1 = self.estimate_prices_1(tokens, denominator_token, 1.into()).await;
+        let prices2 = self.estimate_prices_1(tokens, denominator_token, "1000000000000000000".into()).await;
+        println!("-----------");
+        for (t, p0, p1, p2) in itertools::izip!(tokens, prices0, prices1, prices2) {
+            println!("{:#?} : {:#?} {:#?} {:#?}", t, p0, p1, p2);
+        }
+        self.estimate_prices_1(tokens, denominator_token, "1000000000000000000".into()).await
     }
 }
 
@@ -97,6 +140,7 @@ pub struct BaselinePriceEstimator {
     base_tokens: HashSet<H160>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: H160,
+    amount_to_estimate_prices_with: U256,
 }
 
 impl BaselinePriceEstimator {
@@ -106,6 +150,7 @@ impl BaselinePriceEstimator {
         base_tokens: HashSet<H160>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_token: H160,
+        amount_to_estimate_prices_with : U256,
     ) -> Self {
         Self {
             pool_fetcher,
@@ -113,6 +158,7 @@ impl BaselinePriceEstimator {
             base_tokens,
             bad_token_detector,
             native_token,
+            amount_to_estimate_prices_with,
         }
     }
 
@@ -215,6 +261,12 @@ impl PriceEstimating for BaselinePriceEstimator {
             + BASELINE_FIXED_OVERHEAD
             + BASELINE_GAS_PER_HOP * trades as u64);
     }
+
+    fn amount_to_estimate_prices_with(
+        &self
+    ) -> U256 {
+        self.amount_to_estimate_prices_with
+    }
 }
 
 impl BaselinePriceEstimator {
@@ -229,17 +281,20 @@ impl BaselinePriceEstimator {
         let buy_token_price_in_native_token = self
             .estimate_price(buy_token, self.native_token, U256::zero(), OrderKind::Sell)
             .await?;
+
         self.best_execution(
             sell_token,
             buy_token,
             sell_amount,
             |amount, path, pools| {
                 estimate_buy_amount(amount, path, pools).map(|estimate| {
+                    /*
                     let proceeds_in_native_token =
                         estimate.value.to_big_rational() * buy_token_price_in_native_token.clone();
                     let tx_cost_in_native_token = U256::from_f64_lossy(gas_price).to_big_rational()
                         * BigRational::from_integer(estimate.gas_cost().into());
-                    proceeds_in_native_token - tx_cost_in_native_token
+                    proceeds_in_native_token - tx_cost_in_native_token*/
+                    estimate.value.to_big_rational()
                 })
             },
             |amount, path, pools| {
@@ -443,6 +498,7 @@ mod tests {
             hashset!(),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             token_b,
+            0.into(),
         );
 
         assert_approx_eq!(
@@ -510,6 +566,7 @@ mod tests {
             hashset!(),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
+            0.into(),
         );
 
         assert!(estimator
@@ -544,6 +601,7 @@ mod tests {
             hashset!(token_a, token_b, token_c),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
+            0.into(),
         );
 
         let prices = estimator
@@ -569,6 +627,7 @@ mod tests {
             hashset!(),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
+            0.into(),
         );
 
         assert!(estimator
@@ -594,6 +653,7 @@ mod tests {
             hashset!(),
             bad_token,
             token_a,
+            0.into(),
         );
 
         let result = estimator
@@ -628,6 +688,7 @@ mod tests {
             hashset!(),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             Default::default(),
+            0.into(),
         );
 
         assert!(estimator
@@ -657,6 +718,7 @@ mod tests {
             hashset!(base_token),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             token_b,
+            0.into(),
         );
 
         assert!(estimator
@@ -706,6 +768,7 @@ mod tests {
             HashSet::new(),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             token_a,
+            0.into(),
         );
 
         let price = estimator
@@ -744,6 +807,7 @@ mod tests {
             hashset!(intermediate),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             intermediate,
+            0.into(),
         );
 
         // Trade with intermediate hop
@@ -782,6 +846,7 @@ mod tests {
             hashset!(),
             Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
             Default::default(),
+            0.into(),
         );
 
         // Price estimate selling unsupported
@@ -851,6 +916,7 @@ mod tests {
             hashset!(native, intermediate),
             Arc::new(ListBasedDetector::deny_list(Vec::new())),
             native,
+            0.into(),
         );
 
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.

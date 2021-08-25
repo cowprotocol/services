@@ -2,15 +2,7 @@ use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use prometheus::Registry;
 use reqwest::Url;
-use shared::{
-    bad_token::list_based::ListBasedDetector,
-    current_block::current_block_stream,
-    maintenance::{Maintaining, ServiceMaintenance},
-    metrics::serve_metrics,
-    network::network_name,
-    price_estimate::BaselinePriceEstimator,
-    recent_block_cache::CacheConfig,
-    sources::{
+use shared::{bad_token::list_based::ListBasedDetector, current_block::current_block_stream, maintenance::{Maintaining, ServiceMaintenance}, metrics::serve_metrics, network::network_name, price_estimate::{BaselinePriceEstimator, PriceEstimating}, recent_block_cache::CacheConfig, sources::{
         self,
         balancer::pool_fetching::BalancerPoolFetcher,
         uniswap::{
@@ -18,12 +10,7 @@ use shared::{
             pool_fetching::{PoolFetcher, PoolFetching},
         },
         BaselineSource, PoolAggregator,
-    },
-    token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    token_list::TokenList,
-    transport::create_instrumented_transport,
-    transport::http::HttpTransport,
-};
+    }, token_info::{CachedTokenInfoFetcher, TokenInfoFetcher}, token_list::TokenList, transport::create_instrumented_transport, transport::http::HttpTransport};
 use solver::{
     driver::Driver,
     liquidity::{balancer::BalancerV2Liquidity, uniswap::UniswapLikeLiquidity},
@@ -329,7 +316,13 @@ async fn main() {
         // Order book already filters bad tokens
         Arc::new(ListBasedDetector::deny_list(Vec::new())),
         native_token_contract.address(),
+        args.shared.amount_to_estimate_prices_with,
     ));
+    let DAI : H160 = "0x6B175474E89094C44Da98b954EedeAC495271d0F".parse().unwrap();
+    let tokens: [H160; 1] = [DAI];
+    price_estimator.estimate_prices(&tokens, native_token_contract.address()).await;
+    std::process::exit(0);
+
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         settlement_contract.clone(),
