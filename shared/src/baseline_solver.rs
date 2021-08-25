@@ -154,6 +154,10 @@ pub fn path_candidates(
     base_tokens: &HashSet<H160>,
     max_hops: usize,
 ) -> HashSet<PathCandidate> {
+    if sell_token == buy_token {
+        return HashSet::new();
+    }
+
     let mut candidates = HashSet::new();
 
     // Start with just the sell token (yields the direct pair candidate in the 0th iteration)
@@ -209,6 +213,19 @@ mod tests {
     use maplit::{hashmap, hashset};
     use model::TokenPair;
     use std::iter::FromIterator;
+
+    #[test]
+    fn path_candidates_empty_when_same_token() {
+        let base_tokens = [H160::from_low_u64_be(0), H160::from_low_u64_be(1)]
+            .iter()
+            .copied()
+            .collect();
+
+        let sell_token = H160::from_low_u64_be(2);
+        let buy_token = H160::from_low_u64_be(2);
+
+        assert!(path_candidates(sell_token, buy_token, &base_tokens, 5).is_empty());
+    }
 
     #[test]
     fn test_path_candidates() {
