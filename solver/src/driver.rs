@@ -270,19 +270,21 @@ impl Driver {
         };
 
         for (((solver, settlement), _previous_error), result) in errors.iter().zip(simulations) {
-            let error_at_earlier_block = match result {
-                Ok(()) => continue,
-                Err(err) => err,
-            };
-            tracing::error!(
-                "{} settlement simulation failed at submission and block {}:\n{:?}",
-                solver.name(),
-                current_block_during_liquidity_fetch,
-                error_at_earlier_block,
-            );
-            // This is an additional debug log so that the log message doesn't get too long as
-            // settlement information is recoverable through tenderly anyway.
-            tracing::warn!("settlement failure for: \n{:#?}", settlement);
+            if let Err(error_at_earlier_block) = result {
+                tracing::warn!(
+                    "{} settlement simulation failed at submission and block {}:\n{:?}",
+                    solver.name(),
+                    current_block_during_liquidity_fetch,
+                    error_at_earlier_block,
+                );
+                // split warning into separate logs so that the messages aren't too long.
+                tracing::warn!("settlement failure for: \n{:#?}", settlement);
+
+                self.metrics.settlement_simulation_failed(solver.name());
+            } else {
+                self.metrics
+                    .settlement_simulation_failed_on_latest(solver.name());
+            }
         }
     }
 
@@ -430,9 +432,6 @@ impl Driver {
         );
         for (solver, _) in &settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
-        }
-        for ((solver, _), _) in &errors {
-            self.metrics.settlement_simulation_failed(solver.name());
         }
 
         let rated_settlements = self

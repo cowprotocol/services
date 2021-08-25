@@ -28,6 +28,7 @@ pub trait SolverMetrics {
     fn settlement_computed(&self, solver_type: &str, start: Instant);
     fn order_settled(&self, order: &Order, solver: &'static str);
     fn settlement_simulation_succeeded(&self, solver: &'static str);
+    fn settlement_simulation_failed_on_latest(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, successful: bool, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
@@ -182,6 +183,12 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
+    fn settlement_simulation_failed_on_latest(&self, solver: &'static str) {
+        self.settlement_simulations
+            .with_label_values(&["failure_on_latest", solver])
+            .inc()
+    }
+
     fn settlement_simulation_failed(&self, solver: &'static str) {
         self.settlement_simulations
             .with_label_values(&["failure", solver])
@@ -251,6 +258,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
     fn order_settled(&self, _: &Order, _: &'static str) {}
     fn settlement_simulation_succeeded(&self, _: &'static str) {}
+    fn settlement_simulation_failed_on_latest(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: bool, _: &'static str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
