@@ -25,8 +25,9 @@ const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
 pub async fn estimate_gas(
     contract: &GPv2Settlement,
     settlement: &EncodedSettlement,
+    from: Account,
 ) -> Result<U256, ExecutionError> {
-    retry::settle_method_builder(contract, settlement.clone())
+    retry::settle_method_builder(contract, settlement.clone(), from)
         .tx
         .estimate_gas()
         .await

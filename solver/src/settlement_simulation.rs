@@ -61,9 +61,9 @@ pub async fn simulate_settlements(
             let method = crate::settlement_submission::retry::settle_method_builder(
                 contract,
                 settlement.clone().into(),
+                solver.account().clone(),
             )
-            .gas_price(gas_price)
-            .from(solver.account().clone());
+            .gas_price(gas_price);
             let transaction_builder = method.tx.clone();
             let view = method
                 .view()

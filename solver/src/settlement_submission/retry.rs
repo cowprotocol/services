@@ -67,11 +67,11 @@ impl<'a> TransactionSending for SettlementSender<'a> {
 
     async fn send(&self, gas_price: f64) -> Self::Output {
         tracing::info!("submitting solution transaction at gas price {}", gas_price);
-        let mut method = settle_method_builder(self.contract, self.settlement.clone())
-            .nonce(self.nonce)
-            .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)))
-            .gas(U256::from_f64_lossy(self.gas_limit))
-            .from(self.account.clone());
+        let mut method =
+            settle_method_builder(self.contract, self.settlement.clone(), self.account.clone())
+                .nonce(self.nonce)
+                .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)))
+                .gas(U256::from_f64_lossy(self.gas_limit));
         method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
         let result = method.send().await.map(|tx| tx.hash());
         SettleResult(result)
@@ -81,13 +81,16 @@ impl<'a> TransactionSending for SettlementSender<'a> {
 pub fn settle_method_builder(
     contract: &GPv2Settlement,
     settlement: EncodedSettlement,
+    from: Account,
 ) -> DynMethodBuilder<()> {
-    contract.settle(
-        settlement.tokens,
-        settlement.clearing_prices,
-        settlement.trades,
-        settlement.interactions,
-    )
+    contract
+        .settle(
+            settlement.tokens,
+            settlement.clearing_prices,
+            settlement.trades,
+            settlement.interactions,
+        )
+        .from(from)
 }
 
 // We never send cancellations but we still need to have types that implement the traits.

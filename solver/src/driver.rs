@@ -333,6 +333,7 @@ impl Driver {
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
                     &settlement.clone().into(),
+                    solver.account().clone(),
                 )
                 .await
                 .ok()?;
