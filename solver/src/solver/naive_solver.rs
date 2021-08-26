@@ -24,6 +24,7 @@ impl NaiveSolver {
 impl Solver for NaiveSolver {
     async fn solve(
         &self,
+        _id: u64,
         liquidity: Vec<Liquidity>,
         _gas_price: f64,
         _deadline: Instant,

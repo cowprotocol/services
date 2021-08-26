@@ -40,8 +40,11 @@ pub trait Solver: 'static {
     ///
     /// The returned settlements should be independent (for example not reusing the same user
     /// order) so that they can be merged by the driver at its leisure.
+    ///
+    /// id identifies this instance of solving by the driver in which it invokes all solvers.
     async fn solve(
         &self,
+        id: u64,
         orders: Vec<Liquidity>,
         gas_price: f64,
         deadline: Instant,
@@ -106,6 +109,7 @@ pub fn create(
         web3.clone(),
         settlement_contract.address(),
     ));
+    let http_solver_cache = http_solver::InstanceCache::default();
     // Helper function to create http solver instances.
     let create_http_solver = |account: Account, url: Url, name: &'static str| -> HttpSolver {
         HttpSolver::new(
@@ -124,6 +128,7 @@ pub fn create(
             chain_id,
             fee_subsidy_factor,
             client.clone(),
+            http_solver_cache.clone(),
         )
     };
 
@@ -258,6 +263,7 @@ impl SellVolumeFilteringSolver {
 impl Solver for SellVolumeFilteringSolver {
     async fn solve(
         &self,
+        id: u64,
         orders: Vec<Liquidity>,
         gas_price: f64,
         deadline: Instant,
@@ -269,7 +275,7 @@ impl Solver for SellVolumeFilteringSolver {
             original_length - filtered_liquidity.len()
         );
         self.inner
-            .solve(filtered_liquidity, gas_price, deadline)
+            .solve(id, filtered_liquidity, gas_price, deadline)
             .await
     }
 
@@ -295,7 +301,13 @@ mod tests {
     pub struct NoopSolver();
     #[async_trait::async_trait]
     impl Solver for NoopSolver {
-        async fn solve(&self, _: Vec<Liquidity>, _: f64, _: Instant) -> Result<Vec<Settlement>> {
+        async fn solve(
+            &self,
+            _: u64,
+            _: Vec<Liquidity>,
+            _: f64,
+            _: Instant,
+        ) -> Result<Vec<Settlement>> {
             Ok(Vec::new())
         }
 

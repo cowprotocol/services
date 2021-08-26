@@ -43,6 +43,7 @@ impl<I: SingleOrderSolving> From<I> for SingleOrderSolver<I> {
 impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver<I> {
     async fn solve(
         &self,
+        _id: u64,
         liquidity: Vec<Liquidity>,
         _gas_price: f64,
         deadline: Instant,
@@ -144,7 +145,7 @@ mod tests {
         ];
 
         let settlements = solver
-            .solve(orders, 0., Instant::now() + Duration::from_secs(10))
+            .solve(0, orders, 0., Instant::now() + Duration::from_secs(10))
             .await
             .unwrap();
         assert_eq!(settlements.len(), 2);
@@ -186,7 +187,7 @@ mod tests {
             settlement_handling: handler.clone(),
         });
         solver
-            .solve(vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .solve(0, vec![order], 0., Instant::now() + Duration::from_secs(10))
             .await
             .unwrap();
     }
@@ -216,7 +217,7 @@ mod tests {
             settlement_handling: handler.clone(),
         });
         solver
-            .solve(vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .solve(0, vec![order], 0., Instant::now() + Duration::from_secs(10))
             .await
             .unwrap();
     }

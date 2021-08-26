@@ -35,6 +35,7 @@ pub struct BaselineSolver {
 impl Solver for BaselineSolver {
     async fn solve(
         &self,
+        _id: u64,
         liquidity: Vec<Liquidity>,
         _gas_price: f64,
         _deadline: Instant,

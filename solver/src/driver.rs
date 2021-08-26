@@ -52,6 +52,7 @@ pub struct Driver {
     block_stream: CurrentBlockStream,
     fee_subsidy_factor: f64,
     solution_submitter: SolutionSubmitter,
+    solve_id: u64,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -93,6 +94,7 @@ impl Driver {
             block_stream,
             fee_subsidy_factor,
             solution_submitter,
+            solve_id: 0,
         }
     }
 
@@ -114,6 +116,7 @@ impl Driver {
         gas_price: f64,
     ) -> Vec<(Arc<dyn Solver>, Result<Vec<Settlement>>)> {
         let deadline = Instant::now() + self.solver_time_limit;
+        let id = self.solve_id;
         join_all(self.solvers.iter().map(|solver| {
             let liquidity = liquidity.clone();
             let metrics = &self.metrics;
@@ -121,7 +124,7 @@ impl Driver {
                 let start_time = Instant::now();
                 let result = match tokio::time::timeout_at(
                     deadline.into(),
-                    solver.solve(liquidity, gas_price, deadline),
+                    solver.solve(id, liquidity, gas_price, deadline),
                 )
                 .await
                 {
@@ -388,7 +391,9 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
-        for (solver, settlements) in self.run_solvers(liquidity, gas_price_wei).await {
+        let run_solver_results = self.run_solvers(liquidity, gas_price_wei).await;
+        self.solve_id += 1;
+        for (solver, settlements) in run_solver_results {
             let name = solver.name();
 
             let mut settlements = match settlements {

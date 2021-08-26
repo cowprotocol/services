@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::HashMap;
 
-#[derive(Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
     pub tokens: HashMap<H160, TokenInfoModel>,
     pub orders: HashMap<usize, OrderModel>,
@@ -17,7 +17,7 @@ pub struct BatchAuctionModel {
     pub metadata: Option<MetadataModel>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct OrderModel {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -31,7 +31,7 @@ pub struct OrderModel {
     pub cost: CostModel,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AmmModel {
     #[serde(flatten)]
     pub parameters: AmmParameters,
@@ -60,7 +60,7 @@ impl AmmModel {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
@@ -68,13 +68,13 @@ pub enum AmmParameters {
 }
 
 #[serde_as]
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConstantProductPoolParameters {
     #[serde_as(as = "HashMap<_, DecimalU256>")]
     pub reserves: HashMap<H160, U256>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PoolTokenData {
     #[serde(with = "u256_decimal")]
     pub balance: U256,
@@ -82,13 +82,13 @@ pub struct PoolTokenData {
     pub weight: BigRational,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeightedProductPoolParameters {
     pub reserves: HashMap<H160, PoolTokenData>,
 }
 
 #[serde_as]
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct TokenInfoModel {
     pub decimals: Option<u8>,
     pub external_price: Option<f64>,
@@ -97,14 +97,14 @@ pub struct TokenInfoModel {
     pub internal_buffer: Option<U256>,
 }
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CostModel {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     pub token: H160,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct FeeModel {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
@@ -133,7 +133,7 @@ impl SettledBatchAuctionModel {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct MetadataModel {
     pub environment: Option<String>,
 }

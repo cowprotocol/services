@@ -12,7 +12,7 @@ use std::collections::{hash_map::Entry, HashMap};
 
 // To send an instance to the solver we need to identify tokens and orders through strings. This
 // struct combines the created model and a mapping of those identifiers to their original value.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SettlementContext {
     pub limit_orders: HashMap<usize, LimitOrder>,
     pub constant_product_orders: HashMap<usize, ConstantProductOrder>,

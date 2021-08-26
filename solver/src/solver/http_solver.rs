@@ -13,7 +13,7 @@ use ::model::order::OrderKind;
 use anyhow::{anyhow, ensure, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
-use futures::join;
+use futures::{join, lock::Mutex};
 use lazy_static::lazy_static;
 use num::{BigInt, BigRational, ToPrimitive};
 use primitive_types::H160;
@@ -59,6 +59,17 @@ impl SolverConfig {
     }
 }
 
+/// Data shared between multiple instances of the http solver for the same solve id.
+pub struct InstanceData {
+    solve_id: u64,
+    model: BatchAuctionModel,
+    context: SettlementContext,
+}
+
+/// We keep a cache of per solve instance data because it is the same for all http solver
+/// invocations. Without the cache we would duplicate most of the requests to the node.
+pub type InstanceCache = Arc<Mutex<Option<InstanceData>>>;
+
 pub struct HttpSolver {
     name: &'static str,
     account: Account,
@@ -73,6 +84,7 @@ pub struct HttpSolver {
     network_id: String,
     chain_id: u64,
     fee_subsidy_factor: f64,
+    instance_cache: InstanceCache,
 }
 
 impl HttpSolver {
@@ -91,6 +103,7 @@ impl HttpSolver {
         chain_id: u64,
         fee_subsidy_factor: f64,
         client: Client,
+        instance_cache: InstanceCache,
     ) -> Self {
         Self {
             name,
@@ -106,6 +119,7 @@ impl HttpSolver {
             network_id,
             chain_id,
             fee_subsidy_factor,
+            instance_cache,
         }
     }
 
@@ -499,6 +513,7 @@ fn remove_orders_without_native_connection(
 impl Solver for HttpSolver {
     async fn solve(
         &self,
+        id: u64,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
         deadline: Instant,
@@ -507,7 +522,21 @@ impl Solver for HttpSolver {
         if !has_limit_orders {
             return Ok(Vec::new());
         };
-        let (model, context) = self.prepare_model(liquidity, gas_price).await?;
+        let (model, context) = {
+            let mut guard = self.instance_cache.lock().await;
+            match guard.as_mut() {
+                Some(data) if data.solve_id == id => (data.model.clone(), data.context.clone()),
+                _ => {
+                    let (model, context) = self.prepare_model(liquidity, gas_price).await?;
+                    *guard = Some(InstanceData {
+                        solve_id: id,
+                        model: model.clone(),
+                        context: context.clone(),
+                    });
+                    (model, context)
+                }
+            }
+        };
         let settled = self.send(&model, deadline).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
@@ -596,6 +625,7 @@ mod tests {
             0,
             1.,
             Client::new(),
+            Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let orders = vec![
