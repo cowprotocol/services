@@ -1,6 +1,8 @@
+use crate::metrics::get_metrics_registry;
 use ethcontract::jsonrpc as jsonrpc_core;
 use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
+use prometheus::Registry;
 use reqwest::{Client, Url};
 use serde::de::DeserializeOwned;
 use std::{
@@ -93,6 +95,8 @@ impl Transport for HttpTransport {
     fn send(&self, id: RequestId, call: Call) -> Self::Out {
         let (client, url) = self.new_request();
         async move {
+            let _guard = TransportMetrics::instance().on_request_start(method_name(&call));
+
             let output = execute_rpc(client, url, id, &Request::Single(call)).await?;
             helpers::to_result_from_output(output)
         }
@@ -112,6 +116,8 @@ impl BatchTransport for HttpTransport {
         let (client, url) = self.new_request();
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
         async move {
+            let _guard = TransportMetrics::instance().on_request_start("batch");
+
             let outputs = execute_rpc(client, url, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
         }
@@ -156,6 +162,78 @@ fn id_of_output(output: &Output) -> Result<RequestId, Web3Error> {
         _ => Err(Web3Error::InvalidResponse(
             "response id is not u64".to_string(),
         )),
+    }
+}
+
+fn method_name(call: &Call) -> &str {
+    match call {
+        Call::MethodCall(method) => &method.method,
+        Call::Notification(notification) => &notification.method,
+        Call::Invalid { .. } => "invalid",
+    }
+}
+
+struct TransportMetrics {
+    requests_inflight: prometheus::IntGaugeVec,
+    requests_complete: prometheus::CounterVec,
+    requests_duration_seconds: prometheus::HistogramVec,
+}
+
+impl TransportMetrics {
+    fn new(registry: &Registry) -> prometheus::Result<Self> {
+        let label_names = &["method"];
+
+        let opts = prometheus::Opts::new(
+            "node_transport_requests_inflight",
+            "Number of inflight RPC requests for ethereum node",
+        );
+        let requests_inflight = prometheus::IntGaugeVec::new(opts, label_names)?;
+        registry.register(Box::new(requests_inflight.clone()))?;
+
+        let opts = prometheus::Opts::new(
+            "node_transport_requests_complete",
+            "Number of completed RPC requests for ethereum node",
+        );
+        let requests_complete = prometheus::CounterVec::new(opts, label_names)?;
+        registry.register(Box::new(requests_complete.clone()))?;
+
+        let opts = prometheus::HistogramOpts::new(
+            "node_transport_requests_duration_seconds",
+            "Execution time for each RPC request (batches are counted as one request)",
+        );
+        let requests_duration_seconds = prometheus::HistogramVec::new(opts, label_names)?;
+        registry.register(Box::new(requests_duration_seconds.clone()))?;
+
+        Ok(TransportMetrics {
+            requests_inflight,
+            requests_complete,
+            requests_duration_seconds,
+        })
+    }
+
+    fn instance() -> &'static Self {
+        lazy_static::lazy_static! {
+            static ref INSTANCE: TransportMetrics =
+                TransportMetrics::new(get_metrics_registry()).unwrap();
+        }
+
+        &INSTANCE
+    }
+
+    #[must_use]
+    fn on_request_start(&self, method: &str) -> impl Drop {
+        let requests_inflight = self.requests_inflight.with_label_values(&[method]);
+        let requests_complete = self.requests_complete.with_label_values(&[method]);
+        let requests_duration_seconds = self.requests_duration_seconds.with_label_values(&[method]);
+
+        requests_inflight.inc();
+        let timer = requests_duration_seconds.start_timer();
+
+        scopeguard::guard(timer, move |timer| {
+            requests_inflight.dec();
+            requests_complete.inc();
+            timer.stop_and_record();
+        })
     }
 }
 
