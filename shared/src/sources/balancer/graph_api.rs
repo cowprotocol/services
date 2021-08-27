@@ -132,7 +132,7 @@ mod pools_query {
                 first: $pageSize
                 where: {
                     id_gt: $lastId
-                    poolType: Weighted
+                    poolType: "Weighted"
                 }
             ) {
                 id
