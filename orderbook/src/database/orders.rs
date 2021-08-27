@@ -1064,4 +1064,86 @@ mod tests {
         .unwrap();
         assert!(!is_order_valid().await);
     }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_solvable_orders() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order = Order {
+            order_meta_data: Default::default(),
+            order_creation: OrderCreation {
+                kind: OrderKind::Sell,
+                sell_amount: 10.into(),
+                buy_amount: 100.into(),
+                valid_to: 3,
+                partially_fillable: true,
+                ..Default::default()
+            },
+        };
+        db.insert_order(&order).await.unwrap();
+
+        let get_order = |min_valid_to| {
+            let db = db.clone();
+            async move {
+                let orders = db.solvable_orders(min_valid_to).await.unwrap();
+                orders.into_iter().next()
+            }
+        };
+
+        // not solvable because valid to
+        assert!(get_order(4).await.is_none());
+
+        // not solvable because fully executed
+        db.append_events_(vec![(
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            Event::Trade(Trade {
+                order_uid: order.order_meta_data.uid,
+                sell_amount_including_fee: 10.into(),
+                ..Default::default()
+            }),
+        )])
+        .await
+        .unwrap();
+        assert!(get_order(0).await.is_none());
+        db.replace_events_(0, Vec::new()).await.unwrap();
+
+        // not solvable because invalidated
+        db.append_events_(vec![(
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            Event::Invalidation(Invalidation {
+                order_uid: order.order_meta_data.uid,
+            }),
+        )])
+        .await
+        .unwrap();
+        assert!(get_order(0).await.is_none());
+        db.replace_events_(0, Vec::new()).await.unwrap();
+
+        // solvable
+        assert!(get_order(3).await.is_some());
+
+        // still solvable because only partially filled
+        db.append_events_(vec![(
+            EventIndex {
+                block_number: 0,
+                log_index: 0,
+            },
+            Event::Trade(Trade {
+                order_uid: order.order_meta_data.uid,
+                sell_amount_including_fee: 5.into(),
+                ..Default::default()
+            }),
+        )])
+        .await
+        .unwrap();
+        assert!(get_order(3).await.is_some());
+    }
 }

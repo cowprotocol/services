@@ -238,12 +238,6 @@ impl Orderbook {
         let mut orders = self.database.orders(filter).await?;
         let balances =
             track_and_get_balances(self.balance_fetcher.as_ref(), orders.as_slice()).await;
-        // The meaning of the available balance field is different depending on whether we return
-        // orders for the solver or the frontend. For the frontend (else case) balances are always
-        // actual balances but for the solver there is custom logic to decide which orders get
-        // prioritized when a user's balance is too small to cover all of their orders.
-        // We can hopefully resolve this when we have a custom struct for orders in the
-        // get_solver_orders route and a custom endpoint to query user balances for the frontend.
         set_available_balances(orders.as_mut_slice(), &balances);
         if filter.exclude_insufficient_balance {
             orders = solvable_orders(orders, &balances);
@@ -255,15 +249,14 @@ impl Orderbook {
     }
 
     pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {
-        let filter = OrderFilter {
-            min_valid_to: now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32,
-            exclude_fully_executed: true,
-            exclude_invalidated: true,
-            exclude_insufficient_balance: true,
-            exclude_unsupported_tokens: true,
-            ..Default::default()
-        };
-        self.get_orders(&filter).await
+        let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
+        let orders = self.database.solvable_orders(min_valid_to).await?;
+        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        let balances =
+            track_and_get_balances(self.balance_fetcher.as_ref(), orders.as_slice()).await;
+        let mut orders = solvable_orders(orders, &balances);
+        set_available_balances(orders.as_mut_slice(), &balances);
+        Ok(orders)
     }
 }
 
