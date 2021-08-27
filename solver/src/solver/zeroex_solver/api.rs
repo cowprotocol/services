@@ -1,4 +1,4 @@
-//! Matcha HTTP API client implementation.
+//! Ox HTTP API client implementation.
 //!
 //! For more information on the HTTP API, consult:
 //! <https://0x.org/docs/api#request-1>
@@ -14,11 +14,11 @@ use serde::Deserialize;
 use thiserror::Error;
 use web3::types::Bytes;
 
-// Matcha requires an address as an affiliate.
+// 0x requires an address as an affiliate.
 // Hence we hand over the settlement contract address
 const AFFILIATE_ADDRESS: &str = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 
-/// A Matcha API quote query parameters.
+/// A 0x API quote query parameters.
 ///
 /// These parameters are currently incomplete, and missing parameters can be
 /// added incrementally as needed.
@@ -75,7 +75,7 @@ impl SwapQuery {
     }
 }
 
-/// A Matcha API swap response.
+/// A Ox API swap response.
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -97,18 +97,18 @@ pub struct SwapResponse {
 /// Mockable implementation of the API for unit test
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait MatchaApi {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, MatchaResponseError>;
+pub trait ZeroExApi {
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
 }
 
-/// Matcha API Client implementation.
+/// 0x API Client implementation.
 #[derive(Debug)]
-pub struct DefaultMatchaApi {
+pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
 }
 
-impl DefaultMatchaApi {
+impl DefaultZeroExApi {
     pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
 
     /// Create a new 1Inch HTTP API client with the specified base URL.
@@ -128,12 +128,12 @@ enum RawResponse<Ok> {
 }
 
 #[derive(Error, Debug)]
-pub enum MatchaResponseError {
+pub enum ZeroExResponseError {
     #[error("ServerError from query {0}")]
     ServerError(String),
 
     #[error("uncatalogued error message: {0}")]
-    UnknownMatchaError(String),
+    UnknownZeroExError(String),
 
     #[error("Error({0}) for response {1}")]
     DeserializeError(serde_json::Error, String),
@@ -148,34 +148,34 @@ pub enum MatchaResponseError {
 }
 
 #[async_trait::async_trait]
-impl MatchaApi for DefaultMatchaApi {
+impl ZeroExApi for DefaultZeroExApi {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, MatchaResponseError> {
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
         let query_str = format!("{:?}", &query);
         let response_text = self
             .client
             .get(query.into_url(&self.base_url))
             .send()
             .await
-            .map_err(MatchaResponseError::Send)?
+            .map_err(ZeroExResponseError::Send)?
             .text()
             .await
-            .map_err(MatchaResponseError::TextFetch)?;
-        parse_matcha_response_text(&response_text, &query_str)
+            .map_err(ZeroExResponseError::TextFetch)?;
+        parse_zeroex_response_text(&response_text, &query_str)
     }
 }
 
-fn parse_matcha_response_text(
+fn parse_zeroex_response_text(
     response_text: &str,
     query: &str,
-) -> Result<SwapResponse, MatchaResponseError> {
+) -> Result<SwapResponse, ZeroExResponseError> {
     match serde_json::from_str::<RawResponse<SwapResponse>>(response_text) {
         Ok(RawResponse::ResponseOk(response)) => Ok(response),
         Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
-            "Server Error" => Err(MatchaResponseError::ServerError(format!("{:?}", query))),
-            _ => Err(MatchaResponseError::UnknownMatchaError(message)),
+            "Server Error" => Err(ZeroExResponseError::ServerError(format!("{:?}", query))),
+            _ => Err(ZeroExResponseError::UnknownZeroExError(message)),
         },
-        Err(err) => Err(MatchaResponseError::DeserializeError(
+        Err(err) => Err(ZeroExResponseError::DeserializeError(
             err,
             response_text.parse().unwrap(),
         )),
@@ -189,8 +189,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e() {
-        let matcha_client =
-            DefaultMatchaApi::new(DefaultMatchaApi::DEFAULT_URL, Client::new()).unwrap();
+        let zeroex_client =
+            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, Client::new()).unwrap();
         let sell_token = shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
         let buy_token = shared::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
         let swap_query = SwapQuery {
@@ -202,7 +202,7 @@ mod tests {
             skip_validation: Some(true),
         };
 
-        let price_response = matcha_client.get_swap(swap_query).await;
+        let price_response = zeroex_client.get_swap(swap_query).await;
         assert!(price_response.is_ok());
     }
 

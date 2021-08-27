@@ -1,6 +1,6 @@
 // This application observes the order book api and tries to determine if the solver is down. It
 // does this by checking if no trades have been made recently and if so checking if it finds a
-// matchable order according to an external price api (matcha). If this is the case it alerts.
+// matchable order according to an external price api (0x). If this is the case it alerts.
 
 use anyhow::{Context, Result};
 use model::{
@@ -63,12 +63,12 @@ fn convert_eth_to_weth(token: H160) -> H160 {
     }
 }
 
-struct MatchaApi {
+struct ZeroExApi {
     base: Url,
     client: Client,
 }
 
-impl MatchaApi {
+impl ZeroExApi {
     pub fn new(client: Client) -> Self {
         Self {
             base: "https://api.0x.org".parse().unwrap(),
@@ -107,7 +107,7 @@ impl MatchaApi {
             .json()
             .await?;
 
-        tracing::debug!(url = url.as_str(), ?response, "matcha");
+        tracing::debug!(url = url.as_str(), ?response, "0x");
 
         Ok(match order.kind {
             OrderKind::Buy => order.sell_amount >= response.sell_amount,
@@ -118,7 +118,7 @@ impl MatchaApi {
 
 struct Alerter {
     orderbook_api: OrderBookApi,
-    matcha_api: MatchaApi,
+    zeroex_api: ZeroExApi,
     config: AlertConfig,
     last_observed_trade: Instant,
     last_alert: Option<Instant>,
@@ -135,10 +135,10 @@ struct AlertConfig {
 }
 
 impl Alerter {
-    pub fn new(orderbook_api: OrderBookApi, matcha_api: MatchaApi, config: AlertConfig) -> Self {
+    pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
         Self {
             orderbook_api,
-            matcha_api,
+            zeroex_api,
             config,
             last_observed_trade: Instant::now(),
             last_alert: None,
@@ -185,7 +185,7 @@ impl Alerter {
 
     fn alert(&self, order: &Order) {
         tracing::error!(
-            "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to matcha.",
+            "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to 0x.",
             self.config.time_without_trade.as_secs(),
             order.order_meta_data.uid,
         );
@@ -208,7 +208,7 @@ impl Alerter {
             }
 
             if self
-                .matcha_api
+                .zeroex_api
                 .can_be_settled(&order.order_creation)
                 .await
                 .context("can_be_settled")?
@@ -251,7 +251,7 @@ struct Arguments {
     )]
     min_alert_interval: Duration,
 
-    /// How many errors in the update loop (fetching solvable orders or querying matcha) in a row
+    /// How many errors in the update loop (fetching solvable orders or querying 0x) in a row
     /// must happen before we alert about them.
     #[structopt(long, env, default_value = "5")]
     errors_in_a_row_before_alert: u32,
@@ -273,7 +273,7 @@ async fn main() {
 
     let mut alerter = Alerter::new(
         OrderBookApi::new(client.clone(), &args.orderbook_api),
-        MatchaApi::new(client),
+        ZeroExApi::new(client),
         AlertConfig {
             time_without_trade: args.time_without_trade,
             min_order_age: args.min_order_age,

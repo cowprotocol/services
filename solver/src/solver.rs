@@ -4,7 +4,6 @@ use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{Account, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver, SolverConfig};
-use matcha_solver::MatchaSolver;
 use naive_solver::NaiveSolver;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
@@ -19,15 +18,16 @@ use std::{
     time::Instant,
 };
 use structopt::clap::arg_enum;
+use zeroex_solver::ZeroExSolver;
 
 mod baseline_solver;
 mod http_solver;
-mod matcha_solver;
 mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;
 mod single_order_solver;
 mod solver_utils;
+mod zeroex_solver;
 
 /// Interface that all solvers must implement.
 ///
@@ -73,7 +73,7 @@ arg_enum! {
         Mip,
         OneInch,
         Paraswap,
-        Matcha,
+        ZeroEx,
         Quasimodo,
     }
 }
@@ -161,8 +161,8 @@ pub fn create(
                     min_order_size_one_inch,
                 ))
             }
-            SolverType::Matcha => {
-                let matcha_solver = MatchaSolver::new(
+            SolverType::ZeroEx => {
+                let zeroex_solver = ZeroExSolver::new(
                     account,
                     web3.clone(),
                     settlement_contract.clone(),
@@ -170,7 +170,7 @@ pub fn create(
                     client.clone(),
                 )
                 .unwrap();
-                shared(SingleOrderSolver::from(matcha_solver))
+                shared(SingleOrderSolver::from(zeroex_solver))
             }
             SolverType::Paraswap => shared(SingleOrderSolver::from(ParaswapSolver::new(
                 account,
