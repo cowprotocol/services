@@ -207,7 +207,6 @@ arg_enum! {
 async fn main() {
     let args = Arguments::from_args();
     shared::tracing::initialize(args.shared.log_filter.as_str());
-    args.shared.validate();
     tracing::info!("running solver with validated {:#?}", args);
 
     setup_metrics_registry(Some("gp_v2_solver".into()), None);
@@ -380,7 +379,7 @@ async fn main() {
         price_estimator.clone(),
         network_name.to_string(),
         chain_id,
-        args.shared.fee_subsidy_factor,
+        args.shared.fee_factor,
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
@@ -432,7 +431,7 @@ async fn main() {
         args.solver_time_limit,
         market_makable_token_list,
         current_block_stream.clone(),
-        args.shared.fee_subsidy_factor,
+        args.shared.fee_factor,
         solution_submitter,
     );
 

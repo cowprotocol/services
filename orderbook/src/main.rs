@@ -125,7 +125,6 @@ pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
 async fn main() {
     let args = Arguments::from_args();
     shared::tracing::initialize(args.shared.log_filter.as_str());
-    args.shared.validate();
     tracing::info!("running order book with validated {:#?}", args);
 
     setup_metrics_registry(Some("gp_v2_api".into()), None);
@@ -310,7 +309,7 @@ async fn main() {
         gas_price_estimator,
         native_token.address(),
         database.clone(),
-        args.shared.fee_subsidy_factor,
+        args.shared.fee_factor,
         bad_token_detector.clone(),
     ));
 

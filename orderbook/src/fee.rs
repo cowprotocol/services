@@ -23,7 +23,7 @@ pub struct MinFeeCalculator {
     native_token: H160,
     measurements: Arc<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
-    fee_subsidy_factor: f64,
+    fee_factor: f64,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
 }
 
@@ -106,7 +106,7 @@ impl EthAwareMinFeeCalculator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
-        fee_subsidy_factor: f64,
+        fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
@@ -115,7 +115,7 @@ impl EthAwareMinFeeCalculator {
                 gas_estimator,
                 native_token,
                 measurements,
-                fee_subsidy_factor,
+                fee_factor,
                 bad_token_detector,
             ),
             weth: native_token,
@@ -156,7 +156,7 @@ impl MinFeeCalculator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
-        fee_subsidy_factor: f64,
+        fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
         Self {
@@ -165,7 +165,7 @@ impl MinFeeCalculator {
             native_token,
             measurements,
             now: Box::new(Utc::now),
-            fee_subsidy_factor,
+            fee_factor,
             bad_token_detector,
         }
     }
@@ -186,7 +186,7 @@ impl MinFeeCalculator {
                     .estimate_gas(sell_token, buy_token, amount, kind)
                     .await
                 {
-                    Ok(amount) => amount.to_f64_lossy() * (1f64 - self.fee_subsidy_factor),
+                    Ok(amount) => amount.to_f64_lossy() * self.fee_factor,
                     Err(err) => {
                         tracing::warn!("Failed to estimate gas amount: {}", err);
                         return Ok(None);
@@ -436,7 +436,7 @@ mod tests {
                 native_token: Default::default(),
                 measurements: Arc::new(InMemoryFeeStore::default()),
                 now,
-                fee_subsidy_factor: 0.0,
+                fee_factor: 1.0,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
             }
         }
@@ -516,7 +516,7 @@ mod tests {
             native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
-            fee_subsidy_factor: 0.0,
+            fee_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
         };
 

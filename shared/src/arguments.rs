@@ -1,8 +1,10 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{gas_price_estimation::GasEstimatorType, sources::BaselineSource};
+use anyhow::{ensure, Result};
 use ethcontract::{H160, U256};
 use std::{
     num::{NonZeroU64, ParseFloatError},
+    str::FromStr,
     time::Duration,
 };
 use url::Url;
@@ -49,9 +51,10 @@ pub struct Arguments {
     #[structopt(long, env = "BASE_TOKENS", use_delimiter = true)]
     pub base_tokens: Vec<H160>,
 
-    /// Gas Fee Subsidy: 0 means no subsidy, 0.9 means 90% subsidized.
-    #[structopt(long, env = "FEE_SUBSIDY_FACTOR", default_value = "0")]
-    pub fee_subsidy_factor: f64,
+    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
+    /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
+    #[structopt(long, env, default_value = "1", parse(try_from_str = parse_fee_factor))]
+    pub fee_factor: f64,
 
     /// Which Liquidity sources to be used by Price Estimator.
     #[structopt(
@@ -90,13 +93,10 @@ pub struct Arguments {
     pub block_stream_poll_interval_seconds: Duration,
 }
 
-impl Arguments {
-    pub fn validate(&self) {
-        assert!(
-            0f64 <= self.fee_subsidy_factor && self.fee_subsidy_factor <= 1f64,
-            "Fee subsidy must be in the range [0, 1]"
-        );
-    }
+fn parse_fee_factor(s: &str) -> Result<f64> {
+    let f64 = f64::from_str(s)?;
+    ensure!(f64.is_finite() && f64 >= 0.);
+    Ok(f64)
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

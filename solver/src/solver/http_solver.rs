@@ -83,8 +83,8 @@ pub struct HttpSolver {
     buffer_retriever: Arc<dyn BufferRetrieving>,
     network_id: String,
     chain_id: u64,
-    fee_subsidy_factor: f64,
     instance_cache: InstanceCache,
+    fee_factor: f64,
 }
 
 impl HttpSolver {
@@ -101,7 +101,7 @@ impl HttpSolver {
         buffer_retriever: Arc<dyn BufferRetrieving>,
         network_id: String,
         chain_id: u64,
-        fee_subsidy_factor: f64,
+        fee_factor: f64,
         client: Client,
         instance_cache: InstanceCache,
     ) -> Self {
@@ -118,8 +118,8 @@ impl HttpSolver {
             buffer_retriever,
             network_id,
             chain_id,
-            fee_subsidy_factor,
             instance_cache,
+            fee_factor,
         }
     }
 
@@ -432,8 +432,7 @@ impl HttpSolver {
     }
 
     fn order_fee(&self, order: &LimitOrder) -> U256 {
-        let ceiled_div =
-            (order.fee_amount.to_f64_lossy() / (1f64 - self.fee_subsidy_factor)).ceil();
+        let ceiled_div = (order.fee_amount.to_f64_lossy() / self.fee_factor).ceil();
         U256::from_f64_lossy(ceiled_div)
     }
 
@@ -649,7 +648,7 @@ mod tests {
         ];
         let (model, _context) = solver.prepare_model(orders, gas_price).await.unwrap();
         let settled = solver
-            .send(&model, Instant::now() + Duration::from_secs(u64::MAX))
+            .send(&model, Instant::now() + Duration::from_secs(1000))
             .await
             .unwrap();
         dbg!(&settled);

@@ -225,7 +225,7 @@ async fn eth_integration(web3: Web3) {
         Duration::from_secs(30),
         None,
         block_stream,
-        0.0,
+        1.0,
         SolutionSubmitter {
             web3: web3.clone(),
             contract: gpv2.settlement.clone(),

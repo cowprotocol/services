@@ -50,7 +50,7 @@ pub struct Driver {
     market_makable_token_list: Option<TokenList>,
     inflight_trades: HashSet<OrderUid>,
     block_stream: CurrentBlockStream,
-    fee_subsidy_factor: f64,
+    fee_factor: f64,
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
 }
@@ -72,7 +72,7 @@ impl Driver {
         solver_time_limit: Duration,
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
-        fee_subsidy_factor: f64,
+        fee_factor: f64,
         solution_submitter: SolutionSubmitter,
     ) -> Self {
         Self {
@@ -92,7 +92,7 @@ impl Driver {
             market_makable_token_list,
             inflight_trades: HashSet::new(),
             block_stream,
-            fee_subsidy_factor,
+            fee_factor,
             solution_submitter,
             solve_id: 0,
         }
@@ -332,7 +332,7 @@ impl Driver {
                 let surplus = settlement.total_surplus(prices);
                 // Because of a potential fee discount, the solver fees may by themselves not be sufficient to make a solution economically viable (leading to a negative objective value)
                 // We therefore reverse apply the fee discount to simulate unsubsidized fees for ranking.
-                let unsubsidized_solver_fees = settlement.total_fees(prices) / BigRational::from_float(1f64 - self.fee_subsidy_factor).expect("Discount factor is not a rational");
+                let unsubsidized_solver_fees = settlement.total_fees(prices) / BigRational::from_float(self.fee_factor).expect("Discount factor is not a rational");
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
                     &settlement.clone().into(),

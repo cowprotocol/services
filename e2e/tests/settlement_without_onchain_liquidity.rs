@@ -218,7 +218,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         Duration::from_secs(10),
         Some(market_makable_token_list),
         block_stream,
-        0.0,
+        1.0,
         SolutionSubmitter {
             web3: web3.clone(),
             contract: gpv2.settlement.clone(),
