@@ -248,6 +248,18 @@ impl Orderbook {
         Ok(orders)
     }
 
+    pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
+        let mut order = match self.database.single_order(uid).await? {
+            Some(order) => order,
+            None => return Ok(None),
+        };
+        let balances =
+            track_and_get_balances(self.balance_fetcher.as_ref(), std::slice::from_ref(&order))
+                .await;
+        set_available_balances(std::slice::from_mut(&mut order), &balances);
+        Ok(Some(order))
+    }
+
     pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let orders = self.database.solvable_orders(min_valid_to).await?;

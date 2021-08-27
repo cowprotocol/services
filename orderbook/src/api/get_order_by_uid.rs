@@ -1,29 +1,22 @@
 use crate::api::convert_get_orders_error_to_reply;
-use crate::database::orders::OrderFilter;
 use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::{Order, OrderUid};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
 
-pub fn get_order_by_uid_request() -> impl Filter<Extract = (OrderFilter,), Error = Rejection> + Clone
-{
-    warp::path!("orders" / OrderUid)
-        .and(warp::get())
-        .map(|uid| OrderFilter {
-            uid: Some(uid),
-            ..Default::default()
-        })
+pub fn get_order_by_uid_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
+    warp::path!("orders" / OrderUid).and(warp::get())
 }
 
-pub fn get_order_by_uid_response(result: Result<Vec<Order>>) -> impl Reply {
-    let orders = match result {
-        Ok(orders) => orders,
+pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> impl Reply {
+    let order = match result {
+        Ok(order) => order,
         Err(err) => {
             return Ok(convert_get_orders_error_to_reply(err));
         }
     };
-    Ok(match orders.first() {
+    Ok(match order {
         Some(order) => reply::with_status(reply::json(&order), StatusCode::OK),
         None => reply::with_status(
             super::error("NotFound", "Order was not found"),
@@ -35,10 +28,10 @@ pub fn get_order_by_uid_response(result: Result<Vec<Order>>) -> impl Reply {
 pub fn get_order_by_uid(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    get_order_by_uid_request().and_then(move |order_filter| {
+    get_order_by_uid_request().and_then(move |uid| {
         let orderbook = orderbook.clone();
         async move {
-            let result = orderbook.get_orders(&order_filter).await;
+            let result = orderbook.get_order(&uid).await;
             Result::<_, Infallible>::Ok(get_order_by_uid_response(result))
         }
     })
@@ -56,22 +49,22 @@ mod tests {
         let request = request().path(&format!("/orders/{:}", uid)).method("GET");
         let filter = get_order_by_uid_request();
         let result = request.filter(&filter).await.unwrap();
-        assert_eq!(result.uid, Some(uid));
+        assert_eq!(result, uid);
     }
 
     #[tokio::test]
     async fn get_order_by_uid_response_ok() {
-        let orders = vec![Order::default()];
-        let response = get_order_by_uid_response(Ok(orders.clone())).into_response();
+        let order = Order::default();
+        let response = get_order_by_uid_response(Ok(Some(order.clone()))).into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
         let response_order: Order = serde_json::from_slice(body.as_slice()).unwrap();
-        assert_eq!(response_order, orders[0]);
+        assert_eq!(response_order, order);
     }
 
     #[tokio::test]
     async fn get_order_by_uid_response_non_existent() {
-        let response = get_order_by_uid_response(Ok(Vec::new())).into_response();
+        let response = get_order_by_uid_response(Ok(None)).into_response();
         assert_eq!(response.status(), StatusCode::NOT_FOUND);
     }
 }
