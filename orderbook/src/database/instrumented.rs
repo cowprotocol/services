@@ -128,6 +128,25 @@ impl OrderStoring for Instrumented {
             .start_timer();
         self.inner.orders(filter).await
     }
+
+    async fn single_order(
+        &self,
+        uid: &model::order::OrderUid,
+    ) -> anyhow::Result<model::order::Order> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("single_order")
+            .start_timer();
+        self.inner.single_order(uid).await
+    }
+
+    async fn solvable_orders(&self, min_valid_to: u32) -> anyhow::Result<Vec<model::order::Order>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("solvable_orders")
+            .start_timer();
+        self.inner.solvable_orders(min_valid_to).await
+    }
 }
 
 #[async_trait::async_trait]

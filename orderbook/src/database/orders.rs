@@ -3,6 +3,7 @@ use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
 use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
+use const_format::concatcp;
 use futures::stream::TryStreamExt;
 use model::order::{BuyTokenDestination, SellTokenSource};
 use model::{
@@ -17,6 +18,12 @@ pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
+    // TODO: use in higher level code
+    async fn single_order(&self, uid: &OrderUid) -> Result<Order>;
+    // TODO: use in higher level code
+    async fn solvable_orders(&self, min_valid_to: u32) -> Result<Vec<Order>>;
+    // Soon:
+    // async fn user_orders(&self, filter, order_uid) -> Result<Vec<Order>>;
 }
 
 /// Any default value means that this field is unfiltered.
@@ -149,6 +156,28 @@ impl From<sqlx::Error> for InsertionError {
     }
 }
 
+// When querying orders we have several specialized use cases working with their own filtering,
+// ordering, indexes. The parts that are shared between all queries are defined here so they can be
+// reused.
+
+const ORDERS_SELECT: &str = "\
+    o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount, \
+    o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature, o.receiver, \
+    o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance, \
+    COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
+    COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
+    COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
+    (COUNT(invalidations.*) > 0 OR o.cancellation_timestamp IS NOT NULL) AS invalidated \
+";
+
+const ORDERS_FROM: &str = "\
+    orders o \
+    LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
+    LEFT OUTER JOIN invalidations ON o.uid = invalidations.order_uid \
+";
+
+const ORDERS_GROUP_BY: &str = "o.uid ";
+
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
@@ -222,44 +251,74 @@ impl OrderStoring for Postgres {
         // The `or`s in the `where` clause are there so that each filter is ignored when not set.
         // We use a subquery instead of a `having` clause in the inner query because we would not be
         // able to use the `sum_*` columns there.
-        const QUERY: &str = "\
-        SELECT * FROM ( \
-            SELECT \
-                o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, \
-                o.buy_amount, o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, \
-                o.signature, o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, \
-                o.buy_token_balance, \
-                COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
-                COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
-                COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
-                (COUNT(invalidations.*) > 0 OR o.cancellation_timestamp IS NOT NULL) AS invalidated \
-            FROM \
-                orders o \
-                LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
-                LEFT OUTER JOIN invalidations ON o.uid = invalidations.order_uid \
+        #[rustfmt::skip]
+        const QUERY: &str = concatcp!(
+            "SELECT * FROM ( ",
+                "SELECT ", ORDERS_SELECT,
+                "FROM ", ORDERS_FROM,
+                "WHERE \
+                    o.valid_to >= $1 AND \
+                    ($2 IS NULL OR o.owner = $2) AND \
+                    ($3 IS NULL OR o.sell_token = $3) AND \
+                    ($4 IS NULL OR o.buy_token = $4) AND \
+                    ($5 IS NULL OR o.uid = $5) ",
+                "GROUP BY ", ORDERS_GROUP_BY,
+            ") AS unfiltered \
             WHERE \
-                o.valid_to >= $1 AND \
-                ($2 IS NULL OR o.owner = $2) AND \
-                ($3 IS NULL OR o.sell_token = $3) AND \
-                ($4 IS NULL OR o.buy_token = $4) AND \
-                ($5 IS NULL OR o.uid = $5) \
-            GROUP BY o.uid \
-        ) AS unfiltered \
-        WHERE
-            ($6 OR CASE kind \
-                WHEN 'sell' THEN sum_sell < sell_amount \
-                WHEN 'buy' THEN sum_buy < buy_amount \
-            END) AND \
-            ($7 OR NOT invalidated);";
-
+                ($6 OR CASE kind \
+                    WHEN 'sell' THEN sum_sell < sell_amount \
+                    WHEN 'buy' THEN sum_buy < buy_amount \
+                END) AND \
+                ($7 OR NOT invalidated);"
+        );
         sqlx::query_as(QUERY)
-            .bind(filter.min_valid_to)
+            .bind(filter.min_valid_to as i64)
             .bind(filter.owner.as_ref().map(|h160| h160.as_bytes()))
             .bind(filter.sell_token.as_ref().map(|h160| h160.as_bytes()))
             .bind(filter.buy_token.as_ref().map(|h160| h160.as_bytes()))
             .bind(filter.uid.as_ref().map(|uid| uid.0.as_ref()))
             .bind(!filter.exclude_fully_executed)
             .bind(!filter.exclude_invalidated)
+            .fetch(&self.pool)
+            .err_into()
+            .and_then(|row: OrdersQueryRow| async move { row.into_order() })
+            .try_collect()
+            .await
+    }
+
+    async fn single_order(&self, uid: &OrderUid) -> Result<Order> {
+        #[rustfmt::skip]
+        const QUERY: &str = concatcp!(
+            "SELECT ", ORDERS_SELECT,
+            "FROM ", ORDERS_FROM,
+            "WHERE o.uid = $1 ",
+            "GROUP BY ", ORDERS_GROUP_BY,
+        );
+        let order: OrdersQueryRow = sqlx::query_as(QUERY)
+            .bind(uid.0.as_ref())
+            .fetch_one(&self.pool)
+            .await?;
+        order.into_order()
+    }
+
+    async fn solvable_orders(&self, min_valid_to: u32) -> Result<Vec<Order>> {
+        #[rustfmt::skip]
+        const QUERY: &str = concatcp!(
+            "SELECT * FROM ( ",
+                "SELECT ", ORDERS_SELECT,
+                "FROM ", ORDERS_FROM,
+                "WHERE o.valid_to >= $1 ",
+                "GROUP BY ", ORDERS_GROUP_BY,
+            ") AS unfiltered \
+            WHERE \
+                CASE kind \
+                    WHEN 'sell' THEN sum_sell < sell_amount \
+                    WHEN 'buy' THEN sum_buy < buy_amount \
+                END AND \
+                (NOT invalidated);"
+        );
+        sqlx::query_as(QUERY)
+            .bind(min_valid_to as i64)
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })

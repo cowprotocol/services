@@ -319,6 +319,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "const_format"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59c7d3aa11be45d56befebb10f4a8785fcb62aabddf5f33638efef922e505ec9"
+dependencies = [
+ "const_format_proc_macros",
+]
+
+[[package]]
+name = "const_format_proc_macros"
+version = "0.2.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "29c36c619c422113552db4eb28cddba8faa757e33f758cc3415bd2885977b591"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "unicode-xid",
+]
+
+[[package]]
 name = "contracts"
 version = "0.1.0"
 dependencies = [
@@ -1792,6 +1812,7 @@ dependencies = [
  "async-trait",
  "bigdecimal",
  "chrono",
+ "const_format",
  "contracts",
  "either",
  "ethcontract",
