@@ -18,9 +18,7 @@ pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
-    // TODO: use in higher level code
-    async fn single_order(&self, uid: &OrderUid) -> Result<Order>;
-    // TODO: use in higher level code
+    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
     async fn solvable_orders(&self, min_valid_to: u32) -> Result<Vec<Order>>;
     // Soon:
     // async fn user_orders(&self, filter, order_uid) -> Result<Vec<Order>>;
@@ -286,7 +284,7 @@ impl OrderStoring for Postgres {
             .await
     }
 
-    async fn single_order(&self, uid: &OrderUid) -> Result<Order> {
+    async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
         #[rustfmt::skip]
         const QUERY: &str = concatcp!(
             "SELECT ", ORDERS_SELECT,
@@ -294,11 +292,11 @@ impl OrderStoring for Postgres {
             "WHERE o.uid = $1 ",
             "GROUP BY ", ORDERS_GROUP_BY,
         );
-        let order: OrdersQueryRow = sqlx::query_as(QUERY)
+        let order = sqlx::query_as(QUERY)
             .bind(uid.0.as_ref())
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await?;
-        order.into_order()
+        order.map(OrdersQueryRow::into_order).transpose()
     }
 
     async fn solvable_orders(&self, min_valid_to: u32) -> Result<Vec<Order>> {
@@ -1145,5 +1143,39 @@ mod tests {
         .await
         .unwrap();
         assert!(get_order(3).await.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_single_order() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order0 = Order {
+            order_meta_data: OrderMetaData {
+                uid: OrderUid([1u8; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let order1 = Order {
+            order_meta_data: OrderMetaData {
+                uid: OrderUid([2u8; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(order0.order_meta_data.uid != order1.order_meta_data.uid);
+        db.insert_order(&order0).await.unwrap();
+        db.insert_order(&order1).await.unwrap();
+
+        let get_order = |uid| {
+            let db = db.clone();
+            async move { db.single_order(uid).await.unwrap() }
+        };
+
+        assert!(get_order(&order0.order_meta_data.uid).await.is_some());
+        assert!(get_order(&order1.order_meta_data.uid).await.is_some());
+        assert!(get_order(&OrderUid::default()).await.is_none());
     }
 }

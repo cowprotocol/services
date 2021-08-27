@@ -125,9 +125,7 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: "#/components/schemas/Order"
+                $ref: "#/components/schemas/Order"
         404:
           description: Order was not found
     delete:

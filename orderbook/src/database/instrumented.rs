@@ -132,7 +132,7 @@ impl OrderStoring for Instrumented {
     async fn single_order(
         &self,
         uid: &model::order::OrderUid,
-    ) -> anyhow::Result<model::order::Order> {
+    ) -> anyhow::Result<Option<model::order::Order>> {
         let _timer = self
             .metrics
             .database_query_histogram("single_order")
