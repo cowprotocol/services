@@ -68,6 +68,7 @@ impl Signature {
         }
     }
 
+    #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> [u8; 65] {
         match self {
             Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes(),
