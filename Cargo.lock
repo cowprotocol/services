@@ -2643,6 +2643,7 @@ dependencies = [
  "chrono",
  "contracts",
  "derivative",
+ "derive_more",
  "ethcontract",
  "futures",
  "gas-estimation",

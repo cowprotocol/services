@@ -3,8 +3,12 @@
 //! For more information on the HTTP API, consult:
 //! <https://docs.1inch.io/api/quote-swap>
 //! <https://api.1inch.exchange/swagger/ethereum/>
-use crate::solver::solver_utils::{deserialize_prefixed_hex, Slippage};
-use anyhow::{ensure, Context, Result};
+use crate::solver::{
+    single_order_solver::SettlementError,
+    solver_utils::{deserialize_prefixed_hex, Slippage},
+};
+use anyhow::{anyhow, ensure, Context, Result};
+use derive_more::From;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
@@ -120,6 +124,29 @@ impl SwapQuery {
 }
 
 /// A 1Inch API swap response.
+#[derive(Clone, Debug, Deserialize, PartialEq, From)]
+#[serde(untagged)]
+pub enum SwapResponse {
+    Swap(Swap),
+    Error(SwapResponseError),
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapResponseError {
+    pub status_code: u32,
+    pub message: String,
+}
+
+impl From<SwapResponseError> for SettlementError {
+    fn from(error: SwapResponseError) -> Self {
+        SettlementError {
+            inner: anyhow!(error.message),
+            retryable: matches!(error.status_code, 500),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Swap {
@@ -196,7 +223,7 @@ pub struct Protocols {
 #[async_trait::async_trait]
 pub trait OneInchClient: Send + Sync {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap>;
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse>;
 
     /// Retrieves the address of the spender to use for token approvals.
     async fn get_spender(&self) -> Result<Spender>;
@@ -226,7 +253,7 @@ impl OneInchClientImpl {
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<Swap> {
+    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse> {
         logged_query(&self.client, query.into_url(&self.base_url)).await
     }
 
@@ -349,7 +376,7 @@ mod tests {
 
     #[test]
     fn deserialize_swap_response() {
-        let swap = serde_json::from_str::<Swap>(
+        let swap = serde_json::from_str::<SwapResponse>(
             r#"{
               "fromToken": {
                 "symbol": "ETH",
@@ -401,7 +428,7 @@ mod tests {
 
         assert_eq!(
             swap,
-            Swap {
+            SwapResponse::Swap(Swap {
                 from_token: Token {
                     address: shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 },
@@ -445,7 +472,23 @@ mod tests {
                     gas_price: 154_110_000_000u128.into(),
                     gas: 143297,
                 },
-            }
+            })
+        );
+
+        let swap_error = serde_json::from_str::<SwapResponse>(
+            r#"{
+            "statusCode":500,
+            "message":"Internal server error"
+        }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            swap_error,
+            SwapResponse::Error(SwapResponseError {
+                status_code: 500,
+                message: "Internal server error".into()
+            })
         );
     }
 

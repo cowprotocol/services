@@ -7,6 +7,7 @@ pub mod api;
 use self::api::{Amount, OneInchClient, Swap, SwapQuery};
 use super::single_order_solver::{SettlementError, SingleOrderSolving};
 use super::solver_utils::Slippage;
+use crate::solver::oneinch_solver::api::SwapResponse;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
@@ -130,7 +131,10 @@ impl OneInchSolver {
         };
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = self.client.get_swap(query).await?;
+        let swap = match self.client.get_swap(query).await? {
+            SwapResponse::Swap(swap) => swap,
+            SwapResponse::Error(error) => return Err(error.into()),
+        };
 
         if !satisfies_limit_price(&swap, &order) {
             tracing::debug!("Order limit price not respected");
@@ -264,7 +268,8 @@ mod tests {
                 from_token_amount: 100.into(),
                 to_token_amount: 99.into(),
                 ..Default::default()
-            })
+            }
+            .into())
         });
 
         allowance_fetcher
@@ -339,7 +344,8 @@ mod tests {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            })
+            }
+            .into())
         });
 
         let solver = OneInchSolver {
@@ -376,7 +382,8 @@ mod tests {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            })
+            }
+            .into())
         });
 
         // On first invocation no prior allowance, then max allowance set.
