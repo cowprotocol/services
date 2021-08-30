@@ -196,12 +196,13 @@ impl MinFeeCalculator {
                 GAS_PER_ORDER
             };
         let fee_in_eth = gas_price * gas_amount;
+        let amount_to_estimate_price = U256::from_f64_lossy(fee_in_eth).max(U256::one());
         let token_price = match self
             .price_estimator
             .estimate_price_as_f64(
                 sell_token,
                 self.native_token,
-                U256::from_f64_lossy(fee_in_eth),
+                amount_to_estimate_price,
                 model::order::OrderKind::Buy,
             )
             .await

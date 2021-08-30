@@ -337,6 +337,7 @@ async fn main() {
         // Order book already filters bad tokens
         Arc::new(ListBasedDetector::deny_list(Vec::new())),
         native_token_contract.address(),
+        args.shared.amount_to_estimate_prices_with,
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,

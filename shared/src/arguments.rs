@@ -91,6 +91,15 @@ pub struct Arguments {
         parse(try_from_str = duration_from_seconds),
     )]
     pub block_stream_poll_interval_seconds: Duration,
+
+    /// Default is one atom of native_token (i.e. price estimation uses spot prices).
+    #[structopt(
+        long,
+        env,
+        default_value = "1",
+        parse(try_from_str = U256::from_dec_str)
+    )]
+    pub amount_to_estimate_prices_with: U256,
 }
 
 fn parse_fee_factor(s: &str) -> Result<f64> {

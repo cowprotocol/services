@@ -303,6 +303,7 @@ async fn main() {
         base_tokens,
         bad_token_detector.clone(),
         native_token.address(),
+        args.shared.amount_to_estimate_prices_with,
     ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),

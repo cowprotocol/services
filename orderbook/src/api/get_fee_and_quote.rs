@@ -115,7 +115,8 @@ async fn calculate_sell(
     let sell_amount_after_fee = query
         .sell_amount_before_fee
         .checked_sub(fee)
-        .ok_or(Error::SellAmountDoesNotCoverFee)?;
+        .ok_or(Error::SellAmountDoesNotCoverFee)?
+        .max(U256::one());
 
     let price = price_estimator
         .estimate_price(

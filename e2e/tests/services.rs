@@ -178,6 +178,7 @@ impl OrderbookServices {
             base_tokens,
             bad_token_detector.clone(),
             gpv2.native_token.address(),
+            1_000_000_000_000_000_000_u128.into(),
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
