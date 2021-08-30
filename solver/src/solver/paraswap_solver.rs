@@ -70,11 +70,11 @@ impl From<ParaswapResponseError> for SettlementError {
     fn from(err: ParaswapResponseError) -> Self {
         SettlementError {
             inner: anyhow!("Paraswap Response Error {:?}", err),
+            // We don't retry TooMuchSlippageOnQuote because it is unlikely a new liquidity source for the same pair will appear by the time we would retry
             retryable: matches!(
                 err,
                 ParaswapResponseError::PriceChange
                     | ParaswapResponseError::BuildingTransaction(_)
-                    | ParaswapResponseError::TooMuchSlippageOnQuote
                     | ParaswapResponseError::GetParaswapPool(_),
             ),
         }
