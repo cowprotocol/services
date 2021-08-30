@@ -20,6 +20,8 @@ use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use reqwest::Client;
 use std::sync::Arc;
 
+const STABLE_POOL_FACTORY_ADDRESS: H160 = addr!("c66ba2b6595d3613ccab350c886ace23866ede24");
+
 #[derive(Debug, Default, PartialEq)]
 pub struct BalancerRegisteredPools {
     pub weighted_pools: Vec<RegisteredWeightedPool>,
@@ -148,6 +150,9 @@ where
             fetched_block_number: pools.fetched_block_number,
         };
 
+        //TODO: remove when we support the stable pool factoru
+        pools.pools_by_factory.remove(&STABLE_POOL_FACTORY_ADDRESS);
+
         // Log an error in order to trigger an alert. This will allow us to make
         // sure we get notified if new pool factories are added that we don't
         // index for.
@@ -241,6 +246,7 @@ where
             fetched_block_number: pools.fetched_block_number,
         };
 
+        pools.pools_by_factory.remove(&STABLE_POOL_FACTORY_ADDRESS);
         // Log an error in order to trigger an alert. This will allow us to make
         // sure we get notified if new pool factories are added that we don't
         // index for.
