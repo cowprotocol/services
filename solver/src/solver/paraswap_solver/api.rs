@@ -51,6 +51,9 @@ impl ParaswapApi for DefaultParaswapApi {
                 "No routes found with enough liquidity" => {
                     Err(ParaswapResponseError::InsufficientLiquidity)
                 }
+                "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT" => {
+                    Err(ParaswapResponseError::TooMuchSlippageOnQuote)
+                }
                 _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
                     "uncatalogued Price Query error message {}",
                     message
@@ -77,9 +80,12 @@ impl ParaswapApi for DefaultParaswapApi {
 
 #[derive(Deserialize)]
 #[serde(untagged)]
+// Some Paraswap errors may contain both an error and an Ok response.
+// In those cases we should treat the response as an error which is why the error variant
+// is declared first (serde will encodes a mixed response as the first matching variant).
 pub enum RawResponse<Ok> {
-    ResponseOk(Ok),
     ResponseErr { error: String },
+    ResponseOk(Ok),
 }
 
 #[derive(Error, Debug)]
@@ -576,6 +582,131 @@ mod tests {
 
         assert_eq!(result.src_amount, 100_000_000_000_000_000u128.into());
         assert_eq!(result.dest_amount, 1_444_292_761_374_042_400u128.into());
+    }
+
+    #[test]
+    fn test_price_query_response_deserialization_with_error() {
+        let result = serde_json::from_str::<RawResponse<PriceResponse>>(
+            r#"{
+                "error": "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT",
+                "value": "28.13%",
+                "priceRoute": {
+                  "bestRoute": [
+                    {
+                      "exchange": "UniswapV2",
+                      "srcAmount": "34020118741679034368",
+                      "destAmount": "132586194058791470",
+                      "percent": "100.00",
+                      "data": {
+                        "router": "0x86d3579b043585A97532514016dCF0C2d6C4b6a1",
+                        "path": [
+                          "0x960b236a07cf122663c4303350609a66a7b288c0",
+                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                        ],
+                        "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+                        "initCode": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
+                        "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                        "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "gasUSD": "16.343060"
+                      },
+                      "destAmountFeeDeducted": "132586194058791470"
+                    }
+                  ],
+                  "blockNumber": 13115088,
+                  "destAmount": "132586194058791470",
+                  "srcAmount": "34020118741679034368",
+                  "adapterVersion": "4.0.0",
+                  "others": [
+                    {
+                      "exchange": "UniswapV2",
+                      "rate": "132586194058791470",
+                      "unit": "3925118665550511",
+                      "data": {
+                        "router": "0x86d3579b043585A97532514016dCF0C2d6C4b6a1",
+                        "path": [
+                          "0x960b236a07cf122663c4303350609a66a7b288c0",
+                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                        ],
+                        "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+                        "initCode": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
+                        "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                        "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "gasUSD": "16.343060"
+                      },
+                      "rateFeeDeducted": "132586194058791470",
+                      "unitFeeDeducted": "3925118665550511"
+                    },
+                    {
+                      "exchange": "Balancer",
+                      "rate": "123444215277050183",
+                      "unit": "4186233534292740",
+                      "data": {
+                        "pool": "0x2cf9106faf2c5c8713035d40df655fb1b9b0f9b9",
+                        "exchangeProxy": "0x6317c5e82a06e1d8bf200d21f4510ac2c038ac81",
+                        "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                        "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "gasUSD": "24.514591"
+                      },
+                      "rateFeeDeducted": "123444215277050183",
+                      "unitFeeDeducted": "4186233534292740"
+                    },
+                    {
+                      "exchange": "SushiSwap",
+                      "rate": "2750123947578310",
+                      "unit": "1787208779577095",
+                      "data": {
+                        "router": "0xBc1315CD2671BC498fDAb42aE1214068003DC51e",
+                        "path": [
+                          "0x960b236a07cf122663c4303350609a66a7b288c0",
+                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"
+                        ],
+                        "factory": "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
+                        "initCode": "0xe18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303",
+                        "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                        "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "gasUSD": "18.385943"
+                      },
+                      "rateFeeDeducted": "2750123947578310",
+                      "unitFeeDeducted": "1787208779577095"
+                    },
+                    {
+                      "exchange": "Kyber",
+                      "rate": "137840846740713684",
+                      "unit": "4052387741876373",
+                      "data": {
+                        "exchange": "0x9AAb3f75489902f3a48495025729a0AF77d4b11e",
+                        "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                        "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                        "gasUSD": "57.200711"
+                      },
+                      "rateFeeDeducted": "137840846740713684",
+                      "unitFeeDeducted": "4052387741876373"
+                    }
+                  ],
+                  "side": "SELL",
+                  "details": {
+                    "tokenFrom": "0x960b236a07cf122663c4303350609a66a7b288c0",
+                    "tokenTo": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                    "srcAmount": "34020118741679034368",
+                    "destAmount": "132586194058791470"
+                  },
+                  "bestRouteGas": "189300",
+                  "bestRouteGasCostUSD": "38.671767",
+                  "contractMethod": "swapOnUniswap",
+                  "fromUSD": "599.5691475494",
+                  "toUSD": "430.8894557824",
+                  "priceWithSlippage": "131260332118203555",
+                  "spender": "0xb70Bc06D2c9Bf03b3373799606dc7d39346c06B3",
+                  "destAmountFeeDeducted": "132586194058791470",
+                  "toUSDFeeDeducted": "430.8894557824",
+                  "multiRoute": [],
+                  "maxImpactReached": true,
+                  "priceID": "385c3f7a-f57b-4295-b5f6-b210c0c7ec1d",
+                  "hmac": "59baa2597b5aeebd13eca67fdbe2d6765decc328"
+                }
+              }"#).unwrap();
+
+        assert!(matches!(result, RawResponse::ResponseErr { error: _ }));
     }
 
     #[test]
