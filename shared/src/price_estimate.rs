@@ -239,6 +239,10 @@ impl BaselinePriceEstimator {
                         consider_gas_costs,
                     )
                     .await?;
+                // Due to integer rounding it is possible that we find path but the amount is 0.
+                if buy_amount.is_zero() {
+                    return Err(anyhow!("infinite price").into());
+                }
                 Ok(BigRational::new(
                     amount.to_big_int(),
                     buy_amount.to_big_int(),
@@ -980,5 +984,36 @@ mod tests {
 
         assert!(price_considering_gas_costs <= BigRational::new(1008.into(), 1000.into()));
         assert!(price_disregarding_gas_costs <= BigRational::new(1008.into(), 1000.into()));
+    }
+
+    #[tokio::test]
+    async fn estimate_price_does_not_panic_on_zero_amount() {
+        let token_a = H160::from_low_u64_be(1);
+        let token_b = H160::from_low_u64_be(2);
+        let pool_ab = Pool::uniswap(
+            TokenPair::new(token_a, token_b).unwrap(),
+            (10u128.pow(18), 1),
+        );
+        let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool_ab]));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Default::default()));
+        let estimator = BaselinePriceEstimator::new(
+            pool_fetcher,
+            gas_estimator,
+            hashset!(token_b),
+            Arc::new(ListBasedDetector::deny_list(Vec::new())),
+            token_a,
+            1.into(),
+        );
+
+        let result = estimator
+            .estimate_price_helper(
+                token_a,
+                token_b,
+                10u128.pow(18).into(),
+                OrderKind::Sell,
+                false,
+            )
+            .await;
+        assert!(result.is_err());
     }
 }
