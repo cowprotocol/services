@@ -56,6 +56,7 @@ pub enum OrderCancellationResult {
     AlreadyCancelled,
     OrderFullyExecuted,
     OrderExpired,
+    OnChainOrder,
 }
 
 pub struct Orderbook {
@@ -222,27 +223,29 @@ impl Orderbook {
             None => return Ok(OrderCancellationResult::OrderNotFound),
         };
 
-        match cancellation.validate(&self.domain_separator) {
-            Some(signer) => {
-                match order.order_meta_data.status {
-                    OrderStatus::Fulfilled => Ok(OrderCancellationResult::OrderFullyExecuted),
-                    OrderStatus::Cancelled => Ok(OrderCancellationResult::AlreadyCancelled),
-                    OrderStatus::Expired => Ok(OrderCancellationResult::OrderExpired),
-                    OrderStatus::Open => {
-                        if signer == order.order_meta_data.owner {
-                            // order is already known to exist in DB at this point!
-                            self.database
-                                .cancel_order(&order.order_meta_data.uid, Utc::now())
-                                .await?;
-                            Ok(OrderCancellationResult::Cancelled)
-                        } else {
-                            Ok(OrderCancellationResult::WrongOwner)
-                        }
-                    }
-                }
+        match order.order_meta_data.status {
+            OrderStatus::SignaturePending => return Ok(OrderCancellationResult::OnChainOrder),
+            OrderStatus::Open if !order.order_creation.signature.scheme().is_ecdsa_scheme() => {
+                return Ok(OrderCancellationResult::OnChainOrder);
             }
-            None => Ok(OrderCancellationResult::InvalidSignature),
+            OrderStatus::Fulfilled => return Ok(OrderCancellationResult::OrderFullyExecuted),
+            OrderStatus::Cancelled => return Ok(OrderCancellationResult::AlreadyCancelled),
+            OrderStatus::Expired => return Ok(OrderCancellationResult::OrderExpired),
+            _ => {}
         }
+
+        match cancellation.validate(&self.domain_separator) {
+            Some(signer) if signer != order.order_meta_data.owner => {}
+            Some(_) => return Ok(OrderCancellationResult::WrongOwner),
+            None => return Ok(OrderCancellationResult::InvalidSignature),
+        };
+
+        // order is already known to exist in DB at this point, and signer is
+        // known to be correct!
+        self.database
+            .cancel_order(&order.order_meta_data.uid, Utc::now())
+            .await?;
+        Ok(OrderCancellationResult::Cancelled)
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {

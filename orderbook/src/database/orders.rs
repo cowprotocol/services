@@ -118,7 +118,7 @@ impl DbBuyTokenDestination {
     }
 }
 
-#[derive(sqlx::Type)]
+#[derive(PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum DbSigningScheme {
@@ -168,7 +168,14 @@ const ORDERS_SELECT: &str = "\
     COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
     COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
     COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
-    (COUNT(invalidations.*) > 0 OR o.cancellation_timestamp IS NOT NULL) AS invalidated \
+    (COUNT(invalidations.*) > 0 OR o.cancellation_timestamp IS NOT NULL) AS invalidated, \
+    (o.signing_scheme = 'presign' AND COALESCE(( \
+        SELECT (NOT p.signed) as unsigned \
+        FROM presignature_events p \
+        WHERE o.uid = p.order_uid \
+        ORDER BY p.block_number DESC, p.log_index DESC \
+        LIMIT 1 \
+    ), true)) AS presignature_pending \
 ";
 
 const ORDERS_FROM: &str = "\
@@ -352,6 +359,7 @@ struct OrdersQueryRow {
     settlement_contract: Vec<u8>,
     sell_token_balance: DbSellTokenSource,
     buy_token_balance: DbBuyTokenDestination,
+    presignature_pending: bool,
 }
 
 impl OrdersQueryRow {
@@ -373,6 +381,9 @@ impl OrdersQueryRow {
         }
         if self.valid_to < Utc::now().timestamp() {
             return OrderStatus::Expired;
+        }
+        if self.presignature_pending {
+            return OrderStatus::SignaturePending;
         }
         OrderStatus::Open
     }
@@ -458,14 +469,16 @@ mod tests {
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
     use sqlx::Executor;
-    use std::collections::HashSet;
+    use std::{
+        collections::HashSet,
+        sync::atomic::{AtomicI64, Ordering},
+    };
 
     #[test]
     fn order_status() {
         let valid_to_timestamp = Utc::now() + Duration::days(1);
 
-        // Open - sell (filled - 0%)
-        let order_row = OrdersQueryRow {
+        let order_row = || OrdersQueryRow {
             uid: vec![0; 56],
             owner: vec![0; 20],
             creation_timestamp: Utc::now(),
@@ -488,130 +501,185 @@ mod tests {
             settlement_contract: vec![0; 20],
             sell_token_balance: DbSellTokenSource::External,
             buy_token_balance: DbBuyTokenDestination::Internal,
+            presignature_pending: false,
         };
 
-        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+        // Open - sell (filled - 0%)
+        assert_eq!(order_row().calculate_status(), OrderStatus::Open);
 
         // Open - sell (almost filled - 99.99%)
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Sell,
-            sell_amount: BigDecimal::from(10_000),
-            sum_sell: BigDecimal::from(9_999),
-            ..order_row
-        };
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Sell,
+                sell_amount: BigDecimal::from(10_000),
+                sum_sell: BigDecimal::from(9_999),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Open
+        );
 
-        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+        // Open - with presignature
+        assert_eq!(
+            OrdersQueryRow {
+                signing_scheme: DbSigningScheme::PreSign,
+                presignature_pending: false,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Open
+        );
+
+        // SignaturePending - without presignature
+        assert_eq!(
+            OrdersQueryRow {
+                signing_scheme: DbSigningScheme::PreSign,
+                presignature_pending: true,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::SignaturePending
+        );
 
         // Filled - sell (filled - 100%)
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Sell,
-            sell_amount: BigDecimal::from(2),
-            sum_sell: BigDecimal::from(3),
-            sum_fee: BigDecimal::from(1),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Fulfilled);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Sell,
+                sell_amount: BigDecimal::from(2),
+                sum_sell: BigDecimal::from(3),
+                sum_fee: BigDecimal::from(1),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Fulfilled
+        );
 
         // Open - buy (filled - 0%)
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Buy,
-            buy_amount: BigDecimal::from(1),
-            sum_buy: BigDecimal::from(0),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Buy,
+                buy_amount: BigDecimal::from(1),
+                sum_buy: BigDecimal::from(0),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Open
+        );
 
         // Open - buy (almost filled - 99.99%)
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Buy,
-            buy_amount: BigDecimal::from(10_000),
-            sum_buy: BigDecimal::from(9_999),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Open);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Buy,
+                buy_amount: BigDecimal::from(10_000),
+                sum_buy: BigDecimal::from(9_999),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Open
+        );
 
         // Filled - buy (filled - 100%)
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Buy,
-            buy_amount: BigDecimal::from(1),
-            sum_buy: BigDecimal::from(1),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Fulfilled);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Buy,
+                buy_amount: BigDecimal::from(1),
+                sum_buy: BigDecimal::from(1),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Fulfilled
+        );
 
         // Cancelled - no fills - sell
-        let order_row = OrdersQueryRow {
-            sum_sell: BigDecimal::default(),
-            sum_buy: BigDecimal::default(),
-            invalidated: true,
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+        assert_eq!(
+            OrdersQueryRow {
+                invalidated: true,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Cancelled
+        );
 
         // Cancelled - partial fill - sell
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Sell,
-            sell_amount: BigDecimal::from(2),
-            sum_sell: BigDecimal::from(1),
-            sum_fee: BigDecimal::default(),
-            invalidated: true,
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Sell,
+                sell_amount: BigDecimal::from(2),
+                sum_sell: BigDecimal::from(1),
+                sum_fee: BigDecimal::default(),
+                invalidated: true,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Cancelled
+        );
 
         // Cancelled - partial fill - buy
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Buy,
-            buy_amount: BigDecimal::from(2),
-            sum_buy: BigDecimal::from(1),
-            invalidated: true,
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Cancelled);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Buy,
+                buy_amount: BigDecimal::from(2),
+                sum_buy: BigDecimal::from(1),
+                invalidated: true,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Cancelled
+        );
 
         // Expired - no fills
         let valid_to_yesterday = Utc::now() - Duration::days(1);
 
-        let order_row = OrdersQueryRow {
-            sum_sell: BigDecimal::default(),
-            sum_buy: BigDecimal::default(),
-            invalidated: false,
-            valid_to: valid_to_yesterday.timestamp(),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+        assert_eq!(
+            OrdersQueryRow {
+                invalidated: false,
+                valid_to: valid_to_yesterday.timestamp(),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Expired
+        );
 
         // Expired - partial fill - sell
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Sell,
-            sell_amount: BigDecimal::from(2),
-            sum_sell: BigDecimal::from(1),
-            invalidated: false,
-            valid_to: valid_to_yesterday.timestamp(),
-            ..order_row
-        };
-
-        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Sell,
+                sell_amount: BigDecimal::from(2),
+                sum_sell: BigDecimal::from(1),
+                invalidated: false,
+                valid_to: valid_to_yesterday.timestamp(),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Expired
+        );
 
         // Expired - partial fill - buy
-        let order_row = OrdersQueryRow {
-            kind: DbOrderKind::Buy,
-            buy_amount: BigDecimal::from(2),
-            sum_buy: BigDecimal::from(1),
-            invalidated: false,
-            valid_to: valid_to_yesterday.timestamp(),
-            ..order_row
-        };
+        assert_eq!(
+            OrdersQueryRow {
+                kind: DbOrderKind::Buy,
+                buy_amount: BigDecimal::from(2),
+                sum_buy: BigDecimal::from(1),
+                invalidated: false,
+                valid_to: valid_to_yesterday.timestamp(),
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Expired
+        );
 
-        assert_eq!(order_row.calculate_status(), OrderStatus::Expired);
+        // Expired - with pending presignature
+        assert_eq!(
+            OrdersQueryRow {
+                signing_scheme: DbSigningScheme::PreSign,
+                invalidated: false,
+                valid_to: valid_to_yesterday.timestamp(),
+                presignature_pending: true,
+                ..order_row()
+            }
+            .calculate_status(),
+            OrderStatus::Expired
+        );
     }
 
     #[tokio::test]
@@ -649,6 +717,10 @@ mod tests {
                         NaiveDateTime::from_timestamp(1234567890, 0),
                         Utc,
                     ),
+                    status: match signing_scheme {
+                        SigningScheme::PreSign => OrderStatus::SignaturePending,
+                        _ => OrderStatus::Open,
+                    },
                     ..Default::default()
                 },
                 order_creation: OrderCreation {
@@ -1182,5 +1254,80 @@ mod tests {
         assert!(get_order(&order0.order_meta_data.uid).await.is_some());
         assert!(get_order(&order1.order_meta_data.uid).await.is_some());
         assert!(get_order(&OrderUid::default()).await.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_presignature_status() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        let uid = OrderUid([0u8; 56]);
+        let order = Order {
+            order_creation: OrderCreation {
+                signature: Signature::default_with(SigningScheme::PreSign),
+                ..Default::default()
+            },
+            order_meta_data: OrderMetaData {
+                uid,
+                ..Default::default()
+            },
+        };
+        db.insert_order(&order).await.unwrap();
+
+        let order_status = || async {
+            db.orders(&OrderFilter {
+                uid: Some(uid),
+                ..Default::default()
+            })
+            .await
+            .unwrap()[0]
+                .order_meta_data
+                .status
+        };
+        let block_number = AtomicI64::new(0);
+        let insert_presignature = |signed: bool| {
+            let db = db.clone();
+            let block_number = &block_number;
+            let owner = order.order_meta_data.owner.as_bytes();
+            async move {
+                sqlx::query(
+                    "INSERT INTO presignature_events \
+                    (block_number, log_index, owner, order_uid, signed) \
+                 VALUES \
+                    ($1, $2, $3, $4, $5)",
+                )
+                .bind(block_number.fetch_add(1, Ordering::SeqCst))
+                .bind(0i64)
+                .bind(owner)
+                .bind(&uid.0[..])
+                .bind(signed)
+                .execute(&db.pool)
+                .await
+                .unwrap();
+            }
+        };
+
+        // "presign" order with no signature events has pending status.
+        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+
+        // Inserting a presignature event changes the order status.
+        insert_presignature(true).await;
+        assert_eq!(order_status().await, OrderStatus::Open);
+
+        // "unsigning" the presignature makes the signature pending again.
+        insert_presignature(false).await;
+        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+
+        // Multiple "unsign" events keep the signature pending.
+        insert_presignature(false).await;
+        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+
+        // Re-signing sets the status back to open.
+        insert_presignature(true).await;
+        assert_eq!(order_status().await, OrderStatus::Open);
+
+        // Re-signing sets the status back to open.
+        insert_presignature(true).await;
+        assert_eq!(order_status().await, OrderStatus::Open);
     }
 }

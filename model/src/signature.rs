@@ -117,6 +117,10 @@ impl From<EcdsaSigningScheme> for SigningScheme {
 }
 
 impl SigningScheme {
+    pub fn is_ecdsa_scheme(&self) -> bool {
+        self.try_to_ecdsa_scheme().is_some()
+    }
+
     pub fn try_to_ecdsa_scheme(&self) -> Option<EcdsaSigningScheme> {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),

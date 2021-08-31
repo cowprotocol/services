@@ -49,7 +49,7 @@ pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Re
             StatusCode::BAD_REQUEST,
         ),
         Ok(OrderCancellationResult::OrderNotFound) => (
-            super::error("OrderNotFound", "order not located in database"),
+            super::error("OrderNotFound", "Order not located in database"),
             StatusCode::NOT_FOUND,
         ),
         Ok(OrderCancellationResult::WrongOwner) => (
@@ -58,6 +58,10 @@ pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Re
                 "Signature recovery's owner doesn't match order's",
             ),
             StatusCode::UNAUTHORIZED,
+        ),
+        Ok(OrderCancellationResult::OnChainOrder) => (
+            super::error("OnChainOrder", "On-chain orders must be cancelled on-chain"),
+            StatusCode::BAD_REQUEST,
         ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
     };

@@ -447,7 +447,7 @@ components:
     OrderStatus:
       description: The current order status
       type: string
-      enum: [open, fulfilled, cancelled, expired]
+      enum: [signaturePending, open, fulfilled, cancelled, expired]
     OrderCreation:
       description: Data a user provides when creating a new order.
       type: object
@@ -681,7 +681,16 @@ components:
       properties:
         errorType:
           type: string
-          enum: [InvalidSignature, WrongOwner, OrderNotFound, AlreadyCancelled, OrderFullyExecuted, OrderExpired]
+          enum:
+            [
+              InvalidSignature,
+              WrongOwner,
+              OrderNotFound,
+              AlreadyCancelled,
+              OrderFullyExecuted,
+              OrderExpired,
+              OnChainOrder,
+            ]
         description:
           type: string
       required:
