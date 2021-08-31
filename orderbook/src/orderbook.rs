@@ -224,7 +224,7 @@ impl Orderbook {
         };
 
         match order.order_meta_data.status {
-            OrderStatus::SignaturePending => return Ok(OrderCancellationResult::OnChainOrder),
+            OrderStatus::PresignaturePending => return Ok(OrderCancellationResult::OnChainOrder),
             OrderStatus::Open if !order.order_creation.signature.scheme().is_ecdsa_scheme() => {
                 return Ok(OrderCancellationResult::OnChainOrder);
             }

@@ -35,6 +35,7 @@ pub struct OrderFilter {
     pub exclude_invalidated: bool,
     pub exclude_insufficient_balance: bool,
     pub exclude_unsupported_tokens: bool,
+    pub exclude_presignature_pending: bool,
     pub uid: Option<OrderUid>,
 }
 
@@ -277,7 +278,8 @@ impl OrderStoring for Postgres {
                     WHEN 'sell' THEN sum_sell < sell_amount \
                     WHEN 'buy' THEN sum_buy < buy_amount \
                 END) AND \
-                ($7 OR NOT invalidated);"
+                ($7 OR NOT invalidated) AND \
+                ($8 OR NOT presignature_pending);"
         );
         sqlx::query_as(QUERY)
             .bind(filter.min_valid_to as i64)
@@ -287,6 +289,7 @@ impl OrderStoring for Postgres {
             .bind(filter.uid.as_ref().map(|uid| uid.0.as_ref()))
             .bind(!filter.exclude_fully_executed)
             .bind(!filter.exclude_invalidated)
+            .bind(!filter.exclude_presignature_pending)
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
@@ -323,7 +326,8 @@ impl OrderStoring for Postgres {
                     WHEN 'sell' THEN sum_sell < sell_amount \
                     WHEN 'buy' THEN sum_buy < buy_amount \
                 END AND \
-                (NOT invalidated);"
+                (NOT invalidated) AND \
+                (NOT presignature_pending);"
         );
         sqlx::query_as(QUERY)
             .bind(min_valid_to as i64)
@@ -383,7 +387,7 @@ impl OrdersQueryRow {
             return OrderStatus::Expired;
         }
         if self.presignature_pending {
-            return OrderStatus::SignaturePending;
+            return OrderStatus::PresignaturePending;
         }
         OrderStatus::Open
     }
@@ -530,7 +534,7 @@ mod tests {
             OrderStatus::Open
         );
 
-        // SignaturePending - without presignature
+        // PresignaturePending - without presignature
         assert_eq!(
             OrdersQueryRow {
                 signing_scheme: DbSigningScheme::PreSign,
@@ -538,7 +542,7 @@ mod tests {
                 ..order_row()
             }
             .calculate_status(),
-            OrderStatus::SignaturePending
+            OrderStatus::PresignaturePending
         );
 
         // Filled - sell (filled - 100%)
@@ -718,7 +722,7 @@ mod tests {
                         Utc,
                     ),
                     status: match signing_scheme {
-                        SigningScheme::PreSign => OrderStatus::SignaturePending,
+                        SigningScheme::PreSign => OrderStatus::PresignaturePending,
                         _ => OrderStatus::Open,
                     },
                     ..Default::default()
@@ -1142,6 +1146,64 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn postgres_solvable_presign_orders() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order = Order {
+            order_meta_data: Default::default(),
+            order_creation: OrderCreation {
+                sell_amount: 1.into(),
+                buy_amount: 1.into(),
+                signature: Signature::default_with(SigningScheme::PreSign),
+                ..Default::default()
+            },
+        };
+        db.insert_order(&order).await.unwrap();
+
+        let get_order = || {
+            let db = db.clone();
+            async move {
+                let orders = db.solvable_orders(0).await.unwrap();
+                orders.into_iter().next()
+            }
+        };
+        let pre_signature_event = |block_number: u64, signed: bool| {
+            let db = db.clone();
+            let events = vec![(
+                EventIndex {
+                    block_number,
+                    log_index: 0,
+                },
+                Event::PreSignature(PreSignature {
+                    owner: order.order_meta_data.owner,
+                    order_uid: order.order_meta_data.uid,
+                    signed,
+                }),
+            )];
+            async move {
+                db.append_events_(events).await.unwrap();
+            }
+        };
+
+        // not solvable because there is no presignature event.
+        assert!(get_order().await.is_none());
+
+        // solvable because once presignature event is observed.
+        pre_signature_event(0, true).await;
+        assert!(get_order().await.is_some());
+
+        // not solvable because "unsigned" presignature event.
+        pre_signature_event(1, false).await;
+        assert!(get_order().await.is_none());
+
+        // solvable once again because of new presignature event.
+        pre_signature_event(2, true).await;
+        assert!(get_order().await.is_some());
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn postgres_solvable_orders() {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
@@ -1308,7 +1370,7 @@ mod tests {
         };
 
         // "presign" order with no signature events has pending status.
-        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
         // Inserting a presignature event changes the order status.
         insert_presignature(true).await;
@@ -1316,11 +1378,11 @@ mod tests {
 
         // "unsigning" the presignature makes the signature pending again.
         insert_presignature(false).await;
-        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
         // Multiple "unsign" events keep the signature pending.
         insert_presignature(false).await;
-        assert_eq!(order_status().await, OrderStatus::SignaturePending);
+        assert_eq!(order_status().await, OrderStatus::PresignaturePending);
 
         // Re-signing sets the status back to open.
         insert_presignature(true).await;
@@ -1329,5 +1391,102 @@ mod tests {
         // Re-signing sets the status back to open.
         insert_presignature(true).await;
         assert_eq!(order_status().await, OrderStatus::Open);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_filter_presignature_pending() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+        let order_uid = |uid: u8| OrderUid([uid; 56]);
+        let order = |uid: u8, scheme: SigningScheme| Order {
+            order_creation: OrderCreation {
+                signature: Signature::default_with(scheme),
+                ..Default::default()
+            },
+            order_meta_data: OrderMetaData {
+                uid: order_uid(uid),
+                ..Default::default()
+            },
+        };
+
+        db.insert_order(&order(0, SigningScheme::Eip712))
+            .await
+            .unwrap();
+        for i in 1..=4 {
+            db.insert_order(&order(i, SigningScheme::PreSign))
+                .await
+                .unwrap();
+        }
+
+        // Insert:
+        // - No presignature events for order 0 (but its a ECDSA signed order)
+        // - A signed event for order 1.
+        // - No presignature events for order 2
+        // - A signed and unsigned event for order 3
+        // - A signed, unsigned and a final signed event for order 4
+        sqlx::query(
+            "INSERT INTO presignature_events \
+                 (block_number, log_index, owner, order_uid, signed) \
+             VALUES \
+                 (0, 0, $1, $2, true), \
+                 \
+                 (1, 0, $1, $3, true), \
+                 (2, 0, $1, $3, false),
+                 \
+                 (3, 0, $1, $4, true), \
+                 (4, 0, $1, $4, false), \
+                 (5, 0, $1, $4, true);",
+        )
+        .bind(&[0u8; 20][..])
+        .bind(&order_uid(1).0[..])
+        .bind(&order_uid(3).0[..])
+        .bind(&order_uid(4).0[..])
+        .execute(&db.pool)
+        .await
+        .unwrap();
+
+        let query_order_uids = |filter: OrderFilter| {
+            let db = db.clone();
+            async move {
+                let mut order_uids = db
+                    .orders(&filter)
+                    .await
+                    .unwrap()
+                    .into_iter()
+                    .map(|order| order.order_meta_data.uid)
+                    .collect::<Vec<_>>();
+                // Make sure the list is sorted, this makes assertions easier.
+                order_uids.sort_by_key(|uid| uid.0);
+                order_uids
+            }
+        };
+
+        // With presignature pending filter, only orders that aren't waiting for
+        // a presignature event are returned.
+        let filtered_orders = query_order_uids(OrderFilter {
+            exclude_presignature_pending: true,
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(
+            filtered_orders,
+            [
+                order_uid(0), // No presignature event, but its an ECDSA signed order
+                order_uid(1), // Pre-sign order with pre-sign event
+                order_uid(4), // Pre-sign order where the last event was a "signed" presignature
+            ]
+        );
+
+        // Without presignature pending filter, all orders are returned.
+        let unfiltered_orders = query_order_uids(OrderFilter {
+            exclude_presignature_pending: false,
+            ..Default::default()
+        })
+        .await;
+        assert_eq!(
+            unfiltered_orders,
+            (0..=4).map(order_uid).collect::<Vec<_>>(),
+        );
     }
 }

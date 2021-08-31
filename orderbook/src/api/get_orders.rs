@@ -29,6 +29,8 @@ struct Query {
     include_insufficient_balance: bool,
     #[serde(default)]
     include_unsupported_tokens: bool,
+    #[serde(default)]
+    include_presignature_pending: bool,
 }
 
 impl Query {
@@ -46,6 +48,7 @@ impl Query {
             exclude_invalidated: !self.include_invalidated,
             exclude_insufficient_balance: !self.include_insufficient_balance,
             exclude_unsupported_tokens: !self.include_unsupported_tokens,
+            exclude_presignature_pending: !self.include_presignature_pending,
             uid: None,
         })
     }
@@ -89,8 +92,7 @@ pub fn get_orders(
 mod tests {
     use super::*;
     use crate::api::response_body;
-    use hex_literal::hex;
-    use primitive_types::H160;
+    use shared::addr;
     use warp::test::{request, RequestBuilder};
 
     #[tokio::test]
@@ -100,11 +102,19 @@ mod tests {
             request.method("GET").filter(&filter).await
         };
 
-        let owner = H160::from_slice(&hex!("0000000000000000000000000000000000000001"));
-        let sell = H160::from_slice(&hex!("0000000000000000000000000000000000000002"));
-        let buy = H160::from_slice(&hex!("0000000000000000000000000000000000000003"));
+        let owner = addr!("0000000000000000000000000000000000000001");
+        let sell = addr!("0000000000000000000000000000000000000002");
+        let buy = addr!("0000000000000000000000000000000000000003");
         let path = format!(
-            "/orders?owner=0x{:x}&sellToken=0x{:x}&buyToken=0x{:x}&minValidTo=2&includeFullyExecuted=true&includeInvalidated=true&includeInsufficientBalance=true",
+            "/orders\
+                 ?owner=0x{:x}\
+                 &sellToken=0x{:x}\
+                 &buyToken=0x{:x}\
+                 &minValidTo=2\
+                 &includeFullyExecuted=true\
+                 &includeInvalidated=true\
+                 &includeInsufficientBalance=true\
+                 &includePresignaturePending=true",
             owner, sell, buy
         );
         let request = request().path(path.as_str());
@@ -116,6 +126,7 @@ mod tests {
         assert!(!result.exclude_fully_executed);
         assert!(!result.exclude_invalidated);
         assert!(!result.exclude_insufficient_balance);
+        assert!(!result.exclude_presignature_pending);
     }
 
     #[test]

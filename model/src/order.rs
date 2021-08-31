@@ -51,7 +51,7 @@ impl Default for Order {
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum OrderStatus {
-    SignaturePending,
+    PresignaturePending,
     Open,
     Fulfilled,
     Cancelled,

@@ -88,6 +88,12 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: includePresignaturePending
+          in: query
+          description: Should pre-sign orders waiting for the on-chain presignature be included?
+          schema:
+            type: boolean
+            default: false
         - name: includeUnsupportedTokens
           in: query
           description: Should the orders containing unsupported tokens be included?
@@ -447,7 +453,7 @@ components:
     OrderStatus:
       description: The current order status
       type: string
-      enum: [signaturePending, open, fulfilled, cancelled, expired]
+      enum: [presignaturePending, open, fulfilled, cancelled, expired]
     OrderCreation:
       description: Data a user provides when creating a new order.
       type: object
