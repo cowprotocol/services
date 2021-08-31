@@ -690,7 +690,7 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,
-                signature: Signature::from_bytes(*signing_scheme, signature),
+                signature: Signature::from_bytes(*signing_scheme, signature).unwrap(),
             };
 
             let owner = order

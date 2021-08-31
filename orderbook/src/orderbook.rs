@@ -6,8 +6,12 @@ use crate::{
 use anyhow::Result;
 use chrono::Utc;
 use contracts::WETH9;
-use model::order::{
-    BuyTokenDestination, OrderCancellation, OrderCreation, OrderCreationPayload, SellTokenSource,
+use model::{
+    order::{
+        BuyTokenDestination, OrderCancellation, OrderCreation, OrderCreationPayload,
+        SellTokenSource,
+    },
+    signature::SigningScheme,
 };
 use model::{
     order::{Order, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
@@ -30,6 +34,7 @@ pub enum AddOrderResult {
     WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
+    UnsupportedSignature,
     Forbidden,
     MissingOrderData,
     InsufficientValidTo,
@@ -110,6 +115,12 @@ impl Orderbook {
             return Ok(AddOrderResult::UnsupportedSellTokenSource(
                 order.sell_token_balance,
             ));
+        }
+        if !matches!(
+            order.signature.scheme(),
+            SigningScheme::Eip712 | SigningScheme::EthSign,
+        ) {
+            return Ok(AddOrderResult::UnsupportedSignature);
         }
 
         if has_same_buy_and_sell_token(&order, &self.native_token) {

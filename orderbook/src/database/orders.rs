@@ -65,7 +65,7 @@ impl DbOrderKind {
 /// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(sqlx::Type)]
 #[sqlx(type_name = "SellTokenSource")]
-#[sqlx(rename_all = "snake_case")]
+#[sqlx(rename_all = "lowercase")]
 pub enum DbSellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
     Erc20,
@@ -95,7 +95,7 @@ impl DbSellTokenSource {
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
 #[derive(sqlx::Type)]
 #[sqlx(type_name = "BuyTokenDestination")]
-#[sqlx(rename_all = "snake_case")]
+#[sqlx(rename_all = "lowercase")]
 pub enum DbBuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
     Erc20,
@@ -124,6 +124,7 @@ impl DbBuyTokenDestination {
 pub enum DbSigningScheme {
     Eip712,
     EthSign,
+    PreSign,
 }
 
 impl DbSigningScheme {
@@ -131,6 +132,7 @@ impl DbSigningScheme {
         match signing_scheme {
             SigningScheme::Eip712 => Self::Eip712,
             SigningScheme::EthSign => Self::EthSign,
+            SigningScheme::PreSign => Self::PreSign,
         }
     }
 
@@ -138,6 +140,7 @@ impl DbSigningScheme {
         match self {
             Self::Eip712 => SigningScheme::Eip712,
             Self::EthSign => SigningScheme::EthSign,
+            Self::PreSign => SigningScheme::PreSign,
         }
     }
 }
@@ -203,7 +206,7 @@ impl OrderStoring for Postgres {
             .bind(u256_to_big_decimal(&order.order_creation.fee_amount))
             .bind(DbOrderKind::from(order.order_creation.kind))
             .bind(order.order_creation.partially_fillable)
-            .bind(order.order_creation.signature.to_bytes().as_ref())
+            .bind(&*order.order_creation.signature.to_bytes())
             .bind(DbSigningScheme::from(
                 order.order_creation.signature.scheme(),
             ))
@@ -419,13 +422,7 @@ impl OrdersQueryRow {
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             kind: self.kind.into(),
             partially_fillable: self.partially_fillable,
-            signature: Signature::from_bytes(
-                signing_scheme,
-                &self
-                    .signature
-                    .try_into()
-                    .map_err(|_| anyhow!("invalid signature"))?,
-            ),
+            signature: Signature::from_bytes(signing_scheme, &self.signature)?,
             sell_token_balance: self.sell_token_balance.into(),
             buy_token_balance: self.buy_token_balance.into(),
         };
@@ -622,19 +619,27 @@ mod tests {
     async fn postgres_insert_same_order_twice_fails() {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
-        let order = Order::default();
+
+        let mut order = Order::default();
         db.insert_order(&order).await.unwrap();
-        match db.insert_order(&order).await {
-            Err(InsertionError::DuplicatedRecord) => (),
-            _ => panic!("Expecting DuplicatedRecord error"),
-        };
+
+        // Note that order UIDs do not care about the signing scheme.
+        order.order_creation.signature = Signature::default_with(SigningScheme::PreSign);
+        assert!(matches!(
+            db.insert_order(&order).await,
+            Err(InsertionError::DuplicatedRecord)
+        ));
     }
 
     #[tokio::test]
     #[ignore]
     async fn postgres_order_roundtrip() {
         let db = Postgres::new("postgresql://").unwrap();
-        for signing_scheme in &[SigningScheme::Eip712, SigningScheme::EthSign] {
+        for signing_scheme in &[
+            SigningScheme::Eip712,
+            SigningScheme::EthSign,
+            SigningScheme::PreSign,
+        ] {
             db.clear().await.unwrap();
             let filter = OrderFilter::default();
             assert!(db.orders(&filter).await.unwrap().is_empty());

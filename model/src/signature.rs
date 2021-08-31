@@ -1,7 +1,8 @@
 use super::DomainSeparator;
+use anyhow::{Context as _, Result};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
-use std::fmt;
+use std::{convert::TryInto as _, fmt};
 use web3::{
     signing::{self, Key, SecretKeyRef},
     types::Recovery,
@@ -12,6 +13,7 @@ use web3::{
 pub enum SigningScheme {
     Eip712,
     EthSign,
+    PreSign,
 }
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -19,6 +21,7 @@ pub enum SigningScheme {
 pub enum Signature {
     Eip712(EcdsaSignature),
     EthSign(EcdsaSignature),
+    PreSign(H160),
 }
 
 impl Default for Signature {
@@ -32,6 +35,7 @@ impl Signature {
         match scheme {
             SigningScheme::Eip712 => Signature::Eip712(Default::default()),
             SigningScheme::EthSign => Signature::EthSign(Default::default()),
+            SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
     }
 }
@@ -50,28 +54,40 @@ impl Signature {
                 domain_separator,
                 struct_hash,
             ),
+            Signature::PreSign(account) => Some(*account),
         }
     }
 
-    pub fn from_bytes(scheme: SigningScheme, bytes: &[u8; 65]) -> Self {
-        match scheme {
-            scheme @ (SigningScheme::Eip712 | SigningScheme::EthSign) => EcdsaSignature {
-                r: H256::from_slice(&bytes[..32]),
-                s: H256::from_slice(&bytes[32..64]),
-                v: bytes[64],
+    pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
+        Ok(match scheme {
+            scheme @ (SigningScheme::Eip712 | SigningScheme::EthSign) => {
+                let bytes: [u8; 65] = bytes
+                    .try_into()
+                    .context("ECDSA signature must be 65 bytes long")?;
+                EcdsaSignature {
+                    r: H256::from_slice(&bytes[..32]),
+                    s: H256::from_slice(&bytes[32..64]),
+                    v: bytes[64],
+                }
+                .to_signature(
+                    scheme
+                        .try_to_ecdsa_scheme()
+                        .expect("scheme is an ecdsa scheme"),
+                )
             }
-            .to_signature(
-                scheme
-                    .try_to_ecdsa_scheme()
-                    .expect("scheme is an ecdsa scheme"),
-            ),
-        }
+            SigningScheme::PreSign => Signature::PreSign(H160(
+                bytes
+                    .try_into()
+                    .context("pre-signature must be exactly 20 bytes long")?,
+            )),
+        })
     }
 
     #[allow(clippy::wrong_self_convention)]
-    pub fn to_bytes(&self) -> [u8; 65] {
+    pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes(),
+            Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::PreSign(account) => account.0.to_vec(),
         }
     }
 
@@ -79,6 +95,7 @@ impl Signature {
         match self {
             Signature::Eip712(_) => SigningScheme::Eip712,
             Signature::EthSign(_) => SigningScheme::EthSign,
+            Signature::PreSign(_) => SigningScheme::PreSign,
         }
     }
 }
@@ -104,6 +121,7 @@ impl SigningScheme {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
+            Self::PreSign => None,
         }
     }
 }
@@ -251,5 +269,23 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
         }
 
         deserializer.deserialize_str(Visitor {})
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn presign_validates_to_account() {
+        assert_eq!(
+            Signature::PreSign(H160([0x42; 20])).validate(&Default::default(), &Default::default()),
+            Some(H160([0x42; 20])),
+        );
+    }
+
+    #[test]
+    fn presign_fails_to_convert_to_ecdsa_signature() {
+        assert!(SigningScheme::PreSign.try_to_ecdsa_scheme().is_none());
     }
 }

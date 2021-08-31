@@ -45,6 +45,10 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             super::error("InvalidSignature", "invalid signature"),
             StatusCode::BAD_REQUEST,
         ),
+        Ok(AddOrderResult::UnsupportedSignature) => (
+            super::error("UnsupportedSignature", "signing scheme is not supported"),
+            StatusCode::BAD_REQUEST,
+        ),
         Ok(AddOrderResult::Forbidden) => (
             super::error("Forbidden", "Forbidden, your account is deny-listed"),
             StatusCode::FORBIDDEN,
