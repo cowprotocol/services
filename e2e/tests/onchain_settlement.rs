@@ -162,7 +162,6 @@ async fn onchain_settlement(web3: Web3) {
             &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
-        .unwrap()
         .build()
         .order_creation;
     let placement = client
@@ -185,7 +184,6 @@ async fn onchain_settlement(web3: Web3) {
             &gpv2.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
         )
-        .unwrap()
         .build()
         .order_creation;
     let placement = client

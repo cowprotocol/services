@@ -163,7 +163,7 @@ impl OrderBuilder {
         signing_scheme: EcdsaSigningScheme,
         domain: &DomainSeparator,
         key: SecretKeyRef,
-    ) -> Result<Self, Self> {
+    ) -> Self {
         self.0.order_meta_data.owner = key.address();
         self.0.order_meta_data.uid = self.0.order_creation.uid(domain, &key.address());
         self.0.order_creation.signature = EcdsaSignature::sign(
@@ -173,7 +173,13 @@ impl OrderBuilder {
             key,
         )
         .to_signature(signing_scheme);
-        Ok(self)
+        self
+    }
+
+    pub fn with_presign(mut self, owner: H160) -> Self {
+        self.0.order_meta_data.owner = owner;
+        self.0.order_creation.signature = Signature::PreSign(owner);
+        self
     }
 
     pub fn build(self) -> Order {
@@ -812,7 +818,6 @@ mod tests {
                 &DomainSeparator::default(),
                 SecretKeyRef::from(&sk),
             )
-            .unwrap()
             .build();
 
         let owner = order

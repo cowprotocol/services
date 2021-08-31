@@ -105,6 +105,13 @@ struct Arguments {
     /// The number of pairs that are automatically updated in the pool cache.
     #[structopt(long, env, default_value = "200")]
     pub pool_cache_lru_size: usize,
+
+    /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
+    /// signature, so this flag allows this feature to be turned off if malicious users are
+    /// abusing the database by inserting a bunch of order rows that won't ever be valid.
+    /// This flag can be removed once DDoS protection is implemented.
+    #[structopt(long, env, parse(try_from_str), default_value = "false")]
+    pub enable_presign_orders: bool,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -325,6 +332,7 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users,
+        args.enable_presign_orders,
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![

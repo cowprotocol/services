@@ -70,6 +70,7 @@ pub struct Orderbook {
     code_fetcher: Box<dyn CodeFetching>,
     native_token: WETH9,
     banned_users: Vec<H160>,
+    enable_presign_orders: bool,
 }
 
 impl Orderbook {
@@ -85,6 +86,7 @@ impl Orderbook {
         code_fetcher: Box<dyn CodeFetching>,
         native_token: WETH9,
         banned_users: Vec<H160>,
+        enable_presign_orders: bool,
     ) -> Self {
         Self {
             domain_separator,
@@ -97,6 +99,7 @@ impl Orderbook {
             code_fetcher,
             native_token,
             banned_users,
+            enable_presign_orders,
         }
     }
 
@@ -118,8 +121,8 @@ impl Orderbook {
             ));
         }
         if !matches!(
-            order.signature.scheme(),
-            SigningScheme::Eip712 | SigningScheme::EthSign,
+            (order.signature.scheme(), self.enable_presign_orders),
+            (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
         ) {
             return Ok(AddOrderResult::UnsupportedSignature);
         }

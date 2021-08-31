@@ -204,6 +204,7 @@ impl OrderbookServices {
             Box::new(web3.clone()),
             gpv2.native_token.clone(),
             vec![],
+            true,
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![orderbook.clone(), db.clone(), event_updater],

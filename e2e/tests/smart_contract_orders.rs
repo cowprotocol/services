@@ -1,12 +1,12 @@
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, PrivateKey, U256};
-use model::{
-    order::{OrderBuilder, OrderKind, SellTokenSource},
-    signature::EcdsaSigningScheme,
+use crate::services::{
+    create_orderbook_api, deploy_mintable_token, to_wei, GPv2, OrderbookServices, UniswapContracts,
+    API_HOST,
 };
-use secp256k1::SecretKey;
-use serde_json::json;
+use contracts::IUniswapLikeRouter;
+use ethcontract::prelude::{Account, Address, Bytes, PrivateKey, U256};
+use model::order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid};
 use shared::{
+    maintenance::Maintaining,
     sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     Web3,
 };
@@ -15,26 +15,21 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
-use web3::signing::SecretKeyRef;
 
 mod ganache;
 #[macro_use]
 mod services;
-use crate::services::{
-    create_orderbook_api, deploy_mintable_token, to_wei, GPv2, OrderbookServices, UniswapContracts,
-    API_HOST,
-};
 
 const TRADER: [u8; 32] = [1; 32];
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
-async fn ganache_vault_balances() {
-    ganache::test(vault_balances).await;
+async fn ganache_smart_contract_orders() {
+    ganache::test(smart_contract_orders).await;
 }
 
-async fn vault_balances(web3: Web3) {
+async fn smart_contract_orders(web3: Web3) {
     shared::tracing::initialize("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
@@ -45,6 +40,12 @@ async fn vault_balances(web3: Web3) {
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
+
+    // Note that this account is technically not a SC order. However, we allow
+    // presign orders from EOAs as well, and it is easier to setup an order
+    // for an EOA then SC wallet. In the future, once we add EIP-1271 support,
+    // where we would **need** an SC wallet, we can also change this trader to
+    // use one.
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
 
     let gpv2 = GPv2::fetch(&web3).await;
@@ -92,17 +93,12 @@ async fn vault_balances(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader, token.approve(gpv2.vault.address(), to_wei(10)));
-    tx!(
-        trader,
-        gpv2.vault
-            .set_relayer_approval(trader.address(), gpv2.allowance, true)
-    );
+    tx!(trader, token.approve(gpv2.allowance, to_wei(10)));
 
     let OrderbookServices {
         price_estimator,
         block_stream,
-        ..
+        maintenance,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
@@ -112,24 +108,49 @@ async fn vault_balances(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .with_sell_token(token.address())
         .with_sell_amount(to_wei(9))
-        .with_sell_token_balance(SellTokenSource::External)
         .with_fee_amount(to_wei(1))
         .with_buy_token(gpv2.native_token.address())
         .with_buy_amount(to_wei(8))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
-        )
+        .with_presign(trader.address())
         .build()
         .order_creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order).to_string())
+        .json(&order)
         .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
+        .await
+        .unwrap();
+    assert_eq!(placement.status(), 201);
+
+    let order_uid = placement.json::<OrderUid>().await.unwrap();
+    let order_status = || async {
+        client
+            .get(&format!(
+                "{}{}{}",
+                API_HOST, ORDER_PLACEMENT_ENDPOINT, &order_uid
+            ))
+            .send()
+            .await
+            .unwrap()
+            .json::<Order>()
+            .await
+            .unwrap()
+            .order_meta_data
+            .status
+    };
+
+    // Execute pre-sign transaction.
+    assert_eq!(order_status().await, OrderStatus::PresignaturePending);
+    tx!(
+        trader,
+        gpv2.settlement
+            .set_pre_signature(Bytes(order_uid.0.to_vec()), true)
+    );
+
+    // Drive orderbook in order to check that the presignature event was received.
+    maintenance.run_maintenance().await.unwrap();
+    assert_eq!(order_status().await, OrderStatus::Open);
 
     // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
