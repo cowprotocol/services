@@ -197,6 +197,7 @@ impl OrderbookServices {
                 Some(gpv2.vault.clone()),
                 gpv2.allowance,
                 gpv2.settlement.address(),
+                metrics.clone(),
             )),
             fee_calculator.clone(),
             Duration::from_secs(120),

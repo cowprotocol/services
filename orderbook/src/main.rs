@@ -214,6 +214,7 @@ async fn main() {
         vault,
         vault_relayer,
         settlement_contract.address(),
+        metrics.clone(),
     );
 
     let gas_price_estimator = Arc::new(

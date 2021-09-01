@@ -1,8 +1,8 @@
 use anyhow::Result;
-use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts};
-use shared::metrics::get_metrics_registry;
+use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGauge, IntGaugeVec, Opts};
 use shared::{
-    sources::uniswap::pool_cache::PoolCacheMetrics, transport::instrumented::TransportMetrics,
+    metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
+    transport::instrumented::TransportMetrics,
 };
 use std::{
     convert::Infallible,
@@ -20,6 +20,8 @@ pub struct Metrics {
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     database_queries: HistogramVec,
+    /// account balance subscriptions
+    account_balance_queries: IntGauge,
 }
 
 impl Metrics {
@@ -65,6 +67,12 @@ impl Metrics {
         let database_queries = HistogramVec::new(opts, &["type"]).unwrap();
         registry.register(Box::new(database_queries.clone()))?;
 
+        let account_balance_queries = IntGauge::new(
+            "account_balance_queries",
+            "Number accounts whose balances are being tracked",
+        )?;
+        registry.register(Box::new(account_balance_queries.clone()))?;
+
         Ok(Self {
             api_requests,
             db_table_row_count,
@@ -72,6 +80,7 @@ impl Metrics {
             pool_cache_hits,
             pool_cache_misses,
             database_queries,
+            account_balance_queries,
         })
     }
 
@@ -100,6 +109,12 @@ impl PoolCacheMetrics for Metrics {
 impl crate::database::instrumented::Metrics for Metrics {
     fn database_query_histogram(&self, label: &str) -> Histogram {
         self.database_queries.with_label_values(&[label])
+    }
+}
+
+impl crate::account_balances::Metrics for Metrics {
+    fn account_balance_update(&self, accounts: usize) {
+        self.account_balance_queries.set(accounts as _);
     }
 }
 

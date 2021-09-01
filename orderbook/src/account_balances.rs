@@ -8,7 +8,10 @@ use futures::{
 use model::order::SellTokenSource;
 use primitive_types::{H160, U256};
 use shared::{Web3, Web3Transport};
-use std::{collections::HashMap, sync::Mutex};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 use web3::types::{BlockId, BlockNumber, CallRequest};
 
 const MAX_BATCH_SIZE: usize = 100;
@@ -50,6 +53,7 @@ pub struct Web3BalanceFetcher {
     settlement_contract: H160,
     // Mapping of address, token to balance, allowance
     balances: Mutex<HashMap<SubscriptionKey, SubscriptionValue>>,
+    metrics: Arc<dyn Metrics>,
 }
 
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
@@ -71,6 +75,7 @@ impl Web3BalanceFetcher {
         vault: Option<BalancerV2Vault>,
         vault_relayer: H160,
         settlement_contract: H160,
+        metrics: Arc<dyn Metrics>,
     ) -> Self {
         Self {
             web3,
@@ -78,6 +83,7 @@ impl Web3BalanceFetcher {
             vault_relayer,
             settlement_contract,
             balances: Default::default(),
+            metrics,
         }
     }
 
@@ -280,6 +286,7 @@ impl BalanceFetching for Web3BalanceFetcher {
             let map = self.balances.lock().expect("mutex holding thread panicked");
             map.keys().cloned().collect()
         };
+        self.metrics.account_balance_update(subscriptions.len());
         let _ = self._register_many(subscriptions).await;
     }
 
@@ -309,12 +316,28 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
     }
 }
 
+pub trait Metrics: Send + Sync + 'static {
+    fn account_balance_update(&self, accounts: usize);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use contracts::{vault, BalancerV2Authorizer, ERC20Mintable};
     use hex_literal::hex;
     use shared::transport::create_env_test_transport;
+
+    struct NoopMetrics;
+
+    impl NoopMetrics {
+        fn arc() -> Arc<dyn Metrics> {
+            Arc::new(Self)
+        }
+    }
+
+    impl Metrics for NoopMetrics {
+        fn account_balance_update(&self, _: usize) {}
+    }
 
     #[tokio::test]
     #[ignore]
@@ -323,7 +346,13 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address());
+        let fetcher = Web3BalanceFetcher::new(
+            web3,
+            None,
+            vault_relayer,
+            settlement.address(),
+            NoopMetrics::arc(),
+        );
         let owner = H160(hex!("07c2af75788814BA7e5225b2F5c951eD161cB589"));
         let token = H160(hex!("dac17f958d2ee523a2206206994597c13d831ec7"));
 
@@ -346,7 +375,13 @@ mod tests {
         let web3 = Web3::new(http);
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let vault_relayer = settlement.vault_relayer().call().await.unwrap();
-        let fetcher = Web3BalanceFetcher::new(web3, None, vault_relayer, settlement.address());
+        let fetcher = Web3BalanceFetcher::new(
+            web3,
+            None,
+            vault_relayer,
+            settlement.address(),
+            NoopMetrics::arc(),
+        );
         let owner = H160(hex!("78045485dc4ad96f60937dad4b01b118958761ae"));
         // Token takes a fee.
         let token = H160(hex!("bae5f2d8a1299e5c4963eaff3312399253f27ccb"));
@@ -385,6 +420,7 @@ mod tests {
             None,
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            NoopMetrics::arc(),
         );
 
         // Not available until registered
@@ -475,6 +511,7 @@ mod tests {
             Some(vault.clone()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            NoopMetrics::arc(),
         );
 
         assert!(!fetcher
@@ -568,6 +605,7 @@ mod tests {
             Some(vault.clone()),
             allowance_target.address(),
             H160::from_low_u64_be(1),
+            NoopMetrics::arc(),
         );
 
         // Not available until registered
