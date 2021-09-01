@@ -766,12 +766,13 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.15.1"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ea4f8a3e0a51e6745974d16076eb8f56b1abe12c642b5e9068adb5915ed991b"
+checksum = "2267d015c10e2df6bb5a24cdfdbfb037b2cec9b24132b83910ee77701a51a0c5"
 dependencies = [
  "arrayvec 0.7.1",
  "ethcontract-common",
+ "ethcontract-derive",
  "futures",
  "futures-timer",
  "hex",
@@ -789,9 +790,9 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-common"
-version = "0.15.1"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b475a483d1d874cbf3b757b6f87b1c90883c62c35542a0a5fc270a5f672546a8"
+checksum = "5b7af54e00ba011a694c8fcb4a00bbdd81994874c0203b7887a230e547550a50"
 dependencies = [
  "ethabi",
  "hex",
@@ -804,10 +805,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethcontract-generate"
-version = "0.15.1"
+name = "ethcontract-derive"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0fa5f7c25b5bc82dd6bd452daebd3e4c7886d838f1079cbddb782add2151c3d"
+checksum = "802f4b47a4fea9182d0746bb121c03b45ddceee600e33a5eb90167eb64802547"
+dependencies = [
+ "anyhow",
+ "ethcontract-common",
+ "ethcontract-generate",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "ethcontract-generate"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3fd1a1ad98206db73dbb8e95849a737ff24e5b58bfe8abceb6ba33259c81b572"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -817,6 +832,19 @@ dependencies = [
  "quote",
  "syn",
  "url",
+]
+
+[[package]]
+name = "ethcontract-mock"
+version = "0.15.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c925e885492448a4e3910d18d26823352a6a1e5f198866bcd3d1b77b6140c9d"
+dependencies = [
+ "ethcontract",
+ "hex",
+ "mockall",
+ "predicates",
+ "rlp",
 ]
 
 [[package]]
@@ -2592,6 +2620,7 @@ dependencies = [
  "contracts",
  "derivative",
  "ethcontract",
+ "ethcontract-mock",
  "futures",
  "gas-estimation",
  "hex",
@@ -2625,6 +2654,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook-registry"
+version = "1.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e51e73328dc4ac0c7ccbda3a494dfa03df1de2f46018127f60c693f2648455b0"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "slab"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2644,6 +2682,21 @@ checksum = "9e3dfc207c526015c632472a77be09cf1b6e46866581aecae5cc38fb4235dea2"
 dependencies = [
  "libc",
  "winapi",
+]
+
+[[package]]
+name = "soketto"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4919971d141dbadaa0e82b5d369e2d7666c98e4625046140615ca363e50d4daa"
+dependencies = [
+ "base64",
+ "bytes",
+ "futures",
+ "httparse",
+ "log",
+ "rand",
+ "sha-1",
 ]
 
 [[package]]
@@ -3002,7 +3055,10 @@ dependencies = [
  "memchr",
  "mio",
  "num_cpus",
+ "once_cell",
+ "parking_lot",
  "pin-project-lite",
+ "signal-hook-registry",
  "tokio-macros",
  "winapi",
 ]
@@ -3076,6 +3132,7 @@ checksum = "1caa0b0c8d94a049db56b5acf8cba99dc0623aab1b26d5b5f5e2d945846b3592"
 dependencies = [
  "bytes",
  "futures-core",
+ "futures-io",
  "futures-sink",
  "log",
  "pin-project-lite",
@@ -3512,7 +3569,23 @@ dependencies = [
  "secp256k1",
  "serde",
  "serde_json",
+ "soketto",
  "tiny-keccak",
+ "tokio",
+ "tokio-util",
+ "url",
+ "web3-async-native-tls",
+]
+
+[[package]]
+name = "web3-async-native-tls"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f6d8d1636b2627fe63518d5a9b38a569405d9c9bc665c43c9c341de57227ebb"
+dependencies = [
+ "native-tls",
+ "thiserror",
+ "tokio",
  "url",
 ]
 

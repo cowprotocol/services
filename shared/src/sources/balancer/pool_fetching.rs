@@ -18,6 +18,7 @@ use crate::{
     Web3,
 };
 use anyhow::Result;
+use contracts::BalancerV2Vault;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
 use reqwest::Client;
@@ -101,6 +102,7 @@ impl BalancerPoolFetcher {
         let pool_info = Arc::new(PoolInfoFetcher {
             web3: web3.clone(),
             token_info_fetcher: token_info_fetcher.clone(),
+            vault: BalancerV2Vault::deployed(&web3).await?,
         });
         let pool_initializer = DefaultPoolInitializer::new(chain_id, pool_info.clone(), client)?;
         let pool_registry =

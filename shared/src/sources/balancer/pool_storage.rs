@@ -62,13 +62,13 @@ impl RegisteredWeightedPool {
         pool_address: H160,
         data_fetcher: &dyn PoolInfoFetching,
     ) -> Result<RegisteredWeightedPool> {
-        let pool_data = data_fetcher.get_pool_data(pool_address).await?;
+        let pool_data = data_fetcher.get_weighted_pool_data(pool_address).await?;
         Ok(RegisteredWeightedPool {
-            pool_id: pool_data.pool_id,
+            pool_id: pool_data.common.pool_id,
             pool_address,
-            tokens: pool_data.tokens,
+            tokens: pool_data.common.tokens,
             normalized_weights: pool_data.weights,
-            scaling_exponents: pool_data.scaling_exponents,
+            scaling_exponents: pool_data.common.scaling_exponents,
             block_created,
         })
     }
@@ -265,7 +265,9 @@ impl PoolStorage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::info_fetching::{MockPoolInfoFetching, WeightedPoolInfo};
+    use crate::sources::balancer::info_fetching::{
+        CommonPoolInfo, MockPoolInfoFetching, WeightedPoolInfo,
+    };
     use maplit::{hashmap, hashset};
     use mockall::predicate::eq;
 
@@ -394,13 +396,15 @@ mod tests {
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in 0..n {
             let expected_pool_data = WeightedPoolInfo {
-                pool_id: pool_ids[i],
-                tokens: vec![tokens[i], tokens[i + 1]],
+                common: CommonPoolInfo {
+                    pool_id: pool_ids[i],
+                    tokens: vec![tokens[i], tokens[i + 1]],
+                    scaling_exponents: vec![0, 0],
+                },
                 weights: vec![weights[i], weights[i + 1]],
-                scaling_exponents: vec![0, 0],
             };
             dummy_data_fetcher
-                .expect_get_pool_data()
+                .expect_get_weighted_pool_data()
                 .with(eq(pool_addresses[i]))
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
@@ -458,13 +462,15 @@ mod tests {
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in start_block..end_block + 1 {
             let expected_pool_data = WeightedPoolInfo {
-                pool_id: pool_ids[i],
-                tokens: vec![tokens[i], tokens[i + 1]],
+                common: CommonPoolInfo {
+                    pool_id: pool_ids[i],
+                    tokens: vec![tokens[i], tokens[i + 1]],
+                    scaling_exponents: vec![0, 0],
+                },
                 weights: vec![weights[i], weights[i + 1]],
-                scaling_exponents: vec![0, 0],
             };
             dummy_data_fetcher
-                .expect_get_pool_data()
+                .expect_get_weighted_pool_data()
                 .with(eq(pool_addresses[i]))
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
@@ -479,14 +485,16 @@ mod tests {
         };
         let new_event = (EventIndex::new(3, 0), new_creation);
         dummy_data_fetcher
-            .expect_get_pool_data()
+            .expect_get_weighted_pool_data()
             .with(eq(new_pool_address))
             .returning(move |_| {
                 Ok(WeightedPoolInfo {
-                    pool_id: new_pool_id,
-                    tokens: vec![new_token],
+                    common: CommonPoolInfo {
+                        pool_id: new_pool_id,
+                        tokens: vec![new_token],
+                        scaling_exponents: vec![0],
+                    },
                     weights: vec![new_weight],
-                    scaling_exponents: vec![0],
                 })
             });
 
@@ -570,13 +578,15 @@ mod tests {
         // Have to load all expected data into fetcher before it is passed on.
         for i in 0..n {
             let expected_pool_data = WeightedPoolInfo {
-                pool_id: pool_ids[i],
-                tokens: tokens[i..n].to_owned(),
+                common: CommonPoolInfo {
+                    pool_id: pool_ids[i],
+                    tokens: tokens[i..n].to_owned(),
+                    scaling_exponents: vec![],
+                },
                 weights: vec![],
-                scaling_exponents: vec![],
             };
             dummy_data_fetcher
-                .expect_get_pool_data()
+                .expect_get_weighted_pool_data()
                 .with(eq(pool_addresses[i]))
                 .returning(move |_| Ok(expected_pool_data.clone()));
         }
