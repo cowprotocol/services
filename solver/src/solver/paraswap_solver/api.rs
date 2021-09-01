@@ -11,6 +11,7 @@ use model::u256_decimal;
 use web3::types::Bytes;
 
 const BASE_URL: &str = "https://apiv4.paraswap.io";
+const PARTNER_HEADER_KEY: &str = "X-Partner";
 
 /// Mockable implementation of the API for unit test
 #[cfg_attr(test, mockall::automock)]
@@ -25,6 +26,8 @@ pub trait ParaswapApi {
 
 pub struct DefaultParaswapApi {
     pub client: Client,
+    // X-Partner header to void rate limiting
+    pub partner_header_value: &'static str,
 }
 
 #[async_trait::async_trait]
@@ -33,7 +36,11 @@ impl ParaswapApi for DefaultParaswapApi {
         let query_str = format!("{:?}", &query);
         let url = query.into_url();
         tracing::debug!("Querying Paraswap API (price) for url {}", url);
-        let response_text = reqwest::get(url)
+        let response_text = self
+            .client
+            .get(url)
+            .header(PARTNER_HEADER_KEY, self.partner_header_value)
+            .send()
             .await
             .map_err(ParaswapResponseError::Send)?
             .text()
@@ -68,6 +75,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let query_str = serde_json::to_string(&query).unwrap();
         let response_text = query
             .into_request(&self.client)
+            .header(PARTNER_HEADER_KEY, self.partner_header_value)
             .send()
             .await
             .map_err(ParaswapResponseError::Send)?
@@ -756,6 +764,7 @@ mod tests {
 
         let api = DefaultParaswapApi {
             client: Client::new(),
+            partner_header_value: "Test",
         };
 
         let good_query = TransactionBuilderQuery {

@@ -54,12 +54,16 @@ impl ParaswapSolver {
         client: Client,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
+
         Self {
             account,
             settlement_contract,
             token_info,
             allowance_fetcher: Box::new(allowance_fetcher),
-            client: Box::new(DefaultParaswapApi { client }),
+            client: Box::new(DefaultParaswapApi {
+                client,
+                partner_header_value: REFERRER,
+            }),
             slippage_bps,
             disabled_paraswap_dexs,
         }
