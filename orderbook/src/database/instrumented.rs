@@ -147,6 +147,19 @@ impl OrderStoring for Instrumented {
             .start_timer();
         self.inner.solvable_orders(min_valid_to).await
     }
+
+    async fn user_orders(
+        &self,
+        owner: &ethcontract::H160,
+        offset: u64,
+        limit: Option<u64>,
+    ) -> anyhow::Result<Vec<model::order::Order>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("user_orders")
+            .start_timer();
+        self.inner.user_orders(owner, offset, limit).await
+    }
 }
 
 #[async_trait::async_trait]

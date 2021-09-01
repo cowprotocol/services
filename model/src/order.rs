@@ -425,6 +425,15 @@ impl Default for OrderMetaData {
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct OrderUid(pub [u8; 56]);
 
+impl OrderUid {
+    /// Intended for easier uid creation in tests.
+    pub fn from_integer(i: u32) -> Self {
+        let mut uid = OrderUid::default();
+        uid.0[0..4].copy_from_slice(&i.to_le_bytes());
+        uid
+    }
+}
+
 impl FromStr for OrderUid {
     type Err = hex::FromHexError;
     fn from_str(s: &str) -> Result<OrderUid, hex::FromHexError> {

@@ -17,11 +17,18 @@ use std::{borrow::Cow, convert::TryInto};
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
+    // Legacy generic orders route that we are phasing out.
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
+    /// Orders that are solvable: minimum valid to, not fully executed, not invalidated.
     async fn solvable_orders(&self, min_valid_to: u32) -> Result<Vec<Order>>;
-    // Soon:
-    // async fn user_orders(&self, filter, order_uid) -> Result<Vec<Order>>;
+    /// All orders of a single user ordered by creation date descending (newest orders first).
+    async fn user_orders(
+        &self,
+        owner: &H160,
+        offset: u64,
+        limit: Option<u64>,
+    ) -> Result<Vec<Order>>;
 }
 
 /// Any default value means that this field is unfiltered.
@@ -161,15 +168,33 @@ impl From<sqlx::Error> for InsertionError {
 // When querying orders we have several specialized use cases working with their own filtering,
 // ordering, indexes. The parts that are shared between all queries are defined here so they can be
 // reused.
-
+//
+// It might feel more natural to use aggregate, joins and group by to calculate trade data and
+// invalidations. The problem with that is that it makes the query inefficient when we wish to limit
+// or order the selected orders because postgres is unable to understand the query well enough.
+// For example if we want to select orders ordered by creation timestamp on which there is an index
+// with offset and limit then the group by causes postgres to not use the index for the ordering. So
+// it will select orders, aggregate them with trades grouped by uid, sort by timestamp and only then
+// apply the limit. Instead we would like to apply the limit first and only then aggregate but I
+// could not get this to happen without writing the query using sub queries. A similar situation is
+// discussed in https://dba.stackexchange.com/questions/88988/postgres-error-column-must-appear-in-the-group-by-clause-or-be-used-in-an-aggre .
+//
+// To analyze queries take a look at https://www.postgresql.org/docs/13/using-explain.html . I also
+// find it useful to
+// SET enable_seqscan = false;
+// SET enable_nestloop = false;
+// to get a better idea of what indexes postgres *could* use even if it decides that with the
+// current amount of data this wouldn't be better.
 const ORDERS_SELECT: &str = "\
     o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount, \
     o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature, o.receiver, \
     o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance, \
-    COALESCE(SUM(t.buy_amount), 0) AS sum_buy, \
-    COALESCE(SUM(t.sell_amount), 0) AS sum_sell, \
-    COALESCE(SUM(t.fee_amount), 0) AS sum_fee, \
-    (COUNT(invalidations.*) > 0 OR o.cancellation_timestamp IS NOT NULL) AS invalidated, \
+    (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy, \
+    (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell, \
+    (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee, \
+    (o.cancellation_timestamp IS NOT NULL OR \
+        (SELECT COUNT(*) FROM invalidations WHERE invalidations.order_uid = o.uid) > 0 \
+    ) AS invalidated, \
     (o.signing_scheme = 'presign' AND COALESCE(( \
         SELECT (NOT p.signed) as unsigned \
         FROM presignature_events p \
@@ -181,11 +206,7 @@ const ORDERS_SELECT: &str = "\
 
 const ORDERS_FROM: &str = "\
     orders o \
-    LEFT OUTER JOIN trades t ON o.uid = t.order_uid \
-    LEFT OUTER JOIN invalidations ON o.uid = invalidations.order_uid \
 ";
-
-const ORDERS_GROUP_BY: &str = "o.uid ";
 
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
@@ -271,7 +292,6 @@ impl OrderStoring for Postgres {
                     ($3 IS NULL OR o.sell_token = $3) AND \
                     ($4 IS NULL OR o.buy_token = $4) AND \
                     ($5 IS NULL OR o.uid = $5) ",
-                "GROUP BY ", ORDERS_GROUP_BY,
             ") AS unfiltered \
             WHERE \
                 ($6 OR CASE kind \
@@ -303,7 +323,6 @@ impl OrderStoring for Postgres {
             "SELECT ", ORDERS_SELECT,
             "FROM ", ORDERS_FROM,
             "WHERE o.uid = $1 ",
-            "GROUP BY ", ORDERS_GROUP_BY,
         );
         let order = sqlx::query_as(QUERY)
             .bind(uid.0.as_ref())
@@ -319,7 +338,6 @@ impl OrderStoring for Postgres {
                 "SELECT ", ORDERS_SELECT,
                 "FROM ", ORDERS_FROM,
                 "WHERE o.valid_to >= $1 ",
-                "GROUP BY ", ORDERS_GROUP_BY,
             ") AS unfiltered \
             WHERE \
                 CASE kind \
@@ -331,6 +349,39 @@ impl OrderStoring for Postgres {
         );
         sqlx::query_as(QUERY)
             .bind(min_valid_to as i64)
+            .fetch(&self.pool)
+            .err_into()
+            .and_then(|row: OrdersQueryRow| async move { row.into_order() })
+            .try_collect()
+            .await
+    }
+
+    async fn user_orders(
+        &self,
+        owner: &H160,
+        offset: u64,
+        limit: Option<u64>,
+    ) -> Result<Vec<Order>> {
+        // As a future consideration for this query we could move from offset to an approach called
+        // keyset pagination where the offset is identified by "key" of the previous query. In our
+        // case that would be the lowest creation_timestamp. This way the database can start
+        // immediately at the offset through the index without enumerating the first N elements
+        // before as is the case with OFFSET.
+        // On the other hand that approach is less flexible so we will consider if we see that these
+        // queries are taking too long in practice.
+        #[rustfmt::skip]
+        const QUERY: &str = concatcp!(
+            "SELECT ", ORDERS_SELECT,
+            "FROM ", ORDERS_FROM,
+            "WHERE o.owner = $1 ",
+            "ORDER BY o.creation_timestamp DESC ",
+            "LIMIT $2 ",
+            "OFFSET $3 ",
+        );
+        sqlx::query_as(QUERY)
+            .bind(owner.as_bytes())
+            .bind(limit.map(|limit| limit as i64))
+            .bind(offset as i64)
             .fetch(&self.pool)
             .err_into()
             .and_then(|row: OrdersQueryRow| async move { row.into_order() })
@@ -1488,5 +1539,76 @@ mod tests {
             unfiltered_orders,
             (0..=4).map(order_uid).collect::<Vec<_>>(),
         );
+    }
+
+    fn datetime(offset: u32) -> DateTime<Utc> {
+        DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(offset as i64, 0), Utc)
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_user_orders() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let owners: Vec<H160> = (0u64..2).map(H160::from_low_u64_le).collect();
+
+        let orders = [
+            Order {
+                order_meta_data: OrderMetaData {
+                    uid: OrderUid::from_integer(3),
+                    owner: owners[0],
+                    creation_date: datetime(3),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                order_meta_data: OrderMetaData {
+                    uid: OrderUid::from_integer(1),
+                    owner: owners[1],
+                    creation_date: datetime(2),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                order_meta_data: OrderMetaData {
+                    uid: OrderUid::from_integer(0),
+                    owner: owners[0],
+                    creation_date: datetime(1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                order_meta_data: OrderMetaData {
+                    uid: OrderUid::from_integer(2),
+                    owner: owners[1],
+                    creation_date: datetime(0),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+        ];
+
+        for order in &orders {
+            db.insert_order(order).await.unwrap();
+        }
+
+        let result = db.user_orders(&owners[0], 0, None).await.unwrap();
+        assert_eq!(result, vec![orders[0].clone(), orders[2].clone()]);
+
+        let result = db.user_orders(&owners[1], 0, None).await.unwrap();
+        assert_eq!(result, vec![orders[1].clone(), orders[3].clone()]);
+
+        let result = db.user_orders(&owners[0], 0, Some(1)).await.unwrap();
+        assert_eq!(result, vec![orders[0].clone()]);
+
+        let result = db.user_orders(&owners[0], 1, Some(1)).await.unwrap();
+        assert_eq!(result, vec![orders[2].clone()]);
+
+        let result = db.user_orders(&owners[0], 2, Some(1)).await.unwrap();
+        assert_eq!(result, vec![]);
     }
 }
