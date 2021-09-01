@@ -134,53 +134,68 @@ pub fn create(
 
     solvers
         .into_iter()
-        .map(|(account, solver_type)| match solver_type {
-            SolverType::Naive => shared(NaiveSolver::new(account)),
-            SolverType::Baseline => shared(BaselineSolver::new(account, base_tokens.clone())),
-            SolverType::Mip => shared(create_http_solver(account, mip_solver_url.clone(), "Mip")),
-            SolverType::Quasimodo => shared(create_http_solver(
-                account,
-                quasimodo_solver_url.clone(),
-                "Quasimodo",
-            )),
-            SolverType::OneInch => {
-                let one_inch_solver: SingleOrderSolver<_> = OneInchSolver::with_disabled_protocols(
+        .map(|(account, solver_type)| {
+            let solver = match solver_type {
+                SolverType::Naive => shared(NaiveSolver::new(account)),
+                SolverType::Baseline => shared(BaselineSolver::new(account, base_tokens.clone())),
+                SolverType::Mip => {
+                    shared(create_http_solver(account, mip_solver_url.clone(), "Mip"))
+                }
+                SolverType::Quasimodo => shared(create_http_solver(
+                    account,
+                    quasimodo_solver_url.clone(),
+                    "Quasimodo",
+                )),
+                SolverType::OneInch => {
+                    let one_inch_solver: SingleOrderSolver<_> =
+                        OneInchSolver::with_disabled_protocols(
+                            account,
+                            web3.clone(),
+                            settlement_contract.clone(),
+                            chain_id,
+                            disabled_one_inch_protocols.clone(),
+                            client.clone(),
+                        )?
+                        .into();
+                    // We only want to use 1Inch for high value orders
+                    shared(SellVolumeFilteringSolver::new(
+                        Box::new(one_inch_solver),
+                        price_estimator.clone(),
+                        native_token,
+                        min_order_size_one_inch,
+                    ))
+                }
+                SolverType::ZeroEx => {
+                    let zeroex_solver = ZeroExSolver::new(
+                        account,
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        chain_id,
+                        client.clone(),
+                    )
+                    .unwrap();
+                    shared(SingleOrderSolver::from(zeroex_solver))
+                }
+                SolverType::Paraswap => shared(SingleOrderSolver::from(ParaswapSolver::new(
                     account,
                     web3.clone(),
                     settlement_contract.clone(),
-                    chain_id,
-                    disabled_one_inch_protocols.clone(),
+                    token_info_fetcher.clone(),
+                    paraswap_slippage_bps,
+                    disabled_paraswap_dexs.clone(),
                     client.clone(),
-                )?
-                .into();
-                // We only want to use 1Inch for high value orders
-                shared(SellVolumeFilteringSolver::new(
-                    Box::new(one_inch_solver),
-                    price_estimator.clone(),
-                    native_token,
-                    min_order_size_one_inch,
-                ))
-            }
-            SolverType::ZeroEx => {
-                let zeroex_solver = ZeroExSolver::new(
-                    account,
-                    web3.clone(),
-                    settlement_contract.clone(),
-                    chain_id,
-                    client.clone(),
+                ))),
+            };
+
+            if let Ok(solver) = &solver {
+                tracing::info!(
+                    "initialized solver {} at address {:#x}",
+                    solver.name(),
+                    solver.account().address()
                 )
-                .unwrap();
-                shared(SingleOrderSolver::from(zeroex_solver))
             }
-            SolverType::Paraswap => shared(SingleOrderSolver::from(ParaswapSolver::new(
-                account,
-                web3.clone(),
-                settlement_contract.clone(),
-                token_info_fetcher.clone(),
-                paraswap_slippage_bps,
-                disabled_paraswap_dexs.clone(),
-                client.clone(),
-            ))),
+
+            solver
         })
         .collect()
 }
