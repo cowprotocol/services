@@ -36,7 +36,7 @@ pub trait PriceEstimating: Send + Sync {
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in buy_token.
     /// The resulting price is how many units of sell_token needs to be sold for one unit of
     /// buy_token (sell_amount / buy_amount).
-    /// The result will be an error for non-positive amounts.
+    /// amount must be nonzero.
     async fn estimate_price(
         &self,
         sell_token: H160,
@@ -45,7 +45,8 @@ pub trait PriceEstimating: Send + Sync {
         kind: OrderKind,
     ) -> Result<BigRational, PriceEstimationError>;
 
-    // Returns the expected gas cost for this given trade
+    /// Returns the expected gas cost for this given trade
+    /// amount must be nonzero.
     async fn estimate_gas(
         &self,
         sell_token: H160,
@@ -148,8 +149,11 @@ impl PriceEstimating for BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
     ) -> Result<BigRational, PriceEstimationError> {
-        self.estimate_price_helper(sell_token, buy_token, amount, kind, true)
-            .await
+        let price = self
+            .estimate_price_helper(sell_token, buy_token, amount, kind, true)
+            .await?
+            .1;
+        Ok(price)
     }
 
     async fn estimate_gas(
@@ -159,25 +163,10 @@ impl PriceEstimating for BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
     ) -> Result<U256, PriceEstimationError> {
-        self.ensure_token_supported(sell_token).await?;
-        self.ensure_token_supported(buy_token).await?;
-        if sell_token == buy_token || amount.is_zero() {
-            return Ok(U256::zero());
-        }
-
-        let gas_price = self.gas_estimator.estimate().await?;
-        let path = match kind {
-            OrderKind::Buy => {
-                self.best_execution_buy_order(sell_token, buy_token, amount, gas_price, true)
-                    .await?
-                    .0
-            }
-            OrderKind::Sell => {
-                self.best_execution_sell_order(sell_token, buy_token, amount, gas_price, true)
-                    .await?
-                    .0
-            }
-        };
+        let path = self
+            .estimate_price_helper(sell_token, buy_token, amount, kind, true)
+            .await?
+            .0;
         let trades = path.len() - 1;
         // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
         // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
@@ -196,6 +185,7 @@ impl PriceEstimating for BaselinePriceEstimator {
 }
 
 impl BaselinePriceEstimator {
+    /// Returns the path and the price.
     async fn estimate_price_helper(
         &self,
         sell_token: H160,
@@ -203,11 +193,11 @@ impl BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
         consider_gas_costs: bool,
-    ) -> Result<BigRational, PriceEstimationError> {
+    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
         self.ensure_token_supported(sell_token).await?;
         self.ensure_token_supported(buy_token).await?;
         if sell_token == buy_token {
-            return Ok(num::one());
+            return Ok((Vec::new(), num::one()));
         }
         if amount.is_zero() {
             return Err(anyhow!("Attempt to estimate price of a trade with zero amount.").into());
@@ -215,7 +205,7 @@ impl BaselinePriceEstimator {
         let gas_price = self.gas_estimator.estimate().await?;
         match kind {
             OrderKind::Buy => {
-                let (_, sell_amount) = self
+                let (path, sell_amount) = self
                     .best_execution_buy_order(
                         sell_token,
                         buy_token,
@@ -224,13 +214,13 @@ impl BaselinePriceEstimator {
                         consider_gas_costs,
                     )
                     .await?;
-                Ok(BigRational::new(
-                    sell_amount.to_big_int(),
-                    amount.to_big_int(),
+                Ok((
+                    path,
+                    BigRational::new(sell_amount.to_big_int(), amount.to_big_int()),
                 ))
             }
             OrderKind::Sell => {
-                let (_, buy_amount) = self
+                let (path, buy_amount) = self
                     .best_execution_sell_order(
                         sell_token,
                         buy_token,
@@ -243,9 +233,9 @@ impl BaselinePriceEstimator {
                 if buy_amount.is_zero() {
                     return Err(anyhow!("infinite price").into());
                 }
-                Ok(BigRational::new(
-                    amount.to_big_int(),
-                    buy_amount.to_big_int(),
+                Ok((
+                    path,
+                    BigRational::new(amount.to_big_int(), buy_amount.to_big_int()),
                 ))
             }
         }
@@ -289,7 +279,8 @@ impl BaselinePriceEstimator {
                     OrderKind::Sell,
                     false,
                 )
-                .await?;
+                .await?
+                .1;
             Box::new(move |buy_estimate: Estimate<U256, Pool>| {
                 self.evaluate_path_of_sell_order_considering_gas_costs(
                     buy_token_price_in_native_token.clone(),
@@ -357,7 +348,8 @@ impl BaselinePriceEstimator {
                     OrderKind::Sell,
                     false,
                 )
-                .await?;
+                .await?
+                .1;
             Box::new(move |sell_estimate: Estimate<U256, Pool>| {
                 self.evaluate_path_of_buy_order_considering_gas_costs(
                     sell_token_price_in_native_token.clone(),
@@ -799,7 +791,7 @@ mod tests {
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
             assert_eq!(
                 estimator
-                    .estimate_gas(token_b, token_a, 1.into(), *kind)
+                    .estimate_gas(token_b, token_a, 10.into(), *kind)
                     .await
                     .unwrap(),
                 200_000.into()
@@ -962,7 +954,9 @@ mod tests {
                 OrderKind::Sell,
                 true,
             )
-            .await;
+            .await
+            .unwrap()
+            .1;
 
         let price_disregarding_gas_costs = estimator
             .estimate_price_helper(
@@ -972,13 +966,9 @@ mod tests {
                 OrderKind::Sell,
                 false,
             )
-            .await;
-
-        assert!(price_considering_gas_costs.is_ok());
-        assert!(price_disregarding_gas_costs.is_ok());
-
-        let price_considering_gas_costs = price_considering_gas_costs.unwrap();
-        let price_disregarding_gas_costs = price_disregarding_gas_costs.unwrap();
+            .await
+            .unwrap()
+            .1;
 
         assert!(price_considering_gas_costs != price_disregarding_gas_costs);
 
