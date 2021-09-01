@@ -324,7 +324,7 @@ async fn filter_unsupported_tokens(
 }
 
 // Make sure the balance fetcher tracks all balances for user, sell token combinations in these
-// orders and returns said balances.
+// orders and returns said balances. Only records this for open orders.
 async fn track_and_get_balances(
     fetcher: &dyn BalanceFetching,
     orders: &[Order],
@@ -332,6 +332,9 @@ async fn track_and_get_balances(
     let mut balances = HashMap::<(H160, H160, SellTokenSource), U256>::new();
     let mut untracked = HashSet::<(H160, H160, SellTokenSource)>::new();
     for order in orders {
+        if !matches!(order.order_meta_data.status, OrderStatus::Open) {
+            continue;
+        }
         let key = (
             order.order_meta_data.owner,
             order.order_creation.sell_token,
@@ -461,6 +464,9 @@ mod tests {
         let another_sell_token = H160::from_low_u64_be(3);
         let another_balance = 200.into();
 
+        // Should not get tracked because corresponding order isn't open.
+        let untracked_sell_token = H160::from_low_u64_be(4);
+
         let orders = vec![
             Order {
                 order_creation: OrderCreation {
@@ -476,6 +482,17 @@ mod tests {
                     ..Default::default()
                 },
                 ..Default::default()
+            },
+            Order {
+                order_creation: OrderCreation {
+                    sell_token: untracked_sell_token,
+                    sell_token_balance: SellTokenSource::External,
+                    ..Default::default()
+                },
+                order_meta_data: OrderMetaData {
+                    status: OrderStatus::Expired,
+                    ..Default::default()
+                },
             },
         ];
         let owner = orders[0].order_meta_data.owner;

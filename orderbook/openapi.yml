@@ -539,7 +539,7 @@ components:
         UID:
           $ref: "#/components/schemas/UID"
         availableBalance:
-          description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance."
+          description: "Amount of sellToken available for the settlement contract to spend on behalf of the owner. Null if API was unable to fetch balance or if the order status isn't Open."
           $ref: "#/components/schemas/TokenAmount"
           nullable: true
         executedSellAmount:
