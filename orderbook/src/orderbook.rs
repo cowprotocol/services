@@ -238,7 +238,7 @@ impl Orderbook {
         }
 
         match cancellation.validate(&self.domain_separator) {
-            Some(signer) if signer != order.order_meta_data.owner => {}
+            Some(signer) if signer == order.order_meta_data.owner => {}
             Some(_) => return Ok(OrderCancellationResult::WrongOwner),
             None => return Ok(OrderCancellationResult::InvalidSignature),
         };
