@@ -52,6 +52,7 @@ impl ParaswapSolver {
         slippage_bps: usize,
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
+        partner_header_value: Option<String>,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
 
@@ -62,7 +63,7 @@ impl ParaswapSolver {
             allowance_fetcher: Box::new(allowance_fetcher),
             client: Box::new(DefaultParaswapApi {
                 client,
-                partner_header_value: REFERRER,
+                partner_header_value: partner_header_value.unwrap_or_else(|| REFERRER.into()),
             }),
             slippage_bps,
             disabled_paraswap_dexs,
@@ -561,6 +562,7 @@ mod tests {
             0,
             vec![],
             Client::new(),
+            None,
         );
 
         let settlement = solver

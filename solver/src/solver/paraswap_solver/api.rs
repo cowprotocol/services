@@ -27,7 +27,7 @@ pub trait ParaswapApi {
 pub struct DefaultParaswapApi {
     pub client: Client,
     // X-Partner header to void rate limiting
-    pub partner_header_value: &'static str,
+    pub partner_header_value: String,
 }
 
 #[async_trait::async_trait]
@@ -39,7 +39,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let response_text = self
             .client
             .get(url)
-            .header(PARTNER_HEADER_KEY, self.partner_header_value)
+            .header(PARTNER_HEADER_KEY, &self.partner_header_value)
             .send()
             .await
             .map_err(ParaswapResponseError::Send)?
@@ -75,7 +75,7 @@ impl ParaswapApi for DefaultParaswapApi {
         let query_str = serde_json::to_string(&query).unwrap();
         let response_text = query
             .into_request(&self.client)
-            .header(PARTNER_HEADER_KEY, self.partner_header_value)
+            .header(PARTNER_HEADER_KEY, &self.partner_header_value)
             .send()
             .await
             .map_err(ParaswapResponseError::Send)?
@@ -764,7 +764,7 @@ mod tests {
 
         let api = DefaultParaswapApi {
             client: Client::new(),
-            partner_header_value: "Test",
+            partner_header_value: "Test".into(),
         };
 
         let good_query = TransactionBuilderQuery {
