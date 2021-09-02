@@ -78,7 +78,7 @@ enum Error {
 impl From<MinFeeCalculationError> for Error {
     fn from(other: MinFeeCalculationError) -> Self {
         match other {
-            MinFeeCalculationError::NotFound => Error::NoLiquidity,
+            MinFeeCalculationError::NoLiquidity => Error::NoLiquidity,
             MinFeeCalculationError::UnsupportedToken(token) => Error::UnsupportedToken(token),
             MinFeeCalculationError::Other(error) => Error::Other(error),
         }
@@ -88,6 +88,7 @@ impl From<MinFeeCalculationError> for Error {
 impl From<PriceEstimationError> for Error {
     fn from(other: PriceEstimationError) -> Self {
         match other {
+            PriceEstimationError::NoLiquidity => Error::NoLiquidity,
             PriceEstimationError::UnsupportedToken(token) => Error::UnsupportedToken(token),
             PriceEstimationError::Other(error) => Error::Other(error),
         }
@@ -197,7 +198,7 @@ fn response<T: Serialize>(result: Result<T, Error>) -> impl Reply {
     match result {
         Ok(response) => reply::with_status(reply::json(&response), StatusCode::OK),
         Err(Error::NoLiquidity) => reply::with_status(
-            super::error("NoLiquidity", "Token does not have enough liquidity."),
+            super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         ),
         Err(Error::UnsupportedToken(token)) => reply::with_status(

@@ -92,10 +92,14 @@ fn get_amount_estimate_response(
             super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
         ),
-        Err(PriceEstimationError::Other(_)) => reply::with_status(
-            super::error("NotFound", "No price estimate found"),
+        Err(PriceEstimationError::NoLiquidity) => reply::with_status(
+            super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         ),
+        Err(PriceEstimationError::Other(err)) => {
+            tracing::error!(?err, "get_market error");
+            reply::with_status(super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+        }
     }
 }
 

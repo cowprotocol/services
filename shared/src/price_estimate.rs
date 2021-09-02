@@ -22,9 +22,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {
-    // Represents a failure when no liquidity between sell and buy token via the native token can be found
     #[error("Token {0:?} not supported")]
     UnsupportedToken(H160),
+
+    #[error("No liquidity")]
+    NoLiquidity,
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -189,9 +191,7 @@ fn amounts_to_price(
 ) -> Result<BigRational, PriceEstimationError> {
     // Due to integer rounding it is possible that we find path but the amount is 0.
     if sell_amount.is_zero() || buy_amount.is_zero() {
-        return Err(PriceEstimationError::Other(anyhow!(
-            "zero amount leads to impossible price"
-        )));
+        return Err(PriceEstimationError::NoLiquidity);
     }
     Ok(BigRational::new(
         sell_amount.to_big_int(),
@@ -396,19 +396,10 @@ impl BaselinePriceEstimator {
         let best_path = path_candidates
             .iter()
             .max_by_key(|path| comparison(amount, path, &pools))
-            .ok_or(anyhow!(format!(
-                "No Uniswap path found between {:#x} and {:#x}",
-                sell_token, buy_token
-            )))?;
-        Ok((
-            best_path.clone(),
-            resulting_amount(amount, best_path, &pools).ok_or_else(|| {
-                anyhow!(format!(
-                    "No valid path found between {:#x} and {:#x}",
-                    sell_token, buy_token
-                ))
-            })?,
-        ))
+            .ok_or(PriceEstimationError::NoLiquidity)?;
+        let resulting_amount =
+            resulting_amount(amount, best_path, &pools).ok_or(PriceEstimationError::NoLiquidity)?;
+        Ok((best_path.clone(), resulting_amount))
     }
 }
 

@@ -80,11 +80,9 @@ const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
 
 #[derive(Error, Debug)]
 pub enum MinFeeCalculationError {
-    // Represents a failure when no liquidity between sell and buy token via the native token can be found
-    #[error("Token not found")]
-    NotFound,
+    #[error("No liquidity")]
+    NoLiquidity,
 
-    // Represents a failure when one of the tokens involved is not supported by the system
     #[error("Token {0:?} not supported")]
     UnsupportedToken(H160),
 
@@ -266,7 +264,7 @@ impl MinFeeCalculating for MinFeeCalculator {
             .await?
         {
             Some(fee) => fee,
-            None => return Err(MinFeeCalculationError::NotFound),
+            None => return Err(MinFeeCalculationError::NoLiquidity),
         };
 
         let _ = self

@@ -45,8 +45,8 @@ pub fn get_fee_info_response(
             };
             Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
         }
-        Err(MinFeeCalculationError::NotFound) => Ok(reply::with_status(
-            super::error("NotFound", "Token was not found"),
+        Err(MinFeeCalculationError::NoLiquidity) => Ok(reply::with_status(
+            super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         )),
         Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
@@ -112,8 +112,8 @@ pub fn legacy_get_fee_info_response(
             };
             Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
         }
-        Err(MinFeeCalculationError::NotFound) => Ok(reply::with_status(
-            super::error("NotFound", "Token was not found"),
+        Err(MinFeeCalculationError::NoLiquidity) => Ok(reply::with_status(
+            super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         )),
         Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
