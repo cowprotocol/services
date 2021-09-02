@@ -72,7 +72,9 @@ impl From<Block> for BlockNumber {
 pub struct RecentBlockCache<K, V, F, M>
 where
     K: CacheKey<V>,
+    V: Clone,
     F: CacheFetching<K, V>,
+    M: CacheMetrics,
 {
     mutexed: Mutex<Mutexed<K, V>>,
     number_of_blocks_to_cache: NonZeroU64,

@@ -4,7 +4,6 @@ pub mod conversions;
 pub mod database;
 pub mod event_updater;
 pub mod fee;
-pub mod metrics;
 pub mod orderbook;
 
 use crate::orderbook::Orderbook;
@@ -12,7 +11,6 @@ use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
 use fee::EthAwareMinFeeCalculator;
-use metrics::Metrics;
 use model::DomainSeparator;
 use shared::{
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
@@ -27,15 +25,9 @@ pub fn serve_task(
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
     address: SocketAddr,
-    metrics: Arc<Metrics>,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
-        database,
-        orderbook.clone(),
-        fee_calculator,
-        price_estimator,
-        metrics,
-    );
+    let filter =
+        api::handle_all_routes(database, orderbook.clone(), fee_calculator, price_estimator);
     let mut metrics_address = address;
     tracing::info!(%address, "serving order book");
     task::spawn(warp::serve(filter).bind(address));

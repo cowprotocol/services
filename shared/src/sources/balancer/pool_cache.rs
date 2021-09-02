@@ -1,3 +1,5 @@
+use crate::current_block::CurrentBlockStream;
+use crate::recent_block_cache::CacheConfig;
 use crate::{
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
     sources::{
@@ -20,10 +22,6 @@ pub struct PoolReserveFetcher {
     web3: Web3,
 }
 
-pub trait BalancerPoolCacheMetrics: Send + Sync {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
-}
-
 impl PoolReserveFetcher {
     pub async fn new(pool_registry: Arc<BalancerPoolRegistry>, web3: Web3) -> Result<Self> {
         let vault = BalancerV2Vault::deployed(&web3).await?;
@@ -36,7 +34,20 @@ impl PoolReserveFetcher {
 }
 
 pub type BalancerPoolReserveCache =
-    RecentBlockCache<H256, WeightedPool, PoolReserveFetcher, Arc<dyn BalancerPoolCacheMetrics>>;
+    RecentBlockCache<H256, WeightedPool, PoolReserveFetcher, &'static BalancerPoolCacheMetrics>;
+
+pub fn new_balancer_pool_reserve_cache(
+    config: CacheConfig,
+    fetcher: PoolReserveFetcher,
+    block_stream: CurrentBlockStream,
+) -> Result<BalancerPoolReserveCache> {
+    RecentBlockCache::new(
+        config,
+        fetcher,
+        block_stream,
+        BalancerPoolCacheMetrics::instance(),
+    )
+}
 
 impl CacheKey<WeightedPool> for H256 {
     fn first_ord() -> Self {
@@ -100,9 +111,31 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
     }
 }
 
-impl CacheMetrics for Arc<dyn BalancerPoolCacheMetrics> {
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "balancer_pool_cache")]
+pub struct BalancerPoolCacheMetrics {
+    /// Number of cache hits in the pool fetcher cache.
+    hits: prometheus::IntCounter,
+
+    /// Number of cache misses in the pool fetcher cache.
+    misses: prometheus::IntCounter,
+}
+
+impl BalancerPoolCacheMetrics {
+    fn instance() -> &'static Self {
+        lazy_static::lazy_static! {
+            static ref INSTANCE: BalancerPoolCacheMetrics =
+                BalancerPoolCacheMetrics::new(crate::metrics::get_metrics_registry()).unwrap();
+        }
+
+        &INSTANCE
+    }
+}
+
+impl CacheMetrics for &BalancerPoolCacheMetrics {
     fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pools_fetched(cache_hits, cache_misses)
+        self.hits.inc_by(cache_hits as _);
+        self.misses.inc_by(cache_misses as _);
     }
 }
 

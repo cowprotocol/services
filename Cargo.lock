@@ -1849,6 +1849,7 @@ dependencies = [
  "gas-estimation",
  "hex",
  "hex-literal",
+ "lazy_static",
  "maplit",
  "mockall",
  "model",
@@ -1856,7 +1857,9 @@ dependencies = [
  "num-bigint 0.3.2",
  "primitive-types",
  "prometheus",
+ "prometheus-metric-storage",
  "reqwest",
+ "scopeguard",
  "secp256k1",
  "serde",
  "serde_json",
@@ -2120,6 +2123,27 @@ dependencies = [
  "parking_lot",
  "protobuf",
  "thiserror",
+]
+
+[[package]]
+name = "prometheus-metric-storage"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f84e1225d147a22e045bcf68f1ad9e62f6238dc5608b48dc3a9e205b1eaf7ea0"
+dependencies = [
+ "prometheus",
+ "prometheus-metric-storage-derive",
+]
+
+[[package]]
+name = "prometheus-metric-storage-derive"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46a461ed568577900f3d7017060b29cebca9b2ca0f64525c3bcf2b7355fc5004"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
@@ -2624,6 +2648,7 @@ dependencies = [
  "once_cell",
  "primitive-types",
  "prometheus",
+ "prometheus-metric-storage",
  "regex",
  "reqwest",
  "scopeguard",

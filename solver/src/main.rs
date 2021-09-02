@@ -282,13 +282,9 @@ async fn main() {
                     pair_provider,
                     web3: web3.clone(),
                 });
-                let pool_cache = PoolCache::new(
-                    cache_config,
-                    fetcher,
-                    current_block_stream.clone(),
-                    metrics.clone(),
-                )
-                .expect("failed to create pool cache");
+                let pool_cache =
+                    PoolCache::new(cache_config, fetcher, current_block_stream.clone())
+                        .expect("failed to create pool cache");
                 (source, Arc::new(pool_cache))
             })
             .collect();
@@ -312,7 +308,6 @@ async fn main() {
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
-                metrics.clone(),
                 client.clone(),
             )
             .await

@@ -2,14 +2,15 @@
 //! when given a collection of `TokenPair`. Each of these pools are then queried for
 //! their `token_balances` and the `PoolFetcher` returns all up-to-date `WeightedPools`
 //! to be consumed by external users (e.g. Price Estimators and Solvers).
+use crate::sources::balancer::pool_cache::new_balancer_pool_reserve_cache;
 use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
-    recent_block_cache::{Block, CacheConfig, RecentBlockCache},
+    recent_block_cache::{Block, CacheConfig},
     sources::balancer::{
         event_handler::BalancerPoolRegistry,
         info_fetching::PoolInfoFetcher,
-        pool_cache::{BalancerPoolCacheMetrics, BalancerPoolReserveCache, PoolReserveFetcher},
+        pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher},
         pool_init::DefaultPoolInitializer,
         pool_storage::RegisteredWeightedPool,
         swap::fixed_point::Bfp,
@@ -103,7 +104,6 @@ impl BalancerPoolFetcher {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
     ) -> Result<Self> {
         let pool_info = Arc::new(PoolInfoFetcher {
@@ -116,7 +116,7 @@ impl BalancerPoolFetcher {
             Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);
         let reserve_fetcher = PoolReserveFetcher::new(pool_registry.clone(), web3).await?;
         let pool_reserve_cache =
-            RecentBlockCache::new(config, reserve_fetcher, block_stream, metrics)?;
+            new_balancer_pool_reserve_cache(config, reserve_fetcher, block_stream)?;
         Ok(Self {
             pool_registry,
             pool_reserve_cache,

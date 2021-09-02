@@ -3,12 +3,12 @@ use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
+use orderbook::database::instrumented::update_database_metrics;
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
-    metrics::Metrics,
     orderbook::Orderbook,
     serve_task, verify_deployed_contract_constants,
 };
@@ -34,8 +34,8 @@ use shared::{
         },
         PoolAggregator,
     },
-    transport::create_instrumented_transport,
     transport::http::HttpTransport,
+    Web3Transport,
 };
 use std::{
     collections::HashSet, iter::FromIterator as _, net::SocketAddr, sync::Arc, time::Duration,
@@ -114,20 +114,6 @@ struct Arguments {
     pub enable_presign_orders: bool,
 }
 
-pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
-    loop {
-        match database.count_rows_in_tables().await {
-            Ok(counts) => {
-                for (table, count) in counts {
-                    metrics.set_table_row_count(table, count);
-                }
-            }
-            Err(err) => tracing::error!(?err, "failed to update db metrics"),
-        };
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-}
-
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
@@ -135,14 +121,10 @@ async fn main() {
     tracing::info!("running order book with validated {:#?}", args);
 
     setup_metrics_registry(Some("gp_v2_api".into()), None);
-    let metrics = Arc::new(Metrics::new().unwrap());
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url),
-        metrics.clone(),
-    );
+    let transport = Web3Transport::new(HttpTransport::new(client.clone(), args.shared.node_url));
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
@@ -189,10 +171,7 @@ async fn main() {
     let domain_separator =
         DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
-    let database = Arc::new(database::instrumented::Instrumented::new(
-        postgres.clone(),
-        metrics.clone(),
-    ));
+    let database = Arc::new(database::instrumented::Instrumented::new(postgres.clone()));
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
@@ -214,7 +193,6 @@ async fn main() {
         vault,
         vault_relayer,
         settlement_contract.address(),
-        metrics.clone(),
     );
 
     let gas_price_estimator = Arc::new(
@@ -300,7 +278,6 @@ async fn main() {
             },
             Box::new(pool_aggregator),
             current_block_stream.clone(),
-            metrics.clone(),
         )
         .expect("failed to create pool cache"),
     );
@@ -351,11 +328,10 @@ async fn main() {
         fee_calculator,
         price_estimator,
         args.bind_address,
-        metrics.clone(),
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(metrics, postgres));
+    let db_metrics_task = task::spawn(update_database_metrics(postgres));
 
     tokio::select! {
         result = serve_task => tracing::error!(?result, "serve task exited"),

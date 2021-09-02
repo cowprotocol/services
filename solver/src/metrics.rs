@@ -7,13 +7,7 @@ use std::{
 use anyhow::Result;
 use model::order::Order;
 use prometheus::{HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts};
-use shared::{
-    metrics::LivenessChecking,
-    sources::{
-        balancer::pool_cache::BalancerPoolCacheMetrics, uniswap::pool_cache::PoolCacheMetrics,
-    },
-    transport::instrumented::TransportMetrics,
-};
+use shared::{metrics::LivenessChecking, transport::instrumented::TransportMetrics};
 use strum::{AsStaticRef, VariantNames};
 
 use crate::liquidity::Liquidity;
@@ -44,8 +38,6 @@ pub struct Metrics {
     settlement_submissions: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
     transport_requests: HistogramVec,
-    pool_cache_hits: IntCounter,
-    pool_cache_misses: IntCounter,
     last_runloop_completed: Mutex<Instant>,
 }
 
@@ -108,18 +100,6 @@ impl Metrics {
         let transport_requests = HistogramVec::new(opts, &["method"]).unwrap();
         registry.register(Box::new(transport_requests.clone()))?;
 
-        let pool_cache_hits = IntCounter::new(
-            "pool_cache_hits",
-            "Number of cache hits in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_hits.clone()))?;
-
-        let pool_cache_misses = IntCounter::new(
-            "pool_cache_misses",
-            "Number of cache misses in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_misses.clone()))?;
-
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -129,8 +109,6 @@ impl Metrics {
             settlement_submissions,
             matched_but_unsettled_orders,
             transport_requests,
-            pool_cache_hits,
-            pool_cache_misses,
             last_runloop_completed: Mutex::new(Instant::now()),
         })
     }
@@ -214,22 +192,6 @@ impl TransportMetrics for Metrics {
         self.transport_requests
             .with_label_values(&[label])
             .observe(elapsed.as_secs_f64())
-    }
-}
-
-impl PoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
-    }
-}
-
-impl BalancerPoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        // We may want to distinguish cache metrics between the different
-        // liquidity sources in the future, for now just use the same counters.
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 

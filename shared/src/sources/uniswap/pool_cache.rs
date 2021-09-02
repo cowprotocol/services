@@ -8,14 +8,10 @@ use crate::{
 };
 use anyhow::Result;
 use model::TokenPair;
-use std::{collections::HashSet, sync::Arc};
-
-pub trait PoolCacheMetrics: Send + Sync {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
-}
+use std::collections::HashSet;
 
 pub struct PoolCache(
-    RecentBlockCache<TokenPair, Pool, Box<dyn PoolFetching>, Arc<dyn PoolCacheMetrics>>,
+    RecentBlockCache<TokenPair, Pool, Box<dyn PoolFetching>, &'static PoolCacheMetrics>,
 );
 
 impl CacheKey<Pool> for TokenPair {
@@ -35,25 +31,18 @@ impl CacheFetching<TokenPair, Pool> for Box<dyn PoolFetching> {
     }
 }
 
-impl CacheMetrics for Arc<dyn PoolCacheMetrics> {
-    fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pools_fetched(cache_hits, cache_misses)
-    }
-}
-
 impl PoolCache {
     /// Creates a new pool cache.
     pub fn new(
         config: CacheConfig,
         fetcher: Box<dyn PoolFetching>,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn PoolCacheMetrics>,
     ) -> Result<Self> {
         Ok(Self(RecentBlockCache::new(
             config,
             fetcher,
             block_stream,
-            metrics,
+            PoolCacheMetrics::instance(),
         )?))
     }
 }
@@ -69,5 +58,33 @@ impl PoolFetching for PoolCache {
 impl Maintaining for PoolCache {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.update_cache().await
+    }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "pool_cache")]
+struct PoolCacheMetrics {
+    /// Number of cache hits in the pool fetcher cache.
+    hits: prometheus::IntCounter,
+
+    /// Number of cache misses in the pool fetcher cache.
+    misses: prometheus::IntCounter,
+}
+
+impl PoolCacheMetrics {
+    fn instance() -> &'static Self {
+        lazy_static::lazy_static! {
+            static ref INSTANCE: PoolCacheMetrics =
+                PoolCacheMetrics::new(crate::metrics::get_metrics_registry()).unwrap();
+        }
+
+        &INSTANCE
+    }
+}
+
+impl CacheMetrics for &PoolCacheMetrics {
+    fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        self.hits.inc_by(cache_hits as _);
+        self.misses.inc_by(cache_misses as _);
     }
 }

@@ -53,7 +53,7 @@ impl Postgres {
         row.try_get(0).map_err(Into::into)
     }
 
-    pub async fn count_rows_in_tables(&self) -> Result<HashMap<&'static str, i64>> {
+    async fn count_rows_in_tables(&self) -> Result<HashMap<&'static str, i64>> {
         let mut result = HashMap::new();
         for &table in ALL_TABLES.iter() {
             result.insert(table, self.count_rows_in_table(table).await?);

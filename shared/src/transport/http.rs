@@ -2,7 +2,6 @@ use crate::metrics::get_metrics_registry;
 use ethcontract::jsonrpc as jsonrpc_core;
 use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
-use prometheus::Registry;
 use reqwest::{Client, Url};
 use serde::de::DeserializeOwned;
 use std::{
@@ -173,44 +172,23 @@ fn method_name(call: &Call) -> &str {
     }
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "node_transport")]
 struct TransportMetrics {
+    /// Number of inflight RPC requests for ethereum node.
+    #[metric(labels("method"))]
     requests_inflight: prometheus::IntGaugeVec,
+
+    /// Number of completed RPC requests for ethereum node.
+    #[metric(labels("method"))]
     requests_complete: prometheus::CounterVec,
+
+    /// Execution time for each RPC request (batches are counted as one request).
+    #[metric(labels("method"))]
     requests_duration_seconds: prometheus::HistogramVec,
 }
 
 impl TransportMetrics {
-    fn new(registry: &Registry) -> prometheus::Result<Self> {
-        let label_names = &["method"];
-
-        let opts = prometheus::Opts::new(
-            "node_transport_requests_inflight",
-            "Number of inflight RPC requests for ethereum node",
-        );
-        let requests_inflight = prometheus::IntGaugeVec::new(opts, label_names)?;
-        registry.register(Box::new(requests_inflight.clone()))?;
-
-        let opts = prometheus::Opts::new(
-            "node_transport_requests_complete",
-            "Number of completed RPC requests for ethereum node",
-        );
-        let requests_complete = prometheus::CounterVec::new(opts, label_names)?;
-        registry.register(Box::new(requests_complete.clone()))?;
-
-        let opts = prometheus::HistogramOpts::new(
-            "node_transport_requests_duration_seconds",
-            "Execution time for each RPC request (batches are counted as one request)",
-        );
-        let requests_duration_seconds = prometheus::HistogramVec::new(opts, label_names)?;
-        registry.register(Box::new(requests_duration_seconds.clone()))?;
-
-        Ok(TransportMetrics {
-            requests_inflight,
-            requests_complete,
-            requests_duration_seconds,
-        })
-    }
-
     fn instance() -> &'static Self {
         lazy_static::lazy_static! {
             static ref INSTANCE: TransportMetrics =

@@ -6,7 +6,7 @@ use maplit::hashset;
 use model::DomainSeparator;
 use orderbook::{
     account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
-    fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
+    fee::EthAwareMinFeeCalculator, orderbook::Orderbook,
 };
 use reqwest::Client;
 use shared::{
