@@ -9,7 +9,6 @@ use crate::{
     sources::uniswap::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::{anyhow, Result};
-use async_recursion::async_recursion;
 use ethcontract::{H160, U256};
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
@@ -184,6 +183,22 @@ impl PriceEstimating for BaselinePriceEstimator {
     }
 }
 
+fn amounts_to_price(
+    sell_amount: U256,
+    buy_amount: U256,
+) -> Result<BigRational, PriceEstimationError> {
+    // Due to integer rounding it is possible that we find path but the amount is 0.
+    if sell_amount.is_zero() || buy_amount.is_zero() {
+        return Err(PriceEstimationError::Other(anyhow!(
+            "zero amount leads to impossible price"
+        )));
+    }
+    Ok(BigRational::new(
+        sell_amount.to_big_int(),
+        buy_amount.to_big_int(),
+    ))
+}
+
 impl BaselinePriceEstimator {
     /// Returns the path and the price.
     async fn estimate_price_helper(
@@ -205,178 +220,146 @@ impl BaselinePriceEstimator {
         let gas_price = self.gas_estimator.estimate().await?;
         match kind {
             OrderKind::Buy => {
-                let (path, sell_amount) = self
-                    .best_execution_buy_order(
-                        sell_token,
-                        buy_token,
-                        amount,
-                        gas_price,
-                        consider_gas_costs,
-                    )
-                    .await?;
-                Ok((
-                    path,
-                    BigRational::new(sell_amount.to_big_int(), amount.to_big_int()),
-                ))
+                // Do not consider gas costs below to avoid infinite recursion.
+                let sell_token_price_in_native_token = if consider_gas_costs {
+                    Some(if sell_token == self.native_token {
+                        num::one()
+                    } else {
+                        self.best_execution_sell_order(
+                            self.native_token,
+                            sell_token,
+                            self.amount_to_estimate_prices_with,
+                            gas_price,
+                            None,
+                        )
+                        .await?
+                        .1
+                    })
+                } else {
+                    None
+                };
+                self.best_execution_buy_order(
+                    sell_token,
+                    buy_token,
+                    amount,
+                    gas_price,
+                    sell_token_price_in_native_token,
+                )
+                .await
             }
             OrderKind::Sell => {
-                let (path, buy_amount) = self
-                    .best_execution_sell_order(
-                        sell_token,
-                        buy_token,
-                        amount,
-                        gas_price,
-                        consider_gas_costs,
-                    )
-                    .await?;
-                // Due to integer rounding it is possible that we find path but the amount is 0.
-                if buy_amount.is_zero() {
-                    return Err(anyhow!("infinite price").into());
-                }
-                Ok((
-                    path,
-                    BigRational::new(amount.to_big_int(), buy_amount.to_big_int()),
-                ))
+                // Do not consider gas costs below to avoid infinite recursion.
+                let buy_token_price_in_native_token = if consider_gas_costs {
+                    Some(if buy_token == self.native_token {
+                        num::one()
+                    } else {
+                        self.best_execution_sell_order(
+                            self.native_token,
+                            buy_token,
+                            self.amount_to_estimate_prices_with,
+                            gas_price,
+                            None,
+                        )
+                        .await?
+                        .1
+                    })
+                } else {
+                    None
+                };
+                self.best_execution_sell_order(
+                    sell_token,
+                    buy_token,
+                    amount,
+                    gas_price,
+                    buy_token_price_in_native_token,
+                )
+                .await
             }
         }
     }
 
-    fn evaluate_path_of_sell_order_disregarding_gas_costs(
-        &self,
-        buy_estimate: Estimate<U256, Pool>,
-    ) -> BigRational {
-        buy_estimate.value.to_big_rational()
-    }
-    fn evaluate_path_of_sell_order_considering_gas_costs(
-        &self,
-        buy_token_price_in_native_token: BigRational,
-        gas_price: f64,
-        buy_estimate: Estimate<U256, Pool>,
-    ) -> BigRational {
-        let buy_amount_in_native_token =
-            buy_estimate.value.to_big_rational() * buy_token_price_in_native_token;
-        let tx_cost_in_native_token = U256::from_f64_lossy(gas_price).to_big_rational()
-            * BigRational::from_integer(buy_estimate.gas_cost().into());
-        buy_amount_in_native_token - tx_cost_in_native_token
-    }
-
-    #[async_recursion]
+    /// Returns path and price (sell_amount / buy_amount).
+    /// If buy_token_price_in_native_token is set then it will be used to take gas cost into
+    /// account.
     async fn best_execution_sell_order(
         &self,
         sell_token: H160,
         buy_token: H160,
         sell_amount: U256,
         gas_price: f64,
-        consider_gas_costs: bool,
-    ) -> Result<(Vec<H160>, U256)> {
-        let path_comparison = if consider_gas_costs {
-            // Do not consider gas costs below to avoid infinite recursion.
-            let buy_token_price_in_native_token = self
-                .estimate_price_helper(
-                    self.native_token,
-                    buy_token,
-                    self.amount_to_estimate_prices_with,
-                    OrderKind::Sell,
-                    false,
-                )
-                .await?
-                .1;
-            Box::new(move |buy_estimate: Estimate<U256, Pool>| {
-                self.evaluate_path_of_sell_order_considering_gas_costs(
-                    buy_token_price_in_native_token.clone(),
-                    gas_price,
-                    buy_estimate,
-                )
-            }) as Box<dyn Fn(Estimate<U256, Pool>) -> BigRational + Send + Sync>
-        } else {
-            Box::new(|buy_estimate: Estimate<U256, Pool>| {
-                self.evaluate_path_of_sell_order_disregarding_gas_costs(buy_estimate)
-            }) as Box<dyn Fn(Estimate<U256, Pool>) -> BigRational + Send + Sync>
+        buy_token_price_in_native_token: Option<BigRational>,
+    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
+        let path_comparison = |buy_estimate: Estimate<U256, Pool>| {
+            if let Some(buy_token_price_in_native_token) = &buy_token_price_in_native_token {
+                let buy_amount_in_native_token =
+                    buy_estimate.value.to_big_rational() * buy_token_price_in_native_token;
+                let tx_cost_in_native_token = U256::from_f64_lossy(gas_price).to_big_rational()
+                    * BigRational::from_integer(buy_estimate.gas_cost().into());
+                buy_amount_in_native_token - tx_cost_in_native_token
+            } else {
+                buy_estimate.value.to_big_rational()
+            }
         };
 
-        self.best_execution(
-            sell_token,
-            buy_token,
-            sell_amount,
-            |amount, path, pools| {
-                estimate_buy_amount(amount, path, pools)
-                    .map(&path_comparison)
-                    .unwrap_or_else(|| -U256::max_value().to_big_rational())
-            },
-            |amount, path, pools| {
-                estimate_buy_amount(amount, path, pools).map(|estimate| estimate.value)
-            },
-        )
-        .await
+        let (path, buy_amount) = self
+            .best_execution(
+                sell_token,
+                buy_token,
+                sell_amount,
+                |amount, path, pools| {
+                    estimate_buy_amount(amount, path, pools)
+                        .map(&path_comparison)
+                        .unwrap_or_else(|| -U256::max_value().to_big_rational())
+                },
+                |amount, path, pools| {
+                    estimate_buy_amount(amount, path, pools).map(|estimate| estimate.value)
+                },
+            )
+            .await?;
+        let price = amounts_to_price(sell_amount, buy_amount)?;
+        Ok((path, price))
     }
 
-    fn evaluate_path_of_buy_order_disregarding_gas_costs(
-        &self,
-        sell_estimate: Estimate<U256, Pool>,
-    ) -> BigRational {
-        -sell_estimate.value.to_big_rational()
-    }
-    fn evaluate_path_of_buy_order_considering_gas_costs(
-        &self,
-        sell_token_price_in_native_token: BigRational,
-        gas_price: f64,
-        sell_estimate: Estimate<U256, Pool>,
-    ) -> BigRational {
-        let sell_amount_in_native_token =
-            sell_estimate.value.to_big_rational() * sell_token_price_in_native_token;
-        let tx_cost_in_native_token = U256::from_f64_lossy(gas_price).to_big_rational()
-            * BigRational::from_integer(sell_estimate.gas_cost().into());
-        -sell_amount_in_native_token - tx_cost_in_native_token
-    }
-
-    #[async_recursion]
+    /// Returns path and price (sell_amount / buy_amount).
+    /// If sell_token_price_in_native_token is set then it will be used to take gas cost into
+    /// account.
     async fn best_execution_buy_order(
         &self,
         sell_token: H160,
         buy_token: H160,
         buy_amount: U256,
         gas_price: f64,
-        consider_gas_costs: bool,
-    ) -> Result<(Vec<H160>, U256)> {
-        let path_comparison = if consider_gas_costs {
-            // Do not consider gas costs below to avoid infinite recursion.
-            let sell_token_price_in_native_token = self
-                .estimate_price_helper(
-                    self.native_token,
-                    sell_token,
-                    self.amount_to_estimate_prices_with,
-                    OrderKind::Sell,
-                    false,
-                )
-                .await?
-                .1;
-            Box::new(move |sell_estimate: Estimate<U256, Pool>| {
-                self.evaluate_path_of_buy_order_considering_gas_costs(
-                    sell_token_price_in_native_token.clone(),
-                    gas_price,
-                    sell_estimate,
-                )
-            }) as Box<dyn Fn(Estimate<U256, Pool>) -> BigRational + Send + Sync>
-        } else {
-            Box::new(|sell_estimate: Estimate<U256, Pool>| {
-                self.evaluate_path_of_buy_order_disregarding_gas_costs(sell_estimate)
-            }) as Box<dyn Fn(Estimate<U256, Pool>) -> BigRational + Send + Sync>
+        sell_token_price_in_native_token: Option<BigRational>,
+    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
+        let path_comparison = |sell_estimate: Estimate<U256, Pool>| {
+            if let Some(sell_token_price_in_native_token) = &sell_token_price_in_native_token {
+                let sell_amount_in_native_token =
+                    sell_estimate.value.to_big_rational() * sell_token_price_in_native_token;
+                let tx_cost_in_native_token = U256::from_f64_lossy(gas_price).to_big_rational()
+                    * BigRational::from_integer(sell_estimate.gas_cost().into());
+                -sell_amount_in_native_token - tx_cost_in_native_token
+            } else {
+                -sell_estimate.value.to_big_rational()
+            }
         };
 
-        self.best_execution(
-            sell_token,
-            buy_token,
-            buy_amount,
-            |amount, path, pools| {
-                estimate_sell_amount(amount, path, pools)
-                    .map(&path_comparison)
-                    .unwrap_or_else(|| -U256::max_value().to_big_rational())
-            },
-            |amount, path, pools| {
-                estimate_sell_amount(amount, path, pools).map(|estimate| estimate.value)
-            },
-        )
-        .await
+        let (path, sell_amount) = self
+            .best_execution(
+                sell_token,
+                buy_token,
+                buy_amount,
+                |amount, path, pools| {
+                    estimate_sell_amount(amount, path, pools)
+                        .map(path_comparison)
+                        .unwrap_or_else(|| -U256::max_value().to_big_rational())
+                },
+                |amount, path, pools| {
+                    estimate_sell_amount(amount, path, pools).map(|estimate| estimate.value)
+                },
+            )
+            .await?;
+        let price = amounts_to_price(sell_amount, buy_amount)?;
+        Ok((path, price))
     }
 
     async fn best_execution<AmountFn, CompareFn, O, Amount>(
@@ -386,12 +369,15 @@ impl BaselinePriceEstimator {
         amount: U256,
         comparison: CompareFn,
         resulting_amount: AmountFn,
-    ) -> Result<(Vec<H160>, Amount)>
+    ) -> Result<(Vec<H160>, Amount), PriceEstimationError>
     where
         AmountFn: Fn(U256, &[H160], &HashMap<TokenPair, Vec<Pool>>) -> Option<Amount>,
         CompareFn: Fn(U256, &[H160], &HashMap<TokenPair, Vec<Pool>>) -> O,
         O: Ord,
     {
+        debug_assert!(sell_token != buy_token);
+        debug_assert!(!amount.is_zero());
+
         let path_candidates =
             path_candidates(sell_token, buy_token, &self.base_tokens, DEFAULT_MAX_HOPS);
         let all_pairs = path_candidates
