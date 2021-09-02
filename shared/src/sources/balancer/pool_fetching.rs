@@ -56,17 +56,17 @@ impl WeightedPool {
         // use them and fetch the weights from the registry by token address.
         for (i, balance) in balances.into_iter().enumerate() {
             reserves.insert(
-                pool_data.tokens[i],
+                pool_data.common.tokens[i],
                 PoolTokenState {
                     balance,
                     weight: pool_data.normalized_weights[i],
-                    scaling_exponent: pool_data.scaling_exponents[i],
+                    scaling_exponent: pool_data.common.scaling_exponents[i],
                 },
             );
         }
         WeightedPool {
-            pool_id: pool_data.pool_id,
-            pool_address: pool_data.pool_address,
+            pool_id: pool_data.common.pool_id,
+            pool_address: pool_data.common.pool_address,
             swap_fee_percentage,
             reserves,
             paused,

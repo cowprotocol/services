@@ -8,9 +8,12 @@
 //! - ensure that we are using the latest up-to-date pool data by using events
 //!   from the node
 
-use crate::sources::balancer::graph_api::pools_query::{PoolData, StableToken, WeightedToken};
 use crate::{
-    event_handling::MAX_REORG_BLOCK_COUNT, sources::balancer::pool_storage::RegisteredPool,
+    event_handling::MAX_REORG_BLOCK_COUNT,
+    sources::balancer::{
+        graph_api::pools_query::{PoolData, StableToken, WeightedToken},
+        pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
+    },
     subgraph::SubgraphClient,
 };
 use anyhow::{bail, Result};
@@ -84,46 +87,39 @@ impl BalancerSubgraphClient {
     /// Retrieves the list of registered pools from the subgraph.
     pub async fn get_registered_pools(&self) -> Result<RegisteredPools> {
         let block_number = self.get_safe_block().await?;
-
-        let weighted_pools = self
+        let mut weighted_pools_by_factory = HashMap::<H160, Vec<RegisteredWeightedPool>>::new();
+        for pool_data in self
             .query_graph_for::<WeightedToken>(block_number, pools_query::WEIGHTED_POOL_QUERY)
             .await?
-            .into_iter()
-            .map(|pool_data| {
-                (
-                    pool_data.factory,
-                    pool_data.into_registered_pool(block_number),
+        {
+            weighted_pools_by_factory
+                .entry(pool_data.factory.unwrap_or_default())
+                .or_default()
+                .push(
+                    pool_data
+                        .into_weighted_pool(block_number)
+                        .expect("failed conversion to weighted pool"),
                 )
-            });
-        let stable_pools = self
+        }
+        let mut stable_pools_by_factory = HashMap::<H160, Vec<RegisteredStablePool>>::new();
+        for pool_data in self
             .query_graph_for::<StableToken>(block_number, pools_query::STABLE_POOL_QUERY)
             .await?
-            .into_iter()
-            .map(|pool_data| {
-                (
-                    pool_data.factory,
-                    pool_data.into_registered_pool(block_number),
-                )
-            });
-
-        let mut pools_by_factory = HashMap::<H160, Vec<RegisteredPool>>::new();
-        for (factory, pool) in weighted_pools.chain(stable_pools) {
-            let pool = match pool {
-                Ok(pool) => pool,
-                // Technically this should never happen and should only ever be from
-                // a token with more than 18 decimals (not supported by balancer contracts)
-                // https://github.com/balancer-labs/balancer-v2-monorepo/blob/deployments-latest/pkg/pool-utils/contracts/BasePool.sol#L476-L487
-                Err(err) => bail!("failed conversion to registered pool with {}", err),
-            };
-            pools_by_factory
-                .entry(factory.unwrap_or_default())
+        {
+            stable_pools_by_factory
+                .entry(pool_data.factory.unwrap_or_default())
                 .or_default()
-                .push(pool);
+                .push(
+                    pool_data
+                        .into_stable_pool(block_number)
+                        .expect("failed conversion to stable pool"),
+                )
         }
 
         Ok(RegisteredPools {
             fetched_block_number: block_number,
-            pools_by_factory,
+            weighted_pools_by_factory,
+            stable_pools_by_factory,
         })
     }
 
@@ -151,12 +147,14 @@ pub struct RegisteredPools {
     /// weighted pools can be considered up to date.
     pub fetched_block_number: u64,
     /// The registered Pools
-    pub pools_by_factory: HashMap<H160, Vec<RegisteredPool>>,
+    pub weighted_pools_by_factory: HashMap<H160, Vec<RegisteredWeightedPool>>,
+    pub stable_pools_by_factory: HashMap<H160, Vec<RegisteredStablePool>>,
 }
 
 mod pools_query {
+    use crate::sources::balancer::pool_storage::CommonPoolData;
     use crate::sources::balancer::{
-        pool_storage::{RegisteredPool, RegisteredStablePool, RegisteredWeightedPool},
+        pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
     };
     use anyhow::{anyhow, Result};
@@ -233,8 +231,16 @@ mod pools_query {
         pub decimals: u8,
     }
 
+    pub fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
+        // Technically this should never fail for Balancer Pools since tokens
+        // with more than 18 decimals (not supported by balancer contracts)
+        // https://github.com/balancer-labs/balancer-v2-monorepo/blob/deployments-latest/pkg/pool-utils/contracts/BasePool.sol#L476-L487
+        18u8.checked_sub(decimals)
+            .ok_or_else(|| anyhow!("unsupported token with more than 18 decimals"))
+    }
+
     impl PoolData<WeightedToken> {
-        pub fn into_registered_pool(self, block_fetched: u64) -> Result<RegisteredPool> {
+        pub fn into_weighted_pool(self, block_fetched: u64) -> Result<RegisteredWeightedPool> {
             // The Balancer subgraph does not contain information for the block
             // in which a pool was created. Instead, we just use the block that
             // the data was fetched for, as the created block is guaranteed to
@@ -242,33 +248,31 @@ mod pools_query {
             let block_created_upper_bound = block_fetched;
 
             let token_count = self.tokens.len();
-            self.tokens
-                .iter()
-                .try_fold(
-                    RegisteredWeightedPool {
+            self.tokens.iter().try_fold(
+                RegisteredWeightedPool {
+                    common: CommonPoolData {
                         pool_id: self.id,
                         pool_address: self.address,
                         tokens: Vec::with_capacity(token_count),
-                        normalized_weights: Vec::with_capacity(token_count),
                         scaling_exponents: Vec::with_capacity(token_count),
                         block_created: block_created_upper_bound,
                     },
-                    |mut pool, token| {
-                        pool.tokens.push(token.address);
-                        pool.normalized_weights.push(token.weight);
-                        pool.scaling_exponents
-                            .push(18u8.checked_sub(token.decimals).ok_or_else(|| {
-                                anyhow!("unsupported token with more than 18 decimals")
-                            })?);
-                        Ok(pool)
-                    },
-                )
-                .map(RegisteredPool::Weighted)
+                    normalized_weights: Vec::with_capacity(token_count),
+                },
+                |mut pool, token| {
+                    pool.common.tokens.push(token.address);
+                    pool.normalized_weights.push(token.weight);
+                    pool.common
+                        .scaling_exponents
+                        .push(scaling_exponent_from_decimals(token.decimals)?);
+                    Ok(pool)
+                },
+            )
         }
     }
 
     impl PoolData<StableToken> {
-        pub fn into_registered_pool(self, block_fetched: u64) -> Result<RegisteredPool> {
+        pub fn into_stable_pool(self, block_fetched: u64) -> Result<RegisteredStablePool> {
             // The Balancer subgraph does not contain information for the block
             // in which a pool was created. Instead, we just use the block that
             // the data was fetched for, as the created block is guaranteed to
@@ -276,26 +280,24 @@ mod pools_query {
             let block_created_upper_bound = block_fetched;
 
             let token_count = self.tokens.len();
-            self.tokens
-                .iter()
-                .try_fold(
-                    RegisteredStablePool {
+            self.tokens.iter().try_fold(
+                RegisteredStablePool {
+                    common: CommonPoolData {
                         pool_id: self.id,
                         pool_address: self.address,
                         tokens: Vec::with_capacity(token_count),
                         scaling_exponents: Vec::with_capacity(token_count),
                         block_created: block_created_upper_bound,
                     },
-                    |mut pool, token| {
-                        pool.tokens.push(token.address);
-                        pool.scaling_exponents
-                            .push(18u8.checked_sub(token.decimals).ok_or_else(|| {
-                                anyhow!("unsupported token with more than 18 decimals")
-                            })?);
-                        Ok(pool)
-                    },
-                )
-                .map(RegisteredPool::Stable)
+                },
+                |mut pool, token| {
+                    pool.common.tokens.push(token.address);
+                    pool.common
+                        .scaling_exponents
+                        .push(scaling_exponent_from_decimals(token.decimals)?);
+                    Ok(pool)
+                },
+            )
         }
     }
 }
@@ -329,8 +331,11 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::pool_storage::{RegisteredStablePool, RegisteredWeightedPool};
-    use crate::sources::balancer::swap::fixed_point::Bfp;
+    use crate::sources::balancer::{
+        graph_api::pools_query::scaling_exponent_from_decimals,
+        pool_storage::{CommonPoolData, RegisteredStablePool, RegisteredWeightedPool},
+        swap::fixed_point::Bfp,
+    };
     use ethcontract::{H160, H256};
 
     #[test]
@@ -447,6 +452,13 @@ mod tests {
     fn convert_pool_to_registered_pool() {
         // Note that this test also demonstrates unreachable code is indeed unreachable
         use pools_query::*;
+        let common = CommonPoolData {
+            pool_id: H256([2; 32]),
+            pool_address: H160([1; 20]),
+            tokens: vec![H160([2; 20]), H160([3; 20])],
+            scaling_exponents: vec![17, 16],
+            block_created: 42,
+        };
 
         let weighted_pool_data = PoolData {
             id: H256([2; 32]),
@@ -467,18 +479,14 @@ mod tests {
         };
 
         assert_eq!(
-            weighted_pool_data.into_registered_pool(42).unwrap(),
-            RegisteredPool::Weighted(RegisteredWeightedPool {
-                pool_id: H256([2; 32]),
-                pool_address: H160([1; 20]),
-                tokens: vec![H160([2; 20]), H160([3; 20])],
-                scaling_exponents: vec![17, 16],
+            weighted_pool_data.into_weighted_pool(42).unwrap(),
+            RegisteredWeightedPool {
+                common: common.clone(),
                 normalized_weights: vec![
                     Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
                     Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
                 ],
-                block_created: 42,
-            })
+            }
         );
 
         let stable_pool_data = PoolData {
@@ -498,14 +506,8 @@ mod tests {
         };
 
         assert_eq!(
-            stable_pool_data.into_registered_pool(42).unwrap(),
-            RegisteredPool::Stable(RegisteredStablePool {
-                pool_id: H256([2; 32]),
-                pool_address: H160([1; 20]),
-                tokens: vec![H160([2; 20]), H160([3; 20])],
-                scaling_exponents: vec![17, 16],
-                block_created: 42,
-            })
+            stable_pool_data.into_stable_pool(42).unwrap(),
+            RegisteredStablePool { common }
         );
     }
 
@@ -523,7 +525,10 @@ mod tests {
                 weight: "1.337".parse().unwrap(),
             }],
         };
-        assert!(pool.into_registered_pool(2).is_err());
+        assert_eq!(
+            pool.into_weighted_pool(2).unwrap_err().to_string(),
+            "unsupported token with more than 18 decimals"
+        );
     }
 
     #[tokio::test]
@@ -532,9 +537,9 @@ mod tests {
         let client = BalancerSubgraphClient::for_chain(1, Client::new()).unwrap();
         let pools = client.get_registered_pools().await.unwrap();
         println!(
-            "Retrieved {} total pools at block {}",
+            "Retrieved {} total weighted pools at block {}",
             pools
-                .pools_by_factory
+                .weighted_pools_by_factory
                 .iter()
                 .map(|(factory, pool)| {
                     println!("Retrieved {} pools for factory at {}", pool.len(), factory);
@@ -543,5 +548,28 @@ mod tests {
                 .sum::<usize>(),
             pools.fetched_block_number,
         );
+        println!(
+            "Retrieved {} total stable pools at block {}",
+            pools
+                .stable_pools_by_factory
+                .iter()
+                .map(|(factory, pool)| {
+                    println!("Retrieved {} pools for factory at {}", pool.len(), factory);
+                    pool.len()
+                })
+                .sum::<usize>(),
+            pools.fetched_block_number,
+        );
+    }
+
+    #[test]
+    fn scaling_exponent_from_decimals_ok_and_err() {
+        for i in 0..=18 {
+            assert_eq!(scaling_exponent_from_decimals(i).unwrap(), 18u8 - i);
+        }
+        assert_eq!(
+            scaling_exponent_from_decimals(19).unwrap_err().to_string(),
+            "unsupported token with more than 18 decimals"
+        )
     }
 }
