@@ -10,7 +10,7 @@ use model::order::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
-use shared::sources::balancer::pool_fetching::PoolTokenState;
+use shared::sources::balancer::pool_fetching::WeightedTokenState;
 #[cfg(test)]
 use shared::sources::uniswap::pool_fetching::Pool;
 use std::collections::HashMap;
@@ -140,7 +140,7 @@ impl From<Pool> for ConstantProductOrder {
 /// 2 sided weighted product automated market maker with weighted reserves and a trading fee (e.g. BalancerV2)
 #[derive(Clone)]
 pub struct WeightedProductOrder {
-    pub reserves: HashMap<H160, PoolTokenState>,
+    pub reserves: HashMap<H160, WeightedTokenState>,
     pub fee: BigRational,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
@@ -226,6 +226,7 @@ impl Default for WeightedProductOrder {
 pub mod tests {
     use super::*;
     use maplit::hashmap;
+    use shared::sources::balancer::pool_fetching::TokenState;
     use std::sync::Mutex;
 
     pub struct CapturingSettlementHandler<L>
@@ -305,10 +306,12 @@ pub mod tests {
 
     #[test]
     fn weighted_pool_enumerate_token_pairs() {
-        let token_state = PoolTokenState {
-            balance: 0.into(),
+        let token_state = WeightedTokenState {
+            token_state: TokenState {
+                balance: 0.into(),
+                scaling_exponent: 0,
+            },
             weight: "0.25".parse().unwrap(),
-            scaling_exponent: 0,
         };
         let pool = WeightedProductOrder {
             reserves: hashmap! {

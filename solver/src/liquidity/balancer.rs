@@ -153,7 +153,7 @@ mod tests {
     use shared::{
         dummy_contract,
         sources::balancer::pool_fetching::{
-            MockWeightedPoolFetching, PoolTokenState, WeightedPool,
+            MockWeightedPoolFetching, TokenState, WeightedPool, WeightedTokenState,
         },
     };
 
@@ -179,20 +179,26 @@ mod tests {
                 pool_address: H160([0x90; 20]),
                 swap_fee_percentage: "0.002".parse().unwrap(),
                 reserves: hashmap! {
-                    H160([0x70; 20]) => PoolTokenState {
-                        balance: 100.into(),
+                    H160([0x70; 20]) => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 100.into(),
+                            scaling_exponent: 16,
+                        },
                         weight: "0.25".parse().unwrap(),
-                        scaling_exponent: 16,
                     },
-                    H160([0x71; 20]) => PoolTokenState {
-                        balance: 1_000_000.into(),
+                    H160([0x71; 20]) => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 1_000_000.into(),
+                            scaling_exponent: 12,
+                        },
                         weight: "0.25".parse().unwrap(),
-                        scaling_exponent: 12,
                     },
-                    H160([0xb0; 20]) => PoolTokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                    H160([0xb0; 20]) => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 1_000_000_000_000_000_000u128.into(),
+                            scaling_exponent: 0,
+                        },
                         weight: "0.5".parse().unwrap(),
-                        scaling_exponent: 0,
                     },
                 },
                 paused: true,
@@ -202,15 +208,19 @@ mod tests {
                 pool_address: H160([0x91; 20]),
                 swap_fee_percentage: "0.001".parse().unwrap(),
                 reserves: hashmap! {
-                    H160([0x73; 20]) => PoolTokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                    H160([0x73; 20]) => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 1_000_000_000_000_000_000u128.into(),
+                            scaling_exponent: 0,
+                        },
                         weight: "0.5".parse().unwrap(),
-                        scaling_exponent: 0,
                     },
-                    H160([0xb0; 20]) => PoolTokenState {
-                        balance: 1_000_000_000_000_000_000u128.into(),
+                    H160([0xb0; 20]) => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 1_000_000_000_000_000_000u128.into(),
+                            scaling_exponent: 0,
+                        },
                         weight: "0.5".parse().unwrap(),
-                        scaling_exponent: 0,
                     },
                 },
                 paused: true,

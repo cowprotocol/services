@@ -203,7 +203,10 @@ mod tests {
     use model::TokenPair;
     use num::rational::Ratio;
     use num::BigRational;
-    use shared::sources::balancer::{pool_fetching::PoolTokenState, swap::fixed_point::Bfp};
+    use shared::sources::balancer::{
+        pool_fetching::{TokenState, WeightedTokenState},
+        swap::fixed_point::Bfp,
+    };
 
     #[test]
     fn convert_settlement_() {
@@ -235,15 +238,19 @@ mod tests {
         let wp_amm_handler = CapturingSettlementHandler::arc();
         let weighted_product_order = WeightedProductOrder {
             reserves: hashmap! {
-                t0 => PoolTokenState {
-                    balance: U256::from(200),
+                t0 => WeightedTokenState {
+                    token_state: TokenState {
+                        balance: U256::from(200),
+                        scaling_exponent: 4,
+                    },
                     weight: Bfp::from(200_000_000_000_000_000),
-                    scaling_exponent: 4,
                 },
-                t1 => PoolTokenState {
-                    balance: U256::from(800),
+                t1 => WeightedTokenState {
+                    token_state: TokenState {
+                        balance: U256::from(800),
+                        scaling_exponent: 6,
+                    },
                     weight: Bfp::from(800_000_000_000_000_000),
-                    scaling_exponent: 6,
                 }
             },
             fee: BigRational::new(3.into(), 1.into()),
@@ -336,15 +343,19 @@ mod tests {
         let constant_product_orders = hashmap! { 0usize => cpo_0.clone(), 1usize => cpo_1 };
         let weighted_product_order = WeightedProductOrder {
             reserves: hashmap! {
-                token_c => PoolTokenState {
-                    balance: U256::from(1251682293173877359u128),
+                token_c => WeightedTokenState {
+                    token_state: TokenState {
+                        balance: U256::from(1251682293173877359u128),
+                        scaling_exponent: 0,
+                    },
                     weight: Bfp::from(500_000_000_000_000_000),
-                    scaling_exponent: 0,
                 },
-                token_b => PoolTokenState {
-                    balance: U256::from(799086982149629058u128),
+                token_b => WeightedTokenState {
+                    token_state: TokenState {
+                        balance: U256::from(799086982149629058u128),
+                        scaling_exponent: 0,
+                    },
                     weight: Bfp::from(500_000_000_000_000_000),
-                    scaling_exponent: 0,
                 }
             },
             fee: BigRational::new(1.into(), 1000.into()),

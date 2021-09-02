@@ -303,7 +303,10 @@ mod tests {
     use maplit::hashset;
     use model::order::OrderKind;
     use num::rational::Ratio;
-    use shared::{addr, sources::balancer::pool_fetching::PoolTokenState};
+    use shared::{
+        addr,
+        sources::balancer::pool_fetching::{TokenState, WeightedTokenState},
+    };
 
     #[test]
     fn finds_best_route_sell_order() {
@@ -583,15 +586,19 @@ mod tests {
             }),
             Liquidity::WeightedProduct(WeightedProductOrder {
                 reserves: hashmap! {
-                    addr!("c778417e063141139fce010982780140aa0cd5ab") => PoolTokenState {
-                        balance: 799_086_982_149_629_058_u128.into(),
+                    addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 799_086_982_149_629_058_u128.into(),
+                            scaling_exponent: 0,
+                        },
                         weight: "0.5".parse().unwrap(),
-                        scaling_exponent: 0,
                     },
-                    addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => PoolTokenState {
-                        balance: 1_251_682_293_173_877_359_u128.into(),
+                    addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 1_251_682_293_173_877_359_u128.into(),
+                            scaling_exponent: 0,
+                        },
                         weight: "0.5".parse().unwrap(),
-                        scaling_exponent: 0,
                     },
                 },
                 fee: Ratio::new(1.into(), 1000.into()),

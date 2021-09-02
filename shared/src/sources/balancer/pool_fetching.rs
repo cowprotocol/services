@@ -9,7 +9,7 @@ use crate::{
     sources::balancer::{
         event_handler::BalancerPoolRegistry,
         info_fetching::PoolInfoFetcher,
-        pool_cache::{BalancerPoolReserveCache, PoolReserveFetcher, WeightedPoolCacheMetrics},
+        pool_cache::{BalancerPoolCacheMetrics, BalancerPoolReserveCache, PoolReserveFetcher},
         pool_init::DefaultPoolInitializer,
         pool_storage::RegisteredWeightedPool,
         swap::fixed_point::Bfp,
@@ -28,10 +28,15 @@ use std::{
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PoolTokenState {
+pub struct TokenState {
     pub balance: U256,
-    pub weight: Bfp,
     pub scaling_exponent: u8,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WeightedTokenState {
+    pub token_state: TokenState,
+    pub weight: Bfp,
 }
 
 #[derive(Clone, Debug)]
@@ -39,7 +44,7 @@ pub struct WeightedPool {
     pub pool_id: H256,
     pub pool_address: H160,
     pub swap_fee_percentage: Bfp,
-    pub reserves: HashMap<H160, PoolTokenState>,
+    pub reserves: HashMap<H160, WeightedTokenState>,
     pub paused: bool,
 }
 
@@ -57,10 +62,12 @@ impl WeightedPool {
         for (i, balance) in balances.into_iter().enumerate() {
             reserves.insert(
                 pool_data.common.tokens[i],
-                PoolTokenState {
-                    balance,
+                WeightedTokenState {
+                    token_state: TokenState {
+                        balance,
+                        scaling_exponent: pool_data.common.scaling_exponents[i],
+                    },
                     weight: pool_data.normalized_weights[i],
-                    scaling_exponent: pool_data.common.scaling_exponents[i],
                 },
             );
         }
@@ -96,7 +103,7 @@ impl BalancerPoolFetcher {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn WeightedPoolCacheMetrics>,
+        metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
     ) -> Result<Self> {
         let pool_info = Arc::new(PoolInfoFetcher {

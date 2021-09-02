@@ -246,7 +246,7 @@ impl HttpSolver {
                         (
                             *token,
                             PoolTokenData {
-                                balance: state.balance,
+                                balance: state.token_state.balance,
                                 weight: BigRational::from(state.weight),
                             },
                         )

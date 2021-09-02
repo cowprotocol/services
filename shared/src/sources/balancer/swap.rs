@@ -1,7 +1,7 @@
 use crate::{
     baseline_solver::BaselineSolvable,
     conversions::u256_to_big_int,
-    sources::balancer::pool_fetching::{PoolTokenState, WeightedPool},
+    sources::balancer::pool_fetching::{TokenState, WeightedPool, WeightedTokenState},
 };
 use error::Error;
 use ethcontract::{H160, U256};
@@ -16,18 +16,18 @@ mod weighted_math;
 
 const BALANCER_SWAP_GAS_COST: usize = 100_000;
 
-impl PoolTokenState {
+impl WeightedTokenState {
     /// Converts the stored balance into its internal representation as a
     /// Balancer fixed point number.
     fn upscaled_balance(&self) -> Option<Bfp> {
-        self.upscale(self.balance)
+        self.upscale(self.token_state.balance)
     }
 
     /// Scales the input token amount to the value that is used by the Balancer
     /// contract to execute math operations.
     fn upscale(&self, amount: U256) -> Option<Bfp> {
         amount
-            .checked_mul(U256::exp10(self.scaling_exponent as usize))
+            .checked_mul(U256::exp10(self.token_state.scaling_exponent as usize))
             .map(Bfp::from_wei)
     }
 
@@ -36,14 +36,13 @@ impl PoolTokenState {
     fn downscale(&self, amount: Bfp) -> Option<U256> {
         amount
             .as_uint256()
-            .checked_div(U256::exp10(self.scaling_exponent as usize))
+            .checked_div(U256::exp10(self.token_state.scaling_exponent as usize))
     }
 }
 
-/// Weighted pool data as a reference used for computing input and output
-/// amounts.
+/// Weighted pool data as a reference used for computing input and output amounts.
 pub struct WeightedPoolRef<'a> {
-    pub reserves: &'a HashMap<H160, PoolTokenState>,
+    pub reserves: &'a HashMap<H160, WeightedTokenState>,
     pub swap_fee_percentage: Bfp,
 }
 
@@ -148,15 +147,21 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
         // https://balancer.fi/whitepaper.pdf#spot-price
-        let PoolTokenState {
+        let WeightedTokenState {
+            token_state:
+                TokenState {
+                    balance: base_balance,
+                    ..
+                },
             weight: base_weight,
-            balance: base_balance,
-            ..
         } = self.reserves.get(&base_token)?;
-        let PoolTokenState {
+        let WeightedTokenState {
+            token_state:
+                TokenState {
+                    balance: quote_balance,
+                    ..
+                },
             weight: quote_weight,
-            balance: quote_balance,
-            ..
         } = self.reserves.get(&quote_token)?;
         if base_weight.is_zero() || quote_weight.is_zero() {
             return None;
@@ -225,10 +230,12 @@ mod tests {
                 (tokens[i], balances[i], weights[i], scaling_exps[i]);
             reserves.insert(
                 token,
-                PoolTokenState {
-                    balance,
+                WeightedTokenState {
+                    token_state: TokenState {
+                        balance,
+                        scaling_exponent,
+                    },
                     weight,
-                    scaling_exponent,
                 },
             );
         }
