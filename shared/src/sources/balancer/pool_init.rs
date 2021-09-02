@@ -346,10 +346,9 @@ async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::pool_storage::common_pool;
     use crate::sources::balancer::{
         info_fetching::{CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo},
-        pool_storage::{CommonPoolData, RegisteredStablePool},
+        pool_storage::{common_pool, CommonPoolData, RegisteredStablePool},
         swap::fixed_point::Bfp,
     };
     use anyhow::bail;

@@ -19,15 +19,19 @@ use crate::{
     sources::balancer::{
         info_fetching::PoolInfoFetching,
         pool_init::PoolInitializing,
-        pool_storage::{PoolCreated, PoolStorage, RegisteredWeightedPool},
+        pool_storage::{
+            PoolCreated, PoolStorage, PoolType, RegisteredStablePool, RegisteredWeightedPool,
+        },
     },
     Web3,
 };
 use anyhow::{anyhow, Context, Result};
 use contracts::{
+    balancer_v2_stable_pool_factory::{self, Event as StablePoolFactoryEvent},
     balancer_v2_weighted_pool_2_tokens_factory::{self, Event as WeightedPool2TokensFactoryEvent},
     balancer_v2_weighted_pool_factory::{self, Event as WeightedPoolFactoryEvent},
-    BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+    BalancerV2StablePoolFactory, BalancerV2WeightedPool2TokensFactory,
+    BalancerV2WeightedPoolFactory,
 };
 use ethcontract::{Event as EthContractEvent, H256};
 use model::TokenPair;
@@ -44,6 +48,8 @@ pub struct BalancerPoolRegistry {
         Mutex<EventHandler<Web3, BalancerV2WeightedPoolFactoryContract, PoolStorage>>,
     two_token_pool_updater:
         Mutex<EventHandler<Web3, BalancerV2WeightedPool2TokensFactoryContract, PoolStorage>>,
+    stable_pool_updater:
+        Mutex<EventHandler<Web3, BalancerV2StablePoolFactoryContract, PoolStorage>>,
 }
 
 impl BalancerPoolRegistry {
@@ -56,65 +62,101 @@ impl BalancerPoolRegistry {
     ) -> Result<Self> {
         let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
         let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
+        let stable_pool_factory = BalancerV2StablePoolFactory::deployed(&web3).await?;
 
         let initial_pools = pool_initializer.initialize_pools().await?;
 
         let weighted_pool_updater = Mutex::new(EventHandler::new(
             web3.clone(),
             BalancerV2WeightedPoolFactoryContract(weighted_pool_factory),
-            PoolStorage::new(initial_pools.weighted_pools, pool_info.clone()),
+            PoolStorage::new(initial_pools.weighted_pools, vec![], pool_info.clone()),
             Some(initial_pools.fetched_block_number),
         ));
         let two_token_pool_updater = Mutex::new(EventHandler::new(
             web3.clone(),
             BalancerV2WeightedPool2TokensFactoryContract(two_token_pool_factory),
-            PoolStorage::new(initial_pools.weighted_2token_pools, pool_info),
+            PoolStorage::new(
+                initial_pools.weighted_2token_pools,
+                vec![],
+                pool_info.clone(),
+            ),
+            Some(initial_pools.fetched_block_number),
+        ));
+
+        let stable_pool_updater = Mutex::new(EventHandler::new(
+            web3.clone(),
+            BalancerV2StablePoolFactoryContract(stable_pool_factory),
+            PoolStorage::new(vec![], initial_pools.stable_pools, pool_info),
             Some(initial_pools.fetched_block_number),
         ));
 
         Ok(Self {
             weighted_pool_updater,
             two_token_pool_updater,
+            stable_pool_updater,
         })
     }
 
-    /// Retrieves `RegisteredWeightedPool`s from each Pool Store in the Registry and
+    /// Retrieves `RegisteredPool`s from each Pool Store in the Registry and
     /// returns the merged result.
     /// Primarily intended to be used by `BalancerPoolFetcher`.
     pub async fn get_pool_ids_containing_token_pairs(
         &self,
         token_pairs: HashSet<TokenPair>,
     ) -> HashSet<H256> {
-        let pool_set_1 = self
-            .weighted_pool_updater
-            .lock()
-            .await
-            .store
-            .ids_for_pools_containing_token_pairs(token_pairs.clone());
-        let pool_set_2 = self
-            .two_token_pool_updater
-            .lock()
-            .await
-            .store
-            .ids_for_pools_containing_token_pairs(token_pairs);
-        pool_set_1.union(&pool_set_2).copied().collect()
+        let mut pool_ids = HashSet::new();
+        pool_ids.extend(
+            self.weighted_pool_updater
+                .lock()
+                .await
+                .store
+                .ids_for_pools_containing_token_pairs(token_pairs.clone()),
+        );
+        pool_ids.extend(
+            self.two_token_pool_updater
+                .lock()
+                .await
+                .store
+                .ids_for_pools_containing_token_pairs(token_pairs.clone()),
+        );
+        pool_ids.extend(
+            self.stable_pool_updater
+                .lock()
+                .await
+                .store
+                .ids_for_pools_containing_token_pairs(token_pairs),
+        );
+        pool_ids
     }
 
-    pub async fn get_pools(&self, pool_ids: &HashSet<H256>) -> Vec<RegisteredWeightedPool> {
-        let mut pool_set_1 = self
-            .weighted_pool_updater
+    pub async fn get_weighted_pools(
+        &self,
+        pool_ids: &HashSet<H256>,
+    ) -> Vec<RegisteredWeightedPool> {
+        let mut pools: Vec<RegisteredWeightedPool> = Vec::new();
+        pools.extend(
+            self.weighted_pool_updater
+                .lock()
+                .await
+                .store
+                .weighted_pools_for(pool_ids),
+        );
+        pools.extend(
+            self.two_token_pool_updater
+                .lock()
+                .await
+                .store
+                .weighted_pools_for(pool_ids),
+        );
+        pools
+    }
+
+    pub async fn get_stable_pools(&self, pool_ids: &HashSet<H256>) -> Vec<RegisteredStablePool> {
+        self.stable_pool_updater
             .lock()
             .await
             .store
-            .pools_for(pool_ids);
-        let pool_set_2 = self
-            .two_token_pool_updater
-            .lock()
-            .await
-            .store
-            .pools_for(pool_ids);
-        pool_set_1.extend(pool_set_2);
-        pool_set_1
+            .stable_pools_for(pool_ids)
     }
 }
 
@@ -180,12 +222,44 @@ impl EventStoring<WeightedPool2TokensFactoryEvent> for PoolStorage {
     }
 }
 
+#[async_trait::async_trait]
+impl EventStoring<StablePoolFactoryEvent> for PoolStorage {
+    async fn replace_events(
+        &mut self,
+        events: Vec<EthContractEvent<StablePoolFactoryEvent>>,
+        range: RangeInclusive<BlockNumber>,
+    ) -> Result<()> {
+        self.replace_events_inner(range.start().to_u64(), convert_stable_pool_created(events)?)
+            .await
+    }
+
+    async fn append_events(
+        &mut self,
+        events: Vec<EthContractEvent<StablePoolFactoryEvent>>,
+    ) -> Result<()> {
+        tracing::info!(
+            "Inserting {} Balancer Stable Pools from events",
+            events.len()
+        );
+        self.insert_events(convert_stable_pool_created(events)?)
+            .await
+    }
+
+    async fn last_event_block(&self) -> Result<u64> {
+        Ok(self.last_event_block())
+    }
+}
+
 impl_event_retrieving! {
     pub BalancerV2WeightedPoolFactoryContract for balancer_v2_weighted_pool_factory
 }
 
 impl_event_retrieving! {
     pub BalancerV2WeightedPool2TokensFactoryContract for balancer_v2_weighted_pool_2_tokens_factory
+}
+
+impl_event_retrieving! {
+    pub BalancerV2StablePoolFactoryContract for balancer_v2_stable_pool_factory
 }
 
 #[async_trait::async_trait]
@@ -220,6 +294,7 @@ fn convert_weighted_pool_created(
 ) -> Result<Vec<(EventIndex, PoolCreated)>> {
     contract_to_pool_creation(events, |event| match event {
         WeightedPoolFactoryEvent::PoolCreated(creation) => PoolCreated {
+            pool_type: PoolType::Weighted,
             pool_address: creation.pool,
         },
     })
@@ -230,6 +305,18 @@ fn convert_two_token_pool_created(
 ) -> Result<Vec<(EventIndex, PoolCreated)>> {
     contract_to_pool_creation(events, |event| match event {
         WeightedPool2TokensFactoryEvent::PoolCreated(creation) => PoolCreated {
+            pool_type: PoolType::Weighted,
+            pool_address: creation.pool,
+        },
+    })
+}
+
+fn convert_stable_pool_created(
+    events: Vec<EthContractEvent<StablePoolFactoryEvent>>,
+) -> Result<Vec<(EventIndex, PoolCreated)>> {
+    contract_to_pool_creation(events, |event| match event {
+        StablePoolFactoryEvent::PoolCreated(creation) => PoolCreated {
+            pool_type: PoolType::Stable,
             pool_address: creation.pool,
         },
     })

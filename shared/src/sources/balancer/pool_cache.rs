@@ -59,7 +59,7 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
         let block = BlockId::Number(at_block.into());
         let futures = self
             .pool_registry
-            .get_pools(&pool_ids)
+            .get_weighted_pools(&pool_ids)
             .await
             .into_iter()
             .map(|registered_pool| {
