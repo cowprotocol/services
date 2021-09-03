@@ -1,4 +1,7 @@
-use crate::{liquidity::Liquidity, settlement::Settlement};
+use crate::{
+    liquidity::{LimitOrder, Liquidity},
+    settlement::Settlement,
+};
 use anyhow::Result;
 use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
@@ -63,7 +66,11 @@ pub struct Auction {
     /// service restarts.
     pub id: u64,
 
-    /// The collection of all liquidity that the solver can use.
+    /// The GPv2 orders to match.
+    pub orders: Vec<LimitOrder>,
+
+    /// The baseline on-chain liquidity that can be used by the solvers for
+    /// settling orders.
     pub liquidity: Vec<Liquidity>,
 
     /// The current gas price estimate.
@@ -86,6 +93,7 @@ impl Default for Auction {
         let never = Instant::now() + Duration::from_secs(SECONDS_IN_A_YEAR);
         Self {
             id: Default::default(),
+            orders: Default::default(),
             liquidity: Default::default(),
             gas_price: Default::default(),
             deadline: never,
@@ -264,17 +272,8 @@ impl SellVolumeFilteringSolver {
         }
     }
 
-    async fn filter_liquidity(&self, orders: Vec<Liquidity>) -> Vec<Liquidity> {
-        let sell_tokens: Vec<_> = orders
-            .iter()
-            .filter_map(|order| {
-                if let Liquidity::Limit(order) = order {
-                    Some(order.sell_token)
-                } else {
-                    None
-                }
-            })
-            .collect();
+    async fn filter_orders(&self, orders: Vec<LimitOrder>) -> Vec<LimitOrder> {
+        let sell_tokens: Vec<_> = orders.iter().map(|order| order.sell_token).collect();
         let prices: HashMap<_, _> = self
             .price_estimator
             .estimate_prices(&sell_tokens, self.denominator_token)
@@ -293,17 +292,13 @@ impl SellVolumeFilteringSolver {
         orders
             .into_iter()
             .filter(|order| {
-                if let Liquidity::Limit(order) = order {
-                    prices
-                        .get(&order.sell_token)
-                        .map(|price| {
-                            price * order.sell_amount.to_big_rational()
-                                > self.min_value.to_big_rational()
-                        })
-                        .unwrap_or(false)
-                } else {
-                    true
-                }
+                prices
+                    .get(&order.sell_token)
+                    .map(|price| {
+                        price * order.sell_amount.to_big_rational()
+                            > self.min_value.to_big_rational()
+                    })
+                    .unwrap_or(false)
             })
             .collect()
     }
@@ -312,11 +307,11 @@ impl SellVolumeFilteringSolver {
 #[async_trait::async_trait]
 impl Solver for SellVolumeFilteringSolver {
     async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
-        let original_length = auction.liquidity.len();
-        auction.liquidity = self.filter_liquidity(auction.liquidity).await;
+        let original_length = auction.orders.len();
+        auction.orders = self.filter_orders(auction.orders).await;
         tracing::info!(
             "Filtered {} orders because on insufficient volume",
-            original_length - auction.liquidity.len()
+            original_length - auction.orders.len()
         );
         self.inner.solve(auction).await
     }
@@ -359,26 +354,24 @@ mod tests {
     #[tokio::test]
     async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {
         let sell_token = H160::from_low_u64_be(1);
-        let liquidity = vec![
-            // Only filter limit orders
-            Liquidity::ConstantProduct(Default::default()),
+        let orders = vec![
             // Orders with high enough amount
-            Liquidity::Limit(LimitOrder {
+            LimitOrder {
                 sell_amount: 100_000.into(),
                 sell_token,
                 ..Default::default()
-            }),
-            Liquidity::Limit(LimitOrder {
+            },
+            LimitOrder {
                 sell_amount: 500_000.into(),
                 sell_token,
                 ..Default::default()
-            }),
+            },
             // Order with small amount
-            Liquidity::Limit(LimitOrder {
+            LimitOrder {
                 sell_amount: 100.into(),
                 sell_token,
                 ..Default::default()
-            }),
+            },
         ];
 
         let price_estimator = Arc::new(FakePriceEstimator(BigRational::from_integer(42.into())));
@@ -388,17 +381,17 @@ mod tests {
             denominator_token: H160::zero(),
             min_value: 400_000.into(),
         };
-        assert_eq!(solver.filter_liquidity(liquidity).await.len(), 3);
+        assert_eq!(solver.filter_orders(orders).await.len(), 2);
     }
 
     #[tokio::test]
     async fn test_filtering_solver_removes_orders_without_price_estimate() {
         let sell_token = H160::from_low_u64_be(1);
-        let liquidity = vec![Liquidity::Limit(LimitOrder {
+        let orders = vec![LimitOrder {
             sell_amount: 100_000.into(),
             sell_token,
             ..Default::default()
-        })];
+        }];
 
         let price_estimator = Arc::new(FailingPriceEstimator());
         let solver = SellVolumeFilteringSolver {
@@ -407,6 +400,6 @@ mod tests {
             denominator_token: H160::zero(),
             min_value: 0.into(),
         };
-        assert_eq!(solver.filter_liquidity(liquidity).await.len(), 0);
+        assert_eq!(solver.filter_orders(orders).await.len(), 0);
     }
 }

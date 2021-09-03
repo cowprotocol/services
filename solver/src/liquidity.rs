@@ -20,7 +20,6 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
 pub enum Liquidity {
-    Limit(LimitOrder),
     ConstantProduct(ConstantProductOrder),
     WeightedProduct(WeightedProductOrder),
 }

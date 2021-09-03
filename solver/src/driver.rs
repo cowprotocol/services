@@ -1,9 +1,9 @@
 pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
+use crate::liquidity::LimitOrder;
 use crate::solver::{Auction, SettlementWithSolver, Solvers};
 use crate::{
-    liquidity::Liquidity,
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
     settlement::Settlement,
@@ -29,6 +29,7 @@ use shared::{
 };
 use std::{
     collections::{HashMap, HashSet},
+    iter::FromIterator as _,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -365,20 +366,23 @@ impl Driver {
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
+        let orders = self
+            .liquidity_collector
+            .get_orders(&self.inflight_trades)
+            .await?;
         let liquidity = self
             .liquidity_collector
-            .get_liquidity(
-                Block::Number(current_block_during_liquidity_fetch),
-                &self.inflight_trades,
-            )
+            .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
             .await?;
 
         let estimated_prices =
-            collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &liquidity)
+            collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &orders)
                 .await;
         tracing::debug!("estimated prices: {:?}", estimated_prices);
 
-        let liquidity = liquidity_with_price(liquidity, &estimated_prices);
+        let orders = orders_with_price_estimates(orders, &estimated_prices);
+
+        self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
 
         let gas_price_wei = self
@@ -392,6 +396,7 @@ impl Driver {
 
         let auction = Auction {
             id: self.next_auction_id(),
+            orders,
             liquidity,
             gas_price: gas_price_wei,
             deadline: Instant::now() + self.solver_time_limit,
@@ -503,19 +508,17 @@ impl Driver {
 pub async fn collect_estimated_prices(
     price_estimator: &dyn PriceEstimating,
     native_token: H160,
-    liquidity: &[Liquidity],
+    orders: &[LimitOrder],
 ) -> HashMap<H160, BigRational> {
     // Computes set of traded tokens (limit orders only).
     // NOTE: The native token is always added.
 
-    let mut tokens = HashSet::new();
-    for liquid in liquidity {
-        if let Liquidity::Limit(limit_order) = liquid {
-            tokens.insert(limit_order.sell_token);
-            tokens.insert(limit_order.buy_token);
-        }
-    }
-    let tokens = tokens.drain().collect::<Vec<_>>();
+    let tokens = Vec::from_iter(
+        orders
+            .iter()
+            .flat_map(|order| [order.sell_token, order.buy_token])
+            .collect::<HashSet<_>>(),
+    );
 
     // For ranking purposes it doesn't matter how the external price vector is scaled,
     // but native_token is used here anyway for better logging/debugging.
@@ -547,19 +550,13 @@ pub async fn collect_estimated_prices(
 }
 
 // Filter limit orders for which we don't have price estimates as they cannot be considered for the objective criterion
-fn liquidity_with_price(
-    liquidity: Vec<Liquidity>,
+fn orders_with_price_estimates(
+    orders: Vec<LimitOrder>,
     prices: &HashMap<H160, BigRational>,
-) -> Vec<Liquidity> {
-    let (liquidity, removed_orders): (Vec<_>, Vec<_>) =
-        liquidity
-            .into_iter()
-            .partition(|liquidity| match liquidity {
-                Liquidity::Limit(limit_order) => [limit_order.sell_token, limit_order.buy_token]
-                    .iter()
-                    .all(|token| prices.contains_key(token)),
-                Liquidity::ConstantProduct(_) | Liquidity::WeightedProduct(_) => true,
-            });
+) -> Vec<LimitOrder> {
+    let (orders, removed_orders): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
+        prices.contains_key(&order.sell_token) && prices.contains_key(&order.buy_token)
+    });
     if !removed_orders.is_empty() {
         tracing::debug!(
             "pruned {} orders: {:?}",
@@ -567,7 +564,7 @@ fn liquidity_with_price(
             removed_orders,
         );
     }
-    liquidity
+    orders
 }
 
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
@@ -582,15 +579,12 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
 mod tests {
     use super::*;
     use crate::{
-        liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder},
+        liquidity::{tests::CapturingSettlementHandler, LimitOrder},
         settlement::Trade,
     };
     use maplit::hashmap;
-    use model::{
-        order::{Order, OrderCreation, OrderKind},
-        TokenPair,
-    };
-    use num::{rational::Ratio, traits::One};
+    use model::order::{Order, OrderCreation, OrderKind};
+    use num::traits::One as _;
     use shared::{
         price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator},
         token_list::Token,
@@ -604,26 +598,18 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
 
-        let liquidity = vec![
-            Liquidity::Limit(LimitOrder {
-                sell_amount: 100_000.into(),
-                buy_amount: 100_000.into(),
-                sell_token,
-                buy_token,
-                kind: OrderKind::Buy,
-                partially_fillable: false,
-                fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "0".into(),
-            }),
-            Liquidity::ConstantProduct(ConstantProductOrder {
-                tokens: TokenPair::new(buy_token, native_token).unwrap(),
-                reserves: (1_000_000, 1_000_000),
-                fee: Ratio::new(3, 1000),
-                settlement_handling: CapturingSettlementHandler::arc(),
-            }),
-        ];
-        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        let orders = vec![LimitOrder {
+            sell_amount: 100_000.into(),
+            buy_amount: 100_000.into(),
+            sell_token,
+            buy_token,
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            fee_amount: Default::default(),
+            settlement_handling: CapturingSettlementHandler::arc(),
+            id: "0".into(),
+        }];
+        let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
         assert_eq!(prices.len(), 4);
         assert!(prices.contains_key(&sell_token));
         assert!(prices.contains_key(&buy_token));
@@ -637,7 +623,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
 
-        let liquidity = vec![Liquidity::Limit(LimitOrder {
+        let orders = vec![LimitOrder {
             sell_amount: 100_000.into(),
             buy_amount: 100_000.into(),
             sell_token,
@@ -647,8 +633,8 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
-        })];
-        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        }];
+        let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
         assert_eq!(prices.len(), 2);
     }
 
@@ -659,7 +645,7 @@ mod tests {
         let native_token = H160::zero();
         let sell_token = H160::from_low_u64_be(1);
 
-        let liquidity = vec![Liquidity::Limit(LimitOrder {
+        let liquidity = vec![LimitOrder {
             sell_amount: 100_000.into(),
             buy_amount: 100_000.into(),
             sell_token,
@@ -669,7 +655,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
-        })];
+        }];
         let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
         assert_eq!(prices.len(), 3);
         assert!(prices.contains_key(&sell_token));
@@ -686,24 +672,20 @@ mod tests {
             H160::from_low_u64_be(3),
         ];
         let prices = hashmap! {tokens[0] => BigRational::one(), tokens[1] => BigRational::one()};
-        let order = |sell_token, buy_token| {
-            Liquidity::Limit(LimitOrder {
-                sell_token,
-                buy_token,
-                ..Default::default()
-            })
+        let order = |sell_token, buy_token| LimitOrder {
+            sell_token,
+            buy_token,
+            ..Default::default()
         };
-        let liquidity = vec![
+        let orders = vec![
             order(tokens[0], tokens[1]),
             order(tokens[0], tokens[2]),
             order(tokens[2], tokens[0]),
             order(tokens[2], tokens[3]),
         ];
-        let filtered = liquidity_with_price(liquidity, &prices);
+        let filtered = orders_with_price_estimates(orders, &prices);
         assert_eq!(filtered.len(), 1);
-        assert!(
-            matches!(&filtered[0], Liquidity::Limit(order) if order.sell_token == tokens[0] && order.buy_token == tokens[1])
-        );
+        assert!(filtered[0].sell_token == tokens[0] && filtered[0].buy_token == tokens[1]);
     }
 
     #[test]

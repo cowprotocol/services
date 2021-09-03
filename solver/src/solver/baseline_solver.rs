@@ -32,8 +32,13 @@ pub struct BaselineSolver {
 
 #[async_trait::async_trait]
 impl Solver for BaselineSolver {
-    async fn solve(&self, Auction { liquidity, .. }: Auction) -> Result<Vec<Settlement>> {
-        Ok(self.solve(liquidity))
+    async fn solve(
+        &self,
+        Auction {
+            orders, liquidity, ..
+        }: Auction,
+    ) -> Result<Vec<Settlement>> {
+        Ok(self.solve(orders, liquidity))
     }
 
     fn account(&self) -> &Account {
@@ -141,30 +146,29 @@ impl BaselineSolver {
         }
     }
 
-    fn solve(&self, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
-        let (user_orders, amm_map) = liquidity.into_iter().fold(
-            (Vec::new(), HashMap::<_, Vec<_>>::new()),
-            |(mut user_orders, mut amm_map), liquidity| {
-                match liquidity {
-                    Liquidity::Limit(order) => user_orders.push(order),
-                    Liquidity::ConstantProduct(order) => {
-                        amm_map.entry(order.tokens).or_default().push(Amm {
-                            tokens: order.tokens,
-                            order: AmmOrder::ConstantProduct(order),
-                        });
-                    }
-                    Liquidity::WeightedProduct(order) => {
-                        for tokens in order.token_pairs() {
-                            amm_map.entry(tokens).or_default().push(Amm {
-                                tokens,
-                                order: AmmOrder::WeightedProduct(order.clone()),
+    fn solve(&self, user_orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
+        let amm_map =
+            liquidity
+                .into_iter()
+                .fold(HashMap::<_, Vec<_>>::new(), |mut amm_map, liquidity| {
+                    match liquidity {
+                        Liquidity::ConstantProduct(order) => {
+                            amm_map.entry(order.tokens).or_default().push(Amm {
+                                tokens: order.tokens,
+                                order: AmmOrder::ConstantProduct(order),
                             });
                         }
+                        Liquidity::WeightedProduct(order) => {
+                            for tokens in order.token_pairs() {
+                                amm_map.entry(tokens).or_default().push(Amm {
+                                    tokens,
+                                    order: AmmOrder::WeightedProduct(order.clone()),
+                                });
+                            }
+                        }
                     }
-                }
-                (user_orders, amm_map)
-            },
-        );
+                    amm_map
+                });
 
         // We assume that individual settlements do not move the amm pools significantly when
         // returning multiple settlements.
@@ -229,8 +233,8 @@ impl BaselineSolver {
     }
 
     #[cfg(test)]
-    fn must_solve(&self, liquidity: Vec<Liquidity>) -> Settlement {
-        self.solve(liquidity).into_iter().next().unwrap()
+    fn must_solve(&self, orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Settlement {
+        self.solve(orders, liquidity).into_iter().next().unwrap()
     }
 }
 
@@ -370,12 +374,10 @@ mod tests {
                 settlement_handling: amm_handler[2].clone(),
             },
         ];
-
-        let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
-        liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
+        let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let solver = BaselineSolver::new(account(), hashset! { native_token });
-        let result = solver.must_solve(liquidity);
+        let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
             &hashmap! {
@@ -475,12 +477,10 @@ mod tests {
                 settlement_handling: amm_handler[2].clone(),
             },
         ];
-
-        let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
-        liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
+        let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let solver = BaselineSolver::new(account(), hashset! { native_token });
-        let result = solver.must_solve(liquidity);
+        let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
             &hashmap! {
@@ -544,29 +544,27 @@ mod tests {
                 settlement_handling: CapturingSettlementHandler::arc(),
             },
         ];
-
-        let mut liquidity: Vec<_> = orders.iter().cloned().map(Liquidity::Limit).collect();
-        liquidity.extend(amms.iter().cloned().map(Liquidity::ConstantProduct));
+        let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let solver = BaselineSolver::new(account(), hashset! {});
-        assert_eq!(solver.solve(liquidity).len(), 1);
+        assert_eq!(solver.solve(orders, liquidity).len(), 1);
     }
 
     #[test]
     fn does_not_panic_when_building_solution() {
         // Regression test for https://github.com/gnosis/gp-v2-services/issues/838
+        let order = LimitOrder {
+            sell_token: addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"),
+            buy_token: addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
+            sell_amount: 1_741_103_528_769_588_955_u128.into(),
+            buy_amount: 500_000_000_000_000_000_000_u128.into(),
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            fee_amount: 3_429_706_374_800_940_u128.into(),
+            settlement_handling: CapturingSettlementHandler::arc(),
+            id: "Crash Bandicoot".to_string(),
+        };
         let liquidity = vec![
-            Liquidity::Limit(LimitOrder {
-                sell_token: addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"),
-                buy_token: addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
-                sell_amount: 1_741_103_528_769_588_955_u128.into(),
-                buy_amount: 500_000_000_000_000_000_000_u128.into(),
-                kind: OrderKind::Buy,
-                partially_fillable: false,
-                fee_amount: 3_429_706_374_800_940_u128.into(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                id: "Crash Bandicoot".to_string(),
-            }),
             Liquidity::ConstantProduct(ConstantProductOrder {
                 tokens: TokenPair::new(
                     addr!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"),
@@ -603,6 +601,6 @@ mod tests {
             account(),
             hashset![addr!("c778417e063141139fce010982780140aa0cd5ab")],
         );
-        assert_eq!(solver.solve(liquidity).len(), 0);
+        assert_eq!(solver.solve(vec![order], liquidity).len(), 0);
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    liquidity::{LimitOrder, Liquidity},
+    liquidity::LimitOrder,
     settlement::Settlement,
     solver::{Auction, Solver},
 };
@@ -41,21 +41,15 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
     async fn solve(
         &self,
         Auction {
-            liquidity,
+            mut orders,
             deadline,
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
-        let mut orders = liquidity
-            .into_iter()
-            .filter_map(|liquidity| match liquidity {
-                Liquidity::Limit(order) => Some(order),
-                _ => None,
-            })
-            .collect::<VecDeque<_>>();
         // Randomize which orders we start with to prevent us getting stuck on bad orders.
-        orders.make_contiguous().shuffle(&mut rand::thread_rng());
+        orders.shuffle(&mut rand::thread_rng());
 
+        let mut orders = orders.into_iter().collect::<VecDeque<_>>();
         let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
@@ -131,20 +125,20 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
         };
-        let liquidity = vec![
-            Liquidity::Limit(LimitOrder {
+        let orders = vec![
+            LimitOrder {
                 id: 0.to_string(),
                 ..order.clone()
-            }),
-            Liquidity::Limit(LimitOrder {
+            },
+            LimitOrder {
                 id: 1.to_string(),
                 ..order.clone()
-            }),
+            },
         ];
 
         let settlements = solver
             .solve(Auction {
-                liquidity,
+                orders,
                 ..Default::default()
             })
             .await
@@ -176,7 +170,7 @@ mod tests {
 
         let solver: SingleOrderSolver<_> = inner.into();
         let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = Liquidity::Limit(LimitOrder {
+        let order = LimitOrder {
             id: Default::default(),
             sell_token: Default::default(),
             buy_token: Default::default(),
@@ -186,10 +180,10 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
-        });
+        };
         solver
             .solve(Auction {
-                liquidity: vec![order],
+                orders: vec![order],
                 ..Default::default()
             })
             .await
@@ -209,7 +203,7 @@ mod tests {
 
         let solver: SingleOrderSolver<_> = inner.into();
         let handler = Arc::new(CapturingSettlementHandler::default());
-        let order = Liquidity::Limit(LimitOrder {
+        let order = LimitOrder {
             id: Default::default(),
             sell_token: Default::default(),
             buy_token: Default::default(),
@@ -219,10 +213,10 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
-        });
+        };
         solver
             .solve(Auction {
-                liquidity: vec![order],
+                orders: vec![order],
                 ..Default::default()
             })
             .await
