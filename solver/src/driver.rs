@@ -269,6 +269,8 @@ impl Driver {
         };
 
         for (((solver, settlement), _previous_error), result) in errors.iter().zip(simulations) {
+            self.metrics
+                .settlement_simulation_failed_on_latest(solver.name());
             if let Err(error_at_earlier_block) = result {
                 tracing::warn!(
                     "{} settlement simulation failed at submission and block {}:\n{:?}",
@@ -280,9 +282,6 @@ impl Driver {
                 tracing::warn!("settlement failure for: \n{:#?}", settlement);
 
                 self.metrics.settlement_simulation_failed(solver.name());
-            } else {
-                self.metrics
-                    .settlement_simulation_failed_on_latest(solver.name());
             }
         }
     }
