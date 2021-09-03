@@ -16,7 +16,7 @@ use ethcontract::{H160, H256};
 use shared::{
     baseline_solver::{relevant_token_pairs, DEFAULT_MAX_HOPS},
     recent_block_cache::Block,
-    sources::balancer::pool_fetching::WeightedPoolFetching,
+    sources::balancer::pool_fetching::BalancerPoolFetching,
     Web3,
 };
 use std::{collections::HashSet, sync::Arc};
@@ -37,7 +37,7 @@ impl Contracts {
 /// A liquidity provider for Balancer V2 weighted pools.
 pub struct BalancerV2Liquidity {
     contracts: Arc<Contracts>,
-    pool_fetcher: Arc<dyn WeightedPoolFetching>,
+    pool_fetcher: Arc<dyn BalancerPoolFetching>,
     allowance_manager: Box<dyn AllowanceManaging>,
     base_tokens: HashSet<H160>,
 }
@@ -45,12 +45,12 @@ pub struct BalancerV2Liquidity {
 impl BalancerV2Liquidity {
     pub async fn new(
         web3: Web3,
-        pool_fetcher: Arc<dyn WeightedPoolFetching>,
+        pool_fetcher: Arc<dyn BalancerPoolFetching>,
         base_tokens: HashSet<H160>,
     ) -> Result<Self> {
         let contracts = Contracts::new(&web3)
             .await
-            .context("missing Balancer V2 contract deployement")?;
+            .context("missing Balancer V2 contract deployment")?;
         let allowance_manager = AllowanceManager::new(web3, contracts.settlement.address());
 
         Ok(Self {
@@ -81,11 +81,7 @@ impl BalancerV2Liquidity {
             .collect();
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
-        let tokens = pools
-            .iter()
-            .flat_map(|pool| pool.reserves.keys())
-            .copied()
-            .collect();
+        let tokens = pools.iter().flat_map(|pool| pool.reserve_keys()).collect();
         let allowances = Arc::new(
             self.allowance_manager
                 .get_allowances(tokens, self.contracts.vault.address())
@@ -94,17 +90,20 @@ impl BalancerV2Liquidity {
 
         let liquidity = pools
             .into_iter()
-            .map(|pool| WeightedProductOrder {
-                reserves: pool.reserves,
-                fee: pool.swap_fee_percentage.into(),
-                settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.pool_id,
-                    contracts: self.contracts.clone(),
-                    allowances: allowances.clone(),
-                }),
+            .filter_map(|pool| {
+                let weighted_pool = pool.try_into_weighted().ok()?;
+                Some(WeightedProductOrder {
+                    reserves: weighted_pool.reserves,
+                    fee: weighted_pool.swap_fee_percentage.into(),
+                    settlement_handling: Arc::new(SettlementHandler {
+                        pool_id: weighted_pool.pool_id,
+                        contracts: self.contracts.clone(),
+                        allowances: allowances.clone(),
+                    }),
+                })
             })
             .collect();
-
+        // TODO(bh2smith) - fetch stable pools in following PR.
         Ok(liquidity)
     }
 }
@@ -153,9 +152,11 @@ mod tests {
     use shared::{
         dummy_contract,
         sources::balancer::pool_fetching::{
-            MockWeightedPoolFetching, TokenState, WeightedPool, WeightedTokenState,
+            BalancerPool, BalancerPoolState, MockBalancerPoolFetching, TokenState, WeightedPool,
+            WeightedTokenState,
         },
     };
+    use std::collections::HashMap;
 
     fn dummy_contracts() -> Arc<Contracts> {
         Arc::new(Contracts {
@@ -170,11 +171,11 @@ mod tests {
 
     #[tokio::test]
     async fn fetches_liquidity() {
-        let mut pool_fetcher = MockWeightedPoolFetching::new();
+        let mut pool_fetcher = MockBalancerPoolFetching::new();
         let mut allowance_manager = MockAllowanceManaging::new();
 
         let pools = vec![
-            WeightedPool {
+            BalancerPool::Weighted(WeightedPool {
                 pool_id: H256([0x90; 32]),
                 pool_address: H160([0x90; 20]),
                 swap_fee_percentage: "0.002".parse().unwrap(),
@@ -202,8 +203,8 @@ mod tests {
                     },
                 },
                 paused: true,
-            },
-            WeightedPool {
+            }),
+            BalancerPool::Weighted(WeightedPool {
                 pool_id: H256([0x91; 32]),
                 pool_address: H160([0x91; 20]),
                 swap_fee_percentage: "0.001".parse().unwrap(),
@@ -224,7 +225,7 @@ mod tests {
                     },
                 },
                 paused: true,
-            },
+            }),
         ];
 
         // Fetches pools for all relevant tokens, in this example, there is no
@@ -292,13 +293,32 @@ mod tests {
             .unwrap();
 
         assert_eq!(liquidity.len(), 2);
+        let a: HashMap<H160, BalancerPoolState> = liquidity[0]
+            .clone()
+            .reserves
+            .into_iter()
+            .map(|(key, val)| (key, BalancerPoolState::Weighted(val)))
+            .collect();
         assert_eq!(
-            (&liquidity[0].reserves, &liquidity[0].fee),
-            (&pools[0].reserves, &BigRational::new(2.into(), 1000.into())),
+            (&a, &liquidity[0].fee),
+            (
+                &pools[0].reserves(),
+                &BigRational::new(2.into(), 1000.into())
+            ),
         );
+
+        let b: HashMap<H160, BalancerPoolState> = liquidity[1]
+            .clone()
+            .reserves
+            .into_iter()
+            .map(|(key, val)| (key, BalancerPoolState::Weighted(val)))
+            .collect();
         assert_eq!(
-            (&liquidity[1].reserves, &liquidity[1].fee),
-            (&pools[1].reserves, &BigRational::new(1.into(), 1000.into())),
+            (&b, &liquidity[1].fee),
+            (
+                &pools[1].reserves(),
+                &BigRational::new(1.into(), 1000.into())
+            ),
         );
     }
 
