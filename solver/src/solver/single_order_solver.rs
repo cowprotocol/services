@@ -1,15 +1,12 @@
 use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
-    solver::Solver,
+    solver::{Auction, Solver},
 };
 use anyhow::{Error, Result};
 use ethcontract::Account;
 use rand::prelude::SliceRandom;
-use std::{
-    collections::VecDeque,
-    time::{Duration, Instant},
-};
+use std::{collections::VecDeque, time::Duration};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -43,10 +40,11 @@ impl<I: SingleOrderSolving> From<I> for SingleOrderSolver<I> {
 impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver<I> {
     async fn solve(
         &self,
-        _id: u64,
-        liquidity: Vec<Liquidity>,
-        _gas_price: f64,
-        deadline: Instant,
+        Auction {
+            liquidity,
+            deadline,
+            ..
+        }: Auction,
     ) -> Result<Vec<Settlement>> {
         let mut orders = liquidity
             .into_iter()
@@ -133,7 +131,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
         };
-        let orders = vec![
+        let liquidity = vec![
             Liquidity::Limit(LimitOrder {
                 id: 0.to_string(),
                 ..order.clone()
@@ -145,7 +143,10 @@ mod tests {
         ];
 
         let settlements = solver
-            .solve(0, orders, 0., Instant::now() + Duration::from_secs(10))
+            .solve(Auction {
+                liquidity,
+                ..Default::default()
+            })
             .await
             .unwrap();
         assert_eq!(settlements.len(), 2);
@@ -187,7 +188,10 @@ mod tests {
             settlement_handling: handler.clone(),
         });
         solver
-            .solve(0, vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .solve(Auction {
+                liquidity: vec![order],
+                ..Default::default()
+            })
             .await
             .unwrap();
     }
@@ -217,7 +221,10 @@ mod tests {
             settlement_handling: handler.clone(),
         });
         solver
-            .solve(0, vec![order], 0., Instant::now() + Duration::from_secs(10))
+            .solve(Auction {
+                liquidity: vec![order],
+                ..Default::default()
+            })
             .await
             .unwrap();
     }

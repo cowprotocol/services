@@ -7,7 +7,7 @@ use crate::{
     liquidity::{ConstantProductOrder, LimitOrder, Liquidity, WeightedProductOrder},
     settlement::Settlement,
     settlement_submission::retry::is_transaction_failure,
-    solver::Solver,
+    solver::{Auction, Solver},
 };
 use ::model::order::OrderKind;
 use anyhow::{anyhow, ensure, Context, Result};
@@ -512,10 +512,12 @@ fn remove_orders_without_native_connection(
 impl Solver for HttpSolver {
     async fn solve(
         &self,
-        id: u64,
-        liquidity: Vec<Liquidity>,
-        gas_price: f64,
-        deadline: Instant,
+        Auction {
+            id,
+            liquidity,
+            gas_price,
+            deadline,
+        }: Auction,
     ) -> Result<Vec<Settlement>> {
         let has_limit_orders = liquidity.iter().any(|l| matches!(l, Liquidity::Limit(_)));
         if !has_limit_orders {

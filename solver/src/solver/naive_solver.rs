@@ -3,12 +3,12 @@ mod multi_order_solver;
 use crate::{
     liquidity::{ConstantProductOrder, LimitOrder, Liquidity},
     settlement::Settlement,
-    solver::Solver,
+    solver::{Auction, Solver},
 };
 use anyhow::Result;
 use ethcontract::Account;
 use model::TokenPair;
-use std::{collections::HashMap, time::Instant};
+use std::collections::HashMap;
 
 pub struct NaiveSolver {
     account: Account,
@@ -22,13 +22,7 @@ impl NaiveSolver {
 
 #[async_trait::async_trait]
 impl Solver for NaiveSolver {
-    async fn solve(
-        &self,
-        _id: u64,
-        liquidity: Vec<Liquidity>,
-        _gas_price: f64,
-        _deadline: Instant,
-    ) -> Result<Vec<Settlement>> {
+    async fn solve(&self, Auction { liquidity, .. }: Auction) -> Result<Vec<Settlement>> {
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
         let limit_orders = liquidity
             .into_iter()

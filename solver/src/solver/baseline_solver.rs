@@ -3,7 +3,7 @@ use crate::{
         AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity, WeightedProductOrder,
     },
     settlement::Settlement,
-    solver::Solver,
+    solver::{Auction, Solver},
 };
 use anyhow::Result;
 use ethcontract::{Account, H160, U256};
@@ -23,7 +23,6 @@ use shared::{
 use std::{
     collections::{HashMap, HashSet},
     convert::TryFrom as _,
-    time::Instant,
 };
 
 pub struct BaselineSolver {
@@ -33,13 +32,7 @@ pub struct BaselineSolver {
 
 #[async_trait::async_trait]
 impl Solver for BaselineSolver {
-    async fn solve(
-        &self,
-        _id: u64,
-        liquidity: Vec<Liquidity>,
-        _gas_price: f64,
-        _deadline: Instant,
-    ) -> Result<Vec<Settlement>> {
+    async fn solve(&self, Auction { liquidity, .. }: Auction) -> Result<Vec<Settlement>> {
         Ok(self.solve(liquidity))
     }
 

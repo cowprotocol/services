@@ -1,7 +1,7 @@
 pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
-use crate::solver::{SettlementWithSolver, Solvers};
+use crate::solver::{Auction, SettlementWithSolver, Solvers};
 use crate::{
     liquidity::Liquidity,
     liquidity_collector::LiquidityCollector,
@@ -112,25 +112,20 @@ impl Driver {
     // Returns solver name and result.
     async fn run_solvers(
         &self,
-        liquidity: Vec<Liquidity>,
-        gas_price: f64,
+        auction: Auction,
     ) -> Vec<(Arc<dyn Solver>, Result<Vec<Settlement>>)> {
-        let deadline = Instant::now() + self.solver_time_limit;
-        let id = self.solve_id;
         join_all(self.solvers.iter().map(|solver| {
-            let liquidity = liquidity.clone();
+            let auction = auction.clone();
             let metrics = &self.metrics;
             async move {
                 let start_time = Instant::now();
-                let result = match tokio::time::timeout_at(
-                    deadline.into(),
-                    solver.solve(id, liquidity, gas_price, deadline),
-                )
-                .await
-                {
-                    Ok(inner) => inner,
-                    Err(_timeout) => Err(anyhow!("solver timed out")),
-                };
+                let result =
+                    match tokio::time::timeout_at(auction.deadline.into(), solver.solve(auction))
+                        .await
+                    {
+                        Ok(inner) => inner,
+                        Err(_timeout) => Err(anyhow!("solver timed out")),
+                    };
                 metrics.settlement_computed(solver.name(), start_time);
                 (solver.clone(), result)
             }
@@ -395,8 +390,15 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
-        let run_solver_results = self.run_solvers(liquidity, gas_price_wei).await;
-        self.solve_id += 1;
+        let auction = Auction {
+            id: self.next_auction_id(),
+            liquidity,
+            gas_price: gas_price_wei,
+            deadline: Instant::now() + self.solver_time_limit,
+        };
+        tracing::debug!("solving auction ID {}", auction.id);
+
+        let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
             let name = solver.name();
 
@@ -489,6 +491,12 @@ impl Driver {
             .await;
 
         Ok(())
+    }
+
+    fn next_auction_id(&mut self) -> u64 {
+        let id = self.solve_id;
+        self.solve_id += 1;
+        id
     }
 }
 

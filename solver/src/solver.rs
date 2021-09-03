@@ -15,7 +15,7 @@ use single_order_solver::SingleOrderSolver;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 use structopt::clap::arg_enum;
 use zeroex_solver::ZeroExSolver;
@@ -42,13 +42,7 @@ pub trait Solver: 'static {
     /// order) so that they can be merged by the driver at its leisure.
     ///
     /// id identifies this instance of solving by the driver in which it invokes all solvers.
-    async fn solve(
-        &self,
-        id: u64,
-        orders: Vec<Liquidity>,
-        gas_price: f64,
-        deadline: Instant,
-    ) -> Result<Vec<Settlement>>;
+    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>>;
 
     /// Returns solver's account that should be used to submit settlements.
     fn account(&self) -> &Account;
@@ -57,6 +51,46 @@ pub trait Solver: 'static {
     ///
     /// This method is used for logging and metrics collection.
     fn name(&self) -> &'static str;
+}
+
+/// A batch auction for a solver to produce a settlement for.
+#[derive(Clone, Debug)]
+pub struct Auction {
+    /// An ID that idetifies a batch within a `Driver` isntance.
+    ///
+    /// Note that this ID is not unique across multiple instances of drivers,
+    /// in particular it cannot be used to uniquely identify batches across
+    /// service restarts.
+    pub id: u64,
+
+    /// The collection of all liquidity that the solver can use.
+    pub liquidity: Vec<Liquidity>,
+
+    /// The current gas price estimate.
+    pub gas_price: f64,
+
+    /// The deadline for computing a solution.
+    ///
+    /// This can be used internally for the solver to decide when to stop
+    /// trying to optimize the settlement. The caller is expected poll the solve
+    /// future at most until the deadline is reach, at which point the future
+    /// will be dropped.
+    pub deadline: Instant,
+}
+
+impl Default for Auction {
+    fn default() -> Self {
+        const SECONDS_IN_A_YEAR: u64 = 31_622_400;
+
+        // Not actually never, but good enough...
+        let never = Instant::now() + Duration::from_secs(SECONDS_IN_A_YEAR);
+        Self {
+            id: Default::default(),
+            liquidity: Default::default(),
+            gas_price: Default::default(),
+            deadline: never,
+        }
+    }
 }
 
 /// A vector of solvers.
@@ -277,22 +311,14 @@ impl SellVolumeFilteringSolver {
 
 #[async_trait::async_trait]
 impl Solver for SellVolumeFilteringSolver {
-    async fn solve(
-        &self,
-        id: u64,
-        orders: Vec<Liquidity>,
-        gas_price: f64,
-        deadline: Instant,
-    ) -> Result<Vec<Settlement>> {
-        let original_length = orders.len();
-        let filtered_liquidity = self.filter_liquidity(orders).await;
+    async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
+        let original_length = auction.liquidity.len();
+        auction.liquidity = self.filter_liquidity(auction.liquidity).await;
         tracing::info!(
             "Filtered {} orders because on insufficient volume",
-            original_length - filtered_liquidity.len()
+            original_length - auction.liquidity.len()
         );
-        self.inner
-            .solve(id, filtered_liquidity, gas_price, deadline)
-            .await
+        self.inner.solve(auction).await
     }
 
     fn account(&self) -> &Account {
@@ -317,13 +343,7 @@ mod tests {
     pub struct NoopSolver();
     #[async_trait::async_trait]
     impl Solver for NoopSolver {
-        async fn solve(
-            &self,
-            _: u64,
-            _: Vec<Liquidity>,
-            _: f64,
-            _: Instant,
-        ) -> Result<Vec<Settlement>> {
+        async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
             Ok(Vec::new())
         }
 
