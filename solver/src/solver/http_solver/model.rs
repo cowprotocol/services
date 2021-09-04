@@ -54,11 +54,6 @@ impl AmmModel {
                 .values()
                 .filter(|&data| data.balance.gt(&U256::zero()))
                 .count(),
-            AmmParameters::Stable(parameters) => parameters
-                .reserves
-                .values()
-                .filter(|&balance| balance.gt(&U256::zero()))
-                .count(),
         };
         // HTTP solver requires at least two non-zero reserves.
         non_zero_balance_count >= 2
@@ -70,7 +65,6 @@ impl AmmModel {
 pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
     WeightedProduct(WeightedProductPoolParameters),
-    Stable(StablePoolParameters),
 }
 
 #[serde_as]
@@ -81,7 +75,7 @@ pub struct ConstantProductPoolParameters {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct WeightedPoolTokenData {
+pub struct PoolTokenData {
     #[serde(with = "u256_decimal")]
     pub balance: U256,
     #[serde(with = "ratio_as_decimal")]
@@ -90,16 +84,7 @@ pub struct WeightedPoolTokenData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeightedProductPoolParameters {
-    pub reserves: HashMap<H160, WeightedPoolTokenData>,
-}
-
-#[serde_as]
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct StablePoolParameters {
-    #[serde_as(as = "HashMap<_, DecimalU256>")]
-    pub reserves: HashMap<H160, U256>,
-    #[serde(with = "u256_decimal")]
-    pub amplification_parameter: U256,
+    pub reserves: HashMap<H160, PoolTokenData>,
 }
 
 #[serde_as]
@@ -294,11 +279,11 @@ mod tests {
         let weighted_product_pool_model = AmmModel {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
                 reserves: hashmap! {
-                    sell_token => WeightedPoolTokenData {
+                    sell_token => PoolTokenData {
                         balance: U256::from(808),
                         weight: BigRational::new(2.into(), 10.into()),
                     },
-                    buy_token => WeightedPoolTokenData {
+                    buy_token => PoolTokenData {
                         balance: U256::from(64),
                         weight: BigRational::new(8.into(), 10.into()),
                     }
