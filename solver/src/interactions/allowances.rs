@@ -87,7 +87,8 @@ impl Allowances {
 /// An ERC20 approval interaction.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Approval {
-    /// The existing allowance is sufficient, so no additional `approve` is required.
+    /// The exisisting allowance is sufficient, so no additional `approve` is
+    /// required.
     AllowanceSufficient,
 
     /// An ERC20 approve is needed. This interaction always approves U256::MAX
