@@ -93,7 +93,7 @@ impl BadTokenDetecting for TraceCallDetector {
 
 impl TraceCallDetector {
     pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
-        let (take_from, amount) = match self.find_largest_pool_owning_token(token).await? {
+        let (pool, amount) = match self.find_largest_pool_owning_token(token).await? {
             Some((address, balance)) => {
                 tracing::debug!(
                     "testing token {:?} with pool {:?} amount {}",
@@ -111,7 +111,7 @@ impl TraceCallDetector {
         // Note that gas use can depend on the recipient because for the standard implementation
         // sending to an address that does not have any balance yet (implicitly 0) causes an
         // allocation.
-        let request = self.create_trace_request(token, amount, take_from);
+        let request = self.create_trace_request(token, amount, pool);
         let traces = trace_many::trace_many(request, &self.web3)
             .await
             .context("failed to trace for bad token detection")?;
@@ -182,20 +182,22 @@ impl TraceCallDetector {
             .public_address()
     }
 
-    fn create_trace_request(&self, token: H160, amount: U256, take_from: H160) -> Vec<CallRequest> {
+    fn create_trace_request(&self, token: H160, amount: U256, pool: H160) -> Vec<CallRequest> {
         let instance = ERC20::at(&self.web3, token);
 
         let mut requests = Vec::new();
 
+        // pool -> settlement
         // 0
         let tx = instance.balance_of(self.settlement_contract).m.tx;
         requests.push(call_request(None, token, tx));
         // 1
         let tx = instance.transfer(self.settlement_contract, amount).tx;
-        requests.push(call_request(Some(take_from), token, tx));
+        requests.push(call_request(Some(pool), token, tx));
         // 2
         let tx = instance.balance_of(self.settlement_contract).m.tx;
         requests.push(call_request(None, token, tx));
+        // settlement -> arbitrary recipient
         // 3
         let recipient = Self::arbitrary_recipient();
         let tx = instance.balance_of(recipient).m.tx;
@@ -209,8 +211,18 @@ impl TraceCallDetector {
         // 6
         let tx = instance.balance_of(recipient).m.tx;
         requests.push(call_request(None, token, tx));
-
+        // arbitrary recipient -> pool
         // 7
+        let tx = instance.balance_of(pool).m.tx;
+        requests.push(call_request(None, token, tx));
+        // 8
+        let tx = instance.transfer(pool, amount).tx;
+        requests.push(call_request(Some(recipient), token, tx));
+        // 9
+        let tx = instance.balance_of(pool).m.tx;
+        requests.push(call_request(None, token, tx));
+
+        // 10
         let tx = instance.approve(recipient, U256::MAX).tx;
         requests.push(call_request(Some(self.settlement_contract), token, tx));
 
@@ -218,67 +230,127 @@ impl TraceCallDetector {
     }
 
     fn handle_response(traces: &[BlockTrace], amount: U256) -> Result<TokenQuality> {
-        ensure!(traces.len() == 8, "unexpected number of traces");
+        ensure!(traces.len() == 11, "unexpected number of traces");
 
-        let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
+        let gas_to_settlement = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "failed transaction to settlement: {}",
+                    reason
+                )))
+            }
         };
-        let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
+        let gas_to_recipient = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "failed transaction to settlement: {}",
+                    reason
+                )))
+            }
+        };
+        let gas_to_pool = match ensure_transaction_ok_and_get_gas(&traces[8])? {
+            Ok(gas) => gas,
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "failed transaction to pool: {}",
+                    reason
+                )))
+            }
         };
 
-        let balance_before_in = match decode_u256(&traces[0]) {
+        let bal_settlement_initial = match decode_u256(&traces[0]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
-        let balance_after_in = match decode_u256(&traces[2]) {
+        let bal_settlement_after_transfer_from_pool = match decode_u256(&traces[2]) {
             Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode middle settlement balance")),
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode settlement balance after transfer from pool",
+                ))
+            }
         };
-        let balance_after_out = match decode_u256(&traces[5]) {
+        let balance_settlement_after_transfer_to_recipient = match decode_u256(&traces[5]) {
             Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
-        };
-
-        let balance_recpient_before = match decode_u256(&traces[3]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
-        };
-
-        let balance_recipient_after = match decode_u256(&traces[6]) {
-            Ok(balance) => balance,
-            Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance after")),
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode settlement balance after transfer to recipient",
+                ))
+            }
         };
 
-        tracing::debug!(%amount, %balance_before_in, %balance_after_in, %balance_after_out);
+        let balance_recipient_before_transfer_from_settlement = match decode_u256(&traces[3]) {
+            Ok(balance) => balance,
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode recipient balance before transfer from settlement",
+                ))
+            }
+        };
+
+        let balance_recipient_after_transfer_from_settlement = match decode_u256(&traces[6]) {
+            Ok(balance) => balance,
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode recipient balance after transfer from settlement",
+                ))
+            }
+        };
+
+        let balance_pool_before_transfer_from_recipient = match decode_u256(&traces[7]) {
+            Ok(balance) => balance,
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode pool balance before transfer from recipient",
+                ))
+            }
+        };
+
+        let balance_pool_after_transfer_from_recipient = match decode_u256(&traces[9]) {
+            Ok(balance) => balance,
+            Err(_) => {
+                return Ok(TokenQuality::bad(
+                    "can't decode pool balance after transfer from recipient",
+                ))
+            }
+        };
+
+        tracing::debug!(%amount, %bal_settlement_initial, %bal_settlement_after_transfer_from_pool, %balance_settlement_after_transfer_to_recipient, %balance_pool_after_transfer_from_recipient);
 
         // todo: Maybe do >= checks in case token transfer for whatever reason grants user more than
         // an amount transferred like an anti fee.
 
-        if balance_after_in != balance_before_in + amount {
+        if bal_settlement_after_transfer_from_pool != bal_settlement_initial + amount {
             return Ok(TokenQuality::bad(
-                "balance after in transfer does not match",
+                "balance after settlement in transfer does not match",
             ));
         }
-        if balance_after_out != balance_before_in {
+        if balance_settlement_after_transfer_to_recipient != bal_settlement_initial {
             return Ok(TokenQuality::bad(
-                "balance after out transfer does not match",
+                "balance after settlement out transfer does not match",
             ));
         }
-        if balance_recpient_before + amount != balance_recipient_after {
+        if balance_recipient_before_transfer_from_settlement + amount
+            != balance_recipient_after_transfer_from_settlement
+        {
             return Ok(TokenQuality::bad("balance of recipient does not match"));
         }
+        if balance_pool_before_transfer_from_recipient + amount
+            != balance_pool_after_transfer_from_recipient
+        {
+            return Ok(TokenQuality::bad("balance of pool does not match"));
+        }
 
-        if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[7])? {
+        if let Err(err) = ensure_transaction_ok_and_get_gas(&traces[10])? {
             return Ok(TokenQuality::bad(format!(
                 "can't approve max amount: {}",
                 err
             )));
         }
 
-        let _gas_per_transfer = (gas_in + gas_out) / 2;
+        let _gas_per_transfer = (gas_to_settlement + gas_to_recipient + gas_to_pool) / 3;
         Ok(TokenQuality::Good)
     }
 }
@@ -344,6 +416,7 @@ mod tests {
     #[test]
     fn handle_response_ok() {
         let traces = &[
+            // 0
             BlockTrace {
                 output: encode_u256(0.into()),
                 trace: None,
@@ -351,6 +424,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 1
             BlockTrace {
                 output: Default::default(),
                 trace: Some(vec![TransactionTrace {
@@ -375,6 +449,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 2
             BlockTrace {
                 output: encode_u256(1.into()),
                 trace: None,
@@ -382,6 +457,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 3
             BlockTrace {
                 output: encode_u256(0.into()),
                 trace: None,
@@ -389,6 +465,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 4
             BlockTrace {
                 output: Default::default(),
                 trace: Some(vec![TransactionTrace {
@@ -413,6 +490,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 5
             BlockTrace {
                 output: encode_u256(0.into()),
                 trace: None,
@@ -420,6 +498,7 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 6
             BlockTrace {
                 output: encode_u256(1.into()),
                 trace: None,
@@ -427,6 +506,48 @@ mod tests {
                 state_diff: None,
                 transaction_hash: None,
             },
+            // 7
+            BlockTrace {
+                output: encode_u256(0.into()),
+                trace: None,
+                vm_trace: None,
+                state_diff: None,
+                transaction_hash: None,
+            },
+            // 8
+            BlockTrace {
+                output: Default::default(),
+                trace: Some(vec![TransactionTrace {
+                    trace_address: Vec::new(),
+                    subtraces: 0,
+                    action: Action::Call(Call {
+                        from: H160::zero(),
+                        to: H160::zero(),
+                        value: 0.into(),
+                        gas: 0.into(),
+                        input: Bytes(Vec::new()),
+                        call_type: CallType::None,
+                    }),
+                    action_type: ActionType::Call,
+                    result: Some(Res::Call(CallResult {
+                        gas_used: 5.into(),
+                        output: Bytes(Vec::new()),
+                    })),
+                    error: None,
+                }]),
+                vm_trace: None,
+                state_diff: None,
+                transaction_hash: None,
+            },
+            // 9
+            BlockTrace {
+                output: encode_u256(1.into()),
+                trace: None,
+                vm_trace: None,
+                state_diff: None,
+                transaction_hash: None,
+            },
+            // 10
             BlockTrace {
                 output: Default::default(),
                 trace: Some(vec![TransactionTrace {
@@ -577,16 +698,15 @@ mod tests {
             H160(hex!("2129ff6000b95a973236020bcd2b2006b0d8e019")),
             // Should be denied because can't approve more than balance
             H160(hex!("decade1c6bf2cd9fb89afad73e4a519c867adcf5")),
+            // Should be denied because can't transfer to pool
+            // note: affected pool is WETH/token, and that pool was set as the
+            // burn address for that pool. This might change in the future
+            H160(hex!("cfbd04b3cef2cf1527f143a49e5dc1e19941d254")),
         ];
 
         // Of the deny listed tokens the following are detected as good:
-        // - token 0xc12d1c73ee7dc3615ba4e37e4abfdbddfa38907e
-        //   Has some kind of "freezing" mechanism where some balance is unusuable. We don't seem to
-        //   trigger it.
         // - 0x910524678c0b1b23ffb9285a81f99c29c11cbaed
         //   Has some kind of time lock that we don't encounter.
-        // - 0xed5e5ab076ae60bdb9c49ac255553e65426a2167
-        //   Not sure why deny listed.
         // - 0x1337def18c680af1f9f45cbcab6309562975b1dd
         //   Not sure why deny listed, maybe the callback that I didn't follow in the SC code.
         // - 0x4f9254c83eb525f9fcf346490bbb3ed28a81c667
