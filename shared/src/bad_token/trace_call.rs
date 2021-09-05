@@ -322,6 +322,9 @@ impl TraceCallDetector {
             %balance_settlement_initial,
             %balance_settlement_after_transfer_from_pool,
             %balance_settlement_after_transfer_to_recipient,
+            %balance_recipient_before_transfer_from_settlement,
+            %balance_recipient_after_transfer_from_settlement,
+            %balance_pool_before_transfer_from_recipient,
             %balance_pool_after_transfer_from_recipient
         );
 
