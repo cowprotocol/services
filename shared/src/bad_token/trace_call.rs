@@ -236,7 +236,7 @@ impl TraceCallDetector {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "failed transaction to settlement: {}",
+                    "failed transfer to settlement: {}",
                     reason
                 )))
             }
@@ -245,7 +245,7 @@ impl TraceCallDetector {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "failed transaction to settlement: {}",
+                    "failed transfer to settlement: {}",
                     reason
                 )))
             }
@@ -254,7 +254,7 @@ impl TraceCallDetector {
             Ok(gas) => gas,
             Err(reason) => {
                 return Ok(TokenQuality::bad(format!(
-                    "failed transaction to pool: {}",
+                    "failed transfer to pool: {}",
                     reason
                 )))
             }
