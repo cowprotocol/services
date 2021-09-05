@@ -260,11 +260,11 @@ impl TraceCallDetector {
             }
         };
 
-        let bal_settlement_initial = match decode_u256(&traces[0]) {
+        let balance_settlement_initial = match decode_u256(&traces[0]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode initial settlement balance")),
         };
-        let bal_settlement_after_transfer_from_pool = match decode_u256(&traces[2]) {
+        let balance_settlement_after_transfer_from_pool = match decode_u256(&traces[2]) {
             Ok(balance) => balance,
             Err(_) => {
                 return Ok(TokenQuality::bad(
@@ -317,17 +317,23 @@ impl TraceCallDetector {
             }
         };
 
-        tracing::debug!(%amount, %bal_settlement_initial, %bal_settlement_after_transfer_from_pool, %balance_settlement_after_transfer_to_recipient, %balance_pool_after_transfer_from_recipient);
+        tracing::debug!(
+            %amount,
+            %balance_settlement_initial,
+            %balance_settlement_after_transfer_from_pool,
+            %balance_settlement_after_transfer_to_recipient,
+            %balance_pool_after_transfer_from_recipient
+        );
 
         // todo: Maybe do >= checks in case token transfer for whatever reason grants user more than
         // an amount transferred like an anti fee.
 
-        if bal_settlement_after_transfer_from_pool != bal_settlement_initial + amount {
+        if balance_settlement_after_transfer_from_pool != balance_settlement_initial + amount {
             return Ok(TokenQuality::bad(
                 "balance after settlement in transfer does not match",
             ));
         }
-        if balance_settlement_after_transfer_to_recipient != bal_settlement_initial {
+        if balance_settlement_after_transfer_to_recipient != balance_settlement_initial {
             return Ok(TokenQuality::bad(
                 "balance after settlement out transfer does not match",
             ));
