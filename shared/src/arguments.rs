@@ -92,14 +92,14 @@ pub struct Arguments {
     )]
     pub block_stream_poll_interval_seconds: Duration,
 
-    /// Default is one atom of native_token (i.e. price estimation uses spot prices).
+    /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
+    // that small pools do not influence the prices.
     #[structopt(
         long,
         env,
-        default_value = "1",
         parse(try_from_str = U256::from_dec_str)
     )]
-    pub amount_to_estimate_prices_with: U256,
+    pub amount_to_estimate_prices_with: Option<U256>,
 }
 
 fn parse_fee_factor(s: &str) -> Result<f64> {
@@ -119,4 +119,14 @@ pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     let in_gwei: f64 = s.parse()?;
     Ok(in_gwei * 10e9)
+}
+
+pub fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
+    match network_id {
+        // Mainnet, Rinkeby
+        "1" | "4" => Some(10u128.pow(18).into()),
+        // Xdai
+        "100" => Some(10u128.pow(21).into()),
+        _ => None,
+    }
 }
