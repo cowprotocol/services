@@ -81,8 +81,8 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
         Ok(AddOrderResult::TransferEthToContract) => (
             super::error(
                 "TransferEthToContract",
-                "Setting receiver to a smart contract wallet when buying Ether \
-                 is currently not supported",
+                "Sending Ether to a smart contract wallets is currently not \
+                 supported",
             ),
             StatusCode::BAD_REQUEST,
         ),
