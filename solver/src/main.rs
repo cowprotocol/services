@@ -204,6 +204,7 @@ arg_enum! {
     pub enum TransactionStrategyArg {
         PublicMempool,
         ArcherNetwork,
+        DryRun,
     }
 }
 
@@ -425,6 +426,7 @@ async fn main() {
                 ),
                 max_confirm_time: args.max_archer_submission_seconds,
             },
+            TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         },
     };
     let mut driver = Driver::new(

@@ -1,5 +1,6 @@
 pub mod archer_api;
 pub mod archer_settlement;
+mod dry_run;
 mod gas_price_stream;
 pub mod public_mempool;
 pub mod retry;
@@ -49,6 +50,7 @@ pub enum TransactionStrategy {
         archer_api: ArcherApi,
         max_confirm_time: Duration,
     },
+    DryRun,
 }
 
 impl SolutionSubmitter {
@@ -101,6 +103,9 @@ impl SolutionSubmitter {
                     Ok(None) => Err(anyhow!("transaction did not get mined in time")),
                     Err(err) => Err(err),
                 }
+            }
+            TransactionStrategy::DryRun => {
+                dry_run::log_settlement(account, &self.contract, settlement).await
             }
         }
     }
