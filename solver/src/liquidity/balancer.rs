@@ -1,5 +1,6 @@
 //! Module for providing Balancer V2 pool liquidity to the solvers.
 
+use crate::liquidity::{BalancerOrder, StablePoolOrder};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances},
@@ -67,7 +68,7 @@ impl BalancerV2Liquidity {
         &self,
         orders: &[LimitOrder],
         block: Block,
-    ) -> Result<Vec<WeightedProductOrder>> {
+    ) -> Result<Vec<BalancerOrder>> {
         let pairs = orders
             .iter()
             .flat_map(|order| {
@@ -91,19 +92,33 @@ impl BalancerV2Liquidity {
         let liquidity = pools
             .into_iter()
             .filter_map(|pool| {
-                let weighted_pool = pool.try_into_weighted().ok()?;
-                Some(WeightedProductOrder {
-                    reserves: weighted_pool.reserves,
-                    fee: weighted_pool.swap_fee_percentage.into(),
-                    settlement_handling: Arc::new(SettlementHandler {
-                        pool_id: weighted_pool.pool_id,
-                        contracts: self.contracts.clone(),
-                        allowances: allowances.clone(),
-                    }),
-                })
+                if pool.is_weighted() {
+                    let weighted_pool = pool.try_into_weighted().unwrap();
+                    Some(BalancerOrder::Weighted(WeightedProductOrder {
+                        reserves: weighted_pool.reserves,
+                        fee: weighted_pool.swap_fee_percentage.into(),
+                        settlement_handling: Arc::new(SettlementHandler {
+                            pool_id: weighted_pool.pool_id,
+                            contracts: self.contracts.clone(),
+                            allowances: allowances.clone(),
+                        }),
+                    }))
+                } else {
+                    // This branch covers the case of Stable and "Other" PoolType
+                    let stable_pool = pool.try_into_stable().ok()?;
+                    Some(BalancerOrder::Stable(StablePoolOrder {
+                        reserves: stable_pool.reserves,
+                        fee: stable_pool.swap_fee_percentage.into(),
+                        amplification_parameter: stable_pool.amplification_parameter,
+                        settlement_handling: Arc::new(SettlementHandler {
+                            pool_id: stable_pool.pool_id,
+                            contracts: self.contracts.clone(),
+                            allowances: allowances.clone(),
+                        }),
+                    }))
+                }
             })
             .collect();
-        // TODO(bh2smith) - fetch stable pools in following PR.
         Ok(liquidity)
     }
 }
@@ -116,6 +131,22 @@ struct SettlementHandler {
 
 impl SettlementHandling<WeightedProductOrder> for SettlementHandler {
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
+        self.inner_encode(execution, encoder)
+    }
+}
+
+impl SettlementHandling<StablePoolOrder> for SettlementHandler {
+    fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
+        self.inner_encode(execution, encoder)
+    }
+}
+
+impl SettlementHandler {
+    fn inner_encode(
+        &self,
+        execution: AmmOrderExecution,
+        encoder: &mut SettlementEncoder,
+    ) -> Result<()> {
         let (asset_in, amount_in) = execution.input;
         let (asset_out, amount_out) = execution.output;
 
@@ -128,7 +159,7 @@ impl SettlementHandling<WeightedProductOrder> for SettlementHandler {
             asset_out,
             amount_out,
             amount_in_max: slippage::amount_plus_max_slippage(amount_in),
-            // Balancer pools allow passing additonal user data in order to
+            // Balancer pools allow passing additional user data in order to
             // control pool behaviour for swaps. That being said, weighted pools
             // do not seem to make use of this at the moment so leave it empty.
             user_data: Default::default(),
@@ -141,10 +172,8 @@ impl SettlementHandling<WeightedProductOrder> for SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        interactions::allowances::{Approval, MockAllowanceManaging},
-        settlement::Interaction,
-    };
+    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
+    use crate::settlement::Interaction;
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
@@ -152,11 +181,10 @@ mod tests {
     use shared::{
         dummy_contract,
         sources::balancer::pool_fetching::{
-            BalancerPool, BalancerPoolState, MockBalancerPoolFetching, TokenState, WeightedPool,
+            BalancerPool, MockBalancerPoolFetching, StablePool, TokenState, WeightedPool,
             WeightedTokenState,
         },
     };
-    use std::collections::HashMap;
 
     fn dummy_contracts() -> Arc<Contracts> {
         Arc::new(Contracts {
@@ -226,6 +254,23 @@ mod tests {
                 },
                 paused: true,
             }),
+            BalancerPool::Stable(StablePool {
+                pool_id: H256([0x92; 32]),
+                pool_address: H160([0x92; 20]),
+                swap_fee_percentage: "0.002".parse().unwrap(),
+                amplification_parameter: BigRational::from_integer(1.into()),
+                reserves: hashmap! {
+                    H160([0x73; 20]) => TokenState {
+                            balance: 1_000_000_000_000_000_000u128.into(),
+                            scaling_exponent: 0,
+                        },
+                    H160([0xb0; 20]) => TokenState {
+                            balance: 1_000_000_000_000_000_000u128.into(),
+                            scaling_exponent: 0,
+                        }
+                },
+                paused: true,
+            }),
         ];
 
         // Fetches pools for all relevant tokens, in this example, there is no
@@ -292,32 +337,29 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(liquidity.len(), 2);
-        let a: HashMap<H160, BalancerPoolState> = liquidity[0]
-            .clone()
-            .reserves
-            .into_iter()
-            .map(|(key, val)| (key, BalancerPoolState::Weighted(val)))
-            .collect();
+        assert_eq!(liquidity.len(), 3);
+        let a = liquidity[0].clone().try_as_weighted().unwrap().reserves;
         assert_eq!(
-            (&a, &liquidity[0].fee),
+            (&a, &liquidity[0].fee()),
             (
-                &pools[0].reserves(),
+                &pools[0].try_into_weighted().unwrap().reserves,
                 &BigRational::new(2.into(), 1000.into())
             ),
         );
-
-        let b: HashMap<H160, BalancerPoolState> = liquidity[1]
-            .clone()
-            .reserves
-            .into_iter()
-            .map(|(key, val)| (key, BalancerPoolState::Weighted(val)))
-            .collect();
+        let b = liquidity[1].clone().try_as_weighted().unwrap().reserves;
         assert_eq!(
-            (&b, &liquidity[1].fee),
+            (&b, &liquidity[1].fee()),
             (
-                &pools[1].reserves(),
+                &pools[1].try_into_weighted().unwrap().reserves,
                 &BigRational::new(1.into(), 1000.into())
+            ),
+        );
+        let c = liquidity[2].clone().try_as_stable().unwrap().reserves;
+        assert_eq!(
+            (&c, &liquidity[2].fee()),
+            (
+                &pools[2].try_into_stable().unwrap().reserves,
+                &BigRational::new(2.into(), 1000.into())
             ),
         );
     }
@@ -338,24 +380,24 @@ mod tests {
         };
 
         let mut encoder = SettlementEncoder::new(Default::default());
-        handler
-            .encode(
-                AmmOrderExecution {
-                    input: (H160([0x70; 20]), 10.into()),
-                    output: (H160([0x71; 20]), 11.into()),
-                },
-                &mut encoder,
-            )
-            .unwrap();
-        handler
-            .encode(
-                AmmOrderExecution {
-                    input: (H160([0x71; 20]), 12.into()),
-                    output: (H160([0x72; 20]), 13.into()),
-                },
-                &mut encoder,
-            )
-            .unwrap();
+        SettlementHandling::<WeightedProductOrder>::encode(
+            &handler,
+            AmmOrderExecution {
+                input: (H160([0x70; 20]), 10.into()),
+                output: (H160([0x71; 20]), 11.into()),
+            },
+            &mut encoder,
+        )
+        .unwrap();
+        SettlementHandling::<WeightedProductOrder>::encode(
+            &handler,
+            AmmOrderExecution {
+                input: (H160([0x71; 20]), 12.into()),
+                output: (H160([0x72; 20]), 13.into()),
+            },
+            &mut encoder,
+        )
+        .unwrap();
 
         let [_, interactions, _] = encoder.finish().interactions;
         assert_eq!(

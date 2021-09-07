@@ -1,13 +1,14 @@
 //! Responsible for conversion of a `pool_address` into `WeightedPoolInfo` which is used by the
 //! event handler to construct a `RegisteredWeightedPool`.
 use crate::{
-    sources::balancer::swap::fixed_point::Bfp, sources::uniswap::pool_fetching::MAX_BATCH_SIZE,
-    token_info::TokenInfoFetching, Web3,
+    conversions::U256Ext, sources::balancer::swap::fixed_point::Bfp,
+    sources::uniswap::pool_fetching::MAX_BATCH_SIZE, token_info::TokenInfoFetching, Web3,
 };
 use anyhow::{anyhow, Result};
 use contracts::{BalancerV2StablePool, BalancerV2Vault, BalancerV2WeightedPool};
-use ethcontract::{batch::CallBatch, Bytes, H160, H256, U256};
+use ethcontract::{batch::CallBatch, Bytes, H160, H256};
 use mockall::*;
+use num::BigRational;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -26,7 +27,7 @@ pub struct WeightedPoolInfo {
 #[derive(Clone, Debug)]
 pub struct StablePoolInfo {
     pub common: CommonPoolInfo,
-    pub amplification_parameter: U256,
+    pub amplification_parameter: BigRational,
 }
 
 /// Via `PoolInfoFetcher` (leverages a combination of `Web3` and `TokenInfoFetching`)
@@ -109,13 +110,16 @@ impl PoolInfoFetching for PoolInfoFetcher {
 
         let tokens = token_data.await?.0;
         let scaling_exponents = self.get_scaling_exponents(&tokens).await?;
+        let (amplification_factor, _, precision) = amplification_parameter.await?;
+        let amplification_parameter =
+            BigRational::new(amplification_factor.to_big_int(), precision.to_big_int());
         Ok(StablePoolInfo {
             common: CommonPoolInfo {
                 pool_id,
                 tokens,
                 scaling_exponents,
             },
-            amplification_parameter: amplification_parameter.await?.0,
+            amplification_parameter,
         })
     }
 
@@ -140,6 +144,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
 mod tests {
     use super::*;
     use crate::token_info::{MockTokenInfoFetching, TokenInfo};
+    use ethcontract::U256;
     use ethcontract_mock::Mock;
     use maplit::hashmap;
 
@@ -311,7 +316,7 @@ mod tests {
             .returns((tokens.clone(), vec![], U256::zero()));
         stable_pool
             .expect_call(BalancerV2StablePool::signatures().get_amplification_parameter())
-            .returns((U256::one(), false, U256::zero()));
+            .returns((U256::one(), false, U256::from(1000)));
 
         let mut token_info_fetcher = MockTokenInfoFetching::new();
         token_info_fetcher
@@ -341,6 +346,9 @@ mod tests {
         );
         assert_eq!(pool_info.common.pool_id, pool_id);
         assert_eq!(pool_info.common.scaling_exponents, vec![0u8, 1u8]);
-        assert_eq!(pool_info.amplification_parameter, U256::one());
+        assert_eq!(
+            pool_info.amplification_parameter,
+            BigRational::new(1.into(), 1000.into())
+        );
     }
 }

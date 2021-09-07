@@ -372,6 +372,7 @@ mod tests {
     };
     use maplit::{hashmap, hashset};
     use mockall::predicate::eq;
+    use num::BigRational;
 
     pub type PoolInitData = (Vec<H256>, Vec<H160>, Vec<H160>, Vec<Bfp>, Vec<PoolCreated>);
     fn pool_init_data(start: usize, end: usize, pool_type: PoolType) -> PoolInitData {
@@ -537,7 +538,7 @@ mod tests {
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
-                amplification_parameter: Default::default(),
+                amplification_parameter: BigRational::from_integer(1.into()),
             };
             dummy_data_fetcher
                 .expect_get_stable_pool_data()
@@ -727,7 +728,7 @@ mod tests {
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
-                amplification_parameter: Default::default(),
+                amplification_parameter: BigRational::from_integer(1.into()),
             };
             dummy_data_fetcher
                 .expect_get_stable_pool_data()
@@ -754,7 +755,7 @@ mod tests {
                         tokens: vec![new_token],
                         scaling_exponents: vec![0],
                     },
-                    amplification_parameter: Default::default(),
+                    amplification_parameter: BigRational::from_integer(1.into()),
                 })
             });
 

@@ -352,9 +352,10 @@ mod tests {
         swap::fixed_point::Bfp,
     };
     use anyhow::bail;
-    use ethcontract::{H256, U256};
+    use ethcontract::H256;
     use maplit::hashmap;
     use mockall::{predicate::*, Sequence};
+    use num::BigRational;
 
     #[tokio::test]
     async fn initializes_empty_pools() {
@@ -645,7 +646,7 @@ mod tests {
                         tokens: vec![],
                         scaling_exponents: vec![],
                     },
-                    amplification_parameter: U256::one(),
+                    amplification_parameter: BigRational::from_integer(3.into()),
                 })
             });
 

@@ -4,7 +4,10 @@ mod settlement;
 
 use self::{model::*, settlement::SettlementContext};
 use crate::{
-    liquidity::{ConstantProductOrder, LimitOrder, Liquidity, WeightedProductOrder},
+    liquidity::{
+        BalancerOrder, ConstantProductOrder, LimitOrder, Liquidity, StablePoolOrder,
+        WeightedProductOrder,
+    },
     settlement::Settlement,
     settlement_submission::retry::is_transaction_failure,
     solver::{Auction, Solver},
@@ -129,7 +132,7 @@ impl HttpSolver {
             .flat_map(|order| [order.sell_token, order.buy_token]);
         let liquidity_tokens = liquidity.iter().flat_map(|liquidity| match liquidity {
             Liquidity::ConstantProduct(amm) => amm.tokens.into_iter().collect::<Vec<_>>(),
-            Liquidity::WeightedProduct(amm) => amm.reserves.keys().cloned().collect(),
+            Liquidity::Balancer(amm) => amm.tokens(),
         });
 
         order_tokens
@@ -207,6 +210,7 @@ impl HttpSolver {
         &self,
         constant_product_orders: &HashMap<usize, ConstantProductOrder>,
         weighted_product_orders: &HashMap<usize, WeightedProductOrder>,
+        stable_pool_orders: &HashMap<usize, StablePoolOrder>,
         gas_price: f64,
     ) -> HashMap<usize, AmmModel> {
         let uniswap_cost = self.uniswap_cost(gas_price);
@@ -244,7 +248,7 @@ impl HttpSolver {
                     .map(|(token, state)| {
                         (
                             *token,
-                            PoolTokenData {
+                            WeightedPoolTokenData {
                                 balance: state.token_state.balance,
                                 weight: BigRational::from(state.weight),
                             },
@@ -267,8 +271,37 @@ impl HttpSolver {
                 (*index + constant_product_models.len(), pool_model)
             })
             .collect();
+        let stable_pool_models: HashMap<_, AmmModel> = stable_pool_orders
+            .iter()
+            .map(|(index, amm)| {
+                let reserves = amm
+                    .reserves
+                    .iter()
+                    .map(|(token, state)| (*token, state.balance))
+                    .collect();
+                let pool_model = AmmModel {
+                    parameters: AmmParameters::Stable(StablePoolParameters {
+                        reserves,
+                        amplification_parameter: amm.amplification_parameter.clone(),
+                    }),
+                    fee: amm.fee.clone(),
+                    cost: CostModel {
+                        amount: balancer_cost,
+                        token: self.native_token,
+                    },
+                    mandatory: false,
+                };
+                // Note that in order to preserve unique keys of this hashmap, we use
+                // the current index + the length of the previous map.
+                (
+                    *index + constant_product_models.len() + weighted_product_models.len(),
+                    pool_model,
+                )
+            })
+            .collect();
         pool_model_map.extend(constant_product_models);
         pool_model_map.extend(weighted_product_models);
+        pool_model_map.extend(stable_pool_models);
         pool_model_map
     }
 
@@ -322,7 +355,8 @@ impl HttpSolver {
         let price_estimates: HashMap<H160, Result<BigRational, _>> =
             tokens.iter().cloned().zip(price_estimates).collect();
 
-        let (constant_product_liquidity, weighted_product_liquidity) = split_liquidity(liquidity);
+        let (constant_product_liquidity, weighted_product_liquidity, stable_pool_liquidity) =
+            split_liquidity(liquidity);
 
         // For the solver to run correctly we need to be sure that there are no isolated islands of
         // tokens without connection between them.
@@ -334,12 +368,15 @@ impl HttpSolver {
         let limit_orders = self.map_orders_for_solver(orders);
         let constant_product_orders = self.map_amm_orders_for_solver(constant_product_liquidity);
         let weighted_product_orders = self.map_amm_orders_for_solver(weighted_product_liquidity);
+        let stable_pool_orders = self.map_amm_orders_for_solver(stable_pool_liquidity);
+
         let token_models = self.token_models(&token_infos, &price_estimates, &buffers);
         let order_models = self.order_models(&limit_orders, gas_price);
         let amm_models = self
             .amm_models(
                 &constant_product_orders,
                 &weighted_product_orders,
+                &stable_pool_orders,
                 gas_price,
             )
             .into_iter()
@@ -357,6 +394,7 @@ impl HttpSolver {
             limit_orders,
             constant_product_orders,
             weighted_product_orders,
+            stable_pool_orders,
         };
         Ok((model, context))
     }
@@ -449,16 +487,28 @@ impl HttpSolver {
 
 fn split_liquidity(
     liquidity: Vec<Liquidity>,
-) -> (Vec<ConstantProductOrder>, Vec<WeightedProductOrder>) {
+) -> (
+    Vec<ConstantProductOrder>,
+    Vec<WeightedProductOrder>,
+    Vec<StablePoolOrder>,
+) {
     let mut constant_product_orders = Vec::new();
     let mut weighted_product_orders = Vec::new();
+    let mut stable_pool_orders = Vec::new();
     for order in liquidity {
         match order {
             Liquidity::ConstantProduct(order) => constant_product_orders.push(order),
-            Liquidity::WeightedProduct(order) => weighted_product_orders.push(order),
+            Liquidity::Balancer(order) => match order {
+                BalancerOrder::Weighted(wp_order) => weighted_product_orders.push(wp_order),
+                BalancerOrder::Stable(st_order) => stable_pool_orders.push(st_order),
+            },
         }
     }
-    (constant_product_orders, weighted_product_orders)
+    (
+        constant_product_orders,
+        weighted_product_orders,
+        stable_pool_orders,
+    )
 }
 
 // TODO: This currently does **NOT** consider balancer pools, but definitely should.

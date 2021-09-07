@@ -21,6 +21,7 @@ use anyhow::{anyhow, Result};
 use contracts::BalancerV2Vault;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
+use num::BigRational;
 use reqwest::Client;
 use std::{
     collections::{HashMap, HashSet},
@@ -196,7 +197,7 @@ pub struct StablePool {
     pub pool_id: H256,
     pub pool_address: H160,
     pub swap_fee_percentage: Bfp,
-    pub amplification_parameter: U256,
+    pub amplification_parameter: BigRational,
     pub reserves: HashMap<H160, TokenState>,
     pub paused: bool,
 }
@@ -206,7 +207,7 @@ impl StablePool {
         pool_data: RegisteredStablePool,
         balances: Vec<U256>,
         swap_fee_percentage: Bfp,
-        amplification_parameter: U256,
+        amplification_parameter: BigRational,
         paused: bool,
     ) -> Self {
         let mut reserves = HashMap::new();
@@ -331,7 +332,7 @@ mod tests {
                 pool_id: H256::from_low_u64_be(1),
                 pool_address: Default::default(),
                 swap_fee_percentage: Bfp::zero(),
-                amplification_parameter: Default::default(),
+                amplification_parameter: BigRational::new(10.into(), 1000.into()),
                 reserves: Default::default(),
                 paused: false,
             }),
@@ -359,7 +360,7 @@ mod tests {
             pool_id: H256::from_low_u64_be(1),
             pool_address: Default::default(),
             swap_fee_percentage: Bfp::zero(),
-            amplification_parameter: Default::default(),
+            amplification_parameter: BigRational::new(1.into(), 2.into()),
             reserves: Default::default(),
             paused: false,
         });
@@ -428,7 +429,7 @@ mod tests {
             pool_id: H256::from_low_u64_be(2),
             pool_address: H160::from_low_u64_be(2),
             swap_fee_percentage: Bfp::one(),
-            amplification_parameter: U256::one(),
+            amplification_parameter: BigRational::from_integer(2.into()),
             reserves: hashmap! { H160::from_low_u64_be(2) => stable_pool_state.clone() },
             paused: true,
         });

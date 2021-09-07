@@ -1,6 +1,7 @@
 use crate::{
     liquidity::{
-        AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity, WeightedProductOrder,
+        token_pairs, AmmOrderExecution, BalancerOrder, ConstantProductOrder, LimitOrder, Liquidity,
+        WeightedProductOrder,
     },
     settlement::Settlement,
     solver::{Auction, Solver},
@@ -158,12 +159,22 @@ impl BaselineSolver {
                                 order: AmmOrder::ConstantProduct(order),
                             });
                         }
-                        Liquidity::WeightedProduct(order) => {
-                            for tokens in order.token_pairs() {
-                                amm_map.entry(tokens).or_default().push(Amm {
-                                    tokens,
-                                    order: AmmOrder::WeightedProduct(order.clone()),
-                                });
+                        Liquidity::Balancer(order) => {
+                            match &order {
+                                BalancerOrder::Weighted(weighted_product_order) => {
+                                    for tokens in token_pairs(&weighted_product_order.reserves) {
+                                        amm_map.entry(tokens).or_default().push(Amm {
+                                            tokens,
+                                            order: AmmOrder::WeightedProduct(
+                                                weighted_product_order.clone(),
+                                            ),
+                                        });
+                                    }
+                                }
+                                BalancerOrder::Stable(_) => {
+                                    // TODO - https://github.com/gnosis/gp-v2-services/issues/1074
+                                    tracing::warn!("Excluded stable pool from baseline solving.")
+                                }
                             }
                         }
                     }
@@ -575,7 +586,7 @@ mod tests {
                 fee: Ratio::new(3, 1000),
                 settlement_handling: CapturingSettlementHandler::arc(),
             }),
-            Liquidity::WeightedProduct(WeightedProductOrder {
+            Liquidity::Balancer(BalancerOrder::Weighted(WeightedProductOrder {
                 reserves: hashmap! {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
                         token_state: TokenState {
@@ -594,7 +605,7 @@ mod tests {
                 },
                 fee: Ratio::new(1.into(), 1000.into()),
                 settlement_handling: CapturingSettlementHandler::arc(),
-            }),
+            })),
         ];
 
         let solver = BaselineSolver::new(
