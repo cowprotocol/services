@@ -39,7 +39,7 @@ pub type Web3Transport = DynTransport;
 pub type Web3 = DynWeb3;
 
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(transparent)]
 pub struct H160Wrapper(#[serde(with = "h160_hexadecimal")] pub H160);
 impl FromStr for H160Wrapper {

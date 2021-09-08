@@ -7,6 +7,7 @@ mod get_order_by_uid;
 mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
+mod get_user_orders;
 
 use crate::{
     database::trades::TradeRetrieving,
@@ -40,12 +41,13 @@ pub fn handle_all_routes(
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
-    let cancel_order = cancel_order::cancel_order(orderbook);
+    let cancel_order = cancel_order::cancel_order(orderbook.clone());
     let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
     let get_fee_and_quote_sell =
         get_fee_and_quote::get_fee_and_quote_sell(fee_calculator.clone(), price_estimator.clone());
     let get_fee_and_quote_buy =
         get_fee_and_quote::get_fee_and_quote_buy(fee_calculator, price_estimator.clone());
+    let get_user_orders = get_user_orders::get_user_orders(orderbook);
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -73,6 +75,8 @@ pub fn handle_all_routes(
             .unify()
             .or(get_fee_and_quote_buy
                 .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_buy")))
+            .unify()
+            .or(get_user_orders.map(|reply| LabelledReply::new(reply, "get_user_orders")))
             .unify(),
     );
     routes_with_labels

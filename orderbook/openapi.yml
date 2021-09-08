@@ -378,6 +378,45 @@ paths:
           description: Token non-existent or not connected to native token
         500:
           description: Unexpected internal error while processing the request
+  /api/v1/account/{owner}/orders:
+    get:
+      summary: Get orders of one user paginated.
+      description: |
+        The orders are ordered by their creation date descending (newest orders first).
+        To enumerate all orders start with offset 0 and keep increasing the offset by the total
+        number of returned results. When a response contains less than the limit the last page has
+        been reached.
+      parameters:
+        - name: owner
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/Address"
+        - name: offset
+          in: query
+          description: |
+            The pagination offset. Defaults to 0.
+          schema:
+            type: integer
+          required: false
+        - name: limit
+          in: query
+          description: |
+            The pagination limit. Defaults to 10. Maximum 1000. Minimum 1.
+          schema:
+            type: integer
+          required: false
+      responses:
+        200:
+          description: the orders
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
+        400:
+          description: Problem with parameters like limit being too large.
 components:
   schemas:
     TransactionHash:
