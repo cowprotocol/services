@@ -34,7 +34,13 @@ pub async fn submit(
         .context("failed to get transaction_count")?;
     let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, &address, nonce)
         .await
-        .context("failed to get pending gas price")?;
+        .unwrap_or_else(|e| {
+            tracing::info!(
+                "Cannot get pending gas price due to {}, assuming no pending settlement",
+                e
+            );
+            None
+        });
 
     // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time
     let gas_limit = gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
