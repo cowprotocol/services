@@ -145,6 +145,7 @@ async fn onchain_settlement(web3: Web3) {
         price_estimator,
         maintenance,
         block_stream,
+        solvable_orders_cache,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
@@ -196,6 +197,8 @@ async fn onchain_settlement(web3: Web3) {
         factory: uniswap_factory.clone(),
         chain_id,
     });
+
+    solvable_orders_cache.update(0).await.unwrap();
 
     // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
@@ -260,6 +263,7 @@ async fn onchain_settlement(web3: Web3) {
 
     // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
+    solvable_orders_cache.update(0).await.unwrap();
 
     let orders = create_orderbook_api(&web3, gpv2.native_token.address())
         .get_orders()

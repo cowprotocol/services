@@ -7,6 +7,7 @@ use model::DomainSeparator;
 use orderbook::{
     account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
+    solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
 use shared::{
@@ -129,6 +130,7 @@ pub struct OrderbookServices {
     pub price_estimator: Arc<BaselinePriceEstimator>,
     pub maintenance: ServiceMaintenance,
     pub block_stream: CurrentBlockStream,
+    pub solvable_orders_cache: Arc<SolvableOrdersCache>,
 }
 
 impl OrderbookServices {
@@ -188,17 +190,24 @@ impl OrderbookServices {
             0.0,
             bad_token_detector.clone(),
         ));
+        let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+            web3.clone(),
+            Some(gpv2.vault.clone()),
+            gpv2.allowance,
+            gpv2.settlement.address(),
+        ));
+        let solvable_orders_cache = SolvableOrdersCache::new(
+            Duration::from_secs(120),
+            db.clone(),
+            balance_fetcher.clone(),
+            bad_token_detector.clone(),
+            current_block_stream.clone(),
+        );
         let orderbook = Arc::new(Orderbook::new(
             gpv2.domain_separator,
             gpv2.settlement.address(),
             db.clone(),
-            Box::new(Web3BalanceFetcher::new(
-                web3.clone(),
-                Some(gpv2.vault.clone()),
-                gpv2.allowance,
-                gpv2.settlement.address(),
-                metrics.clone(),
-            )),
+            balance_fetcher,
             fee_calculator.clone(),
             Duration::from_secs(120),
             bad_token_detector,
@@ -206,9 +215,10 @@ impl OrderbookServices {
             gpv2.native_token.clone(),
             vec![],
             true,
+            solvable_orders_cache.clone(),
         ));
         let maintenance = ServiceMaintenance {
-            maintainers: vec![orderbook.clone(), db.clone(), event_updater],
+            maintainers: vec![db.clone(), event_updater],
         };
         orderbook::serve_task(
             db.clone(),
@@ -223,6 +233,7 @@ impl OrderbookServices {
             price_estimator,
             maintenance,
             block_stream: current_block_stream,
+            solvable_orders_cache,
         }
     }
 }

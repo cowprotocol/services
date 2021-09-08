@@ -102,6 +102,7 @@ async fn vault_balances(web3: Web3) {
     let OrderbookServices {
         price_estimator,
         block_stream,
+        solvable_orders_cache,
         ..
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
@@ -130,6 +131,8 @@ async fn vault_balances(web3: Web3) {
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
+
+    solvable_orders_cache.update(0).await.unwrap();
 
     // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {

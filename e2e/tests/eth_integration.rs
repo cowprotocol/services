@@ -112,7 +112,7 @@ async fn eth_integration(web3: Web3) {
         maintenance,
         price_estimator,
         block_stream,
-        ..
+        solvable_orders_cache,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
@@ -184,6 +184,8 @@ async fn eth_integration(web3: Web3) {
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
+    solvable_orders_cache.update(0).await.unwrap();
+
     // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
         factory: uniswap_factory.clone(),
@@ -252,6 +254,7 @@ async fn eth_integration(web3: Web3) {
 
     // Drive orderbook in order to check that all orders were settled
     maintenance.run_maintenance().await.unwrap();
+    solvable_orders_cache.update(0).await.unwrap();
 
     let orders = create_orderbook_api(&web3, weth.address())
         .get_orders()

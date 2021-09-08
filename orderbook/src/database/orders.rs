@@ -13,6 +13,7 @@ use model::{
 use primitive_types::H160;
 use std::{borrow::Cow, convert::TryInto};
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;

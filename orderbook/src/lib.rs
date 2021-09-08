@@ -6,6 +6,7 @@ pub mod event_updater;
 pub mod fee;
 pub mod metrics;
 pub mod orderbook;
+pub mod solvable_orders;
 
 use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};

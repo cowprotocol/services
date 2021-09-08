@@ -99,6 +99,7 @@ async fn smart_contract_orders(web3: Web3) {
         price_estimator,
         block_stream,
         maintenance,
+        solvable_orders_cache,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
@@ -122,6 +123,8 @@ async fn smart_contract_orders(web3: Web3) {
         .await
         .unwrap();
     assert_eq!(placement.status(), 201);
+
+    solvable_orders_cache.update(0).await.unwrap();
 
     let order_uid = placement.json::<OrderUid>().await.unwrap();
     let order_status = || async {
@@ -150,6 +153,7 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive orderbook in order to check that the presignature event was received.
     maintenance.run_maintenance().await.unwrap();
+    solvable_orders_cache.update(0).await.unwrap();
     assert_eq!(order_status().await, OrderStatus::Open);
 
     // Drive solution
