@@ -4,7 +4,7 @@ use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
 use prometheus::Registry;
 use reqwest::{Client, Url};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
     collections::HashMap,
     sync::{
@@ -125,9 +125,26 @@ impl BatchTransport for HttpTransport {
     }
 }
 
+/// Workaround for Erigon nodes, which encode each element of the Batch Response as a String rather than a deserializable JSON object
+#[derive(Debug, PartialEq, Clone, Deserialize, Serialize)]
+#[serde(untagged)]
+enum OutputOrString {
+    String(String),
+    Output(Output),
+}
+
+impl OutputOrString {
+    fn try_into_output(self) -> Result<Output, Web3Error> {
+        Ok(match self {
+            OutputOrString::String(string) => jsonrpc_core::serde_from_str(&string)?,
+            OutputOrString::Output(output) => output,
+        })
+    }
+}
+
 fn handle_batch_response(
     ids: &[RequestId],
-    outputs: Vec<Output>,
+    outputs: Vec<OutputOrString>,
 ) -> Result<Vec<RpcResult>, Web3Error> {
     if ids.len() != outputs.len() {
         return Err(Web3Error::InvalidResponse(
@@ -136,7 +153,8 @@ fn handle_batch_response(
     }
     let mut outputs = outputs
         .into_iter()
-        .map(|output| {
+        .map(|output_or_string| {
+            let output = output_or_string.try_into_output()?;
             Ok((
                 id_of_output(&output)?,
                 helpers::to_result_from_output(output),
@@ -248,11 +266,11 @@ mod tests {
         let outputs = [1u64, 0, 2]
             .iter()
             .map(|&id| {
-                Output::Success(jsonrpc_core::Success {
+                OutputOrString::Output(Output::Success(jsonrpc_core::Success {
                     jsonrpc: None,
                     result: id.into(),
                     id: jsonrpc_core::Id::Num(id),
-                })
+                }))
             })
             .collect();
         let results = handle_batch_response(&ids, outputs)
@@ -262,5 +280,27 @@ mod tests {
             .collect::<Vec<_>>();
         // The order of the ids should have been restored.
         assert_eq!(ids, results);
+    }
+
+    #[test]
+    fn handles_batch_items_that_are_strings() {
+        let result = handle_batch_response(
+            &[1],
+            vec![OutputOrString::String("{\"result\": 1, \"id\": 1}".into())],
+        )
+        .unwrap()
+        .into_iter()
+        .map(|result| result.unwrap().as_u64().unwrap() as usize)
+        .collect::<Vec<_>>();
+        assert_eq!(vec![1], result);
+    }
+
+    #[test]
+    fn errors_on_invalid_string_batch_responses() {
+        assert!(handle_batch_response(
+            &[1],
+            vec![OutputOrString::String("there is no spoon".into())],
+        )
+        .is_err());
     }
 }
