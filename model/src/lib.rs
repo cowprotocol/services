@@ -16,7 +16,7 @@ use std::fmt;
 use web3::signing;
 
 /// Erc20 token pair specified by two contract addresses.
-#[derive(Eq, PartialEq, Copy, Clone, Debug, Hash, Ord, PartialOrd)]
+#[derive(Copy, Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct TokenPair(H160, H160);
 
 impl TokenPair {
@@ -85,7 +85,7 @@ impl<'a> IntoIterator for &'a TokenPair {
     }
 }
 
-#[derive(Copy, Eq, PartialEq, Clone, Default)]
+#[derive(Copy, Clone, Default, Eq, PartialEq)]
 pub struct DomainSeparator(pub [u8; 32]);
 
 impl std::str::FromStr for DomainSeparator {
@@ -107,7 +107,7 @@ impl std::fmt::Debug for DomainSeparator {
 }
 
 impl DomainSeparator {
-    pub fn get_domain_separator(chain_id: u64, contract_address: H160) -> Self {
+    pub fn new(chain_id: u64, contract_address: H160) -> Self {
         lazy_static! {
             /// The EIP-712 domain name used for computing the domain separator.
             static ref DOMAIN_NAME: [u8; 32] = signing::keccak256(b"Gnosis Protocol");
@@ -136,18 +136,51 @@ impl DomainSeparator {
 mod tests {
     use super::*;
     use hex_literal::hex;
+    use std::cmp::Ordering;
+    use std::str::FromStr;
+
+    #[test]
+    fn domain_separator_from_str() {
+        assert!(DomainSeparator::from_str(
+            "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
+        )
+        .is_ok());
+    }
 
     #[test]
     fn domain_separator_rinkeby() {
         let contract_address: H160 = hex!("91D6387ffbB74621625F39200d91a50386C9Ab15").into();
         let chain_id: u64 = 4;
-        let domain_separator_rinkeby =
-            DomainSeparator::get_domain_separator(chain_id, contract_address);
+        let domain_separator_rinkeby = DomainSeparator::new(chain_id, contract_address);
         // domain separator is taken from rinkeby deployment at address 91D6387ffbB74621625F39200d91a50386C9Ab15
         let expected_domain_separator = DomainSeparator(hex!(
             "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
         ));
         assert_eq!(domain_separator_rinkeby, expected_domain_separator);
+    }
+
+    #[test]
+    fn token_pair_contains() {
+        let token_a = H160::from_low_u64_be(0);
+        let token_b = H160::from_low_u64_be(1);
+        let token_c = H160::from_low_u64_be(2);
+        let pair = TokenPair::new(token_a, token_b).unwrap();
+
+        assert!(pair.contains(&token_a));
+        assert!(pair.contains(&token_b));
+        assert!(!pair.contains(&token_c));
+    }
+
+    #[test]
+    fn token_pair_other() {
+        let token_a = H160::from_low_u64_be(0);
+        let token_b = H160::from_low_u64_be(1);
+        let token_c = H160::from_low_u64_be(2);
+        let pair = TokenPair::new(token_a, token_b).unwrap();
+
+        assert_eq!(pair.other(&token_a), Some(token_b));
+        assert_eq!(pair.other(&token_b), Some(token_a));
+        assert_eq!(pair.other(&token_c), None);
     }
 
     #[test]
@@ -182,5 +215,20 @@ mod tests {
         assert_eq!(iter.next(), Some(token_a));
         assert_eq!(iter.next(), Some(token_b));
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn token_pair_ordering() {
+        let token_a = H160::from_low_u64_be(0);
+        let token_b = H160::from_low_u64_be(1);
+        let token_c = H160::from_low_u64_be(2);
+        let pair_ab = TokenPair::new(token_a, token_b).unwrap();
+        let pair_bc = TokenPair::new(token_b, token_c).unwrap();
+        let pair_ca = TokenPair::new(token_c, token_a).unwrap();
+
+        assert_eq!(pair_ab.cmp(&pair_bc), Ordering::Less);
+        assert_eq!(pair_ab.cmp(&pair_ca), Ordering::Less);
+        assert_eq!(pair_bc.cmp(&pair_ca), Ordering::Greater);
+        assert_eq!(pair_ab.cmp(&TokenPair::first_ord()), Ordering::Equal);
     }
 }

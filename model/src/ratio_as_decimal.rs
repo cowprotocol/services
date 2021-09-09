@@ -80,7 +80,7 @@ fn sign_03_to_04(sign_03: Sign03) -> Sign04 {
 
 #[cfg(test)]
 mod tests {
-    use crate::ratio_as_decimal::{deserialize, serialize};
+    use super::*;
     use num::{BigRational, Zero};
     use serde_json::json;
     use serde_json::value::Serializer;
@@ -125,5 +125,16 @@ mod tests {
             deserialize(json!("-1")).unwrap(),
             BigRational::new((-1).into(), 1.into())
         );
+    }
+
+    #[test]
+    fn sign_conversions() {
+        assert_eq!(sign_04_to_03(Sign04::Minus), Sign03::Minus);
+        assert_eq!(sign_04_to_03(Sign04::Plus), Sign03::Plus);
+        assert_eq!(sign_04_to_03(Sign04::NoSign), Sign03::NoSign);
+
+        assert_eq!(sign_03_to_04(Sign03::Minus), Sign04::Minus);
+        assert_eq!(sign_03_to_04(Sign03::Plus), Sign04::Plus);
+        assert_eq!(sign_03_to_04(Sign03::NoSign), Sign04::NoSign);
     }
 }

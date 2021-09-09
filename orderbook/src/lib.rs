@@ -63,7 +63,7 @@ pub async fn verify_deployed_contract_constants(
             .0,
     );
 
-    let domain_separator = DomainSeparator::get_domain_separator(chain_id, contract.address());
+    let domain_separator = DomainSeparator::new(chain_id, contract.address());
     if !bytecode.contains(&hex::encode(domain_separator.0)) {
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }

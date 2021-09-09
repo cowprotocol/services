@@ -56,6 +56,14 @@ mod tests {
     use serde_json::Value;
 
     #[test]
+    fn works_on_32_byte_string() {
+        let value = Value::String(
+            "0x0ddeb6e4a814908832cc25d11311c514e7efe6af3c9bafeb0d241129cf7f4d83".to_string(),
+        );
+        assert!(deserialize(value).is_ok());
+    }
+
+    #[test]
     fn does_not_start_with_0x() {
         let value = Value::String("00".to_string());
         assert!(deserialize(value).is_err());

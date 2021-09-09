@@ -67,6 +67,7 @@ impl Order {
         let owner = order_creation
             .signature
             .validate(domain, &order_creation.hash_struct())?;
+        // TODO - test this function when validate returns None.
         Some(Self {
             order_meta_data: OrderMetaData {
                 creation_date: chrono::offset::Utc::now(),
@@ -717,6 +718,29 @@ mod tests {
         }
     }
 
+    #[test]
+    fn order_actual_receiver() {
+        // Isn't it a bit weird that the default order struct has such an arbitrary receiver?
+        assert_eq!(
+            Order::default().actual_receiver(),
+            H160(hex!("7e5f4552091a69125d5dfcb7b8c2659029395bdf"))
+        );
+
+        let mut order = Order::default();
+        let receiver = H160::from_low_u64_be(1);
+        order.order_creation.receiver = Some(receiver);
+        assert_eq!(order.actual_receiver(), receiver);
+    }
+
+    #[test]
+    fn order_with_app_data() {
+        let mut order = Order::default();
+
+        let receiver = H160::from_low_u64_be(1);
+        order.order_creation.receiver = Some(receiver);
+        assert_eq!(order.actual_receiver(), receiver);
+    }
+
     // from the test `should compute order unique identifier` in
     // <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/test/GPv2Signing.test.ts#L143>
     #[test]
@@ -821,6 +845,16 @@ mod tests {
             .with_buy_token(H160::zero())
             .with_buy_amount(80.into())
             .with_valid_to(u32::MAX)
+            .with_app_data([1u8; 32])
+            .with_fee_amount(U256::from(1337))
+            .with_partially_fillable(true)
+            .with_sell_token_balance(SellTokenSource::External)
+            .with_buy_token_balance(BuyTokenDestination::Internal)
+            .with_creation_date(DateTime::<Utc>::from_utc(
+                NaiveDateTime::from_timestamp(3, 0),
+                Utc,
+            ))
+            .with_presign(H160::from_low_u64_be(1))
             .with_kind(OrderKind::Sell)
             .sign_with(
                 EcdsaSigningScheme::Eip712,

@@ -204,8 +204,7 @@ async fn main() {
     verify_deployed_contract_constants(&settlement_contract, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator =
-        DomainSeparator::get_domain_separator(chain_id, settlement_contract.address());
+    let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
     let database = Arc::new(database::instrumented::Instrumented::new(
         postgres.clone(),

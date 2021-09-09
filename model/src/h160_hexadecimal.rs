@@ -68,3 +68,33 @@ where
 
     deserializer.deserialize_str(Visitor {})
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::Value;
+
+    #[test]
+    fn works_on_20_byte_string() {
+        let value = Value::String("0x9008D19f58AAbD9eD0D60971565AA8510560ab41".to_string());
+        assert!(deserialize(value).is_ok());
+    }
+
+    #[test]
+    fn does_not_start_with_0x() {
+        let value = Value::String("00".to_string());
+        assert!(deserialize(value).is_err());
+    }
+
+    #[test]
+    fn invalid_characters() {
+        let value = Value::String("asdf".to_string());
+        assert!(deserialize(value).is_err());
+    }
+
+    #[test]
+    fn invalid_length() {
+        let value = Value::String("0x00".to_string());
+        assert!(deserialize(value).is_err());
+    }
+}
