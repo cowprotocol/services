@@ -66,6 +66,7 @@ pub struct Orderbook {
     banned_users: Vec<H160>,
     enable_presign_orders: bool,
     solvable_orders: Arc<SolvableOrdersCache>,
+    solvable_orders_max_update_age: Duration,
 }
 
 impl Orderbook {
@@ -83,6 +84,7 @@ impl Orderbook {
         banned_users: Vec<H160>,
         enable_presign_orders: bool,
         solvable_orders: Arc<SolvableOrdersCache>,
+        solvable_orders_max_update_age: Duration,
     ) -> Self {
         Self {
             domain_separator,
@@ -97,6 +99,7 @@ impl Orderbook {
             banned_users,
             enable_presign_orders,
             solvable_orders,
+            solvable_orders_max_update_age,
         }
     }
 
@@ -274,10 +277,9 @@ impl Orderbook {
     }
 
     pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {
-        const MAX_UPDATE_AGE: Duration = Duration::from_secs(60);
         let (orders, timestamp) = self.solvable_orders.cached_solvable_orders();
         ensure!(
-            timestamp.elapsed() <= MAX_UPDATE_AGE,
+            timestamp.elapsed() <= self.solvable_orders_max_update_age,
             "solvable orders are out of date"
         );
         Ok(orders)

@@ -114,6 +114,15 @@ struct Arguments {
     /// This flag can be removed once DDoS protection is implemented.
     #[structopt(long, env, parse(try_from_str), default_value = "false")]
     pub enable_presign_orders: bool,
+
+    /// If solvable orders haven't been successfully update in this time attempting to get them
+    /// errors and our liveness check fails.
+    #[structopt(
+        long,
+        default_value = "300",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    solvable_orders_max_update_age: Duration,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -356,6 +365,7 @@ async fn main() {
         args.banned_users,
         args.enable_presign_orders,
         solvable_orders_cache,
+        args.solvable_orders_max_update_age,
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![database.clone(), Arc::new(event_updater), pool_fetcher],

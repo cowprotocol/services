@@ -216,6 +216,7 @@ impl OrderbookServices {
             vec![],
             true,
             solvable_orders_cache.clone(),
+            Duration::from_secs(600),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],
