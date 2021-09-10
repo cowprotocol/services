@@ -876,7 +876,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
     fn debug_order_data() {
         dbg!(Order::default());
     }

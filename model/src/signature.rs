@@ -8,7 +8,7 @@ use web3::{
     types::Recovery,
 };
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
@@ -279,6 +279,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn presign_validates_to_account() {
@@ -291,5 +292,107 @@ mod tests {
     #[test]
     fn presign_fails_to_convert_to_ecdsa_signature() {
         assert!(SigningScheme::PreSign.try_to_ecdsa_scheme().is_none());
+    }
+
+    #[test]
+    fn signature_from_bytes() {
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::Eip712, &[0u8; 20])
+                .unwrap_err()
+                .to_string(),
+            "ECDSA signature must be 65 bytes long"
+        );
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::EthSign, &[0u8; 20])
+                .unwrap_err()
+                .to_string(),
+            "ECDSA signature must be 65 bytes long"
+        );
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::PreSign, &[0u8; 32])
+                .unwrap_err()
+                .to_string(),
+            "pre-signature must be exactly 20 bytes long"
+        );
+
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::Eip712, &[0u8; 65]).unwrap(),
+            Signature::default_with(SigningScheme::Eip712)
+        );
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::EthSign, &[0u8; 65]).unwrap(),
+            Signature::default_with(SigningScheme::EthSign)
+        );
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::PreSign, &[0u8; 20]).unwrap(),
+            Signature::default_with(SigningScheme::PreSign)
+        );
+    }
+
+    #[test]
+    fn signature_to_bytes() {
+        assert_eq!(
+            Signature::default_with(SigningScheme::Eip712).to_bytes(),
+            [0u8; 65].to_vec()
+        );
+        assert_eq!(
+            Signature::default_with(SigningScheme::EthSign).to_bytes(),
+            [0u8; 65].to_vec()
+        );
+        assert_eq!(
+            Signature::default_with(SigningScheme::PreSign).to_bytes(),
+            [0u8; 20].to_vec()
+        );
+        // and something non-trivial
+        assert_eq!(
+            Signature::from_bytes(SigningScheme::PreSign, &[1u8; 20])
+                .unwrap()
+                .to_bytes(),
+            [1u8; 20].to_vec()
+        );
+    }
+
+    #[test]
+    fn ecdsa_scheme_conversion() {
+        for ecdsa_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
+            let scheme = SigningScheme::from(ecdsa_scheme);
+            assert!(scheme.is_ecdsa_scheme())
+        }
+        assert!(!SigningScheme::PreSign.is_ecdsa_scheme())
+    }
+
+    #[test]
+    fn deserialize_and_back() {
+        let value = json!(
+        {
+            "signature": "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+            "signingScheme": "eip712"
+        });
+        let expected = Signature::default();
+        let deserialized: Signature = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(deserialized, expected);
+        let serialized = serde_json::to_value(expected).unwrap();
+        assert_eq!(value, serialized);
+
+        assert_eq!(
+            serde_json::from_value::<Signature>(json!(
+            {
+                "signature": "1234",
+                "signingScheme": "eip712"
+            }))
+            .unwrap_err()
+            .to_string(),
+            "\"1234\" can't be decoded as hex ecdsa signature because it does not start with '0x'"
+        );
+        assert_eq!(
+            serde_json::from_value::<Signature>(json!(
+            {
+                "signature": "0x42",
+                "signingScheme": "eip712"
+            }))
+            .unwrap_err()
+            .to_string(),
+            "failed to decode \"42\" as hex ecdsa signature: Invalid string length"
+        );
     }
 }

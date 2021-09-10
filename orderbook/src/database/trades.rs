@@ -117,13 +117,16 @@ impl TradesQueryRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::events::{Event, Settlement as DbSettlement, Trade as DbTrade};
-    use crate::database::orders::OrderStoring;
+    use crate::database::{
+        events::{Event, Settlement as DbSettlement, Trade as DbTrade},
+        orders::OrderStoring,
+    };
     use ethcontract::H256;
-    use model::order::{Order, OrderCreation, OrderMetaData};
-    use model::trade::Trade;
+    use model::{
+        order::{Order, OrderCreation, OrderMetaData},
+        trade::Trade,
+    };
     use shared::event_handling::EventIndex;
-    use std::collections::HashSet;
 
     async fn generate_owners_and_order_ids(
         num_owners: usize,
@@ -190,8 +193,8 @@ mod tests {
             .await
             .unwrap()
             .into_iter()
-            .collect::<HashSet<_>>();
-        let expected = expected.iter().cloned().collect::<HashSet<_>>();
+            .collect::<Vec<_>>();
+        let expected = expected.to_vec();
         assert_eq!(filtered, expected);
     }
 

@@ -5,7 +5,7 @@ use num_bigint::BigUint;
 use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
 
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub block_number: u64,
@@ -62,5 +62,10 @@ mod tests {
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_eq!(serialized, value);
+    }
+
+    #[test]
+    fn debug_trade_data() {
+        dbg!(Trade::default());
     }
 }
