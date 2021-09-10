@@ -197,6 +197,10 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     max_archer_submission_seconds: Duration,
+
+    /// The RPC endpoint to use for submitting private network transactions.
+    #[structopt(long, env)]
+    private_tx_network_url: Option<Url>,
 }
 
 arg_enum! {
@@ -204,6 +208,7 @@ arg_enum! {
     pub enum TransactionStrategyArg {
         PublicMempool,
         ArcherNetwork,
+        PrivateNetwork,
         DryRun,
     }
 }
@@ -425,6 +430,18 @@ async fn main() {
                     client.clone(),
                 ),
                 max_confirm_time: args.max_archer_submission_seconds,
+            },
+            TransactionStrategyArg::PrivateNetwork => TransactionStrategy::PrivateNetwork {
+                network_rpc: {
+                    let url = args
+                        .private_tx_network_url
+                        .expect("missing private transaction network URL");
+                    let transport = create_instrumented_transport(
+                        HttpTransport::new(client.clone(), url),
+                        metrics.clone(),
+                    );
+                    web3::Web3::new(transport)
+                },
             },
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         },

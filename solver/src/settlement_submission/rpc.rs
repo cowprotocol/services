@@ -10,10 +10,14 @@ use ethcontract::{dyns::DynTransport, Account, TransactionHash, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::{H160, U256};
-use std::time::{Duration, Instant};
+use std::{
+    borrow::Cow,
+    time::{Duration, Instant},
+};
 use transaction_retry::RetryResult;
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.
+#[allow(clippy::too_many_arguments)]
 pub async fn submit(
     account: Account,
     contract: &GPv2Settlement,
@@ -22,6 +26,7 @@ pub async fn submit(
     gas_price_cap: f64,
     settlement: Settlement,
     gas_estimate: U256,
+    private_network: Option<&shared::Web3>,
 ) -> Result<TransactionHash> {
     let address = account.address();
     let settlement: EncodedSettlement = settlement.into();
@@ -32,21 +37,18 @@ pub async fn submit(
         .transaction_count(address, None)
         .await
         .context("failed to get transaction_count")?;
-    let pending_gas_price = recover_gas_price_from_pending_transaction(&web3, &address, nonce)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::info!(
-                "Cannot get pending gas price due to {}, assuming no pending settlement",
-                e
-            );
-            None
-        });
+    let pending_gas_price =
+        recover_gas_price_from_pending_transaction(&web3, &address, nonce).await?;
 
     // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time
     let gas_limit = gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
 
+    let contract = match private_network {
+        Some(rpc) => Cow::Owned(GPv2Settlement::at(rpc, contract.address())),
+        None => Cow::Borrowed(contract),
+    };
     let settlement_sender = SettlementSender {
-        contract,
+        contract: &*contract,
         nonce,
         gas_limit,
         settlement,
