@@ -1,11 +1,10 @@
-use crate::fee::{EthAwareMinFeeCalculator, MinFeeCalculating, MinFeeCalculationError};
-
+use crate::fee::{EthAwareMinFeeCalculator, MinFeeCalculating};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use shared::H160Wrapper;
+use shared::{price_estimate::PriceEstimationError, H160Wrapper};
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -35,7 +34,7 @@ fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> 
 }
 
 pub fn get_fee_info_response(
-    result: Result<(U256, DateTime<Utc>), MinFeeCalculationError>,
+    result: Result<(U256, DateTime<Utc>), PriceEstimationError>,
 ) -> impl Reply {
     match result {
         Ok((amount, expiration_date)) => {
@@ -45,15 +44,15 @@ pub fn get_fee_info_response(
             };
             Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
         }
-        Err(MinFeeCalculationError::NoLiquidity) => Ok(reply::with_status(
+        Err(PriceEstimationError::NoLiquidity) => Ok(reply::with_status(
             super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         )),
-        Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
+        Err(PriceEstimationError::UnsupportedToken(token)) => Ok(reply::with_status(
             super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
         )),
-        Err(MinFeeCalculationError::Other(err)) => {
+        Err(PriceEstimationError::Other(err)) => {
             tracing::error!(?err, "get_fee error");
             Ok(reply::with_status(
                 super::internal_error(),
@@ -101,7 +100,7 @@ pub fn legacy_get_fee_info_request() -> impl Filter<Extract = (H160,), Error = R
 }
 
 pub fn legacy_get_fee_info_response(
-    result: Result<(U256, DateTime<Utc>), MinFeeCalculationError>,
+    result: Result<(U256, DateTime<Utc>), PriceEstimationError>,
 ) -> impl Reply {
     match result {
         Ok((minimal_fee, expiration_date)) => {
@@ -112,15 +111,15 @@ pub fn legacy_get_fee_info_response(
             };
             Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
         }
-        Err(MinFeeCalculationError::NoLiquidity) => Ok(reply::with_status(
+        Err(PriceEstimationError::NoLiquidity) => Ok(reply::with_status(
             super::error("NoLiquidity", "not enough liquidity"),
             StatusCode::NOT_FOUND,
         )),
-        Err(MinFeeCalculationError::UnsupportedToken(token)) => Ok(reply::with_status(
+        Err(PriceEstimationError::UnsupportedToken(token)) => Ok(reply::with_status(
             super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
         )),
-        Err(MinFeeCalculationError::Other(err)) => {
+        Err(PriceEstimationError::Other(err)) => {
             tracing::error!(?err, "get_fee error");
             Ok(reply::with_status(
                 super::internal_error(),

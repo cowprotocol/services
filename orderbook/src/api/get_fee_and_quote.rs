@@ -1,4 +1,4 @@
-use crate::fee::{MinFeeCalculating, MinFeeCalculationError};
+use crate::fee::MinFeeCalculating;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
@@ -73,16 +73,6 @@ enum Error {
     AmountIsZero,
     SellAmountDoesNotCoverFee,
     Other(anyhow::Error),
-}
-
-impl From<MinFeeCalculationError> for Error {
-    fn from(other: MinFeeCalculationError) -> Self {
-        match other {
-            MinFeeCalculationError::NoLiquidity => Error::NoLiquidity,
-            MinFeeCalculationError::UnsupportedToken(token) => Error::UnsupportedToken(token),
-            MinFeeCalculationError::Other(error) => Error::Other(error),
-        }
-    }
 }
 
 impl From<PriceEstimationError> for Error {

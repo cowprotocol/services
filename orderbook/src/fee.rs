@@ -3,10 +3,10 @@ use chrono::{DateTime, Duration, Utc};
 use gas_estimation::GasPriceEstimating;
 use model::order::{OrderKind, BUY_ETH_ADDRESS};
 use primitive_types::{H160, U256};
+use shared::price_estimate::PriceEstimationError;
 use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use thiserror::Error;
 
 pub type Measurement = (U256, DateTime<Utc>);
 
@@ -40,7 +40,7 @@ pub trait MinFeeCalculating: Send + Sync {
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
-    ) -> Result<Measurement, MinFeeCalculationError>;
+    ) -> Result<Measurement, PriceEstimationError>;
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
     async fn is_valid_fee(&self, sell_token: H160, fee: U256) -> bool;
@@ -77,18 +77,6 @@ const GAS_PER_ORDER: f64 = 100_000.0;
 // This way we can serve a previous estimate if the same token is queried again shortly after
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 60;
 const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
-
-#[derive(Error, Debug)]
-pub enum MinFeeCalculationError {
-    #[error("No liquidity")]
-    NoLiquidity,
-
-    #[error("Token {0:?} not supported")]
-    UnsupportedToken(H160),
-
-    #[error(transparent)]
-    Other(#[from] anyhow::Error),
-}
 
 fn normalize_buy_token(buy_token: H160, weth: H160) -> H160 {
     if buy_token == BUY_ETH_ADDRESS {
@@ -132,7 +120,7 @@ where
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
-    ) -> Result<Measurement, MinFeeCalculationError> {
+    ) -> Result<Measurement, PriceEstimationError> {
         self.calculator
             .min_fee(
                 sell_token,
@@ -174,28 +162,22 @@ impl MinFeeCalculator {
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
-    ) -> Result<Option<U256>> {
+    ) -> Result<U256, PriceEstimationError> {
         let gas_price = self.gas_estimator.estimate().await?;
         let gas_amount =
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
                 // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
-                match self
-                    .price_estimator
+                self.price_estimator
                     .estimate_gas(sell_token, buy_token, amount, kind)
-                    .await
-                {
-                    Ok(amount) => amount.to_f64_lossy() * self.fee_factor,
-                    Err(err) => {
-                        tracing::warn!("Failed to estimate gas amount: {}", err);
-                        return Ok(None);
-                    }
-                }
+                    .await?
+                    .to_f64_lossy()
+                    * self.fee_factor
             } else {
                 GAS_PER_ORDER
             };
         let fee_in_eth = gas_price * gas_amount;
         let amount_to_estimate_price = U256::from_f64_lossy(fee_in_eth).max(U256::one());
-        let token_price = match self
+        let token_price = self
             .price_estimator
             .estimate_price_as_f64(
                 sell_token,
@@ -203,28 +185,20 @@ impl MinFeeCalculator {
                 amount_to_estimate_price,
                 model::order::OrderKind::Buy,
             )
-            .await
-        {
-            Ok(price) => price,
-            Err(err) => {
-                tracing::warn!("Failed to estimate sell token price: {}", err);
-                return Ok(None);
-            }
-        };
-
-        Ok(Some(U256::from_f64_lossy(fee_in_eth * token_price)))
+            .await?;
+        Ok(U256::from_f64_lossy(fee_in_eth * token_price))
     }
 
-    async fn ensure_token_supported(&self, token: H160) -> Result<(), MinFeeCalculationError> {
+    async fn ensure_token_supported(&self, token: H160) -> Result<(), PriceEstimationError> {
         match self.bad_token_detector.detect(token).await {
             Ok(quality) => {
                 if quality.is_good() {
                     Ok(())
                 } else {
-                    Err(MinFeeCalculationError::UnsupportedToken(token))
+                    Err(PriceEstimationError::UnsupportedToken(token))
                 }
             }
-            Err(err) => Err(MinFeeCalculationError::Other(err)),
+            Err(err) => Err(PriceEstimationError::Other(err)),
         }
     }
 }
@@ -241,7 +215,7 @@ impl MinFeeCalculating for MinFeeCalculator {
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
-    ) -> Result<Measurement, MinFeeCalculationError> {
+    ) -> Result<Measurement, PriceEstimationError> {
         self.ensure_token_supported(sell_token).await?;
         if let Some(buy_token) = buy_token {
             self.ensure_token_supported(buy_token).await?;
@@ -259,13 +233,9 @@ impl MinFeeCalculating for MinFeeCalculator {
             return Ok((past_fee, official_valid_until));
         }
 
-        let min_fee = match self
+        let min_fee = self
             .compute_min_fee(sell_token, buy_token, amount, kind)
-            .await?
-        {
-            Some(fee) => fee,
-            None => return Err(MinFeeCalculationError::NoLiquidity),
-        };
+            .await?;
 
         let _ = self
             .measurements
@@ -292,7 +262,7 @@ impl MinFeeCalculating for MinFeeCalculator {
                 return true;
             }
         }
-        if let Ok(Some(current_fee)) = self.compute_min_fee(sell_token, None, None, None).await {
+        if let Ok(current_fee) = self.compute_min_fee(sell_token, None, None, None).await {
             return fee >= current_fee;
         }
         false
@@ -529,7 +499,7 @@ mod tests {
                     Some(OrderKind::Sell)
                 )
                 .await,
-            Err(MinFeeCalculationError::UnsupportedToken(t)) if t == unsupported_token
+            Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token
         ));
 
         // Buying unsupported token
@@ -542,7 +512,7 @@ mod tests {
                     Some(OrderKind::Sell)
                 )
                 .await,
-            Err(MinFeeCalculationError::UnsupportedToken(t)) if t == unsupported_token
+            Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token
         ));
     }
 }
