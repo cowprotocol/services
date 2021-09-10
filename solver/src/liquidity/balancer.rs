@@ -1,13 +1,13 @@
 //! Module for providing Balancer V2 pool liquidity to the solvers.
 
-use crate::liquidity::{BalancerOrder, StablePoolOrder};
 use crate::{
     interactions::{
         allowances::{AllowanceManager, AllowanceManaging, Allowances},
         BalancerSwapGivenOutInteraction,
     },
     liquidity::{
-        slippage, AmmOrderExecution, LimitOrder, SettlementHandling, WeightedProductOrder,
+        slippage, AmmOrderExecution, LimitOrder, SettlementHandling, StablePoolOrder,
+        WeightedProductOrder,
     },
     settlement::SettlementEncoder,
 };
@@ -68,7 +68,7 @@ impl BalancerV2Liquidity {
         &self,
         orders: &[LimitOrder],
         block: Block,
-    ) -> Result<Vec<BalancerOrder>> {
+    ) -> Result<(Vec<StablePoolOrder>, Vec<WeightedProductOrder>)> {
         let pairs = orders
             .iter()
             .flat_map(|order| {
@@ -89,10 +89,10 @@ impl BalancerV2Liquidity {
                 .await?,
         );
 
-        let mut liquidity = Vec::new();
-
-        liquidity.extend(pools.weighted_pools.into_iter().map(|pool| {
-            BalancerOrder::Weighted(WeightedProductOrder {
+        let weighted_product_orders = pools
+            .weighted_pools
+            .into_iter()
+            .map(|pool| WeightedProductOrder {
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee_percentage.into(),
                 settlement_handling: Arc::new(SettlementHandler {
@@ -101,10 +101,11 @@ impl BalancerV2Liquidity {
                     allowances: allowances.clone(),
                 }),
             })
-        }));
-
-        liquidity.extend(pools.stable_pools.into_iter().map(|pool| {
-            BalancerOrder::Stable(StablePoolOrder {
+            .collect();
+        let stable_pool_orders = pools
+            .stable_pools
+            .into_iter()
+            .map(|pool| StablePoolOrder {
                 reserves: pool.reserves,
                 fee: pool.common.swap_fee_percentage.into(),
                 amplification_parameter: pool.amplification_parameter,
@@ -114,9 +115,9 @@ impl BalancerV2Liquidity {
                     allowances: allowances.clone(),
                 }),
             })
-        }));
+            .collect();
 
-        Ok(liquidity)
+        Ok((stable_pool_orders, weighted_product_orders))
     }
 }
 
@@ -323,7 +324,7 @@ mod tests {
             allowance_manager: Box::new(allowance_manager),
             base_tokens: hashset![H160([0xb0; 20])],
         };
-        let liquidity = liquidity_provider
+        let (stable_orders, weighted_orders) = liquidity_provider
             .get_liquidity(
                 &[
                     LimitOrder {
@@ -347,26 +348,25 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(liquidity.len(), 3);
-        let a = liquidity[0].clone().try_as_weighted().unwrap().reserves;
+        assert_eq!(weighted_orders.len(), 2);
+        assert_eq!(stable_orders.len(), 1);
+
         assert_eq!(
-            (&a, &liquidity[0].fee()),
+            (&weighted_orders[0].reserves, &weighted_orders[0].fee),
             (
                 &weighted_pools[0].reserves,
                 &BigRational::new(2.into(), 1000.into())
             ),
         );
-        let b = liquidity[1].clone().try_as_weighted().unwrap().reserves;
         assert_eq!(
-            (&b, &liquidity[1].fee()),
+            (&weighted_orders[1].reserves, &weighted_orders[1].fee),
             (
                 &weighted_pools[1].reserves,
                 &BigRational::new(1.into(), 1000.into())
             ),
         );
-        let c = liquidity[2].clone().try_as_stable().unwrap().reserves;
         assert_eq!(
-            (&c, &liquidity[2].fee()),
+            (&stable_orders[0].reserves, &stable_orders[0].fee),
             (
                 &stable_pools[0].reserves,
                 &BigRational::new(2.into(), 1000.into())

@@ -5,8 +5,7 @@ mod settlement;
 use self::{model::*, settlement::SettlementContext};
 use crate::{
     liquidity::{
-        BalancerOrder, ConstantProductOrder, LimitOrder, Liquidity, StablePoolOrder,
-        WeightedProductOrder,
+        ConstantProductOrder, LimitOrder, Liquidity, StablePoolOrder, WeightedProductOrder,
     },
     settlement::Settlement,
     settlement_submission::retry::is_transaction_failure,
@@ -132,7 +131,8 @@ impl HttpSolver {
             .flat_map(|order| [order.sell_token, order.buy_token]);
         let liquidity_tokens = liquidity.iter().flat_map(|liquidity| match liquidity {
             Liquidity::ConstantProduct(amm) => amm.tokens.into_iter().collect::<Vec<_>>(),
-            Liquidity::Balancer(amm) => amm.tokens(),
+            Liquidity::BalancerWeighted(amm) => amm.reserves.keys().copied().collect(),
+            Liquidity::BalancerStable(amm) => amm.reserves.keys().copied().collect(),
         });
 
         order_tokens
@@ -498,10 +498,8 @@ fn split_liquidity(
     for order in liquidity {
         match order {
             Liquidity::ConstantProduct(order) => constant_product_orders.push(order),
-            Liquidity::Balancer(order) => match order {
-                BalancerOrder::Weighted(wp_order) => weighted_product_orders.push(wp_order),
-                BalancerOrder::Stable(st_order) => stable_pool_orders.push(st_order),
-            },
+            Liquidity::BalancerWeighted(order) => weighted_product_orders.push(order),
+            Liquidity::BalancerStable(order) => stable_pool_orders.push(order),
         }
     }
     (

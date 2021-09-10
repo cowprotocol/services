@@ -4,7 +4,7 @@ pub mod slippage;
 pub mod uniswap;
 
 use crate::settlement::SettlementEncoder;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 #[cfg(test)]
 use model::order::Order;
 use model::{order::OrderKind, TokenPair};
@@ -21,7 +21,8 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 #[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
 pub enum Liquidity {
     ConstantProduct(ConstantProductOrder),
-    Balancer(BalancerOrder),
+    BalancerWeighted(WeightedProductOrder),
+    BalancerStable(StablePoolOrder),
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -214,42 +215,6 @@ impl Settleable for StablePoolOrder {
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
         &*self.settlement_handling
-    }
-}
-
-#[derive(Clone, Debug)]
-pub enum BalancerOrder {
-    Weighted(WeightedProductOrder),
-    Stable(StablePoolOrder),
-}
-
-impl BalancerOrder {
-    pub fn tokens(&self) -> Vec<H160> {
-        match self {
-            BalancerOrder::Weighted(order) => order.reserves.keys().cloned().collect(),
-            BalancerOrder::Stable(order) => order.reserves.keys().cloned().collect(),
-        }
-    }
-
-    pub fn fee(&self) -> BigRational {
-        match self {
-            BalancerOrder::Weighted(order) => order.fee.clone(),
-            BalancerOrder::Stable(order) => order.fee.clone(),
-        }
-    }
-
-    pub fn try_as_weighted(&self) -> Result<WeightedProductOrder> {
-        match self {
-            BalancerOrder::Weighted(wp_order) => Ok(wp_order.clone()),
-            BalancerOrder::Stable(_) => Err(anyhow!("Not a weighted pool order")),
-        }
-    }
-
-    pub fn try_as_stable(&self) -> Result<StablePoolOrder> {
-        match self {
-            BalancerOrder::Stable(st_order) => Ok(st_order.clone()),
-            BalancerOrder::Weighted(_) => Err(anyhow!("Not a stable pool order")),
-        }
     }
 }
 
