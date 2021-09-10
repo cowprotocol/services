@@ -42,14 +42,13 @@ impl LiquidityCollector {
             );
         }
         if let Some(balancer_v2_liquidity) = self.balancer_v2_liquidity.as_ref() {
-            amms.extend(
-                balancer_v2_liquidity
-                    .get_liquidity(limit_orders, at_block)
-                    .await
-                    .context("failed to get Balancer liquidity")?
-                    .into_iter()
-                    .map(Liquidity::Balancer),
-            );
+            let (stable_orders, weighted_orders) = balancer_v2_liquidity
+                .get_liquidity(limit_orders, at_block)
+                .await
+                .context("failed to get Balancer liquidity")?;
+
+            amms.extend(weighted_orders.into_iter().map(Liquidity::BalancerWeighted));
+            amms.extend(stable_orders.into_iter().map(Liquidity::BalancerStable));
         }
         tracing::debug!("got {} AMMs", amms.len());
 
