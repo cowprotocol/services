@@ -189,7 +189,7 @@ impl WeightedPool {
     fn as_pool_ref(&self) -> WeightedPoolRef {
         WeightedPoolRef {
             reserves: &self.reserves,
-            swap_fee_percentage: self.swap_fee_percentage,
+            swap_fee_percentage: self.common.swap_fee_percentage,
         }
     }
 }
@@ -215,6 +215,7 @@ impl BaselineSolvable for WeightedPool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sources::balancer::pool_fetching::CommonPoolState;
     use std::collections::HashMap;
 
     fn create_pool_with(
@@ -240,11 +241,13 @@ mod tests {
             );
         }
         WeightedPool {
-            pool_id: Default::default(),
-            pool_address: H160::zero(),
+            common: CommonPoolState {
+                pool_id: Default::default(),
+                pool_address: H160::zero(),
+                swap_fee_percentage: Bfp::from_wei(swap_fee_percentage),
+                paused: true,
+            },
             reserves,
-            swap_fee_percentage: Bfp::from_wei(swap_fee_percentage),
-            paused: true,
         }
     }
 
