@@ -1,12 +1,8 @@
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
-use num::{BigInt, BigRational};
 use serde::{Deserialize, Serialize};
-use shared::{
-    conversions::U256Ext,
-    price_estimate::{PriceEstimating, PriceEstimationError},
-};
+use shared::price_estimate::{self, PriceEstimating, PriceEstimationError};
 use std::sync::Arc;
 use std::{convert::Infallible, str::FromStr};
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -20,8 +16,9 @@ struct AmountEstimateQuery {
 
 #[derive(Deserialize, Serialize)]
 struct AmountEstimateResult {
-    #[serde(with = "serde_with::rust::display_fromstr")]
-    amount: BigInt,
+    #[serde(with = "model::u256_decimal")]
+    amount: U256,
+    #[serde(with = "model::h160_hexadecimal")]
     token: H160,
 }
 
@@ -70,24 +67,17 @@ fn get_amount_estimate_request(
 }
 
 fn get_amount_estimate_response(
-    result: Result<BigRational, PriceEstimationError>,
+    result: Result<price_estimate::Estimate, PriceEstimationError>,
     query: AmountEstimateQuery,
 ) -> impl Reply {
     match result {
-        Ok(price) => {
-            let query_amount = query.amount.to_big_rational();
-            let response_amount = match query.kind {
-                OrderKind::Buy => query_amount * price,
-                OrderKind::Sell => query_amount / price,
-            };
-            reply::with_status(
-                reply::json(&AmountEstimateResult {
-                    amount: response_amount.to_integer(),
-                    token: query.market.quote_token,
-                }),
-                StatusCode::OK,
-            )
-        }
+        Ok(estimate) => reply::with_status(
+            reply::json(&AmountEstimateResult {
+                amount: estimate.out_amount,
+                token: query.market.quote_token,
+            }),
+            StatusCode::OK,
+        ),
         Err(PriceEstimationError::UnsupportedToken(token)) => reply::with_status(
             super::error("UnsupportedToken", format!("Token address {:?}", token)),
             StatusCode::BAD_REQUEST,
@@ -117,7 +107,12 @@ pub fn get_amount_estimate(
                 OrderKind::Sell => (market.quote_token, market.base_token),
             };
             let result = price_estimator
-                .estimate_price(sell_token, buy_token, query.amount, query.kind)
+                .estimate(&price_estimate::Query {
+                    sell_token,
+                    buy_token,
+                    in_amount: query.amount,
+                    kind: query.kind,
+                })
                 .await;
             Result::<_, Infallible>::Ok(get_amount_estimate_response(result, query))
         }
@@ -170,19 +165,27 @@ mod tests {
         };
 
         // Sell Order
-        let response =
-            get_amount_estimate_response(Ok(BigRational::from_integer(2.into())), query.clone())
-                .into_response();
+        let response = get_amount_estimate_response(
+            Ok(price_estimate::Estimate {
+                out_amount: 2.into(),
+                gas: 0.into(),
+            }),
+            query.clone(),
+        )
+        .into_response();
         assert_eq!(response.status(), StatusCode::OK);
 
         let estimate: AmountEstimateResult =
             serde_json::from_slice(response_body(response).await.as_slice()).unwrap();
-        assert_eq!(estimate.amount, 50.into());
+        assert_eq!(estimate.amount, 2.into());
         assert_eq!(estimate.token, query.market.quote_token);
 
         // Buy Order
         let response = get_amount_estimate_response(
-            Ok(BigRational::from_integer(2.into())),
+            Ok(price_estimate::Estimate {
+                out_amount: 2.into(),
+                gas: 0.into(),
+            }),
             AmountEstimateQuery {
                 kind: OrderKind::Buy,
                 ..query.clone()
@@ -192,7 +195,7 @@ mod tests {
 
         let estimate: AmountEstimateResult =
             serde_json::from_slice(response_body(response).await.as_slice()).unwrap();
-        assert_eq!(estimate.amount, 200.into());
+        assert_eq!(estimate.amount, 2.into());
         assert_eq!(estimate.token, query.market.quote_token);
     }
 }

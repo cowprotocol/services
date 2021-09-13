@@ -7,16 +7,19 @@ use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{Account, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver, SolverConfig};
+use model::order::OrderKind;
 use naive_solver::NaiveSolver;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
 use shared::{
-    conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching, Web3,
+    price_estimate::{self, PriceEstimating},
+    token_info::TokenInfoFetching,
+    Web3,
 };
 use single_order_solver::SingleOrderSolver;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -273,32 +276,36 @@ impl SellVolumeFilteringSolver {
     }
 
     async fn filter_orders(&self, orders: Vec<LimitOrder>) -> Vec<LimitOrder> {
-        let sell_tokens: Vec<_> = orders.iter().map(|order| order.sell_token).collect();
-        let prices: HashMap<_, _> = self
-            .price_estimator
-            .estimate_prices(&sell_tokens, self.denominator_token)
-            .await
-            .into_iter()
-            .zip(sell_tokens)
-            .filter_map(|(result, token)| {
-                if let Ok(price) = result {
-                    Some((token, price))
-                } else {
-                    None
-                }
+        let queries = orders
+            .iter()
+            // The out amount is always self.denominator_token and the in amount in the token the
+            // user has balance.
+            .map(|order| match order.kind {
+                OrderKind::Buy => price_estimate::Query {
+                    sell_token: self.denominator_token,
+                    buy_token: order.buy_token,
+                    in_amount: order.buy_amount,
+                    kind: OrderKind::Buy,
+                },
+                OrderKind::Sell => price_estimate::Query {
+                    sell_token: order.sell_token,
+                    buy_token: self.denominator_token,
+                    in_amount: order.sell_amount,
+                    kind: OrderKind::Sell,
+                },
             })
-            .collect();
+            .collect::<Vec<_>>();
+        let estimates = self.price_estimator.estimates(&queries).await;
 
         orders
             .into_iter()
-            .filter(|order| {
-                prices
-                    .get(&order.sell_token)
-                    .map(|price| {
-                        price * order.sell_amount.to_big_rational()
-                            > self.min_value.to_big_rational()
-                    })
-                    .unwrap_or(false)
+            .zip(estimates)
+            .filter_map(|(order, estimate)| {
+                let estimate = estimate.ok()?;
+                if estimate.out_amount < self.min_value {
+                    return None;
+                }
+                Some(order)
             })
             .collect()
     }
@@ -327,12 +334,9 @@ impl Solver for SellVolumeFilteringSolver {
 
 #[cfg(test)]
 mod tests {
-    use num::BigRational;
-    use shared::price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator};
-
-    use crate::liquidity::LimitOrder;
-
     use super::*;
+    use crate::liquidity::LimitOrder;
+    use shared::price_estimate::{mocks::FailingPriceEstimator, MockPriceEstimating};
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();
@@ -359,27 +363,41 @@ mod tests {
             LimitOrder {
                 sell_amount: 100_000.into(),
                 sell_token,
+                kind: OrderKind::Sell,
                 ..Default::default()
             },
             LimitOrder {
                 sell_amount: 500_000.into(),
                 sell_token,
+                kind: OrderKind::Sell,
                 ..Default::default()
             },
             // Order with small amount
             LimitOrder {
                 sell_amount: 100.into(),
                 sell_token,
+                kind: OrderKind::Sell,
                 ..Default::default()
             },
         ];
 
-        let price_estimator = Arc::new(FakePriceEstimator(BigRational::from_integer(42.into())));
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|queries| {
+            queries
+                .iter()
+                .map(|query| {
+                    Ok(price_estimate::Estimate {
+                        out_amount: query.in_amount,
+                        gas: 0.into(),
+                    })
+                })
+                .collect()
+        });
         let solver = SellVolumeFilteringSolver {
             inner: Box::new(NoopSolver()),
-            price_estimator,
+            price_estimator: Arc::new(price_estimator),
             denominator_token: H160::zero(),
-            min_value: 400_000.into(),
+            min_value: 50_000.into(),
         };
         assert_eq!(solver.filter_orders(orders).await.len(), 2);
     }

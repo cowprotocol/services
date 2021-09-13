@@ -20,6 +20,7 @@ use itertools::{Either, Itertools};
 use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
 use primitive_types::H160;
+use shared::price_estimate;
 use shared::{
     current_block::{self, CurrentBlockStream},
     price_estimate::PriceEstimating,
@@ -29,7 +30,6 @@ use shared::{
 };
 use std::{
     collections::{HashMap, HashSet},
-    iter::FromIterator as _,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -512,36 +512,51 @@ pub async fn collect_estimated_prices(
     // Computes set of traded tokens (limit orders only).
     // NOTE: The native token is always added.
 
-    let tokens = Vec::from_iter(
-        orders
-            .iter()
-            .flat_map(|order| [order.sell_token, order.buy_token])
-            .collect::<HashSet<_>>(),
-    );
-
-    // For ranking purposes it doesn't matter how the external price vector is scaled,
-    // but native_token is used here anyway for better logging/debugging.
-    let denominator_token: H160 = native_token;
-
-    let estimated_prices = price_estimator
-        .estimate_prices(&tokens, denominator_token)
-        .await;
-
-    let mut prices: HashMap<_, _> = tokens
+    let amount = price_estimator.native_token_amount_to_estimate_prices_with();
+    let queries = orders
+        .iter()
+        .flat_map(|order| [order.sell_token, order.buy_token])
+        .filter(|token| *token != native_token)
+        .collect::<HashSet<_>>()
         .into_iter()
-        .zip(estimated_prices)
-        .filter_map(|(token, price)| match price {
-            Ok(price) => Some((token, price)),
-            Err(err) => {
-                tracing::warn!("failed to estimate price for token {}: {:?}", token, err);
-                None
-            }
+        .map(|token| price_estimate::Query {
+            // For ranking purposes it doesn't matter how the external price vector is scaled,
+            // but native_token is used here anyway for better logging/debugging.
+            sell_token: native_token,
+            buy_token: token,
+            in_amount: amount,
+            kind: model::order::OrderKind::Sell,
+        })
+        .collect::<Vec<_>>();
+    let estimates = price_estimator.estimates(&queries).await;
+
+    fn log_err(token: H160, err: &str) {
+        tracing::warn!("failed to estimate price for token {}: {}", token, err);
+    }
+    let mut prices: HashMap<_, _> = queries
+        .into_iter()
+        .zip(estimates)
+        .filter_map(|(query, estimate)| {
+            let estimate = match estimate {
+                Ok(estimate) => estimate,
+                Err(err) => {
+                    log_err(query.buy_token, &format!("{:?}", err));
+                    return None;
+                }
+            };
+            let price = match estimate.price_in_sell_token_rational(&query) {
+                Some(price) => price,
+                None => {
+                    log_err(query.buy_token, "infinite price");
+                    return None;
+                }
+            };
+            Some((query.buy_token, price))
         })
         .collect();
 
     // Always include the native token.
     prices.insert(native_token, num::one());
-
     // And the placeholder for its native counterpart.
     prices.insert(BUY_ETH_ADDRESS, num::one());
 
@@ -591,7 +606,10 @@ mod tests {
 
     #[tokio::test]
     async fn collect_estimated_prices_adds_prices_for_buy_and_sell_token_of_limit_orders() {
-        let price_estimator = FakePriceEstimator(BigRational::from_float(1.0).unwrap());
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1.into(),
+        });
 
         let native_token = H160::zero();
         let sell_token = H160::from_low_u64_be(1);
@@ -639,7 +657,10 @@ mod tests {
 
     #[tokio::test]
     async fn collect_estimated_prices_adds_native_token_if_wrapped_is_traded() {
-        let price_estimator = FakePriceEstimator(BigRational::from_float(1.0).unwrap());
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1.into(),
+        });
 
         let native_token = H160::zero();
         let sell_token = H160::from_low_u64_be(1);

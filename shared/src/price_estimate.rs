@@ -1,8 +1,8 @@
 use crate::{
     bad_token::BadTokenDetecting,
     baseline_solver::{
-        estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
-        Estimate, DEFAULT_MAX_HOPS,
+        self, estimate_buy_amount, estimate_sell_amount, path_candidates, token_path_to_pair_path,
+        DEFAULT_MAX_HOPS,
     },
     conversions::U256Ext,
     recent_block_cache::Block,
@@ -13,7 +13,7 @@ use ethcontract::{H160, U256};
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
-use num::{BigRational, ToPrimitive};
+use num::BigRational;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -32,71 +32,59 @@ pub enum PriceEstimationError {
     Other(#[from] anyhow::Error),
 }
 
-#[async_trait::async_trait]
-pub trait PriceEstimating: Send + Sync {
+#[derive(Copy, Clone, Debug)]
+pub struct Query {
+    pub sell_token: H160,
+    pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in buy_token.
-    /// The resulting price is how many units of sell_token needs to be sold for one unit of
-    /// buy_token (sell_amount / buy_amount).
-    /// amount must be nonzero.
-    async fn estimate_price(
-        &self,
-        sell_token: H160,
-        buy_token: H160,
-        amount: U256,
-        kind: OrderKind,
-    ) -> Result<BigRational, PriceEstimationError>;
+    pub in_amount: U256,
+    pub kind: OrderKind,
+}
 
-    /// Returns the expected gas cost for this given trade
-    /// amount must be nonzero.
-    async fn estimate_gas(
-        &self,
-        sell_token: H160,
-        buy_token: H160,
-        amount: U256,
-        kind: OrderKind,
-    ) -> Result<U256, PriceEstimationError>;
+#[derive(Copy, Clone, Debug)]
+pub struct Estimate {
+    pub out_amount: U256,
+    pub gas: U256,
+}
 
-    async fn estimate_price_as_f64(
-        &self,
-        sell_token: H160,
-        buy_token: H160,
-        amount: U256,
-        kind: OrderKind,
-    ) -> Result<f64, PriceEstimationError> {
-        self.estimate_price(sell_token, buy_token, amount, kind)
-            .await
-            .and_then(|price| {
-                price
-                    .to_f64()
-                    .ok_or_else(|| anyhow!("Cannot convert price ratio to float").into())
-            })
+impl Estimate {
+    /// Returns (sell_amount, buy_amount).
+    pub fn amounts(&self, query: &Query) -> (U256, U256) {
+        match query.kind {
+            OrderKind::Buy => (self.out_amount, query.in_amount),
+            OrderKind::Sell => (query.in_amount, self.out_amount),
+        }
     }
 
-    fn amount_to_estimate_prices_with(&self) -> U256;
+    /// The resulting price is how many units of sell_token needs to be sold for one unit of
+    /// buy_token (sell_amount / buy_amount).
+    pub fn price_in_sell_token_rational(&self, query: &Query) -> Option<BigRational> {
+        let (sell_amount, buy_amount) = self.amounts(query);
+        amounts_to_price(sell_amount, buy_amount)
+    }
+
+    pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
+        let (sell_amount, buy_amount) = self.amounts(query);
+        sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()
+    }
+}
+
+#[mockall::automock]
+#[async_trait::async_trait]
+pub trait PriceEstimating: Send + Sync {
+    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError>;
 
     // Returns a vector of (rational) prices for the given tokens denominated
     // in denominator_token or an error in case there is an error computing any
     // of the prices in the vector.
-    async fn estimate_prices(
-        &self,
-        tokens: &[H160],
-        denominator_token: H160,
-    ) -> Vec<Result<BigRational, PriceEstimationError>> {
-        join_all(tokens.iter().map(|token| async move {
-            if *token != denominator_token {
-                self.estimate_price(
-                    denominator_token,
-                    *token,
-                    self.amount_to_estimate_prices_with(),
-                    OrderKind::Sell,
-                )
-                .await
-            } else {
-                Ok(num::one())
-            }
-        }))
-        .await
+    async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+        // Naive default implementation that could be implemented more efficiently for some
+        // estimators.
+        join_all(queries.iter().map(|query| self.estimate(query))).await
     }
+
+    // Used when a price relative to the native token is needed without having a specific amount.
+    fn native_token_amount_to_estimate_prices_with(&self) -> U256;
 }
 
 pub struct BaselinePriceEstimator {
@@ -143,64 +131,53 @@ impl BaselinePriceEstimator {
 
 #[async_trait::async_trait]
 impl PriceEstimating for BaselinePriceEstimator {
-    async fn estimate_price(
-        &self,
-        sell_token: H160,
-        buy_token: H160,
-        amount: U256,
-        kind: OrderKind,
-    ) -> Result<BigRational, PriceEstimationError> {
-        let price = self
-            .estimate_price_helper(sell_token, buy_token, amount, kind, true)
-            .await?
-            .1;
-        Ok(price)
+    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
+        let (path, out_amount) = self
+            .estimate_price_helper(
+                query.sell_token,
+                query.buy_token,
+                query.in_amount,
+                query.kind,
+                true,
+            )
+            .await?;
+        Ok(Estimate {
+            out_amount,
+            gas: self.estimate_gas(&path),
+        })
     }
 
-    async fn estimate_gas(
-        &self,
-        sell_token: H160,
-        buy_token: H160,
-        amount: U256,
-        kind: OrderKind,
-    ) -> Result<U256, PriceEstimationError> {
-        let path = self
-            .estimate_price_helper(sell_token, buy_token, amount, kind, true)
-            .await?
-            .0;
-        let trades = path.len() - 1;
-        // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
-        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
-        const BASELINE_GAS_PER_HOP: u64 = 60_000;
-        const BASELINE_FIXED_OVERHEAD: u64 = 50_000;
-        // Extrapolated from gp-v2-contract's `yarn bench:uniswap`
-        const GP_OVERHEAD: u64 = 90_000;
-        return Ok(U256::from(GP_OVERHEAD)
-            + BASELINE_FIXED_OVERHEAD
-            + BASELINE_GAS_PER_HOP * trades as u64);
-    }
-
-    fn amount_to_estimate_prices_with(&self) -> U256 {
+    fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
         self.amount_to_estimate_prices_with
     }
 }
 
-fn amounts_to_price(
-    sell_amount: U256,
-    buy_amount: U256,
-) -> Result<BigRational, PriceEstimationError> {
-    // Due to integer rounding it is possible that we find path but the amount is 0.
-    if sell_amount.is_zero() || buy_amount.is_zero() {
-        return Err(PriceEstimationError::NoLiquidity);
+fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRational> {
+    if buy_amount.is_zero() {
+        return None;
     }
-    Ok(BigRational::new(
+    Some(BigRational::new(
         sell_amount.to_big_int(),
         buy_amount.to_big_int(),
     ))
 }
 
 impl BaselinePriceEstimator {
-    /// Returns the path and the price.
+    fn estimate_gas(&self, path: &[H160]) -> U256 {
+        let trades = match path.len().checked_sub(1) {
+            Some(len) => len,
+            None => return 0.into(),
+        };
+        // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
+        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
+        const BASELINE_GAS_PER_HOP: u64 = 60_000;
+        const BASELINE_FIXED_OVERHEAD: u64 = 50_000;
+        // Extrapolated from gp-v2-contract's `yarn bench:uniswap`
+        const GP_OVERHEAD: u64 = 90_000;
+        U256::from(GP_OVERHEAD) + BASELINE_FIXED_OVERHEAD + BASELINE_GAS_PER_HOP * trades as u64
+    }
+
+    /// Returns the path and the out amount.
     async fn estimate_price_helper(
         &self,
         sell_token: H160,
@@ -208,11 +185,11 @@ impl BaselinePriceEstimator {
         amount: U256,
         kind: OrderKind,
         consider_gas_costs: bool,
-    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
+    ) -> Result<(Vec<H160>, U256), PriceEstimationError> {
         self.ensure_token_supported(sell_token).await?;
         self.ensure_token_supported(buy_token).await?;
         if sell_token == buy_token {
-            return Ok((Vec::new(), num::one()));
+            return Ok((Vec::new(), amount));
         }
         if amount.is_zero() {
             return Err(anyhow!("Attempt to estimate price of a trade with zero amount.").into());
@@ -225,27 +202,32 @@ impl BaselinePriceEstimator {
                     Some(if sell_token == self.native_token {
                         num::one()
                     } else {
-                        self.best_execution_sell_order(
-                            self.native_token,
-                            sell_token,
-                            self.amount_to_estimate_prices_with,
-                            gas_price,
-                            None,
-                        )
-                        .await?
-                        .1
+                        let buy_amount = self
+                            .best_execution_sell_order(
+                                self.native_token,
+                                sell_token,
+                                self.amount_to_estimate_prices_with,
+                                gas_price,
+                                None,
+                            )
+                            .await?
+                            .1;
+                        amounts_to_price(self.amount_to_estimate_prices_with, buy_amount)
+                            .ok_or(PriceEstimationError::NoLiquidity)?
                     })
                 } else {
                     None
                 };
-                self.best_execution_buy_order(
-                    sell_token,
-                    buy_token,
-                    amount,
-                    gas_price,
-                    sell_token_price_in_native_token,
-                )
-                .await
+                let (path, sell_amount) = self
+                    .best_execution_buy_order(
+                        sell_token,
+                        buy_token,
+                        amount,
+                        gas_price,
+                        sell_token_price_in_native_token,
+                    )
+                    .await?;
+                Ok((path, sell_amount))
             }
             OrderKind::Sell => {
                 // Do not consider gas costs below to avoid infinite recursion.
@@ -253,32 +235,37 @@ impl BaselinePriceEstimator {
                     Some(if buy_token == self.native_token {
                         num::one()
                     } else {
-                        self.best_execution_sell_order(
-                            self.native_token,
-                            buy_token,
-                            self.amount_to_estimate_prices_with,
-                            gas_price,
-                            None,
-                        )
-                        .await?
-                        .1
+                        let buy_amount = self
+                            .best_execution_sell_order(
+                                self.native_token,
+                                buy_token,
+                                self.amount_to_estimate_prices_with,
+                                gas_price,
+                                None,
+                            )
+                            .await?
+                            .1;
+                        amounts_to_price(self.amount_to_estimate_prices_with, buy_amount)
+                            .ok_or(PriceEstimationError::NoLiquidity)?
                     })
                 } else {
                     None
                 };
-                self.best_execution_sell_order(
-                    sell_token,
-                    buy_token,
-                    amount,
-                    gas_price,
-                    buy_token_price_in_native_token,
-                )
-                .await
+                let (path, buy_amount) = self
+                    .best_execution_sell_order(
+                        sell_token,
+                        buy_token,
+                        amount,
+                        gas_price,
+                        buy_token_price_in_native_token,
+                    )
+                    .await?;
+                Ok((path, buy_amount))
             }
         }
     }
 
-    /// Returns path and price (sell_amount / buy_amount).
+    /// Returns path and out (buy) amount.
     /// If buy_token_price_in_native_token is set then it will be used to take gas cost into
     /// account.
     async fn best_execution_sell_order(
@@ -288,8 +275,8 @@ impl BaselinePriceEstimator {
         sell_amount: U256,
         gas_price: f64,
         buy_token_price_in_native_token: Option<BigRational>,
-    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
-        let path_comparison = |buy_estimate: Estimate<U256, Pool>| {
+    ) -> Result<(Vec<H160>, U256), PriceEstimationError> {
+        let path_comparison = |buy_estimate: baseline_solver::Estimate<U256, Pool>| {
             if let Some(buy_token_price_in_native_token) = &buy_token_price_in_native_token {
                 let buy_amount_in_native_token =
                     buy_estimate.value.to_big_rational() * buy_token_price_in_native_token;
@@ -316,11 +303,10 @@ impl BaselinePriceEstimator {
                 },
             )
             .await?;
-        let price = amounts_to_price(sell_amount, buy_amount)?;
-        Ok((path, price))
+        Ok((path, buy_amount))
     }
 
-    /// Returns path and price (sell_amount / buy_amount).
+    /// Returns path and out (sell) amount.
     /// If sell_token_price_in_native_token is set then it will be used to take gas cost into
     /// account.
     async fn best_execution_buy_order(
@@ -330,8 +316,8 @@ impl BaselinePriceEstimator {
         buy_amount: U256,
         gas_price: f64,
         sell_token_price_in_native_token: Option<BigRational>,
-    ) -> Result<(Vec<H160>, BigRational), PriceEstimationError> {
-        let path_comparison = |sell_estimate: Estimate<U256, Pool>| {
+    ) -> Result<(Vec<H160>, U256), PriceEstimationError> {
+        let path_comparison = |sell_estimate: baseline_solver::Estimate<U256, Pool>| {
             if let Some(sell_token_price_in_native_token) = &sell_token_price_in_native_token {
                 let sell_amount_in_native_token =
                     sell_estimate.value.to_big_rational() * sell_token_price_in_native_token;
@@ -358,8 +344,7 @@ impl BaselinePriceEstimator {
                 },
             )
             .await?;
-        let price = amounts_to_price(sell_amount, buy_amount)?;
-        Ok((path, price))
+        Ok((path, sell_amount))
     }
 
     async fn best_execution<AmountFn, CompareFn, O, Amount>(
@@ -406,30 +391,14 @@ impl BaselinePriceEstimator {
 pub mod mocks {
     use super::*;
 
-    pub struct FakePriceEstimator(pub BigRational);
+    pub struct FakePriceEstimator(pub Estimate);
     #[async_trait::async_trait]
     impl PriceEstimating for FakePriceEstimator {
-        async fn estimate_price(
-            &self,
-            _: H160,
-            _: H160,
-            _: U256,
-            _: OrderKind,
-        ) -> Result<BigRational, PriceEstimationError> {
-            Ok(self.0.clone())
+        async fn estimate(&self, _: &Query) -> Result<Estimate, PriceEstimationError> {
+            Ok(self.0)
         }
 
-        async fn estimate_gas(
-            &self,
-            _: H160,
-            _: H160,
-            _: U256,
-            _: OrderKind,
-        ) -> Result<U256, PriceEstimationError> {
-            Ok(100_000.into())
-        }
-
-        fn amount_to_estimate_prices_with(&self) -> U256 {
+        fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
             1.into()
         }
     }
@@ -437,27 +406,11 @@ pub mod mocks {
     pub struct FailingPriceEstimator();
     #[async_trait::async_trait]
     impl PriceEstimating for FailingPriceEstimator {
-        async fn estimate_price(
-            &self,
-            _: H160,
-            _: H160,
-            _: U256,
-            _: OrderKind,
-        ) -> Result<BigRational, PriceEstimationError> {
-            Err(anyhow!("error").into())
+        async fn estimate(&self, _: &Query) -> Result<Estimate, PriceEstimationError> {
+            Err(anyhow!("").into())
         }
 
-        async fn estimate_gas(
-            &self,
-            _: H160,
-            _: H160,
-            _: U256,
-            _: OrderKind,
-        ) -> Result<U256, PriceEstimationError> {
-            Err(anyhow!("error").into())
-        }
-
-        fn amount_to_estimate_prices_with(&self) -> U256 {
+        fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
             1.into()
         }
     }
@@ -510,52 +463,59 @@ mod tests {
             1.into(),
         );
 
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_a, token_a, U256::exp10(18), OrderKind::Buy)
-                .await
-                .unwrap(),
-            1.0
-        );
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_a, token_a, U256::exp10(18), OrderKind::Sell)
-                .await
-                .unwrap(),
-            1.0
-        );
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_a, token_b, U256::exp10(18), OrderKind::Buy)
-                .await
-                .unwrap(),
-            10.03,
-            1.0e-4
-        );
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_a, token_b, U256::exp10(18), OrderKind::Sell)
-                .await
-                .unwrap(),
-            10.03,
-            1.0e-4
-        );
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_b, token_a, U256::exp10(18), OrderKind::Buy)
-                .await
-                .unwrap(),
-            0.1003,
-            1.0e-4
-        );
-        assert_approx_eq!(
-            estimator
-                .estimate_price_as_f64(token_b, token_a, U256::exp10(18), OrderKind::Sell)
-                .await
-                .unwrap(),
-            0.1003,
-            1.0e-4
-        );
+        let query = Query {
+            sell_token: token_a,
+            buy_token: token_a,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Buy,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 1.0);
+
+        let query = Query {
+            sell_token: token_a,
+            buy_token: token_a,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Sell,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 1.0);
+
+        let query = Query {
+            sell_token: token_a,
+            buy_token: token_b,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Buy,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 10.03, 1.0e-4);
+
+        let query = Query {
+            sell_token: token_a,
+            buy_token: token_b,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Sell,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 10.03, 1.0e-4);
+
+        let query = Query {
+            sell_token: token_b,
+            buy_token: token_a,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Buy,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 0.1003, 1.0e-4);
+
+        let query = Query {
+            sell_token: token_b,
+            buy_token: token_a,
+            in_amount: U256::exp10(18),
+            kind: OrderKind::Sell,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
+        assert_approx_eq!(estimate.price_in_sell_token_f64(&query), 0.1003, 1.0e-4);
     }
 
     #[tokio::test]
@@ -574,7 +534,12 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .estimate(&Query {
+                sell_token: token_a,
+                buy_token: token_b,
+                in_amount: 1.into(),
+                kind: OrderKind::Buy
+            })
             .await
             .is_err());
     }
@@ -600,7 +565,12 @@ mod tests {
         );
 
         let result = estimator
-            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .estimate(&Query {
+                sell_token: token_a,
+                buy_token: token_b,
+                in_amount: 1.into(),
+                kind: OrderKind::Buy,
+            })
             .await
             .unwrap_err();
         assert_eq!(
@@ -608,7 +578,12 @@ mod tests {
             result.to_string()
         );
         let result = estimator
-            .estimate_price(token_b, token_a, 1.into(), OrderKind::Buy)
+            .estimate(&Query {
+                sell_token: token_b,
+                buy_token: token_a,
+                in_amount: 1.into(),
+                kind: OrderKind::Buy,
+            })
             .await
             .unwrap_err();
         assert_eq!(
@@ -635,7 +610,12 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate_price(token_a, token_b, 1.into(), OrderKind::Buy)
+            .estimate(&Query {
+                sell_token: token_a,
+                buy_token: token_b,
+                in_amount: 1.into(),
+                kind: OrderKind::Buy
+            })
             .await
             .is_err());
     }
@@ -665,11 +645,21 @@ mod tests {
         );
 
         assert!(estimator
-            .estimate_price(token_a, token_b, 100.into(), OrderKind::Sell)
+            .estimate(&Query {
+                sell_token: token_a,
+                buy_token: token_b,
+                in_amount: 100.into(),
+                kind: OrderKind::Sell
+            })
             .await
             .is_ok());
         assert!(estimator
-            .estimate_price(token_a, token_b, 100.into(), OrderKind::Buy)
+            .estimate(&Query {
+                sell_token: token_a,
+                buy_token: token_b,
+                in_amount: 100.into(),
+                kind: OrderKind::Buy
+            })
             .await
             .is_ok());
     }
@@ -714,19 +704,31 @@ mod tests {
             10.into(),
         );
 
-        let price = estimator
-            .estimate_price(token_a, token_b, 100.into(), OrderKind::Sell)
-            .await
-            .unwrap();
+        let query = Query {
+            sell_token: token_a,
+            buy_token: token_b,
+            in_amount: 100.into(),
+            kind: OrderKind::Sell,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
         // Pool 0 is more favourable for buying token B.
-        assert_eq!(price, pool_price(&pools[0], token_b, 100, token_a));
+        assert_eq!(
+            estimate.price_in_sell_token_rational(&query).unwrap(),
+            pool_price(&pools[0], token_b, 100, token_a)
+        );
 
-        let price = estimator
-            .estimate_price(token_b, token_a, 100.into(), OrderKind::Sell)
-            .await
-            .unwrap();
+        let query = Query {
+            sell_token: token_b,
+            buy_token: token_a,
+            in_amount: 100.into(),
+            kind: OrderKind::Sell,
+        };
+        let estimate = estimator.estimate(&query).await.unwrap();
         // Pool 1 is more favourable for buying token A.
-        assert_eq!(price, pool_price(&pools[1], token_a, 100, token_b));
+        assert_eq!(
+            estimate.price_in_sell_token_rational(&query).unwrap(),
+            pool_price(&pools[1], token_a, 100, token_b)
+        );
     }
 
     #[tokio::test]
@@ -757,9 +759,15 @@ mod tests {
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
             assert_eq!(
                 estimator
-                    .estimate_gas(token_a, token_b, 1.into(), *kind)
+                    .estimate(&Query {
+                        sell_token: token_a,
+                        buy_token: token_b,
+                        in_amount: 1.into(),
+                        kind: *kind
+                    })
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .gas,
                 260_000.into()
             );
         }
@@ -768,61 +776,18 @@ mod tests {
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
             assert_eq!(
                 estimator
-                    .estimate_gas(token_b, token_a, 10.into(), *kind)
+                    .estimate(&Query {
+                        sell_token: token_b,
+                        buy_token: token_a,
+                        in_amount: 10.into(),
+                        kind: *kind
+                    })
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .gas,
                 200_000.into()
             );
         }
-    }
-
-    #[tokio::test]
-    async fn unsupported_tokens() {
-        let supported_token = H160::from_low_u64_be(1);
-        let unsupported_token = H160::from_low_u64_be(2);
-
-        let pool_fetcher = Arc::new(FakePoolFetcher(Vec::new()));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
-        let estimator = BaselinePriceEstimator::new(
-            pool_fetcher,
-            gas_estimator,
-            hashset!(),
-            Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
-            Default::default(),
-            1.into(),
-        );
-
-        // Price estimate selling unsupported
-        assert!(matches!(estimator.estimate_price(
-            unsupported_token,
-            supported_token,
-            100.into(),
-            OrderKind::Sell
-        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
-
-        // Price estimate buying unsupported
-        assert!(matches!(estimator.estimate_price(
-            supported_token,
-            unsupported_token,
-            100.into(),
-            OrderKind::Sell
-        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
-
-        // Gas estimate selling unsupported
-        assert!(matches!(estimator.estimate_gas(
-            unsupported_token,
-            supported_token,
-            100.into(),
-            OrderKind::Sell
-        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
-
-        // Gas estimate buying unsupported
-        assert!(matches!(estimator.estimate_gas(
-            supported_token,
-            unsupported_token,
-            100.into(),
-            OrderKind::Sell
-        ).await, Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token));
     }
 
     #[tokio::test]
@@ -866,9 +831,15 @@ mod tests {
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
                 estimator
-                    .estimate_gas(sell, buy, 10.into(), *order_kind)
+                    .estimate(&Query {
+                        sell_token: sell,
+                        buy_token: buy,
+                        in_amount: 10.into(),
+                        kind: *order_kind
+                    })
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .gas,
                 200_000.into()
             );
         }
@@ -880,9 +851,15 @@ mod tests {
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
                 estimator
-                    .estimate_gas(sell, buy, 10.into(), *order_kind)
+                    .estimate(&Query {
+                        sell_token: sell,
+                        buy_token: buy,
+                        in_amount: 10.into(),
+                        kind: *order_kind
+                    })
                     .await
-                    .unwrap(),
+                    .unwrap()
+                    .gas,
                 260_000.into()
             );
         }
@@ -923,7 +900,7 @@ mod tests {
             10u128.pow(18).into(),
         );
 
-        let price_considering_gas_costs = estimator
+        let out_amount_considering_gas_costs = estimator
             .estimate_price_helper(
                 token_a,
                 token_c,
@@ -935,7 +912,7 @@ mod tests {
             .unwrap()
             .1;
 
-        let price_disregarding_gas_costs = estimator
+        let out_amount_disregarding_gas_costs = estimator
             .estimate_price_helper(
                 token_a,
                 token_c,
@@ -947,10 +924,10 @@ mod tests {
             .unwrap()
             .1;
 
-        assert!(price_considering_gas_costs != price_disregarding_gas_costs);
+        assert!(out_amount_considering_gas_costs != out_amount_disregarding_gas_costs);
 
-        assert!(price_considering_gas_costs <= BigRational::new(1008.into(), 1000.into()));
-        assert!(price_disregarding_gas_costs <= BigRational::new(1008.into(), 1000.into()));
+        assert!(out_amount_considering_gas_costs.to_f64_lossy() <= 1.008e19);
+        assert!(out_amount_disregarding_gas_costs.to_f64_lossy() <= 1.008e19);
     }
 
     #[tokio::test]
@@ -980,7 +957,8 @@ mod tests {
                 OrderKind::Sell,
                 false,
             )
-            .await;
-        assert!(result.is_err());
+            .await
+            .unwrap();
+        assert_eq!(result.1, 0.into());
     }
 }

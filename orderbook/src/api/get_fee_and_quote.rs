@@ -5,10 +5,8 @@ use ethcontract::{H160, U256};
 use model::h160_hexadecimal;
 use model::{order::OrderKind, u256_decimal};
 use serde::{Deserialize, Serialize};
-use shared::{
-    conversions::{big_int_to_u256, U256Ext},
-    price_estimate::{PriceEstimating, PriceEstimationError},
-};
+use shared::price_estimate;
+use shared::price_estimate::{PriceEstimating, PriceEstimationError};
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -109,24 +107,21 @@ async fn calculate_sell(
         .ok_or(Error::SellAmountDoesNotCoverFee)?
         .max(U256::one());
 
-    let price = price_estimator
-        .estimate_price(
-            query.sell_token,
-            query.buy_token,
-            sell_amount_after_fee,
-            OrderKind::Sell,
-        )
+    let estimate = price_estimator
+        .estimate(&price_estimate::Query {
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
+            in_amount: sell_amount_after_fee,
+            kind: OrderKind::Sell,
+        })
         .await?;
-    let buy_amount_after_fee =
-        big_int_to_u256(&(sell_amount_after_fee.to_big_rational() / price).to_integer())
-            .map_err(Error::Other)?;
 
     Ok(SellResponse {
         fee: Fee {
             expiration_date,
             amount: fee,
         },
-        buy_amount_after_fee,
+        buy_amount_after_fee: estimate.out_amount,
     })
 }
 
@@ -148,18 +143,16 @@ async fn calculate_buy(
         )
         .await?;
 
-    let price = price_estimator
-        .estimate_price(
-            query.sell_token,
-            query.buy_token,
-            query.buy_amount_after_fee,
-            OrderKind::Buy,
-        )
+    let estimate = price_estimator
+        .estimate(&price_estimate::Query {
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
+            in_amount: query.buy_amount_after_fee,
+            kind: OrderKind::Buy,
+        })
         .await?;
-    let sell_amount_after_fee =
-        big_int_to_u256(&(query.buy_amount_after_fee.to_big_rational() * price).to_integer())
-            .map_err(Error::Other)?;
-    let sell_amount_before_fee = sell_amount_after_fee
+    let sell_amount_before_fee = estimate
+        .out_amount
         .checked_add(fee)
         .ok_or_else(|| Error::Other(anyhow!("overflow in sell_amount_before_fee")))?;
 
@@ -252,7 +245,6 @@ mod tests {
     use crate::fee::MockMinFeeCalculating;
     use futures::FutureExt;
     use hex_literal::hex;
-    use num::BigRational;
     use shared::price_estimate::mocks::FakePriceEstimator;
     use warp::test::request;
 
@@ -262,7 +254,10 @@ mod tests {
         fee_calculator
             .expect_min_fee()
             .returning(|_, _, _, _| Ok((U256::from(3), Utc::now())));
-        let price_estimator = FakePriceEstimator(BigRational::from_float(0.5).unwrap());
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 14.into(),
+            gas: 1000.into(),
+        });
         let result = calculate_sell(
             Arc::new(fee_calculator),
             Arc::new(price_estimator),
@@ -286,7 +281,10 @@ mod tests {
         fee_calculator
             .expect_min_fee()
             .returning(|_, _, _, _| Ok((U256::from(3), Utc::now())));
-        let price_estimator = FakePriceEstimator(BigRational::from_float(2.0).unwrap());
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 20.into(),
+            gas: 1000.into(),
+        });
         let result = calculate_buy(
             Arc::new(fee_calculator),
             Arc::new(price_estimator),

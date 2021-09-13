@@ -3,7 +3,7 @@ use chrono::{DateTime, Duration, Utc};
 use gas_estimation::GasPriceEstimating;
 use model::order::{OrderKind, BUY_ETH_ADDRESS};
 use primitive_types::{H160, U256};
-use shared::price_estimate::PriceEstimationError;
+use shared::price_estimate::{self, PriceEstimationError};
 use shared::{bad_token::BadTokenDetecting, price_estimate::PriceEstimating};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -168,25 +168,31 @@ impl MinFeeCalculator {
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
                 // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
                 self.price_estimator
-                    .estimate_gas(sell_token, buy_token, amount, kind)
+                    .estimate(&price_estimate::Query {
+                        sell_token,
+                        buy_token,
+                        in_amount: amount,
+                        kind,
+                    })
                     .await?
+                    .gas
                     .to_f64_lossy()
                     * self.fee_factor
             } else {
                 GAS_PER_ORDER
             };
         let fee_in_eth = gas_price * gas_amount;
-        let amount_to_estimate_price = U256::from_f64_lossy(fee_in_eth).max(U256::one());
-        let token_price = self
-            .price_estimator
-            .estimate_price_as_f64(
-                sell_token,
-                self.native_token,
-                amount_to_estimate_price,
-                model::order::OrderKind::Buy,
-            )
-            .await?;
-        Ok(U256::from_f64_lossy(fee_in_eth * token_price))
+        let query = price_estimate::Query {
+            sell_token,
+            buy_token: self.native_token,
+            in_amount: self
+                .price_estimator
+                .native_token_amount_to_estimate_prices_with(),
+            kind: OrderKind::Buy,
+        };
+        let estimate = self.price_estimator.estimate(&query).await?;
+        let price = estimate.price_in_sell_token_f64(&query);
+        Ok(U256::from_f64_lossy(fee_in_eth * price))
     }
 
     async fn ensure_token_supported(&self, token: H160) -> Result<(), PriceEstimationError> {
@@ -417,12 +423,18 @@ mod tests {
         let time = Arc::new(Mutex::new(Utc::now()));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
-        let price_estimator = Arc::new(FakePriceEstimator(num::one()));
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1.into(),
+        });
         let time_copy = time.clone();
         let now = move || *time_copy.lock().unwrap();
 
-        let fee_estimator =
-            MinFeeCalculator::new_for_test(gas_price_estimator, price_estimator, Box::new(now));
+        let fee_estimator = MinFeeCalculator::new_for_test(
+            gas_price_estimator,
+            Arc::new(price_estimator),
+            Box::new(now),
+        );
 
         let token = H160::from_low_u64_be(1);
         let (fee, expiry) = fee_estimator
@@ -447,11 +459,14 @@ mod tests {
         let gas_price = Arc::new(Mutex::new(100.0));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
-        let price_estimator = Arc::new(FakePriceEstimator(num::one()));
+        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1.into(),
+        });
 
         let fee_estimator = MinFeeCalculator::new_for_test(
             gas_price_estimator,
-            price_estimator,
+            Arc::new(price_estimator),
             Box::new(Utc::now),
         );
 
@@ -461,6 +476,7 @@ mod tests {
             .await
             .unwrap();
 
+        dbg!(fee);
         let lower_fee = fee - U256::one();
 
         // slightly lower fee is not valid
@@ -477,7 +493,10 @@ mod tests {
         let supported_token = H160::from_low_u64_be(2);
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
-        let price_estimator = Arc::new(FakePriceEstimator(num::one()));
+        let price_estimator = Arc::new(FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1000.into(),
+        }));
 
         let fee_estimator = MinFeeCalculator {
             price_estimator,

@@ -17,12 +17,12 @@ use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
 use futures::{join, lock::Mutex};
 use lazy_static::lazy_static;
-use num::{BigInt, BigRational, ToPrimitive};
+use num::{BigInt, BigRational};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use shared::{
     measure_time,
-    price_estimate::{PriceEstimating, PriceEstimationError},
+    price_estimate::{self, PriceEstimating},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use std::{
@@ -145,16 +145,16 @@ impl HttpSolver {
     fn token_models(
         &self,
         token_infos: &HashMap<H160, TokenInfo>,
-        price_estimates: &HashMap<H160, Result<BigRational, PriceEstimationError>>,
+        price_estimates: &HashMap<H160, f64>,
         buffers: &HashMap<H160, U256>,
     ) -> HashMap<H160, TokenInfoModel> {
         token_infos
             .iter()
             .map(|(address, token_info)| {
-                let external_price = price_estimates[address]
-                    .as_ref()
-                    .ok()
-                    .and_then(|price| price.to_f64());
+                let external_price = match price_estimates.get(address).copied() {
+                    Some(price) if price.is_finite() => Some(price),
+                    _ => None,
+                };
                 (
                     *address,
                     TokenInfoModel {
@@ -313,14 +313,26 @@ impl HttpSolver {
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         let tokens = self.map_tokens_for_solver(&orders, &liquidity);
 
+        let amount = self
+            .price_estimator
+            .native_token_amount_to_estimate_prices_with();
+        let queries = tokens
+            .iter()
+            .map(|token| price_estimate::Query {
+                sell_token: self.native_token,
+                buy_token: *token,
+                in_amount: amount,
+                kind: OrderKind::Sell,
+            })
+            .collect::<Vec<_>>();
+
         let (token_infos, price_estimates, mut buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
                 |duration| tracing::debug!("get_token_infos took {} s", duration.as_secs_f32()),
             ),
             measure_time(
-                self.price_estimator
-                    .estimate_prices(tokens.as_slice(), self.native_token),
+                self.price_estimator.estimates(&queries),
                 |duration| tracing::debug!("estimate_prices took {} s", duration.as_secs_f32()),
             ),
             measure_time(
@@ -352,8 +364,14 @@ impl HttpSolver {
             })
             .collect();
 
-        let price_estimates: HashMap<H160, Result<BigRational, _>> =
-            tokens.iter().cloned().zip(price_estimates).collect();
+        let price_estimates: HashMap<H160, f64> = queries
+            .iter()
+            .zip(price_estimates)
+            .filter_map(|(query, estimate)| {
+                let price = estimate.ok()?.price_in_sell_token_f64(query);
+                Some((query.buy_token, price))
+            })
+            .collect();
 
         let (constant_product_liquidity, weighted_product_liquidity, stable_pool_liquidity) =
             split_liquidity(liquidity);
@@ -645,7 +663,10 @@ mod tests {
         let mock_buffer_retriever: Arc<dyn BufferRetrieving> = Arc::new(mock_buffer_retriever);
 
         let mock_price_estimation: Arc<dyn PriceEstimating> =
-            Arc::new(FakePriceEstimator(num::one()));
+            Arc::new(FakePriceEstimator(price_estimate::Estimate {
+                out_amount: 1.into(),
+                gas: 1.into(),
+            }));
 
         let gas_price = 100.;
 
