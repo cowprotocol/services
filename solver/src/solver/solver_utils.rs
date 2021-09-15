@@ -3,8 +3,6 @@ use serde::{
     de::{Deserializer, Error as _},
     Deserialize,
 };
-use web3::types::Bytes;
-
 use std::{
     borrow::Cow,
     fmt::{self, Display, Formatter},
@@ -61,11 +59,4 @@ where
         .strip_prefix("0x")
         .ok_or_else(|| D::Error::custom("hex missing '0x' prefix"))?;
     hex::decode(hex_str).map_err(D::Error::custom)
-}
-
-pub fn debug_bytes(
-    bytes: &Bytes,
-    formatter: &mut std::fmt::Formatter,
-) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
 }

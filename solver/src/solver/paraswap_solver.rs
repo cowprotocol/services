@@ -1,11 +1,4 @@
-mod api;
-
-use self::api::{
-    DefaultParaswapApi, ParaswapApi, PriceQuery, PriceResponse, Side, TransactionBuilderQuery,
-    TransactionBuilderResponse,
-};
 use super::single_order_solver::{SettlementError, SingleOrderSolving};
-use crate::solver::paraswap_solver::api::ParaswapResponseError;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
@@ -18,6 +11,10 @@ use derivative::Derivative;
 use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
 use reqwest::Client;
+use shared::paraswap_api::{
+    DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
+    TransactionBuilderQuery, TransactionBuilderResponse,
+};
 use shared::token_info::TokenInfo;
 use shared::{conversions::U256Ext, token_info::TokenInfoFetching, Web3};
 use std::collections::HashMap;
@@ -218,17 +215,19 @@ fn satisfies_limit_price(order: &LimitOrder, response: &PriceResponse) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{api::MockParaswapApi, *};
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use crate::test::account;
+    use super::*;
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        test::account,
+    };
     use contracts::WETH9;
     use ethcontract::U256;
-    use mockall::predicate::*;
-    use mockall::Sequence;
+    use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderCreation, OrderKind};
     use reqwest::Client;
     use shared::{
         dummy_contract,
+        paraswap_api::MockParaswapApi,
         token_info::{MockTokenInfoFetching, TokenInfo, TokenInfoFetcher},
         transport::create_env_test_transport,
     };

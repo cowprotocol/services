@@ -1,20 +1,19 @@
-use crate::solver::solver_utils::debug_bytes;
+use crate::debug_bytes;
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
+use model::u256_decimal;
 use reqwest::{Client, RequestBuilder, Url};
 use serde::{de::Error, Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 use thiserror::Error;
-
-use model::u256_decimal;
 use web3::types::Bytes;
 
 const BASE_URL: &str = "https://apiv4.paraswap.io";
 const PARTNER_HEADER_KEY: &str = "X-Partner";
 
 /// Mockable implementation of the API for unit test
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait ParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
@@ -331,8 +330,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e_sell() {
-        let from = shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
             from,
             to,
@@ -364,7 +363,7 @@ mod tests {
             from_decimals: 18,
             to_decimals: 18,
             price_route: price_response.price_route_raw,
-            user_address: shared::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
             referrer: "GPv2".to_string(),
         };
 
@@ -391,8 +390,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e_buy() {
-        let from = shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
             from,
             to,
@@ -421,7 +420,7 @@ mod tests {
             from_decimals: 18,
             to_decimals: 18,
             price_route: price_response.price_route_raw,
-            user_address: shared::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
             referrer: "GPv2".to_string(),
         };
 
@@ -443,8 +442,8 @@ mod tests {
     #[test]
     fn test_price_query_serialization() {
         let query = PriceQuery {
-            from: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            to: shared::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
+            from: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            to: crate::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
             from_decimals: 18,
             to_decimals: 8,
             amount: 1_000_000_000_000_000_000u128.into(),
@@ -743,8 +742,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn transaction_response_error() {
-        let from = shared::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
             from,
             to,
@@ -776,7 +775,7 @@ mod tests {
             from_decimals: 18,
             to_decimals: 18,
             price_route: price_response.price_route_raw,
-            user_address: shared::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
             referrer: "GPv2".to_string(),
         };
 

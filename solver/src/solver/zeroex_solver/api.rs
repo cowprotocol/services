@@ -4,13 +4,14 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::solver::solver_utils::{debug_bytes, deserialize_decimal_f64, Slippage};
+use crate::solver::solver_utils::{deserialize_decimal_f64, Slippage};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
+use shared::debug_bytes;
 use thiserror::Error;
 use web3::types::Bytes;
 
