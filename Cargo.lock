@@ -2112,6 +2112,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "prometheus-metric-storage"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46063c7c7e9054bfca94b0aa77e6f70d33c04bb96b8cac6332f95230c34bc6c2"
+dependencies = [
+ "lazy_static",
+ "prometheus",
+ "prometheus-metric-storage-derive",
+]
+
+[[package]]
+name = "prometheus-metric-storage-derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "518fca4a07c57d69fc3721f74e724bf6c20bb8a44598abb667c4e218a2501417"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "protobuf"
 version = "2.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2607,6 +2629,7 @@ dependencies = [
  "once_cell",
  "primitive-types",
  "prometheus",
+ "prometheus-metric-storage",
  "regex",
  "reqwest",
  "scopeguard",

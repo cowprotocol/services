@@ -8,7 +8,7 @@ use warp::{Filter, Rejection, Reply};
 pub const DEFAULT_METRICS_PORT: u16 = 9586;
 
 /// Global metrics registry used by all components.
-static REGISTRY: OnceCell<prometheus::Registry> = OnceCell::new();
+static REGISTRY: OnceCell<prometheus_metric_storage::StorageRegistry> = OnceCell::new();
 
 /// Configure global metrics registry.
 ///
@@ -26,10 +26,16 @@ static REGISTRY: OnceCell<prometheus::Registry> = OnceCell::new();
 /// configuration is invalid.
 pub fn setup_metrics_registry(prefix: Option<String>, labels: Option<HashMap<String, String>>) {
     let registry = prometheus::Registry::new_custom(prefix, labels).unwrap();
-    REGISTRY.set(registry).unwrap();
+    let storage_registry = prometheus_metric_storage::StorageRegistry::new(registry);
+    REGISTRY.set(storage_registry).unwrap();
 }
 
 /// Get the global instance of the metrics registry.
+pub fn get_metrics_registry() -> &'static prometheus::Registry {
+    get_metric_storage_registry().registry()
+}
+
+/// Get the global instance of the metric storage registry.
 ///
 /// # Implementation notice
 ///
@@ -39,8 +45,8 @@ pub fn setup_metrics_registry(prefix: Option<String>, labels: Option<HashMap<Str
 /// a hook that will call [`setup_registry`] before each test, so we'll
 /// have to initialize it manually before every test, which is tedious
 /// to say the least.
-pub fn get_metrics_registry() -> &'static prometheus::Registry {
-    REGISTRY.get_or_init(prometheus::Registry::new)
+pub fn get_metric_storage_registry() -> &'static prometheus_metric_storage::StorageRegistry {
+    REGISTRY.get_or_init(prometheus_metric_storage::StorageRegistry::default)
 }
 
 #[async_trait::async_trait]
