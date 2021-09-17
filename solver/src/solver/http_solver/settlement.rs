@@ -243,6 +243,7 @@ mod tests {
             partially_fillable: false,
             fee_amount: Default::default(),
             settlement_handling: limit_handler.clone(),
+            is_liquidity_order: false,
             id: "0".to_string(),
         };
         let orders = hashmap! { 0 => limit_order };

@@ -124,6 +124,7 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
+            is_liquidity_order: false,
         };
         let orders = vec![
             LimitOrder {
@@ -180,6 +181,7 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
+            is_liquidity_order: false,
         };
         solver
             .solve(Auction {
@@ -213,6 +215,7 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: handler.clone(),
+            is_liquidity_order: false,
         };
         solver
             .solve(Auction {

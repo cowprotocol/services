@@ -54,6 +54,7 @@ pub struct LimitOrder {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub fee_amount: U256,
+    pub is_liquidity_order: bool,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
@@ -89,7 +90,7 @@ impl From<Order> for LimitOrder {
         use shared::dummy_contract;
 
         let native_token = dummy_contract!(WETH9, H160([0x42; 20]));
-        normalize_limit_order(order, native_token)
+        normalize_limit_order(order, native_token, &Default::default())
     }
 }
 
@@ -105,6 +106,7 @@ impl Default for LimitOrder {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
+            is_liquidity_order: false,
             id: Default::default(),
         }
     }
@@ -321,6 +323,7 @@ pub mod tests {
                 partially_fillable: Default::default(),
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
+                is_liquidity_order: false,
             }
         }
 

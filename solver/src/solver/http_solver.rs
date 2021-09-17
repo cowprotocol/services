@@ -196,6 +196,7 @@ impl HttpSolver {
                     amount: order_cost,
                     token: self.native_token,
                 },
+                is_liquidity_order: order.is_liquidity_order,
             };
             result.insert(*index, order);
         }
@@ -698,6 +699,7 @@ mod tests {
             partially_fillable: false,
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
+            is_liquidity_order: false,
             id: "0".to_string(),
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {
@@ -774,6 +776,7 @@ mod tests {
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
             settlement_handling: limit_handling.clone(),
+            is_liquidity_order: false,
             id: "0".to_string(),
         })
         .collect::<Vec<_>>();
