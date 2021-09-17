@@ -329,6 +329,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
+                is_liquidity_order: false,
             },
             LimitOrder {
                 sell_token: token_b,
@@ -340,6 +341,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -389,6 +391,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
+                is_liquidity_order: false,
             },
             LimitOrder {
                 sell_token: token_a,
@@ -400,6 +403,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -445,6 +449,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
+                is_liquidity_order: false,
             },
             LimitOrder {
                 sell_token: token_b,
@@ -456,6 +461,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -505,6 +511,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
+                is_liquidity_order: false,
             },
             LimitOrder {
                 sell_token: token_b,
@@ -516,6 +523,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -569,6 +577,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
+                is_liquidity_order: false,
             },
             LimitOrder {
                 sell_token: token_b,
@@ -580,6 +589,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
+                is_liquidity_order: false,
             },
         ];
 

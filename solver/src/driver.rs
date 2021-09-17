@@ -607,6 +607,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
+            is_liquidity_order: false,
         }];
         let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
         assert_eq!(prices.len(), 4);
@@ -632,6 +633,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
+            is_liquidity_order: false,
         }];
         let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
         assert_eq!(prices.len(), 2);
@@ -654,6 +656,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
+            is_liquidity_order: false,
         }];
         let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
         assert_eq!(prices.len(), 3);

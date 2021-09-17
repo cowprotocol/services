@@ -331,6 +331,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: order_handler[0].clone(),
                 id: "0".into(),
+                is_liquidity_order: false,
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -343,6 +344,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: order_handler[1].clone(),
                 id: "1".into(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -434,6 +436,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: order_handler[0].clone(),
                 id: "0".into(),
+                is_liquidity_order: false,
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -446,6 +449,7 @@ mod tests {
                 fee_amount: Default::default(),
                 settlement_handling: order_handler[1].clone(),
                 id: "1".into(),
+                is_liquidity_order: false,
             },
         ];
 
@@ -532,6 +536,7 @@ mod tests {
             fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
+            is_liquidity_order: false,
         }];
 
         let amms = vec![
@@ -568,6 +573,7 @@ mod tests {
             fee_amount: 3_429_706_374_800_940_u128.into(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "Crash Bandicoot".to_string(),
+            is_liquidity_order: false,
         };
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
