@@ -55,6 +55,7 @@ pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
         reqwest::Url::from_str(API_HOST).unwrap(),
         weth,
         Client::new(),
+        Default::default(),
     )
 }
 

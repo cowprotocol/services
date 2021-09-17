@@ -201,6 +201,11 @@ struct Arguments {
     /// The RPC endpoint to use for submitting private network transactions.
     #[structopt(long, env)]
     private_tx_network_url: Option<Url>,
+
+    /// The configured addresses whose orders should be considered liquidity
+    /// and not to be included in the objective function by the HTTP solver.
+    #[structopt(long, env)]
+    liquidity_order_owners: Vec<H160>,
 }
 
 arg_enum! {
@@ -251,6 +256,7 @@ async fn main() {
         args.orderbook_url,
         native_token_contract.clone(),
         client.clone(),
+        args.liquidity_order_owners.into_iter().collect(),
     );
     let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
     // We should always use the native token as a base token.

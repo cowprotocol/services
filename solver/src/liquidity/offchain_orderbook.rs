@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::{Context as _, Result};
 use contracts::WETH9;
-use ethcontract::U256;
+use ethcontract::{H160, U256};
 use model::order::{Order, OrderUid, BUY_ETH_ADDRESS};
 use std::{collections::HashSet, sync::Arc};
 
@@ -20,7 +20,13 @@ impl OrderBookApi {
             .context("failed to get orderbook")?
             .into_iter()
             .filter_map(|order| inflight_order_filter(order, inflight_trades))
-            .map(|altered_order| normalize_limit_order(altered_order, self.get_native_token()))
+            .map(|altered_order| {
+                normalize_limit_order(
+                    altered_order,
+                    self.get_native_token(),
+                    self.liquidity_order_owners(),
+                )
+            })
             .collect())
     }
 }
@@ -48,7 +54,11 @@ fn inflight_order_filter(order: Order, inflight_trades: &HashSet<OrderUid>) -> O
     Some(order)
 }
 
-pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
+pub fn normalize_limit_order(
+    order: Order,
+    native_token: WETH9,
+    liquidity_order_owners: &HashSet<H160>,
+) -> LimitOrder {
     let buy_token = if order.order_creation.buy_token == BUY_ETH_ADDRESS {
         native_token.address()
     } else {
@@ -65,6 +75,7 @@ pub fn normalize_limit_order(order: Order, native_token: WETH9) -> LimitOrder {
         kind: order.order_creation.kind,
         partially_fillable: order.order_creation.partially_fillable,
         fee_amount: order.order_creation.fee_amount,
+        is_liquidity_order: liquidity_order_owners.contains(&order.order_meta_data.owner),
         settlement_handling: Arc::new(OrderSettlementHandler {
             native_token,
             order,
@@ -118,7 +129,7 @@ pub mod tests {
         };
 
         assert_eq!(
-            normalize_limit_order(order, native_token).buy_token,
+            normalize_limit_order(order, native_token, &Default::default()).buy_token,
             native_token_address
         );
     }
@@ -136,7 +147,7 @@ pub mod tests {
         };
 
         assert_eq!(
-            normalize_limit_order(order, native_token).buy_token,
+            normalize_limit_order(order, native_token, &Default::default()).buy_token,
             buy_token
         );
     }
