@@ -9,8 +9,7 @@ use serde_json::Value;
 use thiserror::Error;
 use web3::types::Bytes;
 
-const BASE_URL: &str = "https://apiv4.paraswap.io";
-const PARTNER_HEADER_KEY: &str = "X-Partner";
+const BASE_URL: &str = "https://apiv5.paraswap.io";
 
 /// Mockable implementation of the API for unit test
 #[mockall::automock]
@@ -25,20 +24,18 @@ pub trait ParaswapApi {
 
 pub struct DefaultParaswapApi {
     pub client: Client,
-    // X-Partner header to void rate limiting
-    pub partner_header_value: String,
+    pub partner: String,
 }
 
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let query_str = format!("{:?}", &query);
-        let url = query.into_url();
+        let url = query.into_url(&self.partner);
         tracing::debug!("Querying Paraswap API (price) for url {}", url);
         let response_text = self
             .client
             .get(url)
-            .header(PARTNER_HEADER_KEY, &self.partner_header_value)
             .send()
             .await
             .map_err(ParaswapResponseError::Send)?
@@ -71,10 +68,14 @@ impl ParaswapApi for DefaultParaswapApi {
         &self,
         query: TransactionBuilderQuery,
     ) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
+        let query = TransactionBuilderQueryWithPartner {
+            query,
+            partner: &self.partner,
+        };
+
         let query_str = serde_json::to_string(&query).unwrap();
         let response_text = query
             .into_request(&self.client)
-            .header(PARTNER_HEADER_KEY, &self.partner_header_value)
             .send()
             .await
             .map_err(ParaswapResponseError::Send)?
@@ -171,13 +172,13 @@ pub enum Side {
 #[derive(Clone, Debug)]
 pub struct PriceQuery {
     /// source token address
-    pub from: H160,
+    pub src_token: H160,
     /// destination token address
-    pub to: H160,
+    pub dest_token: H160,
     /// decimals of from token (according to API needed  to trade any token)
-    pub from_decimals: usize,
+    pub src_decimals: usize,
     /// decimals of to token (according to API needed to trade any token)
-    pub to_decimals: usize,
+    pub dest_decimals: usize,
     /// amount of source token (in the smallest denomination, e.g. for ETH - 10**18)
     pub amount: U256,
     /// Type of order
@@ -187,10 +188,10 @@ pub struct PriceQuery {
 }
 
 impl PriceQuery {
-    pub fn into_url(self) -> Url {
+    pub fn into_url(self, partner: &str) -> Url {
         let mut url = Url::parse(BASE_URL)
             .expect("invalid base url")
-            .join("v2/prices")
+            .join("/prices")
             .expect("unexpectedly invalid URL segment");
 
         let side = match self.side {
@@ -199,10 +200,11 @@ impl PriceQuery {
         };
 
         url.query_pairs_mut()
-            .append_pair("from", &format!("{:#x}", self.from))
-            .append_pair("to", &format!("{:#x}", self.to))
-            .append_pair("fromDecimals", &self.from_decimals.to_string())
-            .append_pair("toDecimals", &self.to_decimals.to_string())
+            .append_pair("partner", partner)
+            .append_pair("srcToken", &format!("{:#x}", self.src_token))
+            .append_pair("destToken", &format!("{:#x}", self.dest_token))
+            .append_pair("srcDecimals", &self.src_decimals.to_string())
+            .append_pair("destDecimals", &self.dest_decimals.to_string())
             .append_pair("amount", &self.amount.to_string())
             .append_pair("side", side)
             .append_pair("network", "1");
@@ -269,31 +271,61 @@ pub struct TransactionBuilderQuery {
     pub src_token: H160,
     /// The received token
     pub dest_token: H160,
-    /// The source amount
-    #[serde(with = "u256_decimal")]
-    pub src_amount: U256,
-    /// The amount (from priceRoute) - slippage
-    #[serde(with = "u256_decimal")]
-    pub dest_amount: U256,
+    /// The trade amount amount
+    #[serde(flatten)]
+    pub trade_amount: TradeAmount,
+    /// The maximum slippage in BPS.
+    pub slippage: u32,
     /// The decimals of the source token
-    pub from_decimals: usize,
+    pub src_decimals: usize,
     /// The decimals of the destination token
-    pub to_decimals: usize,
+    pub dest_decimals: usize,
     /// priceRoute part from /prices endpoint response (without any change)
     pub price_route: Value,
     /// The address of the signer
     pub user_address: H160,
-    /// partner's referrer string, important if the partner takes fees
-    pub referrer: String,
 }
 
-impl TransactionBuilderQuery {
+/// The amounts for buying and selling.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum TradeAmount {
+    #[serde(rename_all = "camelCase")]
+    Sell {
+        /// The source amount
+        #[serde(with = "u256_decimal")]
+        src_amount: U256,
+    },
+    #[serde(rename_all = "camelCase")]
+    Buy {
+        /// The destination amount
+        #[serde(with = "u256_decimal")]
+        dest_amount: U256,
+    },
+}
+
+/// A helper struct to wrap a `TransactionBuilderQuery` that we get as input from
+/// the `ParaswapApi` trait.
+///
+/// This is done because the `partner` is longer specified in the headersd but
+/// instead in the POST body, but we want the API to stay mostly compatible and
+/// not require passing it in every time we build a transaction given that the
+/// API instance already knows what the `partner` value is.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TransactionBuilderQueryWithPartner<'a> {
+    #[serde(flatten)]
+    query: TransactionBuilderQuery,
+    partner: &'a str,
+}
+
+impl TransactionBuilderQueryWithPartner<'_> {
     pub fn into_request(self, client: &Client) -> RequestBuilder {
         let mut url = Url::parse(BASE_URL)
             .expect("invalid base url")
-            .join("/v2/transactions/1")
+            .join("/transactions/1")
             .expect("unexpectedly invalid URL segment");
-        url.query_pairs_mut().append_pair("skipChecks", "true");
+        url.query_pairs_mut().append_pair("ignoreChecks", "true");
 
         tracing::debug!("Paraswap API (transaction) query url: {}", url);
         client.post(url).json(&self)
@@ -326,23 +358,24 @@ pub struct TransactionBuilderResponse {
 mod tests {
     use super::*;
     use reqwest::StatusCode;
+    use serde_json::json;
 
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e_sell() {
-        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
-            from,
-            to,
-            from_decimals: 18,
-            to_decimals: 18,
+            src_token,
+            dest_token,
+            src_decimals: 18,
+            dest_decimals: 18,
             amount: 135_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
             exclude_dexs: None,
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url())
+        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
             .await
             .expect("price query failed")
             .json()
@@ -354,17 +387,20 @@ mod tests {
             serde_json::to_string_pretty(&price_response).unwrap()
         );
 
-        let transaction_query = TransactionBuilderQuery {
-            src_token: from,
-            dest_token: to,
-            src_amount: price_response.src_amount,
-            // 10% slippage
-            dest_amount: price_response.dest_amount * 90 / 100,
-            from_decimals: 18,
-            to_decimals: 18,
-            price_route: price_response.price_route_raw,
-            user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
-            referrer: "GPv2".to_string(),
+        let transaction_query = TransactionBuilderQueryWithPartner {
+            query: TransactionBuilderQuery {
+                src_token,
+                dest_token,
+                trade_amount: TradeAmount::Sell {
+                    src_amount: price_response.src_amount,
+                },
+                slippage: 1000,
+                src_decimals: 18,
+                dest_decimals: 18,
+                price_route: price_response.price_route_raw,
+                user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            },
+            partner: "Test",
         };
 
         println!(
@@ -390,38 +426,44 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e_buy() {
-        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
-            from,
-            to,
-            from_decimals: 18,
-            to_decimals: 18,
+            src_token,
+            dest_token,
+            src_decimals: 18,
+            dest_decimals: 18,
             amount: 1_800_000_000_000_000_000_000u128.into(),
             side: Side::Buy,
             exclude_dexs: Some(vec!["ParaSwapPool4".to_string()]),
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url())
+        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
             .await
             .expect("price query failed")
             .json()
             .await
             .expect("Response is not json");
 
-        println!("Price Response: {:?}", &price_response,);
+        println!(
+            "Price Response: {}",
+            serde_json::to_string_pretty(&price_response).unwrap(),
+        );
 
-        let transaction_query = TransactionBuilderQuery {
-            src_token: from,
-            dest_token: to,
-            // 10% slippage
-            src_amount: price_response.src_amount * 110 / 100,
-            dest_amount: price_response.dest_amount,
-            from_decimals: 18,
-            to_decimals: 18,
-            price_route: price_response.price_route_raw,
-            user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
-            referrer: "GPv2".to_string(),
+        let transaction_query = TransactionBuilderQueryWithPartner {
+            query: TransactionBuilderQuery {
+                src_token,
+                dest_token,
+                trade_amount: TradeAmount::Buy {
+                    dest_amount: price_response.dest_amount,
+                },
+                slippage: 1000,
+                src_decimals: 18,
+                dest_decimals: 18,
+                price_route: price_response.price_route_raw,
+                user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
+            },
+            partner: "Test",
         };
 
         let client = Client::new();
@@ -442,153 +484,87 @@ mod tests {
     #[test]
     fn test_price_query_serialization() {
         let query = PriceQuery {
-            from: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            to: crate::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
-            from_decimals: 18,
-            to_decimals: 8,
+            src_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            dest_token: crate::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
+            src_decimals: 18,
+            dest_decimals: 8,
             amount: 1_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
             exclude_dexs: Some(vec!["Foo".to_string(), "Bar".to_string()]),
         };
 
-        assert_eq!(&query.into_url().to_string(), "https://apiv4.paraswap.io/v2/prices?from=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&to=0x6810e776880c02933d47db1b9fc05908e5386b96&fromDecimals=18&toDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
+        assert_eq!(&query.into_url("Test").to_string(), "https://apiv5.paraswap.io/prices?partner=Test&srcToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee&destToken=0x6810e776880c02933d47db1b9fc05908e5386b96&srcDecimals=18&destDecimals=8&amount=1000000000000000000&side=SELL&network=1&excludeDEXS=Foo%2CBar");
     }
 
     #[test]
     fn test_price_query_response_deserialization() {
         let result: PriceResponse = serde_json::from_str::<PriceResponse>(
             r#"{
-                "priceRoute": {
-                  "bestRoute": [
-                    {
-                      "exchange": "UniswapV2",
-                      "srcAmount": "100000000000000000",
-                      "destAmount": "1444292761374042400",
-                      "percent": "100",
-                      "data": {
-                        "router": "0x86d3579b043585A97532514016dCF0C2d6C4b6a1",
-                        "path": [
-                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                          "0x6810e776880c02933d47db1b9fc05908e5386b96"
-                        ],
-                        "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-                        "initCode": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "5.473000"
-                      },
-                      "destAmountFeeDeducted": "1444292761374042400"
-                    }
-                  ],
-                  "blockNumber": 12570470,
-                  "destAmount": "1444292761374042400",
-                  "srcAmount": "100000000000000000",
-                  "adapterVersion": "4.0.0",
-                  "others": [
-                    {
-                      "exchange": "Uniswap",
-                      "rate": "1169158453388579682",
-                      "unit": "4739285565781337029",
-                      "data": {
-                        "factory": "0xc0a47dFe034B400B47bDaD5FecDa2621de6c4d95",
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "5.473000"
-                      },
-                      "rateFeeDeducted": "1169158453388579682",
-                      "unitFeeDeducted": "4739285565781337029"
-                    },
-                    {
-                      "exchange": "UniswapV2",
-                      "rate": "1444292761374042342",
-                      "unit": "14437807769106106935",
-                      "data": {
-                        "router": "0x86d3579b043585A97532514016dCF0C2d6C4b6a1",
-                        "path": [
-                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                          "0x6810e776880c02933d47db1b9fc05908e5386b96"
-                        ],
-                        "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
-                        "initCode": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "5.473000"
-                      },
-                      "rateFeeDeducted": "1444292761374042342",
-                      "unitFeeDeducted": "14437807769106106935"
-                    },
-                    {
-                      "exchange": "Balancer",
-                      "rate": "1446394472758668036",
-                      "unit": "14458681790856736451",
-                      "data": {
-                        "pool": "0xdbe29107464d469c64a02afe631aba2e6fabedce",
-                        "exchangeProxy": "0x6317c5e82a06e1d8bf200d21f4510ac2c038ac81",
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "8.209500"
-                      },
-                      "rateFeeDeducted": "1446394472758668036",
-                      "unitFeeDeducted": "14458681790856736451"
-                    },
-                    {
-                      "exchange": "SushiSwap",
-                      "rate": "1430347602573572564",
-                      "unit": "14173057789613627150",
-                      "data": {
-                        "router": "0xBc1315CD2671BC498fDAb42aE1214068003DC51e",
-                        "path": [
-                          "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
-                          "0x6810e776880c02933d47db1b9fc05908e5386b96"
-                        ],
-                        "factory": "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac",
-                        "initCode": "0xe18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303",
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "6.157125"
-                      },
-                      "rateFeeDeducted": "1430347602573572564",
-                      "unitFeeDeducted": "14173057789613627150"
-                    },
-                    {
-                      "exchange": "UniswapV3",
-                      "rate": "1414143411381299064",
-                      "unit": "14132797230855578366",
-                      "data": {
-                        "fee": 10000,
-                        "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                        "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                        "gasUSD": "13.682500"
-                      },
-                      "rateFeeDeducted": "1414143411381299064",
-                      "unitFeeDeducted": "14132797230855578366"
-                    }
-                  ],
-                  "side": "SELL",
-                  "details": {
-                    "tokenFrom": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                    "tokenTo": "0x6810e776880c02933d47db1b9fc05908e5386b96",
-                    "srcAmount": "100000000000000000",
-                    "destAmount": "1444292761374042400"
-                  },
-                  "bestRouteGas": "111435",
-                  "bestRouteGasCostUSD": "7.623546",
-                  "contractMethod": "swapOnUniswap",
-                  "fromUSD": "273.6500000000",
-                  "toUSD": "268.2051657871",
-                  "priceWithSlippage": "1429849833760301976",
-                  "spender": "0xb70Bc06D2c9Bf03b3373799606dc7d39346c06B3",
-                  "destAmountFeeDeducted": "1444292761374042400",
-                  "toUSDFeeDeducted": "268.2051657871",
-                  "multiRoute": [],
-                  "maxImpactReached": false,
-                  "priceID": "a515b0ec-6cb8-4062-b6d1-b38b33bd05cb",
-                  "hmac": "f82acc4c0191938b6eebc6eada0899e53e03d377"
-                }
-              }"#).unwrap();
+              "priceRoute": {
+                "blockNumber": 13036269,
+                "network": 1,
+                "src": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+                "srcDecimals": 18,
+                "srcAmount": "10000000000000000",
+                "dest": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                "destDecimals": 6,
+                "destAmount": "32704734",
+                "bestRoute": [
+                  {
+                    "percent": 100,
+                    "swaps": [
+                      {
+                        "src": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+                        "srcDecimals": 18,
+                        "dest": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+                        "destDecimals": 6,
+                        "swapExchanges": [
+                          {
+                            "exchange": "UniswapV2",
+                            "srcAmount": "10000000000000000",
+                            "destAmount": "32704734",
+                            "percent": 100,
+                            "data": {
+                              "router": "0x0000000000000000000000000000000000000000",
+                              "path": [
+                                "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
+                                "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
+                              ],
+                              "factory": "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f",
+                              "initCode": "0x96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
+                              "feeFactor": 10000,
+                              "pools": [
+                                {
+                                  "address": "0xB4e16d0168e52d35CaCD2c6185b44281Ec28C9Dc",
+                                  "fee": 30,
+                                  "direction": false
+                                }
+                              ],
+                              "gasUSD": "9.835332"
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "gasCostUSD": "13.700002",
+                "gasCost": "111435",
+                "side": "SELL",
+                "tokenTransferProxy": "0x0000000000000000000000000000000000000000",
+                "contractAddress": "0x0000000000000000000000000000000000000000",
+                "contractMethod": "swapOnUniswap",
+                "partnerFee": 0,
+                "srcUSD": "32.7332000000",
+                "destUSD": "32.5799000303",
+                "partner": "paraswap",
+                "maxImpactReached": false,
+                "hmac": "cf2ac4b20f83b6656eb9dd28e26414658430e1d5"
+              }
+            }"#).unwrap();
 
-        assert_eq!(result.src_amount, 100_000_000_000_000_000u128.into());
-        assert_eq!(result.dest_amount, 1_444_292_761_374_042_400u128.into());
+        assert_eq!(result.src_amount, 10_000_000_000_000_000_u128.into());
+        assert_eq!(result.dest_amount, 32_704_734_u128.into());
     }
 
     #[test]
@@ -742,19 +718,19 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn transaction_response_error() {
-        let from = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let to = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
+        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
         let price_query = PriceQuery {
-            from,
-            to,
-            from_decimals: 18,
-            to_decimals: 18,
+            src_token,
+            dest_token,
+            src_decimals: 18,
+            dest_decimals: 18,
             amount: 135_000_000_000_000_000_000u128.into(),
             side: Side::Sell,
             exclude_dexs: None,
         };
 
-        let price_response: PriceResponse = reqwest::get(price_query.into_url())
+        let price_response: PriceResponse = reqwest::get(price_query.into_url("Test"))
             .await
             .expect("price query failed")
             .json()
@@ -763,22 +739,51 @@ mod tests {
 
         let api = DefaultParaswapApi {
             client: Client::new(),
-            partner_header_value: "Test".into(),
+            partner: "Test".into(),
         };
 
         let good_query = TransactionBuilderQuery {
-            src_token: from,
-            dest_token: to,
-            src_amount: price_response.src_amount,
-            // 10% slippage
-            dest_amount: price_response.dest_amount * 90 / 100,
-            from_decimals: 18,
-            to_decimals: 18,
+            src_token,
+            dest_token,
+            trade_amount: TradeAmount::Sell {
+                src_amount: price_response.src_amount,
+            },
+            slippage: 1000, // 10%
+            src_decimals: 18,
+            dest_decimals: 18,
             price_route: price_response.price_route_raw,
             user_address: crate::addr!("E0B3700e0aadcb18ed8d4BFF648Bc99896a18ad1"),
-            referrer: "GPv2".to_string(),
         };
 
         assert!(api.transaction(good_query).await.is_ok());
+    }
+
+    #[test]
+    fn transaction_query_serialization() {
+        assert_eq!(
+            serde_json::to_value(TransactionBuilderQuery {
+                src_token: H160([1; 20]),
+                dest_token: H160([2; 20]),
+                trade_amount: TradeAmount::Sell {
+                    src_amount: 1337.into(),
+                },
+                slippage: 250,
+                src_decimals: 18,
+                dest_decimals: 18,
+                price_route: Value::Null,
+                user_address: H160([3; 20]),
+            })
+            .unwrap(),
+            json!({
+                "srcToken": H160([1; 20]),
+                "destToken": H160([2; 20]),
+                "srcAmount": "1337",
+                "slippage": 250,
+                "srcDecimals": 18,
+                "destDecimals": 18,
+                "priceRoute": Value::Null,
+                "userAddress": H160([3; 20]),
+            }),
+        );
     }
 }
