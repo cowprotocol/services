@@ -22,7 +22,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 const REFERRER: &str = "GPv2";
-const APPROVAL_RECEIVER: H160 = shared::addr!("b70bc06d2c9bf03b3373799606dc7d39346c06b3");
 
 /// A GPv2 solver that matches GP orders to direct ParaSwap swaps.
 #[derive(Derivative)]
@@ -112,7 +111,7 @@ impl SingleOrderSolving for ParaswapSolver {
             self.allowance_fetcher
                 .get_approval(
                     order.sell_token,
-                    APPROVAL_RECEIVER,
+                    price_response.token_transfer_proxy,
                     price_response.src_amount,
                 )
                 .await?,
@@ -304,6 +303,7 @@ mod tests {
                 price_route_raw: Default::default(),
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
+                token_transfer_proxy: H160([0x42; 20]),
             })
         });
         client
@@ -376,12 +376,14 @@ mod tests {
 
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
+        let token_transfer_proxy = H160([0x42; 20]);
 
-        client.expect_price().returning(|_| {
+        client.expect_price().returning(move |_| {
             Ok(PriceResponse {
                 price_route_raw: Default::default(),
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
+                token_transfer_proxy,
             })
         });
         client
@@ -393,18 +395,26 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(eq(sell_token), eq(APPROVAL_RECEIVER), eq(U256::from(100)))
+            .with(
+                eq(sell_token),
+                eq(token_transfer_proxy),
+                eq(U256::from(100)),
+            )
             .returning(move |_, _, _| {
                 Ok(Approval::Approve {
                     token: sell_token,
-                    spender: APPROVAL_RECEIVER,
+                    spender: token_transfer_proxy,
                 })
             })
             .in_sequence(&mut seq);
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(eq(sell_token), eq(APPROVAL_RECEIVER), eq(U256::from(100)))
+            .with(
+                eq(sell_token),
+                eq(token_transfer_proxy),
+                eq(U256::from(100)),
+            )
             .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
@@ -460,6 +470,7 @@ mod tests {
                 price_route_raw: Default::default(),
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
+                token_transfer_proxy: H160([0x42; 20]),
             })
         });
 

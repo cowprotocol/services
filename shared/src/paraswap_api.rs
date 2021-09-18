@@ -219,7 +219,7 @@ impl PriceQuery {
 }
 
 /// A Paraswap API price response.
-#[derive(Clone, Debug, PartialEq, Default, Serialize)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct PriceResponse {
     /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
     pub price_route_raw: Value,
@@ -227,6 +227,8 @@ pub struct PriceResponse {
     pub src_amount: U256,
     /// The estimated out amount (part of price_route but extracted for type safety & convenience)
     pub dest_amount: U256,
+    /// The token transfer proxy address to set an allowance for.
+    pub token_transfer_proxy: H160,
 }
 
 impl<'de> Deserialize<'de> for PriceResponse {
@@ -247,18 +249,21 @@ impl<'de> Deserialize<'de> for PriceResponse {
             src_amount: U256,
             #[serde(with = "u256_decimal")]
             dest_amount: U256,
+            token_transfer_proxy: H160,
         }
 
         let parsed = ParsedRaw::deserialize(deserializer)?;
         let PriceRoute {
             src_amount,
             dest_amount,
+            token_transfer_proxy,
         } = serde_json::from_value::<PriceRoute>(parsed.price_route.clone())
             .map_err(D::Error::custom)?;
         Ok(PriceResponse {
             price_route_raw: parsed.price_route,
             src_amount,
             dest_amount,
+            token_transfer_proxy,
         })
     }
 }
@@ -384,7 +389,7 @@ mod tests {
 
         println!(
             "Price Response: {}",
-            serde_json::to_string_pretty(&price_response).unwrap()
+            serde_json::to_string_pretty(&price_response.price_route_raw).unwrap()
         );
 
         let transaction_query = TransactionBuilderQueryWithPartner {
@@ -447,7 +452,7 @@ mod tests {
 
         println!(
             "Price Response: {}",
-            serde_json::to_string_pretty(&price_response).unwrap(),
+            serde_json::to_string_pretty(&price_response.price_route_raw).unwrap(),
         );
 
         let transaction_query = TransactionBuilderQueryWithPartner {
