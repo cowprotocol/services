@@ -93,6 +93,10 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             ),
             StatusCode::BAD_REQUEST,
         ),
+        Ok(AddOrderResult::ZeroAmount) => (
+            super::error("ZeroAmount", "Buy or sell amount is zero."),
+            StatusCode::BAD_REQUEST,
+        ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
     };
     warp::reply::with_status(body, status_code)

@@ -39,6 +39,7 @@ pub enum AddOrderResult {
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
+    ZeroAmount,
 }
 
 #[derive(Debug)]
@@ -126,10 +127,13 @@ impl Orderbook {
         ) {
             return Ok(AddOrderResult::UnsupportedSignature);
         }
-
         if has_same_buy_and_sell_token(&order, &self.native_token) {
             return Ok(AddOrderResult::SameBuyAndSellToken);
         }
+        if order.buy_amount.is_zero() || order.sell_amount.is_zero() {
+            return Ok(AddOrderResult::ZeroAmount);
+        }
+
         if order.valid_to
             < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
         {

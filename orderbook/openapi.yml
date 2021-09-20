@@ -713,6 +713,7 @@ components:
               UnsupportedToken,
               WrongOwner,
               SameBuyAndSellToken,
+              ZeroAmount,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
             ]
