@@ -16,7 +16,7 @@ use solver::{
     liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 mod ganache;
@@ -146,6 +146,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         maintenance,
         block_stream,
         solvable_orders_cache,
+        base_tokens,
     } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
 
     let client = reqwest::Client::new();
@@ -182,7 +183,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         gpv2.settlement.clone(),
-        HashSet::new(),
+        base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher {
             pair_provider: uniswap_pair_provider,

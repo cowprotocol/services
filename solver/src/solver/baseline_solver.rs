@@ -12,23 +12,17 @@ use maplit::hashmap;
 use model::TokenPair;
 use num::BigRational;
 use shared::{
-    baseline_solver::{
-        estimate_buy_amount, estimate_sell_amount, path_candidates, BaselineSolvable,
-        DEFAULT_MAX_HOPS,
-    },
+    baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
     sources::{
         balancer::swap::{fixed_point::Bfp, WeightedPoolRef},
         uniswap::pool_fetching::Pool,
     },
 };
-use std::{
-    collections::{HashMap, HashSet},
-    convert::TryFrom as _,
-};
+use std::{collections::HashMap, convert::TryFrom as _, sync::Arc};
 
 pub struct BaselineSolver {
     account: Account,
-    base_tokens: HashSet<H160>,
+    base_tokens: Arc<BaseTokens>,
 }
 
 #[async_trait::async_trait]
@@ -140,7 +134,7 @@ impl BaselineSolvable for Amm {
 }
 
 impl BaselineSolver {
-    pub fn new(account: Account, base_tokens: HashSet<H160>) -> Self {
+    pub fn new(account: Account, base_tokens: Arc<BaseTokens>) -> Self {
         Self {
             account,
             base_tokens,
@@ -207,12 +201,9 @@ impl BaselineSolver {
         order: &LimitOrder,
         amms: &HashMap<TokenPair, Vec<Amm>>,
     ) -> Option<Solution> {
-        let candidates = path_candidates(
-            order.sell_token,
-            order.buy_token,
-            &self.base_tokens,
-            DEFAULT_MAX_HOPS,
-        );
+        let candidates = self
+            .base_tokens
+            .path_candidates(order.sell_token, order.buy_token);
 
         let (path, executed_sell_amount, executed_buy_amount) = match order.kind {
             model::order::OrderKind::Buy => {
@@ -302,7 +293,6 @@ mod tests {
         tests::CapturingSettlementHandler, AmmOrderExecution, ConstantProductOrder, LimitOrder,
     };
     use crate::test::account;
-    use maplit::hashset;
     use model::order::OrderKind;
     use num::rational::Ratio;
     use shared::{
@@ -383,7 +373,8 @@ mod tests {
         ];
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
-        let solver = BaselineSolver::new(account(), hashset! { native_token });
+        let base_tokens = Arc::new(BaseTokens::new(native_token, &[]));
+        let solver = BaselineSolver::new(account(), base_tokens);
         let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -488,7 +479,8 @@ mod tests {
         ];
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
-        let solver = BaselineSolver::new(account(), hashset! { native_token });
+        let base_tokens = Arc::new(BaseTokens::new(native_token, &[]));
+        let solver = BaselineSolver::new(account(), base_tokens);
         let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -556,7 +548,8 @@ mod tests {
         ];
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
-        let solver = BaselineSolver::new(account(), hashset! {});
+        let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
+        let solver = BaselineSolver::new(account(), base_tokens);
         assert_eq!(solver.solve(orders, liquidity).len(), 1);
     }
 
@@ -608,10 +601,11 @@ mod tests {
             }),
         ];
 
-        let solver = BaselineSolver::new(
-            account(),
-            hashset![addr!("c778417e063141139fce010982780140aa0cd5ab")],
-        );
+        let base_tokens = Arc::new(BaseTokens::new(
+            addr!("c778417e063141139fce010982780140aa0cd5ab"),
+            &[],
+        ));
+        let solver = BaselineSolver::new(account(), base_tokens);
         assert_eq!(solver.solve(vec![order], liquidity).len(), 0);
     }
 }

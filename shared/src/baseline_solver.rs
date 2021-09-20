@@ -6,7 +6,7 @@ use num::BigRational;
 use std::collections::{HashMap, HashSet};
 
 /// The maximum number of hops to use when trading with AMMs along a path.
-pub const DEFAULT_MAX_HOPS: usize = 2;
+const DEFAULT_MAX_HOPS: usize = 2;
 
 type PathCandidate = Vec<H160>;
 
@@ -146,9 +146,62 @@ pub fn estimate_spot_price<'a, L: BaselineSolvable>(
         })
 }
 
-// Returns possible paths from sell_token to buy token, given a list of potential intermediate base tokens
-// and a maximum number of intermediate steps.
-pub fn path_candidates(
+pub struct BaseTokens {
+    /// The base tokens used to determine potential paths in the baseline solver.
+    ///
+    /// Always includes the native token.
+    tokens: HashSet<H160>,
+    /// All pairs of above.
+    pairs: HashSet<TokenPair>,
+}
+
+impl BaseTokens {
+    pub fn new(native_token: H160, base_tokens: &[H160]) -> Self {
+        let mut tokens = base_tokens.to_vec();
+        tokens.push(native_token);
+        tokens.sort();
+        tokens.dedup();
+        let pairs = base_token_pairs(&tokens).collect();
+        Self {
+            tokens: tokens.into_iter().collect(),
+            pairs,
+        }
+    }
+
+    pub fn tokens(&self) -> &HashSet<H160> {
+        &self.tokens
+    }
+
+    /// All pool token pairs that could be used along a path candidate for these token pairs.
+    pub fn relevant_pairs(&self, pairs: &mut dyn Iterator<Item = TokenPair>) -> HashSet<TokenPair> {
+        let mut result = HashSet::new();
+        for pair in pairs {
+            result.insert(pair);
+            for token in pair {
+                result.extend(
+                    self.tokens
+                        .iter()
+                        .filter_map(move |base_token| TokenPair::new(*base_token, token)),
+                );
+            }
+        }
+        // Could be empty if the input pairs are empty. Just like path_candidates we return empty
+        // set in this case.
+        if !result.is_empty() {
+            result.extend(self.pairs.iter().copied());
+        }
+        result
+    }
+
+    // Returns possible paths from sell_token to buy token, given a list of potential intermediate base tokens
+    // and a maximum number of intermediate steps.
+    // Can contain token pairs between base tokens or a base token and the sell or buy token.
+    pub fn path_candidates(&self, sell_token: H160, buy_token: H160) -> HashSet<PathCandidate> {
+        path_candidates(sell_token, buy_token, &self.tokens, DEFAULT_MAX_HOPS)
+    }
+}
+
+fn path_candidates(
     sell_token: H160,
     buy_token: H160,
     base_tokens: &HashSet<H160>,
@@ -184,24 +237,19 @@ pub fn path_candidates(
     candidates
 }
 
-pub fn token_path_to_pair_path(token_list: &[H160]) -> Vec<TokenPair> {
-    token_list
-        .windows(2)
-        .map(|window| {
-            TokenPair::new(window[0], window[1]).expect("token list contains same token in a row")
+/// All token pairs between base tokens.
+fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '_ {
+    base_tokens
+        .iter()
+        .copied()
+        .enumerate()
+        .flat_map(move |(index, token)| {
+            base_tokens
+                .iter()
+                .copied()
+                .skip(index)
+                .filter_map(move |token_| TokenPair::new(token, token_))
         })
-        .collect()
-}
-
-pub fn relevant_token_pairs(
-    sell_token: H160,
-    buy_token: H160,
-    base_tokens: &HashSet<H160>,
-    max_hops: usize,
-) -> impl Iterator<Item = TokenPair> {
-    path_candidates(sell_token, buy_token, base_tokens, max_hops)
-        .into_iter()
-        .flat_map(|path| token_path_to_pair_path(&path))
 }
 
 #[cfg(test)]
@@ -212,19 +260,14 @@ mod tests {
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
     use model::TokenPair;
-    use std::iter::FromIterator;
 
     #[test]
     fn path_candidates_empty_when_same_token() {
-        let base_tokens = [H160::from_low_u64_be(0), H160::from_low_u64_be(1)]
-            .iter()
-            .copied()
-            .collect();
-
+        let base = BaseTokens::new(H160::from_low_u64_be(0), &[H160::from_low_u64_be(1)]);
         let sell_token = H160::from_low_u64_be(2);
         let buy_token = H160::from_low_u64_be(2);
 
-        assert!(path_candidates(sell_token, buy_token, &base_tokens, 5).is_empty());
+        assert!(base.path_candidates(sell_token, buy_token).is_empty());
     }
 
     #[test]
@@ -234,20 +277,20 @@ mod tests {
             H160::from_low_u64_be(1),
             H160::from_low_u64_be(2),
         ];
-        let base_token_set = &HashSet::from_iter(base_tokens.clone());
+        let base_token_set: HashSet<H160> = base_tokens.iter().copied().collect();
 
         let sell_token = H160::from_low_u64_be(4);
         let buy_token = H160::from_low_u64_be(5);
 
         // 0 hops
         assert_eq!(
-            path_candidates(sell_token, buy_token, base_token_set, 0),
+            path_candidates(sell_token, buy_token, &base_token_set, 0),
             hashset! {vec![sell_token, buy_token]}
         );
 
         // 1 hop with all permutations
         assert_eq!(
-            path_candidates(sell_token, buy_token, base_token_set, 1),
+            path_candidates(sell_token, buy_token, &base_token_set, 1),
             hashset! {
                 vec![sell_token, buy_token],
                 vec![sell_token, base_tokens[0], buy_token],
@@ -259,23 +302,23 @@ mod tests {
 
         // 2 & 3 hops check count
         assert_eq!(
-            path_candidates(sell_token, buy_token, base_token_set, 2).len(),
+            path_candidates(sell_token, buy_token, &base_token_set, 2).len(),
             10
         );
         assert_eq!(
-            path_candidates(sell_token, buy_token, base_token_set, 3).len(),
+            path_candidates(sell_token, buy_token, &base_token_set, 3).len(),
             16
         );
 
         // 4 hops should not yield any more permutations since we used all base tokens
         assert_eq!(
-            path_candidates(sell_token, buy_token, base_token_set, 4).len(),
+            path_candidates(sell_token, buy_token, &base_token_set, 4).len(),
             16
         );
 
         // Ignores base token if part of buy or sell
         assert_eq!(
-            path_candidates(base_tokens[0], buy_token, base_token_set, 1),
+            path_candidates(base_tokens[0], buy_token, &base_token_set, 1),
             hashset! {
                 vec![base_tokens[0], buy_token],
                 vec![base_tokens[0], base_tokens[1], buy_token],
@@ -284,7 +327,7 @@ mod tests {
             }
         );
         assert_eq!(
-            path_candidates(sell_token, base_tokens[0], base_token_set, 1),
+            path_candidates(sell_token, base_tokens[0], &base_token_set, 1),
             hashset! {
                 vec![sell_token, base_tokens[0]],
                 vec![sell_token, base_tokens[1], base_tokens[0]],
@@ -462,5 +505,45 @@ mod tests {
 
         let spot_price = estimate_spot_price(&path, &pools).unwrap();
         assert_eq!(spot_price.path, [&valid_pool]);
+    }
+
+    #[test]
+    fn base_token_pairs_() {
+        let base_tokens: Vec<H160> = [0, 1, 2]
+            .iter()
+            .copied()
+            .map(H160::from_low_u64_le)
+            .collect();
+        let pairs: Vec<TokenPair> = base_token_pairs(&base_tokens).collect();
+        assert_eq!(pairs.len(), 3);
+        assert!(pairs.contains(&TokenPair::new(base_tokens[0], base_tokens[1]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(base_tokens[0], base_tokens[2]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(base_tokens[1], base_tokens[2]).unwrap()));
+    }
+
+    #[test]
+    fn relevant_pairs() {
+        let tokens: Vec<H160> = [0, 1, 2, 3, 4]
+            .iter()
+            .copied()
+            .map(H160::from_low_u64_le)
+            .collect();
+        let base = BaseTokens::new(tokens[0], &tokens[1..2]);
+
+        let pairs = base.relevant_pairs(&mut std::iter::empty());
+        assert!(pairs.is_empty());
+
+        let pairs = base.relevant_pairs(&mut TokenPair::new(tokens[0], tokens[1]).into_iter());
+        assert_eq!(pairs.len(), 1);
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[1]).unwrap()));
+
+        let pairs = base.relevant_pairs(&mut TokenPair::new(tokens[3], tokens[4]).into_iter());
+        assert_eq!(pairs.len(), 6);
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[1]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[3]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[0], tokens[4]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[1], tokens[3]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[1], tokens[4]).unwrap()));
+        assert!(pairs.contains(&TokenPair::new(tokens[3], tokens[4]).unwrap()));
     }
 }

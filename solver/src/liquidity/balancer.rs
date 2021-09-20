@@ -13,14 +13,13 @@ use crate::{
 };
 use anyhow::{Context as _, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::{H160, H256};
+use ethcontract::H256;
+use model::TokenPair;
 use shared::{
-    baseline_solver::{relevant_token_pairs, DEFAULT_MAX_HOPS},
-    recent_block_cache::Block,
-    sources::balancer::pool_fetching::BalancerPoolFetching,
-    Web3,
+    baseline_solver::BaseTokens, recent_block_cache::Block,
+    sources::balancer::pool_fetching::BalancerPoolFetching, Web3,
 };
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 
 struct Contracts {
     settlement: GPv2Settlement,
@@ -40,20 +39,19 @@ pub struct BalancerV2Liquidity {
     contracts: Arc<Contracts>,
     pool_fetcher: Arc<dyn BalancerPoolFetching>,
     allowance_manager: Box<dyn AllowanceManaging>,
-    base_tokens: HashSet<H160>,
+    base_tokens: Arc<BaseTokens>,
 }
 
 impl BalancerV2Liquidity {
     pub async fn new(
         web3: Web3,
         pool_fetcher: Arc<dyn BalancerPoolFetching>,
-        base_tokens: HashSet<H160>,
+        base_tokens: Arc<BaseTokens>,
     ) -> Result<Self> {
         let contracts = Contracts::new(&web3)
             .await
             .context("missing Balancer V2 contract deployment")?;
         let allowance_manager = AllowanceManager::new(web3, contracts.settlement.address());
-
         Ok(Self {
             contracts: Arc::new(contracts),
             pool_fetcher,
@@ -69,17 +67,11 @@ impl BalancerV2Liquidity {
         orders: &[LimitOrder],
         block: Block,
     ) -> Result<(Vec<StablePoolOrder>, Vec<WeightedProductOrder>)> {
-        let pairs = orders
-            .iter()
-            .flat_map(|order| {
-                relevant_token_pairs(
-                    order.sell_token,
-                    order.buy_token,
-                    &self.base_tokens,
-                    DEFAULT_MAX_HOPS,
-                )
-            })
-            .collect();
+        let pairs = self.base_tokens.relevant_pairs(
+            &mut orders
+                .iter()
+                .flat_map(|order| TokenPair::new(order.buy_token, order.sell_token)),
+        );
         let pools = self.pool_fetcher.fetch(pairs, block).await?;
 
         let tokens = pools.relevant_tokens();
@@ -170,15 +162,18 @@ impl SettlementHandler {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::interactions::allowances::{Approval, MockAllowanceManaging};
-    use crate::settlement::Interaction;
+    use crate::{
+        interactions::allowances::{Approval, MockAllowanceManaging},
+        settlement::Interaction,
+    };
     use maplit::{hashmap, hashset};
     use mockall::predicate::*;
     use model::TokenPair;
     use num::BigRational;
-    use shared::sources::balancer::pool_fetching::{CommonPoolState, FetchedBalancerPools};
+    use primitive_types::H160;
     use shared::{
         dummy_contract,
+        sources::balancer::pool_fetching::{CommonPoolState, FetchedBalancerPools},
         sources::balancer::pool_fetching::{
             MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,
         },
@@ -318,11 +313,12 @@ mod tests {
             )
             .returning(|_, _| Ok(Allowances::empty(H160([0xc1; 20]))));
 
+        let base_tokens = Arc::new(BaseTokens::new(H160([0xb0; 20]), &[]));
         let liquidity_provider = BalancerV2Liquidity {
             contracts: dummy_contracts(),
             pool_fetcher: Arc::new(pool_fetcher),
             allowance_manager: Box::new(allowance_manager),
-            base_tokens: hashset![H160([0xb0; 20])],
+            base_tokens,
         };
         let (stable_orders, weighted_orders) = liquidity_provider
             .get_liquidity(

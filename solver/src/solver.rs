@@ -13,11 +13,12 @@ use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
 use shared::{
-    conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching, Web3,
+    baseline_solver::BaseTokens, conversions::U256Ext, price_estimate::PriceEstimating,
+    token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::SingleOrderSolver;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -136,7 +137,7 @@ arg_enum! {
 pub fn create(
     web3: Web3,
     solvers: Vec<(Account, SolverType)>,
-    base_tokens: HashSet<H160>,
+    base_tokens: Arc<BaseTokens>,
     native_token: H160,
     mip_solver_url: Url,
     quasimodo_solver_url: Url,

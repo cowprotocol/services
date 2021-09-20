@@ -1,6 +1,7 @@
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
+use shared::baseline_solver::BaseTokens;
 use shared::metrics::setup_metrics_registry;
 use shared::{
     bad_token::list_based::ListBasedDetector,
@@ -32,8 +33,7 @@ use solver::{
     settlement_submission::{archer_api::ArcherApi, SolutionSubmitter, TransactionStrategy},
     solver::SolverType,
 };
-use std::{collections::HashMap, iter::FromIterator as _};
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use structopt::{clap::arg_enum, StructOpt};
 
 #[derive(Debug, StructOpt)]
@@ -248,9 +248,11 @@ async fn main() {
         client.clone(),
         args.liquidity_order_owners.into_iter().collect(),
     );
-    let mut base_tokens = HashSet::from_iter(args.shared.base_tokens);
-    // We should always use the native token as a base token.
-    base_tokens.insert(native_token_contract.address());
+
+    let base_tokens = Arc::new(BaseTokens::new(
+        native_token_contract.address(),
+        &args.shared.base_tokens,
+    ));
 
     let native_token_price_estimation_amount = args
         .shared
@@ -480,7 +482,7 @@ async fn main() {
 async fn build_amm_artifacts(
     sources: &HashMap<BaselineSource, Arc<PoolCache>>,
     settlement_contract: contracts::GPv2Settlement,
-    base_tokens: HashSet<H160>,
+    base_tokens: Arc<BaseTokens>,
     web3: shared::Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
