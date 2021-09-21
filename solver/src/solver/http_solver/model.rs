@@ -128,7 +128,7 @@ pub struct FeeModel {
 }
 
 #[serde_as]
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
@@ -154,7 +154,7 @@ pub struct MetadataModel {
     pub environment: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct ExecutedOrderModel {
     #[serde(with = "u256_decimal")]
     pub exec_sell_amount: U256,
@@ -162,7 +162,7 @@ pub struct ExecutedOrderModel {
     pub exec_buy_amount: U256,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
