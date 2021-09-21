@@ -77,3 +77,9 @@ pub fn debug_bytes(
 ) -> Result<(), std::fmt::Error> {
     formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
 }
+
+/// anyhow errors are not clonable natively. This is a workaround that creates a new anyhow error
+/// based on formatting the error with its inner sources without backtrace.
+pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
+    anyhow::anyhow!("{:#}", err)
+}

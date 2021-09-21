@@ -83,6 +83,7 @@ fn is_mainnet(network_id: &str) -> bool {
     network_id == "1"
 }
 
+#[derive(Default)]
 pub struct FakeGasPriceEstimator(pub Arc<Mutex<f64>>);
 #[async_trait::async_trait]
 impl GasPriceEstimating for FakeGasPriceEstimator {
