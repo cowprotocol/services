@@ -14,7 +14,22 @@ lazy_static! {
         Bfp::from_wei(U256::exp10(17).checked_mul(3_u32.into()).unwrap());
 }
 
-// https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L69-L100
+/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/weighted/WeightedMath.sol#L69-L100
+/// It is not possible for the following addition balance_in.add(amount_in) to fail since
+/// (1) Largest balance_in can be without overflowing check_mul (above):
+///     balance_in = U256::MAX / (3 * 10^17)
+/// (2) Largest amount_in can be while satisfying above inequality is:
+///     amount_in = balance_in.mul_down(MAX_IN_RATIO)
+/// So that
+/// amount_in + balance_in
+///  <= balance_in.mul_down(*MAX_IN_RATIO) + U256::MAX / (3 * 10^17)
+///  = (U256::MAX / (3 * 10^17)) * (3 * 10^17) / 10^18 + U256::MAX / (3 * 10^17)
+///  = (U256::MAX / 10^18 + U256::MAX / (3 * 10^17)
+///  < (U256::MAX / (3 * 10^17) + U256::MAX / (3 * 10^17)
+///  < 2 * U256::MAX / (3 * 10^17) < U256::MAX
+///
+/// In fact, evaluating at max possible gives:
+///  501765720028370180168807601704314267364169.933551109110837648
 pub fn calc_out_given_in(
     balance_in: Bfp,
     weight_in: Bfp,
@@ -26,7 +41,7 @@ pub fn calc_out_given_in(
         return Err(Error::MaxInRatio);
     }
 
-    let denominator = balance_in.add(amount_in)?;
+    let denominator = balance_in.add(amount_in).expect("See proof above.");
     let base = balance_in.div_up(denominator)?;
     let exponent = weight_in.div_down(weight_out)?;
     let power = base.pow_up(exponent)?;
@@ -46,11 +61,16 @@ pub fn calc_in_given_out(
         return Err(Error::MaxOutRatio);
     }
 
-    let base = balance_out.div_up(balance_out.sub(amount_out)?)?;
+    let denominator = balance_out
+        .sub(amount_out)
+        .expect("if amount_out > balance_out >= balance_out.mul_down(*MAX_OUT_RATIO) contradicting above inequality");
+    let base = balance_out.div_up(denominator)?;
     let exponent = weight_out.div_up(weight_in)?;
     let power = base.pow_up(exponent)?;
+    let ratio = power
+        .sub(Bfp::one())
+        .expect("power=0 => base=0 => balance_out=0 => amount_out=0 => denominator div by zero");
 
-    let ratio = power.sub(Bfp::one())?;
     balance_in.mul_up(ratio)
 }
 
@@ -74,7 +94,7 @@ mod tests {
     // obtain the expected output.
 
     #[test]
-    fn calc_out_given_in_test() {
+    fn calc_out_given_in_ok() {
         assert_eq!(
             calc_out_given_in(
                 Bfp::from_wei(100_000_000_000_000_000_000_000_u128.into()),
@@ -90,7 +110,7 @@ mod tests {
     }
 
     #[test]
-    fn calc_in_given_out_test() {
+    fn calc_in_given_out_ok() {
         assert_eq!(
             calc_in_given_out(
                 Bfp::from_wei(100_000_000_000_000_000_000_000_u128.into()),
@@ -102,6 +122,123 @@ mod tests {
             .unwrap(),
             // (await weightedMath["_calcInGivenOut"]("100000000000000000000000", "300000000000000", "10000000000000000000", "700000000000000", "10000000000000000")).toString()
             Bfp::from_wei(233_722_784_701_541_000_000_u128.into()),
+        );
+    }
+
+    #[test]
+    fn calc_out_given_in_err() {
+        let zero = Bfp::from_wei(0.into());
+        let one = Bfp::from_wei(1.into());
+        let two = Bfp::from_wei(2.into());
+        let max_u256 = Bfp::from_wei(U256::MAX);
+        let max_balance_in = Bfp::from_wei(U256::MAX / (U256::exp10(17) * U256::from(3)));
+        let mid_u256 = Bfp::from_wei(u128::MAX.into());
+        assert_eq!(
+            calc_out_given_in(max_u256, zero, zero, zero, two)
+                .unwrap_err()
+                .to_string(),
+            "BAL#003: MulOverflow",
+            // "failed to evaluate balance_in.mul_down(*MAX_IN_RATIO)"
+        );
+        assert_eq!(
+            calc_out_given_in(one, zero, zero, zero, two)
+                .unwrap_err()
+                .to_string(),
+            "BAL#304: MaxInRatio"
+        );
+        assert_eq!(
+            calc_out_given_in(
+                max_balance_in,
+                one,
+                one,
+                one,
+                max_balance_in.mul_down(*MAX_IN_RATIO).unwrap(),
+            )
+            .unwrap_err()
+            .to_string(),
+            "BAL#005: DivInternal",
+            // "failed to evaluate base as balance_in.div_up(denominator)"
+        );
+        assert_eq!(
+            calc_out_given_in(mid_u256, zero, zero, zero, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#004: ZeroDivision",
+            // "failed to evaluate exponent as weight_in.div_down(weight_out)"
+        );
+        assert_eq!(
+            calc_out_given_in(mid_u256, max_u256, zero, one, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#005: DivInternal",
+            // "failed to evaluate exponent as weight_in.div_down(weight_out)"
+        );
+        assert_eq!(
+            calc_out_given_in(mid_u256, mid_u256, one, one, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#007: YOutOfBounds",
+            // "failed to evaluate power as base.pow_up(exponent)"
+        );
+    }
+
+    #[test]
+    fn calc_in_given_out_err() {
+        let zero = Bfp::from_wei(0.into());
+        let one = Bfp::from_wei(1.into());
+        let two = Bfp::from_wei(2.into());
+        let max_u256 = Bfp::from_wei(U256::MAX);
+        let max_balance = Bfp::from_wei(U256::MAX / (U256::exp10(17) * U256::from(3)));
+        let mid_u256 = Bfp::from_wei(u128::MAX.into());
+        assert_eq!(
+            calc_in_given_out(one, zero, max_u256, zero, two)
+                .unwrap_err()
+                .to_string(),
+            "BAL#003: MulOverflow",
+        );
+        assert_eq!(
+            calc_in_given_out(one, zero, zero, zero, two)
+                .unwrap_err()
+                .to_string(),
+            "BAL#305: MaxOutRatio"
+        );
+        assert_eq!(
+            calc_in_given_out(zero, zero, zero, zero, zero)
+                .unwrap_err()
+                .to_string(),
+            "BAL#004: ZeroDivision"
+        );
+        assert_eq!(
+            calc_in_given_out(zero, zero, max_balance, zero, zero)
+                .unwrap_err()
+                .to_string(),
+            "BAL#005: DivInternal"
+        );
+        assert_eq!(
+            calc_in_given_out(zero, zero, mid_u256, zero, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#004: ZeroDivision"
+        );
+        assert_eq!(
+            calc_in_given_out(zero, one, mid_u256, max_u256, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#005: DivInternal"
+        );
+        assert_eq!(
+            calc_in_given_out(zero, one, mid_u256, max_balance, one)
+                .unwrap_err()
+                .to_string(),
+            "BAL#005: DivInternal",
+            // failed exponent
+        );
+        assert_eq!(
+            calc_in_given_out(zero, one, mid_u256, mid_u256, zero)
+                .unwrap_err()
+                .to_string(),
+            "BAL#007: YOutOfBounds",
+            // failed power
         );
     }
 

@@ -512,8 +512,6 @@ mod tests {
                     },
                     normalized_weights: vec![weights[i], weights[i + 1]],
                 },
-                "failed assertion at index {}",
-                i
             );
         }
     }
@@ -579,8 +577,6 @@ mod tests {
                         block_created: i as u64 + 1
                     }
                 },
-                "failed assertion at index {}",
-                i
             );
         }
     }
@@ -659,8 +655,6 @@ mod tests {
                     },
                     normalized_weights: vec![weights[i], weights[i + 1]],
                 },
-                "assertion failed at index {}",
-                i
             );
         }
         assert_eq!(
@@ -780,8 +774,6 @@ mod tests {
                         block_created: i as u64
                     }
                 },
-                "assertion failed at index {}",
-                i
             );
         }
         assert_eq!(
@@ -919,7 +911,14 @@ mod tests {
             hashset! {pool_ids[0]}
         );
 
+        assert_eq!(
+            registry
+                .ids_for_pools_containing_token_pairs(hashset! { token_pairs[1], token_pairs[2] }),
+            hashset! {pool_ids[0], pool_ids[1]}
+        );
+
         // Testing pools_for
+        assert!(registry.stable_pools_for(&hashset! {}).is_empty());
         assert!(registry.weighted_pools_for(&hashset! {}).is_empty());
         assert_eq!(
             registry.weighted_pools_for(&hashset! {pool_ids[0]}),

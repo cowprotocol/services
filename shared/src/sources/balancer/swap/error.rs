@@ -59,4 +59,10 @@ mod tests {
     fn expected_error_formatting() {
         assert_eq!(format!("{}", Error::XOutOfBounds), "BAL#006: XOutOfBounds");
     }
+
+    #[test]
+    #[should_panic]
+    fn error_parse_fail() {
+        Error::from("Poop");
+    }
 }

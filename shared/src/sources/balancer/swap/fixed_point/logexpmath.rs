@@ -406,11 +406,12 @@ mod tests {
     #[test]
     fn exp_error() {
         let input = [
-            "-41000000000000000001", // MIN_NATURAL_EXPONENT - 1
-            "130000000000000000001", // MAX_NATURAL_EXPONENT + 1
+            "-41000000000000000001",  // MIN_NATURAL_EXPONENT - 1
+            "130000000000000000001",  // MAX_NATURAL_EXPONENT + 1
+            "-130000000000000000001", // -(MAX_NATURAL_EXPONENT + 1)
         ];
         // generated with `await generateErr("exp", input)`
-        let output = ["009", "009"];
+        let output = ["009", "009", "009"];
 
         assert_eq!(input.len(), output.len());
         for (i, &o) in input.iter().zip(output.iter()) {
@@ -437,9 +438,22 @@ mod tests {
                 "1250152866",          // slightly smaller than f64::exp(-MIN_NATURAL_EXPONENT/2)
                 "2000000000000000000", // 2
             ],
+            [
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935", // U256::MAX
+                "1",
+            ],
+            [
+                "1",
+                "115792089237316195423570985008687907853269984665640564039457584007913129639935", // U256::MAX
+            ],
+            [
+                "130000000000000000001", // MAX_NATURAL_EXPONENT + 1
+                "130000000000000000001",
+            ],
+            ["1", "130000000000000000001"],
         ];
         // generated with `await generateErr("pow", input)`
-        let output = ["006", "007", "008", "008"];
+        let output = ["006", "007", "008", "008", "006", "007", "008", "008"];
 
         assert_eq!(input.len(), output.len());
         for (i, &o) in input.iter().zip(output.iter()) {
@@ -500,5 +514,48 @@ mod tests {
                 U256::from_dec_str(o).unwrap()
             );
         }
+    }
+
+    #[test]
+    #[should_panic]
+    fn constant_x_20_panic() {
+        constant_x_20(12);
+    }
+
+    #[test]
+    #[should_panic]
+    fn constant_x_18_panic() {
+        constant_x_18(2);
+    }
+
+    #[test]
+    #[should_panic]
+    fn constant_a_20_panic() {
+        constant_a_20(12);
+    }
+
+    #[test]
+    #[should_panic]
+    fn constant_a_18_panic() {
+        constant_a_18(2);
+    }
+
+    #[test]
+    fn pow_alternate_routes() {
+        assert_eq!(
+            pow(
+                U256::from_dec_str("0").unwrap(),
+                U256::from_dec_str("0").unwrap()
+            ),
+            Ok(*UFIXED256X18_ONE)
+        );
+        assert_eq!(
+            pow(
+                U256::from_dec_str("0").unwrap(),
+                U256::from_dec_str("1").unwrap()
+            ),
+            Ok(U256::zero())
+        );
+        assert_eq!(pow(U256::exp10(18), U256::one()), Ok(*UFIXED256X18_ONE));
     }
 }
