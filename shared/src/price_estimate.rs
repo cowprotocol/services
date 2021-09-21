@@ -18,7 +18,16 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use structopt::clap::arg_enum;
 use thiserror::Error;
+
+arg_enum! {
+    #[derive(Debug)]
+    pub enum PriceEstimatorType {
+        Baseline,
+        Paraswap,
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum PriceEstimationError {

@@ -171,16 +171,6 @@ struct Arguments {
     #[structopt(long, env, default_value = "10")]
     paraswap_slippage_bps: u32,
 
-    /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
-    /// DEX (representing a private market maker) is disabled as it increases
-    /// price by 1% if built transactions don't actually get executed.
-    #[structopt(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
-    disabled_paraswap_dexs: Vec<String>,
-
-    /// Special partner authentication for Paraswap API (allowing higher rater limits)
-    #[structopt(long, env)]
-    paraswap_partner: Option<String>,
-
     /// The authorization for the archer api.
     #[structopt(long, env)]
     archer_authorization: Option<String>,
@@ -406,8 +396,8 @@ async fn main() {
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
-        args.disabled_paraswap_dexs,
-        args.paraswap_partner,
+        args.shared.disabled_paraswap_dexs,
+        args.shared.paraswap_partner,
         client.clone(),
         native_token_price_estimation_amount,
     )

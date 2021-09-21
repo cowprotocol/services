@@ -1,5 +1,8 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
-use crate::{gas_price_estimation::GasEstimatorType, sources::BaselineSource};
+use crate::{
+    gas_price_estimation::GasEstimatorType, price_estimate::PriceEstimatorType,
+    sources::BaselineSource,
+};
 use anyhow::{ensure, Result};
 use ethcontract::{H160, U256};
 use std::{
@@ -101,6 +104,23 @@ pub struct Arguments {
         parse(try_from_str = U256::from_dec_str)
     )]
     pub amount_to_estimate_prices_with: Option<U256>,
+
+    /// Special partner authentication for Paraswap API (allowing higher rater limits)
+    #[structopt(long, env)]
+    pub paraswap_partner: Option<String>,
+
+    /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
+    /// DEX (representing a private market maker) is disabled as it increases
+    /// price by 1% if built transactions don't actually get executed.
+    #[structopt(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
+    pub disabled_paraswap_dexs: Vec<String>,
+
+    #[structopt(
+        long,
+        default_value = "Baseline",
+        possible_values = &PriceEstimatorType::variants(),
+    )]
+    pub price_estimator: PriceEstimatorType,
 }
 
 fn parse_fee_factor(s: &str) -> Result<f64> {
