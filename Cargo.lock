@@ -1037,12 +1037,11 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.3#b8b018545d0a4891135a1010ffab6b8425a89815"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.2#b6b4808e182cacd660913a408d3938ef024c86fe"
 dependencies = [
  "anyhow",
  "async-trait",
  "futures",
- "http",
  "primitive-types",
  "serde",
  "serde_json",
