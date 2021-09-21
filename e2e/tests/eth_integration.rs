@@ -234,6 +234,7 @@ async fn eth_integration(web3: Web3) {
             gas_price_cap: f64::MAX,
             transaction_strategy: solver::settlement_submission::TransactionStrategy::PublicMempool,
         },
+        1_000_000_000_000_000_000_u128.into(),
     );
     driver.single_run().await.unwrap();
 

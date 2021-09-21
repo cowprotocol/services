@@ -179,7 +179,7 @@ async fn main() {
         .await
         .expect("Failed to retrieve network version ID");
 
-    let amount_to_estimate_prices_with = args
+    let native_token_price_estimation_amount = args
         .shared
         .amount_to_estimate_prices_with
         .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network))
@@ -327,7 +327,7 @@ async fn main() {
         base_tokens,
         bad_token_detector.clone(),
         native_token.address(),
-        amount_to_estimate_prices_with,
+        native_token_price_estimation_amount,
     ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
@@ -336,6 +336,7 @@ async fn main() {
         database.clone(),
         args.shared.fee_factor,
         bad_token_detector.clone(),
+        native_token_price_estimation_amount,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

@@ -262,7 +262,7 @@ async fn main() {
     // We should always use the native token as a base token.
     base_tokens.insert(native_token_contract.address());
 
-    let amount_to_estimate_prices_with = args
+    let native_token_price_estimation_amount = args
         .shared
         .amount_to_estimate_prices_with
         .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network_id))
@@ -359,7 +359,7 @@ async fn main() {
         // Order book already filters bad tokens
         Arc::new(ListBasedDetector::deny_list(Vec::new())),
         native_token_contract.address(),
-        amount_to_estimate_prices_with,
+        native_token_price_estimation_amount,
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
@@ -409,6 +409,7 @@ async fn main() {
         args.disabled_paraswap_dexs,
         args.paraswap_partner,
         client.clone(),
+        native_token_price_estimation_amount,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
@@ -470,6 +471,7 @@ async fn main() {
         current_block_stream.clone(),
         args.shared.fee_factor,
         solution_submitter,
+        native_token_price_estimation_amount,
     );
 
     let maintainer = ServiceMaintenance {

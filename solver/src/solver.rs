@@ -143,6 +143,7 @@ pub fn create(
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
     client: Client,
+    native_token_amount_to_estimate_prices_with: U256,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -175,6 +176,7 @@ pub fn create(
             fee_factor,
             client.clone(),
             http_solver_cache.clone(),
+            native_token_amount_to_estimate_prices_with,
         )
     };
 

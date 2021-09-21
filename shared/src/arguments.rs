@@ -93,7 +93,8 @@ pub struct Arguments {
     pub block_stream_poll_interval_seconds: Duration,
 
     /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
-    // that small pools do not influence the prices.
+    // that small pools do not influence the prices. If not set a reasonable default is used based
+    // on network id.
     #[structopt(
         long,
         env,

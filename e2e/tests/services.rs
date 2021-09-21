@@ -190,6 +190,7 @@ impl OrderbookServices {
             db.clone(),
             0.0,
             bad_token_detector.clone(),
+            1_000_000_000_000_000_000_u128.into(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

@@ -82,9 +82,6 @@ pub trait PriceEstimating: Send + Sync {
         // estimators.
         join_all(queries.iter().map(|query| self.estimate(query))).await
     }
-
-    // Used when a price relative to the native token is needed without having a specific amount.
-    fn native_token_amount_to_estimate_prices_with(&self) -> U256;
 }
 
 pub struct BaselinePriceEstimator {
@@ -93,7 +90,7 @@ pub struct BaselinePriceEstimator {
     base_tokens: HashSet<H160>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: H160,
-    amount_to_estimate_prices_with: U256,
+    native_token_price_estimation_amount: U256,
 }
 
 impl BaselinePriceEstimator {
@@ -103,7 +100,7 @@ impl BaselinePriceEstimator {
         base_tokens: HashSet<H160>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         native_token: H160,
-        amount_to_estimate_prices_with: U256,
+        native_token_price_estimation_amount: U256,
     ) -> Self {
         Self {
             pool_fetcher,
@@ -111,7 +108,7 @@ impl BaselinePriceEstimator {
             base_tokens,
             bad_token_detector,
             native_token,
-            amount_to_estimate_prices_with,
+            native_token_price_estimation_amount,
         }
     }
 
@@ -145,10 +142,6 @@ impl PriceEstimating for BaselinePriceEstimator {
             out_amount,
             gas: self.estimate_gas(&path),
         })
-    }
-
-    fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
-        self.amount_to_estimate_prices_with
     }
 }
 
@@ -206,13 +199,13 @@ impl BaselinePriceEstimator {
                             .best_execution_sell_order(
                                 self.native_token,
                                 sell_token,
-                                self.amount_to_estimate_prices_with,
+                                self.native_token_price_estimation_amount,
                                 gas_price,
                                 None,
                             )
                             .await?
                             .1;
-                        amounts_to_price(self.amount_to_estimate_prices_with, buy_amount)
+                        amounts_to_price(self.native_token_price_estimation_amount, buy_amount)
                             .ok_or(PriceEstimationError::NoLiquidity)?
                     })
                 } else {
@@ -239,13 +232,13 @@ impl BaselinePriceEstimator {
                             .best_execution_sell_order(
                                 self.native_token,
                                 buy_token,
-                                self.amount_to_estimate_prices_with,
+                                self.native_token_price_estimation_amount,
                                 gas_price,
                                 None,
                             )
                             .await?
                             .1;
-                        amounts_to_price(self.amount_to_estimate_prices_with, buy_amount)
+                        amounts_to_price(self.native_token_price_estimation_amount, buy_amount)
                             .ok_or(PriceEstimationError::NoLiquidity)?
                     })
                 } else {
@@ -397,10 +390,6 @@ pub mod mocks {
         async fn estimate(&self, _: &Query) -> Result<Estimate, PriceEstimationError> {
             Ok(self.0)
         }
-
-        fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
-            1.into()
-        }
     }
 
     pub struct FailingPriceEstimator();
@@ -408,10 +397,6 @@ pub mod mocks {
     impl PriceEstimating for FailingPriceEstimator {
         async fn estimate(&self, _: &Query) -> Result<Estimate, PriceEstimationError> {
             Err(anyhow!("").into())
-        }
-
-        fn native_token_amount_to_estimate_prices_with(&self) -> U256 {
-            1.into()
         }
     }
 }

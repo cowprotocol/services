@@ -1,15 +1,15 @@
 pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
-use crate::liquidity::LimitOrder;
-use crate::solver::{Auction, SettlementWithSolver, Solvers};
 use crate::{
+    liquidity::LimitOrder,
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
     settlement::Settlement,
     settlement_simulation,
     settlement_submission::{self, retry::is_transaction_failure, SolutionSubmitter},
     solver::Solver,
+    solver::{Auction, SettlementWithSolver, Solvers},
 };
 use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
@@ -19,10 +19,10 @@ use gas_estimation::GasPriceEstimating;
 use itertools::{Either, Itertools};
 use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
-use primitive_types::H160;
-use shared::price_estimate;
+use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
+    price_estimate,
     price_estimate::PriceEstimating,
     recent_block_cache::Block,
     token_list::TokenList,
@@ -54,6 +54,7 @@ pub struct Driver {
     fee_factor: f64,
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
+    native_token_amount_to_estimate_prices_with: U256,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -75,6 +76,7 @@ impl Driver {
         block_stream: CurrentBlockStream,
         fee_factor: f64,
         solution_submitter: SolutionSubmitter,
+        native_token_amount_to_estimate_prices_with: U256,
     ) -> Self {
         Self {
             settlement_contract,
@@ -96,6 +98,7 @@ impl Driver {
             fee_factor,
             solution_submitter,
             solve_id: 0,
+            native_token_amount_to_estimate_prices_with,
         }
     }
 
@@ -374,9 +377,13 @@ impl Driver {
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
             .await?;
 
-        let estimated_prices =
-            collect_estimated_prices(self.price_estimator.as_ref(), self.native_token, &orders)
-                .await;
+        let estimated_prices = collect_estimated_prices(
+            self.price_estimator.as_ref(),
+            self.native_token_amount_to_estimate_prices_with,
+            self.native_token,
+            &orders,
+        )
+        .await;
         tracing::debug!("estimated prices: {:?}", estimated_prices);
 
         let orders = orders_with_price_estimates(orders, &estimated_prices);
@@ -506,13 +513,13 @@ impl Driver {
 
 pub async fn collect_estimated_prices(
     price_estimator: &dyn PriceEstimating,
+    native_token_amount_to_estimate_prices_with: U256,
     native_token: H160,
     orders: &[LimitOrder],
 ) -> HashMap<H160, BigRational> {
     // Computes set of traded tokens (limit orders only).
     // NOTE: The native token is always added.
 
-    let amount = price_estimator.native_token_amount_to_estimate_prices_with();
     let queries = orders
         .iter()
         .flat_map(|order| [order.sell_token, order.buy_token])
@@ -524,7 +531,7 @@ pub async fn collect_estimated_prices(
             // but native_token is used here anyway for better logging/debugging.
             sell_token: native_token,
             buy_token: token,
-            in_amount: amount,
+            in_amount: native_token_amount_to_estimate_prices_with,
             kind: model::order::OrderKind::Sell,
         })
         .collect::<Vec<_>>();
@@ -627,7 +634,8 @@ mod tests {
             id: "0".into(),
             is_liquidity_order: false,
         }];
-        let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
+        let prices =
+            collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
         assert_eq!(prices.len(), 4);
         assert!(prices.contains_key(&sell_token));
         assert!(prices.contains_key(&buy_token));
@@ -653,7 +661,8 @@ mod tests {
             id: "0".into(),
             is_liquidity_order: false,
         }];
-        let prices = collect_estimated_prices(&price_estimator, native_token, &orders).await;
+        let prices =
+            collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
         assert_eq!(prices.len(), 2);
     }
 
@@ -679,7 +688,8 @@ mod tests {
             id: "0".into(),
             is_liquidity_order: false,
         }];
-        let prices = collect_estimated_prices(&price_estimator, native_token, &liquidity).await;
+        let prices =
+            collect_estimated_prices(&price_estimator, 1.into(), native_token, &liquidity).await;
         assert_eq!(prices.len(), 3);
         assert!(prices.contains_key(&sell_token));
         assert!(prices.contains_key(&native_token));

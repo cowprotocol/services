@@ -25,6 +25,7 @@ pub struct MinFeeCalculator {
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     fee_factor: f64,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
+    native_token_price_estimation_amount: U256,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -94,6 +95,7 @@ impl EthAwareMinFeeCalculator {
         measurements: Arc<dyn MinFeeStoring>,
         fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        native_token_price_estimation_amount: U256,
     ) -> Self {
         Self {
             calculator: MinFeeCalculator::new(
@@ -103,6 +105,7 @@ impl EthAwareMinFeeCalculator {
                 measurements,
                 fee_factor,
                 bad_token_detector,
+                native_token_price_estimation_amount,
             ),
             weth: native_token,
         }
@@ -144,6 +147,7 @@ impl MinFeeCalculator {
         measurements: Arc<dyn MinFeeStoring>,
         fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        native_token_price_estimation_amount: U256,
     ) -> Self {
         Self {
             price_estimator,
@@ -153,6 +157,7 @@ impl MinFeeCalculator {
             now: Box::new(Utc::now),
             fee_factor,
             bad_token_detector,
+            native_token_price_estimation_amount,
         }
     }
 
@@ -185,9 +190,7 @@ impl MinFeeCalculator {
         let query = price_estimate::Query {
             sell_token,
             buy_token: self.native_token,
-            in_amount: self
-                .price_estimator
-                .native_token_amount_to_estimate_prices_with(),
+            in_amount: self.native_token_price_estimation_amount,
             kind: OrderKind::Buy,
         };
         let estimate = self.price_estimator.estimate(&query).await?;
@@ -413,6 +416,7 @@ mod tests {
                 now,
                 fee_factor: 1.0,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
+                native_token_price_estimation_amount: 1.into(),
             }
         }
     }
@@ -506,6 +510,7 @@ mod tests {
             now: Box::new(Utc::now),
             fee_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
+            native_token_price_estimation_amount: 1.into(),
         };
 
         // Selling unsupported token
