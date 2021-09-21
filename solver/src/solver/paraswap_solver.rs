@@ -304,6 +304,7 @@ mod tests {
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
                 token_transfer_proxy: H160([0x42; 20]),
+                gas_cost: 0.into(),
             })
         });
         client
@@ -384,6 +385,7 @@ mod tests {
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
                 token_transfer_proxy,
+                gas_cost: 0.into(),
             })
         });
         client
@@ -471,6 +473,7 @@ mod tests {
                 src_amount: 100.into(),
                 dest_amount: 99.into(),
                 token_transfer_proxy: H160([0x42; 20]),
+                gas_cost: 0.into(),
             })
         });
 

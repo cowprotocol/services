@@ -14,7 +14,7 @@ const BASE_URL: &str = "https://apiv5.paraswap.io";
 /// Mockable implementation of the API for unit test
 #[mockall::automock]
 #[async_trait::async_trait]
-pub trait ParaswapApi {
+pub trait ParaswapApi: Send + Sync {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
@@ -229,6 +229,7 @@ pub struct PriceResponse {
     pub dest_amount: U256,
     /// The token transfer proxy address to set an allowance for.
     pub token_transfer_proxy: H160,
+    pub gas_cost: U256,
 }
 
 impl<'de> Deserialize<'de> for PriceResponse {
@@ -250,6 +251,8 @@ impl<'de> Deserialize<'de> for PriceResponse {
             #[serde(with = "u256_decimal")]
             dest_amount: U256,
             token_transfer_proxy: H160,
+            #[serde(with = "u256_decimal")]
+            gas_cost: U256,
         }
 
         let parsed = ParsedRaw::deserialize(deserializer)?;
@@ -257,6 +260,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             src_amount,
             dest_amount,
             token_transfer_proxy,
+            gas_cost,
         } = serde_json::from_value::<PriceRoute>(parsed.price_route.clone())
             .map_err(D::Error::custom)?;
         Ok(PriceResponse {
@@ -264,6 +268,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             src_amount,
             dest_amount,
             token_transfer_proxy,
+            gas_cost,
         })
     }
 }

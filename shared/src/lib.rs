@@ -13,6 +13,7 @@ pub mod maintenance;
 pub mod metrics;
 pub mod network;
 pub mod paraswap_api;
+pub mod paraswap_price_estimator;
 pub mod price_estimate;
 pub mod recent_block_cache;
 pub mod sources;

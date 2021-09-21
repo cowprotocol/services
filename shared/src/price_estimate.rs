@@ -111,18 +111,16 @@ impl BaselinePriceEstimator {
             native_token_price_estimation_amount,
         }
     }
+}
 
-    async fn ensure_token_supported(&self, token: H160) -> Result<(), PriceEstimationError> {
-        match self.bad_token_detector.detect(token).await {
-            Ok(quality) => {
-                if quality.is_good() {
-                    Ok(())
-                } else {
-                    Err(PriceEstimationError::UnsupportedToken(token))
-                }
-            }
-            Err(err) => Err(PriceEstimationError::Other(err)),
-        }
+pub async fn ensure_token_supported(
+    token: H160,
+    detector: &dyn BadTokenDetecting,
+) -> Result<(), PriceEstimationError> {
+    match detector.detect(token).await {
+        Ok(quality) if quality.is_good() => Ok(()),
+        Ok(_) => Err(PriceEstimationError::UnsupportedToken(token)),
+        Err(err) => Err(PriceEstimationError::Other(err)),
     }
 }
 
@@ -179,8 +177,8 @@ impl BaselinePriceEstimator {
         kind: OrderKind,
         consider_gas_costs: bool,
     ) -> Result<(Vec<H160>, U256), PriceEstimationError> {
-        self.ensure_token_supported(sell_token).await?;
-        self.ensure_token_supported(buy_token).await?;
+        ensure_token_supported(sell_token, self.bad_token_detector.as_ref()).await?;
+        ensure_token_supported(buy_token, self.bad_token_detector.as_ref()).await?;
         if sell_token == buy_token {
             return Ok((Vec::new(), amount));
         }
