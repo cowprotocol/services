@@ -10,10 +10,7 @@ use ethcontract::{dyns::DynTransport, Account, TransactionHash, Web3};
 use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::{H160, U256};
-use std::{
-    borrow::Cow,
-    time::{Duration, Instant},
-};
+use std::{borrow::Cow, time::Duration};
 use transaction_retry::RetryResult;
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.
@@ -73,7 +70,7 @@ pub async fn submit(
         transaction_retry::gas_price_increase::minimum_increase(gas_price.to_f64_lossy())
     });
     let stream = gas_price_stream(
-        Instant::now() + target_confirm_time,
+        target_confirm_time,
         gas_price_cap,
         gas_limit,
         gas,
