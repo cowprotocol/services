@@ -13,6 +13,7 @@ use crate::{
 };
 use ::model::order::OrderKind;
 use anyhow::{anyhow, ensure, Context, Result};
+use bigdecimal::ToPrimitive;
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
 use futures::{join, lock::Mutex};
@@ -314,11 +315,13 @@ impl HttpSolver {
         mut orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
+        price_estimates: HashMap<H160, BigRational>,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         let tokens = self.map_tokens_for_solver(&orders, &liquidity);
 
         let queries = tokens
             .iter()
+            .filter(|token| !price_estimates.contains_key(token))
             .map(|token| price_estimate::Query {
                 sell_token: self.native_token,
                 buy_token: *token,
@@ -327,7 +330,7 @@ impl HttpSolver {
             })
             .collect::<Vec<_>>();
 
-        let (token_infos, price_estimates, mut buffers_result) = join!(
+        let (token_infos, new_price_estimates, mut buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
                 |duration| tracing::debug!("get_token_infos took {} s", duration.as_secs_f32()),
@@ -365,14 +368,19 @@ impl HttpSolver {
             })
             .collect();
 
-        let price_estimates: HashMap<H160, f64> = queries
+        let mut new_price_estimates: HashMap<H160, f64> = queries
             .iter()
-            .zip(price_estimates)
+            .zip(new_price_estimates)
             .filter_map(|(query, estimate)| {
                 let price = estimate.ok()?.price_in_sell_token_f64(query);
                 Some((query.buy_token, price))
             })
             .collect();
+        new_price_estimates.extend(
+            price_estimates
+                .into_iter()
+                .filter_map(|(token, price)| Some((token, price.to_f64()?))),
+        );
 
         let (constant_product_liquidity, weighted_product_liquidity, stable_pool_liquidity) =
             split_liquidity(liquidity);
@@ -389,7 +397,7 @@ impl HttpSolver {
         let weighted_product_orders = self.map_amm_orders_for_solver(weighted_product_liquidity);
         let stable_pool_orders = self.map_amm_orders_for_solver(stable_pool_liquidity);
 
-        let token_models = self.token_models(&token_infos, &price_estimates, &buffers);
+        let token_models = self.token_models(&token_infos, &new_price_estimates, &buffers);
         let order_models = self.order_models(&limit_orders, gas_price);
         let amm_models = self
             .amm_models(
@@ -576,6 +584,7 @@ impl Solver for HttpSolver {
             liquidity,
             gas_price,
             deadline,
+            price_estimates,
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         if orders.is_empty() {
@@ -586,7 +595,9 @@ impl Solver for HttpSolver {
             match guard.as_mut() {
                 Some(data) if data.solve_id == id => (data.model.clone(), data.context.clone()),
                 _ => {
-                    let (model, context) = self.prepare_model(orders, liquidity, gas_price).await?;
+                    let (model, context) = self
+                        .prepare_model(orders, liquidity, gas_price, price_estimates)
+                        .await?;
                     *guard = Some(InstanceData {
                         solve_id: id,
                         model: model.clone(),
@@ -710,7 +721,7 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         })];
         let (model, _context) = solver
-            .prepare_model(limit_orders, liquidity, gas_price)
+            .prepare_model(limit_orders, liquidity, gas_price, Default::default())
             .await
             .unwrap();
         let settled = solver

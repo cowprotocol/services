@@ -7,19 +7,17 @@ use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{Account, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver, SolverConfig};
-use model::order::OrderKind;
 use naive_solver::NaiveSolver;
+use num::BigRational;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
 use shared::{
-    price_estimate::{self, PriceEstimating},
-    token_info::TokenInfoFetching,
-    Web3,
+    conversions::U256Ext, price_estimate::PriceEstimating, token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::SingleOrderSolver;
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -86,6 +84,16 @@ pub struct Auction {
     /// future at most until the deadline is reach, at which point the future
     /// will be dropped.
     pub deadline: Instant,
+
+    /// The price of tokens appearing in the limit orders represented in the native token.
+    ///
+    /// The objective value is calculated with these prices so they can be relevant for solvers.
+    ///
+    /// The price of the native token and the BUY_ETH_ADDRESS is included and set to 1.
+    ///
+    /// If a price cannot be determined the limit order would not have been included in the auction
+    /// so this is guaranteed to have a price for all tokens.
+    pub price_estimates: HashMap<H160, BigRational>,
 }
 
 impl Default for Auction {
@@ -100,6 +108,7 @@ impl Default for Auction {
             liquidity: Default::default(),
             gas_price: Default::default(),
             deadline: never,
+            price_estimates: Default::default(),
         }
     }
 }
@@ -208,8 +217,6 @@ pub fn create(
                     // We only want to use 1Inch for high value orders
                     shared(SellVolumeFilteringSolver::new(
                         Box::new(one_inch_solver),
-                        price_estimator.clone(),
-                        native_token,
                         min_order_size_one_inch,
                     ))
                 }
@@ -257,59 +264,36 @@ pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
 /// passes the remaining liquidity onto an inner solver implementation.
 pub struct SellVolumeFilteringSolver {
     inner: Box<dyn Solver + Send + Sync>,
-    price_estimator: Arc<dyn PriceEstimating>,
-    denominator_token: H160,
-    min_value: U256,
+    min_value: BigRational,
 }
 
 impl SellVolumeFilteringSolver {
-    pub fn new(
-        inner: Box<dyn Solver + Send + Sync>,
-        price_estimator: Arc<dyn PriceEstimating>,
-        denominator_token: H160,
-        min_value: U256,
-    ) -> Self {
+    pub fn new(inner: Box<dyn Solver + Send + Sync>, min_value: U256) -> Self {
         Self {
             inner,
-            price_estimator,
-            denominator_token,
-            min_value,
+            min_value: min_value.to_big_rational(),
         }
     }
 
-    async fn filter_orders(&self, orders: Vec<LimitOrder>) -> Vec<LimitOrder> {
-        let queries = orders
-            .iter()
-            // The out amount is always self.denominator_token and the in amount in the token the
-            // user has balance.
-            .map(|order| match order.kind {
-                OrderKind::Buy => price_estimate::Query {
-                    sell_token: self.denominator_token,
-                    buy_token: order.buy_token,
-                    in_amount: order.buy_amount,
-                    kind: OrderKind::Buy,
-                },
-                OrderKind::Sell => price_estimate::Query {
-                    sell_token: order.sell_token,
-                    buy_token: self.denominator_token,
-                    in_amount: order.sell_amount,
-                    kind: OrderKind::Sell,
-                },
-            })
-            .collect::<Vec<_>>();
-        let estimates = self.price_estimator.estimates(&queries).await;
-
+    // The price estimates come from the Auction struct passed to solvers.
+    async fn filter_orders(
+        &self,
+        mut orders: Vec<LimitOrder>,
+        price_estimates: &HashMap<H160, BigRational>,
+    ) -> Vec<LimitOrder> {
+        let is_minimum_volume = |token: &H160, amount: &U256| {
+            let price = match price_estimates.get(token) {
+                Some(price) => price,
+                None => return false,
+            };
+            let native_amount = amount.to_big_rational() * price;
+            native_amount >= self.min_value
+        };
+        orders.retain(|order| {
+            is_minimum_volume(&order.buy_token, &order.buy_amount)
+                || is_minimum_volume(&order.sell_token, &order.sell_amount)
+        });
         orders
-            .into_iter()
-            .zip(estimates)
-            .filter_map(|(order, estimate)| {
-                let estimate = estimate.ok()?;
-                if estimate.out_amount < self.min_value {
-                    return None;
-                }
-                Some(order)
-            })
-            .collect()
     }
 }
 
@@ -317,7 +301,9 @@ impl SellVolumeFilteringSolver {
 impl Solver for SellVolumeFilteringSolver {
     async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
         let original_length = auction.orders.len();
-        auction.orders = self.filter_orders(auction.orders).await;
+        auction.orders = self
+            .filter_orders(auction.orders, &auction.price_estimates)
+            .await;
         tracing::info!(
             "Filtered {} orders because on insufficient volume",
             original_length - auction.orders.len()
@@ -338,7 +324,7 @@ impl Solver for SellVolumeFilteringSolver {
 mod tests {
     use super::*;
     use crate::liquidity::LimitOrder;
-    use shared::price_estimate::{mocks::FailingPriceEstimator, MockPriceEstimating};
+    use model::order::OrderKind;
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();
@@ -383,25 +369,11 @@ mod tests {
             },
         ];
 
-        let mut price_estimator = MockPriceEstimating::new();
-        price_estimator.expect_estimates().returning(|queries| {
-            queries
-                .iter()
-                .map(|query| {
-                    Ok(price_estimate::Estimate {
-                        out_amount: query.in_amount,
-                        gas: 0.into(),
-                    })
-                })
-                .collect()
-        });
-        let solver = SellVolumeFilteringSolver {
-            inner: Box::new(NoopSolver()),
-            price_estimator: Arc::new(price_estimator),
-            denominator_token: H160::zero(),
-            min_value: 50_000.into(),
-        };
-        assert_eq!(solver.filter_orders(orders).await.len(), 2);
+        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 50_000.into());
+        let prices =
+            std::array::IntoIter::new([(sell_token, BigRational::new(1.into(), 1.into()))])
+                .collect();
+        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 2);
     }
 
     #[tokio::test]
@@ -413,13 +385,8 @@ mod tests {
             ..Default::default()
         }];
 
-        let price_estimator = Arc::new(FailingPriceEstimator());
-        let solver = SellVolumeFilteringSolver {
-            inner: Box::new(NoopSolver()),
-            price_estimator,
-            denominator_token: H160::zero(),
-            min_value: 0.into(),
-        };
-        assert_eq!(solver.filter_orders(orders).await.len(), 0);
+        let prices = Default::default();
+        let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 0.into());
+        assert_eq!(solver.filter_orders(orders, &prices).await.len(), 0);
     }
 }

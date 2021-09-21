@@ -406,6 +406,7 @@ impl Driver {
             liquidity,
             gas_price: gas_price_wei,
             deadline: Instant::now() + self.solver_time_limit,
+            price_estimates: estimated_prices.clone(),
         };
         tracing::debug!("solving auction ID {}", auction.id);
 
