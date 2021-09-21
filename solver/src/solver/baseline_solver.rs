@@ -254,7 +254,13 @@ impl Solution {
             let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
             let buy_amount = amm
                 .get_amount_out(buy_token, (sell_amount, sell_token))
-                .expect("Path was found, so amount must be calculable");
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "invariant violated: have path but amount was not calculatable: {}",
+                        order.id
+                    )
+                })?;
+            //.expect("Path was found, so amount must be calculable");
             let execution = AmmOrderExecution {
                 input: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
