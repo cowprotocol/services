@@ -5,8 +5,7 @@ use ethcontract::{H160, U256};
 use model::h160_hexadecimal;
 use model::{order::OrderKind, u256_decimal};
 use serde::{Deserialize, Serialize};
-use shared::price_estimate;
-use shared::price_estimate::{PriceEstimating, PriceEstimationError};
+use shared::price_estimation::{self, PriceEstimating, PriceEstimationError};
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -108,7 +107,7 @@ async fn calculate_sell(
         .max(U256::one());
 
     let estimate = price_estimator
-        .estimate(&price_estimate::Query {
+        .estimate(&price_estimation::Query {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
             in_amount: sell_amount_after_fee,
@@ -144,7 +143,7 @@ async fn calculate_buy(
         .await?;
 
     let estimate = price_estimator
-        .estimate(&price_estimate::Query {
+        .estimate(&price_estimation::Query {
             sell_token: query.sell_token,
             buy_token: query.buy_token,
             in_amount: query.buy_amount_after_fee,
@@ -245,7 +244,7 @@ mod tests {
     use crate::fee::MockMinFeeCalculating;
     use futures::FutureExt;
     use hex_literal::hex;
-    use shared::price_estimate::mocks::FakePriceEstimator;
+    use shared::price_estimation::mocks::FakePriceEstimator;
     use warp::test::request;
 
     #[test]
@@ -254,7 +253,7 @@ mod tests {
         fee_calculator
             .expect_min_fee()
             .returning(|_, _, _, _| Ok((U256::from(3), Utc::now())));
-        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
             gas: 1000.into(),
         });
@@ -281,7 +280,7 @@ mod tests {
         fee_calculator
             .expect_min_fee()
             .returning(|_, _, _, _| Ok((U256::from(3), Utc::now())));
-        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 20.into(),
             gas: 1000.into(),
         });

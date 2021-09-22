@@ -29,9 +29,10 @@ use shared::{
     maintenance::ServiceMaintenance,
     metrics::setup_metrics_registry,
     paraswap_api::DefaultParaswapApi,
-    paraswap_price_estimator::ParaswapPriceEstimator,
-    price_estimate::PriceEstimatorType,
-    price_estimate::{BaselinePriceEstimator, PriceEstimating},
+    price_estimation::{
+        baseline::BaselinePriceEstimator, paraswap::ParaswapPriceEstimator, PriceEstimating,
+        PriceEstimatorType,
+    },
     recent_block_cache::CacheConfig,
     sources::{
         self,

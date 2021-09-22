@@ -9,7 +9,7 @@ use shared::{
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::serve_metrics,
     network::network_name,
-    price_estimate::BaselinePriceEstimator,
+    price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     sources::{
         self,

@@ -22,7 +22,7 @@ use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};
 use shared::{
     measure_time,
-    price_estimate::{self, PriceEstimating},
+    price_estimation::{self, PriceEstimating},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use std::{
@@ -142,7 +142,7 @@ impl HttpSolver {
         let queries = tokens
             .iter()
             .filter(|token| !price_estimates.contains_key(token))
-            .map(|token| price_estimate::Query {
+            .map(|token| price_estimation::Query {
                 sell_token: self.native_token,
                 buy_token: *token,
                 in_amount: self.native_token_amount_to_estimate_prices_with,
@@ -559,7 +559,7 @@ mod tests {
     use ethcontract::Address;
     use maplit::hashmap;
     use num::rational::Ratio;
-    use shared::price_estimate::mocks::FakePriceEstimator;
+    use shared::price_estimation::mocks::FakePriceEstimator;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
@@ -601,7 +601,7 @@ mod tests {
         let mock_buffer_retriever: Arc<dyn BufferRetrieving> = Arc::new(mock_buffer_retriever);
 
         let mock_price_estimation: Arc<dyn PriceEstimating> =
-            Arc::new(FakePriceEstimator(price_estimate::Estimate {
+            Arc::new(FakePriceEstimator(price_estimation::Estimate {
                 out_amount: 1.into(),
                 gas: 1.into(),
             }));

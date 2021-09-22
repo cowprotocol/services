@@ -19,7 +19,7 @@ use crate::{
 use anyhow::Error as anyhowError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use shared::price_estimate::PriceEstimating;
+use shared::price_estimation::PriceEstimating;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,

@@ -14,7 +14,7 @@ use shared::{
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
-    price_estimate::BaselinePriceEstimator,
+    price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     sources::uniswap::{
         pair_provider::UniswapPairProvider, pool_cache::PoolCache, pool_fetching::PoolFetcher,

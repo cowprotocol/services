@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use serde::{Deserialize, Serialize};
-use shared::price_estimate::{self, PriceEstimating, PriceEstimationError};
+use shared::price_estimation::{self, PriceEstimating, PriceEstimationError};
 use std::sync::Arc;
 use std::{convert::Infallible, str::FromStr};
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -67,7 +67,7 @@ fn get_amount_estimate_request(
 }
 
 fn get_amount_estimate_response(
-    result: Result<price_estimate::Estimate, PriceEstimationError>,
+    result: Result<price_estimation::Estimate, PriceEstimationError>,
     query: AmountEstimateQuery,
 ) -> impl Reply {
     match result {
@@ -107,7 +107,7 @@ pub fn get_amount_estimate(
                 OrderKind::Sell => (market.quote_token, market.base_token),
             };
             let result = price_estimator
-                .estimate(&price_estimate::Query {
+                .estimate(&price_estimation::Query {
                     sell_token,
                     buy_token,
                     in_amount: query.amount,
@@ -166,7 +166,7 @@ mod tests {
 
         // Sell Order
         let response = get_amount_estimate_response(
-            Ok(price_estimate::Estimate {
+            Ok(price_estimation::Estimate {
                 out_amount: 2.into(),
                 gas: 0.into(),
             }),
@@ -182,7 +182,7 @@ mod tests {
 
         // Buy Order
         let response = get_amount_estimate_response(
-            Ok(price_estimate::Estimate {
+            Ok(price_estimation::Estimate {
                 out_amount: 2.into(),
                 gas: 0.into(),
             }),

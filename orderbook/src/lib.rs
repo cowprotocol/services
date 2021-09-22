@@ -17,7 +17,7 @@ use metrics::Metrics;
 use model::DomainSeparator;
 use shared::{
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-    price_estimate::PriceEstimating,
+    price_estimation::PriceEstimating,
 };
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};

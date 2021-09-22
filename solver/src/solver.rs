@@ -13,7 +13,7 @@ use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
 use shared::{
-    baseline_solver::BaseTokens, conversions::U256Ext, price_estimate::PriceEstimating,
+    baseline_solver::BaseTokens, conversions::U256Ext, price_estimation::PriceEstimating,
     token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::SingleOrderSolver;

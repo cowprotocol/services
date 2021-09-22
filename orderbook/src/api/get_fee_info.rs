@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use shared::{price_estimate::PriceEstimationError, H160Wrapper};
+use shared::{price_estimation::PriceEstimationError, H160Wrapper};
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};

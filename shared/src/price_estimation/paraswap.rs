@@ -1,9 +1,7 @@
+use super::{ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     bad_token::BadTokenDetecting,
     paraswap_api::{ParaswapApi, PriceQuery, Side},
-    price_estimate::{
-        ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query,
-    },
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use anyhow::{anyhow, Context, Result};

@@ -22,8 +22,7 @@ use num::BigRational;
 use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
-    price_estimate,
-    price_estimate::PriceEstimating,
+    price_estimation::{self, PriceEstimating},
     recent_block_cache::Block,
     token_list::TokenList,
     Web3,
@@ -527,7 +526,7 @@ pub async fn collect_estimated_prices(
         .filter(|token| *token != native_token)
         .collect::<HashSet<_>>()
         .into_iter()
-        .map(|token| price_estimate::Query {
+        .map(|token| price_estimation::Query {
             // For ranking purposes it doesn't matter how the external price vector is scaled,
             // but native_token is used here anyway for better logging/debugging.
             sell_token: native_token,
@@ -608,13 +607,13 @@ mod tests {
     use model::order::{Order, OrderCreation, OrderKind};
     use num::traits::One as _;
     use shared::{
-        price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator},
+        price_estimation::mocks::{FailingPriceEstimator, FakePriceEstimator},
         token_list::Token,
     };
 
     #[tokio::test]
     async fn collect_estimated_prices_adds_prices_for_buy_and_sell_token_of_limit_orders() {
-        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1.into(),
         });
@@ -669,7 +668,7 @@ mod tests {
 
     #[tokio::test]
     async fn collect_estimated_prices_adds_native_token_if_wrapped_is_traded() {
-        let price_estimator = FakePriceEstimator(price_estimate::Estimate {
+        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1.into(),
         });
