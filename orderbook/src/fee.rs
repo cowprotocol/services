@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
+use ethcontract::H256;
 use gas_estimation::GasPriceEstimating;
 use model::order::{OrderKind, BUY_ETH_ADDRESS};
 use primitive_types::{H160, U256};
@@ -25,6 +26,7 @@ pub struct MinFeeCalculator {
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     fee_factor: f64,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
+    partner_additional_fee_factors: HashMap<H256, f64>,
     native_token_price_estimation_amount: U256,
 }
 
@@ -44,7 +46,7 @@ pub trait MinFeeCalculating: Send + Sync {
     ) -> Result<Measurement, PriceEstimationError>;
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256) -> bool;
+    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: [u8; 32]) -> bool;
 }
 
 #[async_trait::async_trait]
@@ -88,6 +90,7 @@ fn normalize_buy_token(buy_token: H160, weth: H160) -> H160 {
 }
 
 impl EthAwareMinFeeCalculator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
@@ -95,6 +98,7 @@ impl EthAwareMinFeeCalculator {
         measurements: Arc<dyn MinFeeStoring>,
         fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        partner_additional_fee_factors: HashMap<H256, f64>,
         native_token_price_estimation_amount: U256,
     ) -> Self {
         Self {
@@ -105,6 +109,7 @@ impl EthAwareMinFeeCalculator {
                 measurements,
                 fee_factor,
                 bad_token_detector,
+                partner_additional_fee_factors,
                 native_token_price_estimation_amount,
             ),
             weth: native_token,
@@ -134,12 +139,15 @@ where
             .await
     }
 
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256) -> bool {
-        self.calculator.is_valid_fee(sell_token, fee).await
+    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: [u8; 32]) -> bool {
+        self.calculator
+            .is_valid_fee(sell_token, fee, app_data)
+            .await
     }
 }
 
 impl MinFeeCalculator {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
@@ -147,6 +155,7 @@ impl MinFeeCalculator {
         measurements: Arc<dyn MinFeeStoring>,
         fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        partner_additional_fee_factors: HashMap<H256, f64>,
         native_token_price_estimation_amount: U256,
     ) -> Self {
         Self {
@@ -157,6 +166,7 @@ impl MinFeeCalculator {
             now: Box::new(Utc::now),
             fee_factor,
             bad_token_detector,
+            partner_additional_fee_factors,
             native_token_price_estimation_amount,
         }
     }
@@ -248,21 +258,30 @@ impl MinFeeCalculating for MinFeeCalculator {
     }
 
     // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256) -> bool {
+    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: [u8; 32]) -> bool {
+        let app_based_fee_factor = *self
+            .partner_additional_fee_factors
+            .get(&H256::from(app_data))
+            .unwrap_or(&1.0);
+
         if let Ok(Some(past_fee)) = self
             .measurements
             .get_min_fee(sell_token, None, None, None, (self.now)())
             .await
         {
-            if fee >= past_fee {
+            if fee >= apply_fee_factor(past_fee, app_based_fee_factor) {
                 return true;
             }
         }
         if let Ok(current_fee) = self.compute_min_fee(sell_token, None, None, None).await {
-            return fee >= current_fee;
+            return fee >= apply_fee_factor(current_fee, app_based_fee_factor);
         }
         false
     }
+}
+
+fn apply_fee_factor(fee: U256, factor: f64) -> U256 {
+    U256::from_f64_lossy(fee.to_f64_lossy() * factor)
 }
 
 struct FeeMeasurement {
@@ -333,6 +352,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, NaiveDateTime};
+    use maplit::hashmap;
     use shared::{
         bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
         price_estimate::mocks::FakePriceEstimator,
@@ -381,12 +401,14 @@ mod tests {
         let mut calculator = MockMinFeeCalculating::default();
         calculator
             .expect_is_valid_fee()
-            .withf(move |&sell_token, &fee| sell_token == token && fee == 42.into())
+            .withf(move |&sell_token, &fee, &app_data| {
+                sell_token == token && fee == 42.into() && app_data == [0; 32]
+            })
             .times(1)
-            .returning(|_, _| true);
+            .returning(|_, _, _| true);
 
         let eth_aware = EthAdapter { calculator, weth };
-        assert!(eth_aware.is_valid_fee(token, 42.into()).await);
+        assert!(eth_aware.is_valid_fee(token, 42.into(), [0u8; 32]).await);
     }
 
     impl MinFeeCalculator {
@@ -403,6 +425,7 @@ mod tests {
                 now,
                 fee_factor: 1.0,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
+                partner_additional_fee_factors: hashmap! {},
                 native_token_price_estimation_amount: 1.into(),
             }
         }
@@ -438,11 +461,11 @@ mod tests {
 
         // fee is valid before expiry
         *time.lock().unwrap() = expiry - Duration::seconds(10);
-        assert!(fee_estimator.is_valid_fee(token, fee).await);
+        assert!(fee_estimator.is_valid_fee(token, fee, [0u8; 32]).await);
 
         // fee is invalid for some uncached token
         let token = H160::from_low_u64_be(2);
-        assert!(!fee_estimator.is_valid_fee(token, fee).await);
+        assert!(!fee_estimator.is_valid_fee(token, fee, [0u8; 32]).await);
     }
 
     #[tokio::test]
@@ -471,11 +494,19 @@ mod tests {
         let lower_fee = fee - U256::one();
 
         // slightly lower fee is not valid
-        assert!(!fee_estimator.is_valid_fee(token, lower_fee).await);
+        assert!(
+            !fee_estimator
+                .is_valid_fee(token, lower_fee, [0u8; 32])
+                .await
+        );
 
         // Gas price reduces, and slightly lower fee is now valid
         *gas_price.lock().unwrap() /= 2.0;
-        assert!(fee_estimator.is_valid_fee(token, lower_fee).await);
+        assert!(
+            fee_estimator
+                .is_valid_fee(token, lower_fee, [0u8; 32])
+                .await
+        );
     }
 
     #[tokio::test]
@@ -497,6 +528,7 @@ mod tests {
             now: Box::new(Utc::now),
             fee_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
+            partner_additional_fee_factors: hashmap! {},
             native_token_price_estimation_amount: 1.into(),
         };
 
@@ -525,5 +557,44 @@ mod tests {
                 .await,
             Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token
         ));
+    }
+
+    #[tokio::test]
+    async fn is_valid_fee() {
+        let sell_token = H160::from_low_u64_be(1);
+
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
+        let price_estimator = Arc::new(FakePriceEstimator(price_estimate::Estimate {
+            out_amount: 1.into(),
+            gas: 1000.into(),
+        }));
+        let app_data = [1u8; 32];
+        let fee_estimator = MinFeeCalculator {
+            price_estimator,
+            gas_estimator: gas_price_estimator,
+            native_token: Default::default(),
+            measurements: Arc::new(InMemoryFeeStore::default()),
+            now: Box::new(Utc::now),
+            fee_factor: 1.0,
+            bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
+            partner_additional_fee_factors: hashmap! { H256::from(app_data) => 0.5 },
+            native_token_price_estimation_amount: 1.into(),
+        };
+        let (fee, _) = fee_estimator
+            .min_fee(sell_token, None, None, None)
+            .await
+            .unwrap();
+        let lower_fee = fee - U256::one();
+        assert!(
+            fee_estimator
+                .is_valid_fee(sell_token, lower_fee, app_data)
+                .await
+        );
+        let half_lower_fee = lower_fee / U256::from(2);
+        assert!(
+            !fee_estimator
+                .is_valid_fee(sell_token, half_lower_fee, app_data)
+                .await
+        );
     }
 }

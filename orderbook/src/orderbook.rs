@@ -141,7 +141,7 @@ impl Orderbook {
         }
         if !self
             .fee_validator
-            .is_valid_fee(order.sell_token, order.fee_amount)
+            .is_valid_fee(order.sell_token, order.fee_amount, order.app_data)
             .await
         {
             return Ok(AddOrderResult::InsufficientFee);
