@@ -1,5 +1,6 @@
 pub mod baseline;
 pub mod paraswap;
+pub mod priority;
 
 use crate::{bad_token::BadTokenDetecting, conversions::U256Ext};
 use anyhow::Result;
@@ -48,7 +49,7 @@ pub struct Query {
     pub kind: OrderKind,
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Estimate {
     pub out_amount: U256,
     pub gas: U256,

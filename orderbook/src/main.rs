@@ -30,8 +30,8 @@ use shared::{
     metrics::setup_metrics_registry,
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
-        baseline::BaselinePriceEstimator, paraswap::ParaswapPriceEstimator, PriceEstimating,
-        PriceEstimatorType,
+        baseline::BaselinePriceEstimator, paraswap::ParaswapPriceEstimator,
+        priority::PriorityPriceEstimator, PriceEstimating, PriceEstimatorType,
     },
     recent_block_cache::CacheConfig,
     sources::{
@@ -171,7 +171,7 @@ async fn main() {
     let client = shared::http_client(args.shared.http_timeout);
 
     let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url),
+        HttpTransport::new(client.clone(), args.shared.node_url.clone()),
         metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
@@ -273,10 +273,10 @@ async fn main() {
         native_token.address(),
         &args.shared.base_tokens,
     ));
-    let mut allowed_tokens = args.allowed_tokens;
+    let mut allowed_tokens = args.allowed_tokens.clone();
     allowed_tokens.extend(base_tokens.tokens().iter().copied());
     allowed_tokens.push(BUY_ETH_ADDRESS);
-    let unsupported_tokens = args.unsupported_tokens;
+    let unsupported_tokens = args.unsupported_tokens.clone();
 
     let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
         .iter()
@@ -344,25 +344,31 @@ async fn main() {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
-    let price_estimator = match args.shared.price_estimator {
-        PriceEstimatorType::Baseline => Arc::new(BaselinePriceEstimator::new(
-            pool_fetcher.clone(),
-            gas_price_estimator.clone(),
-            base_tokens,
-            bad_token_detector.clone(),
-            native_token.address(),
-            native_token_price_estimation_amount,
-        )) as Arc<dyn PriceEstimating>,
-        PriceEstimatorType::Paraswap => Arc::new(ParaswapPriceEstimator {
-            paraswap: Arc::new(DefaultParaswapApi {
-                client: client.clone(),
-                partner: args.shared.paraswap_partner.unwrap_or_default(),
+    let price_estimators = args
+        .shared
+        .price_estimators
+        .iter()
+        .map(|estimator| match estimator {
+            PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
+                pool_fetcher.clone(),
+                gas_price_estimator.clone(),
+                base_tokens.clone(),
+                bad_token_detector.clone(),
+                native_token.address(),
+                native_token_price_estimation_amount,
+            )) as Box<dyn PriceEstimating>,
+            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator {
+                paraswap: Arc::new(DefaultParaswapApi {
+                    client: client.clone(),
+                    partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                }),
+                token_info: token_info_fetcher.clone(),
+                bad_token_detector: bad_token_detector.clone(),
+                disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
             }),
-            token_info: token_info_fetcher,
-            bad_token_detector: bad_token_detector.clone(),
-            disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs,
-        }),
-    };
+        })
+        .collect::<Vec<_>>();
+    let price_estimator = Arc::new(PriorityPriceEstimator::new(price_estimators));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,

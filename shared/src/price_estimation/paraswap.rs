@@ -1,7 +1,7 @@
 use super::{ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     bad_token::BadTokenDetecting,
-    paraswap_api::{ParaswapApi, PriceQuery, Side},
+    paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, Side},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use anyhow::{anyhow, Context, Result};
@@ -35,17 +35,16 @@ impl ParaswapPriceEstimator {
         ensure_token_supported(query.buy_token, self.bad_token_detector.as_ref()).await?;
         ensure_token_supported(query.sell_token, self.bad_token_detector.as_ref()).await?;
 
-        let (src_token, dest_token, side) = match query.kind {
-            OrderKind::Buy => (query.buy_token, query.sell_token, Side::Buy),
-            OrderKind::Sell => (query.sell_token, query.buy_token, Side::Sell),
-        };
         let price_query = PriceQuery {
-            src_token,
-            dest_token,
-            src_decimals: decimals(&src_token, token_infos)? as usize,
-            dest_decimals: decimals(&dest_token, token_infos)? as usize,
+            src_token: query.sell_token,
+            dest_token: query.buy_token,
+            src_decimals: decimals(&query.sell_token, token_infos)? as usize,
+            dest_decimals: decimals(&query.buy_token, token_infos)? as usize,
             amount: query.in_amount,
-            side,
+            side: match query.kind {
+                OrderKind::Buy => Side::Buy,
+                OrderKind::Sell => Side::Sell,
+            },
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
 
@@ -53,10 +52,16 @@ impl ParaswapPriceEstimator {
             .paraswap
             .price(price_query)
             .await
-            .map_err(anyhow::Error::from)
+            .map_err(|err| match err {
+                ParaswapResponseError::InsufficientLiquidity => PriceEstimationError::NoLiquidity,
+                _ => PriceEstimationError::Other(err.into()),
+            })
             .context("paraswap")?;
         Ok(Estimate {
-            out_amount: response.dest_amount,
+            out_amount: match query.kind {
+                OrderKind::Buy => response.src_amount,
+                OrderKind::Sell => response.dest_amount,
+            },
             gas: response.gas_cost,
         })
     }
@@ -74,12 +79,6 @@ fn decimals(
 
 #[async_trait::async_trait]
 impl PriceEstimating for ParaswapPriceEstimator {
-    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        let results = self.estimates(std::slice::from_ref(query)).await;
-        // Unwrap because it always returns the same number of results as queries.
-        results.into_iter().next().unwrap()
-    }
-
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
         let tokens = queries
             .iter()

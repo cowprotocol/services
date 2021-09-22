@@ -119,8 +119,9 @@ pub struct Arguments {
         long,
         default_value = "Baseline",
         possible_values = &PriceEstimatorType::variants(),
+        use_delimiter = true
     )]
-    pub price_estimator: PriceEstimatorType,
+    pub price_estimators: Vec<PriceEstimatorType>,
 }
 
 fn parse_fee_factor(s: &str) -> Result<f64> {
