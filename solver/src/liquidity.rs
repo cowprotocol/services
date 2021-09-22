@@ -6,6 +6,8 @@ pub mod uniswap;
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
 #[cfg(test)]
+use derivative::Derivative;
+#[cfg(test)]
 use model::order::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
@@ -19,10 +21,22 @@ use strum_macros::{AsStaticStr, EnumVariantNames};
 
 /// Defines the different types of liquidity our solvers support
 #[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum Liquidity {
     ConstantProduct(ConstantProductOrder),
     BalancerWeighted(WeightedProductOrder),
     BalancerStable(StablePoolOrder),
+}
+
+impl Liquidity {
+    /// Returns an iterator over all token pairs for the given liquidity.
+    pub fn all_token_pairs(&self) -> Vec<TokenPair> {
+        match self {
+            Liquidity::ConstantProduct(amm) => vec![amm.tokens],
+            Liquidity::BalancerWeighted(amm) => token_pairs(&amm.reserves),
+            Liquidity::BalancerStable(amm) => token_pairs(&amm.reserves),
+        }
+    }
 }
 
 /// A trait associating some liquidity model to how it is executed and encoded
@@ -114,10 +128,13 @@ impl Default for LimitOrder {
 
 /// 2 sided constant product automated market maker with equal reserve value and a trading fee (e.g. Uniswap, Sushiswap)
 #[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
 pub struct ConstantProductOrder {
     pub tokens: TokenPair,
     pub reserves: (u128, u128),
     pub fee: Ratio<u32>,
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
@@ -141,9 +158,12 @@ impl From<Pool> for ConstantProductOrder {
 
 /// 2 sided weighted product automated market maker with weighted reserves and a trading fee (e.g. BalancerV2)
 #[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
 pub struct WeightedProductOrder {
     pub reserves: HashMap<H160, WeightedTokenState>,
     pub fee: BigRational,
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 
@@ -154,10 +174,13 @@ impl std::fmt::Debug for WeightedProductOrder {
 }
 
 #[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
 pub struct StablePoolOrder {
     pub reserves: HashMap<H160, TokenState>,
     pub fee: BigRational,
     pub amplification_parameter: BigRational,
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
 

@@ -7,13 +7,13 @@ use num::BigRational;
 use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
-    pub tokens: HashMap<H160, TokenInfoModel>,
-    pub orders: HashMap<usize, OrderModel>,
-    pub amms: HashMap<usize, AmmModel>,
+    pub tokens: BTreeMap<H160, TokenInfoModel>,
+    pub orders: BTreeMap<usize, OrderModel>,
+    pub amms: BTreeMap<usize, AmmModel>,
     pub metadata: Option<MetadataModel>,
 }
 
@@ -77,8 +77,8 @@ pub enum AmmParameters {
 #[serde_as]
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ConstantProductPoolParameters {
-    #[serde_as(as = "HashMap<_, DecimalU256>")]
-    pub reserves: HashMap<H160, U256>,
+    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    pub reserves: BTreeMap<H160, U256>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -91,14 +91,14 @@ pub struct WeightedPoolTokenData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WeightedProductPoolParameters {
-    pub reserves: HashMap<H160, WeightedPoolTokenData>,
+    pub reserves: BTreeMap<H160, WeightedPoolTokenData>,
 }
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StablePoolParameters {
-    #[serde_as(as = "HashMap<_, DecimalU256>")]
-    pub reserves: HashMap<H160, U256>,
+    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    pub reserves: BTreeMap<H160, U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
 }
@@ -203,7 +203,7 @@ pub struct ExecutionPlanCoordinatesModel {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use maplit::hashmap;
+    use maplit::btreemap;
     use serde_json::json;
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
-                reserves: hashmap! {
+                reserves: btreemap! {
                     buy_token => U256::from(100),
                     sell_token => U256::from(200),
                 },
@@ -295,7 +295,7 @@ mod tests {
         };
         let weighted_product_pool_model = AmmModel {
             parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
-                reserves: hashmap! {
+                reserves: btreemap! {
                     sell_token => WeightedPoolTokenData {
                         balance: U256::from(808),
                         weight: BigRational::new(2.into(), 10.into()),
@@ -314,7 +314,7 @@ mod tests {
             mandatory: true,
         };
         let model = BatchAuctionModel {
-            tokens: hashmap! {
+            tokens: btreemap! {
                 buy_token => TokenInfoModel {
                     decimals: Some(6),
                     external_price: Some(1.2),
@@ -328,8 +328,8 @@ mod tests {
                     internal_buffer: Some(U256::from(42)),
                 }
             },
-            orders: hashmap! { 0 => order_model },
-            amms: hashmap! { 0 => constant_product_pool_model, 1 => weighted_product_pool_model },
+            orders: btreemap! { 0 => order_model },
+            amms: btreemap! { 0 => constant_product_pool_model, 1 => weighted_product_pool_model },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
             }),

@@ -1,7 +1,6 @@
 use super::model::*;
-use crate::liquidity::{StablePoolOrder, WeightedProductOrder};
 use crate::{
-    liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder},
+    liquidity::{AmmOrderExecution, LimitOrder, Liquidity},
     settlement::Settlement,
 };
 use anyhow::{anyhow, Result};
@@ -14,10 +13,8 @@ use std::collections::{hash_map::Entry, HashMap};
 // struct combines the created model and a mapping of those identifiers to their original value.
 #[derive(Clone, Debug)]
 pub struct SettlementContext {
-    pub limit_orders: HashMap<usize, LimitOrder>,
-    pub constant_product_orders: HashMap<usize, ConstantProductOrder>,
-    pub weighted_product_orders: HashMap<usize, WeightedProductOrder>,
-    pub stable_pool_orders: HashMap<usize, StablePoolOrder>,
+    pub orders: Vec<LimitOrder>,
+    pub liquidity: Vec<Liquidity>,
 }
 
 pub fn convert_settlement(
@@ -58,30 +55,19 @@ impl ExecutedLimitOrder {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
 struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
-    order: ExecutedOrder,
-}
-
-#[derive(Clone)]
-enum ExecutedOrder {
-    ConstantProduct(ConstantProductOrder),
-    WeightedProduct(WeightedProductOrder),
-    StablePool(StablePoolOrder),
+    order: Liquidity,
 }
 
 impl IntermediateSettlement {
     fn new(settled: SettledBatchAuctionModel, context: SettlementContext) -> Result<Self> {
         let executed_limit_orders =
-            match_prepared_and_settled_orders(context.limit_orders, settled.orders)?;
-        let executed_amms = match_prepared_and_settled_amms(
-            context.constant_product_orders,
-            context.weighted_product_orders,
-            context.stable_pool_orders,
-            settled.amms,
-        )?;
+            match_prepared_and_settled_orders(context.orders, settled.orders)?;
+        let executed_amms = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         Ok(Self {
             executed_limit_orders,
@@ -101,13 +87,13 @@ impl IntermediateSettlement {
                 output: executed_amm.output,
             };
             match &executed_amm.order {
-                ExecutedOrder::ConstantProduct(liquidity) => {
+                Liquidity::ConstantProduct(liquidity) => {
                     settlement.with_liquidity(liquidity, execution)?
                 }
-                ExecutedOrder::WeightedProduct(liquidity) => {
+                Liquidity::BalancerWeighted(liquidity) => {
                     settlement.with_liquidity(liquidity, execution)?
                 }
-                ExecutedOrder::StablePool(liquidity) => {
+                Liquidity::BalancerStable(liquidity) => {
                     settlement.with_liquidity(liquidity, execution)?
                 }
             }
@@ -117,7 +103,7 @@ impl IntermediateSettlement {
 }
 
 fn match_prepared_and_settled_orders(
-    mut prepared_orders: HashMap<usize, LimitOrder>,
+    prepared_orders: Vec<LimitOrder>,
     settled_orders: HashMap<usize, ExecutedOrderModel>,
 ) -> Result<Vec<ExecutedLimitOrder>> {
     settled_orders
@@ -127,10 +113,10 @@ fn match_prepared_and_settled_orders(
         })
         .map(|(index, settled)| {
             let prepared = prepared_orders
-                .remove(&index)
+                .get(index)
                 .ok_or_else(|| anyhow!("invalid order {}", index))?;
             Ok(ExecutedLimitOrder {
-                order: prepared,
+                order: prepared.clone(),
                 executed_buy_amount: settled.exec_buy_amount,
                 executed_sell_amount: settled.exec_sell_amount,
             })
@@ -139,67 +125,25 @@ fn match_prepared_and_settled_orders(
 }
 
 fn match_prepared_and_settled_amms(
-    mut prepared_constant_product_orders: HashMap<usize, ConstantProductOrder>,
-    mut prepared_weighted_product_orders: HashMap<usize, WeightedProductOrder>,
-    mut prepared_stable_pool_orders: HashMap<usize, StablePoolOrder>,
-    settled_orders: HashMap<usize, UpdatedAmmModel>,
+    prepared_amms: Vec<Liquidity>,
+    settled_amms: HashMap<usize, UpdatedAmmModel>,
 ) -> Result<Vec<ExecutedAmm>> {
-    let mut amm_executions = vec![];
-    // Recall, prepared amm for weighted products are shifted by the constant product amms
-    // We declare this outside before prepared_constant_product_orders is mutated.
-    let shift_a = prepared_constant_product_orders.len();
-    let shift_b = shift_a + prepared_weighted_product_orders.len();
-    for (index, settled) in settled_orders
+    settled_amms
         .into_iter()
         .filter(|(_, settled)| settled.is_non_trivial())
-        .flat_map(|(shifted_id, settled)| {
-            settled
-                .execution
-                .into_iter()
-                .map(move |exec| (shifted_id, exec))
+        .flat_map(|(index, settled)| settled.execution.into_iter().map(move |exec| (index, exec)))
+        .sorted_by_key(|(_, a)| a.exec_plan.clone())
+        .map(|(index, settled)| {
+            Ok(ExecutedAmm {
+                order: prepared_amms
+                    .get(index)
+                    .ok_or_else(|| anyhow!("Invalid AMM {}", index))?
+                    .clone(),
+                input: (settled.buy_token, settled.exec_buy_amount),
+                output: (settled.sell_token, settled.exec_sell_amount),
+            })
         })
-        .sorted_by(|a, b| a.1.exec_plan.cmp(&b.1.exec_plan))
-    {
-        let (input, output) = (
-            (settled.buy_token, settled.exec_buy_amount),
-            (settled.sell_token, settled.exec_sell_amount),
-        );
-        if index < shift_a && prepared_constant_product_orders.contains_key(&index) {
-            amm_executions.push(ExecutedAmm {
-                order: ExecutedOrder::ConstantProduct(
-                    prepared_constant_product_orders.remove(&index).unwrap(),
-                ),
-                input,
-                output,
-            });
-        } else if index >= shift_a
-            && index < shift_b
-            && prepared_weighted_product_orders.contains_key(&(index - shift_a))
-        {
-            amm_executions.push(ExecutedAmm {
-                order: ExecutedOrder::WeightedProduct(
-                    prepared_weighted_product_orders
-                        .remove(&(index - shift_a))
-                        .unwrap(),
-                ),
-                input,
-                output,
-            });
-        } else if index >= shift_b && prepared_stable_pool_orders.contains_key(&(index - shift_b)) {
-            amm_executions.push(ExecutedAmm {
-                order: ExecutedOrder::StablePool(
-                    prepared_stable_pool_orders
-                        .remove(&(index - shift_b))
-                        .unwrap(),
-                ),
-                input,
-                output,
-            });
-        } else {
-            return Err(anyhow!("Invalid AMM {}", index));
-        }
-    }
-    Ok(amm_executions)
+        .collect()
 }
 
 fn match_settled_prices(
@@ -224,7 +168,10 @@ fn match_settled_prices(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::tests::CapturingSettlementHandler;
+    use crate::liquidity::{
+        tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
+        WeightedProductOrder,
+    };
     use hex_literal::hex;
     use maplit::hashmap;
     use model::TokenPair;
@@ -241,7 +188,7 @@ mod tests {
         let t1 = H160::from_low_u64_be(1);
 
         let limit_handler = CapturingSettlementHandler::arc();
-        let limit_order = LimitOrder {
+        let orders = vec![LimitOrder {
             sell_token: t0,
             buy_token: t1,
             sell_amount: 1.into(),
@@ -252,57 +199,54 @@ mod tests {
             settlement_handling: limit_handler.clone(),
             is_liquidity_order: false,
             id: "0".to_string(),
-        };
-        let orders = hashmap! { 0 => limit_order };
+        }];
 
         let cp_amm_handler = CapturingSettlementHandler::arc();
-        let constant_product_order = ConstantProductOrder {
-            tokens: TokenPair::new(t0, t1).unwrap(),
-            reserves: (3, 4),
-            fee: 5.into(),
-            settlement_handling: cp_amm_handler.clone(),
-        };
-        let constant_product_orders = hashmap! { 0 => constant_product_order };
         let wp_amm_handler = CapturingSettlementHandler::arc();
-        let weighted_product_order = WeightedProductOrder {
-            reserves: hashmap! {
-                t0 => WeightedTokenState {
-                    token_state: TokenState {
-                        balance: U256::from(200),
-                        scaling_exponent: 4,
-                    },
-                    weight: Bfp::from(200_000_000_000_000_000),
-                },
-                t1 => WeightedTokenState {
-                    token_state: TokenState {
-                        balance: U256::from(800),
-                        scaling_exponent: 6,
-                    },
-                    weight: Bfp::from(800_000_000_000_000_000),
-                }
-            },
-            fee: BigRational::new(3.into(), 1.into()),
-            settlement_handling: wp_amm_handler.clone(),
-        };
-        let weighted_product_orders = hashmap! { 0 => weighted_product_order };
-
         let sp_amm_handler = CapturingSettlementHandler::arc();
-        let stable_pool_order = StablePoolOrder {
-            reserves: hashmap! {
-                t0 => TokenState {
-                    balance: U256::from(300),
-                    scaling_exponent: 0,
+        let liquidity = vec![
+            Liquidity::ConstantProduct(ConstantProductOrder {
+                tokens: TokenPair::new(t0, t1).unwrap(),
+                reserves: (3, 4),
+                fee: 5.into(),
+                settlement_handling: cp_amm_handler.clone(),
+            }),
+            Liquidity::BalancerWeighted(WeightedProductOrder {
+                reserves: hashmap! {
+                    t0 => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: U256::from(200),
+                            scaling_exponent: 4,
+                        },
+                        weight: Bfp::from(200_000_000_000_000_000),
+                    },
+                    t1 => WeightedTokenState {
+                        token_state: TokenState {
+                            balance: U256::from(800),
+                            scaling_exponent: 6,
+                        },
+                        weight: Bfp::from(800_000_000_000_000_000),
+                    }
                 },
-                t1 => TokenState {
-                    balance: U256::from(400),
-                    scaling_exponent: 0,
+                fee: BigRational::new(3.into(), 1.into()),
+                settlement_handling: wp_amm_handler.clone(),
+            }),
+            Liquidity::BalancerStable(StablePoolOrder {
+                reserves: hashmap! {
+                    t0 => TokenState {
+                        balance: U256::from(300),
+                        scaling_exponent: 0,
+                    },
+                    t1 => TokenState {
+                        balance: U256::from(400),
+                        scaling_exponent: 0,
+                    },
                 },
-            },
-            fee: BigRational::new(3.into(), 1.into()),
-            amplification_parameter: BigRational::from_integer(1.into()),
-            settlement_handling: sp_amm_handler.clone(),
-        };
-        let stable_pool_orders = hashmap! { 0 => stable_pool_order };
+                fee: BigRational::new(3.into(), 1.into()),
+                amplification_parameter: BigRational::from_integer(1.into()),
+                settlement_handling: sp_amm_handler.clone(),
+            }),
+        ];
 
         let executed_order = ExecutedOrderModel {
             exec_buy_amount: 6.into(),
@@ -320,7 +264,6 @@ mod tests {
                 }),
             }],
         };
-
         let updated_balancer_weighted = UpdatedAmmModel {
             execution: vec![ExecutedAmmModel {
                 sell_token: t1,
@@ -333,7 +276,6 @@ mod tests {
                 }),
             }],
         };
-
         let updated_balancer_stable = UpdatedAmmModel {
             execution: vec![ExecutedAmmModel {
                 sell_token: t1,
@@ -353,12 +295,7 @@ mod tests {
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
         };
 
-        let prepared = SettlementContext {
-            limit_orders: orders,
-            constant_product_orders,
-            weighted_product_orders,
-            stable_pool_orders,
-        };
+        let prepared = SettlementContext { orders, liquidity };
 
         let settlement = convert_settlement(settled, prepared).unwrap();
         assert_eq!(
@@ -395,6 +332,7 @@ mod tests {
         let token_a = H160::from_slice(&hex!("a7d1c04faf998f9161fc9f800a99a809b84cfc9d"));
         let token_b = H160::from_slice(&hex!("c778417e063141139fce010982780140aa0cd5ab"));
         let token_c = H160::from_slice(&hex!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353"));
+
         let cpo_0 = ConstantProductOrder {
             tokens: TokenPair::new(token_a, token_b).unwrap(),
             reserves: (597249810824827988770940, 225724246562756585230),
@@ -407,8 +345,8 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
-        let constant_product_orders = hashmap! { 0usize => cpo_0.clone(), 1usize => cpo_1 };
-        let weighted_product_order = WeightedProductOrder {
+
+        let wpo = WeightedProductOrder {
             reserves: hashmap! {
                 token_c => WeightedTokenState {
                     token_state: TokenState {
@@ -428,9 +366,8 @@ mod tests {
             fee: BigRational::new(1.into(), 1000.into()),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
-        let weighted_product_orders = hashmap! { 0usize => weighted_product_order.clone() };
 
-        let stable_pool_order = StablePoolOrder {
+        let spo = StablePoolOrder {
             reserves: hashmap! {
                 token_c => TokenState {
                     balance: U256::from(1234u128),
@@ -445,8 +382,13 @@ mod tests {
             amplification_parameter: BigRational::from_integer(1.into()),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
-        let stable_pool_orders = hashmap! { 0usize => stable_pool_order.clone() };
 
+        let liquidity = vec![
+            Liquidity::ConstantProduct(cpo_0.clone()),
+            Liquidity::ConstantProduct(cpo_1.clone()),
+            Liquidity::BalancerWeighted(wpo.clone()),
+            Liquidity::BalancerStable(spo.clone()),
+        ];
         let solution_response = serde_json::from_str::<SettledBatchAuctionModel>(
             r#"{
             "ref_token": "0xc778417e063141139fce010982780140aa0cd5ab",
@@ -576,8 +518,8 @@ mod tests {
                         {
                             "sell_token": "0xc778417e063141139fce010982780140aa0cd5ab",
                             "buy_token": "0xe4b9895e638f54c3bee2a3a78d6a297cc03e0353",
-                            "exec_sell_amount": "1",
-                            "exec_buy_amount": "2",
+                            "exec_sell_amount": "3",
+                            "exec_buy_amount": "4",
                             "exec_plan": {
                                 "sequence": 0,
                                 "position": 3
@@ -607,70 +549,37 @@ mod tests {
                 "termination_condition": "optimal",
                 "exit_status": "completed"
             }
-        }"#,
+            }"#,
         )
         .unwrap();
-        let matched_settlements = match_prepared_and_settled_amms(
-            constant_product_orders,
-            weighted_product_orders,
-            stable_pool_orders,
-            solution_response.amms,
-        );
-        assert!(matched_settlements.is_ok());
-        let prepared_amms = matched_settlements.unwrap();
-        let executed_cp_order: ConstantProductOrder;
-        let executed_wp_order: WeightedProductOrder;
-        let executed_sp_order: StablePoolOrder;
-        match prepared_amms[0].order.clone() {
-            ExecutedOrder::WeightedProduct(order) => {
-                executed_wp_order = order;
-            }
-            _ => {
-                panic!("Expected WeightedProductOrder!");
-            }
-        }
-        match prepared_amms[1].order.clone() {
-            ExecutedOrder::ConstantProduct(order) => {
-                executed_cp_order = order;
-            }
-            _ => {
-                panic!("Expected ConstantProductOrder!")
-            }
-        }
-        match prepared_amms[3].order.clone() {
-            ExecutedOrder::StablePool(order) => {
-                executed_sp_order = order;
-            }
-            _ => {
-                panic!("Expected StablePoolOrder!")
-            }
-        }
-        assert_eq!(executed_cp_order.tokens, cpo_0.tokens);
-        assert_eq!(executed_cp_order.reserves, cpo_0.reserves);
-        assert_eq!(executed_cp_order.fee, cpo_0.fee);
-        assert_eq!(
-            prepared_amms[1].input,
-            (token_b, U256::from(354009510372389956u128))
-        );
-        assert_eq!(
-            prepared_amms[1].output,
-            (token_a, U256::from(932415220613609833982u128))
-        );
 
-        assert_eq!(executed_wp_order.reserves, weighted_product_order.reserves);
-        assert_eq!(executed_wp_order.fee, weighted_product_order.fee);
-        assert_eq!(
-            prepared_amms[0].input,
-            (token_c, U256::from(996570293625184642u128))
-        );
-        assert_eq!(
-            prepared_amms[0].output,
-            (token_b, U256::from(354009510372384890u128))
-        );
+        let prepared_amms =
+            match_prepared_and_settled_amms(liquidity, solution_response.amms).unwrap();
 
-        assert_eq!(executed_sp_order.reserves, stable_pool_order.reserves);
-        assert_eq!(executed_sp_order.fee, stable_pool_order.fee);
-        assert_eq!(prepared_amms[2].input, (token_c, U256::from(2)));
-        assert_eq!(prepared_amms[2].output, (token_b, U256::from(1)));
+        assert_eq!(
+            prepared_amms,
+            vec![
+                ExecutedAmm {
+                    order: Liquidity::BalancerWeighted(wpo),
+                    input: (token_c, U256::from(996570293625184642u128)),
+                    output: (token_b, U256::from(354009510372384890u128)),
+                },
+                ExecutedAmm {
+                    order: Liquidity::ConstantProduct(cpo_0),
+                    input: (token_b, U256::from(354009510372389956u128)),
+                    output: (token_a, U256::from(932415220613609833982u128)),
+                },
+                ExecutedAmm {
+                    order: Liquidity::ConstantProduct(cpo_1),
+                    input: (token_c, U256::from(2)),
+                    output: (token_b, U256::from(1)),
+                },
+                ExecutedAmm {
+                    order: Liquidity::BalancerStable(spo),
+                    input: (token_c, U256::from(4)),
+                    output: (token_b, U256::from(3)),
+                },
+            ],
+        );
     }
 }
