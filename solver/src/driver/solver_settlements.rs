@@ -172,15 +172,15 @@ mod tests {
     fn merge_continues_on_error() {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
-        let settlement0 = Settlement::new(hashmap! {token0 => 0.into()});
-        let settlement1 = Settlement::new(hashmap! {token0 => 2.into()});
-        let settlement2 = Settlement::new(hashmap! {token0 => 0.into(), token1 => 1.into()});
+        let settlement0 = Settlement::new(hashmap! {token0 => 1.into(), token1 => 2.into()});
+        let settlement1 = Settlement::new(hashmap! {token0 => 2.into(), token1 => 2.into()});
+        let settlement2 = Settlement::new(hashmap! {token0 => 1.into(), token1 => 2.into()});
         let settlements = vec![settlement0, settlement1, settlement2];
 
-        // Can't merge 0 with 1 because token0 clearing prices is different.
+        // Can't merge 0 with 1 because token0 and token1 clearing prices are different.
         let merged = merge_at_most_settlements(2, settlements.into_iter()).unwrap();
-        assert_eq!(merged.clearing_price(token0), Some(0.into()));
-        assert_eq!(merged.clearing_price(token1), Some(1.into()));
+        assert_eq!(merged.clearing_price(token0), Some(1.into()));
+        assert_eq!(merged.clearing_price(token1), Some(2.into()));
     }
 
     #[test]
