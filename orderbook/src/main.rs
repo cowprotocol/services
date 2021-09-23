@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
 use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
@@ -141,7 +141,7 @@ struct Arguments {
     #[structopt(
         long,
         env,
-        default_value = "{}",
+        default_value = "",
         parse(try_from_str = parse_partner_fee_factor),
     )]
     partner_additional_fee_factors: HashMap<AppId, f64>,
@@ -447,18 +447,23 @@ async fn check_database_connection(orderbook: &Orderbook) {
 /// Parses a comma separated list of colon separated values representing fee factors for AppIds.
 fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
     let mut res = HashMap::default();
+    if s.is_empty() {
+        return Ok(res);
+    }
     for pair_str in s.split(',').into_iter() {
         let mut split = pair_str.trim().split(':');
         let key = split
             .next()
             .ok_or_else(|| anyhow!("missing AppId"))?
             .trim()
-            .parse()?;
+            .parse()
+            .context("failed to parse address")?;
         let value = split
             .next()
             .ok_or_else(|| anyhow!("missing value"))?
             .trim()
-            .parse::<f64>()?;
+            .parse::<f64>()
+            .context("failed to parse fee factor")?;
         if split.next().is_some() {
             return Err(anyhow!("Invalid pair lengths"));
         }
@@ -495,33 +500,20 @@ mod tests {
 
     #[test]
     fn parse_partner_fee_factor_err() {
-        assert_eq!(
-            parse_partner_fee_factor("0x1:0.5,0x2:0.7")
-                .unwrap_err()
-                .to_string(),
-            "Odd number of digits"
-        );
-        assert_eq!(
-            parse_partner_fee_factor("0x12:0.5,0x22:0.7")
-                .unwrap_err()
-                .to_string(),
-            "Invalid string length"
-        );
-        assert_eq!(
-            parse_partner_fee_factor(
-                "0x0000000000000000000000000000000000000000000000000000000000000000:0.5:3"
-            )
-            .unwrap_err()
-            .to_string(),
-            "Invalid pair lengths"
-        );
-        assert_eq!(
-            parse_partner_fee_factor(
-                "0x0000000000000000000000000000000000000000000000000000000000000000:word"
-            )
-            .unwrap_err()
-            .to_string(),
-            "invalid float literal"
-        );
+        assert!(parse_partner_fee_factor("0x1:0.5,0x2:0.7").is_err());
+        assert!(parse_partner_fee_factor("0x12:0.5,0x22:0.7").is_err());
+        assert!(parse_partner_fee_factor(
+            "0x0000000000000000000000000000000000000000000000000000000000000000:0.5:3"
+        )
+        .is_err());
+        assert!(parse_partner_fee_factor(
+            "0x0000000000000000000000000000000000000000000000000000000000000000:word"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn parse_partner_fee_factor_ok_on_empty() {
+        assert!(parse_partner_fee_factor("").unwrap().is_empty());
     }
 }
