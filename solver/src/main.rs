@@ -194,7 +194,7 @@ struct Arguments {
 
     /// The configured addresses whose orders should be considered liquidity
     /// and not to be included in the objective function by the HTTP solver.
-    #[structopt(long, env)]
+    #[structopt(long, env, use_delimiter = true)]
     liquidity_order_owners: Vec<H160>,
 }
 
