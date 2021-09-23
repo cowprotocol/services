@@ -117,6 +117,7 @@ pub struct Arguments {
 
     #[structopt(
         long,
+        env,
         default_value = "Baseline",
         possible_values = &PriceEstimatorType::variants(),
         use_delimiter = true
