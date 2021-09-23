@@ -1,5 +1,5 @@
+use anyhow::{anyhow, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
-use ethcontract::H256;
 use model::{
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
@@ -45,6 +45,7 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     transport::create_instrumented_transport,
     transport::http::HttpTransport,
+    AppId,
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
@@ -131,7 +132,8 @@ struct Arguments {
 
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
     /// Should take the form of a json string as shown in the following example:
-    /// '{"0x0000000000000000000000000000000000000000000000000000000000000000":0.5,"$PROJECT_APP_ID":0.7}'
+    ///
+    /// '0x0000000000000000000000000000000000000000000000000000000000000000:0.5,$PROJECT_APP_ID:0.7'
     ///
     /// Furthermore, a value of
     /// - 1 means no subsidy and is the default for all app_data not contained in this list.
@@ -140,9 +142,9 @@ struct Arguments {
         long,
         env,
         default_value = "{}",
-        parse(try_from_str = serde_json::from_str),
+        parse(try_from_str = parse_partner_fee_factor),
     )]
-    partner_additional_fee_factors: HashMap<H256, f64>, // '{"$BALANCER_APP_ID":0.5,"$METAMASK_APP_ID":0.7}'
+    partner_additional_fee_factors: HashMap<AppId, f64>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -440,4 +442,86 @@ async fn check_database_connection(orderbook: &Orderbook) {
         })
         .await
         .expect("failed to connect to database");
+}
+
+/// Parses a comma separated list of colon separated values representing fee factors for AppIds.
+fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
+    let mut res = HashMap::default();
+    for pair_str in s.split(',').into_iter() {
+        let mut split = pair_str.trim().split(':');
+        let key = split
+            .next()
+            .ok_or_else(|| anyhow!("missing AppId"))?
+            .trim()
+            .parse()?;
+        let value = split
+            .next()
+            .ok_or_else(|| anyhow!("missing value"))?
+            .trim()
+            .parse::<f64>()?;
+        if split.next().is_some() {
+            return Err(anyhow!("Invalid pair lengths"));
+        }
+        res.insert(key, value);
+    }
+    Ok(res)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use maplit::hashmap;
+
+    #[test]
+    fn parse_partner_fee_factor_ok() {
+        let x = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        let y = "0x0101010101010101010101010101010101010101010101010101010101010101";
+        // without spaces
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}:0.5,{}:0.7", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+        );
+        // with spaces
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}: 0.5, {}: 0.7", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+        );
+        // whole numbers
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}: 1, {}: 2", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
+        );
+    }
+
+    #[test]
+    fn parse_partner_fee_factor_err() {
+        assert_eq!(
+            parse_partner_fee_factor("0x1:0.5,0x2:0.7")
+                .unwrap_err()
+                .to_string(),
+            "Odd number of digits"
+        );
+        assert_eq!(
+            parse_partner_fee_factor("0x12:0.5,0x22:0.7")
+                .unwrap_err()
+                .to_string(),
+            "Invalid string length"
+        );
+        assert_eq!(
+            parse_partner_fee_factor(
+                "0x0000000000000000000000000000000000000000000000000000000000000000:0.5:3"
+            )
+            .unwrap_err()
+            .to_string(),
+            "Invalid pair lengths"
+        );
+        assert_eq!(
+            parse_partner_fee_factor(
+                "0x0000000000000000000000000000000000000000000000000000000000000000:word"
+            )
+            .unwrap_err()
+            .to_string(),
+            "invalid float literal"
+        );
+    }
 }
