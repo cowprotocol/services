@@ -34,6 +34,11 @@ use std::{
     time::{Duration, Instant},
 };
 
+type IntermediateToupleOfVecOfSettlements = (
+    Vec<Vec<SettlementWithSolver>>,
+    Vec<Vec<(SettlementWithSolver, Error)>>,
+);
+
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     liquidity_collector: LiquidityCollector,
@@ -363,6 +368,92 @@ impl Driver {
             .await
     }
 
+    // Takes the settlements of a single solver and adds a merged settlement.
+    pub async fn merge_settlements(
+        &self,
+        solver: Arc<dyn Solver>,
+        max_merged_settlements: usize,
+        prices: &HashMap<H160, BigRational>,
+        settlements: &mut Vec<Settlement>,
+        gas_price_wei: f64,
+    ) -> Result<(
+        Option<SettlementWithSolver>,
+        Vec<(SettlementWithSolver, Error)>,
+    )> {
+        settlements.sort_by_cached_key(|a| -a.total_surplus(prices));
+        self.merge_at_most_settlements(
+            solver.clone(),
+            max_merged_settlements,
+            settlements.clone().into_iter(),
+            gas_price_wei,
+        )
+        .await
+    }
+
+    // Goes through the settlements in order and tries to merge a number of them. Keeps going on merge
+    // error.
+    async fn merge_at_most_settlements(
+        &self,
+        solver: Arc<dyn Solver>,
+        max_merges: usize,
+        mut settlements: impl Iterator<Item = Settlement>,
+        gas_price_wei: f64,
+    ) -> Result<(
+        Option<SettlementWithSolver>,
+        Vec<(SettlementWithSolver, Error)>,
+    )> {
+        let mut simulation_errors = Vec::new();
+        let mut initial_settelment = match settlements.next() {
+            Some(settlement) => settlement,
+            None => return Ok((None, simulation_errors)),
+        };
+        loop {
+            // one can also use the following pattern: let (settlements, errors) =self.simulate().await?;
+            let (successfully_simulated_settlements, mut errors) = self
+                .simulate_settlements(
+                    vec![(solver.clone(), initial_settelment.clone())],
+                    gas_price_wei,
+                )
+                .await?;
+            if !successfully_simulated_settlements.is_empty() {
+                break;
+            }
+            simulation_errors.append(&mut errors);
+            initial_settelment = match settlements.next() {
+                Some(settlement) => settlement,
+                _ => return Ok((None, simulation_errors)),
+            };
+        }
+        let mut merged = initial_settelment;
+        let mut merge_count = 1;
+        while merge_count < max_merges {
+            let next = match settlements.next() {
+                Some(settlement) => settlement,
+                None => break,
+            };
+            let proposed_settlement = match merged.clone().merge(next) {
+                Ok(settlement) => settlement,
+                Err(err) => {
+                    tracing::debug!("failed to merge settlement: {:?}", err);
+                    continue;
+                }
+            };
+            let (successfully_simulated_settlements, mut last_merge_error) = self
+                .simulate_settlements(
+                    vec![(solver.clone(), proposed_settlement.clone())],
+                    gas_price_wei,
+                )
+                .await?;
+            simulation_errors.append(&mut last_merge_error);
+
+            if let Some((_, settlements)) = successfully_simulated_settlements.first() {
+                merged = settlements.clone();
+                merge_count += 1;
+            }
+        }
+        Ok((Some((solver.clone(), merged.clone())), simulation_errors))
+    }
+
     pub async fn single_run(&mut self) -> Result<()> {
         tracing::debug!("starting single run");
         let current_block_during_liquidity_fetch =
@@ -398,8 +489,6 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {}", gas_price_wei);
 
-        let mut solver_settlements = Vec::new();
-
         let auction = Auction {
             id: self.next_auction_id(),
             orders,
@@ -411,44 +500,33 @@ impl Driver {
         tracing::debug!("solving auction ID {}", auction.id);
 
         let run_solver_results = self.run_solvers(auction).await;
-        for (solver, settlements) in run_solver_results {
-            let name = solver.name();
+        let solver_settlements = futures::future::join_all(run_solver_results.into_iter().map(
+            |(solver, settelment_result)| {
+                self.process_solver_solutions(
+                    solver,
+                    settelment_result,
+                    &estimated_prices,
+                    gas_price_wei,
+                )
+            },
+        ))
+        .await;
+        let (settlements, errors): IntermediateToupleOfVecOfSettlements = solver_settlements
+            .into_iter()
+            .filter_map(|result| result.ok())
+            .map(|(settlement, errors)| match settlement {
+                Some(settlement) => (vec![settlement], errors),
+                None => (vec![], errors),
+            })
+            .unzip();
+        let mut settlements: Vec<SettlementWithSolver> =
+            settlements.into_iter().flatten().collect();
 
-            let mut settlements = match settlements {
-                Ok(settlement) => settlement,
-                Err(err) => {
-                    tracing::error!("solver {} error: {:?}", name, err);
-                    continue;
-                }
-            };
-
-            solver_settlements::filter_empty_settlements(&mut settlements);
-
-            for settlement in &settlements {
-                tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
-            }
-
-            solver_settlements::merge_settlements(
-                self.max_merged_settlements,
-                &estimated_prices,
-                &mut settlements,
-            );
-
-            solver_settlements::filter_settlements_without_old_orders(
-                self.min_order_age,
-                &mut settlements,
-            );
-
-            solver_settlements.reserve(settlements.len());
-            for settlement in settlements {
-                solver_settlements.push((solver.clone(), settlement))
-            }
-        }
-
-        let (settlements, errors) = self
-            .simulate_settlements(solver_settlements, gas_price_wei)
-            .await?;
-
+        solver_settlements::filter_settlements_without_old_orders(
+            self.min_order_age,
+            &mut settlements,
+        );
+        let errors: Vec<(SettlementWithSolver, Error)> = errors.into_iter().flatten().collect();
         tracing::info!(
             "{} settlements passed simulation and {} failed",
             settlements.len(),
@@ -509,6 +587,40 @@ impl Driver {
         let id = self.solve_id;
         self.solve_id += 1;
         id
+    }
+
+    async fn process_solver_solutions(
+        &self,
+        solver: Arc<dyn Solver>,
+        settlements: Result<Vec<Settlement>>,
+        estimated_prices: &HashMap<H160, BigRational>,
+        gas_price_wei: f64,
+    ) -> Result<(
+        Option<SettlementWithSolver>,
+        Vec<(SettlementWithSolver, Error)>,
+    )> {
+        let name = solver.name();
+        let mut settlements = match settlements {
+            Ok(settlement) => settlement,
+            Err(err) => {
+                return Err(anyhow!("solver {} error: {:?}", name, err));
+            }
+        };
+
+        solver_settlements::filter_empty_settlements(&mut settlements);
+
+        for settlement in &settlements {
+            tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
+        }
+
+        self.merge_settlements(
+            solver.clone(),
+            self.max_merged_settlements,
+            estimated_prices,
+            &mut settlements,
+            gas_price_wei,
+        )
+        .await
     }
 }
 
@@ -606,6 +718,7 @@ mod tests {
     };
     use maplit::hashmap;
     use model::order::{Order, OrderCreation, OrderKind};
+    use num::rational::BigRational;
     use num::traits::One as _;
     use shared::{
         price_estimate::mocks::{FailingPriceEstimator, FakePriceEstimator},
@@ -770,4 +883,80 @@ mod tests {
         );
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
     }
+    // #[test]
+    // fn merges_settlements_with_highest_objective_value() {
+    //     let token0 = H160::from_low_u64_be(0);
+    //     let token1 = H160::from_low_u64_be(1);
+    //     let prices = hashmap! { token0 => 1.into(), token1 => 1.into()};
+    //     let prices_rational = hashmap! {
+    //         token0 => BigRational::from_u8(1).unwrap(),
+    //         token1 => BigRational::from_u8(1).unwrap()
+    //     };
+    //     fn uid(number: u8) -> OrderUid {
+    //         OrderUid([number; 56])
+    //     }
+
+    //     let trade = |executed_amount, uid_: u8| Trade {
+    //         sell_token_index: 0,
+    //         buy_token_index: 1,
+    //         executed_amount,
+    //         order: Order {
+    //             order_meta_data: OrderMetaData {
+    //                 uid: uid(uid_),
+    //                 ..Default::default()
+    //             },
+    //             order_creation: OrderCreation {
+    //                 sell_token: token0,
+    //                 buy_token: token1,
+    //                 sell_amount: executed_amount,
+    //                 buy_amount: 1.into(),
+    //                 kind: OrderKind::Buy,
+    //                 ..Default::default()
+    //             },
+    //         },
+    //     };
+    //     let settlement = |executed_amount: U256, order_uid: u8| {
+    //         Settlement::with_trades(prices.clone(), vec![trade(executed_amount, order_uid)])
+    //     };
+
+    //     let mut settlements = vec![
+    //         settlement(1.into(), 1),
+    //         settlement(2.into(), 2),
+    //         settlement(3.into(), 3),
+    //     ];
+    //     merge_settlements(2, &prices_rational, &mut settlements);
+
+    //     assert_eq!(settlements.len(), 4);
+    //     assert!(settlements.iter().any(|settlement| {
+    //         let trades = settlement.trades();
+    //         let uids: HashSet<OrderUid> = trades
+    //             .iter()
+    //             .map(|trade| trade.order.order_meta_data.uid)
+    //             .collect();
+    //         uids.len() == 2 && uids.contains(&uid(2)) && uids.contains(&uid(3))
+    //     }));
+    // }
+
+    // #[test]
+    // fn merge_continues_on_error() {
+    //     let token0 = H160::from_low_u64_be(0);
+    //     let token1 = H160::from_low_u64_be(1);
+    //     let settlement0 = Settlement::new(hashmap! {token0 => 1.into(), token1 => 2.into()});
+    //     let settlement1 = Settlement::new(hashmap! {token0 => 2.into(), token1 => 2.into()});
+    //     let settlement2 = Settlement::new(hashmap! {token0 => 1.into(), token1 => 2.into()});
+    //     let settlements = vec![settlement0, settlement1, settlement2];
+
+    //     // Can't merge 0 with 1 because token0 and token1 clearing prices are different.
+    //     let merged = merge_at_most_settlements(2, settlements.into_iter()).unwrap();
+    //     assert_eq!(merged.clearing_price(token0), Some(1.into()));
+    //     assert_eq!(merged.clearing_price(token1), Some(2.into()));
+    // }
+
+    // #[test]
+    // fn merge_does_nothing_on_max_1_merge() {
+    //     let token0 = H160::from_low_u64_be(0);
+    //     let settlement = Settlement::new(hashmap! {token0 => 0.into()});
+    //     let settlements = vec![settlement.clone(), settlement];
+    //     assert!(merge_at_most_settlements(1, settlements.into_iter()).is_none());
+    // }
 }
