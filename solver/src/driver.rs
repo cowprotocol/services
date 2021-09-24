@@ -438,9 +438,11 @@ impl Driver {
                 &mut settlements,
             );
 
-            solver_settlements.reserve(settlements.len());
-            for settlement in settlements {
-                solver_settlements.push((solver.clone(), settlement))
+            match settlements.first() {
+                Some(settlement) => {
+                    solver_settlements.reserve(1);
+                    solver_settlements.push((solver.clone(), settlement))
+                }
             }
         }
 
