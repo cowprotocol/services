@@ -4,9 +4,9 @@ use anyhow::{bail, ensure, Context as _, Result};
 use model::order::{Order, OrderKind};
 use num::{BigRational, Zero};
 use primitive_types::{H160, U256};
-use shared::conversions::U256Ext;
+use shared::conversions::{big_rational_to_u256, U256Ext};
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{hash_map::Entry, HashMap, HashSet},
     iter,
     sync::Arc,
 };
@@ -259,13 +259,19 @@ impl SettlementEncoder {
 
     // Merge other into self so that the result contains both settlements.
     // Fails if the settlements cannot be merged for example because the same limit order is used in
-    // both or the same token has different clearing prices.
+    // both or more than one token has a different clearing prices (a single token difference is scaled)
     pub fn merge(mut self, mut other: Self) -> Result<Self> {
+        let scaling_factor = self.price_scaling_factor(&other);
         for (key, value) in other.clearing_prices {
+            let scaled_price = big_rational_to_u256(&(value.to_big_rational() * &scaling_factor))
+                .context("Invalid price scaling factor")?;
             match self.clearing_prices.entry(key) {
-                Entry::Occupied(entry) => ensure!(*entry.get() == value, "different price"),
+                Entry::Occupied(entry) => ensure!(
+                    *entry.get() == scaled_price,
+                    "different price after scaling"
+                ),
                 Entry::Vacant(entry) => {
-                    entry.insert(value);
+                    entry.insert(scaled_price);
                     self.tokens.push(key);
                 }
             }
@@ -290,6 +296,28 @@ impl SettlementEncoder {
         }
 
         Ok(self)
+    }
+
+    fn price_scaling_factor(&self, other: &Self) -> BigRational {
+        let self_keys: HashSet<_> = self.clearing_prices().keys().collect();
+        let other_keys: HashSet<_> = other.clearing_prices().keys().collect();
+        let common_tokens: Vec<_> = self_keys.intersection(&other_keys).collect();
+        match common_tokens.first() {
+            Some(token) => {
+                let price_in_self = self
+                    .clearing_prices
+                    .get(token)
+                    .expect("common token should be present")
+                    .to_big_rational();
+                let price_in_other = other
+                    .clearing_prices
+                    .get(token)
+                    .expect("common token should be present")
+                    .to_big_rational();
+                price_in_self / price_in_other
+            }
+            None => U256::one().to_big_rational(),
+        }
     }
 }
 
@@ -514,11 +542,27 @@ pub mod tests {
 
     #[test]
     fn merge_fails_because_price_is_different() {
-        let prices = hashmap! { token(1) => 1.into() };
+        let prices = hashmap! { token(1) => 1.into(), token(2) => 2.into() };
         let encoder0 = SettlementEncoder::new(prices);
-        let prices = hashmap! { token(1) => 2.into() };
+        let prices = hashmap! { token(1) => 1.into(), token(2) => 3.into() };
         let encoder1 = SettlementEncoder::new(prices);
         assert!(encoder0.merge(encoder1).is_err());
+    }
+
+    #[test]
+    fn merge_scales_prices_if_only_one_token_used_twice() {
+        let prices = hashmap! { token(1) => 2.into(), token(2) => 2.into() };
+        let encoder0 = SettlementEncoder::new(prices);
+        let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
+        let encoder1 = SettlementEncoder::new(prices);
+
+        let merged = encoder0.merge(encoder1).unwrap();
+        let prices = hashmap! {
+            token(1) => 2.into(),
+            token(2) => 2.into(),
+            token(3) => 6.into(),
+        };
+        assert_eq!(merged.clearing_prices, prices);
     }
 
     #[test]
