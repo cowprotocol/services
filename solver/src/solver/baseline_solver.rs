@@ -30,7 +30,7 @@ impl Solver for BaselineSolver {
             orders, liquidity, ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
-        Ok(self.solve(orders, liquidity))
+        Ok(self.solve_(orders, liquidity))
     }
 
     fn account(&self) -> &Account {
@@ -130,7 +130,7 @@ impl BaselineSolver {
         }
     }
 
-    fn solve(&self, user_orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
+    fn solve_(&self, user_orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Vec<Settlement> {
         let amm_map =
             liquidity
                 .into_iter()
@@ -169,15 +169,10 @@ impl BaselineSolver {
                 None => continue,
             };
 
-            // Check limit price
-            if solution.executed_buy_amount >= order.buy_amount
-                && solution.executed_sell_amount <= order.sell_amount
-            {
-                match solution.into_settlement(&order) {
-                    Ok(settlement) => settlements.push(settlement),
-                    Err(err) => {
-                        tracing::error!("baseline_solver failed to create settlement: {:?}", err)
-                    }
+            match solution.into_settlement(&order) {
+                Ok(settlement) => settlements.push(settlement),
+                Err(err) => {
+                    tracing::error!("baseline_solver failed to create settlement: {:?}", err)
                 }
             }
         }
@@ -199,6 +194,20 @@ impl BaselineSolver {
                 let best = candidates
                     .iter()
                     .filter_map(|path| estimate_sell_amount(order.buy_amount, path, amms))
+                    .filter(|estimate| estimate.value <= order.sell_amount)
+                    // For buy orders we find the best path starting at the buy token ending at the
+                    // sell token. When we turn this into a settlement however we need to go from
+                    // the sell token to the buy token. This reversing of the direction can fail or
+                    // yield different amounts as explained in the BaselineSolvable trait.
+                    .filter(|estimate| {
+                        matches!(
+                            traverse_path_forward(
+                                order.sell_token,
+                                estimate.value,
+                                &estimate.path,
+                            ), Some(amount) if amount >= order.buy_amount
+                        )
+                    })
                     .min_by_key(|estimate| estimate.value)?;
                 (best.path, best.value, order.buy_amount)
             }
@@ -206,6 +215,7 @@ impl BaselineSolver {
                 let best = candidates
                     .iter()
                     .filter_map(|path| estimate_buy_amount(order.sell_amount, path, amms))
+                    .filter(|estimate| estimate.value >= order.buy_amount)
                     .max_by_key(|estimate| estimate.value)?;
                 (best.path, order.sell_amount, best.value)
             }
@@ -219,10 +229,25 @@ impl BaselineSolver {
 
     #[cfg(test)]
     fn must_solve(&self, orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Settlement {
-        self.solve(orders, liquidity).into_iter().next().unwrap()
+        self.solve_(orders, liquidity).into_iter().next().unwrap()
     }
 }
 
+fn traverse_path_forward(
+    mut sell_token: H160,
+    mut sell_amount: U256,
+    path: &[&Amm],
+) -> Option<U256> {
+    for amm in path {
+        let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
+        let buy_amount = amm.get_amount_out(buy_token, (sell_amount, sell_token))?;
+        sell_token = buy_token;
+        sell_amount = buy_amount;
+    }
+    Some(sell_amount)
+}
+
+#[derive(Debug)]
 struct Solution {
     path: Vec<Amm>,
     executed_sell_amount: U256,
@@ -243,13 +268,7 @@ impl Solution {
             let buy_token = amm.tokens.other(&sell_token).expect("Inconsistent path");
             let buy_amount = amm
                 .get_amount_out(buy_token, (sell_amount, sell_token))
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "invariant violated: have path but amount was not calculatable: {}",
-                        order.id
-                    )
-                })?;
-            //.expect("Path was found, so amount must be calculable");
+                .expect("Path was found, so amount must be calculable");
             let execution = AmmOrderExecution {
                 input: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
@@ -290,6 +309,7 @@ mod tests {
     use crate::test::account;
     use model::order::OrderKind;
     use num::rational::Ratio;
+    use shared::sources::balancer::swap::fixed_point::Bfp;
     use shared::{
         addr,
         sources::balancer::pool_fetching::{TokenState, WeightedTokenState},
@@ -545,7 +565,7 @@ mod tests {
 
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let solver = BaselineSolver::new(account(), base_tokens);
-        assert_eq!(solver.solve(orders, liquidity).len(), 1);
+        assert_eq!(solver.solve_(orders, liquidity).len(), 1);
     }
 
     #[test]
@@ -601,6 +621,86 @@ mod tests {
             &[],
         ));
         let solver = BaselineSolver::new(account(), base_tokens);
-        assert_eq!(solver.solve(vec![order], liquidity).len(), 0);
+        assert_eq!(solver.solve_(vec![order], liquidity).len(), 0);
+    }
+
+    #[test]
+    fn does_not_panic_for_asymmetrical_pool() {
+        let tokens: Vec<H160> = (0..3).map(H160::from_low_u64_be).collect();
+        let order = LimitOrder {
+            id: "".to_string(),
+            sell_token: tokens[0],
+            buy_token: tokens[2],
+            sell_amount: 7999613.into(),
+            buy_amount: 1.into(),
+            kind: OrderKind::Buy,
+            partially_fillable: false,
+            scaled_fee_amount: 0.into(),
+            is_liquidity_order: false,
+            settlement_handling: CapturingSettlementHandler::arc(),
+        };
+        let pool_0 = ConstantProductOrder {
+            tokens: TokenPair::new(tokens[1], tokens[2]).unwrap(),
+            reserves: (10, 12),
+            fee: Ratio::new(0, 1),
+            settlement_handling: CapturingSettlementHandler::arc(),
+        };
+        let pool_1 = WeightedProductOrder {
+            reserves: [
+                (
+                    tokens[0],
+                    WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 4294966784u64.into(),
+                            scaling_exponent: 0,
+                        },
+                        weight: 255.into(),
+                    },
+                ),
+                (
+                    tokens[1],
+                    WeightedTokenState {
+                        token_state: TokenState {
+                            balance: 4278190173u64.into(),
+                            scaling_exponent: 0,
+                        },
+                        weight: 2030043135usize.into(),
+                    },
+                ),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+            fee: Bfp::zero(),
+            settlement_handling: CapturingSettlementHandler::arc(),
+        };
+        // When baseline solver goes from the buy token to the sell token it sees that a path with
+        // a sell amount of 7999613.
+        assert_eq!(
+            pool_0.get_amount_in(tokens[1], (1.into(), tokens[2])),
+            Some(1.into())
+        );
+        assert_eq!(
+            pool_1.get_amount_in(tokens[0], (1.into(), tokens[1])),
+            Some(7999613.into())
+        );
+        // But then when it goes from the sell token to the buy token to construct the settlement
+        // it encounters the asymmetry of the weighted pool. With the same in amount the out amount
+        // has changed from 1 to 0.
+        assert_eq!(
+            pool_1.get_amount_out(tokens[1], (7999613.into(), tokens[0])),
+            Some(0.into()),
+        );
+        // This makes using the second pool fail.
+        assert_eq!(pool_0.get_amount_in(tokens[2], (0.into(), tokens[1])), None);
+
+        let liquidity = vec![
+            Liquidity::ConstantProduct(pool_0),
+            Liquidity::BalancerWeighted(pool_1),
+        ];
+        let base_tokens = Arc::new(BaseTokens::new(tokens[0], &tokens));
+        let solver = BaselineSolver::new(account(), base_tokens);
+        let settlements = solver.solve_(vec![order], liquidity);
+        assert!(settlements.is_empty());
     }
 }

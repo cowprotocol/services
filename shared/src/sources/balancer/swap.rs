@@ -69,7 +69,7 @@ impl WeightedPoolRef<'_> {
             .map(|amount_without_fees| amount_without_fees.as_uint256())
     }
 
-    fn unchecked_get_amount_in(
+    fn get_amount_in_(
         &self,
         in_token: H160,
         (out_amount, out_token): (U256, H160),
@@ -94,18 +94,7 @@ impl WeightedPoolRef<'_> {
         self.add_swap_fee_amount(amount_in_before_fee).ok()
     }
 
-    fn checked_get_amount_in(
-        &self,
-        in_token: H160,
-        (out_amount, out_token): (U256, H160),
-    ) -> Option<U256> {
-        let in_amount = self.unchecked_get_amount_in(in_token, (out_amount, out_token))?;
-        // We double check that resulting amount in can symmetrically provide an amount out.
-        self.unchecked_get_amount_out(out_token, (in_amount, in_token))?;
-        Some(in_amount)
-    }
-
-    fn unchecked_get_amount_out(
+    fn get_amount_out_(
         &self,
         out_token: H160,
         (in_amount, in_token): (U256, H160),
@@ -129,26 +118,15 @@ impl WeightedPoolRef<'_> {
         .map(|bfp| out_reserves.downscale(bfp))
         .flatten()
     }
-
-    fn checked_get_amount_out(
-        &self,
-        out_token: H160,
-        (in_amount, in_token): (U256, H160),
-    ) -> Option<U256> {
-        let out_amount = self.unchecked_get_amount_out(out_token, (in_amount, in_token))?;
-        // We double check that resulting amount out can symmetrically provide an amount in.
-        self.unchecked_get_amount_in(in_token, (out_amount, out_token))?;
-        Some(out_amount)
-    }
 }
 
 impl BaselineSolvable for WeightedPoolRef<'_> {
     fn get_amount_out(&self, out_token: H160, (in_amount, in_token): (U256, H160)) -> Option<U256> {
-        self.checked_get_amount_out(out_token, (in_amount, in_token))
+        self.get_amount_out_(out_token, (in_amount, in_token))
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
-        self.checked_get_amount_in(in_token, (out_amount, out_token))
+        self.get_amount_in_(in_token, (out_amount, out_token))
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {

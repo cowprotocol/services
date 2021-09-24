@@ -10,6 +10,11 @@ const DEFAULT_MAX_HOPS: usize = 2;
 
 type PathCandidate = Vec<H160>;
 
+/// Note that get_amount_out and get_amount_in are not always symmetrical. That is for some AMMs it
+/// is possible that get_amount_out returns an amount for which get_amount_in returns None when
+/// trying to go the reverse direction. Or that the resulting amount is different from the original.
+/// This situation is rare and resulting amounts should usually be identical or very close but it
+/// can occur.
 pub trait BaselineSolvable {
     // Given the desired output token, the amount and token input, return the expected amount of output token.
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256>;
