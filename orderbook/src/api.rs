@@ -8,6 +8,7 @@ mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
 mod get_user_orders;
+mod post_quote;
 
 use crate::{
     database::trades::TradeRetrieving,
@@ -48,6 +49,7 @@ pub fn handle_all_routes(
     let get_fee_and_quote_buy =
         get_fee_and_quote::get_fee_and_quote_buy(fee_calculator, price_estimator.clone());
     let get_user_orders = get_user_orders::get_user_orders(orderbook);
+    let post_quote = post_quote::post_quote();
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -77,6 +79,8 @@ pub fn handle_all_routes(
                 .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_buy")))
             .unify()
             .or(get_user_orders.map(|reply| LabelledReply::new(reply, "get_user_orders")))
+            .unify()
+            .or(post_quote.map(|reply| LabelledReply::new(reply, "get_user_orders")))
             .unify(),
     );
     routes_with_labels
