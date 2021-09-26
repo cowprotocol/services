@@ -2,7 +2,7 @@ use super::{Interaction, Trade, TradeExecution};
 use crate::{encoding::EncodedSettlement, interactions::UnwrapWethInteraction};
 use anyhow::{bail, ensure, Context as _, Result};
 use model::order::{Order, OrderKind};
-use num::{BigRational, Zero};
+use num::{BigRational, One, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::{big_rational_to_u256, U256Ext};
 use std::{
@@ -262,6 +262,10 @@ impl SettlementEncoder {
     // both or more than one token has a different clearing prices (a single token difference is scaled)
     pub fn merge(mut self, mut other: Self) -> Result<Self> {
         let scaling_factor = self.price_scaling_factor(&other);
+        // Make sure we always scale prices up to avoid precision issues
+        if scaling_factor < BigRational::one() {
+            return other.merge(self);
+        }
         for (key, value) in other.clearing_prices {
             let scaled_price = big_rational_to_u256(&(value.to_big_rational() * &scaling_factor))
                 .context("Invalid price scaling factor")?;
@@ -563,6 +567,24 @@ pub mod tests {
             token(3) => 6.into(),
         };
         assert_eq!(merged.clearing_prices, prices);
+    }
+
+    #[test]
+    fn merge_always_scales_smaller_price_up() {
+        let prices = hashmap! { token(1) => 1.into(), token(2) => 1_000_000.into() };
+        let encoder0 = SettlementEncoder::new(prices);
+        let prices = hashmap! { token(1) => 1_000_000.into(), token(3) => 900_000.into() };
+        let encoder1 = SettlementEncoder::new(prices);
+
+        let merge01 = encoder0.clone().merge(encoder1.clone()).unwrap();
+        let merge10 = encoder1.merge(encoder0).unwrap();
+        assert_eq!(merge10.clearing_prices, merge01.clearing_prices);
+
+        // If scaled down 900k would have become 0
+        assert_eq!(
+            *merge10.clearing_prices.get(&token(3)).unwrap(),
+            900_000.into()
+        );
     }
 
     #[test]
