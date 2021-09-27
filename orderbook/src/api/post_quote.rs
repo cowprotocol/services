@@ -2,7 +2,7 @@ use crate::api;
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{
-    appdata_hexadecimal,
+    app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     u256_decimal,
 };
@@ -21,8 +21,7 @@ struct OrderQuoteRequest {
     #[serde(flatten)]
     side: OrderQuoteSide,
     valid_to: u32,
-    #[serde(with = "appdata_hexadecimal")]
-    app_data: [u8; 32],
+    app_data: AppId,
     partially_fillable: bool,
     #[serde(default)]
     sell_token_balance: SellTokenSource,
@@ -71,8 +70,7 @@ struct OrderQuote {
     #[serde(with = "u256_decimal")]
     buy_amount: U256,
     valid_to: u32,
-    #[serde(with = "appdata_hexadecimal")]
-    app_data: [u8; 32],
+    app_data: AppId,
     #[serde(with = "u256_decimal")]
     fee_amount: U256,
     kind: OrderKind,
@@ -133,7 +131,7 @@ mod tests {
                     sell_amount: SellAmount::AfterFee { value: 1337.into() },
                 },
                 valid_to: 0x12345678,
-                app_data: [0x90; 32],
+                app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
@@ -165,7 +163,7 @@ mod tests {
                     sell_amount: SellAmount::BeforeFee { value: 1337.into() },
                 },
                 valid_to: 0x12345678,
-                app_data: [0x90; 32],
+                app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 buy_token_balance: BuyTokenDestination::Erc20,
@@ -197,7 +195,7 @@ mod tests {
                     buy_amount_after_fee: U256::from(1337),
                 },
                 valid_to: 0x12345678,
-                app_data: [0x90; 32],
+                app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,

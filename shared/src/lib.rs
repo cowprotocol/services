@@ -30,7 +30,7 @@ use ethcontract::H160;
 use hex::{FromHex, FromHexError};
 use model::h160_hexadecimal;
 use serde::Deserialize;
-use std::fmt::{self, Debug, Formatter};
+use std::fmt::Debug;
 use std::{
     future::Future,
     str::FromStr,
@@ -82,22 +82,4 @@ pub fn debug_bytes(
 /// based on formatting the error with its inner sources without backtrace.
 pub fn clone_anyhow_error(err: &anyhow::Error) -> anyhow::Error {
     anyhow::anyhow!("{:#}", err)
-}
-
-#[derive(Eq, Hash, PartialEq)]
-pub struct AppId(pub [u8; 32]);
-
-impl Debug for AppId {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "0x{}", hex::encode(self.0))
-    }
-}
-
-impl FromStr for AppId {
-    type Err = hex::FromHexError;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut bytes = [0u8; 32];
-        hex::decode_to_slice(s.strip_prefix("0x").unwrap_or(s), &mut bytes)?;
-        Ok(Self(bytes))
-    }
 }

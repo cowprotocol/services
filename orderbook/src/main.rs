@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
 use model::{
+    app_id::AppId,
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
@@ -45,7 +46,6 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     transport::create_instrumented_transport,
     transport::http::HttpTransport,
-    AppId,
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;

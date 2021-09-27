@@ -33,7 +33,7 @@ pub fn encode_trade(
         order.sell_amount,
         order.buy_amount,
         order.valid_to,
-        Bytes(order.app_data),
+        Bytes(order.app_data.0),
         order.fee_amount,
         order_flags(order),
         *executed_amount,

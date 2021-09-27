@@ -5,9 +5,12 @@ use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
 use futures::stream::TryStreamExt;
-use model::order::{BuyTokenDestination, SellTokenSource};
 use model::{
-    order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid},
+    app_id::AppId,
+    order::{
+        BuyTokenDestination, Order, OrderCreation, OrderKind, OrderMetaData, OrderStatus, OrderUid,
+        SellTokenSource,
+    },
     signature::{Signature, SigningScheme},
 };
 use primitive_types::H160;
@@ -232,7 +235,7 @@ impl OrderStoring for Postgres {
             .bind(u256_to_big_decimal(&order.order_creation.sell_amount))
             .bind(u256_to_big_decimal(&order.order_creation.buy_amount))
             .bind(order.order_creation.valid_to)
-            .bind(&order.order_creation.app_data[..])
+            .bind(&order.order_creation.app_data.0[..])
             .bind(u256_to_big_decimal(&order.order_creation.fee_amount))
             .bind(DbOrderKind::from(order.order_creation.kind))
             .bind(order.order_creation.partially_fillable)
@@ -481,10 +484,11 @@ impl OrdersQueryRow {
             buy_amount: big_decimal_to_u256(&self.buy_amount)
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             valid_to: self.valid_to.try_into().context("valid_to is not u32")?,
-            app_data: self
-                .app_data
-                .try_into()
-                .map_err(|_| anyhow!("app_data is not [u8; 32]"))?,
+            app_data: AppId(
+                self.app_data
+                    .try_into()
+                    .map_err(|_| anyhow!("app_data is not [u8; 32]"))?,
+            ),
             fee_amount: big_decimal_to_u256(&self.fee_amount)
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             kind: self.kind.into(),
@@ -786,7 +790,7 @@ mod tests {
                     sell_amount: 3.into(),
                     buy_amount: U256::MAX,
                     valid_to: u32::MAX,
-                    app_data: [4; 32],
+                    app_data: AppId([4; 32]),
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: true,

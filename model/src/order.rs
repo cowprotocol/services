@@ -1,7 +1,7 @@
 //! Contains the order type as described by the specification with serialization as described by the openapi documentation.
 
 use crate::{
-    appdata_hexadecimal,
+    app_id::AppId,
     h160_hexadecimal::{self, HexadecimalH160},
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
     u256_decimal::{self, DecimalU256},
@@ -16,9 +16,11 @@ use secp256k1::key::ONE_KEY;
 use serde::{de, Deserialize, Serialize};
 use serde::{Deserializer, Serializer};
 use serde_with::serde_as;
-use std::collections::HashSet;
-use std::fmt::{self, Display};
-use std::str::FromStr;
+use std::{
+    collections::HashSet,
+    fmt::{self, Debug, Display},
+    str::FromStr,
+};
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -124,7 +126,7 @@ impl OrderBuilder {
     }
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
-        self.0.order_creation.app_data = app_data;
+        self.0.order_creation.app_data = AppId(app_data);
         self
     }
 
@@ -190,8 +192,7 @@ impl OrderBuilder {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize, Hash)]
-#[derivative(Debug)]
+#[derive(Eq, PartialEq, Clone, Deserialize, Debug, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     #[serde(with = "h160_hexadecimal")]
@@ -206,9 +207,7 @@ pub struct OrderCreation {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub valid_to: u32,
-    #[derivative(Debug(format_with = "debug_app_data"))]
-    #[serde(with = "appdata_hexadecimal")]
-    pub app_data: [u8; 32],
+    pub app_data: AppId,
     #[serde(with = "u256_decimal")]
     pub fee_amount: U256,
     pub kind: OrderKind,
@@ -309,7 +308,7 @@ impl OrderCreation {
         self.sell_amount.to_big_endian(&mut hash_data[128..160]);
         self.buy_amount.to_big_endian(&mut hash_data[160..192]);
         hash_data[220..224].copy_from_slice(&self.valid_to.to_be_bytes());
-        hash_data[224..256].copy_from_slice(&self.app_data);
+        hash_data[224..256].copy_from_slice(&self.app_data.0);
         self.fee_amount.to_big_endian(&mut hash_data[256..288]);
         hash_data[288..320].copy_from_slice(match self.kind {
             OrderKind::Sell => &Self::KIND_SELL,
@@ -641,7 +640,9 @@ mod tests {
                 sell_amount: 1.into(),
                 buy_amount: 0.into(),
                 valid_to: u32::MAX,
-                app_data: hex!("6000000000000000000000000000000000000000000000000000000000000007"),
+                app_data: AppId(hex!(
+                    "6000000000000000000000000000000000000000000000000000000000000007"
+                )),
                 fee_amount: U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: false,
@@ -701,7 +702,9 @@ mod tests {
                 sell_amount: 0x0246ddf97976680000_u128.into(),
                 buy_amount: 0xb98bc829a6f90000_u128.into(),
                 valid_to: 0xffffffff,
-                app_data: hex!("0000000000000000000000000000000000000000000000000000000000000000"),
+                app_data: AppId(hex!(
+                    "0000000000000000000000000000000000000000000000000000000000000000"
+                )),
                 fee_amount: 0x0de0b6b3a7640000_u128.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: false,
@@ -756,7 +759,9 @@ mod tests {
             sell_amount: 0x0246ddf97976680000_u128.into(),
             buy_amount: 0xb98bc829a6f90000_u128.into(),
             valid_to: 0xffffffff,
-            app_data: hex!("0000000000000000000000000000000000000000000000000000000000000000"),
+            app_data: AppId(hex!(
+                "0000000000000000000000000000000000000000000000000000000000000000"
+            )),
             fee_amount: 0x0de0b6b3a7640000_u128.into(),
             kind: OrderKind::Sell,
             partially_fillable: false,
