@@ -96,6 +96,11 @@ impl Debug for Bfp {
 }
 
 impl Bfp {
+    #[cfg(test)]
+    pub fn to_f64_lossy(self) -> f64 {
+        self.as_uint256().to_f64_lossy() / 1e18
+    }
+
     pub fn as_uint256(self) -> U256 {
         self.0
     }

@@ -12,6 +12,8 @@ use weighted_math::{calc_in_given_out, calc_out_given_in};
 
 mod error;
 pub mod fixed_point;
+mod math;
+mod stable_math;
 mod weighted_math;
 
 const BALANCER_SWAP_GAS_COST: usize = 100_000;

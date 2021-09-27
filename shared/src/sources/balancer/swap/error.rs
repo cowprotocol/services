@@ -49,6 +49,8 @@ errors_from_codes!(
     (InvalidExponent, 9),
     (MaxInRatio, 304),
     (MaxOutRatio, 305),
+    (InvalidToken, 309),
+    (StableInvariantDidntConverge, 321),
 );
 
 #[cfg(test)]
