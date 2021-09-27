@@ -99,6 +99,8 @@ pub struct WeightedProductPoolParameters {
 pub struct StablePoolParameters {
     #[serde_as(as = "BTreeMap<_, DecimalU256>")]
     pub reserves: BTreeMap<H160, U256>,
+    #[serde_as(as = "BTreeMap<_, DecimalU256>")]
+    pub scaling_rates: BTreeMap<H160, U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
 }
@@ -260,6 +262,7 @@ mod tests {
 
     #[test]
     fn model_serialization() {
+        let native_token = H160([0xee; 20]);
         let buy_token = H160::from_low_u64_be(1337);
         let sell_token = H160::from_low_u64_be(43110);
         let order_model = OrderModel {
@@ -275,7 +278,7 @@ mod tests {
             },
             cost: CostModel {
                 amount: U256::from(1),
-                token: buy_token,
+                token: native_token,
             },
             is_liquidity_order: false,
         };
@@ -289,7 +292,7 @@ mod tests {
             fee: BigRational::new(3.into(), 1000.into()),
             cost: CostModel {
                 amount: U256::from(3),
-                token: buy_token,
+                token: native_token,
             },
             mandatory: false,
         };
@@ -309,7 +312,26 @@ mod tests {
             fee: BigRational::new(2.into(), 1000.into()),
             cost: CostModel {
                 amount: U256::from(2),
-                token: buy_token,
+                token: native_token,
+            },
+            mandatory: true,
+        };
+        let stable_pool_model = AmmModel {
+            parameters: AmmParameters::Stable(StablePoolParameters {
+                reserves: btreemap! {
+                    sell_token => U256::from(1000),
+                    buy_token => U256::from(1_001_000_000),
+                },
+                scaling_rates: btreemap! {
+                    sell_token => U256::from(1),
+                    buy_token => U256::from(1_000_000),
+                },
+                amplification_parameter: BigRational::new(1337.into(), 100.into()),
+            }),
+            fee: BigRational::new(3.into(), 1000.into()),
+            cost: CostModel {
+                amount: U256::from(3),
+                token: native_token,
             },
             mandatory: true,
         };
@@ -329,7 +351,11 @@ mod tests {
                 }
             },
             orders: btreemap! { 0 => order_model },
-            amms: btreemap! { 0 => constant_product_pool_model, 1 => weighted_product_pool_model },
+            amms: btreemap! {
+                0 => constant_product_pool_model,
+                1 => weighted_product_pool_model,
+                2 => stable_pool_model,
+            },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
             }),
@@ -343,14 +369,14 @@ mod tests {
               "decimals": 6,
               "external_price": 1.2,
               "normalize_priority": 1,
-              "internal_buffer": "1337"
+              "internal_buffer": "1337",
             },
             "0x000000000000000000000000000000000000a866": {
               "decimals": 18,
               "external_price": 2345.0,
               "normalize_priority": 0,
-              "internal_buffer": "42"
-            }
+              "internal_buffer": "42",
+            },
           },
           "orders": {
             "0": {
@@ -362,14 +388,14 @@ mod tests {
               "is_sell_order": true,
               "fee": {
                 "amount": "2",
-                "token": "0x000000000000000000000000000000000000a866"
+                "token": "0x000000000000000000000000000000000000a866",
               },
               "is_liquidity_order": false,
               "cost": {
                 "amount": "1",
-                "token": "0x0000000000000000000000000000000000000539"
-              }
-            }
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              },
+            },
           },
           "amms": {
             "0": {
@@ -381,9 +407,9 @@ mod tests {
               "fee": "0.003",
               "cost": {
                 "amount": "3",
-                "token": "0x0000000000000000000000000000000000000539"
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
-              "mandatory": false
+              "mandatory": false,
             },
             "1": {
               "kind": "WeightedProduct",
@@ -400,14 +426,32 @@ mod tests {
               "fee": "0.002",
               "cost": {
                 "amount": "2",
-                "token": "0x0000000000000000000000000000000000000539"
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
-              "mandatory": true
-            }
+              "mandatory": true,
+            },
+            "2": {
+              "kind": "Stable",
+              "reserves": {
+                "0x000000000000000000000000000000000000a866": "1000",
+                "0x0000000000000000000000000000000000000539": "1001000000",
+              },
+              "scaling_rates": {
+                "0x000000000000000000000000000000000000a866": "1",
+                "0x0000000000000000000000000000000000000539": "1000000",
+              },
+              "amplification_parameter": "13.37",
+              "fee": "0.003",
+              "cost": {
+                "amount": "3",
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              },
+              "mandatory": true,
+            },
           },
           "metadata": {
-            "environment": "Such Meta"
-          }
+            "environment": "Such Meta",
+          },
         });
         assert_eq!(result, expected);
     }

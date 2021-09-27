@@ -414,57 +414,79 @@ fn order_models(
 fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, AmmModel> {
     liquidity
         .iter()
-        .map(|liquidity| match liquidity {
-            Liquidity::ConstantProduct(amm) => AmmModel {
-                parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
-                    reserves: btreemap! {
-                        amm.tokens.get().0 => amm.reserves.0.into(),
-                        amm.tokens.get().1 => amm.reserves.1.into(),
-                    },
-                }),
-                fee: BigRational::new(
-                    BigInt::from(*amm.fee.numer()),
-                    BigInt::from(*amm.fee.denom()),
-                ),
-                cost: gas_model.uniswap_cost(),
-                mandatory: false,
-            },
-            Liquidity::BalancerWeighted(amm) => AmmModel {
-                parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
-                    reserves: amm
-                        .reserves
-                        .iter()
-                        .map(|(token, state)| {
-                            (
-                                *token,
-                                WeightedPoolTokenData {
-                                    balance: state.token_state.balance,
-                                    weight: BigRational::from(state.weight),
-                                },
-                            )
-                        })
-                        .collect(),
-                }),
-                fee: amm.fee.clone(),
-                cost: gas_model.balancer_cost(),
-                mandatory: false,
-            },
-            Liquidity::BalancerStable(amm) => AmmModel {
-                parameters: AmmParameters::Stable(StablePoolParameters {
-                    reserves: amm
-                        .reserves
-                        .iter()
-                        .map(|(token, state)| (*token, state.balance))
-                        .collect(),
-                    amplification_parameter: amm.amplification_parameter.clone(),
-                }),
-                fee: amm.fee.clone(),
-                cost: gas_model.balancer_cost(),
-                mandatory: false,
-            },
+        .map(|liquidity| -> Result<_> {
+            Ok(match liquidity {
+                Liquidity::ConstantProduct(amm) => AmmModel {
+                    parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
+                        reserves: btreemap! {
+                            amm.tokens.get().0 => amm.reserves.0.into(),
+                            amm.tokens.get().1 => amm.reserves.1.into(),
+                        },
+                    }),
+                    fee: BigRational::new(
+                        BigInt::from(*amm.fee.numer()),
+                        BigInt::from(*amm.fee.denom()),
+                    ),
+                    cost: gas_model.uniswap_cost(),
+                    mandatory: false,
+                },
+                Liquidity::BalancerWeighted(amm) => AmmModel {
+                    parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
+                        reserves: amm
+                            .reserves
+                            .iter()
+                            .map(|(token, state)| {
+                                (
+                                    *token,
+                                    WeightedPoolTokenData {
+                                        balance: state.token_state.balance,
+                                        weight: BigRational::from(state.weight),
+                                    },
+                                )
+                            })
+                            .collect(),
+                    }),
+                    fee: amm.fee.clone(),
+                    cost: gas_model.balancer_cost(),
+                    mandatory: false,
+                },
+                Liquidity::BalancerStable(amm) => AmmModel {
+                    parameters: AmmParameters::Stable(StablePoolParameters {
+                        reserves: amm
+                            .reserves
+                            .iter()
+                            .map(|(token, state)| (*token, state.balance))
+                            .collect(),
+                        scaling_rates: amm
+                            .reserves
+                            .iter()
+                            .map(|(token, state)| {
+                                Ok((*token, compute_scaling_rate(state.scaling_exponent)?))
+                            })
+                            .collect::<Result<_>>()
+                            .with_context(|| {
+                                format!("error converting stable pool to solver model: {:?}", amm)
+                            })?,
+                        amplification_parameter: amm.amplification_parameter.clone(),
+                    }),
+                    fee: amm.fee.clone(),
+                    cost: gas_model.balancer_cost(),
+                    mandatory: false,
+                },
+            })
         })
         .enumerate()
-        .filter(|(_, model)| model.has_sufficient_reserves())
+        .filter_map(|(index, result)| {
+            let model = match result {
+                Ok(value) if value.has_sufficient_reserves() => value,
+                Ok(_) => return None,
+                Err(err) => {
+                    tracing::error!(?err, "error converting liquidity to solver model");
+                    return None;
+                }
+            };
+            Some((index, model))
+        })
         .collect()
 }
 
@@ -498,6 +520,26 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
     }
 
     fee_connected_tokens
+}
+
+/// Compute the scaling rate from a Balancer pool's scaling exponent.
+///
+/// This method returns an error on any arithmetic underflow when computing the
+/// token decimals. Note that in theory, this should be impossible to happen.
+/// However, we are extra careful and return an `Error` in case it does to avoid
+/// panicking. Additionally, wrapped math could have been used here, but that
+/// would create invalid settlements.
+fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
+    // Balancer `scaling_exponent`s are `18 - decimals`, we want the rate which
+    // is `10 ** decimals`.
+    let decimals = 18_u8.checked_sub(scaling_exponent).ok_or_else(|| {
+        anyhow!("underflow computing decimals from Balancer pool scaling exponent")
+    })?;
+
+    debug_assert!(decimals <= 18);
+    // `decimals` is guaranteed to be between 0 and 18, and 10**18 cannot
+    // cannot overflow a `U256`, so we do not need to use `checked_pow`.
+    Ok(U256::from(10).pow(decimals.into()))
 }
 
 #[async_trait::async_trait]
@@ -821,5 +863,21 @@ mod tests {
         "#;
         let parsed_response = serde_json::from_str::<SettledBatchAuctionModel>(example_response);
         assert!(parsed_response.is_ok());
+    }
+
+    #[test]
+    fn compute_scaling_rates() {
+        // Tokens with 18 decimals
+        assert_eq!(
+            compute_scaling_rate(0).unwrap(),
+            U256::from(1_000_000_000_000_000_000_u128),
+        );
+        // Tokens with 6 decimals
+        assert_eq!(compute_scaling_rate(12).unwrap(), U256::from(1_000_000));
+        // Tokens with 0 decimals
+        assert_eq!(compute_scaling_rate(18).unwrap(), U256::from(1));
+
+        // Tokens with invalid number of decimals, i.e. greater than 18
+        assert!(compute_scaling_rate(42).is_err());
     }
 }
