@@ -1845,6 +1845,7 @@ dependencies = [
  "num-bigint 0.3.3",
  "primitive-types",
  "prometheus",
+ "prometheus-metric-storage",
  "reqwest",
  "secp256k1",
  "serde",

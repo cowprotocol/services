@@ -11,21 +11,18 @@ mod get_user_orders;
 mod post_quote;
 
 use crate::{
-    database::trades::TradeRetrieving,
-    fee::EthAwareMinFeeCalculator,
-    metrics::start_request,
-    metrics::{end_request, LabelledReply, Metrics},
-    orderbook::Orderbook,
+    database::trades::TradeRetrieving, fee::EthAwareMinFeeCalculator, orderbook::Orderbook,
 };
 use anyhow::Error as anyhowError;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use shared::metrics::get_metric_storage_registry;
 use shared::price_estimation::PriceEstimating;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
-    wrap_fn, Filter, Rejection, Reply,
+    Filter, Rejection, Reply,
 };
 
 pub fn handle_all_routes(
@@ -33,7 +30,6 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
-    metrics: Arc<Metrics>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
@@ -55,38 +51,22 @@ pub fn handle_all_routes(
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
     let routes_with_labels = warp::path!("api" / "v1" / ..).and(
-        (create_order.map(|reply| LabelledReply::new(reply, "create_order")))
-            .or(get_orders.map(|reply| LabelledReply::new(reply, "get_orders")))
-            .unify()
-            .or(fee_info.map(|reply| LabelledReply::new(reply, "fee_info")))
-            .unify()
-            .or(legacy_fee_info.map(|reply| LabelledReply::new(reply, "legacy_fee_info")))
-            .unify()
-            .or(get_order.map(|reply| LabelledReply::new(reply, "get_order")))
-            .unify()
-            .or(get_solvable_orders.map(|reply| LabelledReply::new(reply, "get_solvable_orders")))
-            .unify()
-            .or(get_trades.map(|reply| LabelledReply::new(reply, "get_trades")))
-            .unify()
-            .or(cancel_order.map(|reply| LabelledReply::new(reply, "cancel_order")))
-            .unify()
-            .or(get_amount_estimate.map(|reply| LabelledReply::new(reply, "get_amount_estimate")))
-            .unify()
-            .or(get_fee_and_quote_sell
-                .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_sell")))
-            .unify()
-            .or(get_fee_and_quote_buy
-                .map(|reply| LabelledReply::new(reply, "get_fee_and_quote_buy")))
-            .unify()
-            .or(get_user_orders.map(|reply| LabelledReply::new(reply, "get_user_orders")))
-            .unify()
-            .or(post_quote.map(|reply| LabelledReply::new(reply, "get_user_orders")))
-            .unify(),
+        (create_order.with(handle_metrics("create_order")))
+            .or(get_orders.with(handle_metrics("get_orders")))
+            .or(fee_info.with(handle_metrics("fee_info")))
+            .or(legacy_fee_info.with(handle_metrics("legacy_fee_info")))
+            .or(get_order.with(handle_metrics("get_order")))
+            .or(get_solvable_orders.with(handle_metrics("get_solvable_orders")))
+            .or(get_trades.with(handle_metrics("get_trades")))
+            .or(cancel_order.with(handle_metrics("cancel_order")))
+            .or(get_amount_estimate.with(handle_metrics("get_amount_estimate")))
+            .or(get_fee_and_quote_sell.with(handle_metrics("get_fee_and_quote_sell")))
+            .or(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy")))
+            .or(get_user_orders.with(handle_metrics("get_user_orders")))
+            .or(post_quote.with(handle_metrics("get_user_orders"))),
     );
-    routes_with_labels
-        .with(wrap_fn(|f| wrap_metrics(f, metrics.clone())))
-        .recover(handle_rejection)
-        .with(cors)
+
+    routes_with_labels.recover(handle_rejection).with(cors)
 }
 
 // We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
@@ -94,17 +74,29 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     Ok(err.default_response())
 }
 
-fn wrap_metrics<F>(
-    filter: F,
-    metrics: Arc<Metrics>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone
-where
-    F: Filter<Extract = (LabelledReply,), Error = Rejection> + Clone + Send + Sync + 'static,
-{
-    warp::any()
-        .and(start_request())
-        .and(filter)
-        .map(move |timer, reply| end_request(metrics.clone(), timer, reply))
+fn handle_metrics(endpoint: impl Into<String>) -> warp::log::Log<impl Fn(warp::log::Info) + Clone> {
+    let metrics = ApiMetrics::instance(get_metric_storage_registry(), endpoint.into()).unwrap();
+
+    warp::log::custom(move |info: warp::log::Info| {
+        metrics
+            .requests_complete
+            .with_label_values(&[info.status().as_str()])
+            .inc();
+        metrics
+            .requests_duration_seconds
+            .observe(info.elapsed().as_secs_f64());
+    })
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "api", labels("endpoint"))]
+struct ApiMetrics {
+    /// Number of completed API requests.
+    #[metric(labels("status_code"))]
+    requests_complete: prometheus::CounterVec,
+
+    /// Execution time for each API request.
+    requests_duration_seconds: prometheus::Histogram,
 }
 
 #[derive(Serialize)]

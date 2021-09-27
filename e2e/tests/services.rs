@@ -171,7 +171,7 @@ impl OrderbookServices {
                 web3: web3.clone(),
             }),
             current_block_stream.clone(),
-            metrics.clone(),
+            metrics,
         )
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());
@@ -232,7 +232,6 @@ impl OrderbookServices {
             fee_calculator,
             price_estimator.clone(),
             API_HOST[7..].parse().expect("Couldn't parse API address"),
-            metrics,
         );
 
         Self {
