@@ -168,27 +168,26 @@ pub fn create(
     ));
     let http_solver_cache = http_solver::InstanceCache::default();
     // Helper function to create http solver instances.
-    let create_http_solver = |account: Account, url: Url, name: &'static str| -> HttpSolver {
-        HttpSolver::new(
-            name,
-            account,
-            url,
-            None,
-            SolverConfig {
-                max_nr_exec_orders: 100,
-            },
-            native_token,
-            token_info_fetcher.clone(),
-            price_estimator.clone(),
-            buffer_retriever.clone(),
-            network_id.clone(),
-            chain_id,
-            fee_factor,
-            client.clone(),
-            http_solver_cache.clone(),
-            native_token_amount_to_estimate_prices_with,
-        )
-    };
+    let create_http_solver =
+        |account: Account, url: Url, name: &'static str, config: SolverConfig| -> HttpSolver {
+            HttpSolver::new(
+                name,
+                account,
+                url,
+                None,
+                config,
+                native_token,
+                token_info_fetcher.clone(),
+                price_estimator.clone(),
+                buffer_retriever.clone(),
+                network_id.clone(),
+                chain_id,
+                fee_factor,
+                client.clone(),
+                http_solver_cache.clone(),
+                native_token_amount_to_estimate_prices_with,
+            )
+        };
 
     solvers
         .into_iter()
@@ -196,13 +195,23 @@ pub fn create(
             let solver = match solver_type {
                 SolverType::Naive => shared(NaiveSolver::new(account)),
                 SolverType::Baseline => shared(BaselineSolver::new(account, base_tokens.clone())),
-                SolverType::Mip => {
-                    shared(create_http_solver(account, mip_solver_url.clone(), "Mip"))
-                }
+                SolverType::Mip => shared(create_http_solver(
+                    account,
+                    mip_solver_url.clone(),
+                    "Mip",
+                    SolverConfig {
+                        max_nr_exec_orders: 100,
+                        enforce_uniform_clearing_prices: false,
+                    },
+                )),
                 SolverType::Quasimodo => shared(create_http_solver(
                     account,
                     quasimodo_solver_url.clone(),
                     "Quasimodo",
+                    SolverConfig {
+                        max_nr_exec_orders: 100,
+                        enforce_uniform_clearing_prices: true,
+                    },
                 )),
                 SolverType::OneInch => {
                     let one_inch_solver: SingleOrderSolver<_> =
