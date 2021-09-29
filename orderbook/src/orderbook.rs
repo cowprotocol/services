@@ -30,7 +30,6 @@ pub enum AddOrderResult {
     InvalidSignature,
     UnsupportedSignature,
     Forbidden,
-    MissingOrderData,
     InsufficientValidTo,
     InsufficientFunds,
     InsufficientFee,

@@ -749,7 +749,6 @@ components:
               InsufficientFunds,
               InsufficientValidTo,
               InvalidSignature,
-              MissingOrderData,
               TransferEthToContract,
               UnsupportedToken,
               WrongOwner,
