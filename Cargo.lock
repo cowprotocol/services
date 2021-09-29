@@ -2718,7 +2718,6 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "orderbook",
  "primitive-types",
  "prometheus",
  "rand",

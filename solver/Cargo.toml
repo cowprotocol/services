@@ -33,7 +33,6 @@ lazy_static = "1.4"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
-orderbook= { path = "../orderbook" }
 primitive-types = { version = "0.9", features = ["fp-conversion"] }
 prometheus = "0.12"
 rand = "0.8"
