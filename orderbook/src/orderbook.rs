@@ -1,44 +1,33 @@
 use crate::{
     account_balances::BalanceFetching,
+    api::validation::{PreOrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
     fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
     solvable_orders::SolvableOrdersCache,
 };
 use anyhow::{ensure, Result};
 use chrono::Utc;
-use contracts::WETH9;
 use model::{
-    order::{
-        BuyTokenDestination, OrderCancellation, OrderCreation, OrderCreationPayload,
-        SellTokenSource,
-    },
+    order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
     signature::SigningScheme,
-};
-use model::{
-    order::{Order, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
 use primitive_types::{H160, U256};
-use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking, web3_traits::CodeFetching};
+use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
 pub enum AddOrderResult {
     Added(OrderUid),
     WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
     UnsupportedSignature,
-    Forbidden,
-    InsufficientValidTo,
     InsufficientFunds,
     InsufficientFee,
     UnsupportedToken(H160),
-    TransferEthToContract,
-    SameBuyAndSellToken,
-    UnsupportedBuyTokenDestination(BuyTokenDestination),
-    UnsupportedSellTokenSource(SellTokenSource),
     ZeroAmount,
+    PreValidationError(ValidationError),
 }
 
 #[derive(Debug)]
@@ -59,14 +48,11 @@ pub struct Orderbook {
     database: Arc<dyn OrderStoring>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     fee_validator: Arc<EthAwareMinFeeCalculator>,
-    min_order_validity_period: Duration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    code_fetcher: Box<dyn CodeFetching>,
-    native_token: WETH9,
-    banned_users: Vec<H160>,
     enable_presign_orders: bool,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
+    pre_order_validator: Arc<PreOrderValidator>,
 }
 
 impl Orderbook {
@@ -77,14 +63,11 @@ impl Orderbook {
         database: Arc<dyn OrderStoring>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         fee_validator: Arc<EthAwareMinFeeCalculator>,
-        min_order_validity_period: Duration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        code_fetcher: Box<dyn CodeFetching>,
-        native_token: WETH9,
-        banned_users: Vec<H160>,
         enable_presign_orders: bool,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
+        pre_order_validator: Arc<PreOrderValidator>,
     ) -> Self {
         Self {
             domain_separator,
@@ -92,61 +75,44 @@ impl Orderbook {
             database,
             balance_fetcher,
             fee_validator,
-            min_order_validity_period,
             bad_token_detector,
-            code_fetcher,
-            native_token,
-            banned_users,
             enable_presign_orders,
             solvable_orders,
             solvable_orders_max_update_age,
+            pre_order_validator,
         }
     }
 
     pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
-        let order = payload.order_creation;
-
-        // Temporary - reject new order types until last stage of balancer integration
-        if order.buy_token_balance != BuyTokenDestination::Erc20 {
-            return Ok(AddOrderResult::UnsupportedBuyTokenDestination(
-                order.buy_token_balance,
-            ));
-        }
+        let order_creation = payload.order_creation;
         if !matches!(
-            order.sell_token_balance,
-            SellTokenSource::Erc20 | SellTokenSource::External
-        ) {
-            return Ok(AddOrderResult::UnsupportedSellTokenSource(
-                order.sell_token_balance,
-            ));
-        }
-        if !matches!(
-            (order.signature.scheme(), self.enable_presign_orders),
+            (
+                order_creation.signature.scheme(),
+                self.enable_presign_orders
+            ),
             (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
         ) {
             return Ok(AddOrderResult::UnsupportedSignature);
         }
-        if has_same_buy_and_sell_token(&order, &self.native_token) {
-            return Ok(AddOrderResult::SameBuyAndSellToken);
-        }
-        if order.buy_amount.is_zero() || order.sell_amount.is_zero() {
+
+        if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Ok(AddOrderResult::ZeroAmount);
         }
 
-        if order.valid_to
-            < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
-        {
-            return Ok(AddOrderResult::InsufficientValidTo);
-        }
         if !self
             .fee_validator
-            .is_valid_fee(order.sell_token, order.fee_amount, order.app_data)
+            .is_valid_fee(
+                order_creation.sell_token,
+                order_creation.fee_amount,
+                order_creation.app_data,
+            )
             .await
         {
             return Ok(AddOrderResult::InsufficientFee);
         }
+
         let order = match Order::from_order_creation(
-            order,
+            order_creation,
             &self.domain_separator,
             self.settlement_contract,
         ) {
@@ -155,8 +121,15 @@ impl Orderbook {
         };
 
         let owner = order.order_meta_data.owner;
-        if self.banned_users.contains(&owner) {
-            return Ok(AddOrderResult::Forbidden);
+
+        let pre_validation = self
+            .pre_order_validator
+            .validate_partial_order(order.clone().into())
+            .await;
+        if pre_validation.is_err() {
+            return Ok(AddOrderResult::PreValidationError(
+                pre_validation.unwrap_err(),
+            ));
         }
 
         if matches!(payload.from, Some(from) if from != owner) {
@@ -188,13 +161,6 @@ impl Orderbook {
             .unwrap_or(false)
         {
             return Ok(AddOrderResult::InsufficientFunds);
-        }
-
-        if order.order_creation.buy_token == BUY_ETH_ADDRESS {
-            let code_size = self.code_fetcher.code_size(order.actual_receiver()).await?;
-            if code_size != 0 {
-                return Ok(AddOrderResult::TransferEthToContract);
-            }
         }
 
         match self.database.insert_order(&order).await {
@@ -336,7 +302,7 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     }
 }
 
-// Mininum balance user must have in sell token for order to be accepted. None if no balance is
+// Minimum balance user must have in sell token for order to be accepted. None if no balance is
 // sufficient.
 fn minimum_balance(order: &Order) -> Option<U256> {
     if order.order_creation.partially_fillable {
@@ -349,21 +315,13 @@ fn minimum_balance(order: &Order) -> Option<U256> {
     }
 }
 
-/// Returns true if the orders have same buy and sell tokens.
-///
-/// This also checks for orders selling wrapped native token for native token.
-fn has_same_buy_and_sell_token(order: &OrderCreation, native_token: &WETH9) -> bool {
-    order.sell_token == order.buy_token
-        || (order.sell_token == native_token.address() && order.buy_token == BUY_ETH_ADDRESS)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ethcontract::H160;
     use futures::FutureExt;
-    use model::order::{OrderBuilder, OrderCreation};
-    use shared::{bad_token::list_based::ListBasedDetector, dummy_contract};
+    use model::order::OrderBuilder;
+    use shared::bad_token::list_based::ListBasedDetector;
 
     #[test]
     fn filter_unsupported_tokens_() {
@@ -390,45 +348,5 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
-    }
-
-    #[test]
-    fn detects_orders_with_same_buy_and_sell_token() {
-        let native_token = dummy_contract!(WETH9, [0xef; 20]);
-        assert!(has_same_buy_and_sell_token(
-            &OrderCreation {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x01; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        assert!(has_same_buy_and_sell_token(
-            &OrderCreation {
-                sell_token: native_token.address(),
-                buy_token: BUY_ETH_ADDRESS,
-                ..Default::default()
-            },
-            &native_token,
-        ));
-
-        assert!(!has_same_buy_and_sell_token(
-            &OrderCreation {
-                sell_token: H160([0x01; 20]),
-                buy_token: H160([0x02; 20]),
-                ..Default::default()
-            },
-            &native_token,
-        ));
-        // Sell token set to 0xeee...eee has no special meaning, so it isn't
-        // considered buying and selling the same token.
-        assert!(!has_same_buy_and_sell_token(
-            &OrderCreation {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: native_token.address(),
-                ..Default::default()
-            },
-            &native_token,
-        ));
     }
 }

@@ -15,14 +15,7 @@ pub fn create_order_request(
 pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
     let (body, status_code) = match result {
         Ok(AddOrderResult::Added(uid)) => (warp::reply::json(&uid), StatusCode::CREATED),
-        Ok(AddOrderResult::UnsupportedBuyTokenDestination(dest)) => (
-            super::error("UnsupportedBuyTokenDestination", format!("Type {:?}", dest)),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::UnsupportedSellTokenSource(source)) => (
-            super::error("UnsupportedSellTokenSource", format!("Type {:?}", source)),
-            StatusCode::BAD_REQUEST,
-        ),
+        Ok(AddOrderResult::PreValidationError(err)) => err.to_warp_reply(),
         Ok(AddOrderResult::UnsupportedToken(token)) => (
             super::error("UnsupportedToken", format!("Token address {}", token)),
             StatusCode::BAD_REQUEST,
@@ -49,17 +42,6 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             super::error("UnsupportedSignature", "signing scheme is not supported"),
             StatusCode::BAD_REQUEST,
         ),
-        Ok(AddOrderResult::Forbidden) => (
-            super::error("Forbidden", "Forbidden, your account is deny-listed"),
-            StatusCode::FORBIDDEN,
-        ),
-        Ok(AddOrderResult::InsufficientValidTo) => (
-            super::error(
-                "InsufficientValidTo",
-                "validTo is not far enough in the future",
-            ),
-            StatusCode::BAD_REQUEST,
-        ),
         Ok(AddOrderResult::InsufficientFunds) => (
             super::error(
                 "InsufficientFunds",
@@ -69,21 +51,6 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
         ),
         Ok(AddOrderResult::InsufficientFee) => (
             super::error("InsufficientFee", "Order does not include sufficient fee"),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::TransferEthToContract) => (
-            super::error(
-                "TransferEthToContract",
-                "Sending Ether to a smart contract wallets is currently not \
-                 supported",
-            ),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::SameBuyAndSellToken) => (
-            super::error(
-                "SameBuyAndSellToken",
-                "Buy token is the same as the sell token.",
-            ),
             StatusCode::BAD_REQUEST,
         ),
         Ok(AddOrderResult::ZeroAmount) => (

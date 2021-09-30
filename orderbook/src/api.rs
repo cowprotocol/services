@@ -9,6 +9,7 @@ mod get_solvable_orders;
 mod get_trades;
 mod get_user_orders;
 mod post_quote;
+pub mod validation;
 
 use crate::{
     database::trades::TradeRetrieving, fee::EthAwareMinFeeCalculator, orderbook::Orderbook,
