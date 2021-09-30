@@ -25,11 +25,15 @@ impl WeightedTokenState {
         self.upscale(self.token_state.balance)
     }
 
+    fn scaling_exponent_as_factor(&self) -> Option<U256> {
+        U256::from(10).checked_pow(self.token_state.scaling_exponent.into())
+    }
+
     /// Scales the input token amount to the value that is used by the Balancer
     /// contract to execute math operations.
     fn upscale(&self, amount: U256) -> Option<Bfp> {
         amount
-            .checked_mul(U256::exp10(self.token_state.scaling_exponent as usize))
+            .checked_mul(self.scaling_exponent_as_factor()?)
             .map(Bfp::from_wei)
     }
 
@@ -38,7 +42,7 @@ impl WeightedTokenState {
     fn downscale(&self, amount: Bfp) -> Option<U256> {
         amount
             .as_uint256()
-            .checked_div(U256::exp10(self.token_state.scaling_exponent as usize))
+            .checked_div(self.scaling_exponent_as_factor()?)
     }
 }
 
