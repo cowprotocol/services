@@ -13,12 +13,9 @@ use model::TokenPair;
 use num::BigRational;
 use shared::{
     baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
-    sources::{
-        balancer::swap::{fixed_point::Bfp, WeightedPoolRef},
-        uniswap::pool_fetching::Pool,
-    },
+    sources::{balancer::swap::WeightedPoolRef, uniswap::pool_fetching::Pool},
 };
-use std::{collections::HashMap, convert::TryFrom as _, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 pub struct BaselineSolver {
     account: Account,
@@ -79,27 +76,19 @@ impl BaselineSolvable for ConstantProductOrder {
 
 impl BaselineSolvable for WeightedProductOrder {
     fn get_amount_out(&self, out_token: H160, input: (U256, H160)) -> Option<U256> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_amount_out(out_token, input)
+        amm_to_weighted_pool(self).get_amount_out(out_token, input)
     }
 
     fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_amount_in(in_token, output)
+        amm_to_weighted_pool(self).get_amount_in(in_token, output)
     }
 
     fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        amm_to_weighted_pool(self)
-            .ok()?
-            .get_spot_price(base_token, quote_token)
+        amm_to_weighted_pool(self).get_spot_price(base_token, quote_token)
     }
 
     fn gas_cost(&self) -> usize {
-        amm_to_weighted_pool(self)
-            .map(|pool| pool.gas_cost())
-            .unwrap_or_default()
+        amm_to_weighted_pool(self).gas_cost()
     }
 }
 
@@ -285,11 +274,11 @@ fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
     }
 }
 
-fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> Result<WeightedPoolRef> {
-    Ok(WeightedPoolRef {
+fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
+    WeightedPoolRef {
         reserves: &amm.reserves,
-        swap_fee_percentage: Bfp::try_from(&amm.fee)?,
-    })
+        swap_fee_percentage: amm.fee,
+    }
 }
 
 #[cfg(test)]
@@ -602,7 +591,7 @@ mod tests {
                         weight: "0.5".parse().unwrap(),
                     },
                 },
-                fee: Ratio::new(1.into(), 1000.into()),
+                fee: "0.001".parse().unwrap(),
                 settlement_handling: CapturingSettlementHandler::arc(),
             }),
         ];

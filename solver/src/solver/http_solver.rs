@@ -451,7 +451,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                             })
                             .collect(),
                     }),
-                    fee: amm.fee.clone(),
+                    fee: amm.fee.into(),
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
                 },

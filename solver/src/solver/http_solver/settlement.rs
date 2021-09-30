@@ -229,7 +229,7 @@ mod tests {
                         weight: Bfp::from(800_000_000_000_000_000),
                     }
                 },
-                fee: BigRational::new(3.into(), 1.into()),
+                fee: "0.03".parse().unwrap(),
                 settlement_handling: wp_amm_handler.clone(),
             }),
             Liquidity::BalancerStable(StablePoolOrder {
@@ -364,7 +364,7 @@ mod tests {
                     weight: Bfp::from(500_000_000_000_000_000),
                 }
             },
-            fee: BigRational::new(1.into(), 1000.into()),
+            fee: "0.001".parse().unwrap(),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
 

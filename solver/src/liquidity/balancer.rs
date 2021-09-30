@@ -86,7 +86,7 @@ impl BalancerV2Liquidity {
             .into_iter()
             .map(|pool| WeightedProductOrder {
                 reserves: pool.reserves,
-                fee: pool.common.swap_fee_percentage.into(),
+                fee: pool.common.swap_fee_percentage,
                 settlement_handling: Arc::new(SettlementHandler {
                     pool_id: pool.common.pool_id,
                     contracts: self.contracts.clone(),
@@ -350,17 +350,11 @@ mod tests {
 
         assert_eq!(
             (&weighted_orders[0].reserves, &weighted_orders[0].fee),
-            (
-                &weighted_pools[0].reserves,
-                &BigRational::new(2.into(), 1000.into())
-            ),
+            (&weighted_pools[0].reserves, &"0.002".parse().unwrap()),
         );
         assert_eq!(
             (&weighted_orders[1].reserves, &weighted_orders[1].fee),
-            (
-                &weighted_pools[1].reserves,
-                &BigRational::new(1.into(), 1000.into())
-            ),
+            (&weighted_pools[1].reserves, &"0.001".parse().unwrap()),
         );
         assert_eq!(
             (&stable_orders[0].reserves, &stable_orders[0].fee),
