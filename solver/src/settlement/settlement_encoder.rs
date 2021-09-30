@@ -548,7 +548,7 @@ pub mod tests {
     fn merge_fails_because_price_is_different() {
         let prices = hashmap! { token(1) => 1.into(), token(2) => 2.into() };
         let encoder0 = SettlementEncoder::new(prices);
-        let prices = hashmap! { token(1) => 1.into(), token(2) => 3.into() };
+        let prices = hashmap! { token(1) => 1.into(), token(2) => 4.into() };
         let encoder1 = SettlementEncoder::new(prices);
         assert!(encoder0.merge(encoder1).is_err());
     }
