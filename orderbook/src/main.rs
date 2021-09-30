@@ -13,7 +13,7 @@ use orderbook::{
     fee::EthAwareMinFeeCalculator,
     metrics::Metrics,
     orderbook::Orderbook,
-    serve_task,
+    serve_api,
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
@@ -29,7 +29,7 @@ use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     maintenance::ServiceMaintenance,
-    metrics::setup_metrics_registry,
+    metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         baseline::BaselinePriceEstimator, paraswap::ParaswapPriceEstimator,
@@ -418,22 +418,68 @@ async fn main() {
     };
     check_database_connection(orderbook.as_ref()).await;
 
-    let serve_task = serve_task(
+    let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
         fee_calculator,
         price_estimator,
         args.bind_address,
+        async {
+            let _ = shutdown_receiver.await;
+        },
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
     let db_metrics_task = task::spawn(database_metrics(metrics, postgres));
 
+    let mut metrics_address = args.bind_address;
+    metrics_address.set_port(DEFAULT_METRICS_PORT);
+    tracing::info!(%metrics_address, "serving metrics");
+    let metrics_task = serve_metrics(orderbook, metrics_address);
+
+    futures::pin_mut!(serve_api);
     tokio::select! {
-        result = serve_task => tracing::error!(?result, "serve task exited"),
+        result = &mut serve_api => tracing::error!(?result, "API task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
         result = db_metrics_task => tracing::error!(?result, "database metrics task exited"),
+        result = metrics_task => tracing::error!(?result, "metrics task exited"),
+        _ = shutdown_signal() => {
+            tracing::info!("Gracefully shutting down API");
+            shutdown_sender.send(()).expect("failed to send shutdown signal");
+            match tokio::time::timeout(Duration::from_secs(10), serve_api).await {
+                Ok(inner) => inner.expect("API failed during shutdown"),
+                Err(_) => tracing::error!("API shutdown exceeded timeout"),
+            }
+        }
     };
+}
+
+#[cfg(unix)]
+async fn shutdown_signal() {
+    // Intercept main signals for graceful shutdown
+    // Kubernetes sends sigterm, whereas locally sigint (ctrl-c) is most common
+    let sigterm = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .unwrap()
+            .recv()
+            .await
+    };
+    let sigint = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())
+            .unwrap()
+            .recv()
+            .await;
+    };
+    futures::pin_mut!(sigint);
+    futures::pin_mut!(sigterm);
+    futures::future::select(sigterm, sigint).await;
+}
+
+#[cfg(windows)]
+async fn shutdown_signal() {
+    // We don't support signal handling on windows
+    std::future::pending().await
 }
 
 async fn check_database_connection(orderbook: &Orderbook) {

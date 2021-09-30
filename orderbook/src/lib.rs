@@ -13,30 +13,24 @@ use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
 use fee::EthAwareMinFeeCalculator;
+use futures::Future;
 use model::DomainSeparator;
-use shared::{
-    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
-    price_estimation::PriceEstimating,
-};
+use shared::price_estimation::PriceEstimating;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 
-pub fn serve_task(
+pub fn serve_api(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
     fee_calculator: Arc<EthAwareMinFeeCalculator>,
     price_estimator: Arc<dyn PriceEstimating>,
     address: SocketAddr,
+    shutdown_receiver: impl Future<Output = ()> + Send + 'static,
 ) -> JoinHandle<()> {
-    let filter =
-        api::handle_all_routes(database, orderbook.clone(), fee_calculator, price_estimator);
-    let mut metrics_address = address;
+    let filter = api::handle_all_routes(database, orderbook, fee_calculator, price_estimator);
     tracing::info!(%address, "serving order book");
-    task::spawn(warp::serve(filter).bind(address));
-
-    tracing::info!(%metrics_address, "serving metrics");
-    metrics_address.set_port(DEFAULT_METRICS_PORT);
-    serve_metrics(orderbook, metrics_address)
+    let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
+    task::spawn(server)
 }
 
 /**

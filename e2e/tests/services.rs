@@ -23,7 +23,7 @@ use shared::{
     Web3,
 };
 use solver::orderbook::OrderBookApi;
-use std::collections::HashMap;
+use std::{collections::HashMap, future::pending};
 use std::{num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
@@ -230,12 +230,13 @@ impl OrderbookServices {
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],
         };
-        orderbook::serve_task(
+        orderbook::serve_api(
             db.clone(),
             orderbook,
             fee_calculator,
             price_estimator.clone(),
             API_HOST[7..].parse().expect("Couldn't parse API address"),
+            pending(),
         );
 
         Self {

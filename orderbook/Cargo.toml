@@ -42,7 +42,7 @@ shared= { path = "../shared" }
 sqlx = { version = "0.5", default-features = false, features = ["bigdecimal", "chrono", "macros", "runtime-tokio-native-tls", "postgres"] }
 structopt = "0.3"
 thiserror = "1.0"
-tokio = { version = "1.12", features = ["macros", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1.12", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
 tracing = "0.1"
 url = "2.2"
 warp = "0.3"
