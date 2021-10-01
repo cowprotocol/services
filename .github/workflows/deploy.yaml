@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       AUTODEPLOY_TAG: develop
-      AUTODEPLOY_URL: https://dfusion.auto.gnosisdev.com/services/dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai/rollout
+      AUTODEPLOY_URL: https://dfusion.auto.gnosisdev.com/services/dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet/rollout
       DOCKERHUB_PROJECT: gp-v2-services
       DOCKER_NAME: ${{ secrets.DOCKER_NAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
