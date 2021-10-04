@@ -26,6 +26,9 @@ pub enum PriceEstimationError {
     #[error("No liquidity")]
     NoLiquidity,
 
+    #[error("Zero Amount")]
+    ZeroAmount,
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
@@ -35,6 +38,7 @@ impl Clone for PriceEstimationError {
         match self {
             Self::UnsupportedToken(token) => Self::UnsupportedToken(*token),
             Self::NoLiquidity => Self::NoLiquidity,
+            Self::ZeroAmount => Self::ZeroAmount,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
