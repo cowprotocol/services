@@ -8,8 +8,8 @@ mod get_orders;
 mod get_solvable_orders;
 mod get_trades;
 mod get_user_orders;
+pub mod order_validation;
 mod post_quote;
-pub mod validation;
 
 use crate::{
     database::trades::TradeRetrieving, fee::EthAwareMinFeeCalculator, orderbook::Orderbook,
@@ -119,6 +119,10 @@ fn internal_error() -> Json {
         error_type: "InternalServerError",
         description: "",
     })
+}
+
+pub trait WarpReplyConverting {
+    fn to_warp_reply(&self) -> (Json, StatusCode);
 }
 
 pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {

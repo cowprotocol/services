@@ -69,7 +69,6 @@ impl Order {
         let owner = order_creation
             .signature
             .validate(domain, &order_creation.hash_struct())?;
-        // TODO - test this function when validate returns None.
         Some(Self {
             order_meta_data: OrderMetaData {
                 creation_date: chrono::offset::Utc::now(),

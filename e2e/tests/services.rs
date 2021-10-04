@@ -3,11 +3,10 @@ use contracts::{
 };
 use ethcontract::{prelude::U256, H160};
 use model::DomainSeparator;
-use orderbook::api::validation::PreOrderValidator;
 use orderbook::{
-    account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
-    fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
-    solvable_orders::SolvableOrdersCache,
+    account_balances::Web3BalanceFetcher, api::order_validation::OrderValidator,
+    database::Postgres, event_updater::EventUpdater, fee::EthAwareMinFeeCalculator,
+    metrics::Metrics, orderbook::Orderbook, solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
 use shared::{
@@ -209,23 +208,24 @@ impl OrderbookServices {
             bad_token_detector.clone(),
             current_block_stream.clone(),
         );
-        let pre_order_validator = Arc::new(PreOrderValidator::new(
+        let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
             gpv2.native_token.clone(),
             vec![],
             Duration::from_secs(120),
+            fee_calculator.clone(),
+            bad_token_detector.clone(),
+            balance_fetcher,
         ));
         let orderbook = Arc::new(Orderbook::new(
             gpv2.domain_separator,
             gpv2.settlement.address(),
             db.clone(),
-            balance_fetcher,
-            fee_calculator.clone(),
             bad_token_detector,
             true,
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
-            pre_order_validator,
+            order_validator,
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],

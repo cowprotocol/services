@@ -1,5 +1,7 @@
-use crate::api::extract_payload;
-use crate::orderbook::{AddOrderResult, Orderbook};
+use crate::{
+    api::{extract_payload, WarpReplyConverting},
+    orderbook::{AddOrderResult, Orderbook},
+};
 use anyhow::Result;
 use model::order::OrderCreationPayload;
 use std::{convert::Infallible, sync::Arc};
@@ -15,19 +17,9 @@ pub fn create_order_request(
 pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
     let (body, status_code) = match result {
         Ok(AddOrderResult::Added(uid)) => (warp::reply::json(&uid), StatusCode::CREATED),
-        Ok(AddOrderResult::PreValidationError(err)) => err.to_warp_reply(),
-        Ok(AddOrderResult::UnsupportedToken(token)) => (
-            super::error("UnsupportedToken", format!("Token address {}", token)),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::WrongOwner(owner)) => (
-            super::error(
-                "WrongOwner",
-                format!(
-                    "Address recovered from signature {} does not match from address",
-                    owner
-                ),
-            ),
+        Ok(AddOrderResult::OrderValidation(err)) => err.to_warp_reply(),
+        Ok(AddOrderResult::UnsupportedSignature) => (
+            super::error("UnsupportedSignature", "signing scheme is not supported"),
             StatusCode::BAD_REQUEST,
         ),
         Ok(AddOrderResult::DuplicatedOrder) => (
@@ -36,25 +28,6 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
         ),
         Ok(AddOrderResult::InvalidSignature) => (
             super::error("InvalidSignature", "invalid signature"),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::UnsupportedSignature) => (
-            super::error("UnsupportedSignature", "signing scheme is not supported"),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::InsufficientFunds) => (
-            super::error(
-                "InsufficientFunds",
-                "order owner must have funds worth at least x in his account",
-            ),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::InsufficientFee) => (
-            super::error("InsufficientFee", "Order does not include sufficient fee"),
-            StatusCode::BAD_REQUEST,
-        ),
-        Ok(AddOrderResult::ZeroAmount) => (
-            super::error("ZeroAmount", "Buy or sell amount is zero."),
             StatusCode::BAD_REQUEST,
         ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),

@@ -1,8 +1,6 @@
 use crate::{
-    account_balances::BalanceFetching,
-    api::validation::{PreOrderValidator, ValidationError},
+    api::order_validation::{OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
-    fee::{EthAwareMinFeeCalculator, MinFeeCalculating},
     solvable_orders::SolvableOrdersCache,
 };
 use anyhow::{ensure, Result};
@@ -12,22 +10,17 @@ use model::{
     signature::SigningScheme,
     DomainSeparator,
 };
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
 #[derive(Debug)]
 pub enum AddOrderResult {
     Added(OrderUid),
-    WrongOwner(H160),
     DuplicatedOrder,
     InvalidSignature,
+    OrderValidation(ValidationError),
     UnsupportedSignature,
-    InsufficientFunds,
-    InsufficientFee,
-    UnsupportedToken(H160),
-    ZeroAmount,
-    PreValidationError(ValidationError),
 }
 
 #[derive(Debug)]
@@ -46,13 +39,11 @@ pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: Arc<dyn OrderStoring>,
-    balance_fetcher: Arc<dyn BalanceFetching>,
-    fee_validator: Arc<EthAwareMinFeeCalculator>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     enable_presign_orders: bool,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
-    pre_order_validator: Arc<PreOrderValidator>,
+    order_validator: Arc<OrderValidator>,
 }
 
 impl Orderbook {
@@ -61,30 +52,27 @@ impl Orderbook {
         domain_separator: DomainSeparator,
         settlement_contract: H160,
         database: Arc<dyn OrderStoring>,
-        balance_fetcher: Arc<dyn BalanceFetching>,
-        fee_validator: Arc<EthAwareMinFeeCalculator>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         enable_presign_orders: bool,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
-        pre_order_validator: Arc<PreOrderValidator>,
+        order_validator: Arc<OrderValidator>,
     ) -> Self {
         Self {
             domain_separator,
             settlement_contract,
             database,
-            balance_fetcher,
-            fee_validator,
             bad_token_detector,
             enable_presign_orders,
             solvable_orders,
             solvable_orders_max_update_age,
-            pre_order_validator,
+            order_validator,
         }
     }
 
     pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
         let order_creation = payload.order_creation;
+        // Eventually we will support all Signature types and can remove this.
         if !matches!(
             (
                 order_creation.signature.scheme(),
@@ -94,25 +82,8 @@ impl Orderbook {
         ) {
             return Ok(AddOrderResult::UnsupportedSignature);
         }
-
-        if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
-            return Ok(AddOrderResult::ZeroAmount);
-        }
-
-        if !self
-            .fee_validator
-            .is_valid_fee(
-                order_creation.sell_token,
-                order_creation.fee_amount,
-                order_creation.app_data,
-            )
-            .await
-        {
-            return Ok(AddOrderResult::InsufficientFee);
-        }
-
         let order = match Order::from_order_creation(
-            order_creation,
+            order_creation.clone(),
             &self.domain_separator,
             self.settlement_contract,
         ) {
@@ -120,47 +91,12 @@ impl Orderbook {
             None => return Ok(AddOrderResult::InvalidSignature),
         };
 
-        let owner = order.order_meta_data.owner;
-
-        let pre_validation = self
-            .pre_order_validator
-            .validate_partial_order(order.clone().into())
-            .await;
-        if pre_validation.is_err() {
-            return Ok(AddOrderResult::PreValidationError(
-                pre_validation.unwrap_err(),
-            ));
-        }
-
-        if matches!(payload.from, Some(from) if from != owner) {
-            return Ok(AddOrderResult::WrongOwner(owner));
-        }
-
-        for &token in &[
-            order.order_creation.sell_token,
-            order.order_creation.buy_token,
-        ] {
-            if !self.bad_token_detector.detect(token).await?.is_good() {
-                return Ok(AddOrderResult::UnsupportedToken(token));
-            }
-        }
-
-        let min_balance = match minimum_balance(&order) {
-            Some(amount) => amount,
-            None => return Ok(AddOrderResult::InsufficientFunds),
-        };
-        if !self
-            .balance_fetcher
-            .can_transfer(
-                order.order_creation.sell_token,
-                owner,
-                min_balance,
-                order.order_creation.sell_token_balance,
-            )
+        if let Err(validation_err) = self
+            .order_validator
+            .validate(order.clone(), payload.from)
             .await
-            .unwrap_or(false)
         {
-            return Ok(AddOrderResult::InsufficientFunds);
+            return Ok(AddOrderResult::OrderValidation(validation_err));
         }
 
         match self.database.insert_order(&order).await {
@@ -299,19 +235,6 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     for order in orders.iter_mut() {
         order.order_meta_data.available_balance =
             cache.cached_balance(&crate::account_balances::Query::from_order(order));
-    }
-}
-
-// Minimum balance user must have in sell token for order to be accepted. None if no balance is
-// sufficient.
-fn minimum_balance(order: &Order) -> Option<U256> {
-    if order.order_creation.partially_fillable {
-        Some(U256::from(1))
-    } else {
-        order
-            .order_creation
-            .sell_amount
-            .checked_add(order.order_creation.fee_amount)
     }
 }
 
