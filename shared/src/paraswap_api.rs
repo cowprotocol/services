@@ -57,6 +57,8 @@ impl ParaswapApi for DefaultParaswapApi {
                 "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT" => {
                     Err(ParaswapResponseError::TooMuchSlippageOnQuote)
                 }
+                "Server is too busy" => Err(ParaswapResponseError::ServerBusy),
+                "Bad USD price" => Err(ParaswapResponseError::ComputePrice(message)),
                 _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
                     "uncatalogued Price Query error message {}",
                     message
@@ -119,6 +121,9 @@ pub enum ParaswapResponseError {
     #[error("Error getParaSwapPool - From Price Route {0}")]
     GetParaswapPool(String),
 
+    #[error("Server is too busy")]
+    ServerBusy,
+
     // Connectivity or non-response error
     #[error("Failed on send")]
     Send(reqwest::Error),
@@ -153,6 +158,10 @@ fn parse_paraswap_response_text(
             "Error getParaSwapPool" => Err(ParaswapResponseError::GetParaswapPool(
                 query_str.parse().unwrap(),
             )),
+            "Unable to process the transaction" => {
+                Err(ParaswapResponseError::BuildingTransaction(message))
+            }
+            "Server is too busy" => Err(ParaswapResponseError::ServerBusy),
             _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
                 "uncatalogued error message {}",
                 message
