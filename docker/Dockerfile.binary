@@ -1,4 +1,4 @@
-FROM docker.io/clux/muslrust:1.55.0-openssl11 as cargo-build
+FROM docker.io/clux/muslrust:stable as cargo-build
 WORKDIR /usr/src/oba-services
 
 # Copy and Build Code
