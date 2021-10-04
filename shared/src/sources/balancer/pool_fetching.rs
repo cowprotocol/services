@@ -1,7 +1,7 @@
 //! Pool Fetching is primarily concerned with retrieving relevant pools from the `BalancerPoolRegistry`
 //! when given a collection of `TokenPair`. Each of these pools are then queried for
-//! their `token_balances` and the `PoolFetcher` returns all up-to-date `WeightedPools`
-//! to be consumed by external users (e.g. Price Estimators and Solvers).
+//! their `token_balances` and the `PoolFetcher` returns all up-to-date `Weighted` and `Stable`
+//! pools to be consumed by external users (e.g. Price Estimators and Solvers).
 use crate::sources::balancer::pool_cache::{StablePoolReserveCache, WeightedPoolReserveCache};
 use crate::{
     current_block::CurrentBlockStream,

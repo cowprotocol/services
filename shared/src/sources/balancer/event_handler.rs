@@ -97,8 +97,8 @@ impl BalancerPoolRegistry {
         })
     }
 
-    /// Retrieves `RegisteredPool`s from each Pool Store in the Registry and
-    /// returns the merged result.
+    /// Retrieves Registered Pools from each Pool Store in the Registry and
+    /// returns the combined pool ids.
     /// Primarily intended to be used by `BalancerPoolFetcher`.
     pub async fn get_pool_ids_containing_token_pairs(
         &self,
