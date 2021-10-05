@@ -39,20 +39,28 @@ pub struct MinFeeCalculator {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait MinFeeCalculating: Send + Sync {
-    // Returns the minimum amount of fee required to accept an order selling the specified order
-    // and an expiry date for the estimate.
-    // Returns an error if there is some estimation error and Ok(None) if no information about the given
-    // token exists
-    async fn min_fee(
+    /// Returns the minimum amount of fee required to accept an order selling the specified order
+    /// and an expiry date for the estimate.
+    /// Returns an error if there is some estimation error and Ok(None) if no information about the given
+    /// token exists
+    async fn compute_unsubsidized_min_fee(
         &self,
         sell_token: H160,
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
+        app_data: Option<AppId>,
     ) -> Result<Measurement, PriceEstimationError>;
 
-    // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: AppId) -> bool;
+    /// Validates that the given subsidized fee is enough to process an order for the given token.
+    /// Returns current fee estimate (i.e., unsubsidized fee) if the given subsidized fee passes
+    /// a check. Returns `Err` if the check failed.
+    async fn get_unsubsidized_min_fee(
+        &self,
+        sell_token: H160,
+        fee: U256,
+        app_data: Option<AppId>,
+    ) -> Result<U256, ()>;
 }
 
 #[async_trait::async_trait]
@@ -128,26 +136,33 @@ impl<T> MinFeeCalculating for EthAdapter<T>
 where
     T: MinFeeCalculating + Send + Sync,
 {
-    async fn min_fee(
+    async fn compute_unsubsidized_min_fee(
         &self,
         sell_token: H160,
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
+        app_data: Option<AppId>,
     ) -> Result<Measurement, PriceEstimationError> {
         self.calculator
-            .min_fee(
+            .compute_unsubsidized_min_fee(
                 sell_token,
                 buy_token.map(|token| normalize_buy_token(token, self.weth)),
                 amount,
                 kind,
+                app_data,
             )
             .await
     }
 
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: AppId) -> bool {
+    async fn get_unsubsidized_min_fee(
+        &self,
+        sell_token: H160,
+        fee: U256,
+        app_data: Option<AppId>,
+    ) -> Result<U256, ()> {
         self.calculator
-            .is_valid_fee(sell_token, fee, app_data)
+            .get_unsubsidized_min_fee(sell_token, fee, app_data)
             .await
     }
 }
@@ -177,6 +192,7 @@ impl MinFeeCalculator {
         }
     }
 
+    /// Computes unsubsidized min fee.
     async fn compute_min_fee(
         &self,
         sell_token: H160,
@@ -198,7 +214,6 @@ impl MinFeeCalculator {
                     .await?
                     .gas
                     .to_f64_lossy()
-                    * self.fee_factor
             } else {
                 GAS_PER_ORDER
             };
@@ -213,20 +228,28 @@ impl MinFeeCalculator {
         let price = estimate.price_in_sell_token_f64(&query);
         Ok(U256::from_f64_lossy(fee_in_eth * price))
     }
+
+    fn calculate_fee_factor(&self, app_data: Option<AppId>) -> f64 {
+        app_data
+            .and_then(|app_data| self.partner_additional_fee_factors.get(&app_data).cloned())
+            .unwrap_or(1.0)
+            * self.fee_factor
+    }
+
+    fn apply_fee_factor(fee: U256, factor: f64) -> U256 {
+        U256::from_f64_lossy(fee.to_f64_lossy() * factor)
+    }
 }
 
 #[async_trait::async_trait]
 impl MinFeeCalculating for MinFeeCalculator {
-    // Returns the minimum amount of fee required to accept an order selling the specified order
-    // and an expiry date for the estimate.
-    // Returns an error if there is some estimation error and Ok(None) if no information about the given
-    // token exists
-    async fn min_fee(
+    async fn compute_unsubsidized_min_fee(
         &self,
         sell_token: H160,
         buy_token: Option<H160>,
         amount: Option<U256>,
         kind: Option<OrderKind>,
+        app_data: Option<AppId>,
     ) -> Result<Measurement, PriceEstimationError> {
         ensure_token_supported(sell_token, self.bad_token_detector.as_ref()).await?;
         if let Some(buy_token) = buy_token {
@@ -260,34 +283,40 @@ impl MinFeeCalculating for MinFeeCalculator {
                 min_fee,
             )
             .await;
-        Ok((min_fee, official_valid_until))
+
+        let fee_factor = self.calculate_fee_factor(app_data);
+        Ok((
+            Self::apply_fee_factor(min_fee, fee_factor),
+            official_valid_until,
+        ))
     }
 
-    // Returns true if the fee satisfies a previous not yet expired estimate, or the fee is high enough given the current estimate.
-    async fn is_valid_fee(&self, sell_token: H160, fee: U256, app_data: AppId) -> bool {
-        let app_based_fee_factor = *self
-            .partner_additional_fee_factors
-            .get(&app_data)
-            .unwrap_or(&1.0);
+    async fn get_unsubsidized_min_fee(
+        &self,
+        sell_token: H160,
+        fee: U256,
+        app_data: Option<AppId>,
+    ) -> Result<U256, ()> {
+        let fee_factor = self.calculate_fee_factor(app_data);
 
         if let Ok(Some(past_fee)) = self
             .measurements
             .get_min_fee(sell_token, None, None, None, (self.now)())
             .await
         {
-            if fee >= apply_fee_factor(past_fee, app_based_fee_factor) {
-                return true;
+            if fee >= Self::apply_fee_factor(past_fee, fee_factor) {
+                return Ok(std::cmp::max(fee, past_fee));
             }
         }
-        if let Ok(current_fee) = self.compute_min_fee(sell_token, None, None, None).await {
-            return fee >= apply_fee_factor(current_fee, app_based_fee_factor);
-        }
-        false
-    }
-}
 
-fn apply_fee_factor(fee: U256, factor: f64) -> U256 {
-    U256::from_f64_lossy(fee.to_f64_lossy() * factor)
+        if let Ok(current_fee) = self.compute_min_fee(sell_token, None, None, None).await {
+            if fee >= Self::apply_fee_factor(current_fee, fee_factor) {
+                return Ok(std::cmp::max(fee, current_fee));
+            }
+        }
+
+        Err(())
+    }
 }
 
 struct FeeMeasurement {
@@ -373,15 +402,16 @@ mod tests {
         let token = H160([0x21; 20]);
         let mut calculator = MockMinFeeCalculating::default();
         calculator
-            .expect_min_fee()
-            .withf(move |&sell_token, &buy_token, &amount, &kind| {
+            .expect_compute_unsubsidized_min_fee()
+            .withf(move |&sell_token, &buy_token, &amount, &kind, &app_data| {
                 sell_token == token
                     && buy_token == Some(weth)
                     && amount == Some(1337.into())
                     && kind == Some(OrderKind::Sell)
+                    && app_data == None
             })
             .times(1)
-            .returning(|_, _, _, _| {
+            .returning(|_, _, _, _, _| {
                 Ok((
                     0.into(),
                     DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
@@ -390,11 +420,12 @@ mod tests {
 
         let eth_aware = EthAdapter { calculator, weth };
         assert!(eth_aware
-            .min_fee(
+            .compute_unsubsidized_min_fee(
                 token,
                 Some(BUY_ETH_ADDRESS),
                 Some(1337.into()),
-                Some(OrderKind::Sell)
+                Some(OrderKind::Sell),
+                None,
             )
             .await
             .is_ok());
@@ -406,18 +437,19 @@ mod tests {
         let token = H160([0x21; 20]);
         let mut calculator = MockMinFeeCalculating::default();
         calculator
-            .expect_is_valid_fee()
+            .expect_get_unsubsidized_min_fee()
             .withf(move |&sell_token, &fee, &app_data| {
-                sell_token == token && fee == 42.into() && app_data == AppId([0; 32])
+                sell_token == token && fee == 42.into() && app_data == Default::default()
             })
             .times(1)
-            .returning(|_, _, _| true);
+            .returning(|_, fee, _| Ok(fee));
 
         let eth_aware = EthAdapter { calculator, weth };
-        assert!(
+        assert_eq!(
             eth_aware
-                .is_valid_fee(token, 42.into(), AppId::default())
-                .await
+                .get_unsubsidized_min_fee(token, 42.into(), Default::default())
+                .await,
+            Ok(42.into())
         );
     }
 
@@ -462,20 +494,25 @@ mod tests {
 
         let token = H160::from_low_u64_be(1);
         let (fee, expiry) = fee_estimator
-            .min_fee(token, None, None, None)
+            .compute_unsubsidized_min_fee(token, None, None, None, None)
             .await
             .unwrap();
-        let app_data = AppId::default();
         // Gas price increase after measurement
         *gas_price.lock().unwrap() *= 2.0;
 
         // fee is valid before expiry
         *time.lock().unwrap() = expiry - Duration::seconds(10);
-        assert!(fee_estimator.is_valid_fee(token, fee, app_data).await);
+        assert!(fee_estimator
+            .get_unsubsidized_min_fee(token, fee, None)
+            .await
+            .is_ok());
 
         // fee is invalid for some uncached token
         let token = H160::from_low_u64_be(2);
-        assert!(!fee_estimator.is_valid_fee(token, fee, app_data).await);
+        assert!(!fee_estimator
+            .get_unsubsidized_min_fee(token, fee, None)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -496,19 +533,24 @@ mod tests {
 
         let token = H160::from_low_u64_be(1);
         let (fee, _) = fee_estimator
-            .min_fee(token, None, None, None)
+            .compute_unsubsidized_min_fee(token, None, None, None, None)
             .await
             .unwrap();
 
         dbg!(fee);
         let lower_fee = fee - U256::one();
-        let app_data = AppId::default();
         // slightly lower fee is not valid
-        assert!(!fee_estimator.is_valid_fee(token, lower_fee, app_data).await);
+        assert!(fee_estimator
+            .get_unsubsidized_min_fee(token, lower_fee, None)
+            .await
+            .is_err());
 
         // Gas price reduces, and slightly lower fee is now valid
         *gas_price.lock().unwrap() /= 2.0;
-        assert!(fee_estimator.is_valid_fee(token, lower_fee, app_data).await);
+        assert!(fee_estimator
+            .get_unsubsidized_min_fee(token, lower_fee, None)
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -537,11 +579,12 @@ mod tests {
         // Selling unsupported token
         assert!(matches!(
             fee_estimator
-                .min_fee(
+                .compute_unsubsidized_min_fee(
                     unsupported_token,
                     Some(supported_token),
                     Some(100.into()),
-                    Some(OrderKind::Sell)
+                    Some(OrderKind::Sell),
+                    None,
                 )
                 .await,
             Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token
@@ -550,11 +593,12 @@ mod tests {
         // Buying unsupported token
         assert!(matches!(
             fee_estimator
-                .min_fee(
+                .compute_unsubsidized_min_fee(
                     supported_token,
                     Some(unsupported_token),
                     Some(100.into()),
-                    Some(OrderKind::Sell)
+                    Some(OrderKind::Sell),
+                    None,
                 )
                 .await,
             Err(PriceEstimationError::UnsupportedToken(t)) if t == unsupported_token
@@ -583,20 +627,23 @@ mod tests {
             native_token_price_estimation_amount: 1.into(),
         };
         let (fee, _) = fee_estimator
-            .min_fee(sell_token, None, None, None)
+            .compute_unsubsidized_min_fee(sell_token, None, None, None, Some(app_data))
             .await
             .unwrap();
-        let lower_fee = fee - U256::one();
-        assert!(
+        assert_eq!(
             fee_estimator
-                .is_valid_fee(sell_token, lower_fee, app_data)
-                .await
+                .get_unsubsidized_min_fee(sell_token, fee, Some(app_data))
+                .await,
+            Ok(fee * 2)
         );
-        let half_lower_fee = lower_fee / U256::from(2);
-        assert!(
-            !fee_estimator
-                .is_valid_fee(sell_token, half_lower_fee, app_data)
-                .await
-        );
+        assert!(fee_estimator
+            .get_unsubsidized_min_fee(sell_token, fee, None)
+            .await
+            .is_err());
+        let lower_fee = fee - U256::one();
+        assert!(fee_estimator
+            .get_unsubsidized_min_fee(sell_token, lower_fee, Some(app_data))
+            .await
+            .is_err());
     }
 }

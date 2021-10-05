@@ -191,8 +191,8 @@ impl From<sqlx::Error> for InsertionError {
 // current amount of data this wouldn't be better.
 const ORDERS_SELECT: &str = "\
     o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount, \
-    o.valid_to, o.app_data, o.fee_amount, o.kind, o.partially_fillable, o.signature, o.receiver, \
-    o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance, \
+    o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature, \
+    o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance, \
     (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy, \
     (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell, \
     (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee, \
@@ -219,8 +219,8 @@ impl OrderStoring for Postgres {
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
                 valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme, \
-                settlement_contract, sell_token_balance, buy_token_balance) \
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18);";
+                settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount) \
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);";
         let receiver = order
             .order_creation
             .receiver
@@ -250,6 +250,7 @@ impl OrderStoring for Postgres {
             .bind(DbBuyTokenDestination::from(
                 order.order_creation.buy_token_balance,
             ))
+            .bind(u256_to_big_decimal(&order.order_meta_data.full_fee_amount))
             .execute(&self.pool)
             .await
             .map(|_| ())
@@ -406,6 +407,7 @@ struct OrdersQueryRow {
     valid_to: i64,
     app_data: Vec<u8>,
     fee_amount: BigDecimal,
+    full_fee_amount: BigDecimal,
     kind: DbOrderKind,
     partially_fillable: bool,
     signature: Vec<u8>,
@@ -473,6 +475,8 @@ impl OrdersQueryRow {
             invalidated: self.invalidated,
             status,
             settlement_contract: h160_from_vec(self.settlement_contract)?,
+            full_fee_amount: big_decimal_to_u256(&self.full_fee_amount)
+                .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
         };
         let signing_scheme = self.signing_scheme.into();
         let order_creation = OrderCreation {
@@ -490,7 +494,7 @@ impl OrdersQueryRow {
                     .map_err(|_| anyhow!("app_data is not [u8; 32]"))?,
             ),
             fee_amount: big_decimal_to_u256(&self.fee_amount)
-                .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
+                .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
             kind: self.kind.into(),
             partially_fillable: self.partially_fillable,
             signature: Signature::from_bytes(signing_scheme, &self.signature)?,
@@ -549,6 +553,7 @@ mod tests {
             valid_to: valid_to_timestamp.timestamp(),
             app_data: vec![0; 32],
             fee_amount: BigDecimal::default(),
+            full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
             partially_fillable: true,
             signature: vec![0; 65],

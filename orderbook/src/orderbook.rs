@@ -18,7 +18,6 @@ use std::{collections::HashSet, sync::Arc, time::Duration};
 pub enum AddOrderResult {
     Added(OrderUid),
     DuplicatedOrder,
-    InvalidSignature,
     OrderValidation(ValidationError),
     UnsupportedSignature,
 }
@@ -82,22 +81,20 @@ impl Orderbook {
         ) {
             return Ok(AddOrderResult::UnsupportedSignature);
         }
-        let order = match Order::from_order_creation(
-            order_creation.clone(),
-            &self.domain_separator,
-            self.settlement_contract,
-        ) {
-            Some(order) => order,
-            None => return Ok(AddOrderResult::InvalidSignature),
-        };
 
-        if let Err(validation_err) = self
+        let order = match self
             .order_validator
-            .validate(order.clone(), payload.from)
+            .validate(
+                order_creation,
+                payload.from,
+                &self.domain_separator,
+                self.settlement_contract,
+            )
             .await
         {
-            return Ok(AddOrderResult::OrderValidation(validation_err));
-        }
+            Ok(order) => order,
+            Err(validation_err) => return Ok(AddOrderResult::OrderValidation(validation_err)),
+        };
 
         match self.database.insert_order(&order).await {
             Err(InsertionError::DuplicatedRecord) => return Ok(AddOrderResult::DuplicatedOrder),

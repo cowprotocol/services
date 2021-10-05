@@ -45,6 +45,7 @@ impl Default for Order {
             OrderCreation::default(),
             &DomainSeparator::default(),
             H160::default(),
+            U256::default(),
         )
         .unwrap()
     }
@@ -65,6 +66,7 @@ impl Order {
         order_creation: OrderCreation,
         domain: &DomainSeparator,
         settlement_contract: H160,
+        full_fee_amount: U256,
     ) -> Option<Self> {
         let owner = order_creation
             .signature
@@ -75,6 +77,7 @@ impl Order {
                 owner,
                 uid: order_creation.uid(domain, &owner),
                 settlement_contract,
+                full_fee_amount,
                 ..Default::default()
             },
             order_creation,
@@ -131,6 +134,11 @@ impl OrderBuilder {
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
         self.0.order_creation.fee_amount = fee_amount;
+        self
+    }
+
+    pub fn with_full_fee_amount(mut self, full_fee_amount: U256) -> Self {
+        self.0.order_meta_data.full_fee_amount = full_fee_amount;
         self
     }
 
@@ -400,6 +408,8 @@ pub struct OrderMetaData {
     pub status: OrderStatus,
     #[serde(with = "h160_hexadecimal")]
     pub settlement_contract: H160,
+    #[serde(with = "u256_decimal")]
+    pub full_fee_amount: U256,
 }
 
 impl Default for OrderMetaData {
@@ -416,6 +426,7 @@ impl Default for OrderMetaData {
             invalidated: Default::default(),
             status: OrderStatus::Open,
             settlement_contract: H160::default(),
+            full_fee_amount: U256::default(),
         }
     }
 }
@@ -608,6 +619,7 @@ mod tests {
             "validTo": 4294967295u32,
             "appData": "0x6000000000000000000000000000000000000000000000000000000000000007",
             "feeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
+            "fullFeeAmount": "115792089237316195423570985008687907853269984665640564039457584007913129639935",
             "kind": "buy",
             "partiallyFillable": false,
             "signature": "0x0200000000000000000000000000000000000000000000000000000000000003040000000000000000000000000000000000000000000000000000000000000501",
@@ -631,6 +643,7 @@ mod tests {
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
+                full_fee_amount: U256::MAX,
             },
             order_creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),

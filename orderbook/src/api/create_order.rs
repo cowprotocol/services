@@ -26,10 +26,6 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
             super::error("DuplicatedOrder", "order already exists"),
             StatusCode::BAD_REQUEST,
         ),
-        Ok(AddOrderResult::InvalidSignature) => (
-            super::error("InvalidSignature", "invalid signature"),
-            StatusCode::BAD_REQUEST,
-        ),
         Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
     };
     warp::reply::with_status(body, status_code)
