@@ -188,9 +188,9 @@ struct Arguments {
     )]
     max_archer_submission_seconds: Duration,
 
-    /// The RPC endpoint to use for submitting private network transactions.
-    #[structopt(long, env)]
-    private_tx_network_url: Option<Url>,
+    /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
+    #[structopt(long, env, use_delimiter = true)]
+    transaction_submission_nodes: Vec<Url>,
 
     /// The configured addresses whose orders should be considered liquidity
     /// and not to be included in the objective function by the HTTP solver.
@@ -203,7 +203,7 @@ arg_enum! {
     pub enum TransactionStrategyArg {
         PublicMempool,
         ArcherNetwork,
-        PrivateNetwork,
+        CustomNodes,
         DryRun,
     }
 }
@@ -421,7 +421,9 @@ async fn main() {
         target_confirm_time: args.target_confirm_time,
         gas_price_cap: args.gas_price_cap,
         transaction_strategy: match args.transaction_strategy {
-            TransactionStrategyArg::PublicMempool => TransactionStrategy::PublicMempool,
+            TransactionStrategyArg::PublicMempool => {
+                TransactionStrategy::CustomNodes(vec![web3.clone()])
+            }
             TransactionStrategyArg::ArcherNetwork => TransactionStrategy::ArcherNetwork {
                 archer_api: ArcherApi::new(
                     args.archer_authorization
@@ -430,18 +432,31 @@ async fn main() {
                 ),
                 max_confirm_time: args.max_archer_submission_seconds,
             },
-            TransactionStrategyArg::PrivateNetwork => TransactionStrategy::PrivateNetwork {
-                network_rpc: {
-                    let url = args
-                        .private_tx_network_url
-                        .expect("missing private transaction network URL");
-                    let transport = create_instrumented_transport(
-                        HttpTransport::new(client.clone(), url),
-                        metrics.clone(),
+            TransactionStrategyArg::CustomNodes => {
+                assert!(
+                    !args.transaction_submission_nodes.is_empty(),
+                    "missing transaction submission nodes"
+                );
+                let nodes = args
+                    .transaction_submission_nodes
+                    .into_iter()
+                    .map(|url| {
+                        let transport = create_instrumented_transport(
+                            HttpTransport::new(client.clone(), url),
+                            metrics.clone(),
+                        );
+                        web3::Web3::new(transport)
+                    })
+                    .collect::<Vec<_>>();
+                for node in &nodes {
+                    let node_network_id = node.net().version().await.unwrap();
+                    assert_eq!(
+                        node_network_id, network_id,
+                        "network id of custom node doesn't match main node"
                     );
-                    web3::Web3::new(transport)
-                },
-            },
+                }
+                TransactionStrategy::CustomNodes(nodes)
+            }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         },
     };

@@ -45,14 +45,11 @@ pub struct SolutionSubmitter {
 }
 
 pub enum TransactionStrategy {
-    PublicMempool,
     ArcherNetwork {
         archer_api: ArcherApi,
         max_confirm_time: Duration,
     },
-    PrivateNetwork {
-        network_rpc: Web3,
-    },
+    CustomNodes(Vec<Web3>),
     DryRun,
 }
 
@@ -69,8 +66,9 @@ impl SolutionSubmitter {
         account: Account,
     ) -> Result<TransactionHash> {
         match &self.transaction_strategy {
-            TransactionStrategy::PublicMempool => {
+            TransactionStrategy::CustomNodes(nodes) => {
                 rpc::submit(
+                    nodes,
                     account,
                     &self.contract,
                     self.gas_price_estimator.as_ref(),
@@ -78,7 +76,6 @@ impl SolutionSubmitter {
                     self.gas_price_cap,
                     settlement,
                     gas_estimate,
-                    None,
                 )
                 .await
             }
@@ -107,19 +104,6 @@ impl SolutionSubmitter {
                     Ok(None) => Err(anyhow!("transaction did not get mined in time")),
                     Err(err) => Err(err),
                 }
-            }
-            TransactionStrategy::PrivateNetwork { network_rpc } => {
-                rpc::submit(
-                    account,
-                    &self.contract,
-                    self.gas_price_estimator.as_ref(),
-                    self.target_confirm_time,
-                    self.gas_price_cap,
-                    settlement,
-                    gas_estimate,
-                    Some(network_rpc),
-                )
-                .await
             }
             TransactionStrategy::DryRun => {
                 dry_run::log_settlement(account, &self.contract, settlement).await

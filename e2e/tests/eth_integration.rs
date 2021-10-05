@@ -233,7 +233,9 @@ async fn eth_integration(web3: Web3) {
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,
-            transaction_strategy: solver::settlement_submission::TransactionStrategy::PublicMempool,
+            transaction_strategy: solver::settlement_submission::TransactionStrategy::CustomNodes(
+                vec![web3.clone()],
+            ),
         },
         1_000_000_000_000_000_000_u128.into(),
     );
