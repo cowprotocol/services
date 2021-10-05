@@ -5,7 +5,7 @@ use crate::{
     recent_block_cache::Block,
     sources::uniswap::pool_fetching::{Pool, PoolFetching},
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use ethcontract::{H160, U256};
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
@@ -137,7 +137,7 @@ impl BaselinePriceEstimator {
             return Ok((Vec::new(), query.in_amount));
         }
         if query.in_amount.is_zero() {
-            return Err(anyhow!("Attempt to estimate price of a trade with zero amount.").into());
+            return Err(PriceEstimationError::ZeroAmount);
         }
         match query.kind {
             OrderKind::Buy => {
