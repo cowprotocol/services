@@ -198,15 +198,20 @@ fn generate_contract_with_config(
         .name(name)
         .load_contract_from_file(&path)
         .unwrap();
+    let network_file = paths::network_id_file();
     let address_file = paths::contract_address_file(name);
     let dest = env::var("OUT_DIR").unwrap();
 
     println!("cargo:rerun-if-changed={}", path.display());
     let mut builder = ContractBuilder::new().visibility_modifier("pub");
 
-    if let Ok(address) = fs::read_to_string(&address_file) {
+    if let (Ok(network_id), Ok(address)) = (
+        fs::read_to_string(&network_file),
+        fs::read_to_string(&address_file),
+    ) {
+        println!("cargo:rerun-if-changed={}", network_file.display());
         println!("cargo:rerun-if-changed={}", address_file.display());
-        builder = builder.add_network_str("5777", address.trim());
+        builder = builder.add_network_str(&network_id, address.trim());
     }
 
     config(builder)

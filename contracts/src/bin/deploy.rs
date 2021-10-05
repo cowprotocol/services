@@ -32,6 +32,10 @@ async fn run() -> Result<()> {
     log::info!("checking connection to local test node {}", NODE_URL);
     wait_for_node(&web3).await?;
 
+    let network_id = web3.net().version().await.expect("get network ID failed");
+    write_network_id(&network_id)?;
+    log::info!("connected to test network {}", network_id);
+
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let admin = accounts[0];
 
@@ -112,14 +116,22 @@ async fn run() -> Result<()> {
     touch_build_script()
 }
 
+/// Writes the network ID to the workspace `target` directory.
+fn write_network_id(network_id: &str) -> Result<()> {
+    let path = paths::network_id_file();
+    let dir = path
+        .parent()
+        .ok_or_else(|| anyhow!("network ID file does not have a parent directory"))?;
+
+    fs::create_dir_all(dir)?;
+    fs::write(path, network_id)?;
+
+    Ok(())
+}
+
 /// Writes the deployed contract address to the workspace `target` directory.
 fn write_contract_address(name: &str, address: Address) -> Result<()> {
     let path = paths::contract_address_file(name);
-    let dir = path
-        .parent()
-        .ok_or_else(|| anyhow!("contract address path does not have a parent directory"))?;
-
-    fs::create_dir_all(dir)?;
     fs::write(path, format!("{:?}", address))?;
 
     Ok(())
