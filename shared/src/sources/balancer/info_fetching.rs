@@ -1,14 +1,13 @@
 //! Responsible for conversion of a `pool_address` into `WeightedPoolInfo` which is used by the
 //! event handler to construct a `RegisteredWeightedPool`.
 use crate::{
-    conversions::U256Ext, sources::balancer::swap::fixed_point::Bfp,
-    sources::uniswap::pool_fetching::MAX_BATCH_SIZE, token_info::TokenInfoFetching, Web3,
+    sources::balancer::swap::fixed_point::Bfp, token_info::TokenInfoFetching,
+    transport::MAX_BATCH_SIZE, Web3,
 };
 use anyhow::{anyhow, Result};
 use contracts::{BalancerV2StablePool, BalancerV2Vault, BalancerV2WeightedPool};
 use ethcontract::{batch::CallBatch, Bytes, H160, H256};
 use mockall::*;
-use num::BigRational;
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
@@ -27,7 +26,6 @@ pub struct WeightedPoolInfo {
 #[derive(Clone, Debug)]
 pub struct StablePoolInfo {
     pub common: CommonPoolInfo,
-    pub amplification_parameter: BigRational,
 }
 
 /// Via `PoolInfoFetcher` (leverages a combination of `Web3` and `TokenInfoFetching`)
@@ -102,24 +100,16 @@ impl PoolInfoFetching for PoolInfoFetcher {
             .methods()
             .get_pool_tokens(Bytes(pool_id.0))
             .batch_call(&mut batch);
-        let amplification_parameter = pool_contract
-            .methods()
-            .get_amplification_parameter()
-            .batch_call(&mut batch);
         batch.execute_all(MAX_BATCH_SIZE).await;
 
         let tokens = token_data.await?.0;
         let scaling_exponents = self.get_scaling_exponents(&tokens).await?;
-        let (amplification_factor, _, precision) = amplification_parameter.await?;
-        let amplification_parameter =
-            BigRational::new(amplification_factor.to_big_int(), precision.to_big_int());
         Ok(StablePoolInfo {
             common: CommonPoolInfo {
                 pool_id,
                 tokens,
                 scaling_exponents,
             },
-            amplification_parameter,
         })
     }
 
@@ -346,9 +336,5 @@ mod tests {
         );
         assert_eq!(pool_info.common.pool_id, pool_id);
         assert_eq!(pool_info.common.scaling_exponents, vec![0u8, 1u8]);
-        assert_eq!(
-            pool_info.amplification_parameter,
-            BigRational::new(1.into(), 1000.into())
-        );
     }
 }

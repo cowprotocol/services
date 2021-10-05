@@ -2,15 +2,18 @@
 //! when given a collection of `TokenPair`. Each of these pools are then queried for
 //! their `token_balances` and the `PoolFetcher` returns all up-to-date `Weighted` and `Stable`
 //! pools to be consumed by external users (e.g. Price Estimators and Solvers).
-use crate::sources::balancer::pool_cache::{StablePoolReserveCache, WeightedPoolReserveCache};
 use crate::{
+    conversions::U256Ext,
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
     sources::balancer::{
         event_handler::BalancerPoolRegistry,
         info_fetching::PoolInfoFetcher,
-        pool_cache::{BalancerPoolCacheMetrics, PoolReserveFetcher},
+        pool_cache::{
+            BalancerPoolCacheMetrics, PoolReserveFetcher, StablePoolReserveCache,
+            WeightedPoolReserveCache,
+        },
         pool_init::DefaultPoolInitializer,
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
@@ -18,7 +21,7 @@ use crate::{
     token_info::TokenInfoFetching,
     Web3,
 };
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use contracts::BalancerV2Vault;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
@@ -105,11 +108,38 @@ impl BalancerPoolEvaluating for WeightedPool {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct AmplificationParameter {
+    factor: U256,
+    precision: U256,
+}
+
+impl AmplificationParameter {
+    pub fn new(factor: U256, precision: U256) -> Result<Self> {
+        ensure!(!precision.is_zero(), "Zero precision not allowed");
+        Ok(Self { factor, precision })
+    }
+
+    /// This is the format used to pass into smart contracts.
+    pub fn as_u256(&self) -> U256 {
+        self.factor
+    }
+
+    /// This is the format used to pass along to HTTP solver.
+    pub fn as_big_rational(&self) -> BigRational {
+        // We can assert that the precision is non-zero as we check when constructing
+        // new `AmplificationParameter` instances that this invariant holds, and we don't
+        // allow modifications of `self.precision` such that it could become 0.
+        debug_assert!(!self.precision.is_zero());
+        BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct StablePool {
     pub common: CommonPoolState,
     pub reserves: HashMap<H160, TokenState>,
-    pub amplification_parameter: BigRational,
+    pub amplification_parameter: AmplificationParameter,
 }
 
 impl StablePool {
@@ -117,9 +147,10 @@ impl StablePool {
         pool_data: RegisteredStablePool,
         balances: Vec<U256>,
         swap_fee_percentage: Bfp,
-        amplification_parameter: BigRational,
+        amplification_factor: U256,
+        amplification_precision: U256,
         paused: bool,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut reserves = HashMap::new();
         // We expect the weight and token indices are aligned with balances returned from EVM query.
         // If necessary we would also pass the tokens along with the query result,
@@ -137,7 +168,9 @@ impl StablePool {
                 },
             );
         }
-        StablePool {
+        let amplification_parameter =
+            AmplificationParameter::new(amplification_factor, amplification_precision)?;
+        Ok(StablePool {
             common: CommonPoolState {
                 pool_id: pool_data.common.pool_id,
                 pool_address: pool_data.common.pool_address,
@@ -146,7 +179,7 @@ impl StablePool {
             },
             reserves,
             amplification_parameter,
-        }
+        })
     }
 }
 
@@ -309,5 +342,28 @@ mod tests {
         let filtered_pools = filter_paused(pools.clone());
         assert_eq!(filtered_pools.len(), 1);
         assert_eq!(filtered_pools[0].common.pool_id, pools[1].common.pool_id);
+    }
+
+    #[test]
+    fn amplification_parameter_conversions() {
+        assert_eq!(
+            AmplificationParameter::new(1.into(), 2.into())
+                .unwrap()
+                .as_u256(),
+            1.into()
+        );
+        assert_eq!(
+            AmplificationParameter::new(1.into(), 2.into())
+                .unwrap()
+                .as_big_rational(),
+            BigRational::new(1.into(), 2.into())
+        );
+
+        assert_eq!(
+            AmplificationParameter::new(1.into(), 0.into())
+                .unwrap_err()
+                .to_string(),
+            "Zero precision not allowed"
+        );
     }
 }

@@ -1,23 +1,20 @@
-use crate::conversions::U256Ext;
-use crate::sources::balancer::pool_storage::{
-    PoolEvaluating, RegisteredStablePool, RegisteredWeightedPool,
-};
 use crate::{
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
     sources::{
         balancer::{
             event_handler::BalancerPoolRegistry,
             pool_fetching::{BalancerPoolEvaluating, StablePool, WeightedPool},
+            pool_storage::{PoolEvaluating, RegisteredStablePool, RegisteredWeightedPool},
             swap::fixed_point::Bfp,
         },
-        uniswap::pool_fetching::{handle_contract_error, MAX_BATCH_SIZE},
+        uniswap::pool_fetching::handle_contract_error,
     },
+    transport::MAX_BATCH_SIZE,
     Web3,
 };
 use anyhow::Result;
 use contracts::{BalancerV2StablePool, BalancerV2Vault, BalancerV2WeightedPool};
 use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, Bytes, H160, H256, U256};
-use num::BigRational;
 use std::{collections::HashSet, sync::Arc};
 
 pub struct PoolReserveFetcher {
@@ -258,20 +255,20 @@ impl FetchedBalancerPoolConverting<StablePool> for FetchedStablePool {
             None => return Ok(None),
         };
 
-        let amplification_parameter = match handle_contract_error(self.amplification_parameter)? {
-            // This is the ratio of amplification_parameter / precision.
-            Some((amplification_factor, _, precision)) => {
-                BigRational::new(amplification_factor.to_big_int(), precision.to_big_int())
-            }
-            None => return Ok(None),
-        };
-        Ok(Some(StablePool::new(
+        let (amplification_factor, amplification_precision) =
+            match handle_contract_error(self.amplification_parameter)? {
+                Some((factor, _, precision)) => (factor, precision),
+                None => return Ok(None),
+            };
+        let result = StablePool::new(
             self.registered_pool,
             balances,
             Bfp::from_wei(swap_fee_percentage),
-            amplification_parameter,
+            amplification_factor,
+            amplification_precision,
             paused,
-        )))
+        )?;
+        Ok(Some(result))
     }
 }
 

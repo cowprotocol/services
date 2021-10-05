@@ -471,7 +471,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                             .with_context(|| {
                                 format!("error converting stable pool to solver model: {:?}", amm)
                             })?,
-                        amplification_parameter: amm.amplification_parameter.clone(),
+                        amplification_parameter: amm.amplification_parameter.as_big_rational(),
                     }),
                     fee: amm.fee.clone(),
                     cost: gas_model.balancer_cost(),

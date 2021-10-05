@@ -12,6 +12,8 @@ use reqwest::Client;
 use std::{convert::TryInto as _, sync::Arc};
 use web3::BatchTransport;
 
+pub const MAX_BATCH_SIZE: usize = 100;
+
 /// Convenience method to create our standard instrumented transport.
 pub fn create_instrumented_transport<T>(
     transport: T,

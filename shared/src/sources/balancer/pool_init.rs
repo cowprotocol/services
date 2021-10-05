@@ -355,7 +355,6 @@ mod tests {
     use ethcontract::H256;
     use maplit::hashmap;
     use mockall::{predicate::*, Sequence};
-    use num::BigRational;
 
     #[tokio::test]
     async fn initializes_empty_pools() {
@@ -646,7 +645,6 @@ mod tests {
                         tokens: vec![],
                         scaling_exponents: vec![],
                     },
-                    amplification_parameter: BigRational::from_integer(3.into()),
                 })
             });
 
