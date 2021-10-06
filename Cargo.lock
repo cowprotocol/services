@@ -2099,9 +2099,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5986aa8d62380092d2f50f8b1cdba9cb9b6731ffd4b25b51fd126b6c3e05b99c"
+checksum = "b7f64969ffd5dd8f39bd57a68ac53c163a095ed9d0fb707146da1b27025a3504"
 dependencies = [
  "cfg-if",
  "fnv",
@@ -2114,9 +2114,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "46063c7c7e9054bfca94b0aa77e6f70d33c04bb96b8cac6332f95230c34bc6c2"
+checksum = "4386765c6446d3b5260d8cfcf2eb2d795ea741acce1be50c414a8ea7d9e42edd"
 dependencies = [
  "lazy_static",
  "prometheus",
@@ -2125,9 +2125,9 @@ dependencies = [
 
 [[package]]
 name = "prometheus-metric-storage-derive"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "518fca4a07c57d69fc3721f74e724bf6c20bb8a44598abb667c4e218a2501417"
+checksum = "681eb556e1680139d92b974285b280fbce867b43b1670db0b9d7dec0d5ea19c3"
 dependencies = [
  "proc-macro2",
  "quote",
