@@ -174,7 +174,7 @@ async fn main() {
     let client = shared::http_client(args.shared.http_timeout);
 
     let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url.clone()),
+        HttpTransport::new(client.clone(), args.shared.node_url.clone(), "".to_string()),
         metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);

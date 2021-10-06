@@ -29,7 +29,11 @@ where
 
 /// Convenience method to create a transport from a URL.
 pub fn create_test_transport(url: &str) -> Web3Transport {
-    Web3Transport::new(HttpTransport::new(Client::new(), url.try_into().unwrap()))
+    Web3Transport::new(HttpTransport::new(
+        Client::new(),
+        url.try_into().unwrap(),
+        "".to_string(),
+    ))
 }
 
 /// Like above but takes url from the environment NODE_URL.

@@ -24,26 +24,29 @@ struct Inner {
     url: Url,
     id: AtomicUsize,
     metrics: &'static TransportMetrics,
+    /// Name of the transport used in logs to distinguish different transports.
+    name: String,
 }
 
 impl HttpTransport {
-    pub fn new(client: Client, url: Url) -> Self {
+    pub fn new(client: Client, url: Url, name: String) -> Self {
         Self {
             client,
             inner: Arc::new(Inner {
                 url,
                 id: AtomicUsize::new(0),
                 metrics: TransportMetrics::instance(get_metric_storage_registry()).unwrap(),
+                name,
             }),
         }
     }
 
-    pub fn next_id(&self) -> RequestId {
+    fn next_id(&self) -> RequestId {
         self.inner.id.fetch_add(1, Ordering::SeqCst)
     }
 
-    pub fn new_request(&self) -> (Client, Url) {
-        (self.client.clone(), self.inner.url.clone())
+    fn new_request(&self) -> (Client, Arc<Inner>) {
+        (self.client.clone(), self.inner.clone())
     }
 }
 
@@ -58,29 +61,40 @@ impl Debug for HttpTransport {
 // Id is only used for logging.
 async fn execute_rpc<T: DeserializeOwned>(
     client: Client,
-    url: Url,
+    inner: Arc<Inner>,
     id: RequestId,
     request: &Request,
 ) -> Result<T, Web3Error> {
     tracing::debug!(
-        "[id:{}] sending request: {:?}",
+        "[{}][id:{}] sending request: {:?}",
+        inner.name,
         id,
         serde_json::to_string(&request)?
     );
-    let response = client.post(url).json(request).send().await.map_err(|err| {
-        let message = format!("failed to send request: {}", err);
-        tracing::debug!("[id:{}] {}", id, message);
-        Web3Error::Transport(message)
-    })?;
+    let response = client
+        .post(inner.url.clone())
+        .json(request)
+        .send()
+        .await
+        .map_err(|err| {
+            let message = format!("failed to send request: {}", err);
+            tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
+            Web3Error::Transport(message)
+        })?;
     let status = response.status();
     let text = response.text().await.map_err(|err| {
         let message = format!("failed to get response body: {}", err);
-        tracing::debug!("[id:{}] {}", id, message);
+        tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
         Web3Error::Transport(message)
     })?;
     // Log the raw text before decoding to get more information on responses that aren't valid
     // json. Debug encoding so we don't get control characters like newlines in the output.
-    tracing::debug!("[id:{}] received response: {:?}", id, text.trim());
+    tracing::debug!(
+        "[{}][id:{}] received response: {:?}",
+        inner.name,
+        id,
+        text.trim()
+    );
     if !status.is_success() {
         return Err(Web3Error::Transport(format!(
             "response status code is not success: {}",
@@ -102,14 +116,14 @@ impl Transport for HttpTransport {
     }
 
     fn send(&self, id: RequestId, call: Call) -> Self::Out {
-        let (client, url) = self.new_request();
+        let (client, inner) = self.new_request();
 
         let metrics = self.inner.metrics;
 
         async move {
             let _guard = metrics.on_request_start(method_name(&call));
 
-            let output = execute_rpc(client, url, id, &Request::Single(call)).await?;
+            let output = execute_rpc(client, inner, id, &Request::Single(call)).await?;
             helpers::to_result_from_output(output)
         }
         .boxed()
@@ -125,7 +139,7 @@ impl BatchTransport for HttpTransport {
     {
         // Batch calls don't need an id but it helps associate the response log to the request log.
         let id = self.next_id();
-        let (client, url) = self.new_request();
+        let (client, inner) = self.new_request();
         let (ids, calls): (Vec<_>, Vec<_>) = requests.into_iter().unzip();
 
         let metrics = self.inner.metrics;
@@ -133,7 +147,7 @@ impl BatchTransport for HttpTransport {
         async move {
             let _guard = metrics.on_request_start("batch");
 
-            let outputs = execute_rpc(client, url, id, &Request::Batch(calls)).await?;
+            let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
         }
         .boxed()

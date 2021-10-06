@@ -220,7 +220,7 @@ async fn main() {
     let client = shared::http_client(args.shared.http_timeout);
 
     let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url),
+        HttpTransport::new(client.clone(), args.shared.node_url, "base".to_string()),
         metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
@@ -440,9 +440,10 @@ async fn main() {
                 let nodes = args
                     .transaction_submission_nodes
                     .into_iter()
-                    .map(|url| {
+                    .enumerate()
+                    .map(|(index, url)| {
                         let transport = create_instrumented_transport(
-                            HttpTransport::new(client.clone(), url),
+                            HttpTransport::new(client.clone(), url, index.to_string()),
                             metrics.clone(),
                         );
                         web3::Web3::new(transport)
