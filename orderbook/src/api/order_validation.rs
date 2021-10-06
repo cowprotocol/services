@@ -7,6 +7,42 @@ use shared::{bad_token::BadTokenDetecting, web3_traits::CodeFetching};
 use std::{sync::Arc, time::Duration};
 use warp::{http::StatusCode, reply::Json};
 
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait OrderValidating {
+    /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
+    /// fee & quote phase (i.e. before the order is signed).
+    /// Thus, partial validation *doesn't* verify:
+    ///     - signatures
+    ///     - user sell balances or fee sufficiency.
+    ///
+    /// Specifically, but *does* verify:
+    ///     - if buy token is native asset, receiver is not a smart contract,
+    ///     - the sender is not a banned user,
+    ///     - the order validity is appropriate,
+    ///     - buy_token is not the same as sell_token,
+    ///     - buy and sell token destination and source are supported.
+    async fn partial_validate(&self, order: &PreOrderData) -> Result<(), PartialValidationError>;
+
+    /// This is the full order validation performed at the time of order placement
+    /// (i.e. once all the required fields on an Order are provided). Specifically, verifying that
+    ///     - buy & sell amounts are non-zero,
+    ///     - order's owner matches the from field (if specified),
+    ///     - fee is sufficient,
+    ///     - buy & sell tokens passed "bad token" detection,
+    ///     - user has sufficient (transferable) funds to execute the order.
+    ///
+    /// Furthermore, full order validation also calls partial_validate to ensure that
+    /// other aspects of the order are not malformed.
+    async fn validate_and_construct_order(
+        &self,
+        order_creation: OrderCreation,
+        sender: Option<H160>,
+        domain_separator: &DomainSeparator,
+        settlement_contract: H160,
+    ) -> Result<Order, ValidationError>;
+}
+
 #[derive(Debug)]
 pub enum PartialValidationError {
     Forbidden,
@@ -171,19 +207,10 @@ impl OrderValidator {
             balance_fetcher,
         }
     }
+}
 
-    /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
-    /// fee & quote phase (i.e. before the order is signed).
-    /// Thus, partial validation *doesn't* verify:
-    ///     - signatures
-    ///     - user sell balances or fee sufficiency.
-    ///
-    /// Specifically, but *does* verify:
-    ///     - if buy token is native asset, receiver is not a smart contract,
-    ///     - the sender is not a banned user,
-    ///     - the order validity is appropriate,
-    ///     - buy_token is not the same as sell_token,
-    ///     - buy and sell token destination and source are supported.
+#[async_trait::async_trait]
+impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: &PreOrderData) -> Result<(), PartialValidationError> {
         if self.banned_users.contains(&order.owner) {
             return Err(PartialValidationError::Forbidden);
@@ -222,17 +249,7 @@ impl OrderValidator {
         Ok(())
     }
 
-    /// This is the full order validation performed at the time of order placement
-    /// (i.e. once all the required fields on an Order are provided). Specifically, verifying that
-    ///     - buy & sell amounts are non-zero,
-    ///     - order's owner matches the from field (if specified),
-    ///     - fee is sufficient,
-    ///     - buy & sell tokens passed "bad token" detection,
-    ///     - user has sufficient (transferable) funds to execute the order.
-    ///
-    /// Furthermore, full order validation also calls partial_validate to ensure that
-    /// other aspects of the order are not malformed.
-    pub async fn validate_and_construct_order(
+    async fn validate_and_construct_order(
         &self,
         order_creation: OrderCreation,
         sender: Option<H160>,
