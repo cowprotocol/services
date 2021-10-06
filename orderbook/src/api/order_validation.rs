@@ -232,7 +232,7 @@ impl OrderValidator {
     ///
     /// Furthermore, full order validation also calls partial_validate to ensure that
     /// other aspects of the order are not malformed.
-    pub async fn validate(
+    pub async fn validate_and_construct_order(
         &self,
         order_creation: OrderCreation,
         sender: Option<H160>,
@@ -624,7 +624,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order.clone(), None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order.clone(),
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -636,7 +641,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(
+                    .validate_and_construct_order(
                         order.clone(),
                         Some(H160::from_low_u64_be(1),),
                         &Default::default(),
@@ -651,7 +656,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order.clone(), None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order.clone(),
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -661,7 +671,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order.clone(), None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order.clone(),
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -671,7 +686,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order.clone(), None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order.clone(),
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -683,7 +703,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order.clone(), None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order.clone(),
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -694,7 +719,12 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .validate(order, None, &Default::default(), Default::default())
+                    .validate_and_construct_order(
+                        order,
+                        None,
+                        &Default::default(),
+                        Default::default()
+                    )
                     .await
                     .unwrap_err()
             ),
@@ -734,7 +764,7 @@ mod tests {
             ..Default::default()
         };
         let order = validator
-            .validate(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
             .await
             .unwrap();
         assert_eq!(

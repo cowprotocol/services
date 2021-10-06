@@ -84,7 +84,7 @@ impl Orderbook {
 
         let order = match self
             .order_validator
-            .validate(
+            .validate_and_construct_order(
                 order_creation,
                 payload.from,
                 &self.domain_separator,
