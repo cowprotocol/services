@@ -343,9 +343,14 @@ impl GasModel {
     }
 
     fn order_fee(&self, order: &LimitOrder) -> FeeModel {
-        let ceiled_div = (order.fee_amount.to_f64_lossy() / self.fee_factor).ceil();
+        let amount = if order.full_fee_amount.is_zero() {
+            U256::from_f64_lossy((order.fee_amount.to_f64_lossy() / self.fee_factor).ceil())
+        } else {
+            order.full_fee_amount
+        };
+
         FeeModel {
-            amount: U256::from_f64_lossy(ceiled_div),
+            amount,
             token: order.sell_token,
         }
     }
@@ -683,6 +688,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: "0".to_string(),
@@ -768,6 +774,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: limit_handling.clone(),
             is_liquidity_order: false,
             id: "0".to_string(),

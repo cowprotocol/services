@@ -128,6 +128,7 @@ mod tests {
             kind: Default::default(),
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
             is_liquidity_order: false,
         };
@@ -186,6 +187,7 @@ mod tests {
             kind: Default::default(),
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
             is_liquidity_order: false,
         };
@@ -221,6 +223,7 @@ mod tests {
             kind: Default::default(),
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
             is_liquidity_order: false,
         };

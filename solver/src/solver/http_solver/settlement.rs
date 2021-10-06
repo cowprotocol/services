@@ -197,6 +197,7 @@ mod tests {
             kind: OrderKind::Sell,
             partially_fillable: false,
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: limit_handler.clone(),
             is_liquidity_order: false,
             id: "0".to_string(),

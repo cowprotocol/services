@@ -70,6 +70,7 @@ pub struct LimitOrder {
     pub kind: OrderKind,
     pub partially_fillable: bool,
     pub fee_amount: U256,
+    pub full_fee_amount: U256,
     pub is_liquidity_order: bool,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
@@ -121,6 +122,7 @@ impl Default for LimitOrder {
             kind: Default::default(),
             partially_fillable: Default::default(),
             fee_amount: Default::default(),
+            full_fee_amount: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: Default::default(),
@@ -347,6 +349,7 @@ pub mod tests {
                 kind,
                 partially_fillable: Default::default(),
                 fee_amount: Default::default(),
+                full_fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 is_liquidity_order: false,
             }

@@ -58,16 +58,26 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/gnosis/gp-v2-contracts/blob/964f1eb76f366f652db7f4c2cb5ff9bfa26eb2cd/src/contracts/GPv2Settlement.sol#L370-L371
     pub fn executed_fee(&self) -> Option<U256> {
-        let order = &self.order.order_creation;
-        match order.kind {
-            model::order::OrderKind::Buy => order
-                .fee_amount
+        let fee_amount = self.order.order_creation.fee_amount;
+        match self.order.order_creation.kind {
+            model::order::OrderKind::Buy => fee_amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(order.buy_amount),
-            model::order::OrderKind::Sell => order
-                .fee_amount
+                .checked_div(self.order.order_creation.buy_amount),
+            model::order::OrderKind::Sell => fee_amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(order.sell_amount),
+                .checked_div(self.order.order_creation.sell_amount),
+        }
+    }
+
+    pub fn executed_unsubsidized_fee(&self) -> Option<U256> {
+        let fee_amount = self.order.order_meta_data.full_fee_amount;
+        match self.order.order_creation.kind {
+            model::order::OrderKind::Buy => fee_amount
+                .checked_mul(self.executed_amount)?
+                .checked_div(self.order.order_creation.buy_amount),
+            model::order::OrderKind::Sell => fee_amount
+                .checked_mul(self.executed_amount)?
+                .checked_div(self.order.order_creation.sell_amount),
         }
     }
 
@@ -224,6 +234,32 @@ impl Settlement {
                 Some(trade.executed_fee()?.to_big_rational() * fee_token_price)
             })
             .sum()
+    }
+
+    pub fn total_unsubsidized_fees(
+        &self,
+        external_prices: &HashMap<H160, BigRational>,
+    ) -> Option<BigRational> {
+        if self
+            .encoder
+            .trades()
+            .iter()
+            .any(|trade| trade.order.order_meta_data.full_fee_amount.is_zero())
+        {
+            return None;
+        }
+
+        Some(
+            self.encoder
+                .trades()
+                .iter()
+                .filter_map(|trade| {
+                    let fee_token_price =
+                        external_prices.get(&trade.order.order_creation.sell_token)?;
+                    Some(trade.executed_unsubsidized_fee()?.to_big_rational() * fee_token_price)
+                })
+                .sum(),
+        )
     }
 
     /// See SettlementEncoder::merge
