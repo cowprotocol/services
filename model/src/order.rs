@@ -2,7 +2,6 @@
 
 use crate::{
     app_id::AppId,
-    h160_hexadecimal::{self, HexadecimalH160},
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
@@ -202,12 +201,9 @@ impl OrderBuilder {
 #[derive(Eq, PartialEq, Clone, Deserialize, Debug, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
-    #[serde(with = "h160_hexadecimal")]
     pub sell_token: H160,
-    #[serde(with = "h160_hexadecimal")]
     pub buy_token: H160,
     #[serde(default)]
-    #[serde_as(as = "Option<HexadecimalH160>")]
     pub receiver: Option<H160>,
     #[serde(with = "u256_decimal")]
     pub sell_amount: U256,
@@ -387,7 +383,6 @@ impl OrderCancellation {
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetaData {
     pub creation_date: DateTime<Utc>,
-    #[serde(with = "h160_hexadecimal")]
     pub owner: H160,
     pub uid: OrderUid,
     #[serde_as(as = "Option<DecimalU256>")]
@@ -406,7 +401,6 @@ pub struct OrderMetaData {
     pub executed_fee_amount: BigUint,
     pub invalidated: bool,
     pub status: OrderStatus,
-    #[serde(with = "h160_hexadecimal")]
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,

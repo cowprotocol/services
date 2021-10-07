@@ -28,7 +28,6 @@ pub mod web3_traits;
 use ethcontract::dyns::{DynTransport, DynWeb3};
 use ethcontract::H160;
 use hex::{FromHex, FromHexError};
-use model::h160_hexadecimal;
 use serde::Deserialize;
 use std::fmt::Debug;
 use std::{
@@ -44,7 +43,7 @@ pub type Web3 = DynWeb3;
 /// Wraps H160 with FromStr and Deserialize that can handle a `0x` prefix.
 #[derive(Debug, Deserialize)]
 #[serde(transparent)]
-pub struct H160Wrapper(#[serde(with = "h160_hexadecimal")] pub H160);
+pub struct H160Wrapper(pub H160);
 impl FromStr for H160Wrapper {
     type Err = FromHexError;
     fn from_str(s: &str) -> Result<Self, Self::Err> {

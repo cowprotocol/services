@@ -19,7 +19,6 @@ struct AmountEstimateQuery {
 struct AmountEstimateResult {
     #[serde(with = "model::u256_decimal")]
     amount: U256,
-    #[serde(with = "model::h160_hexadecimal")]
     token: H160,
 }
 

@@ -2,7 +2,6 @@ use crate::{api::price_estimation_error_to_warp_reply, fee::MinFeeCalculating};
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
-use model::h160_hexadecimal;
 use model::{order::OrderKind, u256_decimal};
 use serde::{Deserialize, Serialize};
 use shared::price_estimation::{self, PriceEstimating, PriceEstimationError};
@@ -21,9 +20,7 @@ struct Fee {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SellQuery {
-    #[serde(with = "h160_hexadecimal")]
     sell_token: H160,
-    #[serde(with = "h160_hexadecimal")]
     buy_token: H160,
     // The total amount to be sold from which the fee will be deducted.
     #[serde(with = "u256_decimal")]
@@ -44,9 +41,7 @@ struct SellResponse {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BuyQuery {
-    #[serde(with = "h160_hexadecimal")]
     sell_token: H160,
-    #[serde(with = "h160_hexadecimal")]
     buy_token: H160,
     // The total amount to be bought.
     #[serde(with = "u256_decimal")]
