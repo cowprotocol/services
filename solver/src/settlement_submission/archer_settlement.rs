@@ -28,7 +28,7 @@
 
 use super::{archer_api::ArcherApi, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{interactions::block_coinbase, settlement::Settlement};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use contracts::GPv2Settlement;
 use ethcontract::{errors::MethodError, transaction::Transaction, Account, GasPrice};
@@ -40,12 +40,38 @@ use std::time::{Duration, Instant, SystemTime};
 use web3::types::TransactionId;
 
 pub struct ArcherSolutionSubmitter<'a> {
-    pub web3: &'a Web3,
-    pub contract: &'a GPv2Settlement,
-    pub account: &'a Account,
-    pub archer_api: &'a ArcherApi,
-    pub gas_price_estimator: &'a dyn GasPriceEstimating,
-    pub gas_price_cap: f64,
+    web3: &'a Web3,
+    contract: &'a GPv2Settlement,
+    // Invariant: MUST be an `Account::Offline`.
+    account: &'a Account,
+    archer_api: &'a ArcherApi,
+    gas_price_estimator: &'a dyn GasPriceEstimating,
+    gas_price_cap: f64,
+}
+
+impl<'a> ArcherSolutionSubmitter<'a> {
+    pub fn new(
+        web3: &'a Web3,
+        contract: &'a GPv2Settlement,
+        account: &'a Account,
+        archer_api: &'a ArcherApi,
+        gas_price_estimator: &'a dyn GasPriceEstimating,
+        gas_price_cap: f64,
+    ) -> Result<Self> {
+        ensure!(
+            matches!(account, Account::Offline(..)),
+            "Archer submission requires offline account for signing"
+        );
+
+        Ok(Self {
+            web3,
+            contract,
+            account,
+            archer_api,
+            gas_price_estimator,
+            gas_price_cap,
+        })
+    }
 }
 
 impl<'a> ArcherSolutionSubmitter<'a> {
@@ -249,7 +275,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
             // Unwrap because no communication with the node is needed because we specified nonce and gas.
             let (raw_signed_transaction, hash) =
                 match method.tx.build().now_or_never().unwrap().unwrap() {
-                    Transaction::Request(_) => unreachable!("used local account"),
+                    Transaction::Request(_) => unreachable!("verified offline account was used"),
                     Transaction::Raw { bytes, hash } => (bytes.0, hash),
                 };
 
@@ -308,11 +334,35 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<H256> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethcontract::PrivateKey;
+    use ethcontract::{dyns::DynTransport, PrivateKey, H160};
     use gas_estimation::GasNowGasStation;
     use hex_literal::hex;
     use reqwest::Client;
-    use shared::transport::create_env_test_transport;
+    use shared::{
+        dummy_contract,
+        gas_price_estimation::FakeGasPriceEstimator,
+        transport::{create_env_test_transport, dummy::DummyTransport},
+    };
+
+    #[tokio::test]
+    async fn cannot_create_archer_submitter_with_local_account() {
+        let web3 = Web3::new(DynTransport::new(DummyTransport));
+        let account = Account::Local(H160([0x42; 20]), None);
+        let contract = dummy_contract!(GPv2Settlement, H160([0x01; 20]));
+        let archer_api = ArcherApi::new("unused".to_string(), Client::new());
+        let gas_price_estimator = FakeGasPriceEstimator::new(1e9);
+        let gas_price_cap = 100e9;
+
+        assert!(ArcherSolutionSubmitter::new(
+            &web3,
+            &contract,
+            &account,
+            &archer_api,
+            &gas_price_estimator,
+            gas_price_cap,
+        )
+        .is_err());
+    }
 
     #[tokio::test]
     #[ignore]
@@ -360,14 +410,15 @@ mod tests {
         .await
         .unwrap();
 
-        let submitter = ArcherSolutionSubmitter {
-            web3: &web3,
-            contract: &contract,
-            account: &account,
-            archer_api: &archer_api,
-            gas_price_estimator: &gas_price_estimator,
+        let submitter = ArcherSolutionSubmitter::new(
+            &web3,
+            &contract,
+            &account,
+            &archer_api,
+            &gas_price_estimator,
             gas_price_cap,
-        };
+        )
+        .unwrap();
 
         let result = submitter
             .submit(

@@ -6,7 +6,7 @@ pub mod retry;
 pub mod rpc;
 
 use crate::{encoding::EncodedSettlement, settlement::Settlement};
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
 use ethcontract::{errors::ExecutionError, Account, TransactionHash};
@@ -83,14 +83,14 @@ impl SolutionSubmitter {
                 archer_api,
                 max_confirm_time,
             } => {
-                let submitter = ArcherSolutionSubmitter {
-                    web3: &self.web3,
-                    contract: &self.contract,
-                    account: &account,
+                let submitter = ArcherSolutionSubmitter::new(
+                    &self.web3,
+                    &self.contract,
+                    &account,
                     archer_api,
-                    gas_price_estimator: self.gas_price_estimator.as_ref(),
-                    gas_price_cap: self.gas_price_cap,
-                };
+                    self.gas_price_estimator.as_ref(),
+                    self.gas_price_cap,
+                )?;
                 let result = submitter
                     .submit(
                         self.target_confirm_time,
@@ -101,7 +101,7 @@ impl SolutionSubmitter {
                     .await;
                 match result {
                     Ok(Some(hash)) => Ok(hash),
-                    Ok(None) => Err(anyhow!("transaction did not get mined in time")),
+                    Ok(None) => bail!("transaction did not get mined in time"),
                     Err(err) => Err(err),
                 }
             }

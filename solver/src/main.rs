@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
@@ -33,7 +34,7 @@ use solver::{
     settlement_submission::{archer_api::ArcherApi, SolutionSubmitter, TransactionStrategy},
     solver::SolverType,
 };
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use structopt::{clap::arg_enum, StructOpt};
 
 #[derive(Debug, StructOpt)]
@@ -57,9 +58,11 @@ struct Arguments {
     )]
     quasimodo_solver_url: Url,
 
-    /// The private key used by the driver to sign transactions.
-    #[structopt(short = "k", long, env = "PRIVATE_KEY", hide_env_values = true)]
-    private_key: Option<PrivateKey>,
+    /// The account used by the driver to sign transactions. This can be either
+    /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
+    /// for signing with a local node account.
+    #[structopt(long, env, hide_env_values = true)]
+    solver_account: Option<SolverAccountArg>,
 
     /// The target confirmation time for settlement transactions used to estimate gas price.
     #[structopt(
@@ -90,15 +93,16 @@ struct Arguments {
     )]
     solvers: Vec<SolverType>,
 
-    /// Individual private keys for each solver
+    /// Individual accounts for each solver. See `--solver-account` for more
+    /// information about configuring accounts.
     #[structopt(
         long,
-        env = "SOLVER_PRIVATE_KEYS",
+        env,
         case_insensitive = true,
         use_delimiter = true,
         hide_env_values = true
     )]
-    solver_private_keys: Option<Vec<PrivateKey>>,
+    solver_accounts: Option<Vec<SolverAccountArg>>,
 
     /// A settlement must contain at least one order older than this duration for it to be applied.
     /// Larger values delay individual settlements more but have a higher coincidence of wants
@@ -200,11 +204,44 @@ struct Arguments {
 
 arg_enum! {
     #[derive(Debug)]
-    pub enum TransactionStrategyArg {
+    enum TransactionStrategyArg {
         PublicMempool,
         ArcherNetwork,
         CustomNodes,
         DryRun,
+    }
+}
+
+#[derive(Debug)]
+enum SolverAccountArg {
+    PrivateKey(PrivateKey),
+    Address(H160),
+}
+
+impl SolverAccountArg {
+    fn into_account(self, chain_id: u64) -> Account {
+        match self {
+            SolverAccountArg::PrivateKey(key) => Account::Offline(key, Some(chain_id)),
+            SolverAccountArg::Address(address) => Account::Local(address, None),
+        }
+    }
+}
+
+impl FromStr for SolverAccountArg {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<PrivateKey>()
+            .map(SolverAccountArg::PrivateKey)
+            .or_else(|pk_err| {
+                Ok(SolverAccountArg::Address(s.parse().map_err(
+                    |addr_err| {
+                        anyhow!("could not parse as private key: {}", pk_err)
+                            .context(anyhow!("could not parse as address: {}", addr_err))
+                            .context("invalid solver account, it is neither a private key or an Ethereum address")
+                    },
+                )?))
+            })
     }
 }
 
@@ -362,25 +399,25 @@ async fn main() {
     .await;
 
     let solvers = {
-        if let Some(private_keys) = args.solver_private_keys {
+        if let Some(solver_accounts) = args.solver_accounts {
             assert!(
-                private_keys.len() == args.solvers.len(),
-                "number of solvers {} does not match the number of private keys {}",
+                solver_accounts.len() == args.solvers.len(),
+                "number of solvers ({}) does not match the number of accounts ({})",
                 args.solvers.len(),
-                private_keys.len()
+                solver_accounts.len()
             );
 
-            private_keys
+            solver_accounts
                 .into_iter()
-                .map(|private_key| Account::Offline(private_key, Some(chain_id)))
+                .map(|account_arg| account_arg.into_account(chain_id))
                 .zip(args.solvers)
                 .collect()
-        } else if let Some(private_key) = args.private_key {
-            std::iter::repeat(Account::Offline(private_key, Some(chain_id)))
+        } else if let Some(account_arg) = args.solver_account {
+            std::iter::repeat(account_arg.into_account(chain_id))
                 .zip(args.solvers)
                 .collect()
         } else {
-            panic!("either SOLVER_PRIVATE_KEY or PRIVATE_KEY must be set")
+            panic!("either SOLVER_ACCOUNTS or SOLVER_ACCOUNT must be set")
         }
     };
 
@@ -534,4 +571,45 @@ async fn build_amm_artifacts(
         }
     }
     res
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    impl PartialEq for SolverAccountArg {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (SolverAccountArg::PrivateKey(a), SolverAccountArg::PrivateKey(b)) => {
+                    a.public_address() == b.public_address()
+                }
+                (SolverAccountArg::Address(a), SolverAccountArg::Address(b)) => a == b,
+                _ => false,
+            }
+        }
+    }
+
+    #[test]
+    fn parses_solver_account_arg() {
+        assert_eq!(
+            "0x4242424242424242424242424242424242424242424242424242424242424242"
+                .parse::<SolverAccountArg>()
+                .unwrap(),
+            SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
+        );
+        assert_eq!(
+            "0x4242424242424242424242424242424242424242"
+                .parse::<SolverAccountArg>()
+                .unwrap(),
+            SolverAccountArg::Address(H160([0x42; 20])),
+        );
+    }
+
+    #[test]
+    fn errors_on_invalid_solver_account_arg() {
+        assert!("0x010203040506070809101112131415161718192021"
+            .parse::<SolverAccountArg>()
+            .is_err());
+        assert!("not an account".parse::<SolverAccountArg>().is_err());
+    }
 }
