@@ -3,8 +3,9 @@
 // matchable order according to an external price api (0x). If this is the case it alerts.
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Utc};
 use model::{
-    order::{Order, OrderCreation, OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
+    order::{OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     u256_decimal,
 };
 use primitive_types::{H160, U256};
@@ -12,6 +13,21 @@ use reqwest::Client;
 use std::time::{Duration, Instant, SystemTime};
 use structopt::StructOpt;
 use url::Url;
+
+#[derive(Debug, serde::Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "camelCase")]
+struct Order {
+    kind: OrderKind,
+    buy_token: H160,
+    #[serde(with = "u256_decimal")]
+    buy_amount: U256,
+    sell_token: H160,
+    #[serde(with = "u256_decimal")]
+    sell_amount: U256,
+    uid: OrderUid,
+    status: OrderStatus,
+    creation_date: DateTime<Utc>,
+}
 
 struct OrderBookApi {
     base: Url,
@@ -76,7 +92,7 @@ impl ZeroExApi {
         }
     }
 
-    pub async fn can_be_settled(&self, order: &OrderCreation) -> Result<bool> {
+    pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
         let mut url = self.base.clone();
         url.set_path("/swap/v1/price");
         let (amount_name, amount) = match order.kind {
@@ -157,14 +173,11 @@ impl Alerter {
         // Keep only orders that were open last update and are not open this update.
         orders.retain(|order| !self.open_orders.contains(order));
         for closed_order in orders {
-            let order = self
-                .orderbook_api
-                .order(&closed_order.order_meta_data.uid)
-                .await?;
-            if order.order_meta_data.status == OrderStatus::Fulfilled {
+            let order = self.orderbook_api.order(&closed_order.uid).await?;
+            if order.status == OrderStatus::Fulfilled {
                 tracing::debug!(
                     "updating last observed trade because order {} was fulfilled",
-                    order.order_meta_data.uid
+                    order.uid
                 );
                 self.last_observed_trade = Instant::now();
                 break;
@@ -175,8 +188,7 @@ impl Alerter {
     }
 
     fn order_has_minimum_age(&self, order: &Order) -> bool {
-        let order_time =
-            Duration::from_secs(order.order_meta_data.creation_date.timestamp() as u64);
+        let order_time = Duration::from_secs(order.creation_date.timestamp() as u64);
         let now = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap();
@@ -187,7 +199,7 @@ impl Alerter {
         tracing::error!(
             "No orders have been settled in the last {} seconds even though order {} is solvable and has a price that allows it to be settled according to 0x.",
             self.config.time_without_trade.as_secs(),
-            order.order_meta_data.uid,
+            order.uid,
         );
     }
 
@@ -209,7 +221,7 @@ impl Alerter {
 
             if self
                 .zeroex_api
-                .can_be_settled(&order.order_creation)
+                .can_be_settled(order)
                 .await
                 .context("can_be_settled")?
             {
