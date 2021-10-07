@@ -218,11 +218,12 @@ impl MinFeeCalculator {
                 GAS_PER_ORDER
             };
         let fee_in_eth = gas_price * gas_amount;
+        // Use a sell order instead of a buy order as some DEXs specifically used by Paraswap don't support buy orders natively
         let query = price_estimation::Query {
-            sell_token,
-            buy_token: self.native_token,
+            buy_token: sell_token,
+            sell_token: self.native_token,
             in_amount: self.native_token_price_estimation_amount,
-            kind: OrderKind::Buy,
+            kind: OrderKind::Sell,
         };
         let estimate = self.price_estimator.estimate(&query).await?;
         let price = estimate.price_in_sell_token_f64(&query);
