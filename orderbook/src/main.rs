@@ -58,21 +58,21 @@ struct Arguments {
     #[structopt(flatten)]
     shared: shared::arguments::Arguments,
 
-    #[structopt(long, env = "BIND_ADDRESS", default_value = "0.0.0.0:8080")]
+    #[structopt(long, env, default_value = "0.0.0.0:8080")]
     bind_address: SocketAddr,
 
     /// Url of the Postgres database. By default connects to locally running postgres.
-    #[structopt(long, env = "DB_URL", default_value = "postgresql://")]
+    #[structopt(long, env, default_value = "postgresql://")]
     db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
     #[structopt(long)]
     skip_event_sync: bool,
 
-    /// The minimum amount of time an order has to be valid for.
+    /// The minimum amount of time in seconds an order has to be valid for.
     #[structopt(
         long,
-        env = "MIN_ORDER_VALIDITY_PERIOD",
+        env,
         default_value = "60",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
@@ -81,34 +81,29 @@ struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[structopt(
-        long,
-        env = "SKIP_TRACE_API",
-        parse(try_from_str),
-        default_value = "false"
-    )]
+    #[structopt(long, env, parse(try_from_str), default_value = "false")]
     skip_trace_api: bool,
 
-    /// The amount of time a classification of a token into good or bad is valid for.
+    /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[structopt(
         long,
-        env = "TOKEN_QUALITY_CACHE_EXPIRY_SECONDS",
+        env,
         default_value = "600",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     token_quality_cache_expiry: Duration,
 
     /// List of token addresses to be ignored throughout service
-    #[structopt(long, env = "UNSUPPORTED_TOKENS", use_delimiter = true)]
+    #[structopt(long, env, use_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
     /// List of account addresses to be denied from order creation
-    #[structopt(long, env = "BANNED_USERS", use_delimiter = true)]
+    #[structopt(long, env, use_delimiter = true)]
     pub banned_users: Vec<H160>,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
-    #[structopt(long, env = "ALLOWED_TOKENS", use_delimiter = true)]
+    #[structopt(long, env, use_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
 
     /// The number of pairs that are automatically updated in the pool cache.
@@ -122,8 +117,8 @@ struct Arguments {
     #[structopt(long, env, parse(try_from_str), default_value = "false")]
     pub enable_presign_orders: bool,
 
-    /// If solvable orders haven't been successfully update in this time attempting to get them
-    /// errors and our liveness check fails.
+    /// If solvable orders haven't been successfully update in this time in seconds attempting
+    /// to get them errors and our liveness check fails.
     #[structopt(
         long,
         default_value = "300",
