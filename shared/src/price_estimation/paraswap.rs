@@ -112,7 +112,15 @@ mod tests {
         token_info.expect_get_token_infos().returning(|tokens| {
             tokens
                 .iter()
-                .map(|token| (*token, TokenInfo { decimals: Some(18) }))
+                .map(|token| {
+                    (
+                        *token,
+                        TokenInfo {
+                            decimals: Some(18),
+                            symbol: Some("SYM".to_string()),
+                        },
+                    )
+                })
                 .collect()
         });
         let paraswap = DefaultParaswapApi {

@@ -109,6 +109,7 @@ pub struct StablePoolParameters {
 #[derive(Clone, Debug, Serialize)]
 pub struct TokenInfoModel {
     pub decimals: Option<u8>,
+    pub alias: Option<String>,
     pub external_price: Option<f64>,
     pub normalize_priority: Option<u64>,
     #[serde_as(as = "Option<DecimalU256>")]
@@ -339,12 +340,14 @@ mod tests {
             tokens: btreemap! {
                 buy_token => TokenInfoModel {
                     decimals: Some(6),
+                    alias: Some("CAT".to_string()),
                     external_price: Some(1.2),
                     normalize_priority: Some(1),
                     internal_buffer: Some(U256::from(1337)),
                 },
                 sell_token => TokenInfoModel {
                     decimals: Some(18),
+                    alias: Some("DOG".to_string()),
                     external_price: Some(2345.0),
                     normalize_priority: Some(0),
                     internal_buffer: Some(U256::from(42)),
@@ -367,12 +370,14 @@ mod tests {
           "tokens": {
             "0x0000000000000000000000000000000000000539": {
               "decimals": 6,
+              "alias": "CAT",
               "external_price": 1.2,
               "normalize_priority": 1,
               "internal_buffer": "1337",
             },
             "0x000000000000000000000000000000000000a866": {
               "decimals": 18,
+              "alias": "DOG",
               "external_price": 2345.0,
               "normalize_priority": 0,
               "internal_buffer": "42",

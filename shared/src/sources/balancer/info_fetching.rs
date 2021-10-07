@@ -156,9 +156,9 @@ mod tests {
             .expect_get_token_infos()
             .return_once(move |_| {
                 hashmap! {
-                    tokens[0] => TokenInfo { decimals: Some(0) },
-                    tokens[1] => TokenInfo { decimals: Some(9) },
-                    tokens[2] => TokenInfo { decimals: Some(18) },
+                    tokens[0] => TokenInfo { decimals: Some(0), symbol: Some("CAT".to_string()) },
+                    tokens[1] => TokenInfo { decimals: Some(9), symbol: Some("DOG".to_string()) },
+                    tokens[2] => TokenInfo { decimals: Some(18), symbol: Some("FOX".to_string()) },
                 }
             });
 
@@ -192,8 +192,8 @@ mod tests {
             .in_sequence(&mut seq)
             .return_once(move |_| {
                 hashmap! {
-                    token => TokenInfo { decimals: None },
-                    H160::zero() => TokenInfo { decimals: Some(1) }
+                    token => TokenInfo { decimals: None, symbol: Some("GNO".to_string()) },
+                    H160::zero() => TokenInfo { decimals: Some(1), symbol: Some("WETH".to_string()) }
                 }
             });
         mock_token_info_fetcher
@@ -202,7 +202,7 @@ mod tests {
             .in_sequence(&mut seq)
             .return_once(move |_| {
                 hashmap! {
-                    token => TokenInfo { decimals: Some(19) },
+                    token => TokenInfo { decimals: Some(19), symbol: Some("BAD".to_string()) },
                 }
             });
 
@@ -260,8 +260,8 @@ mod tests {
             .expect_get_token_infos()
             .return_once(move |_| {
                 hashmap! {
-                    tokens[0] => TokenInfo { decimals: Some(18) },
-                    tokens[1] => TokenInfo { decimals: Some(17) },
+                    tokens[0] => TokenInfo { decimals: Some(18), symbol: Some("DAI".to_string()) },
+                    tokens[1] => TokenInfo { decimals: Some(17), symbol: Some("TOK".to_string()) },
                 }
             });
 
@@ -313,8 +313,8 @@ mod tests {
             .expect_get_token_infos()
             .return_once(move |_| {
                 hashmap! {
-                    tokens[0] => TokenInfo { decimals: Some(18) },
-                    tokens[1] => TokenInfo { decimals: Some(17) },
+                    tokens[0] => TokenInfo { decimals: Some(18), symbol: Some("CAT".to_string()) },
+                    tokens[1] => TokenInfo { decimals: Some(17), symbol: Some("CAT".to_string()) },
                 }
             });
 

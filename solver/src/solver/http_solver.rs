@@ -373,6 +373,7 @@ fn token_models(
                 *address,
                 TokenInfoModel {
                     decimals: token_info.decimals,
+                    alias: token_info.symbol.clone(),
                     external_price,
                     normalize_priority: Some(if &gas_model.native_token == address {
                         1
@@ -634,8 +635,8 @@ mod tests {
             .expect_get_token_infos()
             .return_once(move |_| {
                 hashmap! {
-                    buy_token => TokenInfo { decimals: Some(18)},
-                    sell_token => TokenInfo { decimals: Some(18)},
+                    buy_token => TokenInfo { decimals: Some(18), symbol: Some("CAT".to_string()) },
+                    sell_token => TokenInfo { decimals: Some(18), symbol: Some("CAT".to_string()) },
                 }
             });
         let mock_token_info_fetcher: Arc<dyn TokenInfoFetching> = Arc::new(mock_token_info_fetcher);

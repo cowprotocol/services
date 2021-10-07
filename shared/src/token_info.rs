@@ -2,7 +2,6 @@ use crate::Web3;
 use async_trait::async_trait;
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, H160};
-use futures::future::join_all;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -12,9 +11,10 @@ use mockall::*;
 const MAX_BATCH_SIZE: usize = 100;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub struct TokenInfo {
     pub decimals: Option<u8>,
+    pub symbol: Option<String>,
 }
 
 pub struct TokenInfoFetcher {
@@ -37,16 +37,22 @@ impl TokenInfoFetching for TokenInfoFetcher {
             .iter()
             .map(|address| {
                 let erc20 = ERC20::at(&self.web3, *address);
-                erc20.methods().decimals().batch_call(&mut batch)
+                (
+                    erc20.methods().decimals().batch_call(&mut batch),
+                    erc20.methods().symbol().batch_call(&mut batch),
+                )
             })
             .collect::<Vec<_>>();
 
         batch.execute_all(MAX_BATCH_SIZE).await;
-
+        let mut resolved_futures = Vec::with_capacity(futures.len());
+        for (decimals, symbol) in futures {
+            resolved_futures.push((decimals.await, symbol.await));
+        }
         addresses
             .iter()
-            .zip(join_all(futures).await.into_iter())
-            .map(|(address, decimals)| {
+            .zip(resolved_futures)
+            .map(|(address, (decimals, symbol))| {
                 if decimals.is_err() {
                     tracing::trace!("Failed to fetch token info for token {}", address);
                 }
@@ -54,6 +60,7 @@ impl TokenInfoFetching for TokenInfoFetcher {
                     *address,
                     TokenInfo {
                         decimals: decimals.ok(),
+                        symbol: symbol.ok(),
                     },
                 )
             })
@@ -94,7 +101,7 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
             // Add valid token infos to cache.
             cache.extend(
                 fetched
-                    .iter()
+                    .into_iter()
                     .filter(|(_, token_info)| token_info.decimals.is_some()),
             );
         };
@@ -104,9 +111,15 @@ impl TokenInfoFetching for CachedTokenInfoFetcher {
             .iter()
             .map(|address| {
                 if cache.contains_key(address) {
-                    (*address, cache[address])
+                    (*address, cache[address].clone())
                 } else {
-                    (*address, TokenInfo { decimals: None })
+                    (
+                        *address,
+                        TokenInfo {
+                            decimals: None,
+                            symbol: None,
+                        },
+                    )
                 }
             })
             .collect()
@@ -129,7 +142,7 @@ mod tests {
             .times(1)
             .return_once(move |_| {
                 hashmap! {
-                    address0 => TokenInfo { decimals: Some(18)},
+                    address0 => TokenInfo { decimals: Some(18), symbol: Some("CAT".to_string()) },
                 }
             });
         mock_token_info_fetcher
@@ -137,7 +150,7 @@ mod tests {
             .times(2)
             .returning(|_| {
                 hashmap! {
-                    H160::from_low_u64_be(1) => TokenInfo { decimals: None},
+                    H160::from_low_u64_be(1) => TokenInfo { decimals: None, symbol: None },
                 }
             });
         let cached_token_info_fetcher =
