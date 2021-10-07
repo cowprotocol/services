@@ -88,8 +88,12 @@ impl PoolInitializing for DefaultPoolInitializer {
             DefaultPoolInitializer::Subgraph(inner) => inner.initialize_pools().await,
             DefaultPoolInitializer::Fetched(inner) => inner.initialize_pools().await,
         }?;
-
-        tracing::debug!("initialized registered pools {:?}", registered_pools);
+        tracing::debug!(
+            "initialized registered pools ({} Stable, {} Weighted & {} TwoTokenWeighted)",
+            registered_pools.stable_pools.len(),
+            registered_pools.weighted_pools.len(),
+            registered_pools.weighted_2token_pools.len()
+        );
         Ok(registered_pools)
     }
 }

@@ -365,7 +365,9 @@ async fn main() {
         if let Some(private_keys) = args.solver_private_keys {
             assert!(
                 private_keys.len() == args.solvers.len(),
-                "number of solver does not match the number of private keys"
+                "number of solvers {} does not match the number of private keys {}",
+                args.solvers.len(),
+                private_keys.len()
             );
 
             private_keys
