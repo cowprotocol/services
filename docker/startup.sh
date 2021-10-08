@@ -8,7 +8,7 @@
 ( "$@" & echo $! > main_pid ) | regex-stream-split '^\d+-\d+-\d+T\d+:\d+:\d+\.\d+Z\s+(TRACE|DEBUG|INFO|WARN)' '^\d+-\d+-\d+T\d+:\d+:\d+\.\d+Z\s+ERROR' &
 
 # Forward signal to main pid. Sync after killing to make sure the stdout is flushed
-trap 'kill -SIGTERM $(cat main_pid); sync' SIGTERM
-trap 'kill -SIGINT $(cat main_pid); sync' SIGINT
+trap 'kill -TERM $(cat main_pid); sync' TERM
+trap 'kill -INT $(cat main_pid); sync' INT
 
 wait
