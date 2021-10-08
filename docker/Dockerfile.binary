@@ -1,27 +1,30 @@
-FROM docker.io/clux/muslrust:stable as cargo-build
-WORKDIR /usr/src/oba-services
+FROM docker.io/rust:1-slim-bullseye as cargo-build
+WORKDIR /usr/local/src/gp-v2-services
+
+# Install dependencies
+RUN apt-get update && apt-get install -y git libssl-dev pkg-config
 
 # Copy and Build Code
 COPY . .
-RUN env CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --target x86_64-unknown-linux-musl --release
+RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
 
 RUN \
     cd .. && \
     git clone https://github.com/gnosis/regex-stream-split.git && \
     cd regex-stream-split && \
     git checkout edc88224612b9e151c334fa6d3a7d20575d83836 && \
-    cargo build --target x86_64-unknown-linux-musl --release
+    cargo build --release
 
 # Extract Binary
-FROM docker.io/alpine:latest
+FROM docker.io/debian:bullseye-slim
 
 # Handle signal handlers properly
-RUN apk add --no-cache tini
-COPY --from=cargo-build /usr/src/regex-stream-split/target/x86_64-unknown-linux-musl/release/regex-stream-split /usr/local/bin/regex-stream-split
-COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/orderbook /usr/local/bin/orderbook
-COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/solver /usr/local/bin/solver
-COPY --from=cargo-build /usr/src/oba-services/target/x86_64-unknown-linux-musl/release/alerter /usr/local/bin/alerter
+RUN apt-get update && apt-get install -y ca-certificates tini && apt-get clean
+COPY --from=cargo-build /usr/local/src/regex-stream-split/target/release/regex-stream-split /usr/local/bin/regex-stream-split
+COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/orderbook /usr/local/bin/orderbook
+COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/solver /usr/local/bin/solver
+COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/alerter /usr/local/bin/alerter
 COPY docker/startup.sh /usr/local/bin/startup.sh
 
 CMD echo "Specify binary - either solver or orderbook"
-ENTRYPOINT ["/sbin/tini", "--", "startup.sh"]
+ENTRYPOINT ["/usr/bin/tini", "--", "startup.sh"]
