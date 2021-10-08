@@ -52,17 +52,17 @@ lazy_static! {
 #[derive(Debug, Default)]
 pub struct SolverConfig {
     pub max_nr_exec_orders: u32,
-    pub enforce_uniform_clearing_prices: bool,
+    pub has_ucp_policy_parameter: bool,
 }
 
 impl SolverConfig {
-    fn add_to_query(&self, url: &mut Url) {
+    fn add_to_query(&self, url: &mut Url, ucp_policy: &str) {
         url.query_pairs_mut().append_pair(
             "max_nr_exec_orders",
             self.max_nr_exec_orders.to_string().as_str(),
         );
-        if self.enforce_uniform_clearing_prices {
-            url.query_pairs_mut().append_pair("ucp_policy", "Enforce");
+        if self.has_ucp_policy_parameter {
+            url.query_pairs_mut().append_pair("ucp_policy", ucp_policy);
         }
     }
 }
@@ -246,7 +246,13 @@ impl HttpSolver {
             .append_pair("instance_name", &instance_name)
             .append_pair("time_limit", &timeout.as_secs().to_string());
 
-        self.config.add_to_query(&mut url);
+        let ucp_policy = if model.orders.len() > 1 {
+            "Enforce"
+        } else {
+            "EnforceForOrders"
+        };
+        self.config.add_to_query(&mut url, ucp_policy);
+
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         // The default Client created in main has a short http request timeout which we might
         // exceed. We remove it here because the solver already internally enforces the timeout and
@@ -656,7 +662,7 @@ mod tests {
             None,
             SolverConfig {
                 max_nr_exec_orders: 100,
-                enforce_uniform_clearing_prices: false,
+                has_ucp_policy_parameter: false,
             },
             H160::zero(),
             mock_token_info_fetcher,

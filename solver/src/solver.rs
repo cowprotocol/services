@@ -199,7 +199,7 @@ pub fn create(
                     "Mip",
                     SolverConfig {
                         max_nr_exec_orders: 100,
-                        enforce_uniform_clearing_prices: false,
+                        has_ucp_policy_parameter: false,
                     },
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
@@ -208,7 +208,7 @@ pub fn create(
                     "Quasimodo",
                     SolverConfig {
                         max_nr_exec_orders: 100,
-                        enforce_uniform_clearing_prices: true,
+                        has_ucp_policy_parameter: true,
                     },
                 )),
                 SolverType::OneInch => {
