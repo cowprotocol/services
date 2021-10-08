@@ -92,7 +92,6 @@ pub struct HttpSolver {
     network_id: String,
     chain_id: u64,
     instance_cache: InstanceCache,
-    fee_factor: f64,
     native_token_amount_to_estimate_prices_with: U256,
 }
 
@@ -110,7 +109,6 @@ impl HttpSolver {
         buffer_retriever: Arc<dyn BufferRetrieving>,
         network_id: String,
         chain_id: u64,
-        fee_factor: f64,
         client: Client,
         instance_cache: InstanceCache,
         native_token_amount_to_estimate_prices_with: U256,
@@ -129,7 +127,6 @@ impl HttpSolver {
             network_id,
             chain_id,
             instance_cache,
-            fee_factor,
             native_token_amount_to_estimate_prices_with,
         }
     }
@@ -212,7 +209,6 @@ impl HttpSolver {
         let gas_model = GasModel {
             native_token: self.native_token,
             gas_price,
-            fee_factor: self.fee_factor,
         };
 
         let token_models = token_models(&token_infos, &all_price_estimates, &buffers, &gas_model);
@@ -319,7 +315,6 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
 struct GasModel {
     native_token: H160,
     gas_price: f64,
-    fee_factor: f64,
 }
 
 impl GasModel {
@@ -343,14 +338,8 @@ impl GasModel {
     }
 
     fn order_fee(&self, order: &LimitOrder) -> FeeModel {
-        let amount = if order.full_fee_amount.is_zero() {
-            U256::from_f64_lossy((order.fee_amount.to_f64_lossy() / self.fee_factor).ceil())
-        } else {
-            order.full_fee_amount
-        };
-
         FeeModel {
-            amount,
+            amount: order.scaled_fee_amount,
             token: order.sell_token,
         }
     }
@@ -675,7 +664,6 @@ mod tests {
             mock_buffer_retriever,
             "mock_network_id".to_string(),
             0,
-            1.,
             Client::new(),
             Default::default(),
             1.into(),
@@ -688,8 +676,7 @@ mod tests {
             sell_amount: base(2).into(),
             kind: OrderKind::Sell,
             partially_fillable: false,
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: "0".to_string(),
@@ -739,7 +726,6 @@ mod tests {
         ];
 
         let gas_model = GasModel {
-            fee_factor: 1.,
             gas_price: 1e9,
             native_token,
         };
@@ -774,8 +760,7 @@ mod tests {
             buy_amount: Default::default(),
             kind: OrderKind::Sell,
             partially_fillable: Default::default(),
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: limit_handling.clone(),
             is_liquidity_order: false,
             id: "0".to_string(),

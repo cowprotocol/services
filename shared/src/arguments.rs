@@ -125,7 +125,7 @@ pub struct Arguments {
     pub price_estimators: Vec<PriceEstimatorType>,
 }
 
-fn parse_fee_factor(s: &str) -> Result<f64> {
+pub fn parse_fee_factor(s: &str) -> Result<f64> {
     let f64 = f64::from_str(s)?;
     ensure!(f64.is_finite() && f64 >= 0.);
     Ok(f64)

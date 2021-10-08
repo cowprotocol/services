@@ -69,8 +69,13 @@ pub struct LimitOrder {
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    pub fee_amount: U256,
-    pub full_fee_amount: U256,
+    /// The scaled fee amount that the protocol pretends it is receiving.
+    ///
+    /// This is different than the actual order `fee_amount` value in that it
+    /// does not have any subsidies applied and may be scaled by a constant
+    /// factor to make matching orders more valuable from an objective value
+    /// perspective.
+    pub scaled_fee_amount: U256,
     pub is_liquidity_order: bool,
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
 }
@@ -102,12 +107,7 @@ impl Settleable for LimitOrder {
 #[cfg(test)]
 impl From<Order> for LimitOrder {
     fn from(order: Order) -> Self {
-        use self::offchain_orderbook::normalize_limit_order;
-        use contracts::WETH9;
-        use shared::dummy_contract;
-
-        let native_token = dummy_contract!(WETH9, H160([0x42; 20]));
-        normalize_limit_order(order, native_token, &Default::default())
+        offchain_orderbook::OrderConverter::test(H160([0x42; 20])).normalize_limit_order(order)
     }
 }
 
@@ -121,8 +121,7 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: Default::default(),
@@ -348,8 +347,7 @@ pub mod tests {
                 buy_amount: buy_amount.into(),
                 kind,
                 partially_fillable: Default::default(),
-                fee_amount: Default::default(),
-                full_fee_amount: Default::default(),
+                scaled_fee_amount: Default::default(),
                 settlement_handling: CapturingSettlementHandler::arc(),
                 is_liquidity_order: false,
             }

@@ -21,9 +21,10 @@ use shared::{
     },
     Web3,
 };
-use solver::orderbook::OrderBookApi;
-use std::{collections::HashMap, future::pending};
-use std::{num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
+use solver::{liquidity::offchain_orderbook::OrderbookLiquidity, orderbook::OrderBookApi};
+use std::{
+    collections::HashMap, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
+};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
@@ -50,13 +51,20 @@ pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::from(10).pow(18.into())
 }
 
-pub fn create_orderbook_api(web3: &Web3, weth_address: H160) -> OrderBookApi {
+#[allow(dead_code)]
+pub fn create_orderbook_api() -> OrderBookApi {
+    OrderBookApi::new(reqwest::Url::from_str(API_HOST).unwrap(), Client::new())
+}
+
+pub fn create_orderbook_liquidity(web3: &Web3, weth_address: H160) -> OrderbookLiquidity {
     let weth = WETH9::at(web3, weth_address);
-    solver::orderbook::OrderBookApi::new(
+    OrderbookLiquidity::new(
         reqwest::Url::from_str(API_HOST).unwrap(),
-        weth,
         Client::new(),
+        weth,
         Default::default(),
+        1.,
+        1.,
     )
 }
 

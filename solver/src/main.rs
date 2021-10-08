@@ -2,13 +2,12 @@ use anyhow::anyhow;
 use contracts::{IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
-use shared::baseline_solver::BaseTokens;
-use shared::metrics::setup_metrics_registry;
 use shared::{
     bad_token::list_based::ListBasedDetector,
+    baseline_solver::BaseTokens,
     current_block::current_block_stream,
     maintenance::{Maintaining, ServiceMaintenance},
-    metrics::serve_metrics,
+    metrics::{serve_metrics, setup_metrics_registry},
     network::network_name,
     price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
@@ -23,12 +22,14 @@ use shared::{
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::create_instrumented_transport,
-    transport::http::HttpTransport,
+    transport::{create_instrumented_transport, http::HttpTransport},
 };
 use solver::{
     driver::Driver,
-    liquidity::{balancer::BalancerV2Liquidity, uniswap::UniswapLikeLiquidity},
+    liquidity::{
+        balancer::BalancerV2Liquidity, offchain_orderbook::OrderbookLiquidity,
+        uniswap::UniswapLikeLiquidity,
+    },
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     settlement_submission::{archer_api::ArcherApi, SolutionSubmitter, TransactionStrategy},
@@ -191,6 +192,13 @@ struct Arguments {
     /// and not to be included in the objective function by the HTTP solver.
     #[structopt(long, env, use_delimiter = true)]
     liquidity_order_owners: Vec<H160>,
+
+    /// Fee scaling factor for objective value. This controls the constant
+    /// factor by which order fees are multiplied with. Setting this to a value
+    /// greater than 1.0 makes settlements with negative objective values less
+    /// likely, promoting more aggressive merging of single order settlements.
+    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
+    pub fee_objective_scaling_factor: f64,
 }
 
 arg_enum! {
@@ -270,11 +278,13 @@ async fn main() {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
-    let orderbook_api = solver::orderbook::OrderBookApi::new(
+    let orderbook_liquidity = OrderbookLiquidity::new(
         args.orderbook_url,
-        native_token_contract.clone(),
         client.clone(),
+        native_token_contract.clone(),
         args.liquidity_order_owners.into_iter().collect(),
+        args.shared.fee_factor,
+        args.fee_objective_scaling_factor,
     );
 
     let base_tokens = Arc::new(BaseTokens::new(
@@ -424,7 +434,6 @@ async fn main() {
         price_estimator.clone(),
         network_name.to_string(),
         chain_id,
-        args.shared.fee_factor,
         args.min_order_size_one_inch,
         args.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
@@ -435,8 +444,8 @@ async fn main() {
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
+        orderbook_liquidity,
         uniswap_like_liquidity,
-        orderbook_api,
         balancer_v2_liquidity,
     };
     let market_makable_token_list =
@@ -507,7 +516,6 @@ async fn main() {
         args.solver_time_limit,
         market_makable_token_list,
         current_block_stream.clone(),
-        args.shared.fee_factor,
         solution_submitter,
         native_token_price_estimation_amount,
     );

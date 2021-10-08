@@ -50,7 +50,6 @@ pub struct Driver {
     market_makable_token_list: Option<TokenList>,
     inflight_trades: HashSet<OrderUid>,
     block_stream: CurrentBlockStream,
-    fee_factor: f64,
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
     native_token_amount_to_estimate_prices_with: U256,
@@ -73,7 +72,6 @@ impl Driver {
         solver_time_limit: Duration,
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
-        fee_factor: f64,
         solution_submitter: SolutionSubmitter,
         native_token_amount_to_estimate_prices_with: U256,
     ) -> Self {
@@ -94,7 +92,6 @@ impl Driver {
             market_makable_token_list,
             inflight_trades: HashSet::new(),
             block_stream,
-            fee_factor,
             solution_submitter,
             solve_id: 0,
             native_token_amount_to_estimate_prices_with,
@@ -327,13 +324,7 @@ impl Driver {
         futures::stream::iter(settlements)
             .filter_map(|(solver, settlement)| async {
                 let surplus = settlement.total_surplus(prices);
-                // Old orders don't have unsubsidized fees set, so we use the old logic
-                // of restoring the unsubsidized fee from the subsidized one by reversing the fee factor.
-                // This logic will be removed in the future.
-                let unsubsidized_solver_fees = match settlement.total_unsubsidized_fees(prices) {
-                    Some(unsubsidized_solver_fees) => unsubsidized_solver_fees,
-                    None => settlement.total_fees(prices) / BigRational::from_float(self.fee_factor).expect("Discount factor is not a rational")
-                };
+                let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
                 let gas_estimate = settlement_submission::estimate_gas(
                     &self.settlement_contract,
                     &settlement.clone().into(),
@@ -348,7 +339,7 @@ impl Driver {
                 let rated_settlement = RatedSettlement {
                     settlement,
                     surplus,
-                    solver_fees: unsubsidized_solver_fees,
+                    solver_fees: scaled_solver_fees,
                     gas_estimate,
                     gas_price: gas_price_wei.clone(),
                 };
@@ -633,8 +624,7 @@ mod tests {
             buy_token,
             kind: OrderKind::Buy,
             partially_fillable: false,
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
             is_liquidity_order: false,
@@ -661,8 +651,7 @@ mod tests {
             buy_token,
             kind: OrderKind::Buy,
             partially_fillable: false,
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
             is_liquidity_order: false,
@@ -689,8 +678,7 @@ mod tests {
             buy_token: native_token,
             kind: OrderKind::Buy,
             partially_fillable: false,
-            fee_amount: Default::default(),
-            full_fee_amount: Default::default(),
+            scaled_fee_amount: Default::default(),
             settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
             is_liquidity_order: false,

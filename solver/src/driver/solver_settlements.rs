@@ -145,6 +145,7 @@ mod tests {
                     ..Default::default()
                 },
             },
+            ..Default::default()
         };
         let settlement = |executed_amount: U256, order_uid: u8| {
             Settlement::with_trades(prices.clone(), vec![trade(executed_amount, order_uid)])

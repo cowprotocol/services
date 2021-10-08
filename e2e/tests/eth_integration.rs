@@ -1,3 +1,11 @@
+mod ganache;
+#[macro_use]
+mod services;
+
+use crate::services::{
+    create_orderbook_api, create_orderbook_liquidity, deploy_mintable_token, to_wei, GPv2,
+    OrderbookServices, UniswapContracts, API_HOST,
+};
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
@@ -17,14 +25,6 @@ use solver::{
 };
 use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
-
-mod ganache;
-#[macro_use]
-mod services;
-use crate::services::{
-    create_orderbook_api, deploy_mintable_token, to_wei, GPv2, OrderbookServices, UniswapContracts,
-    API_HOST,
-};
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
 const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
@@ -206,7 +206,7 @@ async fn eth_integration(web3: Web3) {
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
-        orderbook_api: create_orderbook_api(&web3, weth.address()),
+        orderbook_liquidity: create_orderbook_liquidity(&web3, weth.address()),
         balancer_v2_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
@@ -226,7 +226,6 @@ async fn eth_integration(web3: Web3) {
         Duration::from_secs(30),
         None,
         block_stream,
-        1.0,
         SolutionSubmitter {
             web3: web3.clone(),
             contract: gpv2.settlement.clone(),
@@ -260,9 +259,6 @@ async fn eth_integration(web3: Web3) {
     maintenance.run_maintenance().await.unwrap();
     solvable_orders_cache.update(0).await.unwrap();
 
-    let orders = create_orderbook_api(&web3, weth.address())
-        .get_orders()
-        .await
-        .unwrap();
+    let orders = create_orderbook_api().get_orders().await.unwrap();
     assert!(orders.is_empty());
 }

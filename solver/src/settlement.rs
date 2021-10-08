@@ -1,5 +1,6 @@
 mod settlement_encoder;
 
+pub use self::settlement_encoder::SettlementEncoder;
 use crate::{
     encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
@@ -11,14 +12,13 @@ use primitive_types::{H160, U256};
 use shared::conversions::U256Ext as _;
 use std::collections::HashMap;
 
-pub use settlement_encoder::SettlementEncoder;
-
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub order: Order,
     pub sell_token_index: usize,
     pub buy_token_index: usize,
     pub executed_amount: U256,
+    pub scaled_fee_amount: U256,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -58,19 +58,16 @@ impl Trade {
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/gnosis/gp-v2-contracts/blob/964f1eb76f366f652db7f4c2cb5ff9bfa26eb2cd/src/contracts/GPv2Settlement.sol#L370-L371
     pub fn executed_fee(&self) -> Option<U256> {
-        let fee_amount = self.order.order_creation.fee_amount;
-        match self.order.order_creation.kind {
-            model::order::OrderKind::Buy => fee_amount
-                .checked_mul(self.executed_amount)?
-                .checked_div(self.order.order_creation.buy_amount),
-            model::order::OrderKind::Sell => fee_amount
-                .checked_mul(self.executed_amount)?
-                .checked_div(self.order.order_creation.sell_amount),
-        }
+        self.compute_fee_execution(self.order.order_creation.fee_amount)
     }
 
-    pub fn executed_unsubsidized_fee(&self) -> Option<U256> {
-        let fee_amount = self.order.order_meta_data.full_fee_amount;
+    /// Returns the scaled unsubsidized fee amount that should be used for
+    /// objective value computation.
+    pub fn executed_scaled_unsubsidized_fee(&self) -> Option<U256> {
+        self.compute_fee_execution(self.scaled_fee_amount)
+    }
+
+    fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
         match self.order.order_creation.kind {
             model::order::OrderKind::Buy => fee_amount
                 .checked_mul(self.executed_amount)?
@@ -223,43 +220,20 @@ impl Settlement {
         }
     }
 
-    // Computes the total fee of all protocol trades (in wei ETH).
-    pub fn total_fees(&self, external_prices: &HashMap<H160, BigRational>) -> BigRational {
+    // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
+    pub fn total_scaled_unsubsidized_fees(
+        &self,
+        external_prices: &HashMap<H160, BigRational>,
+    ) -> BigRational {
         self.encoder
             .trades()
             .iter()
             .filter_map(|trade| {
                 let fee_token_price =
                     external_prices.get(&trade.order.order_creation.sell_token)?;
-                Some(trade.executed_fee()?.to_big_rational() * fee_token_price)
+                Some(trade.executed_scaled_unsubsidized_fee()?.to_big_rational() * fee_token_price)
             })
             .sum()
-    }
-
-    pub fn total_unsubsidized_fees(
-        &self,
-        external_prices: &HashMap<H160, BigRational>,
-    ) -> Option<BigRational> {
-        if self
-            .encoder
-            .trades()
-            .iter()
-            .any(|trade| trade.order.order_meta_data.full_fee_amount.is_zero())
-        {
-            return None;
-        }
-
-        Some(
-            self.encoder
-                .trades()
-                .iter()
-                .filter_map(|trade| {
-                    let fee_token_price =
-                        external_prices.get(&trade.order.order_creation.sell_token)?;
-                    Some(trade.executed_unsubsidized_fee()?.to_big_rational() * fee_token_price)
-                })
-                .sum(),
-        )
     }
 
     /// See SettlementEncoder::merge
@@ -811,13 +785,17 @@ pub mod tests {
                 order_creation: OrderCreation {
                     sell_token: token0,
                     sell_amount: 10.into(),
-                    fee_amount: 5.into(),
+                    fee_amount: 1.into(),
                     kind: OrderKind::Sell,
                     ..Default::default()
                 },
                 ..Default::default()
             },
             executed_amount: 10.into(),
+            // Note that the scaled fee amount is different than the order's
+            // signed fee amount. This happens for subsidized orders, and when
+            // a fee objective scaling factor is configured.
+            scaled_fee_amount: 5.into(),
             ..Default::default()
         };
         let trade1 = Trade {
@@ -832,6 +810,7 @@ pub mod tests {
                 ..Default::default()
             },
             executed_amount: 10.into(),
+            scaled_fee_amount: 2.into(),
             ..Default::default()
         };
 
@@ -839,13 +818,15 @@ pub mod tests {
         let external_prices = maplit::hashmap! {token0 => BigRational::from_integer(5.into()), token1 => BigRational::from_integer(10.into())};
 
         // Fee in sell tokens
-        assert_eq!(trade0.executed_fee().unwrap(), 5.into());
+        assert_eq!(trade0.executed_fee().unwrap(), 1.into());
+        assert_eq!(trade0.executed_scaled_unsubsidized_fee().unwrap(), 5.into());
         assert_eq!(trade1.executed_fee().unwrap(), 2.into());
+        assert_eq!(trade1.executed_scaled_unsubsidized_fee().unwrap(), 2.into());
 
         // Fee in wei of ETH
         let settlement = test_settlement(clearing_prices, vec![trade0, trade1]);
         assert_eq!(
-            settlement.total_fees(&external_prices),
+            settlement.total_scaled_unsubsidized_fees(&external_prices),
             BigRational::from_integer(45.into())
         );
     }
