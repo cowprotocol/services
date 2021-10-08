@@ -1,7 +1,7 @@
 use crate::{
     api::order_validation::{OrderValidating, OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
-    solvable_orders::SolvableOrdersCache,
+    solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
 use anyhow::{ensure, Result};
 use chrono::Utc;
@@ -157,7 +157,7 @@ impl Orderbook {
             let solvable_orders = self
                 .solvable_orders
                 .cached_solvable_orders()
-                .0
+                .orders
                 .iter()
                 .map(Query::from_order)
                 .collect::<HashSet<_>>();
@@ -185,13 +185,13 @@ impl Orderbook {
         Ok(orders)
     }
 
-    pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {
-        let (orders, timestamp) = self.solvable_orders.cached_solvable_orders();
+    pub async fn get_solvable_orders(&self) -> Result<SolvableOrders> {
+        let solvable_orders = self.solvable_orders.cached_solvable_orders();
         ensure!(
-            timestamp.elapsed() <= self.solvable_orders_max_update_age,
+            solvable_orders.update_time.elapsed() <= self.solvable_orders_max_update_age,
             "solvable orders are out of date"
         );
-        Ok(orders)
+        Ok(solvable_orders)
     }
 
     pub async fn get_user_orders(

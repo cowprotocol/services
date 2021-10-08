@@ -1,7 +1,6 @@
-use crate::api::convert_get_orders_error_to_reply;
 use crate::orderbook::Orderbook;
+use crate::{api::convert_get_orders_error_to_reply, solvable_orders::SolvableOrders};
 use anyhow::Result;
-use model::order::Order;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
 
@@ -9,9 +8,12 @@ fn get_solvable_orders_request() -> impl Filter<Extract = (), Error = Rejection>
     warp::path!("solvable_orders").and(warp::get())
 }
 
-fn get_solvable_orders_response(result: Result<Vec<Order>>) -> impl Reply {
+fn get_solvable_orders_response(result: Result<SolvableOrders>) -> impl Reply {
     match result {
-        Ok(orders) => Ok(reply::with_status(reply::json(&orders), StatusCode::OK)),
+        Ok(orders) => Ok(reply::with_status(
+            reply::json(&orders.orders),
+            StatusCode::OK,
+        )),
         Err(err) => Ok(convert_get_orders_error_to_reply(err)),
     }
 }

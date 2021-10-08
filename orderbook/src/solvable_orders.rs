@@ -35,10 +35,16 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    orders: Vec<Order>,
+    orders: SolvableOrders,
     balances: Balances,
     block: u64,
-    update_time: Instant,
+}
+
+#[derive(Clone, Debug)]
+pub struct SolvableOrders {
+    pub orders: Vec<Order>,
+    pub update_time: Instant,
+    pub newest_settlement_block: u64,
 }
 
 impl SolvableOrdersCache {
@@ -56,10 +62,13 @@ impl SolvableOrdersCache {
             bad_token_detector,
             notify: Default::default(),
             cache: Mutex::new(Inner {
-                orders: Default::default(),
+                orders: SolvableOrders {
+                    orders: Vec::new(),
+                    update_time: Instant::now(),
+                    newest_settlement_block: 0,
+                },
                 balances: Default::default(),
                 block: 0,
-                update_time: Instant::now(),
             }),
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
@@ -72,9 +81,8 @@ impl SolvableOrdersCache {
     }
 
     /// Orders and timestamp at which last update happened.
-    pub fn cached_solvable_orders(&self) -> (Vec<Order>, Instant) {
-        let inner = self.cache.lock().unwrap();
-        (inner.orders.clone(), inner.update_time)
+    pub fn cached_solvable_orders(&self) -> SolvableOrders {
+        self.cache.lock().unwrap().orders.clone()
     }
 
     /// The cache will update the solvable orders and missing balances as soon as possible.
@@ -85,8 +93,10 @@ impl SolvableOrdersCache {
     /// Manually update solvable orders. Usually called by the background updating task.
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
-        let orders = self.database.solvable_orders(min_valid_to).await?;
-        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
+        let orders =
+            filter_unsupported_tokens(db_solvable_orders.orders, self.bad_token_detector.as_ref())
+                .await?;
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -124,10 +134,13 @@ impl SolvableOrdersCache {
         }
 
         *self.cache.lock().unwrap() = Inner {
-            orders,
+            orders: SolvableOrders {
+                orders,
+                update_time: Instant::now(),
+                newest_settlement_block: db_solvable_orders.latest_settlement_block,
+            },
             balances: new_balances,
             block,
-            update_time: Instant::now(),
         };
 
         Ok(())
@@ -193,9 +206,9 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     result
 }
 
-/// Keep updating the cache when the current block changes or an update notification happens.
+/// Keep updating the cache every N seconds or when an update notification happens.
 /// Exits when this becomes the only reference to the cache.
-async fn update_task(cache: Weak<SolvableOrdersCache>, mut current_block: CurrentBlockStream) {
+async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlockStream) {
     loop {
         let cache = match cache.upgrade() {
             Some(self_) => self_,
@@ -205,11 +218,17 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, mut current_block: Curren
             }
         };
         {
-            let new_block = current_block.changed();
+            // We are not updating on block changes because
+            // - the state of orders could change even when the block does not like when an order
+            //   gets cancelled off chain
+            // - the event updater takes some time to run and if we go first we would not update the
+            //   orders with the most recent events.
+            const UPDATE_INTERVAL: Duration = Duration::from_secs(2);
+            let timeout = tokio::time::sleep(UPDATE_INTERVAL);
             let notified = cache.notify.notified();
-            futures::pin_mut!(new_block);
+            futures::pin_mut!(timeout);
             futures::pin_mut!(notified);
-            futures::future::select(new_block, notified).await;
+            futures::future::select(timeout, notified).await;
         }
         let block = match current_block.borrow().number {
             Some(block) => block.as_u64(),
@@ -228,7 +247,10 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, mut current_block: Curren
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{account_balances::MockBalanceFetching, database::orders::MockOrderStoring};
+    use crate::{
+        account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
+        database::orders::SolvableOrders as DbOrders,
+    };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use maplit::hashmap;
     use model::order::{OrderCreation, OrderMetaData, SellTokenSource};
@@ -313,19 +335,34 @@ mod tests {
             .times(1)
             .return_once({
                 let orders = orders.clone();
-                move |_| Ok(vec![orders[0].clone()])
+                move |_| {
+                    Ok(DbOrders {
+                        orders: vec![orders[0].clone()],
+                        latest_settlement_block: 0,
+                    })
+                }
             });
         order_storing
             .expect_solvable_orders()
             .times(1)
             .return_once({
                 let orders = orders.clone();
-                move |_| Ok(orders.into())
+                move |_| {
+                    Ok(DbOrders {
+                        orders: orders.into(),
+                        latest_settlement_block: 0,
+                    })
+                }
             });
         order_storing
             .expect_solvable_orders()
             .times(1)
-            .return_once(|_| Ok(Vec::new()));
+            .return_once(|_| {
+                Ok(DbOrders {
+                    orders: Vec::new(),
+                    latest_settlement_block: 0,
+                })
+            });
 
         balance_fetcher
             .expect_get_balances()
@@ -354,7 +391,7 @@ mod tests {
             Some(1.into())
         );
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None);
-        let orders_ = cache.cached_solvable_orders().0;
+        let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 1);
         assert_eq!(orders_[0].order_meta_data.available_balance, Some(1.into()));
 
@@ -367,13 +404,13 @@ mod tests {
             cache.cached_balance(&Query::from_order(&orders[1])),
             Some(2.into())
         );
-        let orders_ = cache.cached_solvable_orders().0;
+        let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 2);
 
         cache.update(0).await.unwrap();
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[0])), None,);
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None,);
-        let orders_ = cache.cached_solvable_orders().0;
+        let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 0);
     }
 }
