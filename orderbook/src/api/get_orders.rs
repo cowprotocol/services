@@ -3,8 +3,9 @@ use crate::{
 };
 use anyhow::Result;
 use model::order::Order;
+use primitive_types::H160;
 use serde::Deserialize;
-use shared::{time::now_in_epoch_seconds, H160Wrapper};
+use shared::time::now_in_epoch_seconds;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -18,9 +19,9 @@ use warp::{
 struct Query {
     #[serde(default = "now_in_epoch_seconds")]
     min_valid_to: u32,
-    owner: Option<H160Wrapper>,
-    sell_token: Option<H160Wrapper>,
-    buy_token: Option<H160Wrapper>,
+    owner: Option<H160>,
+    sell_token: Option<H160>,
+    buy_token: Option<H160>,
     #[serde(default)]
     include_fully_executed: bool,
     #[serde(default)]
@@ -38,12 +39,11 @@ impl Query {
         if self.owner.is_none() && self.sell_token.is_none() && self.buy_token.is_none() {
             return Err("need to set at least one of owner, sell_token, buy_token");
         }
-        let to_h160 = |option: Option<&H160Wrapper>| option.map(|wrapper| wrapper.0);
         Ok(OrderFilter {
             min_valid_to: self.min_valid_to,
-            owner: to_h160(self.owner.as_ref()),
-            sell_token: to_h160(self.sell_token.as_ref()),
-            buy_token: to_h160(self.buy_token.as_ref()),
+            owner: self.owner,
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
             exclude_fully_executed: !self.include_fully_executed,
             exclude_invalidated: !self.include_invalidated,
             exclude_insufficient_balance: !self.include_insufficient_balance,

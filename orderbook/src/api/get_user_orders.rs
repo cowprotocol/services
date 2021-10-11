@@ -1,8 +1,8 @@
 use crate::{api::internal_error, orderbook::Orderbook};
 use anyhow::Result;
 use model::order::Order;
+use primitive_types::H160;
 use serde::Deserialize;
-use shared::H160Wrapper;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -16,8 +16,8 @@ struct Query {
     limit: Option<u64>,
 }
 
-fn request() -> impl Filter<Extract = (H160Wrapper, Query), Error = Rejection> + Clone {
-    warp::path!("account" / H160Wrapper / "orders")
+fn request() -> impl Filter<Extract = (H160, Query), Error = Rejection> + Clone {
+    warp::path!("account" / H160 / "orders")
         .and(warp::get())
         .and(warp::query::<Query>())
 }
@@ -35,7 +35,7 @@ fn response(result: Result<Vec<Order>>) -> WithStatus<Json> {
 pub fn get_user_orders(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    request().and_then(move |owner: H160Wrapper, query: Query| {
+    request().and_then(move |owner: H160, query: Query| {
         let orderbook = orderbook.clone();
         async move {
             const DEFAULT_OFFSET: u64 = 0;
@@ -53,7 +53,7 @@ pub fn get_user_orders(
                     StatusCode::BAD_REQUEST,
                 ));
             }
-            let result = orderbook.get_user_orders(&owner.0, offset, limit).await;
+            let result = orderbook.get_user_orders(&owner, offset, limit).await;
             Result::<_, Infallible>::Ok(response(result))
         }
     })
@@ -74,10 +74,7 @@ mod tests {
             .filter(&request())
             .await
             .unwrap();
-        assert_eq!(
-            result.0 .0,
-            addr!("0000000000000000000000000000000000000001")
-        );
+        assert_eq!(result.0, addr!("0000000000000000000000000000000000000001"));
         assert_eq!(result.1.offset, None);
         assert_eq!(result.1.limit, None);
 

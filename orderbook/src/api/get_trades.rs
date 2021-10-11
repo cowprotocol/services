@@ -4,8 +4,8 @@ use crate::database::trades::TradeRetrieving;
 use anyhow::Result;
 use model::order::OrderUid;
 use model::trade::Trade;
+use primitive_types::H160;
 use serde::Deserialize;
-use shared::H160Wrapper;
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::reply::{Json, WithStatus};
@@ -15,7 +15,7 @@ use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 #[serde(rename_all = "camelCase")]
 struct Query {
     pub order_uid: Option<OrderUid>,
-    pub owner: Option<H160Wrapper>,
+    pub owner: Option<H160>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -25,10 +25,9 @@ enum TradeFilterError {
 
 impl Query {
     fn trade_filter(&self) -> TradeFilter {
-        let to_h160 = |option: Option<&H160Wrapper>| option.map(|wrapper| wrapper.0);
         TradeFilter {
             order_uid: self.order_uid,
-            owner: to_h160(self.owner.as_ref()),
+            owner: self.owner,
         }
     }
 

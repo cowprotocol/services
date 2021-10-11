@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use shared::{price_estimation::PriceEstimationError, H160Wrapper};
+use shared::price_estimation::PriceEstimationError;
 use std::convert::Infallible;
 use std::sync::Arc;
 use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
@@ -21,8 +21,8 @@ struct FeeInfo {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Query {
-    sell_token: H160Wrapper,
-    buy_token: H160Wrapper,
+    sell_token: H160,
+    buy_token: H160,
     #[serde(with = "u256_decimal")]
     amount: U256,
     kind: OrderKind,
@@ -61,8 +61,8 @@ pub fn get_fee_info(
             Result::<_, Infallible>::Ok(get_fee_info_response(
                 fee_calculator
                     .compute_unsubsidized_min_fee(
-                        query.sell_token.0,
-                        Some(query.buy_token.0),
+                        query.sell_token,
+                        Some(query.buy_token),
                         Some(query.amount),
                         Some(query.kind),
                         None,
@@ -85,9 +85,7 @@ struct LegacyFeeInfo {
 }
 
 pub fn legacy_get_fee_info_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
-    warp::path!("tokens" / H160Wrapper / "fee")
-        .and(warp::get())
-        .map(|token: H160Wrapper| token.0)
+    warp::path!("tokens" / H160 / "fee").and(warp::get())
 }
 
 pub fn legacy_get_fee_info_response(
@@ -144,8 +142,8 @@ mod tests {
         );
         let request = request().path(&path_string).method("GET");
         let result = request.filter(&filter).await.unwrap();
-        assert_eq!(result.sell_token.0, H160::from_low_u64_be(1));
-        assert_eq!(result.buy_token.0, H160::from_low_u64_be(2));
+        assert_eq!(result.sell_token, H160::from_low_u64_be(1));
+        assert_eq!(result.buy_token, H160::from_low_u64_be(2));
         assert_eq!(result.amount, U256::exp10(18));
         assert_eq!(result.kind, OrderKind::Buy);
     }
