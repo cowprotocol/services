@@ -131,6 +131,13 @@ impl DomainSeparator {
     }
 }
 
+#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SolvableOrders {
+    pub orders: Vec<order::Order>,
+    pub latest_settlement_block: u64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

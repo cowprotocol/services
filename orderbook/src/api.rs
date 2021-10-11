@@ -7,6 +7,7 @@ mod get_order_by_uid;
 mod get_orders;
 mod get_orders_by_tx;
 mod get_solvable_orders;
+mod get_solvable_orders_v2;
 mod get_trades;
 mod get_user_orders;
 pub mod order_validation;
@@ -39,6 +40,7 @@ pub fn handle_all_routes(
     let fee_info = get_fee_info::get_fee_info(fee_calculator.clone());
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
+    let get_solvable_orders_v2 = get_solvable_orders_v2::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
     let cancel_order = cancel_order::cancel_order(orderbook.clone());
     let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
@@ -53,22 +55,27 @@ pub fn handle_all_routes(
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    let routes_with_labels = warp::path!("api" / "v1" / ..).and(
-        (create_order.with(handle_metrics("create_order")))
-            .or(get_orders.with(handle_metrics("get_orders")))
-            .or(fee_info.with(handle_metrics("fee_info")))
-            .or(legacy_fee_info.with(handle_metrics("legacy_fee_info")))
-            .or(get_order.with(handle_metrics("get_order")))
-            .or(get_solvable_orders.with(handle_metrics("get_solvable_orders")))
-            .or(get_trades.with(handle_metrics("get_trades")))
-            .or(cancel_order.with(handle_metrics("cancel_order")))
-            .or(get_amount_estimate.with(handle_metrics("get_amount_estimate")))
-            .or(get_fee_and_quote_sell.with(handle_metrics("get_fee_and_quote_sell")))
-            .or(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy")))
-            .or(get_user_orders.with(handle_metrics("get_user_orders")))
-            .or(get_orders_by_tx.with(handle_metrics("get_orders_by_tx")))
-            .or(post_quote.with(handle_metrics("get_user_orders"))),
-    );
+    let routes_with_labels = (warp::path!("api" / "v1" / ..)
+        .and(create_order.with(handle_metrics("create_order"))))
+    .or(warp::path!("api" / "v1" / ..).and(get_orders.with(handle_metrics("get_orders"))))
+    .or(warp::path!("api" / "v1" / ..).and(fee_info.with(handle_metrics("fee_info"))))
+    .or(warp::path!("api" / "v1" / ..).and(legacy_fee_info.with(handle_metrics("legacy_fee_info"))))
+    .or(warp::path!("api" / "v1" / ..).and(get_order.with(handle_metrics("get_order"))))
+    .or(warp::path!("api" / "v1" / ..)
+        .and(get_solvable_orders.with(handle_metrics("get_solvable_orders"))))
+    .or(warp::path!("api" / "v2" / ..)
+        .and(get_solvable_orders_v2.with(handle_metrics("get_solvable_orders"))))
+    .or(warp::path!("api" / "v1" / ..).and(get_trades.with(handle_metrics("get_trades"))))
+    .or(warp::path!("api" / "v1" / ..).and(cancel_order.with(handle_metrics("cancel_order"))))
+    .or(warp::path!("api" / "v1" / ..)
+        .and(get_amount_estimate.with(handle_metrics("get_amount_estimate"))))
+    .or(warp::path!("api" / "v1" / ..)
+        .and(get_fee_and_quote_sell.with(handle_metrics("get_fee_and_quote_sell"))))
+    .or(warp::path!("api" / "v1" / ..)
+        .and(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy"))))
+    .or(warp::path!("api" / "v1" / ..).and(get_user_orders.with(handle_metrics("get_user_orders"))))
+    .or(warp::path!("api" / "v1" / ..).and(get_orders_by_tx.with(handle_metrics("get_user_by_tx"))))
+    .or(warp::path!("api" / "v1" / ..).and(post_quote.with(handle_metrics("get_user_orders"))));
 
     routes_with_labels.recover(handle_rejection).with(cors)
 }

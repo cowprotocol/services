@@ -44,7 +44,7 @@ struct Inner {
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub update_time: Instant,
-    pub newest_settlement_block: u64,
+    pub latest_settlement_block: u64,
 }
 
 impl SolvableOrdersCache {
@@ -65,7 +65,7 @@ impl SolvableOrdersCache {
                 orders: SolvableOrders {
                     orders: Vec::new(),
                     update_time: Instant::now(),
-                    newest_settlement_block: 0,
+                    latest_settlement_block: 0,
                 },
                 balances: Default::default(),
                 block: 0,
@@ -137,7 +137,7 @@ impl SolvableOrdersCache {
             orders: SolvableOrders {
                 orders,
                 update_time: Instant::now(),
-                newest_settlement_block: db_solvable_orders.latest_settlement_block,
+                latest_settlement_block: db_solvable_orders.latest_settlement_block,
             },
             balances: new_balances,
             block,

@@ -240,6 +240,27 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Order"
+  /api/v2/solvable_orders:
+    get:
+      summary: Get solvable orders.
+      description: |
+        The set of orders that solvers should be solving right now. These orders are determined to
+        be valid at the time of the request.
+      responses:
+        200:
+          description: the orders
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  orders:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Order"
+                  latestSettlementBlock:
+                    type: integer
+                    description: The block number in which the most recent settlement was observed.
   /api/v1/fee:
     get:
       description: |
