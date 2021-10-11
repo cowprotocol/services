@@ -467,7 +467,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_tokens() {
-        // shared::tracing::initialize("orderbook::bad_token=debug,shared::transport=debug");
+        // shared::tracing::initialize("orderbook::bad_token=debug,shared::transport=debug", tracing::level_filters::LevelFilter::OFF);
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
 

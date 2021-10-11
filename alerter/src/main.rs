@@ -275,7 +275,7 @@ struct Arguments {
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
-    shared::tracing::initialize("alerter=debug");
+    shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     tracing::info!("running alerter with {:#?}", args);
 
     let client = Client::builder()

@@ -2,19 +2,30 @@ use std::{
     panic::{self, PanicInfo},
     thread,
 };
-use tracing_subscriber::fmt::time::ChronoUtc;
+use tracing::level_filters::LevelFilter;
+use tracing_subscriber::fmt::{time::ChronoUtc, writer::MakeWriterExt as _};
 
 /// Initializes tracing setup that is shared between the binaries.
 /// `env_filter` has similar syntax to env_logger. It is documented at
 /// https://docs.rs/tracing-subscriber/0.2.15/tracing_subscriber/filter/struct.EnvFilter.html
-pub fn initialize(env_filter: &str) {
+pub fn initialize(env_filter: &str, stderr_threshold: LevelFilter) {
     // This is what kibana uses to separate multi line log messages.
     let time_format_string = "%Y-%m-%dT%H:%M:%S%.3fZ";
-    tracing_subscriber::fmt::fmt()
+    let subscriber_builder = tracing_subscriber::fmt::fmt()
         .with_timer(ChronoUtc::with_format(String::from(time_format_string)))
         .with_env_filter(env_filter)
-        .with_ansi(atty::is(atty::Stream::Stdout))
-        .init();
+        .with_ansi(atty::is(atty::Stream::Stdout));
+    match stderr_threshold.into_level() {
+        Some(threshold) => subscriber_builder
+            .with_writer(
+                std::io::stderr
+                    .with_max_level(threshold)
+                    .or_else(std::io::stdout),
+            )
+            .init(),
+        None => subscriber_builder.init(),
+    };
+
     set_panic_hook();
 }
 

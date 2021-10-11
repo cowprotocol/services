@@ -17,6 +17,7 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
+use tracing::level_filters::LevelFilter;
 use web3::signing::SecretKeyRef;
 
 mod ganache;
@@ -39,7 +40,7 @@ async fn ganache_onchain_settlement_without_liquidity() {
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug");
+    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::OFF);
     let chain_id = web3
         .eth()
         .chain_id()

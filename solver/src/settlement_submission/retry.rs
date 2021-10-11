@@ -139,6 +139,7 @@ mod tests {
     use jsonrpc_core::ErrorCode;
     use primitive_types::H256;
     use shared::transport::create_test_transport;
+    use tracing::level_filters::LevelFilter;
 
     #[test]
     fn test_submission_result_was_mined() {
@@ -207,7 +208,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn multi_node_rinkeby_test() {
-        shared::tracing::initialize("solver=debug,shared=debug");
+        shared::tracing::initialize("solver=debug,shared=debug", LevelFilter::OFF);
         let envs = ["NODE0", "NODE1"];
         let web3s: Vec<Web3> = envs
             .iter()

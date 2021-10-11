@@ -343,6 +343,7 @@ mod tests {
         gas_price_estimation::FakeGasPriceEstimator,
         transport::{create_env_test_transport, dummy::DummyTransport},
     };
+    use tracing::level_filters::LevelFilter;
 
     #[tokio::test]
     async fn cannot_create_archer_submitter_with_local_account() {
@@ -385,7 +386,10 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_settlement() {
-        shared::tracing::initialize("solver=debug,shared=debug,shared::transport::http=info");
+        shared::tracing::initialize(
+            "solver=debug,shared=debug,shared::transport::http=info",
+            LevelFilter::OFF,
+        );
 
         let web3 = Web3::new(create_env_test_transport());
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();

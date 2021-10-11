@@ -8,23 +8,14 @@ RUN apt-get update && apt-get install -y git libssl-dev pkg-config
 COPY . .
 RUN CARGO_PROFILE_RELEASE_DEBUG=1 cargo build --release
 
-RUN \
-    cd .. && \
-    git clone https://github.com/gnosis/regex-stream-split.git && \
-    cd regex-stream-split && \
-    git checkout edc88224612b9e151c334fa6d3a7d20575d83836 && \
-    cargo build --release
-
 # Extract Binary
 FROM docker.io/debian:bullseye-slim
 
 # Handle signal handlers properly
 RUN apt-get update && apt-get install -y ca-certificates tini && apt-get clean
-COPY --from=cargo-build /usr/local/src/regex-stream-split/target/release/regex-stream-split /usr/local/bin/regex-stream-split
 COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/solver /usr/local/bin/solver
 COPY --from=cargo-build /usr/local/src/gp-v2-services/target/release/alerter /usr/local/bin/alerter
-COPY docker/startup.sh /usr/local/bin/startup.sh
 
 CMD echo "Specify binary - either solver or orderbook"
-ENTRYPOINT ["/usr/bin/tini", "--", "startup.sh"]
+ENTRYPOINT ["/usr/bin/tini"]

@@ -160,7 +160,10 @@ pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
 #[tokio::main]
 async fn main() {
     let args = Arguments::from_args();
-    shared::tracing::initialize(args.shared.log_filter.as_str());
+    shared::tracing::initialize(
+        args.shared.log_filter.as_str(),
+        args.shared.log_stderr_threshold,
+    );
     tracing::info!("running order book with validated {:#?}", args);
 
     setup_metrics_registry(Some("gp_v2_api".into()), None);

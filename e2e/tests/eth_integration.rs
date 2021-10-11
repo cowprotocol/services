@@ -24,6 +24,7 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
+use tracing::level_filters::LevelFilter;
 use web3::signing::SecretKeyRef;
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
@@ -38,7 +39,7 @@ async fn ganache_eth_integration() {
 }
 
 async fn eth_integration(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug");
+    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::OFF);
     let chain_id = web3
         .eth()
         .chain_id()

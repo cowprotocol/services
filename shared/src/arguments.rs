@@ -10,6 +10,7 @@ use std::{
     str::FromStr,
     time::Duration,
 };
+use tracing::level_filters::LevelFilter;
 use url::Url;
 
 #[derive(Debug, structopt::StructOpt)]
@@ -20,6 +21,9 @@ pub struct Arguments {
         default_value = "warn,orderbook=debug,solver=debug,shared=debug,shared::transport::http=info,archerapi=info"
     )]
     pub log_filter: String,
+
+    #[structopt(long, env, default_value = "error", parse(try_from_str))]
+    pub log_stderr_threshold: LevelFilter,
 
     /// The Ethereum node URL to connect to.
     #[structopt(long, env, default_value = "http://localhost:8545")]
