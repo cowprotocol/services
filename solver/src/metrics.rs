@@ -15,7 +15,7 @@ use std::{
     sync::Mutex,
     time::{Duration, Instant},
 };
-use strum::{AsStaticRef, VariantNames};
+use strum::VariantNames;
 
 /// The maximum time between the completion of two run loops. If exceeded the service will be considered unhealthy.
 const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
@@ -148,7 +148,7 @@ impl SolverMetrics for Metrics {
             self.liquidity.with_label_values(&[label]).set(0);
         });
         liquidity.iter().for_each(|liquidity| {
-            let label = liquidity.as_static();
+            let label: &'static str = liquidity.into();
             self.liquidity.with_label_values(&[label]).inc();
         })
     }

@@ -20,10 +20,10 @@ use shared::sources::balancer::{
 use shared::sources::uniswap::pool_fetching::Pool;
 use std::collections::HashMap;
 use std::sync::Arc;
-use strum_macros::{AsStaticStr, EnumVariantNames};
+use strum::{EnumVariantNames, IntoStaticStr};
 
 /// Defines the different types of liquidity our solvers support
-#[derive(Clone, AsStaticStr, EnumVariantNames, Debug)]
+#[derive(Clone, IntoStaticStr, EnumVariantNames, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 pub enum Liquidity {
     ConstantProduct(ConstantProductOrder),
