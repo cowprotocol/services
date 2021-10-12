@@ -21,7 +21,6 @@ impl OrderbookLiquidity {
         client: Client,
         native_token: WETH9,
         liquidity_order_owners: HashSet<H160>,
-        fee_factor: f64,
         fee_objective_scaling_factor: f64,
     ) -> Self {
         Self {
@@ -29,7 +28,6 @@ impl OrderbookLiquidity {
             converter: OrderConverter {
                 native_token,
                 liquidity_order_owners,
-                fee_factor,
                 fee_objective_scaling_factor,
             },
         }
@@ -73,7 +71,6 @@ fn inflight_order_filter(order: Order, inflight_trades: &HashSet<OrderUid>) -> O
 pub struct OrderConverter {
     native_token: WETH9,
     liquidity_order_owners: HashSet<H160>,
-    fee_factor: f64,
     fee_objective_scaling_factor: f64,
 }
 
@@ -85,7 +82,6 @@ impl OrderConverter {
         Self {
             native_token: shared::dummy_contract!(WETH9, native_token),
             liquidity_order_owners: HashSet::new(),
-            fee_factor: 1.,
             fee_objective_scaling_factor: 1.,
         }
     }
@@ -99,22 +95,11 @@ impl OrderConverter {
             order.order_creation.buy_token
         };
 
-        // In order to maintain backwards compatibility with orders created
-        // before the full fee amount was recorded, guess the full amount based
-        // on the actual fee amount and the global fee scaling factor. This can
-        // be removed once there are no more active orders without a full fee
-        // amount.
-        // <https://github.com/gnosis/gp-v2-services/issues/1219>
-        let full_fee_amount = if order.order_meta_data.full_fee_amount.is_zero() {
-            U256::from_f64_lossy(order.order_creation.fee_amount.to_f64_lossy() / self.fee_factor)
-        } else {
-            order.order_meta_data.full_fee_amount
-        };
-
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
         let scaled_fee_amount = U256::from_f64_lossy(
-            full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
+            order.order_meta_data.full_fee_amount.to_f64_lossy()
+                * self.fee_objective_scaling_factor,
         );
 
         LimitOrder {
@@ -214,46 +199,8 @@ pub mod tests {
     }
 
     #[test]
-    fn computes_full_fee_amount_if_missing() {
-        let converter = OrderConverter {
-            fee_factor: 0.5,
-            ..OrderConverter::test(H160::default())
-        };
-
-        assert_eq!(
-            converter
-                .normalize_limit_order(Order {
-                    order_creation: OrderCreation {
-                        fee_amount: 10.into(),
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                })
-                .scaled_fee_amount,
-            20.into(),
-        );
-
-        assert_eq!(
-            converter
-                .normalize_limit_order(Order {
-                    order_creation: OrderCreation {
-                        fee_amount: 10.into(),
-                        ..Default::default()
-                    },
-                    order_meta_data: OrderMetaData {
-                        full_fee_amount: 50.into(),
-                        ..Default::default()
-                    },
-                })
-                .scaled_fee_amount,
-            50.into(),
-        );
-    }
-
-    #[test]
     fn applies_objective_scaling_factor() {
         let converter = OrderConverter {
-            fee_factor: 0.5,
             fee_objective_scaling_factor: 1.5,
             ..OrderConverter::test(H160::default())
         };
@@ -265,7 +212,10 @@ pub mod tests {
                         fee_amount: 10.into(),
                         ..Default::default()
                     },
-                    ..Default::default()
+                    order_meta_data: OrderMetaData {
+                        full_fee_amount: 20.into(),
+                        ..Default::default()
+                    }
                 })
                 .scaled_fee_amount,
             30.into(),

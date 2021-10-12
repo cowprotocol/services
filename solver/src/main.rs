@@ -286,7 +286,6 @@ async fn main() {
         client.clone(),
         native_token_contract.clone(),
         args.liquidity_order_owners.into_iter().collect(),
-        args.shared.fee_factor,
         args.fee_objective_scaling_factor,
     );
 

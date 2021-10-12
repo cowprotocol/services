@@ -58,11 +58,6 @@ pub struct Arguments {
     #[structopt(long, env, use_delimiter = true)]
     pub base_tokens: Vec<H160>,
 
-    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
-    /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
-    #[structopt(long, env, default_value = "1", parse(try_from_str = parse_fee_factor))]
-    pub fee_factor: f64,
-
     /// Which Liquidity sources to be used by Price Estimator.
     #[structopt(
         long,
@@ -130,9 +125,9 @@ pub struct Arguments {
 }
 
 pub fn parse_fee_factor(s: &str) -> Result<f64> {
-    let f64 = f64::from_str(s)?;
-    ensure!(f64.is_finite() && f64 >= 0.);
-    Ok(f64)
+    let fee = f64::from_str(s)?;
+    ensure!(fee.is_finite() && fee >= 0.);
+    Ok(fee)
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

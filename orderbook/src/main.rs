@@ -126,6 +126,11 @@ struct Arguments {
     )]
     solvable_orders_max_update_age: Duration,
 
+    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
+    /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
+    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
+    pub fee_factor: f64,
+
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
     /// Should take the form of a json string as shown in the following example:
     ///
@@ -375,7 +380,7 @@ async fn main() {
         gas_price_estimator,
         native_token.address(),
         database.clone(),
-        args.shared.fee_factor,
+        args.fee_factor,
         bad_token_detector.clone(),
         args.partner_additional_fee_factors,
         native_token_price_estimation_amount,
