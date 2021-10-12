@@ -5,6 +5,7 @@ use crate::{
 };
 use anyhow::{ensure, Result};
 use chrono::Utc;
+use ethcontract::H256;
 use model::{
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
     signature::SigningScheme,
@@ -176,6 +177,12 @@ impl Orderbook {
         };
         set_available_balances(std::slice::from_mut(&mut order), &self.solvable_orders);
         Ok(Some(order))
+    }
+
+    pub async fn get_orders_for_tx(&self, hash: &H256) -> Result<Vec<Order>> {
+        let mut orders = self.database.orders_for_tx(hash).await?;
+        set_available_balances(orders.as_mut_slice(), &self.solvable_orders);
+        Ok(orders)
     }
 
     pub async fn get_solvable_orders(&self) -> Result<Vec<Order>> {

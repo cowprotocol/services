@@ -1,5 +1,7 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
 use crate::fee::MinFeeStoring;
+use ethcontract::H256;
+use model::order::Order;
 use prometheus::Histogram;
 use shared::{event_handling::EventStoring, maintenance::Maintaining};
 use std::sync::Arc;
@@ -127,6 +129,14 @@ impl OrderStoring for Instrumented {
             .database_query_histogram("orders")
             .start_timer();
         self.inner.orders(filter).await
+    }
+
+    async fn orders_for_tx(&self, tx_hash: &H256) -> anyhow::Result<Vec<Order>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("orders_for_tx")
+            .start_timer();
+        self.inner.orders_for_tx(tx_hash).await
     }
 
     async fn single_order(

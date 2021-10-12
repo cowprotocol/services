@@ -161,6 +161,24 @@ paths:
           description: Invalid signature
         404:
           description: Order was not found
+  /api/v1/transactions/{txHash}/orders:
+    get:
+      summary: Get orders by settlement transaction hash.
+      parameters:
+        - in: path
+          name: txHash
+          schema:
+            $ref: "#/components/schemas/TransactionHash"
+          required: true
+      responses:
+        200:
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Order"
   /api/v1/tokens/{sellToken}/fee:
     get:
       description: |

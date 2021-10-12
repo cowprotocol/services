@@ -5,6 +5,7 @@ mod get_fee_info;
 mod get_markets;
 mod get_order_by_uid;
 mod get_orders;
+mod get_orders_by_tx;
 mod get_solvable_orders;
 mod get_trades;
 mod get_user_orders;
@@ -45,7 +46,8 @@ pub fn handle_all_routes(
         get_fee_and_quote::get_fee_and_quote_sell(fee_calculator.clone(), price_estimator.clone());
     let get_fee_and_quote_buy =
         get_fee_and_quote::get_fee_and_quote_buy(fee_calculator, price_estimator.clone());
-    let get_user_orders = get_user_orders::get_user_orders(orderbook);
+    let get_user_orders = get_user_orders::get_user_orders(orderbook.clone());
+    let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook);
     let post_quote = post_quote::post_quote();
     let cors = warp::cors()
         .allow_any_origin()
@@ -64,6 +66,7 @@ pub fn handle_all_routes(
             .or(get_fee_and_quote_sell.with(handle_metrics("get_fee_and_quote_sell")))
             .or(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy")))
             .or(get_user_orders.with(handle_metrics("get_user_orders")))
+            .or(get_orders_by_tx.with(handle_metrics("get_orders_by_tx")))
             .or(post_quote.with(handle_metrics("get_user_orders"))),
     );
 
