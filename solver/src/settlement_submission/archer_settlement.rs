@@ -406,13 +406,19 @@ mod tests {
         let gas_price_cap = 100e9;
 
         let settlement = Settlement::new(Default::default());
-        let gas_estimate = crate::settlement_submission::estimate_gas(
-            &contract,
-            &settlement.clone().into(),
-            account.clone(),
-        )
-        .await
-        .unwrap();
+        let gas_estimate =
+            crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
+                std::iter::once((account.clone(), settlement.clone())),
+                &contract,
+                &web3,
+                0.0,
+            )
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap();
 
         let submitter = ArcherSolutionSubmitter::new(
             &web3,

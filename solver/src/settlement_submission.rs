@@ -5,11 +5,11 @@ mod gas_price_stream;
 pub mod retry;
 pub mod rpc;
 
-use crate::{encoding::EncodedSettlement, settlement::Settlement};
+use crate::settlement::Settlement;
 use anyhow::{bail, Result};
 use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
-use ethcontract::{errors::ExecutionError, Account, TransactionHash};
+use ethcontract::{Account, TransactionHash};
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
@@ -22,17 +22,6 @@ use self::archer_settlement::ArcherSolutionSubmitter;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
-
-pub async fn estimate_gas(
-    contract: &GPv2Settlement,
-    settlement: &EncodedSettlement,
-    from: Account,
-) -> Result<U256, ExecutionError> {
-    retry::settle_method_builder(contract, settlement.clone(), from)
-        .tx
-        .estimate_gas()
-        .await
-}
 
 pub struct SolutionSubmitter {
     pub web3: Web3,

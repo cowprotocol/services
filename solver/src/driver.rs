@@ -7,7 +7,7 @@ use crate::{
     metrics::SolverMetrics,
     settlement::Settlement,
     settlement_simulation,
-    settlement_submission::{self, retry::is_transaction_failure, SolutionSubmitter},
+    settlement_submission::{retry::is_transaction_failure, SolutionSubmitter},
     solver::Solver,
     solver::{Auction, SettlementWithSolver, Solvers},
 };
@@ -193,12 +193,13 @@ impl Driver {
             return Ok(false);
         }
 
-        let simulations = settlement_simulation::simulate_settlements(
-            [(solver, settlement.settlement.without_onchain_liquidity())].iter(),
+        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
+            std::iter::once((
+                solver.account().clone(),
+                settlement.settlement.without_onchain_liquidity(),
+            )),
             &self.settlement_contract,
             &self.web3,
-            &self.network_id,
-            settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
         )
         .await
@@ -215,12 +216,12 @@ impl Driver {
         Vec<SettlementWithSolver>,
         Vec<(SettlementWithSolver, Error)>,
     )> {
-        let simulations = settlement_simulation::simulate_settlements(
-            settlements.iter(),
+        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
+            settlements
+                .iter()
+                .map(|settlement| (settlement.0.account().clone(), settlement.1.clone())),
             &self.settlement_contract,
             &self.web3,
-            &self.network_id,
-            settlement_simulation::Block::LatestWithoutTenderly,
             gas_price_wei,
         )
         .await
@@ -230,8 +231,8 @@ impl Driver {
             .into_iter()
             .zip(simulations)
             .partition_map(|(settlement, result)| match result {
-                Ok(()) => Either::Left(settlement),
-                Err(err) => Either::Right((settlement, err)),
+                Ok(_) => Either::Left(settlement),
+                Err(err) => Either::Right((settlement, err.into())),
             }))
     }
 
@@ -246,13 +247,15 @@ impl Driver {
         current_block_during_liquidity_fetch: u64,
         gas_price_wei: f64,
     ) {
-        let simulations = match settlement_simulation::simulate_settlements(
-            errors.iter().map(|(settlement, _)| settlement),
+        let simulations = match settlement_simulation::simulate_and_error_with_tenderly_link(
+            errors
+                .iter()
+                .map(|(settlement, _)| (settlement.0.account().clone(), settlement.1.clone())),
             &self.settlement_contract,
             &self.web3,
-            &self.network_id,
-            settlement_simulation::Block::FixedWithTenderly(current_block_during_liquidity_fetch),
             gas_price_wei,
+            &self.network_id,
+            current_block_during_liquidity_fetch,
         )
         .await
         {
@@ -316,7 +319,8 @@ impl Driver {
         use futures::stream::StreamExt;
 
         // Normalize gas_price_wei to the native token price in the prices vector.
-        let gas_price_wei = BigRational::from_float(gas_price_wei).expect("Invalid gas price.")
+        let gas_price_normalized = BigRational::from_float(gas_price_wei)
+            .expect("Invalid gas price.")
             * prices
                 .get(&self.native_token)
                 .expect("Price of native token must be known.");
@@ -325,23 +329,26 @@ impl Driver {
             .filter_map(|(solver, settlement)| async {
                 let surplus = settlement.total_surplus(prices);
                 let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
-                let gas_estimate = settlement_submission::estimate_gas(
+                let gas_estimate = match settlement_simulation::simulate_and_estimate_gas_at_current_block(
+                    std::iter::once((solver.account().clone(), settlement.clone())),
                     &self.settlement_contract,
-                    &settlement.clone().into(),
-                    solver.account().clone(),
+                    &self.web3,gas_price_wei
                 )
                 .await
-                .map_err(|err| {
-                    tracing::error!("Failed to estimate gas for solver {}: {:?}", solver.name(), err);
-                    err
-                })
-                .ok()?;
+                .map(|results|  results.into_iter().next().unwrap().map_err(Error::from))
+                {
+                    Ok(Ok(gas)) => gas,
+                    Err(err)  | Ok(Err(err)) => {
+                        tracing::error!("Failed to estimate gas for solver {}: {:?}", solver.name(), err);
+                        return None;
+                    }
+                };
                 let rated_settlement = RatedSettlement {
                     settlement,
                     surplus,
                     solver_fees: scaled_solver_fees,
                     gas_estimate,
-                    gas_price: gas_price_wei.clone(),
+                    gas_price: gas_price_normalized.clone(),
                 };
                 tracing::info!(
                     "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
