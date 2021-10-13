@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use ethcontract::transport::DynTransport;
 use primitive_types::{H160, U256};
 use serde::Deserialize;
@@ -8,7 +8,8 @@ use web3::Transport;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Block {
-    base_fee_per_gas: U256,
+    // Xdai does not have it
+    base_fee_per_gas: Option<U256>,
     transactions: Vec<Transaction>,
 }
 
@@ -81,7 +82,10 @@ pub async fn pending_transactions(transport: &DynTransport) -> Result<Vec<Transa
 
 // Get base fee from pending block (block currently being mined).
 pub async fn base_fee_per_gas(transport: &DynTransport) -> Result<U256> {
-    Ok(pending_block(transport).await?.base_fee_per_gas)
+    pending_block(transport)
+        .await?
+        .base_fee_per_gas
+        .ok_or_else(|| anyhow!("missing base fee per gas"))
 }
 
 #[cfg(test)]
