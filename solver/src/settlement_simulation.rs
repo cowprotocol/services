@@ -7,6 +7,7 @@ use ethcontract::{
 };
 use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
+use itertools::Itertools;
 use primitive_types::U256;
 use shared::Web3;
 use web3::types::{BlockId, CallRequest};
@@ -35,39 +36,42 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     web3: &Web3,
     gas_price: EstimatedGasPrice,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
-    let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport().clone()));
-    let calls = settlements
-        .map(|(account, settlement)| {
-            let tx = settle_method(gas_price, contract, settlement, account).tx;
-            let resolved_gas_price = tx
-                .gas_price
-                .map(|gas_price| gas_price.resolve_for_transaction())
-                .unwrap_or_default();
-
-            let call_request = CallRequest {
-                from: tx.from.map(|account| account.address()),
-                to: tx.to,
-                gas: None,
-                gas_price: resolved_gas_price.gas_price,
-                value: tx.value,
-                data: tx.data,
-                transaction_type: resolved_gas_price.transaction_type,
-                access_list: None,
-                max_fee_per_gas: resolved_gas_price.max_fee_per_gas,
-                max_priority_fee_per_gas: resolved_gas_price.max_priority_fee_per_gas,
-            };
-            web3.eth().estimate_gas(call_request, None)
-        })
-        .collect::<Vec<_>>();
     // Needed because sending an empty batch request gets an empty response which doesn't
     // deserialize correctly.
-    if calls.is_empty() {
+    let mut settlements = settlements.peekable();
+    if settlements.peek().is_none() {
         return Ok(Vec::new());
     }
-    web3.transport().submit_batch().await?;
+
+    let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport().clone()));
     let mut results = Vec::new();
-    for call in calls {
-        results.push(call.await.map_err(ExecutionError::from));
+    for chunk in &settlements.chunks(SIMULATE_BATCH_SIZE) {
+        let calls = chunk
+            .map(|(account, settlement)| {
+                let tx = settle_method(gas_price, contract, settlement, account).tx;
+                let resolved_gas_price = tx
+                    .gas_price
+                    .map(|gas_price| gas_price.resolve_for_transaction())
+                    .unwrap_or_default();
+                let call_request = CallRequest {
+                    from: tx.from.map(|account| account.address()),
+                    to: tx.to,
+                    gas: None,
+                    gas_price: resolved_gas_price.gas_price,
+                    value: tx.value,
+                    data: tx.data,
+                    transaction_type: resolved_gas_price.transaction_type,
+                    access_list: None,
+                    max_fee_per_gas: resolved_gas_price.max_fee_per_gas,
+                    max_priority_fee_per_gas: resolved_gas_price.max_priority_fee_per_gas,
+                };
+                web3.eth().estimate_gas(call_request, None)
+            })
+            .collect::<Vec<_>>();
+        web3.transport().submit_batch().await?;
+        for call in calls {
+            results.push(call.await.map_err(ExecutionError::from));
+        }
     }
     Ok(results)
 }
@@ -198,6 +202,33 @@ mod tests {
             &contract,
             &web3,
             Default::default(),
+        )
+        .await
+        .unwrap();
+        let _ = dbg!(result);
+    }
+
+    // cargo test -p solver settlement_simulation::tests::mainnet_chunked -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore]
+    async fn mainnet_chunked() {
+        shared::tracing::initialize("solver=debug,shared=debug", tracing::Level::ERROR.into());
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
+
+        // 12 so that we hit more than one chunk.
+        let settlements =
+            vec![(account.clone(), Settlement::new(Default::default())); SIMULATE_BATCH_SIZE + 2];
+        let result = simulate_and_estimate_gas_at_current_block(
+            settlements.iter().cloned(),
+            &contract,
+            &web3,
+            EstimatedGasPrice {
+                legacy: 0.0,
+                eip1559: None,
+            },
         )
         .await
         .unwrap();
