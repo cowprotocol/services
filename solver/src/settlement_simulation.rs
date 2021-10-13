@@ -3,9 +3,10 @@ use anyhow::{Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     batch::CallBatch, contract::MethodBuilder, dyns::DynTransport, errors::ExecutionError,
-    transaction::TransactionBuilder, Account, GasPrice,
+    transaction::TransactionBuilder, Account,
 };
 use futures::FutureExt;
+use gas_estimation::EstimatedGasPrice;
 use primitive_types::U256;
 use shared::Web3;
 use web3::types::{BlockId, CallRequest};
@@ -32,21 +33,28 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     settlements: impl Iterator<Item = (Account, Settlement)>,
     contract: &GPv2Settlement,
     web3: &Web3,
-    gas_price: f64,
+    gas_price: EstimatedGasPrice,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
     let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport().clone()));
     let calls = settlements
         .map(|(account, settlement)| {
             let tx = settle_method(gas_price, contract, settlement, account).tx;
+            let resolved_gas_price = tx
+                .gas_price
+                .map(|gas_price| gas_price.resolve_for_transaction())
+                .unwrap_or_default();
+
             let call_request = CallRequest {
                 from: tx.from.map(|account| account.address()),
                 to: tx.to,
                 gas: None,
-                gas_price: tx.gas_price.and_then(|gas_price| gas_price.value()),
+                gas_price: resolved_gas_price.gas_price,
                 value: tx.value,
                 data: tx.data,
-                transaction_type: None,
+                transaction_type: resolved_gas_price.transaction_type,
                 access_list: None,
+                max_fee_per_gas: resolved_gas_price.max_fee_per_gas,
+                max_priority_fee_per_gas: resolved_gas_price.max_priority_fee_per_gas,
             };
             web3.eth().estimate_gas(call_request, None)
         })
@@ -69,7 +77,7 @@ pub async fn simulate_and_error_with_tenderly_link(
     settlements: impl Iterator<Item = (Account, Settlement)>,
     contract: &GPv2Settlement,
     web3: &Web3,
-    gas_price: f64,
+    gas_price: EstimatedGasPrice,
     network_id: &str,
     block: u64,
 ) -> Result<Vec<Result<()>>> {
@@ -85,7 +93,7 @@ pub async fn simulate_and_error_with_tenderly_link(
                 // set a gas limit so we don't get failed simulations because of insufficient
                 // solver balance for the default ~150M gas limit. Limit to around the
                 // block gas limit (since we can't fit more anyway).
-                .gas(15_000_000.into());
+                .gas(30_000_000.into());
             (view.batch_call(&mut batch), transaction_builder)
         })
         .collect::<Vec<_>>();
@@ -102,7 +110,7 @@ pub async fn simulate_and_error_with_tenderly_link(
 }
 
 fn settle_method(
-    gas_price: f64,
+    gas_price: EstimatedGasPrice,
     contract: &GPv2Settlement,
     settlement: Settlement,
     account: Account,
@@ -111,7 +119,12 @@ fn settle_method(
     // is done because the between retrieving the gas price and executing the simulation,
     // a block may have been mined that increases the base gas fee and causes the
     // `eth_call` simulation to fail with `max fee per gas less than block base fee`.
-    let gas_price = GasPrice::Value(U256::from_f64_lossy(gas_price * MAX_BASE_GAS_FEE_INCREASE));
+    let gas_price = gas_price.bump(MAX_BASE_GAS_FEE_INCREASE);
+    let gas_price = if let Some(eip1559) = gas_price.eip1559 {
+        (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
+    } else {
+        gas_price.legacy.into()
+    };
     crate::settlement_submission::retry::settle_method_builder(contract, settlement.into(), account)
         .gas_price(gas_price)
 }
@@ -162,7 +175,7 @@ mod tests {
             settlements.iter().cloned(),
             &contract,
             &web3,
-            0.0,
+            Default::default(),
             network_id.as_str(),
             block,
         )
@@ -174,16 +187,20 @@ mod tests {
             settlements.iter().cloned(),
             &contract,
             &web3,
-            0.0,
+            Default::default(),
         )
         .await
         .unwrap();
         let _ = dbg!(result);
 
-        let result =
-            simulate_and_estimate_gas_at_current_block(std::iter::empty(), &contract, &web3, 0.0)
-                .await
-                .unwrap();
+        let result = simulate_and_estimate_gas_at_current_block(
+            std::iter::empty(),
+            &contract,
+            &web3,
+            Default::default(),
+        )
+        .await
+        .unwrap();
         let _ = dbg!(result);
     }
 }

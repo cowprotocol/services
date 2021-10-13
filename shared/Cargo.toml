@@ -12,12 +12,13 @@ async-trait = "0.1"
 atty = "0.2"
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { version = "0.15.1", default-features = false }
-ethcontract-mock = "0.15.3"
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.2", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.4", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
+http = "0.2.4"
 itertools = "0.10"
 lazy_static = "1.4.0"
 lru = "0.7"
@@ -43,7 +44,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.2", features = ["fmt"] }
 url = "2.2"
 warp = "0.3"
-web3 = { version = "0.17", default-features = false }
+web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e", default-features = false }
 
 [dev-dependencies]
 regex = "1.5.4"

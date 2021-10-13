@@ -7,9 +7,10 @@ use ethcontract::{
     jsonrpc::types::Error as RpcError,
     transaction::{confirm::ConfirmParams, ResolveCondition},
     web3::error::Error as Web3Error,
-    Account, GasPrice, TransactionHash,
+    Account, TransactionHash,
 };
 use futures::FutureExt;
+use gas_estimation::EstimatedGasPrice;
 use primitive_types::U256;
 use shared::Web3;
 use transaction_retry::{TransactionResult, TransactionSending};
@@ -68,18 +69,23 @@ pub struct SettlementSender<'a> {
 impl<'a> TransactionSending for SettlementSender<'a> {
     type Output = SettleResult;
 
-    async fn send(&self, gas_price: f64) -> Self::Output {
+    async fn send(&self, gas_price: EstimatedGasPrice) -> Self::Output {
         debug_assert!(!self.nodes.is_empty());
         tracing::info!(
-            "submitting solution transaction at gas price {:.2} GWei",
-            gas_price / 1e9
+            "submitting solution transaction at gas price {:?}",
+            gas_price
         );
+        let gas_price = if let Some(eip1559) = gas_price.eip1559 {
+            (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
+        } else {
+            gas_price.legacy.into()
+        };
         let send_with_node = |node| {
             let contract = GPv2Settlement::at(node, self.contract.address());
             let mut method =
                 settle_method_builder(&contract, self.settlement.clone(), self.account.clone())
                     .nonce(self.nonce)
-                    .gas_price(GasPrice::Value(U256::from_f64_lossy(gas_price)))
+                    .gas_price(gas_price)
                     .gas(U256::from_f64_lossy(self.gas_limit));
             method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
             async { SettleResult(method.send().await.map(|tx| tx.hash())) }.boxed()
@@ -126,7 +132,7 @@ pub struct CancelSender;
 #[async_trait::async_trait]
 impl TransactionSending for CancelSender {
     type Output = CancelResult;
-    async fn send(&self, _gas_price: f64) -> Self::Output {
+    async fn send(&self, _gas_price: EstimatedGasPrice) -> Self::Output {
         unreachable!()
     }
 }
@@ -239,7 +245,12 @@ mod tests {
             account,
             nonce,
         };
-        let result = sender.send(1e9).await;
+        let result = sender
+            .send(EstimatedGasPrice {
+                legacy: 1e9,
+                ..Default::default()
+            })
+            .await;
         tracing::info!("finished with result {:?}", result.0);
     }
 }

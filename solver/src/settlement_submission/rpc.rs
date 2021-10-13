@@ -8,7 +8,7 @@ use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{Account, TransactionHash};
 use futures::stream::StreamExt;
-use gas_estimation::GasPriceEstimating;
+use gas_estimation::{EstimatedGasPrice, GasPrice1559, GasPriceEstimating};
 use primitive_types::{H160, U256};
 use shared::Web3;
 use std::time::Duration;
@@ -53,7 +53,7 @@ pub async fn submit(
     let cancel_future = std::future::pending::<CancelSender>();
     if let Some(gas_price) = pending_gas_price {
         tracing::info!(
-            "detected existing pending transaction with gas price {}",
+            "detected existing pending transaction with gas price {:?}",
             gas_price
         );
     }
@@ -64,9 +64,8 @@ pub async fn submit(
     // least high enough to accommodate. This isn't perfect because it's still possible that that
     // transaction gets mined first in which case our new transaction would fail with "nonce already
     // used".
-    let pending_gas_price = pending_gas_price.map(|gas_price| {
-        transaction_retry::gas_price_increase::minimum_increase(gas_price.to_f64_lossy())
-    });
+    let pending_gas_price =
+        pending_gas_price.map(transaction_retry::gas_price_increase::minimum_increase);
     let stream = gas_price_stream(
         target_confirm_time,
         gas_price_cap,
@@ -89,7 +88,7 @@ async fn recover_gas_price_from_pending_transaction(
     web3: &Web3,
     address: &H160,
     nonce: U256,
-) -> Result<Option<U256>> {
+) -> Result<Option<EstimatedGasPrice>> {
     let transactions = crate::pending_transactions::pending_transactions(web3.transport())
         .await
         .context("pending_transactions failed")?;
@@ -101,12 +100,22 @@ async fn recover_gas_price_from_pending_transaction(
         None => return Ok(None),
     };
     match transaction.fee {
-        Fee::Legacy { gas_price } => Ok(Some(gas_price)),
-        // vk: At time of writing we never create eip1559 transactions so this branch should not be
-        // taken. Still, to be more future proof we return the priority fee.
+        Fee::Legacy { gas_price } => Ok(Some(EstimatedGasPrice {
+            legacy: gas_price.to_f64_lossy(),
+            ..Default::default()
+        })),
         Fee::Eip1559 {
             max_priority_fee_per_gas,
-            ..
-        } => Ok(Some(max_priority_fee_per_gas)),
+            max_fee_per_gas,
+        } => Ok(Some(EstimatedGasPrice {
+            eip1559: Some(GasPrice1559 {
+                max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
+                max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
+                base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(web3.transport())
+                    .await?
+                    .to_f64_lossy(),
+            }),
+            ..Default::default()
+        })),
     }
 }

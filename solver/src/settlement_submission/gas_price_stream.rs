@@ -1,6 +1,6 @@
 use super::GAS_PRICE_REFRESH_INTERVAL;
 use futures::{stream, Stream, StreamExt};
-use gas_estimation::GasPriceEstimating;
+use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use std::time::Duration;
 
 // Create a never ending stream of gas prices based on checking the estimator in fixed intervals
@@ -10,8 +10,8 @@ pub fn gas_price_stream(
     gas_price_cap: f64,
     gas_limit: f64,
     estimator: &dyn GasPriceEstimating,
-    initial_gas_price: Option<f64>,
-) -> impl Stream<Item = f64> + '_ {
+    initial_gas_price: Option<EstimatedGasPrice>,
+) -> impl Stream<Item = EstimatedGasPrice> + '_ {
     let stream = stream::unfold(true, move |first_call| async move {
         if first_call {
             if let Some(initial_gas_price) = initial_gas_price {
@@ -26,7 +26,7 @@ pub fn gas_price_stream(
     .filter_map(|gas_price_result| async move {
         match gas_price_result {
             Ok(gas_price) => {
-                tracing::debug!("estimated gas price {}", gas_price);
+                tracing::debug!("estimated gas price {:?}", gas_price);
                 Some(gas_price)
             }
             Err(err) => {
@@ -47,8 +47,15 @@ mod tests {
 
     #[async_trait::async_trait]
     impl GasPriceEstimating for TestEstimator {
-        async fn estimate_with_limits(&self, _: f64, time_limit: Duration) -> anyhow::Result<f64> {
-            Ok(20. - time_limit.as_secs_f64())
+        async fn estimate_with_limits(
+            &self,
+            _: f64,
+            time_limit: Duration,
+        ) -> anyhow::Result<EstimatedGasPrice> {
+            Ok(EstimatedGasPrice {
+                legacy: 20. - time_limit.as_secs_f64(),
+                eip1559: None,
+            })
         }
     }
 }

@@ -22,9 +22,9 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 const_format = "0.2"
 contracts = { path = "../contracts" }
 either = "1.0"
-ethcontract = { version = "0.15.1", default-features = false }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false }
 futures = "0.3.17"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.2", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.4", features = ["web3_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 maplit = "1.0"
@@ -46,7 +46,7 @@ tokio = { version = "1.12", features = ["macros", "rt-multi-thread", "sync", "ti
 tracing = "0.1"
 url = "2.2"
 warp = "0.3"
-web3 = { version = "0.17", default-features = false }
+web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e", default-features = false }
 
 [dev-dependencies]
 secp256k1 = "0.20"

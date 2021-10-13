@@ -200,7 +200,7 @@ impl MinFeeCalculator {
         amount: Option<U256>,
         kind: Option<OrderKind>,
     ) -> Result<U256, PriceEstimationError> {
-        let gas_price = self.gas_estimator.estimate().await?;
+        let gas_price = self.gas_estimator.estimate().await?.effective_gas_price();
         let gas_amount =
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
                 self.price_estimator
@@ -394,6 +394,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 mod tests {
     use chrono::{Duration, NaiveDateTime};
+    use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
     use maplit::hashmap;
     use mockall::predicate::*;
     use shared::{
@@ -484,7 +485,14 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_min_fee_if_validated_before_expiry() {
-        let gas_price = Arc::new(Mutex::new(100.0));
+        let gas_price = Arc::new(Mutex::new(EstimatedGasPrice {
+            eip1559: Some(GasPrice1559 {
+                max_fee_per_gas: 100.0,
+                max_priority_fee_per_gas: 50.0,
+                base_fee_per_gas: 30.0,
+            }),
+            ..Default::default()
+        }));
         let time = Arc::new(Mutex::new(Utc::now()));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
@@ -507,7 +515,8 @@ mod tests {
             .await
             .unwrap();
         // Gas price increase after measurement
-        *gas_price.lock().unwrap() *= 2.0;
+        let new_gas_price = gas_price.lock().unwrap().bump(2.0);
+        *gas_price.lock().unwrap() = new_gas_price;
 
         // fee is valid before expiry
         *time.lock().unwrap() = expiry - Duration::seconds(10);
@@ -526,7 +535,14 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_fee_if_higher_than_current_min_fee() {
-        let gas_price = Arc::new(Mutex::new(100.0));
+        let gas_price = Arc::new(Mutex::new(EstimatedGasPrice {
+            eip1559: Some(GasPrice1559 {
+                max_fee_per_gas: 100.0,
+                max_priority_fee_per_gas: 50.0,
+                base_fee_per_gas: 30.0,
+            }),
+            ..Default::default()
+        }));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -555,7 +571,8 @@ mod tests {
             .is_err());
 
         // Gas price reduces, and slightly lower fee is now valid
-        *gas_price.lock().unwrap() /= 2.0;
+        let new_gas_price = gas_price.lock().unwrap().bump(0.5);
+        *gas_price.lock().unwrap() = new_gas_price;
         assert!(fee_estimator
             .get_unsubsidized_min_fee(token, lower_fee, None)
             .await
@@ -567,7 +584,16 @@ mod tests {
         let unsupported_token = H160::from_low_u64_be(1);
         let supported_token = H160::from_low_u64_be(2);
 
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            EstimatedGasPrice {
+                eip1559: Some(GasPrice1559 {
+                    max_fee_per_gas: 100.0,
+                    max_priority_fee_per_gas: 50.0,
+                    base_fee_per_gas: 30.0,
+                }),
+                ..Default::default()
+            },
+        ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1000.into(),
@@ -618,7 +644,16 @@ mod tests {
     async fn is_valid_fee() {
         let sell_token = H160::from_low_u64_be(1);
 
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(100.0))));
+        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            EstimatedGasPrice {
+                eip1559: Some(GasPrice1559 {
+                    max_fee_per_gas: 100.0,
+                    max_priority_fee_per_gas: 50.0,
+                    base_fee_per_gas: 30.0,
+                }),
+                ..Default::default()
+            },
+        ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1000.into(),
@@ -667,7 +702,14 @@ mod tests {
         let kind = OrderKind::Sell;
 
         let gas_estimate = 100_000.;
-        let gas_price = 100.;
+        let gas_price = EstimatedGasPrice {
+            eip1559: Some(GasPrice1559 {
+                max_fee_per_gas: 100.0,
+                max_priority_fee_per_gas: 100.0,
+                base_fee_per_gas: 0.0,
+            }),
+            ..Default::default()
+        };
         // The amount of sell token you receive per native token. This means
         // that 1 WETH would give you 3000.0 SELLTOKEN.
         let sell_token_price = 3000.;
@@ -731,7 +773,7 @@ mod tests {
             // We expect to pay `gas_estimate * gas_price` WETH total in gas,
             // and to convert that into SELLTOKEN, we multiply by the sell
             // token price.
-            U256::from_f64_lossy(gas_estimate * gas_price * sell_token_price)
+            U256::from_f64_lossy(gas_estimate * gas_price.effective_gas_price() * sell_token_price)
         );
     }
 }

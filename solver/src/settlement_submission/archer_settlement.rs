@@ -31,9 +31,9 @@ use crate::{interactions::block_coinbase, settlement::Settlement};
 use anyhow::{anyhow, ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use contracts::GPv2Settlement;
-use ethcontract::{errors::MethodError, transaction::Transaction, Account, GasPrice};
+use ethcontract::{errors::MethodError, transaction::Transaction, Account};
 use futures::FutureExt;
-use gas_estimation::GasPriceEstimating;
+use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::time::{Duration, Instant, SystemTime};
@@ -173,16 +173,16 @@ impl<'a> ArcherSolutionSubmitter<'a> {
         }
     }
 
-    async fn gas_price(&self, gas_limit: f64, time_limit: Duration) -> Result<f64> {
+    async fn gas_price(&self, gas_limit: f64, time_limit: Duration) -> Result<EstimatedGasPrice> {
         match self
             .gas_price_estimator
             .estimate_with_limits(gas_limit, time_limit)
             .await
         {
-            Ok(gas_price) if gas_price <= self.gas_price_cap => Ok(gas_price),
+            Ok(gas_price) if gas_price.cap() <= self.gas_price_cap => Ok(gas_price),
             Ok(gas_price) => Err(anyhow!(
                 "gas station gas price {} is larger than cap {}",
-                gas_price,
+                gas_price.cap(),
                 self.gas_price_cap
             )),
             Err(err) => Err(err),
@@ -212,7 +212,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
         let target_confirm_time = Instant::now() + target_confirm_time;
 
         // gas price and raw signed transaction
-        let mut previous_tx: Option<(f64, Vec<u8>)> = None;
+        let mut previous_tx: Option<(EstimatedGasPrice, Vec<u8>)> = None;
 
         loop {
             // get gas price
@@ -230,7 +230,8 @@ impl<'a> ArcherSolutionSubmitter<'a> {
 
             // create transaction
 
-            let tx_gas_cost_in_ether_wei = U256::from_f64_lossy(gas_price) * gas_estimate;
+            let tx_gas_cost_in_ether_wei =
+                U256::from_f64_lossy(gas_price.effective_gas_price()) * gas_estimate;
             let mut settlement = settlement.clone();
             settlement
                 .encoder
@@ -246,7 +247,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
             // Wouldn't work because the function isn't payable.
             // .value(tx_gas_cost_in_ether_wei)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(GasPrice::Value(U256::zero()));
+            .gas_price(0.0.into());
 
             // simulate transaction
 
@@ -262,7 +263,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
             // If gas price has increased cancel old and submit new new transaction.
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
-                if gas_price > *previous_gas_price {
+                if gas_price.cap() > previous_gas_price.cap() {
                     if let Err(err) = self.archer_api.cancel(previous_tx).await {
                         tracing::error!("archer cancellation failed: {:?}", err);
                     }
@@ -280,7 +281,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
                 };
 
             tracing::info!(
-                "creating archer transaction with hash {:?}, tip to miner {:.3e}, gas price {:.3e}, gas estimate {}",
+                "creating archer transaction with hash {:?}, tip to miner {:.3e}, gas price {:?}, gas estimate {}",
                 hash,
                 tx_gas_cost_in_ether_wei.to_f64_lossy(),
                 gas_price,
@@ -351,7 +352,10 @@ mod tests {
         let account = Account::Local(H160([0x42; 20]), None);
         let contract = dummy_contract!(GPv2Settlement, H160([0x01; 20]));
         let archer_api = ArcherApi::new("unused".to_string(), Client::new());
-        let gas_price_estimator = FakeGasPriceEstimator::new(1e9);
+        let gas_price_estimator = FakeGasPriceEstimator::new(EstimatedGasPrice {
+            legacy: 1e9,
+            ..Default::default()
+        });
         let gas_price_cap = 100e9;
 
         assert!(ArcherSolutionSubmitter::new(
@@ -411,7 +415,7 @@ mod tests {
                 std::iter::once((account.clone(), settlement.clone())),
                 &contract,
                 &web3,
-                0.0,
+                Default::default(),
             )
             .await
             .unwrap()

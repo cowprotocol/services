@@ -55,7 +55,7 @@ impl PriceEstimating for BaselinePriceEstimator {
             vec![Err(PriceEstimationError::Other(crate::clone_anyhow_error(&err))); queries.len()]
         };
         let gas_price = match self.gas_estimator.estimate().await {
-            Ok(gas_price) => gas_price,
+            Ok(gas_price) => gas_price.effective_gas_price(),
             Err(err) => return repeat_same_error(err),
         };
         let unsupported_tokens = match self.unsupported_tokens(queries).await {
@@ -340,6 +340,7 @@ mod tests {
         sources::uniswap::pool_fetching::{Pool, PoolFetching},
     };
     use assert_approx_eq::assert_approx_eq;
+    use gas_estimation::gas_price::EstimatedGasPrice;
     use std::{collections::HashSet, sync::Mutex};
 
     #[derive(Default)]
@@ -366,7 +367,9 @@ mod tests {
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -437,7 +440,9 @@ mod tests {
         let token_a = H160::from_low_u64_be(1);
         let token_b = H160::from_low_u64_be(2);
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![]));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -469,7 +474,9 @@ mod tests {
         );
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool_ab]));
         let bad_token = Arc::new(ListBasedDetector::deny_list(vec![token_a]));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -515,7 +522,9 @@ mod tests {
         let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 10));
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -551,7 +560,9 @@ mod tests {
         );
 
         let pool_fetcher = Arc::new(FakePoolFetcher(vec![pool]));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(base_token, &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -612,7 +623,9 @@ mod tests {
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -664,7 +677,9 @@ mod tests {
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(0.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            Default::default(),
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(intermediate, &[]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -737,7 +752,12 @@ mod tests {
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(10000.0))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+            EstimatedGasPrice {
+                legacy: 10000.0,
+                eip1559: None,
+            },
+        ))));
         let base_tokens = Arc::new(BaseTokens::new(native, &[intermediate]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -766,7 +786,10 @@ mod tests {
         }
 
         // Reduce gas price.
-        *gas_estimator.0.lock().unwrap() = 1.0;
+        *gas_estimator.0.lock().unwrap() = EstimatedGasPrice {
+            legacy: 1.0,
+            eip1559: None,
+        };
 
         // Lower gas price does make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {

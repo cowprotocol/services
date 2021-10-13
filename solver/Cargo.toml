@@ -21,10 +21,10 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
 derive_more = "0.99"
-ethcontract = { version = "0.15.1", default-features = false }
-ethcontract-mock = "0.15.3"
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.2", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.4", features = ["web3_"] }
 hex = "0.4"
 hex-literal = "0.3"
 itertools = "0.10"
@@ -46,8 +46,8 @@ strum = { version = "0.22", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.12", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 tracing = "0.1"
-transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.1.1" }
-web3 = { version = "0.17", default-features = false }
+transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.2.0" }
+web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e", default-features = false }
 
 [dev-dependencies]
 tracing-subscriber = "0.2"

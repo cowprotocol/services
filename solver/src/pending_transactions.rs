@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use web3::Transport;
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Block {
+    base_fee_per_gas: U256,
     transactions: Vec<Transaction>,
 }
 
@@ -39,6 +41,16 @@ pub enum Fee {
     },
 }
 
+// Get pending block (block currently being mined).
+async fn pending_block(transport: &DynTransport) -> Result<Block> {
+    let params = vec!["pending".into(), true.into()];
+    let response = transport
+        .execute("eth_getBlockByNumber", params)
+        .await
+        .context("transport failed")?;
+    Ok(serde_json::from_value(response).context("deserialize failed")?)
+}
+
 // Get pending transactions from a mempool.
 pub async fn pending_transactions(transport: &DynTransport) -> Result<Vec<Transaction>> {
     match transport
@@ -61,17 +73,15 @@ pub async fn pending_transactions(transport: &DynTransport) -> Result<Vec<Transa
                 .collect())
         }
         Err(_) => {
-            //fallback to eth_getBlockByNumber
-            let params = vec!["pending".into(), true.into()];
-            let response = transport
-                .execute("eth_getBlockByNumber", params)
-                .await
-                .context("transport failed")?;
-            let block: Block = serde_json::from_value(response).context("deserialize failed")?;
-
-            Ok(block.transactions)
+            //fallback to transactions from the pending block
+            Ok(pending_block(transport).await?.transactions)
         }
     }
+}
+
+// Get base fee from pending block (block currently being mined).
+pub async fn base_fee_per_gas(transport: &DynTransport) -> Result<U256> {
+    Ok(pending_block(transport).await?.base_fee_per_gas)
 }
 
 #[cfg(test)]
@@ -112,17 +122,24 @@ mod tests {
             },
             "0x24d407e5a0b506e1cb2fae163100b5de01f5193c": {
               "34": {
-                "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
-                "blockNumber": "null",
-                "from": "0x24d407e5a0b506e1cb2fae163100b5de01f5193c",
-                "gas": "0x44c72",
-                "gasPrice": "0x4a817c800",
-                "hash": "0xb5b8b853af32226755a65ba0602f7ed0e8be2211516153b75e9ed640a7d359fe",
-                "input": "0xb61d27f600000000000000000000000024d407e5a0b506e1cb2fae163100b5de01f5193c00000000000000000000000000000000000000000000000053444835ec580000000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
-                "nonce": "0x22",
-                "to": "0x7320785200f74861b69c49e4ab32399a71b34f1a",
-                "transactionIndex": "null",
-                "value": "0x0"
+                "blockHash": null,
+                    "blockNumber": null,
+                    "from": "0x0000000000000000000000000000000000000000",
+                    "gas": "0x5208",
+                    "maxPriorityFeePerGas": "0x5f5e100",
+                    "maxFeePerGas": "0x59682f10",
+                    "hash": "0x71241d3719a9825d2dc8be2447d58956068533acefc34efa533b94979ebf6a07",
+                    "input": "0x",
+                    "nonce": "0x42",
+                    "to": "0x823725e736cf61c78c8770c0947203738a1840dc",
+                    "transactionIndex": null,
+                    "value": "0x2386f26fc10000",
+                    "type": "0x2",
+                    "accessList": [],
+                    "chainId": "0x4",
+                    "v": "0x1",
+                    "r": "0x6787843a4e5a3f1f7faba058b73d8c93773061b36363681b71e69bfcec34bc5c",
+                    "s": "0x51571fbbc603f6e797733e622c6ed8738bbafcc584a9b87dbef18bc1e7bfc58c"
               }
             }
           },

@@ -53,6 +53,10 @@ pub struct Arguments {
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
+    /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
+    #[structopt(long, env)]
+    pub blocknative_api_key: Option<String>,
+
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
     #[structopt(long, env, use_delimiter = true)]

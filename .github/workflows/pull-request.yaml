@@ -49,8 +49,20 @@ jobs:
         # Postgres tests should not run in parallel because they use the same database.
       - run: cargo test --locked --all-features postgres -- --ignored --test-threads 1
       - run: |
-          npm install ganache-cli
-          node_modules/.bin/ganache-cli --gasLimit 10000000 --gasPrice 0 --defaultBalanceEther 1000000 &
+          npm install hardhat
+          cat > hardhat.config.js <<EOF
+          module.exports = {
+            networks: {
+              hardhat: {
+                initialBaseFeePerGas: 0,
+                accounts: {
+                  accountsBalance: "1000000000000000000000000"
+                },
+              },
+            },
+          };
+          EOF
+          node_modules/.bin/hardhat node &
       - run: cargo run --locked --all-features --bin deploy
       - run: cargo test --locked --all-features --package e2e
   openapi:
