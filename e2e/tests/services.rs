@@ -5,8 +5,9 @@ use ethcontract::{prelude::U256, H160};
 use model::DomainSeparator;
 use orderbook::{
     account_balances::Web3BalanceFetcher, api::order_validation::OrderValidator,
-    database::Postgres, event_updater::EventUpdater, fee::EthAwareMinFeeCalculator,
-    metrics::Metrics, orderbook::Orderbook, solvable_orders::SolvableOrdersCache,
+    api::post_quote::OrderQuoter, database::Postgres, event_updater::EventUpdater,
+    fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
+    solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
 use shared::{
@@ -232,16 +233,20 @@ impl OrderbookServices {
             true,
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
-            order_validator,
+            order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],
         };
+        let quoter = Arc::new(OrderQuoter::new(
+            fee_calculator,
+            price_estimator.clone(),
+            order_validator,
+        ));
         orderbook::serve_api(
             db.clone(),
             orderbook,
-            fee_calculator,
-            price_estimator.clone(),
+            quoter,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
         );

@@ -9,7 +9,7 @@ use warp::{http::StatusCode, reply::Json};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait OrderValidating {
+pub trait OrderValidating: Send + Sync {
     /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
     /// fee & quote phase (i.e. before the order is signed).
     /// Thus, partial validation *doesn't* verify:
@@ -22,7 +22,7 @@ pub trait OrderValidating {
     ///     - the order validity is appropriate,
     ///     - buy_token is not the same as sell_token,
     ///     - buy and sell token destination and source are supported.
-    async fn partial_validate(&self, order: &PreOrderData) -> Result<(), PartialValidationError>;
+    async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
     /// This is the full order validation performed at the time of order placement
     /// (i.e. once all the required fields on an Order are provided). Specifically, verifying that
@@ -55,7 +55,7 @@ pub enum PartialValidationError {
 }
 
 impl WarpReplyConverting for PartialValidationError {
-    fn to_warp_reply(&self) -> (Json, StatusCode) {
+    fn into_warp_reply(self) -> (Json, StatusCode) {
         match self {
             Self::UnsupportedBuyTokenDestination(dest) => (
                 super::error("UnsupportedBuyTokenDestination", format!("Type {:?}", dest)),
@@ -108,9 +108,9 @@ pub enum ValidationError {
 }
 
 impl WarpReplyConverting for ValidationError {
-    fn to_warp_reply(&self) -> (Json, StatusCode) {
+    fn into_warp_reply(self) -> (Json, StatusCode) {
         match self {
-            ValidationError::Partial(pre) => pre.to_warp_reply(),
+            ValidationError::Partial(pre) => pre.into_warp_reply(),
             Self::UnsupportedToken(token) => (
                 super::error("UnsupportedToken", format!("Token address {}", token)),
                 StatusCode::BAD_REQUEST,
@@ -162,7 +162,7 @@ pub struct OrderValidator {
     balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug, PartialEq)]
 pub struct PreOrderData {
     pub owner: H160,
     pub sell_token: H160,
@@ -211,7 +211,7 @@ impl OrderValidator {
 
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
-    async fn partial_validate(&self, order: &PreOrderData) -> Result<(), PartialValidationError> {
+    async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
         if self.banned_users.contains(&order.owner) {
             return Err(PartialValidationError::Forbidden);
         }
@@ -233,7 +233,7 @@ impl OrderValidating for OrderValidator {
         {
             return Err(PartialValidationError::InsufficientValidTo);
         }
-        if has_same_buy_and_sell_token(order, &self.native_token) {
+        if has_same_buy_and_sell_token(&order, &self.native_token) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
         if order.buy_token == BUY_ETH_ADDRESS {
@@ -279,7 +279,7 @@ impl OrderValidating for OrderValidator {
             None => return Err(ValidationError::InvalidSignature),
         };
 
-        self.partial_validate(&PreOrderData::from(order.clone()))
+        self.partial_validate(PreOrderData::from(order.clone()))
             .await
             .map_err(ValidationError::Partial)?;
         let order_creation = &order.order_creation;
@@ -455,7 +455,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         owner: H160::from_low_u64_be(1),
                         ..Default::default()
                     })
@@ -468,7 +468,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         buy_token_balance: BuyTokenDestination::Internal,
                         ..Default::default()
                     })
@@ -481,7 +481,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         sell_token_balance: SellTokenSource::Internal,
                         ..Default::default()
                     })
@@ -494,7 +494,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         valid_to: 0,
                         ..Default::default()
                     })
@@ -507,7 +507,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         valid_to: legit_valid_to,
                         buy_token: H160::from_low_u64_be(2),
                         sell_token: H160::from_low_u64_be(2),
@@ -522,7 +522,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         valid_to: legit_valid_to,
                         buy_token: BUY_ETH_ADDRESS,
                         ..Default::default()
@@ -551,7 +551,7 @@ mod tests {
             format!(
                 "{:?}",
                 validator
-                    .partial_validate(&PreOrderData {
+                    .partial_validate(PreOrderData {
                         valid_to: legit_valid_to,
                         buy_token: BUY_ETH_ADDRESS,
                         ..Default::default()
@@ -576,7 +576,7 @@ mod tests {
             Arc::new(MockBalanceFetching::new()),
         );
         assert!(validator
-            .partial_validate(&PreOrderData {
+            .partial_validate(PreOrderData {
                 valid_to: shared::time::now_in_epoch_seconds()
                     + min_order_validity_period.as_secs() as u32
                     + 2,

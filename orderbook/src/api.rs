@@ -11,16 +11,14 @@ mod get_solvable_orders_v2;
 mod get_trades;
 mod get_user_orders;
 pub mod order_validation;
-mod post_quote;
+pub mod post_quote;
 
 use crate::{
-    database::trades::TradeRetrieving, fee::EthAwareMinFeeCalculator, orderbook::Orderbook,
+    api::post_quote::OrderQuoter, database::trades::TradeRetrieving, orderbook::Orderbook,
 };
 use anyhow::Error as anyhowError;
-use serde::de::DeserializeOwned;
-use serde::Serialize;
-use shared::metrics::get_metric_storage_registry;
-use shared::price_estimation::{PriceEstimating, PriceEstimationError};
+use serde::{de::DeserializeOwned, Serialize};
+use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -31,26 +29,23 @@ use warp::{
 pub fn handle_all_routes(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
-    fee_calculator: Arc<EthAwareMinFeeCalculator>,
-    price_estimator: Arc<dyn PriceEstimating>,
+    quoter: Arc<OrderQuoter>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
-    let legacy_fee_info = get_fee_info::legacy_get_fee_info(fee_calculator.clone());
-    let fee_info = get_fee_info::get_fee_info(fee_calculator.clone());
+    let legacy_fee_info = get_fee_info::legacy_get_fee_info(quoter.fee_calculator.clone());
+    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone());
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
     let get_solvable_orders_v2 = get_solvable_orders_v2::get_solvable_orders(orderbook.clone());
     let get_trades = get_trades::get_trades(database);
     let cancel_order = cancel_order::cancel_order(orderbook.clone());
-    let get_amount_estimate = get_markets::get_amount_estimate(price_estimator.clone());
-    let get_fee_and_quote_sell =
-        get_fee_and_quote::get_fee_and_quote_sell(fee_calculator.clone(), price_estimator.clone());
-    let get_fee_and_quote_buy =
-        get_fee_and_quote::get_fee_and_quote_buy(fee_calculator, price_estimator.clone());
+    let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone());
+    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone());
+    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone());
     let get_user_orders = get_user_orders::get_user_orders(orderbook.clone());
     let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook);
-    let post_quote = post_quote::post_quote();
+    let post_quote = post_quote::post_quote(quoter);
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -132,7 +127,7 @@ fn internal_error() -> Json {
 }
 
 pub trait WarpReplyConverting {
-    fn to_warp_reply(&self) -> (Json, StatusCode);
+    fn into_warp_reply(self) -> (Json, StatusCode);
 }
 
 pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {

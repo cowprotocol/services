@@ -8,26 +8,23 @@ pub mod metrics;
 pub mod orderbook;
 pub mod solvable_orders;
 
-use crate::orderbook::Orderbook;
+use crate::{api::post_quote::OrderQuoter, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
-use fee::EthAwareMinFeeCalculator;
 use futures::Future;
 use model::DomainSeparator;
-use shared::price_estimation::PriceEstimating;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 
 pub fn serve_api(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
-    fee_calculator: Arc<EthAwareMinFeeCalculator>,
-    price_estimator: Arc<dyn PriceEstimating>,
+    quoter: Arc<OrderQuoter>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(database, orderbook, fee_calculator, price_estimator);
+    let filter = api::handle_all_routes(database, orderbook, quoter);
     tracing::info!(%address, "serving order book");
     let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
     task::spawn(server)

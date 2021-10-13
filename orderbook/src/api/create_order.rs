@@ -17,7 +17,7 @@ pub fn create_order_request(
 pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
     let (body, status_code) = match result {
         Ok(AddOrderResult::Added(uid)) => (warp::reply::json(&uid), StatusCode::CREATED),
-        Ok(AddOrderResult::OrderValidation(err)) => err.to_warp_reply(),
+        Ok(AddOrderResult::OrderValidation(err)) => err.into_warp_reply(),
         Ok(AddOrderResult::UnsupportedSignature) => (
             super::error("UnsupportedSignature", "signing scheme is not supported"),
             StatusCode::BAD_REQUEST,

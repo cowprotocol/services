@@ -1,5 +1,5 @@
 use crate::api::price_estimation_error_to_warp_reply;
-use crate::fee::{EthAwareMinFeeCalculator, MinFeeCalculating};
+use crate::fee::MinFeeCalculating;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
@@ -53,7 +53,7 @@ pub fn get_fee_info_response(
 }
 
 pub fn get_fee_info(
-    fee_calculator: Arc<EthAwareMinFeeCalculator>,
+    fee_calculator: Arc<dyn MinFeeCalculating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
         let fee_calculator = fee_calculator.clone();
@@ -108,7 +108,7 @@ pub fn legacy_get_fee_info_response(
 }
 
 pub fn legacy_get_fee_info(
-    fee_calculator: Arc<EthAwareMinFeeCalculator>,
+    fee_calculator: Arc<dyn MinFeeCalculating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     legacy_get_fee_info_request().and_then(move |token| {
         let fee_calculator = fee_calculator.clone();

@@ -477,7 +477,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OrderQuote"
+                $ref: "#/components/schemas/OrderQuoteResponse"
         400:
           description: Error quoting order.
           content:
@@ -925,22 +925,28 @@ components:
             buyTokenBalance:
               $ref: "#/components/schemas/BuyTokenDestination"
               default: "erc20"
+            from:
+              $ref: "#/components/schemas/Address"
           required:
             - sellToken
             - buyToken
             - validTo
             - appData
             - partiallyFillable
-    OrderQuote:
+            - from
+    OrderQuoteResponse:
       description: |
         An order quoted by the back end that can be directly signed and
         submitted to the order creation backend.
-      allOf:
-        - $ref: "#/components/schemas/OrderParameters"
-        - type: object
-          properties:
-            from:
-              description: The expected address of the signer
-              $ref: "#/components/schemas/Address"
-          required:
-            - from
+      type: object
+      properties:
+        quote:
+          $ref: "#/components/schemas/OrderParameters"
+        from:
+          $ref: "#/components/schemas/Address"
+        expirationDate:
+          description: |
+            Expiration date of the offered fee. Order service might not accept
+            the fee after this expiration date. Encoded as ISO 8601 UTC.
+          type: string
+          example: "1985-03-10T18:35:18.814523Z"

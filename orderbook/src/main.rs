@@ -7,7 +7,7 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    api::order_validation::OrderValidator,
+    api::{order_validation::OrderValidator, post_quote::OrderQuoter},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
@@ -415,19 +415,22 @@ async fn main() {
         args.enable_presign_orders,
         solvable_orders_cache,
         args.solvable_orders_max_update_age,
-        order_validator,
+        order_validator.clone(),
     ));
     let service_maintainer = ServiceMaintenance {
         maintainers: vec![database.clone(), Arc::new(event_updater), pool_fetcher],
     };
     check_database_connection(orderbook.as_ref()).await;
-
+    let quoter = Arc::new(OrderQuoter::new(
+        fee_calculator,
+        price_estimator,
+        order_validator,
+    ));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
-        fee_calculator,
-        price_estimator,
+        quoter,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;
