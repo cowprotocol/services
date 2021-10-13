@@ -51,6 +51,11 @@ pub async fn simulate_and_estimate_gas_at_current_block(
             web3.eth().estimate_gas(call_request, None)
         })
         .collect::<Vec<_>>();
+    // Needed because sending an empty batch request gets an empty response which doesn't
+    // deserialize correctly.
+    if calls.is_empty() {
+        return Ok(Vec::new());
+    }
     web3.transport().submit_batch().await?;
     let mut results = Vec::new();
     for call in calls {
@@ -173,6 +178,12 @@ mod tests {
         )
         .await
         .unwrap();
+        let _ = dbg!(result);
+
+        let result =
+            simulate_and_estimate_gas_at_current_block(std::iter::empty(), &contract, &web3, 0.0)
+                .await
+                .unwrap();
         let _ = dbg!(result);
     }
 }
