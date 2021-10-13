@@ -6,7 +6,6 @@
 pub mod api;
 use self::api::{Amount, OneInchClient, Swap, SwapQuery};
 use super::single_order_solver::{SettlementError, SingleOrderSolving};
-use super::solver_utils::Slippage;
 use crate::solver::oneinch_solver::api::SwapResponse;
 use crate::{
     encoding::EncodedInteraction,
@@ -22,6 +21,7 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
+use shared::solver_utils::Slippage;
 use shared::Web3;
 use std::{
     collections::HashSet,

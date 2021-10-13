@@ -4,14 +4,14 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::solver::solver_utils::{deserialize_decimal_f64, Slippage};
+use crate::debug_bytes;
+use crate::solver_utils::{deserialize_decimal_f64, Slippage};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
-use shared::debug_bytes;
 use thiserror::Error;
 use web3::types::Bytes;
 
@@ -96,7 +96,7 @@ pub struct SwapResponse {
 }
 
 /// Mockable implementation of the API for unit test
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait ZeroExApi {
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
@@ -192,8 +192,8 @@ mod tests {
     async fn test_api_e2e() {
         let zeroex_client =
             DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, Client::new()).unwrap();
-        let sell_token = shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
-        let buy_token = shared::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
+        let sell_token = crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
+        let buy_token = crate::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
         let swap_query = SwapQuery {
             sell_token,
             buy_token,
@@ -211,8 +211,8 @@ mod tests {
     fn swap_query_serialization_0x_sell_order() {
         let base_url = Url::parse("https://api.0x.org/").unwrap();
         let url = SwapQuery {
-            sell_token: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            buy_token: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
+            sell_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            buy_token: crate::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             sell_amount: Some(1_000_000_000_000_000_000u128.into()),
             buy_amount: None,
             slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
@@ -235,8 +235,8 @@ mod tests {
     fn swap_query_serialization_0x_buy_order() {
         let base_url = Url::parse("https://api.0x.org/").unwrap();
         let url = SwapQuery {
-            sell_token: shared::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            buy_token: shared::addr!("111111111117dc0aa78b770fa6a738034120c302"),
+            sell_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
+            buy_token: crate::addr!("111111111117dc0aa78b770fa6a738034120c302"),
             buy_amount: Some(1_000_000_000_000_000_000u128.into()),
             sell_amount: None,
             slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
@@ -268,9 +268,9 @@ mod tests {
                 SwapResponse {
                     sell_amount: U256::from_dec_str("100000000000000000").unwrap(),
                      buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
-                     allowance_target: shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                     allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     price: 13.121_002_575_170_278_f64,
-                    to: shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    to: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     data: Bytes(hex::decode(
                         "d9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba"
                     ).unwrap()),

@@ -3,16 +3,14 @@
 //! For more information on the HTTP API, consult:
 //! <https://docs.1inch.io/api/quote-swap>
 //! <https://api.1inch.exchange/swagger/ethereum/>
-use crate::solver::{
-    single_order_solver::SettlementError,
-    solver_utils::{deserialize_prefixed_hex, Slippage},
-};
+use crate::solver::single_order_solver::SettlementError;
 use anyhow::{anyhow, ensure, Context, Result};
 use derive_more::From;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
+use shared::solver_utils::{deserialize_prefixed_hex, Slippage};
 use std::fmt::{self, Display, Formatter};
 
 /// Parts to split a swap.

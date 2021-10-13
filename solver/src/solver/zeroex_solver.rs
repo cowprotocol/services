@@ -17,26 +17,22 @@
 //!
 //! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
 
-pub mod api;
-
-use super::solver_utils::Slippage;
-use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
-use crate::solver::zeroex_solver::api::{ZeroExApi, ZeroExResponseError};
-use anyhow::{anyhow, ensure, Result};
-use contracts::GPv2Settlement;
-use ethcontract::{Account, Bytes};
-use maplit::hashmap;
-use reqwest::Client;
-
 use super::single_order_solver::{SettlementError, SingleOrderSolving};
-
-use self::api::{DefaultZeroExApi, SwapQuery, SwapResponse};
+use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
+use anyhow::{anyhow, ensure, Result};
+use contracts::GPv2Settlement;
+use ethcontract::{Account, Bytes};
+use maplit::hashmap;
 use model::order::OrderKind;
+use reqwest::Client;
+use shared::solver_utils::Slippage;
+use shared::zeroex_api::{DefaultZeroExApi, SwapQuery, SwapResponse};
+use shared::zeroex_api::{ZeroExApi, ZeroExResponseError};
 use shared::Web3;
 use std::fmt::{self, Display, Formatter};
 
@@ -167,7 +163,6 @@ mod tests {
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use crate::liquidity::tests::CapturingSettlementHandler;
     use crate::liquidity::LimitOrder;
-    use crate::solver::zeroex_solver::api::MockZeroExApi;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
@@ -175,6 +170,7 @@ mod tests {
     use mockall::Sequence;
     use model::order::{Order, OrderCreation, OrderKind};
     use shared::transport::{create_env_test_transport, create_test_transport};
+    use shared::zeroex_api::MockZeroExApi;
 
     #[tokio::test]
     #[ignore]

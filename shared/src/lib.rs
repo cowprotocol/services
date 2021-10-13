@@ -15,6 +15,7 @@ pub mod network;
 pub mod paraswap_api;
 pub mod price_estimation;
 pub mod recent_block_cache;
+pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;
 pub mod time;
@@ -24,6 +25,7 @@ pub mod trace_many;
 pub mod tracing;
 pub mod transport;
 pub mod web3_traits;
+pub mod zeroex_api;
 
 use ethcontract::dyns::{DynTransport, DynWeb3};
 use std::{

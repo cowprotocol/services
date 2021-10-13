@@ -31,7 +31,6 @@ mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;
 mod single_order_solver;
-mod solver_utils;
 mod zeroex_solver;
 
 /// Interface that all solvers must implement.
