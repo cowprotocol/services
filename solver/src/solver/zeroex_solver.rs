@@ -133,7 +133,6 @@ impl From<ZeroExResponseError> for SettlementError {
         SettlementError {
             inner: anyhow!("0x Response Error {:?}", err),
             retryable: matches!(err, ZeroExResponseError::ServerError(_)),
-            should_alert: true,
         }
     }
 }

@@ -1,3 +1,4 @@
+use crate::metrics::SolverMetrics;
 use crate::{
     liquidity::LimitOrder,
     settlement::Settlement,
@@ -6,6 +7,7 @@ use crate::{
 use anyhow::{Error, Result};
 use ethcontract::Account;
 use rand::prelude::SliceRandom;
+use std::sync::Arc;
 use std::{collections::VecDeque, time::Duration};
 
 #[cfg_attr(test, mockall::automock)]
@@ -28,11 +30,12 @@ pub trait SingleOrderSolving {
 
 pub struct SingleOrderSolver<I> {
     inner: I,
+    metrics: Arc<dyn SolverMetrics>,
 }
 
-impl<I: SingleOrderSolving> From<I> for SingleOrderSolver<I> {
-    fn from(inner: I) -> Self {
-        Self { inner }
+impl<I: SingleOrderSolving> SingleOrderSolver<I> {
+    pub fn new(inner: I, metrics: Arc<dyn SolverMetrics>) -> Self {
+        Self { inner, metrics }
     }
 }
 
@@ -54,16 +57,19 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
         let settle = async {
             while let Some(order) = orders.pop_front() {
                 match self.inner.try_settle_order(order.clone()).await {
-                    Ok(settlement) => settlements.extend(settlement),
+                    Ok(settlement) => {
+                        self.metrics
+                            .single_order_solver_succeeded(self.inner.name());
+                        settlements.extend(settlement)
+                    }
                     Err(err) => {
                         let name = self.inner.name();
+                        self.metrics.single_order_solver_failed(name);
                         if err.retryable {
-                            tracing::warn!("Solver {} retryable error: {:?}", name, &err);
+                            tracing::warn!("Solver {} retryable error: {:?}", name, &err.inner);
                             orders.push_back(order);
-                        } else if err.should_alert {
-                            tracing::error!("Solver {} hard error: {:?}", name, &err);
                         } else {
-                            tracing::warn!("Solver {} soft error: {:?}", name, &err);
+                            tracing::warn!("Solver {} error: {:?}", name, &err.inner);
                         }
                     }
                 }
@@ -88,8 +94,6 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
 pub struct SettlementError {
     pub inner: anyhow::Error,
     pub retryable: bool,
-    // Whether or not this error should be logged as an error
-    pub should_alert: bool,
 }
 
 impl From<anyhow::Error> for SettlementError {
@@ -97,7 +101,6 @@ impl From<anyhow::Error> for SettlementError {
         SettlementError {
             inner: err,
             retryable: false,
-            should_alert: true,
         }
     }
 }
@@ -106,6 +109,7 @@ impl From<anyhow::Error> for SettlementError {
 mod tests {
     use super::*;
     use crate::liquidity::tests::CapturingSettlementHandler;
+    use crate::metrics::NoopMetrics;
     use anyhow::anyhow;
     use std::sync::Arc;
 
@@ -116,8 +120,10 @@ mod tests {
             .expect_try_settle_order()
             .times(2)
             .returning(|_| Ok(Some(Settlement::new(Default::default()))));
+        inner.expect_name().returning(|| "Mock Solver");
 
-        let solver: SingleOrderSolver<_> = inner.into();
+        let solver: SingleOrderSolver<_> =
+            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             id: Default::default(),
@@ -166,7 +172,6 @@ mod tests {
                     0 => Err(SettlementError {
                         inner: anyhow!(""),
                         retryable: true,
-                        should_alert: true,
                     }),
                     1 => Ok(None),
                     _ => unreachable!(),
@@ -175,7 +180,8 @@ mod tests {
                 result
             });
 
-        let solver: SingleOrderSolver<_> = inner.into();
+        let solver: SingleOrderSolver<_> =
+            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             id: Default::default(),
@@ -206,11 +212,11 @@ mod tests {
             Err(SettlementError {
                 inner: anyhow!(""),
                 retryable: false,
-                should_alert: true,
             })
         });
 
-        let solver: SingleOrderSolver<_> = inner.into();
+        let solver: SingleOrderSolver<_> =
+            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             id: Default::default(),

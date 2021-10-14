@@ -1,3 +1,4 @@
+use crate::metrics::SolverMetrics;
 use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
@@ -60,7 +61,7 @@ pub trait Solver: 'static {
 /// A batch auction for a solver to produce a settlement for.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    /// An ID that idetifies a batch within a `Driver` isntance.
+    /// An ID that identifies a batch within a `Driver` instance.
     ///
     /// Note that this ID is not unique across multiple instances of drivers,
     /// in particular it cannot be used to uniquely identify batches across
@@ -152,6 +153,7 @@ pub fn create(
     paraswap_partner: Option<String>,
     client: Client,
     native_token_amount_to_estimate_prices_with: U256,
+    solver_metrics: Arc<dyn SolverMetrics>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -211,7 +213,7 @@ pub fn create(
                     },
                 )),
                 SolverType::OneInch => {
-                    let one_inch_solver: SingleOrderSolver<_> =
+                    let one_inch_solver: SingleOrderSolver<_> = SingleOrderSolver::new(
                         OneInchSolver::with_disabled_protocols(
                             account,
                             web3.clone(),
@@ -219,8 +221,9 @@ pub fn create(
                             chain_id,
                             disabled_one_inch_protocols.clone(),
                             client.clone(),
-                        )?
-                        .into();
+                        )?,
+                        solver_metrics.clone(),
+                    );
                     // We only want to use 1Inch for high value orders
                     shared(SellVolumeFilteringSolver::new(
                         Box::new(one_inch_solver),
@@ -236,18 +239,24 @@ pub fn create(
                         client.clone(),
                     )
                     .unwrap();
-                    shared(SingleOrderSolver::from(zeroex_solver))
+                    shared(SingleOrderSolver::new(
+                        zeroex_solver,
+                        solver_metrics.clone(),
+                    ))
                 }
-                SolverType::Paraswap => shared(SingleOrderSolver::from(ParaswapSolver::new(
-                    account,
-                    web3.clone(),
-                    settlement_contract.clone(),
-                    token_info_fetcher.clone(),
-                    paraswap_slippage_bps,
-                    disabled_paraswap_dexs.clone(),
-                    client.clone(),
-                    paraswap_partner.clone(),
-                ))),
+                SolverType::Paraswap => shared(SingleOrderSolver::new(
+                    ParaswapSolver::new(
+                        account,
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        token_info_fetcher.clone(),
+                        paraswap_slippage_bps,
+                        disabled_paraswap_dexs.clone(),
+                        client.clone(),
+                        paraswap_partner.clone(),
+                    ),
+                    solver_metrics.clone(),
+                )),
             };
 
             if let Ok(solver) = &solver {
