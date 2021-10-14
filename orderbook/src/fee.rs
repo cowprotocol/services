@@ -203,6 +203,7 @@ impl MinFeeCalculator {
         let gas_price = self.gas_estimator.estimate().await?.effective_gas_price();
         let gas_amount =
             if let (Some(buy_token), Some(amount), Some(kind)) = (buy_token, amount, kind) {
+                // We only apply the discount to the more sophisticated fee estimation, as the legacy one is already very favorable to the user in most cases
                 self.price_estimator
                     .estimate(&price_estimation::Query {
                         sell_token,
@@ -216,24 +217,16 @@ impl MinFeeCalculator {
             } else {
                 GAS_PER_ORDER
             };
-
         let fee_in_eth = gas_price * gas_amount;
-
-        // Use a sell order instead of a buy order as some DEXs specifically
-        // used by Paraswap don't support buy orders natively.
         let query = price_estimation::Query {
-            buy_token: sell_token,
-            sell_token: self.native_token,
+            sell_token,
+            buy_token: self.native_token,
             in_amount: self.native_token_price_estimation_amount,
-            kind: OrderKind::Sell,
+            kind: OrderKind::Buy,
         };
         let estimate = self.price_estimator.estimate(&query).await?;
-
-        // The price denominated in native token (since we **used a native token
-        // sell order** when estimating prices). This is the amount of native
-        // token needed to buy one unit of the order's sell token.
         let price = estimate.price_in_sell_token_f64(&query);
-        Ok(U256::from_f64_lossy(fee_in_eth / price))
+        Ok(U256::from_f64_lossy(fee_in_eth * price))
     }
 
     fn calculate_fee_factor(&self, app_data: Option<AppId>) -> f64 {
@@ -396,11 +389,9 @@ mod tests {
     use chrono::{Duration, NaiveDateTime};
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
     use maplit::hashmap;
-    use mockall::predicate::*;
     use shared::{
-        bad_token::list_based::ListBasedDetector,
-        gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::{mocks::FakePriceEstimator, MockPriceEstimating},
+        bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::mocks::FakePriceEstimator,
     };
     use std::sync::Arc;
 
@@ -689,91 +680,5 @@ mod tests {
             .get_unsubsidized_min_fee(sell_token, lower_fee, Some(app_data))
             .await
             .is_err());
-    }
-
-    #[tokio::test]
-    async fn computes_min_fee() {
-        let native_token = H160([0x42; 20]);
-        let native_token_price_estimation_amount = U256::from(1337);
-
-        let sell_token = H160([1; 20]);
-        let buy_token = H160([2; 20]);
-        let in_amount = U256::from(1_000_000_000_000_000_000_u128);
-        let kind = OrderKind::Sell;
-
-        let gas_estimate = 100_000.;
-        let gas_price = EstimatedGasPrice {
-            eip1559: Some(GasPrice1559 {
-                max_fee_per_gas: 100.0,
-                max_priority_fee_per_gas: 100.0,
-                base_fee_per_gas: 0.0,
-            }),
-            ..Default::default()
-        };
-        // The amount of sell token you receive per native token. This means
-        // that 1 WETH would give you 3000.0 SELLTOKEN.
-        let sell_token_price = 3000.;
-
-        let mut sequence = mockall::Sequence::new();
-        let mut price_estimator = MockPriceEstimating::new();
-        price_estimator
-            .expect_estimate()
-            .times(1)
-            .with(eq(price_estimation::Query {
-                sell_token,
-                buy_token,
-                in_amount,
-                kind,
-            }))
-            .returning(move |_| {
-                Ok(price_estimation::Estimate {
-                    out_amount: U256::from(123_456_789_012_345_567_u128),
-                    gas: U256::from_f64_lossy(gas_estimate),
-                })
-            })
-            .in_sequence(&mut sequence);
-        price_estimator
-            .expect_estimate()
-            .times(1)
-            .with(eq(price_estimation::Query {
-                sell_token: native_token,
-                buy_token: sell_token,
-                in_amount: native_token_price_estimation_amount,
-                kind,
-            }))
-            .returning(move |_| {
-                Ok(price_estimation::Estimate {
-                    // Given an input of X WETH, we expect 3000*X SELLTOKEN output
-                    // because, in this example the native token is more valuable
-                    // than the sell token.
-                    out_amount: U256::from_f64_lossy(
-                        native_token_price_estimation_amount.to_f64_lossy() * sell_token_price,
-                    ),
-                    gas: U256::from(1_000_000),
-                })
-            })
-            .in_sequence(&mut sequence);
-
-        let calculator = MinFeeCalculator {
-            native_token,
-            native_token_price_estimation_amount,
-            ..MinFeeCalculator::new_for_test(
-                Arc::new(FakeGasPriceEstimator::new(gas_price)),
-                Arc::new(price_estimator),
-                Box::new(Utc::now),
-            )
-        };
-        let min_fee = calculator
-            .compute_min_fee(sell_token, Some(buy_token), Some(in_amount), Some(kind))
-            .await
-            .unwrap();
-
-        assert_eq!(
-            min_fee,
-            // We expect to pay `gas_estimate * gas_price` WETH total in gas,
-            // and to convert that into SELLTOKEN, we multiply by the sell
-            // token price.
-            U256::from_f64_lossy(gas_estimate * gas_price.effective_gas_price() * sell_token_price)
-        );
     }
 }
