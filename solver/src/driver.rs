@@ -11,9 +11,9 @@ use crate::{
     solver::Solver,
     solver::{Auction, SettlementWithSolver, Solvers},
 };
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::errors::MethodError;
+use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
@@ -208,35 +208,6 @@ impl Driver {
         Ok(simulations[0].is_ok())
     }
 
-    // Split settlements into successfully simulating ones and errors.
-    async fn simulate_settlements(
-        &self,
-        settlements: Vec<SettlementWithSolver>,
-        gas_price: EstimatedGasPrice,
-    ) -> Result<(
-        Vec<SettlementWithSolver>,
-        Vec<(SettlementWithSolver, Error)>,
-    )> {
-        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
-            settlements
-                .iter()
-                .map(|settlement| (settlement.0.account().clone(), settlement.1.clone())),
-            &self.settlement_contract,
-            &self.web3,
-            gas_price,
-        )
-        .await
-        .context("failed to simulate settlements")?;
-
-        Ok(settlements
-            .into_iter()
-            .zip(simulations)
-            .partition_map(|(settlement, result)| match result {
-                Ok(_) => Either::Left(settlement),
-                Err(err) => Either::Right((settlement, err.into())),
-            }))
-    }
-
     // Log simulation errors only if the simulation also fails in the block at which on chain
     // liquidity was queried. If the simulation succeeds at the previous block then the solver
     // worked correctly and the error doesn't have to be reported.
@@ -244,14 +215,14 @@ impl Driver {
     // the block has changed just as were were querying the node.
     async fn report_simulation_errors(
         &self,
-        errors: &[(SettlementWithSolver, Error)],
+        errors: &[(Arc<dyn Solver>, Settlement, ExecutionError)],
         current_block_during_liquidity_fetch: u64,
         gas_price: EstimatedGasPrice,
     ) {
         let simulations = match settlement_simulation::simulate_and_error_with_tenderly_link(
             errors
                 .iter()
-                .map(|(settlement, _)| (settlement.0.account().clone(), settlement.1.clone())),
+                .map(|(solver, settlement, _)| (solver.account().clone(), settlement.clone())),
             &self.settlement_contract,
             &self.web3,
             gas_price,
@@ -271,7 +242,7 @@ impl Driver {
             }
         };
 
-        for (((solver, settlement), _previous_error), result) in errors.iter().zip(simulations) {
+        for ((solver, settlement, _previous_error), result) in errors.iter().zip(simulations) {
             self.metrics
                 .settlement_simulation_failed_on_latest(solver.name());
             if let Err(error_at_earlier_block) = result {
@@ -336,8 +307,20 @@ impl Driver {
         settlements: Vec<SettlementWithSolver>,
         prices: &HashMap<H160, BigRational>,
         gas_price: EstimatedGasPrice,
-    ) -> Vec<(Arc<dyn Solver>, RatedSettlement)> {
-        use futures::stream::StreamExt;
+    ) -> Result<(
+        Vec<(Arc<dyn Solver>, RatedSettlement)>,
+        Vec<(Arc<dyn Solver>, Settlement, ExecutionError)>,
+    )> {
+        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
+            settlements
+                .iter()
+                .map(|settlement| (settlement.0.account().clone(), settlement.1.clone())),
+            &self.settlement_contract,
+            &self.web3,
+            gas_price,
+        )
+        .await
+        .context("failed to simulate settlements")?;
 
         // Normalize gas_price_wei to the native token price in the prices vector.
         let gas_price_normalized = BigRational::from_float(gas_price.effective_gas_price())
@@ -346,43 +329,36 @@ impl Driver {
                 .get(&self.native_token)
                 .expect("Price of native token must be known.");
 
-        futures::stream::iter(settlements)
-            .filter_map(|(solver, settlement)| async {
-                let surplus = settlement.total_surplus(prices);
-                let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
-                let gas_estimate = match settlement_simulation::simulate_and_estimate_gas_at_current_block(
-                    std::iter::once((solver.account().clone(), settlement.clone())),
-                    &self.settlement_contract,
-                    &self.web3,gas_price
-                )
-                .await
-                .map(|results|  results.into_iter().next().unwrap().map_err(Error::from))
-                {
-                    Ok(Ok(gas)) => gas,
-                    Err(err)  | Ok(Err(err)) => {
-                        tracing::error!("Failed to estimate gas for solver {}: {:?}", solver.name(), err);
-                        return None;
-                    }
-                };
-                let rated_settlement = RatedSettlement {
-                    settlement,
-                    surplus,
-                    solver_fees: scaled_solver_fees,
-                    gas_estimate,
-                    gas_price: gas_price_normalized.clone(),
-                };
-                tracing::info!(
-                    "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
-                    solver.name(),
-                    rated_settlement.objective_value(),
-                    rated_settlement.surplus,
-                    rated_settlement.gas_estimate,
-                    rated_settlement.gas_price,
-                );
-                Some((solver, rated_settlement))
-            })
-            .collect::<Vec<_>>()
-            .await
+        let rate_settlement = |solver, settlement: Settlement, gas_estimate| {
+            let surplus = settlement.total_surplus(prices);
+            let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
+            let rated_settlement = RatedSettlement {
+                settlement,
+                surplus,
+                solver_fees: scaled_solver_fees,
+                gas_estimate,
+                gas_price: gas_price_normalized.clone(),
+            };
+            tracing::info!(
+                "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
+                solver,
+                rated_settlement.objective_value(),
+                rated_settlement.surplus,
+                rated_settlement.gas_estimate,
+                rated_settlement.gas_price,
+            );
+            rated_settlement
+        };
+
+        Ok(settlements.into_iter().zip(simulations).partition_map(
+            |((solver, settlement), result)| match result {
+                Ok(gas_estimate) => Either::Left((
+                    solver.clone(),
+                    rate_settlement(solver.name(), settlement, gas_estimate),
+                )),
+                Err(err) => Either::Right((solver, settlement, err)),
+            },
+        ))
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
@@ -467,22 +443,17 @@ impl Driver {
             }
         }
 
-        let (settlements, errors) = self
-            .simulate_settlements(solver_settlements, gas_price)
+        let (rated_settlements, errors) = self
+            .rate_settlements(solver_settlements, &estimated_prices, gas_price)
             .await?;
-
         tracing::info!(
             "{} settlements passed simulation and {} failed",
-            settlements.len(),
+            rated_settlements.len(),
             errors.len()
         );
-        for (solver, _) in &settlements {
+        for (solver, _) in &rated_settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
-
-        let rated_settlements = self
-            .rate_settlements(settlements, &estimated_prices, gas_price)
-            .await;
 
         self.inflight_trades.clear();
         if let Some((solver, mut settlement)) = rated_settlements
