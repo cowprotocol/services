@@ -224,7 +224,7 @@ impl OrderQuoter {
         &self,
         quote_request: &OrderQuoteRequest,
     ) -> Result<FeeParameters, FeeError> {
-        match quote_request.side {
+        Ok(match quote_request.side {
             OrderQuoteSide::Sell {
                 sell_amount:
                     SellAmount::BeforeFee {
@@ -232,93 +232,88 @@ impl OrderQuoter {
                     },
             } => {
                 if sell_amount_before_fee.is_zero() {
-                    Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount))
-                } else {
-                    let (fee, expiration) = self
-                        .fee_calculator
-                        .compute_unsubsidized_min_fee(
-                            quote_request.sell_token,
-                            Some(quote_request.buy_token),
-                            Some(sell_amount_before_fee),
-                            Some(OrderKind::Sell),
-                            Some(quote_request.app_data),
-                        )
-                        .await
-                        .map_err(FeeError::PriceEstimate)?;
-                    let sell_amount_after_fee = sell_amount_before_fee
-                        .checked_sub(fee)
-                        .ok_or(FeeError::SellAmountDoesNotCoverFee)?
-                        .max(U256::one());
-                    let estimate = self
-                        .price_estimator
-                        .estimate(&price_estimation::Query {
-                            sell_token: quote_request.sell_token,
-                            buy_token: quote_request.buy_token,
-                            in_amount: sell_amount_after_fee,
-                            kind: OrderKind::Sell,
-                        })
-                        .await
-                        .map_err(FeeError::PriceEstimate)?;
-                    Ok(FeeParameters {
-                        buy_amount: estimate.out_amount,
-                        sell_amount: sell_amount_before_fee,
-                        fee_amount: fee,
-                        expiration,
+                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
+                }
+
+                let (fee, expiration) = self
+                    .fee_calculator
+                    .compute_unsubsidized_min_fee(
+                        quote_request.sell_token,
+                        Some(quote_request.buy_token),
+                        Some(sell_amount_before_fee),
+                        Some(OrderKind::Sell),
+                        Some(quote_request.app_data),
+                    )
+                    .await
+                    .map_err(FeeError::PriceEstimate)?;
+                let sell_amount_after_fee = sell_amount_before_fee
+                    .checked_sub(fee)
+                    .ok_or(FeeError::SellAmountDoesNotCoverFee)?
+                    .max(U256::one());
+                let estimate = self
+                    .price_estimator
+                    .estimate(&price_estimation::Query {
+                        sell_token: quote_request.sell_token,
+                        buy_token: quote_request.buy_token,
+                        in_amount: sell_amount_after_fee,
                         kind: OrderKind::Sell,
                     })
+                    .await
+                    .map_err(FeeError::PriceEstimate)?;
+                FeeParameters {
+                    buy_amount: estimate.out_amount,
+                    sell_amount: sell_amount_after_fee,
+                    fee_amount: fee,
+                    expiration,
+                    kind: OrderKind::Sell,
                 }
             }
             OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { .. },
             } => {
                 // TODO: Nice to have: true sell amount after the fee (more complicated).
-                Err(FeeError::PriceEstimate(PriceEstimationError::Other(
+                return Err(FeeError::PriceEstimate(PriceEstimationError::Other(
                     anyhow!("Currently unsupported route"),
-                )))
+                )));
             }
             OrderQuoteSide::Buy {
                 buy_amount_after_fee,
             } => {
                 if buy_amount_after_fee.is_zero() {
-                    Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount))
-                } else {
-                    let (fee, expiration) = self
-                        .fee_calculator
-                        .compute_unsubsidized_min_fee(
-                            quote_request.sell_token,
-                            Some(quote_request.buy_token),
-                            Some(buy_amount_after_fee),
-                            Some(OrderKind::Buy),
-                            Some(quote_request.app_data),
-                        )
-                        .await
-                        .map_err(FeeError::PriceEstimate)?;
-                    let estimate = self
-                        .price_estimator
-                        .estimate(&price_estimation::Query {
-                            sell_token: quote_request.sell_token,
-                            buy_token: quote_request.buy_token,
-                            in_amount: buy_amount_after_fee,
-                            kind: OrderKind::Buy,
-                        })
-                        .await
-                        .map_err(FeeError::PriceEstimate)?;
-                    let sell_amount_before_fee =
-                        estimate.out_amount.checked_add(fee).ok_or_else(|| {
-                            FeeError::PriceEstimate(PriceEstimationError::Other(anyhow!(
-                                "overflow in sell_amount_before_fee"
-                            )))
-                        })?;
-                    Ok(FeeParameters {
-                        buy_amount: buy_amount_after_fee,
-                        sell_amount: sell_amount_before_fee,
-                        fee_amount: fee,
-                        expiration,
+                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
+                }
+
+                let (fee, expiration) = self
+                    .fee_calculator
+                    .compute_unsubsidized_min_fee(
+                        quote_request.sell_token,
+                        Some(quote_request.buy_token),
+                        Some(buy_amount_after_fee),
+                        Some(OrderKind::Buy),
+                        Some(quote_request.app_data),
+                    )
+                    .await
+                    .map_err(FeeError::PriceEstimate)?;
+                let estimate = self
+                    .price_estimator
+                    .estimate(&price_estimation::Query {
+                        sell_token: quote_request.sell_token,
+                        buy_token: quote_request.buy_token,
+                        in_amount: buy_amount_after_fee,
                         kind: OrderKind::Buy,
                     })
+                    .await
+                    .map_err(FeeError::PriceEstimate)?;
+                let sell_amount_after_fee = estimate.out_amount;
+                FeeParameters {
+                    buy_amount: buy_amount_after_fee,
+                    sell_amount: sell_amount_after_fee,
+                    fee_amount: fee,
+                    expiration,
+                    kind: OrderKind::Buy,
                 }
             }
-        }
+        })
     }
 }
 
@@ -575,7 +570,7 @@ mod tests {
             result,
             FeeParameters {
                 buy_amount: 14.into(),
-                sell_amount: 10.into(),
+                sell_amount: 7.into(),
                 fee_amount: 3.into(),
                 expiration,
                 kind: OrderKind::Sell
@@ -655,7 +650,7 @@ mod tests {
             result,
             FeeParameters {
                 buy_amount: 10.into(),
-                sell_amount: 23.into(),
+                sell_amount: 20.into(),
                 fee_amount: 3.into(),
                 expiration,
                 kind: OrderKind::Buy
@@ -705,7 +700,7 @@ mod tests {
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             receiver: None,
-            sell_amount: 17.into(), // TODO - verify that this is indeed correct.
+            sell_amount: 14.into(),
             kind: OrderKind::Buy,
             partially_fillable: false,
             sell_token_balance: Default::default(),
