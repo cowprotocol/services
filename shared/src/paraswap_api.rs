@@ -161,7 +161,7 @@ fn parse_paraswap_response_text(
             "Unable to process the transaction" => {
                 Err(ParaswapResponseError::BuildingTransaction(message))
             }
-            "Server is too busy" => Err(ParaswapResponseError::ServerBusy),
+            "Server too busy" => Err(ParaswapResponseError::ServerBusy),
             _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
                 "uncatalogued error message {}",
                 message
