@@ -27,6 +27,7 @@ use shared::{
     token_list::TokenList,
     Web3,
 };
+use std::str::FromStr;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -288,23 +289,43 @@ impl Driver {
         }
     }
 
-    // Record metric with the amount of orders that were matched but not settled in this runloop (effectively queued for the next one)
-    // Should help us to identify how much we can save by parallelizing execution.
-    fn report_matched_but_unsettled_orders(
+    /// Record metrics on the matched orders from a single batch. Specifically we report on
+    /// the number of orders that were;
+    ///  - matched but not settled in this runloop (effectively queued for the next one)
+    ///  - matched but coming from known liquidity providers.
+    /// Should help us to identify how much we can save by parallelizing execution.
+    fn report_matched_orders(
         &self,
         submitted: &Settlement,
         all: impl Iterator<Item = RatedSettlement>,
+        orders: Vec<LimitOrder>,
     ) {
         let submitted: HashSet<_> = submitted
             .trades()
             .iter()
             .map(|trade| trade.order.order_meta_data.uid)
             .collect();
-        let all_matched: HashSet<_> = all
+        let all_matched_orders: HashSet<_> = all
             .flat_map(|solution| solution.settlement.trades().to_vec())
-            .map(|trade| trade.order.order_meta_data.uid)
+            .map(|trade| trade.order)
             .collect();
-        let matched_but_not_settled: HashSet<_> = all_matched.difference(&submitted).collect();
+        let all_matched_ids: HashSet<_> = all_matched_orders
+            .iter()
+            .map(|order| order.order_meta_data.uid)
+            .collect();
+        let matched_but_not_settled = all_matched_ids.difference(&submitted).copied().collect();
+        let liquidity_order_ids: HashSet<_> = orders
+            .into_iter()
+            .filter_map(|order| match order.is_liquidity_order {
+                true => OrderUid::from_str(&order.id).ok(),
+                false => None,
+            })
+            .collect();
+        let matched_but_unsettled_liquidity_ids: HashSet<_> = liquidity_order_ids
+            .intersection(&matched_but_not_settled)
+            .collect();
+        self.metrics
+            .orders_matched_but_liquidity(matched_but_unsettled_liquidity_ids.len());
         self.metrics
             .orders_matched_but_not_settled(matched_but_not_settled.len())
     }
@@ -403,7 +424,7 @@ impl Driver {
 
         let auction = Auction {
             id: self.next_auction_id(),
-            orders,
+            orders: orders.clone(),
             liquidity,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
@@ -493,9 +514,10 @@ impl Driver {
                     .collect::<HashSet<OrderUid>>();
             }
 
-            self.report_matched_but_unsettled_orders(
+            self.report_matched_orders(
                 &settlement.settlement,
                 rated_settlements.into_iter().map(|(_, solution)| solution),
+                orders,
             );
         }
 
