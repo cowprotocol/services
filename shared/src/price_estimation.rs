@@ -44,7 +44,7 @@ impl Clone for PriceEstimationError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug)]
 pub struct Query {
     pub sell_token: H160,
     pub buy_token: H160,
