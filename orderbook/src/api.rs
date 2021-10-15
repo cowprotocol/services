@@ -70,7 +70,7 @@ pub fn handle_all_routes(
         .and(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy"))))
     .or(warp::path!("api" / "v1" / ..).and(get_user_orders.with(handle_metrics("get_user_orders"))))
     .or(warp::path!("api" / "v1" / ..).and(get_orders_by_tx.with(handle_metrics("get_user_by_tx"))))
-    .or(warp::path!("api" / "v1" / ..).and(post_quote.with(handle_metrics("get_user_orders"))));
+    .or(warp::path!("api" / "v1" / ..).and(post_quote.with(handle_metrics("post_quote"))));
 
     routes_with_labels.recover(handle_rejection).with(cors)
 }
