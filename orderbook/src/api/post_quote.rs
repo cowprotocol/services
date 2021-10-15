@@ -354,7 +354,7 @@ pub fn post_quote(
         async move {
             let result = quoter.calculate_quote(&request).await;
             if let Err(err) = &result {
-                tracing::error!(?err, ?request, "post_quote error");
+                tracing::warn!(?err, ?request, "post_quote error");
             }
             Result::<_, Infallible>::Ok(response(result))
         }
