@@ -35,7 +35,7 @@ impl MinFeeStoring for Postgres {
             .map(|_| ())
     }
 
-    async fn get_min_fee(
+    async fn read_fee_measurement(
         &self,
         sell_token: H160,
         buy_token: Option<H160>,
@@ -137,14 +137,14 @@ mod tests {
 
         // Token A has readings valid until now and in 30s
         assert_eq!(
-            db.get_min_fee(token_a, None, None, None, now)
+            db.read_fee_measurement(token_a, None, None, None, now)
                 .await
                 .unwrap()
                 .unwrap(),
             100_u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_a, None, None, None, now + Duration::seconds(30))
+            db.read_fee_measurement(token_a, None, None, None, now + Duration::seconds(30))
                 .await
                 .unwrap()
                 .unwrap(),
@@ -153,14 +153,14 @@ mod tests {
 
         // Token B only has readings valid until now
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now)
+            db.read_fee_measurement(token_b, None, None, None, now)
                 .await
                 .unwrap()
                 .unwrap(),
             10u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now + Duration::seconds(30))
+            db.read_fee_measurement(token_b, None, None, None, now + Duration::seconds(30))
                 .await
                 .unwrap(),
             None
@@ -168,28 +168,28 @@ mod tests {
 
         // Token B has readings for right filters
         assert_eq!(
-            db.get_min_fee(token_b, Some(token_a), None, None, now)
+            db.read_fee_measurement(token_b, Some(token_a), None, None, now)
                 .await
                 .unwrap()
                 .unwrap(),
             10u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_b, None, Some(100.into()), None, now)
+            db.read_fee_measurement(token_b, None, Some(100.into()), None, now)
                 .await
                 .unwrap()
                 .unwrap(),
             10u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_b, None, None, Some(OrderKind::Buy), now)
+            db.read_fee_measurement(token_b, None, None, Some(OrderKind::Buy), now)
                 .await
                 .unwrap()
                 .unwrap(),
             10u32.into()
         );
         assert_eq!(
-            db.get_min_fee(token_b, None, Some(U256::zero()), None, now)
+            db.read_fee_measurement(token_b, None, Some(U256::zero()), None, now)
                 .await
                 .unwrap(),
             None
@@ -199,7 +199,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            db.get_min_fee(token_b, None, None, None, now)
+            db.read_fee_measurement(token_b, None, None, None, now)
                 .await
                 .unwrap(),
             None
