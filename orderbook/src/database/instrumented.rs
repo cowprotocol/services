@@ -75,7 +75,7 @@ impl MinFeeStoring for Instrumented {
             .await
     }
 
-    async fn get_min_fee(
+    async fn read_fee_measurement(
         &self,
         sell_token: ethcontract::H160,
         buy_token: Option<ethcontract::H160>,
@@ -85,10 +85,10 @@ impl MinFeeStoring for Instrumented {
     ) -> anyhow::Result<Option<ethcontract::U256>> {
         let _timer = self
             .metrics
-            .database_query_histogram("get_min_fee")
+            .database_query_histogram("read_fee_measurement")
             .start_timer();
         self.inner
-            .get_min_fee(sell_token, buy_token, amount, kind, min_expiry)
+            .read_fee_measurement(sell_token, buy_token, amount, kind, min_expiry)
             .await
     }
 }

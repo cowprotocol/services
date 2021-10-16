@@ -80,7 +80,7 @@ async fn calculate_sell(
 
     // TODO: would be nice to use true sell amount after the fee but that is more complicated.
     let (fee, expiration_date) = fee_calculator
-        .compute_unsubsidized_min_fee(
+        .compute_subsidized_min_fee(
             query.sell_token,
             Some(query.buy_token),
             Some(query.sell_amount_before_fee),
@@ -124,7 +124,7 @@ async fn calculate_buy(
     }
 
     let (fee, expiration_date) = fee_calculator
-        .compute_unsubsidized_min_fee(
+        .compute_subsidized_min_fee(
             query.sell_token,
             Some(query.buy_token),
             Some(query.buy_amount_after_fee),
@@ -230,7 +230,7 @@ mod tests {
     fn calculate_sell_() {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
-            .expect_compute_unsubsidized_min_fee()
+            .expect_compute_subsidized_min_fee()
             .returning(|_, _, _, _, _| Ok((U256::from(3), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
@@ -257,7 +257,7 @@ mod tests {
     fn calculate_buy_() {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
-            .expect_compute_unsubsidized_min_fee()
+            .expect_compute_subsidized_min_fee()
             .returning(|_, _, _, _, _| Ok((U256::from(3), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 20.into(),
