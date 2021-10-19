@@ -1,5 +1,6 @@
 use anyhow::Result;
-use prometheus::{Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts};
+use gas_estimation::EstimatedGasPrice;
+use prometheus::{Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts};
 use shared::{
     metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
     transport::instrumented::TransportMetrics,
@@ -20,6 +21,8 @@ pub struct Metrics {
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     database_queries: HistogramVec,
+    /// Gas estimate metrics
+    gas_price: Gauge,
 }
 
 impl Metrics {
@@ -65,6 +68,10 @@ impl Metrics {
         let database_queries = HistogramVec::new(opts, &["type"]).unwrap();
         registry.register(Box::new(database_queries.clone()))?;
 
+        let opts = Opts::new("gas_price", "Gas price estimate over time.");
+        let gas_price = Gauge::with_opts(opts).unwrap();
+        registry.register(Box::new(gas_price.clone()))?;
+
         Ok(Self {
             api_requests,
             db_table_row_count,
@@ -72,6 +79,7 @@ impl Metrics {
             pool_cache_hits,
             pool_cache_misses,
             database_queries,
+            gas_price,
         })
     }
 
@@ -100,6 +108,12 @@ impl PoolCacheMetrics for Metrics {
 impl crate::database::instrumented::Metrics for Metrics {
     fn database_query_histogram(&self, label: &str) -> Histogram {
         self.database_queries.with_label_values(&[label])
+    }
+}
+
+impl crate::gas_price::Metrics for Metrics {
+    fn gas_price(&self, estimate: EstimatedGasPrice) {
+        self.gas_price.set(estimate.effective_gas_price() / 1e9);
     }
 }
 

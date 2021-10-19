@@ -11,6 +11,7 @@ use orderbook::{
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
+    gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     orderbook::Orderbook,
     serve_api,
@@ -259,7 +260,7 @@ async fn main() {
         settlement_contract.address(),
     ));
 
-    let gas_price_estimator = Arc::new(
+    let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
         shared::gas_price_estimation::create_priority_estimator(
             client.clone(),
             &web3,
@@ -268,7 +269,8 @@ async fn main() {
         )
         .await
         .expect("failed to create gas price estimator"),
-    );
+        metrics.clone(),
+    ));
 
     let pair_providers = sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
         .await
