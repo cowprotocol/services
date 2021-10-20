@@ -70,15 +70,6 @@ struct Arguments {
     )]
     target_confirm_time: Duration,
 
-    /// Every how often in seconds we should execute the driver's run loop
-    #[structopt(
-        long,
-        env,
-        default_value = "10",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    settle_interval: Duration,
-
     /// Which type of solver to use
     #[structopt(
         long,
@@ -510,7 +501,6 @@ async fn main() {
         price_estimator,
         solver,
         gas_price_estimator,
-        args.settle_interval,
         native_token_contract.address(),
         args.min_order_age,
         metrics.clone(),
