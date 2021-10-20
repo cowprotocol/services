@@ -214,51 +214,57 @@ impl Driver {
     // worked correctly and the error doesn't have to be reported.
     // Note that we could still report a false positive because the earlier block might be off by if
     // the block has changed just as were were querying the node.
-    async fn report_simulation_errors(
+    fn report_simulation_errors(
         &self,
-        errors: &[(Arc<dyn Solver>, Settlement, ExecutionError)],
+        errors: Vec<(Arc<dyn Solver>, Settlement, ExecutionError)>,
         current_block_during_liquidity_fetch: u64,
         gas_price: EstimatedGasPrice,
     ) {
-        let simulations = match settlement_simulation::simulate_and_error_with_tenderly_link(
-            errors
-                .iter()
-                .map(|(solver, settlement, _)| (solver.account().clone(), settlement.clone())),
-            &self.settlement_contract,
-            &self.web3,
-            gas_price,
-            &self.network_id,
-            current_block_during_liquidity_fetch,
-        )
-        .await
-        {
-            Ok(simulations) => simulations,
-            Err(err) => {
-                tracing::error!(
-                    "unable to complete simulation of settlements at earlier block {}: {:?}",
-                    current_block_during_liquidity_fetch,
-                    err
-                );
-                return;
+        let contract = self.settlement_contract.clone();
+        let web3 = self.web3.clone();
+        let network_id = self.network_id.clone();
+        let metrics = self.metrics.clone();
+        let task = async move {
+            let simulations = match settlement_simulation::simulate_and_error_with_tenderly_link(
+                errors
+                    .iter()
+                    .map(|(solver, settlement, _)| (solver.account().clone(), settlement.clone())),
+                &contract,
+                &web3,
+                gas_price,
+                &network_id,
+                current_block_during_liquidity_fetch,
+            )
+            .await
+            {
+                Ok(simulations) => simulations,
+                Err(err) => {
+                    tracing::error!(
+                        "unable to complete simulation of settlements at earlier block {}: {:?}",
+                        current_block_during_liquidity_fetch,
+                        err
+                    );
+                    return;
+                }
+            };
+
+            for ((solver, settlement, _previous_error), result) in errors.iter().zip(simulations) {
+                metrics.settlement_simulation_failed_on_latest(solver.name());
+                if let Err(error_at_earlier_block) = result {
+                    tracing::warn!(
+                        "{} settlement simulation failed at submission and block {}:\n{:?}",
+                        solver.name(),
+                        current_block_during_liquidity_fetch,
+                        error_at_earlier_block,
+                    );
+                    // split warning into separate logs so that the messages aren't too long.
+                    tracing::warn!("settlement failure for: \n{:#?}", settlement);
+
+                    metrics.settlement_simulation_failed(solver.name());
+                }
             }
         };
-
-        for ((solver, settlement, _previous_error), result) in errors.iter().zip(simulations) {
-            self.metrics
-                .settlement_simulation_failed_on_latest(solver.name());
-            if let Err(error_at_earlier_block) = result {
-                tracing::warn!(
-                    "{} settlement simulation failed at submission and block {}:\n{:?}",
-                    solver.name(),
-                    current_block_during_liquidity_fetch,
-                    error_at_earlier_block,
-                );
-                // split warning into separate logs so that the messages aren't too long.
-                tracing::warn!("settlement failure for: \n{:#?}", settlement);
-
-                self.metrics.settlement_simulation_failed(solver.name());
-            }
-        }
+        tokio::task::spawn(task);
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
@@ -507,8 +513,7 @@ impl Driver {
         }
 
         // Happens after settlement submission so that we do not delay it.
-        self.report_simulation_errors(&errors, current_block_during_liquidity_fetch, gas_price)
-            .await;
+        self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
 
         Ok(())
     }

@@ -40,7 +40,7 @@ mod zeroex_solver;
 /// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
 /// would like to process, including their own private sources.
 #[async_trait::async_trait]
-pub trait Solver: 'static {
+pub trait Solver: Send + Sync + 'static {
     /// Runs the solver.
     ///
     /// The returned settlements should be independent (for example not reusing the same user
