@@ -1,7 +1,9 @@
 use crate::liquidity::{LimitOrder, Liquidity};
 use anyhow::Result;
 use model::order::Order;
-use prometheus::{HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts};
+use prometheus::{
+    Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
+};
 use shared::{
     metrics::get_metrics_registry,
     metrics::LivenessChecking,
@@ -34,6 +36,8 @@ pub trait SolverMetrics: Send + Sync {
     fn orders_matched_but_liquidity(&self, count: usize);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn runloop_completed(&self);
+    fn complete_runloop_until_transaction(&self, duration: Duration);
+    fn transaction_submission(&self, duration: Duration);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -51,6 +55,8 @@ pub struct Metrics {
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     last_runloop_completed: Mutex<Instant>,
+    complete_runloop_until_transaction: Histogram,
+    transaction_submission: Histogram,
 }
 
 impl Metrics {
@@ -136,6 +142,26 @@ impl Metrics {
         )?;
         registry.register(Box::new(pool_cache_misses.clone()))?;
 
+        let opts = prometheus::opts!(
+            "complete_runloop_until_transaction_seconds",
+            "Time a runloop that wants to submit a solution takes until the transaction submission starts."
+        );
+        let complete_runloop_until_transaction = Histogram::with_opts(HistogramOpts {
+            common_opts: opts,
+            buckets: vec![f64::INFINITY],
+        })?;
+        registry.register(Box::new(complete_runloop_until_transaction.clone()))?;
+
+        let opts = prometheus::opts!(
+            "transaction_submission_seconds",
+            "Time it takes to submit a settlement transaction."
+        );
+        let transaction_submission = Histogram::with_opts(HistogramOpts {
+            common_opts: opts,
+            buckets: vec![f64::INFINITY],
+        })?;
+        registry.register(Box::new(transaction_submission.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -150,6 +176,8 @@ impl Metrics {
             pool_cache_hits,
             pool_cache_misses,
             last_runloop_completed: Mutex::new(Instant::now()),
+            complete_runloop_until_transaction,
+            transaction_submission,
         })
     }
 }
@@ -247,6 +275,15 @@ impl SolverMetrics for Metrics {
             .lock()
             .expect("thread holding mutex panicked") = Instant::now();
     }
+
+    fn complete_runloop_until_transaction(&self, duration: Duration) {
+        self.complete_runloop_until_transaction
+            .observe(duration.as_secs_f64());
+    }
+
+    fn transaction_submission(&self, duration: Duration) {
+        self.transaction_submission.observe(duration.as_secs_f64());
+    }
 }
 
 impl TransportMetrics for Metrics {
@@ -302,6 +339,8 @@ impl SolverMetrics for NoopMetrics {
     fn orders_matched_but_liquidity(&self, _: usize) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn runloop_completed(&self) {}
+    fn complete_runloop_until_transaction(&self, _: Duration) {}
+    fn transaction_submission(&self, _: Duration) {}
 }
 
 #[cfg(test)]

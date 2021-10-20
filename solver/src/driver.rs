@@ -362,6 +362,7 @@ impl Driver {
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
+        let start = Instant::now();
         tracing::debug!("starting single run");
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
@@ -472,6 +473,9 @@ impl Driver {
             }
 
             tracing::info!("winning settlement: {:?}", settlement);
+            self.metrics
+                .complete_runloop_until_transaction(start.elapsed());
+            let start = Instant::now();
             if self
                 .submit_settlement(solver, settlement.clone())
                 .await
@@ -484,6 +488,7 @@ impl Driver {
                     .map(|t| t.order.order_meta_data.uid)
                     .collect::<HashSet<OrderUid>>();
             }
+            self.metrics.transaction_submission(start.elapsed());
 
             self.report_matched_orders(
                 &settlement.settlement,
