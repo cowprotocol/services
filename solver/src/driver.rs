@@ -20,6 +20,7 @@ use itertools::{Either, Itertools};
 use model::order::{OrderUid, BUY_ETH_ADDRESS};
 use num::BigRational;
 use primitive_types::{H160, U256};
+use rand::prelude::SliceRandom;
 use shared::{
     current_block::{self, CurrentBlockStream},
     price_estimation::{self, PriceEstimating},
@@ -53,6 +54,7 @@ pub struct Driver {
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
     native_token_amount_to_estimate_prices_with: U256,
+    max_settlements_per_solver: usize,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -73,6 +75,7 @@ impl Driver {
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
         native_token_amount_to_estimate_prices_with: U256,
+        max_settlements_per_solver: usize,
     ) -> Self {
         Self {
             settlement_contract,
@@ -93,6 +96,7 @@ impl Driver {
             solution_submitter,
             solve_id: 0,
             native_token_amount_to_estimate_prices_with,
+            max_settlements_per_solver,
         }
     }
 
@@ -423,6 +427,14 @@ impl Driver {
             for settlement in &settlements {
                 tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
             }
+
+            // Keep at most this many settlements. This is important in case where a solver produces
+            // a large number of settlements which would hold up the driver logic when simulating
+            // them.
+            // Shuffle first so that in the case a buggy solver keeps returning some amount of
+            // invalid settlements first we have a chance to make progress.
+            settlements.shuffle(&mut rand::thread_rng());
+            settlements.truncate(self.max_settlements_per_solver);
 
             solver_settlements::merge_settlements(
                 self.max_merged_settlements,

@@ -190,6 +190,10 @@ struct Arguments {
     /// likely, promoting more aggressive merging of single order settlements.
     #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
     pub fee_objective_scaling_factor: f64,
+
+    /// The maximum number of settlements the driver considers per solver.
+    #[structopt(long, env, default_value = "20")]
+    max_settlements_per_solver: usize,
 }
 
 arg_enum! {
@@ -512,6 +516,7 @@ async fn main() {
         current_block_stream.clone(),
         solution_submitter,
         native_token_price_estimation_amount,
+        args.max_settlements_per_solver,
     );
 
     let maintainer = ServiceMaintenance {
