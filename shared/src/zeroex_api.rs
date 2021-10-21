@@ -40,8 +40,8 @@ pub struct SwapQuery {
 }
 
 impl SwapQuery {
-    /// Encodes the swap query as
-    fn into_url(self, base_url: &Url) -> Url {
+    /// Encodes the swap query as a url with get parameters.
+    fn format_url(&self, base_url: &Url, endpoint: &str) -> Url {
         // The `Display` implementation for `H160` unfortunately does not print
         // the full address and instead uses ellipsis (e.g. "0xeeee…eeee"). This
         // helper just works around that.
@@ -50,7 +50,9 @@ impl SwapQuery {
         }
 
         let mut url = base_url
-            .join("/swap/v1/quote?")
+            .join("/swap/v1/")
+            .expect("unexpectedly invalid URL segment")
+            .join(endpoint)
             .expect("unexpectedly invalid URL segment");
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
@@ -76,11 +78,11 @@ impl SwapQuery {
     }
 }
 
-/// A Ox API swap response.
+/// A Ox API `price` response.
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct SwapResponse {
+pub struct PriceResponse {
     #[serde(with = "u256_decimal")]
     pub sell_amount: U256,
     #[serde(with = "u256_decimal")]
@@ -88,6 +90,17 @@ pub struct SwapResponse {
     pub allowance_target: H160,
     #[serde(deserialize_with = "deserialize_decimal_f64")]
     pub price: f64,
+    #[serde(with = "u256_decimal")]
+    pub estimated_gas: U256,
+}
+
+/// A Ox API `swap` response.
+#[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
+#[derivative(Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapResponse {
+    #[serde(flatten)]
+    pub price: PriceResponse,
     pub to: H160,
     #[derivative(Debug(format_with = "debug_bytes"))]
     pub data: Bytes,
@@ -95,11 +108,20 @@ pub struct SwapResponse {
     pub value: U256,
 }
 
-/// Mockable implementation of the API for unit test
+/// Abstract 0x API. Provides a mockable implementation.
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait ZeroExApi {
+    /// Retrieve a swap for the specified parameters from the 1Inch API.
+    ///
+    /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
+
+    /// Similar to `get_swap`: calculate parameters of a swap.
+    /// Does not return a transaction that can be sent to the 0x API.
+    ///
+    /// See [`/swap/v1/price`](https://0x.org/docs/api#get-swapv1price).
+    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError>;
 }
 
 /// 0x API Client implementation.
@@ -110,14 +132,20 @@ pub struct DefaultZeroExApi {
 }
 
 impl DefaultZeroExApi {
+    /// Default 0x API URL.
     pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
 
-    /// Create a new 1Inch HTTP API client with the specified base URL.
+    /// Create a new 0x HTTP API client with the specified base URL.
     pub fn new(base_url: impl IntoUrl, client: Client) -> Result<Self> {
         Ok(Self {
             client,
             base_url: base_url.into_url()?,
         })
+    }
+
+    /// Create a new 0x HTTP API client using the default URL.
+    pub fn with_default_url(client: Client) -> Self {
+        Self::new(Self::DEFAULT_URL, client).unwrap()
     }
 }
 
@@ -150,36 +178,42 @@ pub enum ZeroExResponseError {
 
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
-    /// Retrieves a swap for the specified parameters from the 1Inch API.
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
-        let query_str = format!("{:?}", &query);
+        self.swap_like_request_impl("swap", query).await
+    }
+
+    async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
+        self.swap_like_request_impl("price", query).await
+    }
+}
+
+impl DefaultZeroExApi {
+    async fn swap_like_request_impl<T: for<'a> serde::Deserialize<'a>>(
+        &self,
+        endpoint: &str,
+        query: SwapQuery,
+    ) -> Result<T, ZeroExResponseError> {
         let response_text = self
             .client
-            .get(query.into_url(&self.base_url))
+            .get(query.format_url(&self.base_url, endpoint))
             .send()
             .await
             .map_err(ZeroExResponseError::Send)?
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
-        parse_zeroex_response_text(&response_text, &query_str)
-    }
-}
 
-fn parse_zeroex_response_text(
-    response_text: &str,
-    query: &str,
-) -> Result<SwapResponse, ZeroExResponseError> {
-    match serde_json::from_str::<RawResponse<SwapResponse>>(response_text) {
-        Ok(RawResponse::ResponseOk(response)) => Ok(response),
-        Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
-            "Server Error" => Err(ZeroExResponseError::ServerError(format!("{:?}", query))),
-            _ => Err(ZeroExResponseError::UnknownZeroExError(message)),
-        },
-        Err(err) => Err(ZeroExResponseError::DeserializeError(
-            err,
-            response_text.parse().unwrap(),
-        )),
+        match serde_json::from_str::<RawResponse<T>>(&response_text) {
+            Ok(RawResponse::ResponseOk(response)) => Ok(response),
+            Ok(RawResponse::ResponseErr { reason: message }) => match &message[..] {
+                "Server Error" => Err(ZeroExResponseError::ServerError(format!("{:?}", query))),
+                _ => Err(ZeroExResponseError::UnknownZeroExError(message)),
+            },
+            Err(err) => Err(ZeroExResponseError::DeserializeError(
+                err,
+                response_text.parse().unwrap(),
+            )),
+        }
     }
 }
 
@@ -218,7 +252,7 @@ mod tests {
             slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
             skip_validation: None,
         }
-        .into_url(&base_url);
+        .format_url(&base_url, "quote");
 
         assert_eq!(
             url.as_str(),
@@ -242,7 +276,7 @@ mod tests {
             slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
             skip_validation: Some(true),
         }
-        .into_url(&base_url);
+        .format_url(&base_url, "quote");
 
         assert_eq!(
             url.as_str(),
@@ -266,10 +300,13 @@ mod tests {
         assert_eq!(
                 swap,
                 SwapResponse {
-                    sell_amount: U256::from_dec_str("100000000000000000").unwrap(),
-                     buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
-                     allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    price: 13.121_002_575_170_278_f64,
+                    price: PriceResponse {
+                        sell_amount: U256::from_dec_str("100000000000000000").unwrap(),
+                        buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
+                        allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 13.121_002_575_170_278_f64,
+                        estimated_gas: 111000.into(),
+                    },
                     to: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     data: Bytes(hex::decode(
                         "d9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba"

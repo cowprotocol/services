@@ -19,6 +19,8 @@ use orderbook::{
     verify_deployed_contract_constants,
 };
 use primitive_types::H160;
+use shared::price_estimation::zeroex::ZeroExPriceEstimator;
+use shared::zeroex_api::DefaultZeroExApi;
 use shared::{
     bad_token::{
         cache::CachingDetector,
@@ -374,7 +376,11 @@ async fn main() {
                 token_info: token_info_fetcher.clone(),
                 bad_token_detector: bad_token_detector.clone(),
                 disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
-            }),
+            }) as Box<dyn PriceEstimating>,
+            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator {
+                client: Arc::new(DefaultZeroExApi::with_default_url(client.clone())),
+                bad_token_detector: bad_token_detector.clone(),
+            }) as Box<dyn PriceEstimating>,
         })
         .collect::<Vec<_>>();
     let price_estimator = Arc::new(PriorityPriceEstimator::new(price_estimators));
