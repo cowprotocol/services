@@ -29,6 +29,8 @@ pub trait SolverMetrics: Send + Sync {
     fn order_settled(&self, order: &Order, solver: &'static str);
     fn settlement_simulation_succeeded(&self, solver: &'static str);
     fn settlement_simulation_failed_on_latest(&self, solver: &'static str);
+    fn solver_run_succeeded(&self, solver: &'static str);
+    fn solver_run_failed(&self, solver: &'static str);
     fn single_order_solver_succeeded(&self, solver: &'static str);
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
@@ -48,6 +50,7 @@ pub struct Metrics {
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
+    solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_liquidity: IntCounter,
     matched_but_unsettled_orders: IntCounter,
@@ -105,12 +108,18 @@ impl Metrics {
         )?;
         registry.register(Box::new(settlement_submissions.clone()))?;
 
+        let solver_runs = IntCounterVec::new(
+            Opts::new("solver_run", "Success/Failure counts"),
+            &["result", "solver_type"],
+        )?;
+        registry.register(Box::new(solver_runs.clone()))?;
+
         let single_order_solver_runs = IntCounterVec::new(
             Opts::new("single_order_solver", "Success/Failure counts"),
             &["result", "solver_type"],
         )?;
-
         registry.register(Box::new(single_order_solver_runs.clone()))?;
+
         let matched_but_liquidity = IntCounter::new(
             "orders_matched_liquidity",
             "Counter for the number of orders for which at least one solver computed an execution which was from a known liquidity provider",
@@ -169,6 +178,7 @@ impl Metrics {
             liquidity,
             settlement_simulations,
             settlement_submissions,
+            solver_runs,
             single_order_solver_runs,
             matched_but_liquidity,
             matched_but_unsettled_orders,
@@ -233,6 +243,18 @@ impl SolverMetrics for Metrics {
     fn settlement_simulation_failed_on_latest(&self, solver: &'static str) {
         self.settlement_simulations
             .with_label_values(&["failure_on_latest", solver])
+            .inc()
+    }
+
+    fn solver_run_succeeded(&self, solver: &'static str) {
+        self.solver_runs
+            .with_label_values(&["success", solver])
+            .inc()
+    }
+
+    fn solver_run_failed(&self, solver: &'static str) {
+        self.solver_runs
+            .with_label_values(&["failure", solver])
             .inc()
     }
 
@@ -332,6 +354,8 @@ impl SolverMetrics for NoopMetrics {
     fn order_settled(&self, _: &Order, _: &'static str) {}
     fn settlement_simulation_succeeded(&self, _: &'static str) {}
     fn settlement_simulation_failed_on_latest(&self, _: &'static str) {}
+    fn solver_run_succeeded(&self, _: &'static str) {}
+    fn solver_run_failed(&self, _: &'static str) {}
     fn single_order_solver_succeeded(&self, _: &'static str) {}
     fn single_order_solver_failed(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}

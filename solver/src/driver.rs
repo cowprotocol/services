@@ -225,7 +225,7 @@ impl Driver {
         let network_id = self.network_id.clone();
         let metrics = self.metrics.clone();
         let task = async move {
-            let simulations = match settlement_simulation::simulate_and_error_with_tenderly_link(
+            let simulations = settlement_simulation::simulate_and_error_with_tenderly_link(
                 errors
                     .iter()
                     .map(|(solver, settlement, _)| (solver.account().clone(), settlement.clone())),
@@ -235,18 +235,7 @@ impl Driver {
                 &network_id,
                 current_block_during_liquidity_fetch,
             )
-            .await
-            {
-                Ok(simulations) => simulations,
-                Err(err) => {
-                    tracing::error!(
-                        "unable to complete simulation of settlements at earlier block {}: {:?}",
-                        current_block_during_liquidity_fetch,
-                        err
-                    );
-                    return;
-                }
-            };
+            .await;
 
             for ((solver, settlement, _previous_error), result) in errors.iter().zip(simulations) {
                 metrics.settlement_simulation_failed_on_latest(solver.name());
@@ -421,9 +410,13 @@ impl Driver {
             let name = solver.name();
 
             let mut settlements = match settlements {
-                Ok(settlement) => settlement,
+                Ok(settlement) => {
+                    self.metrics.solver_run_succeeded(name);
+                    settlement
+                }
                 Err(err) => {
-                    tracing::error!("solver {} error: {:?}", name, err);
+                    self.metrics.solver_run_failed(name);
+                    tracing::warn!("solver {} error: {:?}", name, err);
                     continue;
                 }
             };

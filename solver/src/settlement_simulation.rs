@@ -84,7 +84,7 @@ pub async fn simulate_and_error_with_tenderly_link(
     gas_price: EstimatedGasPrice,
     network_id: &str,
     block: u64,
-) -> Result<Vec<Result<()>>> {
+) -> Vec<Result<()>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
         .map(|(account, settlement)| {
@@ -103,14 +103,14 @@ pub async fn simulate_and_error_with_tenderly_link(
         .collect::<Vec<_>>();
     batch.execute_all(SIMULATE_BATCH_SIZE).await;
 
-    Ok(futures
+    futures
         .into_iter()
         .map(|(future, transaction_builder)| {
             future.now_or_never().unwrap().map(|_| ()).map_err(|err| {
                 Error::new(err).context(tenderly_link(block, network_id, transaction_builder))
             })
         })
-        .collect())
+        .collect()
 }
 
 fn settle_method(
@@ -183,8 +183,7 @@ mod tests {
             network_id.as_str(),
             block,
         )
-        .await
-        .unwrap();
+        .await;
         let _ = dbg!(result);
 
         let result = simulate_and_estimate_gas_at_current_block(
