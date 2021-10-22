@@ -3,14 +3,8 @@ use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::WETH9;
 use ethcontract::{H160, U256};
-use model::order::{Order, OrderUid, BUY_ETH_ADDRESS};
+use model::order::{Order, BUY_ETH_ADDRESS};
 use std::{collections::HashSet, sync::Arc};
-
-pub fn is_inflight_order(order: &Order, inflight_trades: &HashSet<OrderUid>) -> bool {
-    // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
-    // https://github.com/gnosis/gp-v2-services/issues/673
-    !order.order_creation.partially_fillable && inflight_trades.contains(&order.order_meta_data.uid)
-}
 
 pub struct OrderConverter {
     pub native_token: WETH9,
@@ -102,11 +96,8 @@ pub mod tests {
     use super::*;
     use crate::settlement::tests::assert_settlement_encoded_with;
     use ethcontract::H160;
-    use maplit::{hashmap, hashset};
-    use model::{
-        order::{OrderCreation, OrderKind, OrderMetaData},
-        DomainSeparator,
-    };
+    use maplit::hashmap;
+    use model::order::{OrderCreation, OrderKind, OrderMetaData};
     use shared::dummy_contract;
 
     #[test]
@@ -316,39 +307,5 @@ pub mod tests {
                 assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
             },
         );
-    }
-
-    #[test]
-    fn inflight_order_filter_() {
-        let fully_fillable_order = Order::from_order_creation(
-            OrderCreation {
-                partially_fillable: false,
-                ..Default::default()
-            },
-            &DomainSeparator::default(),
-            H160::default(),
-            U256::default(),
-        )
-        .unwrap();
-        assert!(is_inflight_order(
-            &fully_fillable_order,
-            &hashset!(fully_fillable_order.order_meta_data.uid)
-        ));
-        assert!(!is_inflight_order(&fully_fillable_order, &hashset!()));
-
-        let partially_fillable_order = Order::from_order_creation(
-            OrderCreation {
-                partially_fillable: true,
-                ..Default::default()
-            },
-            &DomainSeparator::default(),
-            H160::default(),
-            U256::default(),
-        )
-        .unwrap();
-        assert!(!is_inflight_order(
-            &partially_fillable_order,
-            &hashset!(partially_fillable_order.order_meta_data.uid),
-        ));
     }
 }

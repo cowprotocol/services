@@ -1,5 +1,6 @@
 pub mod driver;
 pub mod encoding;
+pub mod in_flight_orders;
 pub mod interactions;
 pub mod liquidity;
 pub mod liquidity_collector;
