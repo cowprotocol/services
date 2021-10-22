@@ -14,9 +14,11 @@ where
 {
     /// Wraps an existing price estimator in an instrumented one.
     pub fn new(inner: T, name: impl Into<String>, metrics: Arc<dyn Metrics>) -> Self {
+        let name = name.into();
+        metrics.initialize_estimator(&name);
         Self {
             inner,
-            name: name.into(),
+            name,
             metrics,
         }
     }
@@ -42,6 +44,7 @@ where
 /// Metrics used by price estimators.
 #[cfg_attr(test, mockall::automock)]
 pub trait Metrics: Send + Sync + 'static {
+    fn initialize_estimator(&self, name: &str);
     fn price_estimated(&self, name: &str, success: bool);
 }
 
@@ -84,6 +87,11 @@ mod tests {
             });
 
         let mut metrics = MockMetrics::new();
+        metrics
+            .expect_initialize_estimator()
+            .times(1)
+            .with(eq("foo"))
+            .return_const(());
         let mut seq = Sequence::new();
         metrics
             .expect_price_estimated()

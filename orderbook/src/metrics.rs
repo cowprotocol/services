@@ -128,6 +128,14 @@ impl crate::gas_price::Metrics for Metrics {
 }
 
 impl shared::price_estimation::instrumented::Metrics for Metrics {
+    fn initialize_estimator(&self, name: &str) {
+        for result in ["success", "failure"] {
+            self.price_estimates
+                .with_label_values(&[name, result])
+                .reset();
+        }
+    }
+
     fn price_estimated(&self, name: &str, success: bool) {
         let result = if success { "success" } else { "failure" };
         self.price_estimates
