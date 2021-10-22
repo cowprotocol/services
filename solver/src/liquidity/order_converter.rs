@@ -9,7 +9,7 @@ use std::{collections::HashSet, sync::Arc};
 pub fn is_inflight_order(order: &Order, inflight_trades: &HashSet<OrderUid>) -> bool {
     // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
     // https://github.com/gnosis/gp-v2-services/issues/673
-    order.order_creation.partially_fillable || inflight_trades.contains(&order.order_meta_data.uid)
+    !order.order_creation.partially_fillable && inflight_trades.contains(&order.order_meta_data.uid)
 }
 
 pub struct OrderConverter {
@@ -330,11 +330,11 @@ pub mod tests {
             U256::default(),
         )
         .unwrap();
-        assert!(!is_inflight_order(
+        assert!(is_inflight_order(
             &fully_fillable_order,
             &hashset!(fully_fillable_order.order_meta_data.uid)
         ));
-        assert!(is_inflight_order(&fully_fillable_order, &hashset!()));
+        assert!(!is_inflight_order(&fully_fillable_order, &hashset!()));
 
         let partially_fillable_order = Order::from_order_creation(
             OrderCreation {
@@ -346,7 +346,7 @@ pub mod tests {
             U256::default(),
         )
         .unwrap();
-        assert!(is_inflight_order(
+        assert!(!is_inflight_order(
             &partially_fillable_order,
             &hashset!(partially_fillable_order.order_meta_data.uid),
         ));
