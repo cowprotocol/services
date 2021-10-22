@@ -27,11 +27,12 @@ use shared::{
 use solver::{
     driver::Driver,
     liquidity::{
-        balancer::BalancerV2Liquidity, offchain_orderbook::OrderbookLiquidity,
+        balancer::BalancerV2Liquidity, order_converter::OrderConverter,
         uniswap::UniswapLikeLiquidity,
     },
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
+    orderbook::OrderBookApi,
     settlement_submission::{archer_api::ArcherApi, SolutionSubmitter, TransactionStrategy},
     solver::SolverType,
 };
@@ -276,14 +277,6 @@ async fn main() {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
-    let orderbook_liquidity = OrderbookLiquidity::new(
-        args.orderbook_url,
-        client.clone(),
-        native_token_contract.clone(),
-        args.liquidity_order_owners.into_iter().collect(),
-        args.fee_objective_scaling_factor,
-    );
-
     let base_tokens = Arc::new(BaseTokens::new(
         native_token_contract.address(),
         &args.shared.base_tokens,
@@ -443,7 +436,6 @@ async fn main() {
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
-        orderbook_liquidity,
         uniswap_like_liquidity,
         balancer_v2_liquidity,
     };
@@ -499,6 +491,12 @@ async fn main() {
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         },
     };
+    let api = OrderBookApi::new(args.orderbook_url, client.clone());
+    let order_converter = OrderConverter {
+        native_token: native_token_contract.clone(),
+        liquidity_order_owners: args.liquidity_order_owners.into_iter().collect(),
+        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+    };
     let mut driver = Driver::new(
         settlement_contract,
         liquidity_collector,
@@ -517,6 +515,8 @@ async fn main() {
         solution_submitter,
         native_token_price_estimation_amount,
         args.max_settlements_per_solver,
+        api,
+        order_converter,
     );
 
     let maintainer = ServiceMaintenance {

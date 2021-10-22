@@ -2,9 +2,13 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
-    liquidity::LimitOrder,
+    liquidity::{
+        order_converter::{is_inflight_order, OrderConverter},
+        LimitOrder,
+    },
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
+    orderbook::OrderBookApi,
     settlement::Settlement,
     settlement_simulation,
     settlement_submission::{retry::is_transaction_failure, SolutionSubmitter},
@@ -55,6 +59,8 @@ pub struct Driver {
     solve_id: u64,
     native_token_amount_to_estimate_prices_with: U256,
     max_settlements_per_solver: usize,
+    api: OrderBookApi,
+    order_converter: OrderConverter,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -76,6 +82,8 @@ impl Driver {
         solution_submitter: SolutionSubmitter,
         native_token_amount_to_estimate_prices_with: U256,
         max_settlements_per_solver: usize,
+        api: OrderBookApi,
+        order_converter: OrderConverter,
     ) -> Self {
         Self {
             settlement_contract,
@@ -97,6 +105,8 @@ impl Driver {
             solve_id: 0,
             native_token_amount_to_estimate_prices_with,
             max_settlements_per_solver,
+            api,
+            order_converter,
         }
     }
 
@@ -363,10 +373,12 @@ impl Driver {
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
-        let orders = self
-            .liquidity_collector
-            .get_orders(&self.inflight_trades)
-            .await?;
+        let mut orders = self.api.get_orders().await.context("get_orders")?;
+        orders.retain(|order| !is_inflight_order(order, &self.inflight_trades));
+        let orders = orders
+            .into_iter()
+            .map(|order| self.order_converter.normalize_limit_order(order))
+            .collect::<Vec<_>>();
         let liquidity = self
             .liquidity_collector
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))

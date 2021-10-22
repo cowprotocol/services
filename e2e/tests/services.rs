@@ -22,7 +22,7 @@ use shared::{
     },
     Web3,
 };
-use solver::{liquidity::offchain_orderbook::OrderbookLiquidity, orderbook::OrderBookApi};
+use solver::{liquidity::order_converter::OrderbookLiquidity, orderbook::OrderBookApi};
 use std::{
     collections::HashMap, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
 };

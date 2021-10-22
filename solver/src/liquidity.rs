@@ -1,5 +1,5 @@
 pub mod balancer;
-pub mod offchain_orderbook;
+pub mod order_converter;
 pub mod slippage;
 pub mod uniswap;
 
@@ -108,7 +108,7 @@ impl Settleable for LimitOrder {
 #[cfg(test)]
 impl From<Order> for LimitOrder {
     fn from(order: Order) -> Self {
-        offchain_orderbook::OrderConverter::test(H160([0x42; 20])).normalize_limit_order(order)
+        order_converter::OrderConverter::test(H160([0x42; 20])).normalize_limit_order(order)
     }
 }
 
