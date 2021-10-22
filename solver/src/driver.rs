@@ -2,10 +2,8 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
-    liquidity::{
-        order_converter::{is_inflight_order, OrderConverter},
-        LimitOrder,
-    },
+    in_flight_orders::InFlightOrders,
+    liquidity::{order_converter::OrderConverter, LimitOrder},
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
     orderbook::OrderBookApi,
@@ -38,6 +36,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use web3::types::TransactionReceipt;
 
 pub struct Driver {
     settlement_contract: GPv2Settlement,
@@ -53,7 +52,6 @@ pub struct Driver {
     max_merged_settlements: usize,
     solver_time_limit: Duration,
     market_makable_token_list: Option<TokenList>,
-    inflight_trades: HashSet<OrderUid>,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
@@ -61,6 +59,7 @@ pub struct Driver {
     max_settlements_per_solver: usize,
     api: OrderBookApi,
     order_converter: OrderConverter,
+    in_flight_orders: InFlightOrders,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -99,7 +98,6 @@ impl Driver {
             max_merged_settlements,
             solver_time_limit,
             market_makable_token_list,
-            inflight_trades: HashSet::new(),
             block_stream,
             solution_submitter,
             solve_id: 0,
@@ -107,6 +105,7 @@ impl Driver {
             max_settlements_per_solver,
             api,
             order_converter,
+            in_flight_orders: InFlightOrders::default(),
         }
     }
 
@@ -149,7 +148,7 @@ impl Driver {
         &self,
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
-    ) -> Result<()> {
+    ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
         let trades = settlement.trades().to_vec();
         match self
@@ -161,14 +160,18 @@ impl Driver {
             )
             .await
         {
-            Ok(hash) => {
+            Ok(receipt) => {
                 let name = solver.name();
-                tracing::info!("Successfully submitted {} settlement: {:?}", name, hash);
+                tracing::info!(
+                    "Successfully submitted {} settlement: {:?}",
+                    name,
+                    receipt.transaction_hash
+                );
                 trades
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
                 self.metrics.settlement_submitted(true, name);
-                Ok(())
+                Ok(receipt)
             }
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
@@ -373,8 +376,17 @@ impl Driver {
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
-        let mut orders = self.api.get_orders().await.context("get_orders")?;
-        orders.retain(|order| !is_inflight_order(order, &self.inflight_trades));
+        let orders = self.api.get_orders().await.context("get_orders")?;
+        let (before_count, block) = (orders.orders.len(), orders.latest_settlement_block);
+        let orders = self.in_flight_orders.update_and_filter(orders);
+        if before_count != orders.len() {
+            tracing::debug!(
+                "reduced {} orders to {} because in flight at last seen block {}",
+                before_count,
+                orders.len(),
+                block
+            );
+        }
         let orders = orders
             .into_iter()
             .map(|order| self.order_converter.normalize_limit_order(order))
@@ -476,7 +488,6 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
-        self.inflight_trades.clear();
         if let Some((solver, mut settlement)) = rated_settlements
             .clone()
             .into_iter()
@@ -496,17 +507,20 @@ impl Driver {
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
-            if self
-                .submit_settlement(solver, settlement.clone())
-                .await
-                .is_ok()
-            {
-                self.inflight_trades = settlement
+            if let Ok(receipt) = self.submit_settlement(solver, settlement.clone()).await {
+                let orders = settlement
                     .settlement
                     .trades()
                     .iter()
-                    .map(|t| t.order.order_meta_data.uid)
-                    .collect::<HashSet<OrderUid>>();
+                    .map(|t| t.order.order_meta_data.uid);
+                let block = match receipt.block_number {
+                    Some(block) => block.as_u64(),
+                    None => {
+                        tracing::error!("tx receipt does not contain block number");
+                        0
+                    }
+                };
+                self.in_flight_orders.mark_settled_orders(block, orders);
             }
             self.metrics.transaction_submission(start.elapsed());
 

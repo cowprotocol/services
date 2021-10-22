@@ -1,4 +1,4 @@
-use model::order::Order;
+use model::SolvableOrders;
 use reqwest::{Client, Url};
 
 pub struct OrderBookApi {
@@ -12,8 +12,8 @@ impl OrderBookApi {
         Self { base, client }
     }
 
-    pub async fn get_orders(&self) -> reqwest::Result<Vec<Order>> {
-        const PATH: &str = "/api/v1/solvable_orders";
+    pub async fn get_orders(&self) -> reqwest::Result<SolvableOrders> {
+        const PATH: &str = "/api/v2/solvable_orders";
         let mut url = self.base.clone();
         url.set_path(PATH);
         self.client.get(url).send().await?.json().await
