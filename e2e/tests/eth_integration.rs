@@ -207,9 +207,9 @@ async fn eth_integration(web3: Web3) {
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity: vec![uniswap_liquidity],
-        orderbook_liquidity: create_orderbook_liquidity(&web3, weth.address()),
         balancer_v2_liquidity: None,
     };
+    let (converter, api) = create_orderbook_liquidity(&web3, gpv2.native_token.address());
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
         gpv2.settlement.clone(),
@@ -238,6 +238,8 @@ async fn eth_integration(web3: Web3) {
         },
         1_000_000_000_000_000_000_u128.into(),
         10,
+        api,
+        converter,
     );
     driver.single_run().await.unwrap();
 

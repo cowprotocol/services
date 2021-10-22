@@ -22,7 +22,7 @@ use shared::{
     },
     Web3,
 };
-use solver::{liquidity::order_converter::OrderbookLiquidity, orderbook::OrderBookApi};
+use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
 use std::{
     collections::HashMap, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
 };
@@ -58,14 +58,17 @@ pub fn create_orderbook_api() -> OrderBookApi {
     OrderBookApi::new(reqwest::Url::from_str(API_HOST).unwrap(), Client::new())
 }
 
-pub fn create_orderbook_liquidity(web3: &Web3, weth_address: H160) -> OrderbookLiquidity {
-    let weth = WETH9::at(web3, weth_address);
-    OrderbookLiquidity::new(
-        reqwest::Url::from_str(API_HOST).unwrap(),
-        Client::new(),
-        weth,
-        Default::default(),
-        1.,
+pub fn create_orderbook_liquidity(
+    web3: &Web3,
+    weth_address: H160,
+) -> (OrderConverter, OrderBookApi) {
+    (
+        OrderConverter {
+            native_token: WETH9::at(web3, weth_address),
+            liquidity_order_owners: Default::default(),
+            fee_objective_scaling_factor: 1.,
+        },
+        OrderBookApi::new(API_HOST.parse().unwrap(), Client::new()),
     )
 }
 
