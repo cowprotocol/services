@@ -37,7 +37,7 @@ use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::time::{Duration, Instant, SystemTime};
-use web3::types::TransactionId;
+use web3::types::TransactionReceipt;
 
 pub struct ArcherSolutionSubmitter<'a> {
     web3: &'a Web3,
@@ -89,7 +89,7 @@ impl<'a> ArcherSolutionSubmitter<'a> {
         deadline: SystemTime,
         settlement: Settlement,
         gas_estimate: U256,
-    ) -> Result<Option<H256>> {
+    ) -> Result<Option<TransactionReceipt>> {
         let nonce = self.nonce().await?;
 
         tracing::info!(
@@ -136,9 +136,9 @@ impl<'a> ArcherSolutionSubmitter<'a> {
             );
 
             loop {
-                if let Some(hash) = find_mined_transaction(self.web3, &transactions).await {
-                    tracing::info!("found mined transaction {}", hash);
-                    return Ok(Some(hash));
+                if let Some(receipt) = find_mined_transaction(self.web3, &transactions).await {
+                    tracing::info!("found mined transaction {}", receipt.transaction_hash);
+                    return Ok(Some(receipt));
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
                     break;
@@ -306,13 +306,13 @@ impl<'a> ArcherSolutionSubmitter<'a> {
 }
 
 /// From a list of potential hashes find one that was mined.
-async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<H256> {
+async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<TransactionReceipt> {
     // It would be nice to use the nonce and account address to find the transaction hash but there
     // is no way to do this in ethrpc api so we have to check the candidates one by one.
     let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport()));
     let futures = hashes
         .iter()
-        .map(|&hash| web3.eth().transaction(TransactionId::Hash(hash)))
+        .map(|&hash| web3.eth().transaction_receipt(hash))
         .collect::<Vec<_>>();
     if let Err(err) = web3.transport().submit_batch().await {
         tracing::error!("mined transaction batch failed: {:?}", err);
@@ -323,9 +323,7 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<H256> {
             Err(err) => {
                 tracing::error!("mined transaction individual failed: {:?}", err);
             }
-            Ok(Some(transaction)) if transaction.block_hash.is_some() => {
-                return Some(transaction.hash)
-            }
+            Ok(Some(transaction)) if transaction.block_hash.is_some() => return Some(transaction),
             Ok(_) => (),
         }
     }
@@ -383,7 +381,13 @@ mod tests {
                 "b9752d57ea49d8055bf50a1361f066691d7b4f2abd555e71896370d1eccda526"
             )),
         ];
-        assert_eq!(find_mined_transaction(&web3, hashes).await, Some(hashes[1]));
+        assert_eq!(
+            find_mined_transaction(&web3, hashes)
+                .await
+                .unwrap()
+                .transaction_hash,
+            hashes[1]
+        );
     }
 
     // env NODE_URL=... PRIVATE_KEY=... ARCHER_AUTHORIZATION=... cargo test -p solver mainnet_settlement -- --ignored --nocapture

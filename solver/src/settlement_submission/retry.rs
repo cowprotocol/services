@@ -7,13 +7,14 @@ use ethcontract::{
     jsonrpc::types::Error as RpcError,
     transaction::{confirm::ConfirmParams, ResolveCondition},
     web3::error::Error as Web3Error,
-    Account, TransactionHash,
+    Account,
 };
 use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
 use primitive_types::U256;
 use shared::Web3;
 use transaction_retry::{TransactionResult, TransactionSending};
+use web3::types::TransactionReceipt;
 
 /// Failure indicating that some aspect about the signed transaction was wrong (e.g. wrong nonce, gas limit to high)
 /// and that the transaction could not be mined. This doesn't mean the transaction reverted.
@@ -44,7 +45,7 @@ pub fn is_transaction_failure(error: &ExecutionError) -> bool {
         || matches!(error, ExecutionError::InvalidOpcode)
 }
 
-pub struct SettleResult(pub Result<TransactionHash, MethodError>);
+pub struct SettleResult(pub Result<TransactionReceipt, MethodError>);
 
 impl TransactionResult for SettleResult {
     fn was_mined(&self) -> bool {
@@ -88,7 +89,14 @@ impl<'a> TransactionSending for SettlementSender<'a> {
                     .gas_price(gas_price)
                     .gas(U256::from_f64_lossy(self.gas_limit));
             method.tx.resolve = Some(ResolveCondition::Confirmed(ConfirmParams::mined()));
-            async { SettleResult(method.send().await.map(|tx| tx.hash())) }.boxed()
+            async {
+                SettleResult(method.send().await.map(|tx| match tx {
+                    ethcontract::transaction::TransactionResult::Receipt(receipt) => receipt,
+                    // We wait for confirmation so we always get a receipt.
+                    ethcontract::transaction::TransactionResult::Hash(_) => unreachable!(),
+                }))
+            }
+            .boxed()
         };
         let mut futures = self.nodes.iter().map(send_with_node).collect::<Vec<_>>();
         loop {
@@ -160,7 +168,10 @@ mod tests {
             data: None,
         }));
 
-        let result = SettleResult(Ok(H256([0xcd; 32])));
+        let result = SettleResult(Ok(TransactionReceipt {
+            transaction_hash: H256([0xcd; 32]),
+            ..Default::default()
+        }));
         assert!(result.was_mined());
 
         let result = SettleResult(Err(MethodError::from_parts(

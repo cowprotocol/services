@@ -9,7 +9,7 @@ use crate::settlement::Settlement;
 use anyhow::{bail, Result};
 use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
-use ethcontract::{Account, TransactionHash};
+use ethcontract::Account;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
@@ -17,6 +17,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime},
 };
+use web3::types::TransactionReceipt;
 
 use self::archer_settlement::ArcherSolutionSubmitter;
 
@@ -53,7 +54,7 @@ impl SolutionSubmitter {
         settlement: Settlement,
         gas_estimate: U256,
         account: Account,
-    ) -> Result<TransactionHash> {
+    ) -> Result<TransactionReceipt> {
         match &self.transaction_strategy {
             TransactionStrategy::CustomNodes(nodes) => {
                 rpc::submit(

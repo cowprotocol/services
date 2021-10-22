@@ -6,13 +6,14 @@ use super::{
 use crate::{encoding::EncodedSettlement, pending_transactions::Fee, settlement::Settlement};
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{Account, TransactionHash};
+use ethcontract::Account;
 use futures::stream::StreamExt;
 use gas_estimation::{EstimatedGasPrice, GasPrice1559, GasPriceEstimating};
 use primitive_types::{H160, U256};
 use shared::Web3;
 use std::time::Duration;
 use transaction_retry::RetryResult;
+use web3::types::TransactionReceipt;
 
 // Submit a settlement to the contract, updating the transaction with gas prices if they increase.
 #[allow(clippy::too_many_arguments)]
@@ -25,7 +26,7 @@ pub async fn submit(
     gas_price_cap: f64,
     settlement: Settlement,
     gas_estimate: U256,
-) -> Result<TransactionHash> {
+) -> Result<TransactionReceipt> {
     let address = account.address();
     let settlement: EncodedSettlement = settlement.into();
 
