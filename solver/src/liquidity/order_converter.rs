@@ -9,19 +9,7 @@ use std::{collections::HashSet, sync::Arc};
 pub fn is_inflight_order(order: &Order, inflight_trades: &HashSet<OrderUid>) -> bool {
     // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
     // https://github.com/gnosis/gp-v2-services/issues/673
-    if inflight_trades.contains(&order.order_meta_data.uid) {
-        return if order.order_creation.partially_fillable {
-            // TODO - driver logic for Partially Fillable Orders
-            // https://github.com/gnosis/gp-v2-services/issues/673
-            // Note that this will result in simulation error "GPv2: order filled" if the
-            // next solver run loop tries to match the order again beyond its remaining amount.
-            true
-        } else {
-            // Fully filled, inflight orders are excluded from consideration
-            false
-        };
-    }
-    true
+    order.order_creation.partially_fillable || inflight_trades.contains(&order.order_meta_data.uid)
 }
 
 pub struct OrderConverter {
