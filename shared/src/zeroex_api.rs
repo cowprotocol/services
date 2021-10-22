@@ -179,7 +179,7 @@ pub enum ZeroExResponseError {
 #[async_trait::async_trait]
 impl ZeroExApi for DefaultZeroExApi {
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError> {
-        self.swap_like_request_impl("swap", query).await
+        self.swap_like_request_impl("quote", query).await
     }
 
     async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError> {
@@ -224,8 +224,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e() {
-        let zeroex_client =
-            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, Client::new()).unwrap();
+        let zeroex_client = DefaultZeroExApi::with_default_url(Client::new());
         let sell_token = crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
         let buy_token = crate::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
         let swap_query = SwapQuery {
