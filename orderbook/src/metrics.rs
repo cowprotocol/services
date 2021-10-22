@@ -1,6 +1,8 @@
 use anyhow::Result;
 use gas_estimation::EstimatedGasPrice;
-use prometheus::{Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntGaugeVec, Opts};
+use prometheus::{
+    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
+};
 use shared::{
     metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
     transport::instrumented::TransportMetrics,
@@ -23,6 +25,7 @@ pub struct Metrics {
     database_queries: HistogramVec,
     /// Gas estimate metrics
     gas_price: Gauge,
+    price_estimates: IntCounterVec,
 }
 
 impl Metrics {
@@ -72,6 +75,12 @@ impl Metrics {
         let gas_price = Gauge::with_opts(opts).unwrap();
         registry.register(Box::new(gas_price.clone()))?;
 
+        let price_estimates = IntCounterVec::new(
+            Opts::new("price_estimates", "Price estimator success/failure counter"),
+            &["estimator_type", "result"],
+        )?;
+        registry.register(Box::new(price_estimates.clone()))?;
+
         Ok(Self {
             api_requests,
             db_table_row_count,
@@ -80,6 +89,7 @@ impl Metrics {
             pool_cache_misses,
             database_queries,
             gas_price,
+            price_estimates,
         })
     }
 
@@ -114,6 +124,15 @@ impl crate::database::instrumented::Metrics for Metrics {
 impl crate::gas_price::Metrics for Metrics {
     fn gas_price(&self, estimate: EstimatedGasPrice) {
         self.gas_price.set(estimate.effective_gas_price() / 1e9);
+    }
+}
+
+impl shared::price_estimation::instrumented::Metrics for Metrics {
+    fn price_estimated(&self, name: &str, success: bool) {
+        let result = if success { "success" } else { "failure" };
+        self.price_estimates
+            .with_label_values(&[name, result])
+            .inc();
     }
 }
 
