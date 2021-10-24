@@ -53,7 +53,9 @@ impl ParaswapPriceEstimator {
             .price(price_query)
             .await
             .map_err(|err| match err {
-                ParaswapResponseError::InsufficientLiquidity => PriceEstimationError::NoLiquidity,
+                ParaswapResponseError::InsufficientLiquidity(_) => {
+                    PriceEstimationError::NoLiquidity
+                }
                 _ => PriceEstimationError::Other(err.into()),
             })
             .context("paraswap")?;

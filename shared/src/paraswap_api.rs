@@ -4,7 +4,10 @@ use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, RequestBuilder, Url};
-use serde::{de::Error, Deserialize, Deserializer, Serialize};
+use serde::{
+    de::{DeserializeOwned, Error},
+    Deserialize, Deserializer, Serialize,
+};
 use serde_json::Value;
 use thiserror::Error;
 use web3::types::Bytes;
@@ -30,41 +33,11 @@ pub struct DefaultParaswapApi {
 #[async_trait::async_trait]
 impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
-        let query_str = format!("{:?}", &query);
         let url = query.into_url(&self.partner);
-        tracing::debug!("Querying Paraswap API (price) for url {}", url);
-        let response_text = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(ParaswapResponseError::Send)?
-            .text()
-            .await
-            .map_err(ParaswapResponseError::TextFetch)?;
-        tracing::debug!("Response from Paraswap API (price): {}", response_text);
-        let raw_response = serde_json::from_str::<RawResponse<PriceResponse>>(&response_text)
-            .map_err(ParaswapResponseError::DeserializeError)?;
-        match raw_response {
-            RawResponse::ResponseOk(response) => Ok(response),
-            RawResponse::ResponseErr { error: message } => match &message[..] {
-                "computePrice Error" => Err(ParaswapResponseError::ComputePrice(
-                    query_str.parse().unwrap(),
-                )),
-                "No routes found with enough liquidity" => {
-                    Err(ParaswapResponseError::InsufficientLiquidity)
-                }
-                "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT" => {
-                    Err(ParaswapResponseError::TooMuchSlippageOnQuote)
-                }
-                "Server is too busy" => Err(ParaswapResponseError::ServerBusy),
-                "Bad USD price" => Err(ParaswapResponseError::ComputePrice(message)),
-                _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
-                    "uncatalogued Price Query error message {}",
-                    message
-                ))),
-            },
-        }
+        tracing::debug!("Querying Paraswap price API: {}", url);
+        let response_text = self.client.get(url).send().await?.text().await?;
+        tracing::debug!("Response from Paraswap price API: {}", response_text);
+        parse_paraswap_response_text(&response_text)
     }
     async fn transaction(
         &self,
@@ -74,17 +47,13 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-
-        let query_str = serde_json::to_string(&query).unwrap();
         let response_text = query
             .into_request(&self.client)
             .send()
-            .await
-            .map_err(ParaswapResponseError::Send)?
+            .await?
             .text()
-            .await
-            .map_err(ParaswapResponseError::TextFetch)?;
-        parse_paraswap_response_text(&response_text, &query_str)
+            .await?;
+        parse_paraswap_response_text(&response_text)
     }
 }
 
@@ -100,74 +69,56 @@ pub enum RawResponse<Ok> {
 
 #[derive(Error, Debug)]
 pub enum ParaswapResponseError {
-    // Represents a failure with Price query
-    #[error("computePrice Error from query {0}")]
-    ComputePrice(String),
-
-    #[error("No routes found with enough liquidity")]
-    InsufficientLiquidity,
-
-    // Represents a failure with TransactionBuilder query
-    #[error("ERROR_BUILDING_TRANSACTION from query {0}")]
-    BuildingTransaction(String),
-
-    // Occurs when the price changes between the time the price was queried and this request
-    #[error("Suspected Rate Change - Please Retry!")]
-    PriceChange,
-
-    #[error("Too much slippage on quote - Please Retry!")]
-    TooMuchSlippageOnQuote,
-
-    #[error("Error getParaSwapPool - From Price Route {0}")]
-    GetParaswapPool(String),
-
-    #[error("Server is too busy")]
-    ServerBusy,
-
-    // Connectivity or non-response error
-    #[error("Failed on send")]
-    Send(reqwest::Error),
-
-    // Recovered Response but failed on async call of response.text()
     #[error(transparent)]
-    TextFetch(reqwest::Error),
-
-    #[error("{0}")]
-    UnknownParaswapError(String),
+    Request(#[from] reqwest::Error),
 
     #[error(transparent)]
-    DeserializeError(#[from] serde_json::Error),
+    Json(#[from] serde_json::Error),
+
+    #[error("insufficient liquidity")]
+    InsufficientLiquidity(String),
+
+    #[error("retryable ParaSwap error: {0}")]
+    Retryable(String),
+
+    #[error("other ParaSwap error: {0}")]
+    Other(String),
 }
 
-fn parse_paraswap_response_text(
-    response_text: &str,
-    query_str: &str,
-) -> Result<TransactionBuilderResponse, ParaswapResponseError> {
-    match serde_json::from_str::<RawResponse<TransactionBuilderResponse>>(response_text) {
-        Ok(RawResponse::ResponseOk(response)) => Ok(response),
-        Ok(RawResponse::ResponseErr { error: message }) => match &message[..] {
-            "ERROR_BUILDING_TRANSACTION" => Err(ParaswapResponseError::BuildingTransaction(
-                query_str.parse().unwrap(),
-            )),
-            "It seems like the rate has changed, please re-query the latest Price" => {
-                Err(ParaswapResponseError::PriceChange)
+impl ParaswapResponseError {
+    /// Returns true if the error is considered intermittent and the same
+    /// ParaSwap request can be retried.
+    pub fn is_retryable(&self) -> bool {
+        // We don't retry insufficient liquidity errors because it is unlikely a
+        // more liquidity will appear by the time we would retry.
+        matches!(
+            self,
+            ParaswapResponseError::Request(_) | ParaswapResponseError::Retryable(_),
+        )
+    }
+}
+
+fn parse_paraswap_response_text<T>(response_text: &str) -> Result<T, ParaswapResponseError>
+where
+    T: DeserializeOwned,
+{
+    match serde_json::from_str::<RawResponse<T>>(response_text)? {
+        RawResponse::ResponseOk(response) => Ok(response),
+        RawResponse::ResponseErr { error: message } => match message.as_str() {
+            "ERROR_BUILDING_TRANSACTION"
+            | "Error getParaSwapPool"
+            | "Server too busy"
+            | "Unable to process the transaction"
+            | "It seems like the rate has changed, please re-query the latest Price" => {
+                Err(ParaswapResponseError::Retryable(message))
             }
-            "Too much slippage on quote, please try again" => {
-                Err(ParaswapResponseError::TooMuchSlippageOnQuote)
+            "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT"
+            | "No routes found with enough liquidity"
+            | "Too much slippage on quote, please try again" => {
+                Err(ParaswapResponseError::InsufficientLiquidity(message))
             }
-            "Error getParaSwapPool" => Err(ParaswapResponseError::GetParaswapPool(
-                query_str.parse().unwrap(),
-            )),
-            "Unable to process the transaction" => {
-                Err(ParaswapResponseError::BuildingTransaction(message))
-            }
-            "Server too busy" => Err(ParaswapResponseError::ServerBusy),
-            _ => Err(ParaswapResponseError::UnknownParaswapError(format!(
-                "uncatalogued error message {}",
-                message
-            ))),
+            _ => Err(ParaswapResponseError::Other(message)),
         },
-        Err(err) => Err(ParaswapResponseError::DeserializeError(err)),
     }
 }
 
@@ -713,25 +664,40 @@ mod tests {
 
     #[test]
     fn paraswap_response_handling() {
+        let parse = |s: &str| parse_paraswap_response_text::<bool>(s);
         assert!(matches!(
-            parse_paraswap_response_text("hello", "there"),
-            Err(ParaswapResponseError::DeserializeError(_))
+            parse("invalid JSON"),
+            Err(ParaswapResponseError::Json(_))
         ));
 
         assert!(matches!(
-            parse_paraswap_response_text("{\"error\": \"Never seen this before\"}", "there"),
-            Err(ParaswapResponseError::UnknownParaswapError(_))
+            parse("{\"error\": \"Never seen this before\"}"),
+            Err(ParaswapResponseError::Other(_))
         ));
 
-        assert!(matches!(
-            parse_paraswap_response_text("{\"error\": \"It seems like the rate has changed, please re-query the latest Price\"}", "there"),
-            Err(ParaswapResponseError::PriceChange)
-        ));
+        for liquidity_error in &[
+            "ESTIMATED_LOSS_GREATER_THAN_MAX_IMPACT",
+            "No routes found with enough liquidity",
+            "Too much slippage on quote, please try again",
+        ] {
+            assert!(matches!(
+                parse(&format!("{{\"error\": \"{}\"}}", liquidity_error)),
+                Err(ParaswapResponseError::InsufficientLiquidity(message)) if &message == liquidity_error,
+            ));
+        }
 
-        assert!(matches!(
-            parse_paraswap_response_text("{\"error\": \"ERROR_BUILDING_TRANSACTION\"}", "there"),
-            Err(ParaswapResponseError::BuildingTransaction(_))
-        ));
+        for retryable_error in &[
+            "ERROR_BUILDING_TRANSACTION",
+            "Error getParaSwapPool",
+            "Server too busy",
+            "Unable to process the transaction",
+            "It seems like the rate has changed, please re-query the latest Price",
+        ] {
+            assert!(matches!(
+                parse(&format!("{{\"error\": \"{}\"}}", retryable_error)),
+                Err(ParaswapResponseError::Retryable(message)) if &message == retryable_error,
+            ));
+        }
     }
 
     #[tokio::test]
