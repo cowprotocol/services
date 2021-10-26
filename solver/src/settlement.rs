@@ -229,6 +229,7 @@ impl Settlement {
         self.encoder
             .trades()
             .iter()
+            .filter(|trade| !trade.is_liquidity_order)
             .filter_map(|trade| {
                 let fee_token_price =
                     external_prices.get(&trade.order.order_creation.sell_token)?;
@@ -297,8 +298,10 @@ fn sell_order_surplus(
 pub mod tests {
     use super::*;
     use crate::liquidity::SettlementHandling;
+    use maplit::hashmap;
     use model::order::{OrderCreation, OrderKind};
     use num::FromPrimitive;
+    use shared::addr;
 
     pub fn assert_settlement_encoded_with<L, S>(
         prices: HashMap<H160, U256>,
@@ -898,5 +901,151 @@ pub mod tests {
         let both_pmm = compute_total_surplus(true, true);
         assert_eq!(total_surplus_without_pmms, surplus_order0 + surplus_order1);
         assert!(both_pmm.is_zero());
+    }
+
+    #[test]
+    fn fees_excluded_for_pmm_orders() {
+        let token0 = H160([0; 20]);
+        let token1 = H160([1; 20]);
+        let settlement = test_settlement(
+            hashmap! { token0 => 1.into(), token1 => 1.into() },
+            vec![
+                Trade {
+                    order: Order {
+                        order_creation: OrderCreation {
+                            sell_token: token0,
+                            buy_token: token1,
+                            sell_amount: 1.into(),
+                            kind: OrderKind::Sell,
+                            // Note that this fee amount is NOT used!
+                            fee_amount: 6.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 1.into(),
+                    // This is what matters for the objective value
+                    scaled_fee_amount: 42.into(),
+                    is_liquidity_order: false,
+                    ..Default::default()
+                },
+                Trade {
+                    order: Order {
+                        order_creation: OrderCreation {
+                            sell_token: token1,
+                            buy_token: token0,
+                            buy_amount: 1.into(),
+                            kind: OrderKind::Buy,
+                            fee_amount: 28.into(),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 1.into(),
+                    // Doesn't count because it is a "liquidity order"
+                    scaled_fee_amount: 1337.into(),
+                    is_liquidity_order: true,
+                    ..Default::default()
+                },
+            ],
+        );
+
+        assert_eq!(
+            settlement.total_scaled_unsubsidized_fees(&hashmap! { token0 => r(1) }),
+            r(42),
+        );
+    }
+
+    #[test]
+    fn prefers_amm_with_better_price_over_pmm() {
+        let amm = test_settlement(
+            hashmap! {
+                addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b") => 99760667014_u128.into(),
+                addr!("dac17f958d2ee523a2206206994597c13d831ec7") => 3813250751402140530019_u128.into(),
+            },
+            vec![Trade {
+                order: Order {
+                    order_creation: OrderCreation {
+                        sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
+                        buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
+                        sell_amount: 99760667014_u128.into(),
+                        buy_amount: 3805639472457226077863_u128.into(),
+                        fee_amount: 239332986_u128.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                executed_amount: 99760667014_u128.into(),
+                scaled_fee_amount: 239332986_u128.into(),
+                is_liquidity_order: false,
+                ..Default::default()
+            }],
+        );
+
+        let pmm = test_settlement(
+            hashmap! {
+                addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b") => 6174583113007029_u128.into(),
+                addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") => 235665799111775530988005794_u128.into(),
+                addr!("dac17f958d2ee523a2206206994597c13d831ec7") => 235593507027683452564881428_u128.into(),
+            },
+            vec![
+                Trade {
+                    order: Order {
+                        order_creation: OrderCreation {
+                            sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
+                            buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
+                            sell_amount: 99760667014_u128.into(),
+                            buy_amount: 3805639472457226077863_u128.into(),
+                            fee_amount: 239332986_u128.into(),
+                            kind: OrderKind::Sell,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 99760667014_u128.into(),
+                    scaled_fee_amount: 239332986_u128.into(),
+                    is_liquidity_order: false,
+                    ..Default::default()
+                },
+                Trade {
+                    order: Order {
+                        order_creation: OrderCreation {
+                            sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                            buy_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
+                            sell_amount: 99730064753_u128.into(),
+                            buy_amount: 99760667014_u128.into(),
+                            fee_amount: 10650127_u128.into(),
+                            kind: OrderKind::Buy,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                    executed_amount: 99760667014_u128.into(),
+                    scaled_fee_amount: 77577144_u128.into(),
+                    is_liquidity_order: true,
+                    ..Default::default()
+                },
+            ],
+        );
+
+        let external_prices = hashmap! {
+            addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b") =>
+                BigRational::new(250000000000000000_u128.into(), 40551883611992959283_u128.into()),
+            addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") =>
+                BigRational::new(40000000000000000_u128.into(), 168777939_u128.into()),
+            addr!("dac17f958d2ee523a2206206994597c13d831ec7") =>
+                BigRational::new(250000000000000000_u128.into(), 1055980021_u128.into()),
+        };
+        let gas_price = 105386573044;
+        let objective_value = |settlement: &Settlement, gas: u128| {
+            settlement.total_surplus(&external_prices)
+                + settlement.total_scaled_unsubsidized_fees(&external_prices)
+                - r(gas * gas_price)
+        };
+
+        // Prefer the AMM that uses more gas because it offers a better price
+        // to the user!
+        assert!(objective_value(&amm, 657196) > objective_value(&pmm, 405053));
     }
 }
