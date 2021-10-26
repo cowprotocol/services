@@ -33,7 +33,6 @@ pub fn handle_all_routes(
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let create_order = create_order::create_order(orderbook.clone());
     let get_orders = get_orders::get_orders(orderbook.clone());
-    let legacy_fee_info = get_fee_info::legacy_get_fee_info(quoter.fee_calculator.clone());
     let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone());
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
     let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
@@ -54,7 +53,6 @@ pub fn handle_all_routes(
         .and(create_order.with(handle_metrics("create_order"))))
     .or(warp::path!("api" / "v1" / ..).and(get_orders.with(handle_metrics("get_orders"))))
     .or(warp::path!("api" / "v1" / ..).and(fee_info.with(handle_metrics("fee_info"))))
-    .or(warp::path!("api" / "v1" / ..).and(legacy_fee_info.with(handle_metrics("legacy_fee_info"))))
     .or(warp::path!("api" / "v1" / ..).and(get_order.with(handle_metrics("get_order"))))
     .or(warp::path!("api" / "v1" / ..)
         .and(get_solvable_orders.with(handle_metrics("get_solvable_orders"))))
