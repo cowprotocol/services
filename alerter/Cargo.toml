@@ -7,7 +7,7 @@ edition = "2018"
 anyhow = "1.0"
 chrono = { version = "0.4", default-features = false }
 model = { path = "../model" }
-primitive-types = { version = "0.9" }
+primitive-types = { version = "0.10" }
 reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 shared = { path = "../shared" }

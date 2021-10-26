@@ -91,12 +91,6 @@ checksum = "61604a8f862e1d5c3229fdd78f8b02c68dcf73a4c4b05fd636d12240aaa242c1"
 
 [[package]]
 name = "arrayvec"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
-
-[[package]]
-name = "arrayvec"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
@@ -715,9 +709,9 @@ dependencies = [
 
 [[package]]
 name = "ethabi"
-version = "14.1.0"
+version = "15.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a01317735d563b3bad2d5f90d2e1799f414165408251abb762510f40e790e69a"
+checksum = "f76ef192b63e8a44b3d08832acebbb984c3fba154b5c26f70037c860202a0d4b"
 dependencies = [
  "anyhow",
  "ethereum-types",
@@ -745,9 +739,9 @@ dependencies = [
 [[package]]
 name = "ethcontract"
 version = "0.15.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=34c618cf63ad4750d1d9198eada85f3d1cf334ab#34c618cf63ad4750d1d9198eada85f3d1cf334ab"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=cafcac443f37cfe1e0e18b03a987a30b61b54695#cafcac443f37cfe1e0e18b03a987a30b61b54695"
 dependencies = [
- "arrayvec 0.7.1",
+ "arrayvec",
  "ethcontract-common",
  "ethcontract-derive",
  "futures",
@@ -768,7 +762,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-common"
 version = "0.15.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=34c618cf63ad4750d1d9198eada85f3d1cf334ab#34c618cf63ad4750d1d9198eada85f3d1cf334ab"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=cafcac443f37cfe1e0e18b03a987a30b61b54695#cafcac443f37cfe1e0e18b03a987a30b61b54695"
 dependencies = [
  "ethabi",
  "hex",
@@ -783,7 +777,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-derive"
 version = "0.15.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=34c618cf63ad4750d1d9198eada85f3d1cf334ab#34c618cf63ad4750d1d9198eada85f3d1cf334ab"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=cafcac443f37cfe1e0e18b03a987a30b61b54695#cafcac443f37cfe1e0e18b03a987a30b61b54695"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -796,7 +790,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-generate"
 version = "0.15.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=34c618cf63ad4750d1d9198eada85f3d1cf334ab#34c618cf63ad4750d1d9198eada85f3d1cf334ab"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=cafcac443f37cfe1e0e18b03a987a30b61b54695#cafcac443f37cfe1e0e18b03a987a30b61b54695"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -811,7 +805,7 @@ dependencies = [
 [[package]]
 name = "ethcontract-mock"
 version = "0.15.3"
-source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=34c618cf63ad4750d1d9198eada85f3d1cf334ab#34c618cf63ad4750d1d9198eada85f3d1cf334ab"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?rev=cafcac443f37cfe1e0e18b03a987a30b61b54695#cafcac443f37cfe1e0e18b03a987a30b61b54695"
 dependencies = [
  "ethcontract",
  "hex",
@@ -822,9 +816,9 @@ dependencies = [
 
 [[package]]
 name = "ethereum-types"
-version = "0.11.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f64b5df66a228d85e4b17e5d6c6aa43b0310898ffe8a85988c4c032357aaabfd"
+checksum = "05136f7057fe789f06e6d41d07b34e6f70d8c86e5693b60f97aaa6553553bdaf"
 dependencies = [
  "ethbloom",
  "fixed-hash",
@@ -1033,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.4#5060ad766c2da74fcbab40857fdb1a1a5b2b7e3f"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.5#e6b09f9e319a310c3da31d435f8d109a34952078"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1864,7 +1858,7 @@ version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "373b1a4c1338d9cd3d1fa53b3a11bdab5ab6bd80a20f7f7becd76953ae2be909"
 dependencies = [
- "arrayvec 0.7.1",
+ "arrayvec",
  "bitvec",
  "byte-slice-cast",
  "impl-trait-for-tuples",
@@ -2027,9 +2021,9 @@ dependencies = [
 
 [[package]]
 name = "primitive-types"
-version = "0.9.1"
+version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "06345ee39fbccfb06ab45f3a1a5798d9dafa04cb8921a76d227040003a234b0e"
+checksum = "05e4722c697a58a99d5d06a08c30821d7c082a4632198de1eaa5a6c22ef42373"
 dependencies = [
  "fixed-hash",
  "impl-codec",
@@ -2678,9 +2672,9 @@ dependencies = [
 
 [[package]]
 name = "soketto"
-version = "0.5.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4919971d141dbadaa0e82b5d369e2d7666c98e4625046140615ca363e50d4daa"
+checksum = "083624472e8817d44d02c0e55df043737ff11f279af924abdf93845717c2b75c"
 dependencies = [
  "base64",
  "bytes",
@@ -3222,7 +3216,7 @@ dependencies = [
 [[package]]
 name = "transaction-retry"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.2.0#fedcc409e056841cc412099554e9055cab1eb4c1"
+source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.2.1#3cd7c0a0001b06194d8988672d0b13d8bb240075"
 dependencies = [
  "async-trait",
  "futures",
@@ -3526,9 +3520,9 @@ dependencies = [
 [[package]]
 name = "web3"
 version = "0.17.0"
-source = "git+https://github.com/tomusdrw/rust-web3.git?rev=2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e#2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e"
+source = "git+https://github.com/tomusdrw/rust-web3.git?rev=a425fa747bca69c7aede4d2c2828f7267d79227e#a425fa747bca69c7aede4d2c2828f7267d79227e"
 dependencies = [
- "arrayvec 0.5.2",
+ "arrayvec",
  "base64",
  "bytes",
  "derive_more",

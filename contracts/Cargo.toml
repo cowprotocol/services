@@ -26,19 +26,19 @@ bin = [
 ]
 
 [dependencies]
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false, features = ["http"] }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false, features = ["http"] }
 serde = "1.0"
 
 # [bin-dependencies]
 anyhow = { version = "1.0", optional = true }
 env_logger = { version = "0.9", optional = true }
-ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", optional = true }
+ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", optional = true }
 filetime = { version = "0.2.15", optional = true }
 log = { version = "0.4", optional = true }
 serde_json = { version = "1.0", optional = true }
 tokio = { version = "1.12", optional = true, features = ["macros", "rt-multi-thread", "time"] }
 
 [build-dependencies]
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false, features = ["http"] }
-ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab" }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false, features = ["http"] }
+ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695" }
 maplit = "1.0"

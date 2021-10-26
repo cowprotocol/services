@@ -12,7 +12,7 @@ harness = false
 [dev-dependencies]
 contracts = { path = "../contracts" }
 criterion = "0.3"
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"
@@ -27,4 +27,4 @@ shared = { path = "../shared" }
 solver = { path = "../solver" }
 tokio = { version = "1.12", features = ["macros"] }
 tracing = "0.1"
-web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e", default-features = false }
+web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }

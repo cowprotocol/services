@@ -12,10 +12,10 @@ async-trait = "0.1"
 atty = "0.2"
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab", default-features = false }
-ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "34c618cf63ad4750d1d9198eada85f3d1cf334ab" }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.4", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.5", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 http = "0.2.4"
@@ -28,7 +28,7 @@ model = { path = "../model" }
 num = "0.4"
 num-bigint = "0.3"
 once_cell = "1.8.0"
-primitive-types = "0.9"
+primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = "0.4"
 reqwest = { version = "0.11", features = ["json"] }
@@ -44,7 +44,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.2", features = ["fmt"] }
 url = "2.2"
 warp = "0.3"
-web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="2e2d1dfa906aa2dff6312b97d0d5ba804e9c8c6e", default-features = false }
+web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }
 
 [dev-dependencies]
 regex = "1.5.4"
