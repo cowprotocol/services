@@ -17,10 +17,15 @@ impl LiquidityCollector {
         at_block: Block,
     ) -> Result<Vec<Liquidity>> {
         let mut amms = vec![];
+        let user_orders = limit_orders
+            .iter()
+            .filter(|order| !order.is_liquidity_order)
+            .cloned()
+            .collect::<Vec<_>>();
         for liquidity in &self.uniswap_like_liquidity {
             amms.extend(
                 liquidity
-                    .get_liquidity(limit_orders, at_block)
+                    .get_liquidity(&user_orders, at_block)
                     .await
                     .context("failed to get UniswapLike liquidity")?
                     .into_iter()
@@ -29,7 +34,7 @@ impl LiquidityCollector {
         }
         if let Some(balancer_v2_liquidity) = self.balancer_v2_liquidity.as_ref() {
             let (stable_orders, weighted_orders) = balancer_v2_liquidity
-                .get_liquidity(limit_orders, at_block)
+                .get_liquidity(&user_orders, at_block)
                 .await
                 .context("failed to get Balancer liquidity")?;
 

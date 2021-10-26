@@ -93,6 +93,7 @@ impl SettlementEncoder {
         order: Order,
         executed_amount: U256,
         scaled_fee_amount: U256,
+        is_liquidity_order: bool,
     ) -> Result<TradeExecution> {
         let sell_price = self
             .clearing_prices
@@ -116,6 +117,7 @@ impl SettlementEncoder {
             buy_token_index,
             executed_amount,
             scaled_fee_amount,
+            is_liquidity_order,
         };
         let execution = trade
             .executed_amounts(*sell_price, *buy_price)
@@ -176,10 +178,10 @@ impl SettlementEncoder {
         for i in 0..self.trades.len() {
             self.trades[i].sell_token_index = self
                 .token_index(self.trades[i].order.order_creation.sell_token)
-                .expect("missing sell token for exisiting trade");
+                .expect("missing sell token for existing trade");
             self.trades[i].buy_token_index = self
                 .token_index(self.trades[i].order.order_creation.buy_token)
-                .expect("missing buy token for exisiting trade");
+                .expect("missing buy token for existing trade");
         }
     }
 
@@ -191,41 +193,50 @@ impl SettlementEncoder {
         &self,
         normalizing_prices: &HashMap<H160, BigRational>,
     ) -> Option<BigRational> {
-        self.trades.iter().fold(Some(num::zero()), |acc, trade| {
-            let sell_token_clearing_price = self
-                .clearing_prices
-                .get(&trade.order.order_creation.sell_token)
-                .expect("Solution with trade but without price for sell token")
-                .to_big_rational();
-            let buy_token_clearing_price = self
-                .clearing_prices
-                .get(&trade.order.order_creation.buy_token)
-                .expect("Solution with trade but without price for buy token")
-                .to_big_rational();
+        self.trades
+            .iter()
+            .filter(|trade| !trade.is_liquidity_order)
+            .fold(Some(num::zero()), |acc, trade| {
+                let order = trade.order.clone();
+                let sell_token_clearing_price = self
+                    .clearing_prices
+                    .get(&order.order_creation.sell_token)
+                    .expect("Solution with trade but without price for sell token")
+                    .to_big_rational();
+                let buy_token_clearing_price = self
+                    .clearing_prices
+                    .get(&order.order_creation.buy_token)
+                    .expect("Solution with trade but without price for buy token")
+                    .to_big_rational();
 
-            let sell_token_external_price = normalizing_prices
-                .get(&trade.order.order_creation.sell_token)
-                .expect("Solution with trade but without price for sell token");
-            let buy_token_external_price = normalizing_prices
-                .get(&trade.order.order_creation.buy_token)
-                .expect("Solution with trade but without price for buy token");
+                let sell_token_external_price = normalizing_prices
+                    .get(&order.order_creation.sell_token)
+                    .expect("Solution with trade but without price for sell token");
+                let buy_token_external_price = normalizing_prices
+                    .get(&order.order_creation.buy_token)
+                    .expect("Solution with trade but without price for buy token");
 
-            if match trade.order.order_creation.kind {
-                OrderKind::Sell => &buy_token_clearing_price,
-                OrderKind::Buy => &sell_token_clearing_price,
-            }
-            .is_zero()
-            {
-                return None;
-            }
+                if match order.order_creation.kind {
+                    OrderKind::Sell => &buy_token_clearing_price,
+                    OrderKind::Buy => &sell_token_clearing_price,
+                }
+                .is_zero()
+                {
+                    return None;
+                }
 
-            let surplus = &trade.surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
-            let normalized_surplus = match trade.order.order_creation.kind {
-                OrderKind::Sell => surplus * buy_token_external_price / buy_token_clearing_price,
-                OrderKind::Buy => surplus * sell_token_external_price / sell_token_clearing_price,
-            };
-            Some(acc? + normalized_surplus)
-        })
+                let surplus =
+                    &trade.surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
+                let normalized_surplus = match order.order_creation.kind {
+                    OrderKind::Sell => {
+                        surplus * buy_token_external_price / buy_token_clearing_price
+                    }
+                    OrderKind::Buy => {
+                        surplus * sell_token_external_price / sell_token_clearing_price
+                    }
+                };
+                Some(acc? + normalized_surplus)
+            })
     }
 
     pub fn finish(self) -> EncodedSettlement {
@@ -371,8 +382,12 @@ pub mod tests {
             token1 => 1.into(),
         });
 
-        assert!(settlement.add_trade(order0, 1.into(), 1.into()).is_ok());
-        assert!(settlement.add_trade(order1, 1.into(), 0.into()).is_ok());
+        assert!(settlement
+            .add_trade(order0, 1.into(), 1.into(), false)
+            .is_ok());
+        assert!(settlement
+            .add_trade(order1, 1.into(), 0.into(), false)
+            .is_ok());
     }
 
     #[test]
@@ -461,6 +476,7 @@ pub mod tests {
                 },
                 0.into(),
                 0.into(),
+                false,
             )
             .unwrap();
 
@@ -516,7 +532,9 @@ pub mod tests {
             .with_buy_amount(11.into())
             .build();
         order13.order_meta_data.uid.0[0] = 0;
-        encoder0.add_trade(order13, 13.into(), 0.into()).unwrap();
+        encoder0
+            .add_trade(order13, 13.into(), 0.into(), false)
+            .unwrap();
         encoder0.append_to_execution_plan(NoopInteraction {});
         encoder0.add_unwrap(UnwrapWethInteraction {
             weth: weth.clone(),
@@ -532,7 +550,9 @@ pub mod tests {
             .with_buy_amount(22.into())
             .build();
         order24.order_meta_data.uid.0[0] = 1;
-        encoder1.add_trade(order24, 24.into(), 0.into()).unwrap();
+        encoder1
+            .add_trade(order24, 24.into(), 0.into(), false)
+            .unwrap();
         encoder1.append_to_execution_plan(NoopInteraction {});
         encoder1.add_unwrap(UnwrapWethInteraction {
             weth,
@@ -606,11 +626,13 @@ pub mod tests {
 
         let mut encoder0 = SettlementEncoder::new(prices.clone());
         encoder0
-            .add_trade(order13.clone(), 13.into(), 0.into())
+            .add_trade(order13.clone(), 13.into(), 0.into(), false)
             .unwrap();
 
         let mut encoder1 = SettlementEncoder::new(prices);
-        encoder1.add_trade(order13, 24.into(), 0.into()).unwrap();
+        encoder1
+            .add_trade(order13, 24.into(), 0.into(), false)
+            .unwrap();
 
         assert!(encoder0.merge(encoder1).is_err());
     }
