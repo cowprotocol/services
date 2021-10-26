@@ -73,6 +73,55 @@ pub fn get_fee_info(
     })
 }
 
+// TODO remove legacy fee endpoint once frontend is updated
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LegacyFeeInfo {
+    pub expiration_date: DateTime<Utc>,
+    #[serde(with = "u256_decimal")]
+    pub minimal_fee: U256,
+    pub fee_ratio: u32,
+}
+
+pub fn legacy_get_fee_info_request() -> impl Filter<Extract = (H160,), Error = Rejection> + Clone {
+    warp::path!("tokens" / H160 / "fee").and(warp::get())
+}
+
+pub fn legacy_get_fee_info_response(
+    result: Result<(U256, DateTime<Utc>), PriceEstimationError>,
+) -> impl Reply {
+    match result {
+        Ok((minimal_fee, expiration_date)) => {
+            let fee_info = LegacyFeeInfo {
+                expiration_date,
+                minimal_fee,
+                fee_ratio: 0u32,
+            };
+            Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
+        }
+        Err(err) => {
+            let (json, status_code) = price_estimation_error_to_warp_reply(err);
+            Ok(reply::with_status(json, status_code))
+        }
+    }
+}
+
+pub fn legacy_get_fee_info(
+    fee_calculator: Arc<dyn MinFeeCalculating>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    legacy_get_fee_info_request().and_then(move |token| {
+        let fee_calculator = fee_calculator.clone();
+        async move {
+            Result::<_, Infallible>::Ok(legacy_get_fee_info_response(
+                fee_calculator
+                    .compute_subsidized_min_fee(token, None, None, None, None)
+                    .await,
+            ))
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -108,6 +157,29 @@ mod tests {
         let body = response_body(response).await;
         let body: FeeInfo = serde_json::from_slice(body.as_slice()).unwrap();
         assert_eq!(body.amount, U256::zero());
+        assert!(body.expiration_date.gt(&chrono::offset::Utc::now()))
+    }
+
+    #[tokio::test]
+    async fn legacy_get_fee_info_request_ok() {
+        let filter = legacy_get_fee_info_request();
+        let token = String::from("0x0000000000000000000000000000000000000001");
+        let path_string = format!("/tokens/{}/fee", token);
+        let request = request().path(&path_string).method("GET");
+        let result = request.filter(&filter).await.unwrap();
+        assert_eq!(result, H160::from_low_u64_be(1));
+    }
+
+    #[tokio::test]
+    async fn legacy_get_fee_info_response_() {
+        let response =
+            legacy_get_fee_info_response(Ok((U256::zero(), Utc::now() + FixedOffset::east(10))))
+                .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        let body: LegacyFeeInfo = serde_json::from_slice(body.as_slice()).unwrap();
+        assert_eq!(body.minimal_fee, U256::zero());
+        assert_eq!(body.fee_ratio, 0);
         assert!(body.expiration_date.gt(&chrono::offset::Utc::now()))
     }
 }
