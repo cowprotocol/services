@@ -19,7 +19,7 @@ use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
-use model::order::{OrderUid, BUY_ETH_ADDRESS};
+use model::order::BUY_ETH_ADDRESS;
 use num::BigRational;
 use primitive_types::{H160, U256};
 use rand::prelude::SliceRandom;
@@ -30,7 +30,6 @@ use shared::{
     token_list::TokenList,
     Web3,
 };
-use std::str::FromStr;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -278,7 +277,6 @@ impl Driver {
         &self,
         submitted: &Settlement,
         all: impl Iterator<Item = RatedSettlement>,
-        orders: Vec<LimitOrder>,
     ) {
         let submitted: HashSet<_> = submitted
             .trades()
@@ -293,19 +291,8 @@ impl Driver {
             .iter()
             .map(|order| order.order_meta_data.uid)
             .collect();
-        let matched_but_not_settled = all_matched_ids.difference(&submitted).copied().collect();
-        let liquidity_order_ids: HashSet<_> = orders
-            .into_iter()
-            .filter_map(|order| match order.is_liquidity_order {
-                true => OrderUid::from_str(&order.id).ok(),
-                false => None,
-            })
-            .collect();
-        let matched_but_unsettled_liquidity_ids: HashSet<_> = liquidity_order_ids
-            .intersection(&matched_but_not_settled)
-            .collect();
-        self.metrics
-            .orders_matched_but_liquidity(matched_but_unsettled_liquidity_ids.len());
+        let matched_but_not_settled: HashSet<_> =
+            all_matched_ids.difference(&submitted).copied().collect();
         self.metrics
             .orders_matched_but_not_settled(matched_but_not_settled.len())
     }
@@ -358,7 +345,6 @@ impl Driver {
             );
             rated_settlement
         };
-
         Ok(settlements.into_iter().zip(simulations).partition_map(
             |((solver, settlement), result)| match result {
                 Ok(gas_estimate) => Either::Left((
@@ -395,7 +381,6 @@ impl Driver {
             .liquidity_collector
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
             .await?;
-
         let estimated_prices = collect_estimated_prices(
             self.price_estimator.as_ref(),
             self.native_token_amount_to_estimate_prices_with,
@@ -428,7 +413,6 @@ impl Driver {
             price_estimates: estimated_prices.clone(),
         };
         tracing::debug!("solving auction ID {}", auction.id);
-
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
             let name = solver.name();
@@ -527,7 +511,6 @@ impl Driver {
             self.report_matched_orders(
                 &settlement.settlement,
                 rated_settlements.into_iter().map(|(_, solution)| solution),
-                orders,
             );
         }
 

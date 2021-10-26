@@ -19,6 +19,7 @@ pub struct Trade {
     pub buy_token_index: usize,
     pub executed_amount: U256,
     pub scaled_fee_amount: U256,
+    pub is_liquidity_order: bool,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -322,7 +323,7 @@ pub mod tests {
         assert_eq!(actual_settlement, expected_settlement);
     }
 
-    // Helper function to save some repeatition below.
+    // Helper function to save some repetition below.
     fn r(u: u128) -> BigRational {
         BigRational::from_u128(u).unwrap()
     }
@@ -538,7 +539,6 @@ pub mod tests {
         // If the external price of the second token is higher, then the second settlement is preferred.
         // (swaps above normalized surpluses of settlement0 and settlement1)
         let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(2)};
-
         assert!(
             settlement0.total_surplus(&external_prices)
                 < settlement1.total_surplus(&external_prices)
@@ -829,5 +829,74 @@ pub mod tests {
             settlement.total_scaled_unsubsidized_fees(&external_prices),
             BigRational::from_integer(45.into())
         );
+    }
+
+    #[test]
+    fn total_surplus_excludes_liquidity_orders() {
+        let token0 = H160::from_low_u64_be(0);
+        let token1 = H160::from_low_u64_be(1);
+
+        let order0 = Order {
+            order_creation: OrderCreation {
+                sell_token: token0,
+                buy_token: token1,
+                sell_amount: 10.into(),
+                buy_amount: 7.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let order1 = Order {
+            order_creation: OrderCreation {
+                sell_token: token1,
+                buy_token: token0,
+                sell_amount: 10.into(),
+                buy_amount: 6.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let trade0 = Trade {
+            order: order0,
+            executed_amount: 10.into(),
+            is_liquidity_order: false,
+            ..Default::default()
+        };
+        let trade1 = Trade {
+            order: order1,
+            executed_amount: 9.into(),
+            is_liquidity_order: false,
+            ..Default::default()
+        };
+
+        let clearing_prices = maplit::hashmap! {token0 => 9.into(), token1 => 10.into()};
+        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
+
+        let compute_total_surplus = |trade0_is_pmm: bool, trade1_is_pmm: bool| {
+            let settlement = test_settlement(
+                clearing_prices.clone(),
+                vec![
+                    Trade {
+                        is_liquidity_order: trade0_is_pmm,
+                        ..trade0.clone()
+                    },
+                    Trade {
+                        is_liquidity_order: trade1_is_pmm,
+                        ..trade1.clone()
+                    },
+                ],
+            );
+            settlement.total_surplus(&external_prices)
+        };
+
+        let total_surplus_without_pmms = compute_total_surplus(false, false);
+        let surplus_order1 = compute_total_surplus(false, true);
+        let surplus_order0 = compute_total_surplus(true, false);
+        let both_pmm = compute_total_surplus(true, true);
+        assert_eq!(total_surplus_without_pmms, surplus_order0 + surplus_order1);
+        assert!(both_pmm.is_zero());
     }
 }

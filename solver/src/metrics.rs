@@ -35,7 +35,6 @@ pub trait SolverMetrics: Send + Sync {
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, successful: bool, solver: &'static str);
-    fn orders_matched_but_liquidity(&self, count: usize);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn runloop_completed(&self);
     fn complete_runloop_until_transaction(&self, duration: Duration);
@@ -52,7 +51,6 @@ pub struct Metrics {
     settlement_submissions: IntCounterVec,
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
-    matched_but_liquidity: IntCounter,
     matched_but_unsettled_orders: IntCounter,
     transport_requests: HistogramVec,
     pool_cache_hits: IntCounter,
@@ -120,12 +118,6 @@ impl Metrics {
         )?;
         registry.register(Box::new(single_order_solver_runs.clone()))?;
 
-        let matched_but_liquidity = IntCounter::new(
-            "orders_matched_liquidity",
-            "Counter for the number of orders for which at least one solver computed an execution which was from a known liquidity provider",
-        )?;
-        registry.register(Box::new(matched_but_liquidity.clone()))?;
-
         let matched_but_unsettled_orders = IntCounter::new(
             "orders_matched_not_settled",
             "Counter for the number of orders for which at least one solver computed an execution which was not chosen in this run-loop",
@@ -180,7 +172,6 @@ impl Metrics {
             settlement_submissions,
             solver_runs,
             single_order_solver_runs,
-            matched_but_liquidity,
             matched_but_unsettled_orders,
             transport_requests,
             pool_cache_hits,
@@ -283,10 +274,6 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn orders_matched_but_liquidity(&self, count: usize) {
-        self.matched_but_liquidity.inc_by(count as u64);
-    }
-
     fn orders_matched_but_not_settled(&self, count: usize) {
         self.matched_but_unsettled_orders.inc_by(count as u64);
     }
@@ -360,7 +347,6 @@ impl SolverMetrics for NoopMetrics {
     fn single_order_solver_failed(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: bool, _: &'static str) {}
-    fn orders_matched_but_liquidity(&self, _: usize) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn runloop_completed(&self) {}
     fn complete_runloop_until_transaction(&self, _: Duration) {}
