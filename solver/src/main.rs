@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use contracts::{IUniswapLikeRouter, WETH9};
+use ethcontract::dyns::DynTransport;
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
 use shared::{
@@ -22,7 +23,7 @@ use shared::{
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::{create_instrumented_transport, http::HttpTransport},
+    transport::http::HttpTransport,
 };
 use solver::{
     driver::Driver,
@@ -254,10 +255,11 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url, "base".to_string()),
-        metrics.clone(),
-    );
+    let transport = DynTransport::new(HttpTransport::new(
+        client.clone(),
+        args.shared.node_url,
+        "base".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
         .eth()
@@ -472,10 +474,11 @@ async fn main() {
                     .into_iter()
                     .enumerate()
                     .map(|(index, url)| {
-                        let transport = create_instrumented_transport(
-                            HttpTransport::new(client.clone(), url, index.to_string()),
-                            metrics.clone(),
-                        );
+                        let transport = DynTransport::new(HttpTransport::new(
+                            client.clone(),
+                            url,
+                            index.to_string(),
+                        ));
                         web3::Web3::new(transport)
                     })
                     .collect::<Vec<_>>();

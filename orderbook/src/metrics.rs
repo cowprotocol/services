@@ -3,23 +3,14 @@ use gas_estimation::EstimatedGasPrice;
 use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
-use shared::{
-    metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
-    transport::instrumented::TransportMetrics,
-};
-use std::{
-    convert::Infallible,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use shared::{metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics};
+use std::{convert::Infallible, sync::Arc, time::Instant};
 use warp::{reply::Response, Filter, Reply};
 
 pub struct Metrics {
     /// Incoming API request metrics
     api_requests: HistogramVec,
     db_table_row_count: IntGaugeVec,
-    /// Outgoing RPC request metrics
-    rpc_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     database_queries: HistogramVec,
@@ -44,13 +35,6 @@ impl Metrics {
             &["table"],
         )?;
         registry.register(Box::new(db_table_row_count.clone()))?;
-
-        let opts = HistogramOpts::new(
-            "transport_requests",
-            "RPC Request durations labelled by method",
-        );
-        let rpc_requests = HistogramVec::new(opts, &["method"]).unwrap();
-        registry.register(Box::new(rpc_requests.clone()))?;
 
         let pool_cache_hits = IntCounter::new(
             "pool_cache_hits",
@@ -84,7 +68,6 @@ impl Metrics {
         Ok(Self {
             api_requests,
             db_table_row_count,
-            rpc_requests,
             pool_cache_hits,
             pool_cache_misses,
             database_queries,
@@ -97,14 +80,6 @@ impl Metrics {
         self.db_table_row_count
             .with_label_values(&[table])
             .set(count);
-    }
-}
-
-impl TransportMetrics for Metrics {
-    fn report_query(&self, label: &str, elapsed: Duration) {
-        self.rpc_requests
-            .with_label_values(&[label])
-            .observe(elapsed.as_secs_f64())
     }
 }
 

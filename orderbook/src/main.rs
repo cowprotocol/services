@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
+use ethcontract::dyns::DynTransport;
 use model::{
     app_id::AppId,
     order::{OrderUid, BUY_ETH_ADDRESS},
@@ -49,7 +50,6 @@ use shared::{
         PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::create_instrumented_transport,
     transport::http::HttpTransport,
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
@@ -180,10 +180,11 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url.clone(), "".to_string()),
-        metrics.clone(),
-    );
+    let transport = DynTransport::new(HttpTransport::new(
+        client.clone(),
+        args.shared.node_url.clone(),
+        "".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await

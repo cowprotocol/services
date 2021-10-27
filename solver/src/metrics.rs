@@ -1,16 +1,13 @@
 use crate::liquidity::{LimitOrder, Liquidity};
 use anyhow::Result;
 use model::order::Order;
-use prometheus::{
-    Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
-};
+use prometheus::{Histogram, HistogramOpts, IntCounter, IntCounterVec, IntGaugeVec, Opts};
 use shared::{
     metrics::get_metrics_registry,
     metrics::LivenessChecking,
     sources::{
         balancer::pool_cache::BalancerPoolCacheMetrics, uniswap::pool_cache::PoolCacheMetrics,
     },
-    transport::instrumented::TransportMetrics,
 };
 use std::{
     convert::TryInto,
@@ -52,7 +49,6 @@ pub struct Metrics {
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
-    transport_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     last_runloop_completed: Mutex<Instant>,
@@ -124,13 +120,6 @@ impl Metrics {
         )?;
         registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
 
-        let opts = HistogramOpts::new(
-            "transport_requests",
-            "RPC Request durations labelled by method",
-        );
-        let transport_requests = HistogramVec::new(opts, &["method"]).unwrap();
-        registry.register(Box::new(transport_requests.clone()))?;
-
         let pool_cache_hits = IntCounter::new(
             "pool_cache_hits",
             "Number of cache hits in the pool fetcher cache.",
@@ -173,7 +162,6 @@ impl Metrics {
             solver_runs,
             single_order_solver_runs,
             matched_but_unsettled_orders,
-            transport_requests,
             pool_cache_hits,
             pool_cache_misses,
             last_runloop_completed: Mutex::new(Instant::now()),
@@ -292,14 +280,6 @@ impl SolverMetrics for Metrics {
 
     fn transaction_submission(&self, duration: Duration) {
         self.transaction_submission.observe(duration.as_secs_f64());
-    }
-}
-
-impl TransportMetrics for Metrics {
-    fn report_query(&self, label: &str, elapsed: Duration) {
-        self.transport_requests
-            .with_label_values(&[label])
-            .observe(elapsed.as_secs_f64())
     }
 }
 
