@@ -35,7 +35,8 @@ where
     ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
         let results = self.inner.estimates(queries).await;
         for result in &results {
-            self.metrics.price_estimated(&self.name, result.is_ok());
+            let success = !matches!(result, Err(PriceEstimationError::Other(_)));
+            self.metrics.price_estimated(&self.name, success);
         }
         results
     }
