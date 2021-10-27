@@ -359,6 +359,7 @@ impl Driver {
     pub async fn single_run(&mut self) -> Result<()> {
         let start = Instant::now();
         tracing::debug!("starting single run");
+
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
@@ -378,7 +379,6 @@ impl Driver {
             .map(|order| self.order_converter.normalize_limit_order(order))
             .collect::<Vec<_>>();
         tracing::info!("got {} orders: {:?}", orders.len(), orders);
-
         let liquidity = self
             .liquidity_collector
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
@@ -391,11 +391,17 @@ impl Driver {
         )
         .await;
         tracing::debug!("estimated prices: {:?}", estimated_prices);
-
         let orders = orders_with_price_estimates(orders, &estimated_prices);
+        if !has_at_least_one_user_order(&orders) {
+            return Ok(());
+        }
 
         self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
+
+        if !has_at_least_one_user_order(&orders) {
+            return Ok(());
+        }
 
         let gas_price = self
             .gas_price_estimator
@@ -612,6 +618,12 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
             .get(&trade.order.order_creation.sell_token)
             .is_none()
     })
+}
+
+// vk: I would like to extend this to also check that the order has minimum age but for this we need
+// access to the creation date which is a more involved change.
+fn has_at_least_one_user_order(orders: &[LimitOrder]) -> bool {
+    orders.iter().any(|order| !order.is_liquidity_order)
 }
 
 #[cfg(test)]
