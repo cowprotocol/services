@@ -67,7 +67,7 @@ mod tests {
         assert_eq!(filtered.len(), 1);
 
         solvable_orders.latest_settlement_block = 1;
-        let filtered = inflight.update_and_filter(solvable_orders.clone());
+        let filtered = inflight.update_and_filter(solvable_orders);
         assert_eq!(filtered.len(), 2);
     }
 }
