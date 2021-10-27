@@ -1,7 +1,7 @@
 use anyhow::Result;
 use gas_estimation::EstimatedGasPrice;
 use prometheus::{
-    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
+    Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
 use shared::{
     metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
@@ -22,7 +22,6 @@ pub struct Metrics {
     rpc_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
-    database_queries: HistogramVec,
     /// Gas estimate metrics
     gas_price: Gauge,
     price_estimates: IntCounterVec,
@@ -64,13 +63,6 @@ impl Metrics {
         )?;
         registry.register(Box::new(pool_cache_misses.clone()))?;
 
-        let opts = HistogramOpts::new(
-            "database_queries",
-            "Sql queries to our postgresql database.",
-        );
-        let database_queries = HistogramVec::new(opts, &["type"]).unwrap();
-        registry.register(Box::new(database_queries.clone()))?;
-
         let opts = Opts::new("gas_price", "Gas price estimate over time.");
         let gas_price = Gauge::with_opts(opts).unwrap();
         registry.register(Box::new(gas_price.clone()))?;
@@ -87,7 +79,6 @@ impl Metrics {
             rpc_requests,
             pool_cache_hits,
             pool_cache_misses,
-            database_queries,
             gas_price,
             price_estimates,
         })
@@ -112,12 +103,6 @@ impl PoolCacheMetrics for Metrics {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
         self.pool_cache_hits.inc_by(cache_hits as u64);
         self.pool_cache_misses.inc_by(cache_misses as u64);
-    }
-}
-
-impl crate::database::instrumented::Metrics for Metrics {
-    fn database_query_histogram(&self, label: &str) -> Histogram {
-        self.database_queries.with_label_values(&[label])
     }
 }
 

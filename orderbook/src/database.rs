@@ -1,6 +1,5 @@
 pub mod events;
 pub mod fees;
-pub mod instrumented;
 pub mod orders;
 pub mod trades;
 

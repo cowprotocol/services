@@ -8,7 +8,7 @@ use model::{
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
-    database::{self, orders::OrderFilter, Postgres},
+    database::{orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::EthAwareMinFeeCalculator,
     gas_price::InstrumentedGasEstimator,
@@ -236,10 +236,7 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
-    let database = Arc::new(database::instrumented::Instrumented::new(
-        postgres.clone(),
-        metrics.clone(),
-    ));
+    let database = Arc::new(postgres.clone());
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
