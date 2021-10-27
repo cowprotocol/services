@@ -1,14 +1,13 @@
-use crate::api::price_estimation_error_to_warp_reply;
+use crate::api::convert_json_response;
 use crate::fee::MinFeeCalculating;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use shared::price_estimation::PriceEstimationError;
 use std::convert::Infallible;
 use std::sync::Arc;
-use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
+use warp::{Filter, Rejection, Reply};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,41 +33,27 @@ fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> 
         .and(warp::query::<Query>())
 }
 
-pub fn get_fee_info_response(
-    result: Result<(U256, DateTime<Utc>), PriceEstimationError>,
-) -> impl Reply {
-    match result {
-        Ok((amount, expiration_date)) => {
-            let fee_info = FeeInfo {
-                expiration_date,
-                amount,
-            };
-            Ok(reply::with_status(reply::json(&fee_info), StatusCode::OK))
-        }
-        Err(err) => {
-            let (json, status_code) = price_estimation_error_to_warp_reply(err);
-            Ok(reply::with_status(json, status_code))
-        }
-    }
-}
-
 pub fn get_fee_info(
     fee_calculator: Arc<dyn MinFeeCalculating>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
         let fee_calculator = fee_calculator.clone();
         async move {
-            Result::<_, Infallible>::Ok(get_fee_info_response(
-                fee_calculator
-                    .compute_subsidized_min_fee(
-                        query.sell_token,
-                        Some(query.buy_token),
-                        Some(query.amount),
-                        Some(query.kind),
-                        None,
-                    )
-                    .await,
-            ))
+            let result = fee_calculator
+                .compute_subsidized_min_fee(
+                    query.sell_token,
+                    Some(query.buy_token),
+                    Some(query.amount),
+                    Some(query.kind),
+                    None,
+                )
+                .await;
+            Result::<_, Infallible>::Ok(convert_json_response(result.map(
+                |(amount, expiration_date)| FeeInfo {
+                    expiration_date,
+                    amount,
+                },
+            )))
         }
     })
 }
@@ -78,6 +63,8 @@ mod tests {
     use super::*;
     use crate::api::response_body;
     use chrono::FixedOffset;
+    use shared::price_estimation::PriceEstimationError;
+    use warp::hyper::StatusCode;
     use warp::test::request;
 
     #[tokio::test]
@@ -101,9 +88,11 @@ mod tests {
 
     #[tokio::test]
     async fn get_fee_info_response_() {
-        let response =
-            get_fee_info_response(Ok((U256::zero(), Utc::now() + FixedOffset::east(10))))
-                .into_response();
+        let result = Ok(FeeInfo {
+            expiration_date: Utc::now() + FixedOffset::east(10),
+            amount: U256::zero(),
+        });
+        let response = convert_json_response::<_, PriceEstimationError>(result).into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
         let body: FeeInfo = serde_json::from_slice(body.as_slice()).unwrap();

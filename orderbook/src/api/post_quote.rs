@@ -1,8 +1,8 @@
 use crate::{
     api::{
-        self,
+        self, convert_json_response,
         order_validation::{OrderValidating, PreOrderData, ValidationError},
-        price_estimation_error_to_warp_reply, WarpReplyConverting,
+        IntoWarpReply,
     },
     fee::MinFeeCalculating,
 };
@@ -19,7 +19,7 @@ use shared::price_estimation::{self, PriceEstimating, PriceEstimationError};
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
-    reply::{self, Json},
+    reply::{Json, WithStatus},
     Filter, Rejection, Reply,
 };
 
@@ -94,7 +94,7 @@ pub enum SellAmount {
 }
 
 /// The quoted order by the service.
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: H160,
@@ -114,7 +114,7 @@ pub struct OrderQuote {
     pub buy_token_balance: BuyTokenDestination,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,
@@ -128,11 +128,11 @@ pub enum FeeError {
     PriceEstimate(PriceEstimationError),
 }
 
-impl WarpReplyConverting for FeeError {
-    fn into_warp_reply(self) -> (Json, StatusCode) {
+impl IntoWarpReply for FeeError {
+    fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
-            FeeError::PriceEstimate(err) => price_estimation_error_to_warp_reply(err),
-            FeeError::SellAmountDoesNotCoverFee => (
+            FeeError::PriceEstimate(err) => err.into_warp_reply(),
+            FeeError::SellAmountDoesNotCoverFee => warp::reply::with_status(
                 super::error(
                     "SellAmountDoesNotCoverFee",
                     "The sell amount for the sell order is lower than the fee.".to_string(),
@@ -149,8 +149,8 @@ pub enum OrderQuoteError {
     Order(ValidationError),
 }
 
-impl OrderQuoteError {
-    pub fn convert_to_reply(self) -> (Json, StatusCode) {
+impl IntoWarpReply for OrderQuoteError {
+    fn into_warp_reply(self) -> WithStatus<Json> {
         match self {
             OrderQuoteError::Fee(err) => err.into_warp_reply(),
             OrderQuoteError::Order(err) => err.into_warp_reply(),
@@ -336,16 +336,6 @@ fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = R
         .and(api::extract_payload())
 }
 
-pub fn response<T: Serialize>(result: Result<T, OrderQuoteError>) -> impl Reply {
-    match result {
-        Ok(response) => reply::with_status(reply::json(&response), StatusCode::OK),
-        Err(err) => {
-            let (reply, status) = err.convert_to_reply();
-            reply::with_status(reply, status)
-        }
-    }
-}
-
 pub fn post_quote(
     quoter: Arc<OrderQuoter>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -356,7 +346,7 @@ pub fn post_quote(
             if let Err(err) = &result {
                 tracing::warn!(?err, ?request, "post_quote error");
             }
-            Result::<_, Infallible>::Ok(response(result))
+            Result::<_, Infallible>::Ok(convert_json_response(result))
         }
     })
 }
@@ -368,7 +358,7 @@ mod tests {
         api::{order_validation::MockOrderValidating, response_body},
         fee::MockMinFeeCalculating,
     };
-    use chrono::Utc;
+    use chrono::{NaiveDateTime, Utc};
     use futures::FutureExt;
     use serde_json::json;
     use shared::price_estimation::mocks::FakePriceEstimator;
@@ -498,7 +488,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_quote_response_ok() {
-        let order_quote = OrderQuote {
+        let quote = OrderQuote {
             sell_token: Default::default(),
             buy_token: Default::default(),
             receiver: None,
@@ -512,19 +502,27 @@ mod tests {
             sell_token_balance: Default::default(),
             buy_token_balance: Default::default(),
         };
-        let response = response(Ok(&order_quote)).into_response();
+        let order_quote_response = OrderQuoteResponse {
+            quote,
+            from: H160::zero(),
+            expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+        };
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
+            order_quote_response.clone(),
+        ))
+        .into_response();
         assert_eq!(response.status(), StatusCode::OK);
         let body = response_body(response).await;
         let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
-        let expected = serde_json::to_value(order_quote).unwrap();
+        let expected = serde_json::to_value(order_quote_response).unwrap();
         assert_eq!(body, expected);
     }
 
     #[tokio::test]
     async fn post_quote_response_err() {
-        let response = response::<OrderQuoteResponse>(Err(OrderQuoteError::Order(
-            ValidationError::Other(anyhow!("Uh oh - error")),
-        )))
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Err(
+            OrderQuoteError::Order(ValidationError::Other(anyhow!("Uh oh - error"))),
+        ))
         .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
         let body = response_body(response).await;

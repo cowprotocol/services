@@ -1,5 +1,4 @@
-use crate::api::convert_get_orders_error_to_reply;
-use crate::orderbook::Orderbook;
+use crate::{api::IntoWarpReply, orderbook::Orderbook};
 use anyhow::Result;
 use model::order::{Order, OrderUid};
 use std::{convert::Infallible, sync::Arc};
@@ -13,7 +12,7 @@ pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> impl Reply {
     let order = match result {
         Ok(order) => order,
         Err(err) => {
-            return Ok(convert_get_orders_error_to_reply(err));
+            return Ok(err.into_warp_reply());
         }
     };
     Ok(match order {

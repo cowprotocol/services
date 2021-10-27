@@ -1,6 +1,6 @@
 use crate::api::extract_payload;
 use crate::orderbook::{OrderCancellationResult, Orderbook};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use model::signature::EcdsaSignature;
 use model::{
     order::{OrderCancellation, OrderUid},
@@ -63,7 +63,10 @@ pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Re
             super::error("OnChainOrder", "On-chain orders must be cancelled on-chain"),
             StatusCode::BAD_REQUEST,
         ),
-        Err(_) => (super::internal_error(), StatusCode::INTERNAL_SERVER_ERROR),
+        Err(err) => (
+            super::internal_error(err.context("cancel_order")),
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ),
     };
     warp::reply::with_status(body, status_code)
 }
@@ -74,10 +77,7 @@ pub fn cancel_order(
     cancel_order_request().and_then(move |order| {
         let orderbook = orderbook.clone();
         async move {
-            let result = orderbook.cancel_order(order).await;
-            if let Err(err) = &result {
-                tracing::error!(?err, ?order, "cancel_order error");
-            }
+            let result = orderbook.cancel_order(order).await.context("cancel_order");
             Result::<_, Infallible>::Ok(cancel_order_response(result))
         }
     })

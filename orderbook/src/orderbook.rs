@@ -3,7 +3,7 @@ use crate::{
     database::orders::{InsertionError, OrderFilter, OrderStoring},
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
 use model::{
@@ -203,7 +203,8 @@ impl Orderbook {
         let mut orders = self
             .database
             .user_orders(owner, offset, Some(limit))
-            .await?;
+            .await
+            .context("get_user_orders error")?;
         set_available_balances(orders.as_mut_slice(), &self.solvable_orders);
         Ok(orders)
     }

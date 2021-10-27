@@ -1,14 +1,12 @@
-use crate::api::convert_get_trades_error_to_reply;
-use crate::database::trades::TradeFilter;
-use crate::database::trades::TradeRetrieving;
-use anyhow::Result;
+use crate::{
+    api::convert_json_response,
+    database::trades::{TradeFilter, TradeRetrieving},
+};
+use anyhow::{Context, Result};
 use model::order::OrderUid;
-use model::trade::Trade;
 use primitive_types::H160;
 use serde::Deserialize;
-use std::convert::Infallible;
-use std::sync::Arc;
-use warp::reply::{Json, WithStatus};
+use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 
 #[derive(Deserialize)]
@@ -49,13 +47,6 @@ fn get_trades_request(
         .map(|query: Query| query.validate())
 }
 
-fn get_trades_response(result: Result<Vec<Trade>>) -> WithStatus<Json> {
-    match result {
-        Ok(trades) => warp::reply::with_status(warp::reply::json(&trades), StatusCode::OK),
-        Err(err) => convert_get_trades_error_to_reply(err),
-    }
-}
-
 pub fn get_trades(
     db: Arc<dyn TradeRetrieving>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -64,8 +55,8 @@ pub fn get_trades(
         async move {
             match request_result {
                 Ok(trade_filter) => {
-                    let result = database.trades(&trade_filter).await;
-                    Result::<_, Infallible>::Ok(get_trades_response(result))
+                    let result = database.trades(&trade_filter).await.context("get_trades");
+                    Result::<_, Infallible>::Ok(convert_json_response(result))
                 }
                 Err(TradeFilterError::InvalidFilter(msg)) => {
                     let err = super::error("InvalidTradeFilter", msg);
@@ -79,7 +70,6 @@ pub fn get_trades(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
     use hex_literal::hex;
     use primitive_types::H160;
     use warp::test::{request, RequestBuilder};
@@ -127,15 +117,5 @@ mod tests {
         let path = "/trades";
         let result = trade_filter(request().path(path)).await.unwrap();
         assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn get_trades_response_ok() {
-        let trades = vec![Trade::default()];
-        let response = get_trades_response(Ok(trades.clone())).into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_body(response).await;
-        let response_trades: Vec<Trade> = serde_json::from_slice(body.as_slice()).unwrap();
-        assert_eq!(response_trades, trades);
     }
 }

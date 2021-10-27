@@ -1,17 +1,13 @@
 use crate::{
-    api::convert_get_orders_error_to_reply, database::orders::OrderFilter, orderbook::Orderbook,
+    api::convert_json_response,
+    {database::orders::OrderFilter, orderbook::Orderbook},
 };
-use anyhow::Result;
-use model::order::Order;
+use anyhow::{Context, Result};
 use primitive_types::H160;
 use serde::Deserialize;
 use shared::time::now_in_epoch_seconds;
 use std::{convert::Infallible, sync::Arc};
-use warp::{
-    hyper::StatusCode,
-    reply::{self, Json, WithStatus},
-    Filter, Rejection, Reply,
-};
+use warp::{hyper::StatusCode, Filter, Rejection, Reply};
 
 // The default values create a filter that only includes valid orders.
 #[derive(Default, Deserialize)]
@@ -62,13 +58,6 @@ pub fn get_orders_request(
         .map(|query: Query| query.order_filter())
 }
 
-pub fn get_orders_response(result: Result<Vec<Order>>) -> WithStatus<Json> {
-    match result {
-        Ok(orders) => reply::with_status(reply::json(&orders), StatusCode::OK),
-        Err(err) => convert_get_orders_error_to_reply(err),
-    }
-}
-
 pub fn get_orders(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -82,8 +71,11 @@ pub fn get_orders(
                     return Ok(warp::reply::with_status(err, StatusCode::BAD_REQUEST));
                 }
             };
-            let result = orderbook.get_orders(&order_filter).await;
-            Result::<_, Infallible>::Ok(get_orders_response(result))
+            let result = orderbook
+                .get_orders(&order_filter)
+                .await
+                .context("get_orders");
+            Result::<_, Infallible>::Ok(convert_json_response(result))
         }
     })
 }
@@ -91,7 +83,6 @@ pub fn get_orders(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
     use shared::addr;
     use warp::test::{request, RequestBuilder};
 
@@ -138,15 +129,5 @@ mod tests {
             ..Default::default()
         };
         assert!(query.order_filter().is_err());
-    }
-
-    #[tokio::test]
-    async fn get_orders_response_ok() {
-        let orders = vec![Order::default()];
-        let response = get_orders_response(Ok(orders.clone())).into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_body(response).await;
-        let response_orders: Vec<Order> = serde_json::from_slice(body.as_slice()).unwrap();
-        assert_eq!(response_orders, orders);
     }
 }

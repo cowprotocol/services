@@ -16,9 +16,10 @@ pub mod post_quote;
 use crate::{
     api::post_quote::OrderQuoter, database::trades::TradeRetrieving, orderbook::Orderbook,
 };
-use anyhow::Error as anyhowError;
+use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
+use std::fmt::Debug;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -117,44 +118,54 @@ fn error(error_type: &str, description: impl AsRef<str>) -> Json {
     })
 }
 
-fn internal_error() -> Json {
+fn internal_error(error: anyhowError) -> Json {
+    tracing::error!(?error, "internal server error");
     json(&Error {
         error_type: "InternalServerError",
         description: "",
     })
 }
 
-pub trait WarpReplyConverting {
-    fn into_warp_reply(self) -> (Json, StatusCode);
+pub fn convert_json_response<T, E>(result: Result<T, E>) -> WithStatus<Json>
+where
+    T: Serialize,
+    E: IntoWarpReply + Debug,
+{
+    match result {
+        Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
+        Err(err) => err.into_warp_reply(),
+    }
 }
 
-pub fn convert_get_orders_error_to_reply(err: anyhowError) -> WithStatus<Json> {
-    tracing::error!(?err, "get_orders error");
-    with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+pub trait IntoWarpReply {
+    fn into_warp_reply(self) -> WithStatus<Json>;
 }
 
-pub fn convert_get_trades_error_to_reply(err: anyhowError) -> WithStatus<Json> {
-    tracing::error!(?err, "get_trades error");
-    with_status(internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+impl IntoWarpReply for anyhowError {
+    fn into_warp_reply(self) -> WithStatus<Json> {
+        with_status(internal_error(self), StatusCode::INTERNAL_SERVER_ERROR)
+    }
 }
 
-pub fn price_estimation_error_to_warp_reply(err: PriceEstimationError) -> (Json, StatusCode) {
-    match err {
-        PriceEstimationError::UnsupportedToken(token) => (
-            error("UnsupportedToken", format!("Token address {:?}", token)),
-            StatusCode::BAD_REQUEST,
-        ),
-        PriceEstimationError::NoLiquidity => (
-            error("NoLiquidity", "not enough liquidity"),
-            StatusCode::NOT_FOUND,
-        ),
-        PriceEstimationError::ZeroAmount => (
-            error("ZeroAmount", "Please use non-zero amount field"),
-            StatusCode::BAD_REQUEST,
-        ),
-        PriceEstimationError::Other(err) => {
-            tracing::error!(?err, "get_market error");
-            (internal_error(), StatusCode::INTERNAL_SERVER_ERROR)
+impl IntoWarpReply for PriceEstimationError {
+    fn into_warp_reply(self) -> WithStatus<Json> {
+        match self {
+            Self::UnsupportedToken(token) => with_status(
+                error("UnsupportedToken", format!("Token address {:?}", token)),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::NoLiquidity => with_status(
+                error("NoLiquidity", "not enough liquidity"),
+                StatusCode::NOT_FOUND,
+            ),
+            Self::ZeroAmount => with_status(
+                error("ZeroAmount", "Please use non-zero amount field"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => with_status(
+                internal_error(err.context("price_estimation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         }
     }
 }
