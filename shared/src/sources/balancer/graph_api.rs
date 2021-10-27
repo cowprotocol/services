@@ -60,6 +60,7 @@ impl BalancerSubgraphClient {
     ) -> Result<Vec<PoolData<T>>> {
         let mut result = Vec::new();
         let mut last_id = H256::default();
+        #[allow(clippy::blocks_in_if_conditions)]
         while {
             let page = self
                 .0

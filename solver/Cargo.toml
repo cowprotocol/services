@@ -50,5 +50,5 @@ transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git"
 web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }
 
 [dev-dependencies]
-tracing-subscriber = "0.2"
+tracing-subscriber = "0.3"
 mockall = "0.10"
