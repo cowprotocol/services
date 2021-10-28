@@ -52,7 +52,10 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
         // Randomize which orders we start with to prevent us getting stuck on bad orders.
         orders.shuffle(&mut rand::thread_rng());
 
-        let mut orders = orders.into_iter().collect::<VecDeque<_>>();
+        let mut orders = orders
+            .into_iter()
+            .filter(|order| !order.is_liquidity_order)
+            .collect::<VecDeque<_>>();
         let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
