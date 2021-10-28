@@ -437,7 +437,8 @@ impl Driver {
                 }
             };
 
-            solver_settlements::filter_empty_settlements(&mut settlements);
+            // Do not continue with settlements that are empty or only liquidity orders.
+            settlements.retain(solver_settlements::has_user_order);
 
             for settlement in &settlements {
                 tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
