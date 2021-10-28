@@ -5,10 +5,11 @@ use primitive_types::H160;
 use shared::conversions::U256Ext;
 use std::{collections::HashMap, time::Duration};
 
-// Return None if the result is an error or there are no settlements remaining after removing
-// settlements with no trades.
-pub fn filter_empty_settlements(settlements: &mut Vec<Settlement>) {
-    settlements.retain(|settlement| !settlement.trades().is_empty());
+pub fn has_user_order(settlement: &Settlement) -> bool {
+    settlement
+        .trades()
+        .iter()
+        .any(|trade| !trade.is_liquidity_order)
 }
 
 // Each individual settlement has an objective value.
@@ -282,5 +283,44 @@ mod tests {
         );
 
         assert!(obj_value1 > obj_value2);
+    }
+
+    #[test]
+    fn has_user_order_() {
+        let settlement = Settlement::with_trades(Default::default(), vec![]);
+        assert!(!has_user_order(&settlement));
+
+        let settlement = Settlement::with_trades(
+            Default::default(),
+            vec![Trade {
+                is_liquidity_order: true,
+                ..Default::default()
+            }],
+        );
+        assert!(!has_user_order(&settlement));
+
+        let settlement = Settlement::with_trades(
+            Default::default(),
+            vec![Trade {
+                is_liquidity_order: false,
+                ..Default::default()
+            }],
+        );
+        assert!(has_user_order(&settlement));
+
+        let settlement = Settlement::with_trades(
+            Default::default(),
+            vec![
+                Trade {
+                    is_liquidity_order: true,
+                    ..Default::default()
+                },
+                Trade {
+                    is_liquidity_order: false,
+                    ..Default::default()
+                },
+            ],
+        );
+        assert!(has_user_order(&settlement));
     }
 }
