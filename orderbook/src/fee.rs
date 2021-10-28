@@ -234,15 +234,14 @@ impl MinFeeCalculator {
         };
         let estimate = self.price_estimator.estimate(&query).await?;
         let price = estimate.price_in_sell_token_f64(&query);
+        let fee = fee_in_eth * price;
 
         tracing::debug!(
-            "computed unsubsidized fee amount of {} ETH at a price of {} ETH/{:?}",
-            fee_in_eth,
-            price,
-            sell_token,
+            ?sell_token, ?buy_token, ?amount, ?kind, %gas_price, %gas_amount, %fee_in_eth, %price, %fee,
+            "unsubsidized fee amount"
         );
 
-        Ok(U256::from_f64_lossy(fee_in_eth * price))
+        Ok(U256::from_f64_lossy(fee))
     }
 
     fn apply_fee_factor(&self, fee: U256, app_data: Option<AppId>) -> U256 {
