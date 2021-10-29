@@ -190,7 +190,7 @@ struct Arguments {
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
     #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
-    pub fee_objective_scaling_factor: f64,
+    fee_objective_scaling_factor: f64,
 
     /// The maximum number of settlements the driver considers per solver.
     #[structopt(long, env, default_value = "20")]
