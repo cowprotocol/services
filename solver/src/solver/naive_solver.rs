@@ -61,7 +61,7 @@ fn settle_pair(
     let uniswap = match uniswaps.get(&pair) {
         Some(uniswap) => uniswap,
         None => {
-            tracing::warn!("No AMM for: {:?}", pair);
+            tracing::debug!("No AMM for: {:?}", pair);
             return None;
         }
     };

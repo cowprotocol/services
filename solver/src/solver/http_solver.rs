@@ -241,7 +241,7 @@ impl HttpSolver {
         url.set_path("/solve");
 
         let instance_name = self.generate_instance_name();
-        tracing::info!("http solver instance name is {}", instance_name);
+        tracing::debug!("http solver instance name is {}", instance_name);
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
             .append_pair("time_limit", &timeout.as_secs().to_string());

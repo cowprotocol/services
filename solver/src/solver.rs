@@ -320,7 +320,7 @@ impl Solver for SellVolumeFilteringSolver {
         auction.orders = self
             .filter_orders(auction.orders, &auction.price_estimates)
             .await;
-        tracing::info!(
+        tracing::debug!(
             "Filtered {} orders because on insufficient volume",
             original_length - auction.orders.len()
         );

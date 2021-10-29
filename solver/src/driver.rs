@@ -335,7 +335,7 @@ impl Driver {
                 gas_estimate,
                 gas_price: gas_price_normalized.clone(),
             };
-            tracing::info!(
+            tracing::debug!(
                 "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
                 solver,
                 rated_settlement.objective_value(),
@@ -493,7 +493,7 @@ impl Driver {
                 .unwrap_or(false)
             {
                 settlement.settlement = settlement.settlement.without_onchain_liquidity();
-                tracing::info!("settlement without onchain liquidity");
+                tracing::debug!("settlement without onchain liquidity");
             }
 
             tracing::info!("winning settlement: {:?}", settlement);
