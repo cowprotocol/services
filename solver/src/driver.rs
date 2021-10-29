@@ -392,9 +392,6 @@ impl Driver {
         .await;
         tracing::debug!("estimated prices: {:?}", estimated_prices);
         let orders = orders_with_price_estimates(orders, &estimated_prices);
-        if !has_at_least_one_user_order(&orders) {
-            return Ok(());
-        }
 
         self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
