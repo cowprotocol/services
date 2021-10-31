@@ -14,6 +14,7 @@ use crate::{
     solver::{Auction, SettlementWithSolver, Solvers},
 };
 use anyhow::{anyhow, Context, Result};
+use bigdecimal::ToPrimitive;
 use contracts::GPv2Settlement;
 use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
@@ -336,12 +337,12 @@ impl Driver {
                 gas_price: gas_price_normalized.clone(),
             };
             tracing::debug!(
-                "Objective value for solver {} is {}: surplus={}, gas_estimate={}, gas_price={}",
+                "Objective value for solver {} is {:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}",
                 solver,
-                rated_settlement.objective_value(),
-                rated_settlement.surplus,
-                rated_settlement.gas_estimate,
-                rated_settlement.gas_price,
+                rated_settlement.objective_value().to_f64().unwrap_or(f64::NAN),
+                rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
+                rated_settlement.gas_estimate.to_f64_lossy(),
+                rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
             );
             rated_settlement
         };
