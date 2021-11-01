@@ -14,11 +14,20 @@ impl PriorityPriceEstimator {
     }
 }
 
+fn log_errors(results: &[Result<Estimate, PriceEstimationError>], estimator_index: usize) {
+    for result in results {
+        if let Err(err) = result {
+            tracing::warn!(%estimator_index, ?err,"priority price estimator failed");
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl PriceEstimating for PriorityPriceEstimator {
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
         let mut results = self.inner[0].estimates(queries).await;
-        for inner in &self.inner[1..] {
+        log_errors(&results, 0);
+        for (i, inner) in (&self.inner[1..]).iter().enumerate() {
             let retry_indexes = results
                 .iter()
                 .enumerate()
@@ -28,18 +37,12 @@ impl PriceEstimating for PriorityPriceEstimator {
             if retry_indexes.is_empty() {
                 break;
             }
-            for index in &retry_indexes {
-                let err = match &results[*index] {
-                    Err(err) => err,
-                    _ => unreachable!(),
-                };
-                tracing::warn!(?err, "inner price estimator failed");
-            }
             let retry_queries = retry_indexes
                 .iter()
                 .map(|index| queries[*index])
                 .collect::<Vec<_>>();
             let retry_results = inner.estimates(&retry_queries).await;
+            log_errors(&retry_results, i + 1);
             for (index, result) in retry_indexes.into_iter().zip(retry_results) {
                 results[index] = result;
             }
