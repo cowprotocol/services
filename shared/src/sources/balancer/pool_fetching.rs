@@ -122,7 +122,7 @@ impl AmplificationParameter {
 
     /// This is the format used to pass into smart contracts.
     pub fn as_u256(&self) -> U256 {
-        self.factor
+        self.factor * self.precision
     }
 
     /// This is the format used to pass along to HTTP solver.
@@ -223,7 +223,6 @@ pub trait BalancerPoolFetching: Send + Sync {
 
 pub struct BalancerPoolFetcher {
     pool_registry: Arc<BalancerPoolRegistry>,
-    // pool_reserve_cache: BalancerPoolReserveCache,
     stable_pool_reserve_cache: StablePoolReserveCache,
     weighted_pool_reserve_cache: WeightedPoolReserveCache,
 }
@@ -347,16 +346,16 @@ mod tests {
     #[test]
     fn amplification_parameter_conversions() {
         assert_eq!(
-            AmplificationParameter::new(1.into(), 2.into())
+            AmplificationParameter::new(2.into(), 3.into())
                 .unwrap()
                 .as_u256(),
-            1.into()
+            6.into()
         );
         assert_eq!(
-            AmplificationParameter::new(1.into(), 2.into())
+            AmplificationParameter::new(7.into(), 8.into())
                 .unwrap()
                 .as_big_rational(),
-            BigRational::new(1.into(), 2.into())
+            BigRational::new(7.into(), 8.into())
         );
 
         assert_eq!(

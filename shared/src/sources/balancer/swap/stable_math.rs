@@ -82,7 +82,7 @@ fn calculate_invariant(
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L109-L147
-fn calc_out_given_in(
+pub fn calc_out_given_in(
     amplification_parameter: U256,
     balances: &mut [Bfp],
     token_index_in: usize,
@@ -114,7 +114,7 @@ fn calc_out_given_in(
 }
 
 /// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L152-L190
-fn calc_in_given_out(
+pub fn calc_in_given_out(
     amplification_parameter: U256,
     balances: &mut [Bfp],
     token_index_in: usize,
