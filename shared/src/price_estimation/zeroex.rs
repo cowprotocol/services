@@ -1,9 +1,13 @@
-use crate::bad_token::BadTokenDetecting;
-use crate::price_estimation::{
-    ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query,
+use super::gas;
+use crate::{
+    bad_token::BadTokenDetecting,
+    price_estimation::{
+        ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query,
+    },
+    zeroex_api::{SwapQuery, ZeroExApi},
 };
-use crate::zeroex_api::{SwapQuery, ZeroExApi};
 use model::order::OrderKind;
+use primitive_types::U256;
 use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator {
@@ -46,7 +50,7 @@ impl ZeroExPriceEstimator {
                 OrderKind::Buy => swap.sell_amount,
                 OrderKind::Sell => swap.buy_amount,
             },
-            gas: swap.estimated_gas,
+            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + swap.estimated_gas,
         })
     }
 }
@@ -115,7 +119,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(est.out_amount, 1110165823572443613u64.into());
-        assert_eq!(est.gas, 111000.into());
+        assert!(est.gas > 111000.into());
     }
 
     #[tokio::test]
@@ -158,7 +162,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(est.out_amount, 8986186353137488u64.into());
-        assert_eq!(est.gas, 111000.into());
+        assert!(est.gas > 111000.into());
     }
 
     #[tokio::test]
