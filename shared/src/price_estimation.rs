@@ -1,4 +1,5 @@
 pub mod baseline;
+pub mod gas;
 pub mod instrumented;
 pub mod paraswap;
 pub mod priority;
@@ -59,6 +60,7 @@ pub struct Query {
 #[derive(Copy, Clone, Debug, Default)]
 pub struct Estimate {
     pub out_amount: U256,
+    /// full gas cost when settling this order alone on gp
     pub gas: U256,
 }
 

@@ -1,4 +1,4 @@
-use super::{ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query};
+use super::{ensure_token_supported, gas, Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     bad_token::BadTokenDetecting,
     paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, Side},
@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::{anyhow, Context, Result};
 use model::order::OrderKind;
-use primitive_types::H160;
+use primitive_types::{H160, U256};
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -64,7 +64,7 @@ impl ParaswapPriceEstimator {
                 OrderKind::Buy => response.src_amount,
                 OrderKind::Sell => response.dest_amount,
             },
-            gas: response.gas_cost,
+            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + response.gas_cost,
         })
     }
 }
