@@ -34,7 +34,7 @@ impl ZeroExPriceEstimator {
 
         let swap = self
             .client
-            .get_price(SwapQuery {
+            .get_swap(SwapQuery {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 sell_amount,
@@ -47,10 +47,10 @@ impl ZeroExPriceEstimator {
 
         Ok(Estimate {
             out_amount: match query.kind {
-                OrderKind::Buy => swap.sell_amount,
-                OrderKind::Sell => swap.buy_amount,
+                OrderKind::Buy => swap.price.sell_amount,
+                OrderKind::Sell => swap.price.buy_amount,
             },
-            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + swap.estimated_gas,
+            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + swap.price.estimated_gas,
         })
     }
 }
@@ -75,8 +75,8 @@ impl PriceEstimating for ZeroExPriceEstimator {
 mod tests {
     use super::*;
     use crate::bad_token::list_based::ListBasedDetector;
-    use crate::zeroex_api::MockZeroExApi;
     use crate::zeroex_api::{DefaultZeroExApi, PriceResponse};
+    use crate::zeroex_api::{MockZeroExApi, SwapResponse};
     use reqwest::Client;
 
     #[tokio::test]
@@ -90,13 +90,16 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     sellAmount=100000000000000000"
-        zeroex_api.expect_get_price().return_once(|_| {
-            Ok(PriceResponse {
-                sell_amount: 100000000000000000u64.into(),
-                buy_amount: 1110165823572443613u64.into(),
-                allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                price: 11.101_658_235_724_436,
-                estimated_gas: 111000.into(),
+        zeroex_api.expect_get_swap().return_once(|_| {
+            Ok(SwapResponse {
+                price: PriceResponse {
+                    sell_amount: 100000000000000000u64.into(),
+                    buy_amount: 1110165823572443613u64.into(),
+                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    price: 11.101_658_235_724_436,
+                    estimated_gas: 111000.into(),
+                },
+                ..Default::default()
             })
         });
 
@@ -133,13 +136,16 @@ mod tests {
         //     buyToken=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     slippagePercentage=0&\
         //     buyAmount=100000000000000000"
-        zeroex_api.expect_get_price().return_once(|_| {
-            Ok(PriceResponse {
-                sell_amount: 8986186353137488u64.into(),
-                buy_amount: 100000000000000000u64.into(),
-                allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                price: 0.089_861_863_531_374_87,
-                estimated_gas: 111000.into(),
+        zeroex_api.expect_get_swap().return_once(|_| {
+            Ok(SwapResponse {
+                price: PriceResponse {
+                    sell_amount: 8986186353137488u64.into(),
+                    buy_amount: 100000000000000000u64.into(),
+                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    price: 0.089_861_863_531_374_87,
+                    estimated_gas: 111000.into(),
+                },
+                ..Default::default()
             })
         });
 

@@ -117,10 +117,9 @@ pub trait ZeroExApi {
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
 
-    /// Similar to `get_swap`: calculate parameters of a swap.
-    /// Does not return a transaction that can be sent to the 0x API.
-    ///
-    /// See [`/swap/v1/price`](https://0x.org/docs/api#get-swapv1price).
+    /// Pricing for RFQT liquidity.
+    /// - https://0x.org/docs/guides/rfqt-in-the-0x-api
+    /// - https://0x.org/docs/api#get-swapv1price
     async fn get_price(&self, query: SwapQuery) -> Result<PriceResponse, ZeroExResponseError>;
 }
 
