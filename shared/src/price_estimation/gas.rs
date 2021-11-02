@@ -16,9 +16,11 @@ pub const TRADE: u64 =
     // overhead of one interaction
     3000;
 
-/// lower bound for an erc20 transfer
-/// TODO: Use an average or median?
-pub const ERC20_TRANSFER: u64 = 25_551;
+/// lower bound for an erc20 transfer.
+///
+/// Value was computed by taking 52 percentile median of `transfer()` costs
+/// of the 90% most traded tokens by volume in the month of Oct. 2021.
+pub const ERC20_TRANSFER: u64 = 27_513;
 
 /// a settlement that contains one trade
 pub const SETTLEMENT_SINGLE_TRADE: u64 = SETTLEMENT + TRADE + 2 * ERC20_TRANSFER;
