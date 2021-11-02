@@ -1027,7 +1027,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.3.5#e6b09f9e319a310c3da31d435f8d109a34952078"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.4.0#ba771bbf8893a435ab92c21bd014c09ea1623383"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3221,7 +3221,7 @@ dependencies = [
 [[package]]
 name = "transaction-retry"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.2.1#3cd7c0a0001b06194d8988672d0b13d8bb240075"
+source = "git+https://github.com/gnosis/gp-transaction-retry.git?tag=v0.2.2#10fc6f3cdfa80e42dbc112575d6124360312c3dd"
 dependencies = [
  "async-trait",
  "futures",

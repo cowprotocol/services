@@ -1,14 +1,12 @@
 use crate::Web3;
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{ensure, Context, Result};
 use gas_estimation::{
-    blocknative::BlockNative, EstimatedGasPrice, EthGasStation, GasNowWebSocketGasStation,
-    GasPriceEstimating, GnosisSafeGasStation, PriorityGasPriceEstimating, Transport,
+    blocknative::BlockNative, nativegasestimator::NativeGasEstimator, EstimatedGasPrice,
+    EthGasStation, GasNowGasStation, GasPriceEstimating, GnosisSafeGasStation,
+    PriorityGasPriceEstimating, Transport,
 };
 use serde::de::DeserializeOwned;
-use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::sync::{Arc, Mutex};
 use structopt::clap::arg_enum;
 
 arg_enum! {
@@ -19,6 +17,7 @@ arg_enum! {
         GnosisSafe,
         Web3,
         BlockNative,
+        Native,
     }
 }
 
@@ -85,20 +84,18 @@ pub async fn create_priority_estimator(
             }
             GasEstimatorType::GasNow => {
                 ensure!(is_mainnet(&network_id), "GasNow only supports mainnet");
-                let max_update_age = Duration::from_secs(30);
-                let mut estimator = GasNowWebSocketGasStation::new(max_update_age);
-                if tokio::time::timeout(Duration::from_secs(15), estimator.wait_for_first_update())
-                    .await
-                    .is_err()
-                {
-                    return Err(anyhow!("gas now estimator did not initialize in time"));
-                };
-                estimators.push(Box::new(estimator));
+                estimators.push(Box::new(GasNowGasStation::new(client.clone())))
             }
             GasEstimatorType::GnosisSafe => estimators.push(Box::new(
                 GnosisSafeGasStation::with_network_id(&network_id, client.clone())?,
             )),
             GasEstimatorType::Web3 => estimators.push(Box::new(web3.clone())),
+            GasEstimatorType::Native => {
+                ensure!(is_mainnet(&network_id), "Native only supports mainnet");
+                estimators.push(Box::new(
+                    NativeGasEstimator::new(web3.transport().clone(), None).await?,
+                ))
+            }
         }
     }
     Ok(PriorityGasPriceEstimating::new(estimators))

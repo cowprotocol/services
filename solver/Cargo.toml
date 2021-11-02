@@ -24,7 +24,7 @@ derive_more = "0.99"
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }
 ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.3.5", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.0", features = ["web3_"] }
 hex = "0.4"
 hex-literal = "0.3"
 itertools = "0.10"
@@ -46,7 +46,7 @@ strum = { version = "0.22", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.13", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 tracing = "0.1"
-transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.2.1" }
+transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.2.2" }
 web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }
 
 [dev-dependencies]
