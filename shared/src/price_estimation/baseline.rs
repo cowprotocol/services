@@ -1,7 +1,9 @@
+use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     bad_token::BadTokenDetecting,
     baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
     conversions::U256Ext,
+    price_estimation::gas,
     recent_block_cache::Block,
     sources::uniswap::pool_fetching::{Pool, PoolFetching},
 };
@@ -14,8 +16,6 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-
-use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 
 pub struct BaselinePriceEstimator {
     pool_fetcher: Arc<dyn PoolFetching>,
@@ -75,7 +75,7 @@ impl PriceEstimating for BaselinePriceEstimator {
             let (path, out_amount) = self.estimate_price_helper(query, true, &pools, gas_price)?;
             Ok(Estimate {
                 out_amount,
-                gas: self.estimate_gas(&path),
+                gas: estimate_gas(path.len()).into(),
             })
         };
         queries.iter().map(estimate_single).collect()
@@ -109,20 +109,6 @@ impl BaselinePriceEstimator {
         );
         let pools = self.pool_fetcher.fetch(pairs, Block::Recent).await?;
         Ok(pools_vec_to_map(pools))
-    }
-
-    fn estimate_gas(&self, path: &[H160]) -> U256 {
-        let trades = match path.len().checked_sub(1) {
-            Some(len) => len,
-            None => return 0.into(),
-        };
-        // This could be more accurate by actually simulating the settlement (since different tokens might have more or less expensive transfer costs)
-        // For the standard OZ token the cost is roughly 110k for a direct trade, 170k for a 1 hop trade, 230k for a 2 hop trade.
-        const BASELINE_GAS_PER_HOP: u64 = 60_000;
-        const BASELINE_FIXED_OVERHEAD: u64 = 50_000;
-        // Extrapolated from gp-v2-contract's `yarn bench:uniswap`
-        const GP_OVERHEAD: u64 = 90_000;
-        U256::from(GP_OVERHEAD) + BASELINE_FIXED_OVERHEAD + BASELINE_GAS_PER_HOP * trades as u64
     }
 
     /// Returns the path and the out amount.
@@ -328,6 +314,16 @@ fn pools_vec_to_map(pools: Vec<Pool>) -> Pools {
         pools.entry(pool.tokens).or_default().push(pool);
         pools
     })
+}
+
+fn estimate_gas(path_len: usize) -> u64 {
+    let hops = match path_len.checked_sub(1) {
+        Some(len) => len,
+        None => return 0,
+    };
+    // Can be reduced to one erc20 transfer when #675 is fixed.
+    let per_hop = gas::ERC20_TRANSFER * 2 + 40_000;
+    gas::SETTLEMENT_SINGLE_TRADE + per_hop * (hops as u64)
 }
 
 #[cfg(test)]
@@ -690,38 +686,32 @@ mod tests {
             10.into(),
         );
 
-        // Trade with intermediate hop
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
-            assert_eq!(
-                estimator
-                    .estimate(&Query {
-                        sell_token: token_a,
-                        buy_token: token_b,
-                        in_amount: 1.into(),
-                        kind: *kind
-                    })
-                    .await
-                    .unwrap()
-                    .gas,
-                260_000.into()
-            );
-        }
-
-        // Direct Trade
-        for kind in &[OrderKind::Sell, OrderKind::Buy] {
-            assert_eq!(
-                estimator
-                    .estimate(&Query {
-                        sell_token: token_b,
-                        buy_token: token_a,
-                        in_amount: 10.into(),
-                        kind: *kind
-                    })
-                    .await
-                    .unwrap()
-                    .gas,
-                200_000.into()
-            );
+            let intermediate = estimator
+                .estimate(&Query {
+                    sell_token: token_a,
+                    buy_token: token_b,
+                    in_amount: 1.into(),
+                    kind: *kind,
+                })
+                .await
+                .unwrap()
+                .gas
+                .as_u64();
+            assert_eq!(intermediate, estimate_gas(3));
+            let direct = estimator
+                .estimate(&Query {
+                    sell_token: token_b,
+                    buy_token: token_a,
+                    in_amount: 10.into(),
+                    kind: *kind,
+                })
+                .await
+                .unwrap()
+                .gas
+                .as_u64();
+            assert_eq!(direct, estimate_gas(2));
+            assert!(direct < intermediate);
         }
     }
 
@@ -781,7 +771,7 @@ mod tests {
                     .await
                     .unwrap()
                     .gas,
-                200_000.into()
+                estimate_gas(2).into(),
             );
         }
 
@@ -804,7 +794,7 @@ mod tests {
                     .await
                     .unwrap()
                     .gas,
-                260_000.into()
+                estimate_gas(3).into()
             );
         }
     }
