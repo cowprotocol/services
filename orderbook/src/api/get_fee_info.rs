@@ -1,5 +1,5 @@
-use crate::api::convert_json_response;
 use crate::fee::MinFeeCalculating;
+use crate::{api::convert_json_response, fee::FeeData};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{order::OrderKind, u256_decimal};
@@ -41,11 +41,13 @@ pub fn get_fee_info(
         async move {
             let result = fee_calculator
                 .compute_subsidized_min_fee(
-                    query.sell_token,
-                    Some(query.buy_token),
-                    Some(query.amount),
-                    Some(query.kind),
-                    None,
+                    FeeData {
+                        sell_token: query.sell_token,
+                        buy_token: query.buy_token,
+                        amount: query.amount,
+                        kind: query.kind,
+                    },
+                    Default::default(),
                 )
                 .await;
             Result::<_, Infallible>::Ok(convert_json_response(result.map(

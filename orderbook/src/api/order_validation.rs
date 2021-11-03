@@ -1,8 +1,14 @@
-use crate::{account_balances::BalanceFetching, api::IntoWarpReply, fee::MinFeeCalculating};
+use crate::{
+    account_balances::BalanceFetching,
+    api::IntoWarpReply,
+    fee::{FeeData, MinFeeCalculating},
+};
 use contracts::WETH9;
 use ethcontract::{H160, U256};
 use model::{
-    order::{BuyTokenDestination, Order, OrderCreation, SellTokenSource, BUY_ETH_ADDRESS},
+    order::{
+        BuyTokenDestination, Order, OrderCreation, OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
+    },
     DomainSeparator,
 };
 use shared::{bad_token::BadTokenDetecting, web3_traits::CodeFetching};
@@ -270,9 +276,17 @@ impl OrderValidating for OrderValidator {
         let full_fee_amount = match self
             .fee_validator
             .get_unsubsidized_min_fee(
-                order_creation.sell_token,
+                FeeData {
+                    sell_token: order_creation.sell_token,
+                    buy_token: order_creation.buy_token,
+                    amount: match order_creation.kind {
+                        OrderKind::Buy => order_creation.buy_amount,
+                        OrderKind::Sell => order_creation.sell_amount,
+                    },
+                    kind: order_creation.kind,
+                },
+                order_creation.app_data,
                 order_creation.fee_amount,
-                Some(order_creation.app_data),
             )
             .await
         {
@@ -607,17 +621,17 @@ mod tests {
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(2)
-            .returning(|_, fee, _| Ok(fee));
+            .returning(|_, _, fee| Ok(fee));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(1)
             .returning(|_, _, _| Err(()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, fee, _| Ok(fee));
+            .returning(|_, _, fee| Ok(fee));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, fee, _| Ok(fee));
+            .returning(|_, _, fee| Ok(fee));
         bad_token_detector
             .expect_detect()
             .times(1)
@@ -767,7 +781,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, fee, _| Ok(fee));
+            .returning(|_, _, fee| Ok(fee));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));

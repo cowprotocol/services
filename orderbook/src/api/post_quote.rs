@@ -4,7 +4,7 @@ use crate::{
         order_validation::{OrderValidating, PreOrderData, ValidationError},
         IntoWarpReply,
     },
-    fee::MinFeeCalculating,
+    fee::{FeeData, MinFeeCalculating},
 };
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
@@ -238,11 +238,13 @@ impl OrderQuoter {
                 let (fee, expiration) = self
                     .fee_calculator
                     .compute_subsidized_min_fee(
-                        quote_request.sell_token,
-                        Some(quote_request.buy_token),
-                        Some(sell_amount_before_fee),
-                        Some(OrderKind::Sell),
-                        Some(quote_request.app_data),
+                        FeeData {
+                            sell_token: quote_request.sell_token,
+                            buy_token: quote_request.buy_token,
+                            amount: sell_amount_before_fee,
+                            kind: OrderKind::Sell,
+                        },
+                        quote_request.app_data,
                     )
                     .await
                     .map_err(FeeError::PriceEstimate)?;
@@ -286,11 +288,13 @@ impl OrderQuoter {
                 let (fee, expiration) = self
                     .fee_calculator
                     .compute_subsidized_min_fee(
-                        quote_request.sell_token,
-                        Some(quote_request.buy_token),
-                        Some(buy_amount_after_fee),
-                        Some(OrderKind::Buy),
-                        Some(quote_request.app_data),
+                        FeeData {
+                            sell_token: quote_request.sell_token,
+                            buy_token: quote_request.buy_token,
+                            amount: buy_amount_after_fee,
+                            kind: OrderKind::Buy,
+                        },
+                        quote_request.app_data,
                     )
                     .await
                     .map_err(FeeError::PriceEstimate)?;
@@ -539,7 +543,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _, _, _| Ok((U256::from(3), expiration)));
+            .returning(move |_, _| Ok((U256::from(3), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -581,7 +585,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(|_, _, _, _, _| Ok((U256::from(3), Utc::now())));
+            .returning(|_, _| Ok((U256::from(3), Utc::now())));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -618,7 +622,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _, _, _| Ok((U256::from(3), expiration)));
+            .returning(move |_, _| Ok((U256::from(3), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -678,7 +682,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _, _, _| Ok((U256::from(3), Utc::now())));
+            .returning(move |_, _| Ok((U256::from(3), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
             gas: 1000.into(),
