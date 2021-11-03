@@ -29,12 +29,15 @@ use contracts::GPv2Settlement;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
-use reqwest::Client;
-use shared::solver_utils::Slippage;
-use shared::zeroex_api::{DefaultZeroExApi, SwapQuery, SwapResponse};
-use shared::zeroex_api::{ZeroExApi, ZeroExResponseError};
-use shared::Web3;
-use std::fmt::{self, Display, Formatter};
+use shared::{
+    solver_utils::Slippage,
+    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
+    Web3,
+};
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::Arc,
+};
 
 /// Constant maximum slippage of 5 BPS (0.05%) to use for on-chain liquidity.
 pub const STANDARD_ZEROEX_SLIPPAGE_BPS: u16 = 5;
@@ -42,7 +45,7 @@ pub const STANDARD_ZEROEX_SLIPPAGE_BPS: u16 = 5;
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
 pub struct ZeroExSolver {
     account: Account,
-    client: Box<dyn ZeroExApi + Send + Sync>,
+    api: Arc<dyn ZeroExApi>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
 }
 
@@ -55,7 +58,7 @@ impl ZeroExSolver {
         web3: Web3,
         settlement_contract: GPv2Settlement,
         chain_id: u64,
-        client: Client,
+        api: Arc<dyn ZeroExApi>,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -65,7 +68,7 @@ impl ZeroExSolver {
         Ok(Self {
             account,
             allowance_fetcher: Box::new(allowance_fetcher),
-            client: Box::new(DefaultZeroExApi::with_default_url(client)),
+            api,
         })
     }
 }
@@ -87,11 +90,10 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_amount,
             slippage_percentage: Slippage::number_from_basis_points(STANDARD_ZEROEX_SLIPPAGE_BPS)
                 .unwrap(),
-            skip_validation: Some(true),
         };
 
         tracing::debug!("querying 0x swap api with {:?}", query);
-        let swap = self.client.get_swap(query).await?;
+        let swap = self.api.get_swap(query).await?;
         tracing::debug!("proposed 0x swap is {:?}", swap);
 
         if !swap_respects_limit_price(&swap, &order) {
@@ -166,7 +168,7 @@ mod tests {
     use mockall::Sequence;
     use model::order::{Order, OrderCreation, OrderKind};
     use shared::transport::{create_env_test_transport, create_test_transport};
-    use shared::zeroex_api::{MockZeroExApi, PriceResponse};
+    use shared::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse};
 
     #[tokio::test]
     #[ignore]
@@ -178,8 +180,14 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver =
-            ZeroExSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
+        let solver = ZeroExSolver::new(
+            account(),
+            web3,
+            settlement,
+            chain_id,
+            Arc::new(DefaultZeroExApi::default()),
+        )
+        .unwrap();
         let settlement = solver
             .try_settle_order(
                 Order {
@@ -211,8 +219,14 @@ mod tests {
         let weth = WETH9::deployed(&web3).await.unwrap();
         let gno = shared::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
-        let solver =
-            ZeroExSolver::new(account(), web3, settlement, chain_id, Client::new()).unwrap();
+        let solver = ZeroExSolver::new(
+            account(),
+            web3,
+            settlement,
+            chain_id,
+            Arc::new(DefaultZeroExApi::default()),
+        )
+        .unwrap();
         let settlement = solver
             .try_settle_order(
                 Order {
@@ -236,7 +250,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_satisfies_limit_price_for_orders() {
-        let mut client = Box::new(MockZeroExApi::new());
+        let mut client = MockZeroExApi::new();
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
 
         let sell_token = H160::from_low_u64_be(1);
@@ -271,7 +285,7 @@ mod tests {
 
         let solver = ZeroExSolver {
             account: account(),
-            client,
+            api: Arc::new(client),
             allowance_fetcher,
         };
 
@@ -356,12 +370,19 @@ mod tests {
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
         let settlement = GPv2Settlement::deployed(&web3).await.unwrap();
 
-        assert!(ZeroExSolver::new(account(), web3, settlement, chain_id, Client::new()).is_err())
+        assert!(ZeroExSolver::new(
+            account(),
+            web3,
+            settlement,
+            chain_id,
+            Arc::new(DefaultZeroExApi::default())
+        )
+        .is_err())
     }
 
     #[tokio::test]
     async fn test_sets_allowance_if_necessary() {
-        let mut client = Box::new(MockZeroExApi::new());
+        let mut client = MockZeroExApi::new();
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
 
         let sell_token = H160::from_low_u64_be(1);
@@ -404,7 +425,7 @@ mod tests {
 
         let solver = ZeroExSolver {
             account: account(),
-            client,
+            api: Arc::new(client),
             allowance_fetcher,
         };
 
@@ -434,7 +455,7 @@ mod tests {
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
 
-        let mut client = Box::new(MockZeroExApi::new());
+        let mut client = MockZeroExApi::new();
         client.expect_get_swap().returning(move |_| {
             Ok(SwapResponse {
                 price: PriceResponse {
@@ -457,7 +478,7 @@ mod tests {
 
         let solver = ZeroExSolver {
             account: account(),
-            client,
+            api: Arc::new(client),
             allowance_fetcher,
         };
 

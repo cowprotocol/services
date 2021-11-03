@@ -356,6 +356,17 @@ async fn main() {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
+    let zeroex_api = Arc::new(
+        DefaultZeroExApi::new(
+            args.shared
+                .zeroex_url
+                .as_deref()
+                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
+            args.shared.zeroex_api_key.clone(),
+            client.clone(),
+        )
+        .unwrap(),
+    );
     let price_estimators = args
         .shared
         .price_estimators
@@ -389,7 +400,7 @@ async fn main() {
                 )),
                 PriceEstimatorType::ZeroEx => Box::new(InstrumentedPriceEstimator::new(
                     ZeroExPriceEstimator {
-                        client: Arc::new(DefaultZeroExApi::with_default_url(client.clone())),
+                        api: zeroex_api.clone(),
                         bad_token_detector: bad_token_detector.clone(),
                     },
                     "ZeroEx",

@@ -23,6 +23,7 @@ use shared::{
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     transport::{create_instrumented_transport, http::HttpTransport},
+    zeroex_api::DefaultZeroExApi,
 };
 use solver::{
     driver::Driver,
@@ -413,6 +414,18 @@ async fn main() {
         }
     };
 
+    let zeroex_api = Arc::new(
+        DefaultZeroExApi::new(
+            args.shared
+                .zeroex_url
+                .as_deref()
+                .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
+            args.shared.zeroex_api_key,
+            client.clone(),
+        )
+        .unwrap(),
+    );
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -433,6 +446,7 @@ async fn main() {
         client.clone(),
         native_token_price_estimation_amount,
         metrics.clone(),
+        zeroex_api,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

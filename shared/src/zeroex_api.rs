@@ -6,7 +6,7 @@
 
 use crate::debug_bytes;
 use crate::solver_utils::{deserialize_decimal_f64, Slippage};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
@@ -23,7 +23,7 @@ const AFFILIATE_ADDRESS: &str = "0x9008D19f58AAbD9eD0D60971565AA8510560ab41";
 ///
 /// These parameters are currently incomplete, and missing parameters can be
 /// added incrementally as needed.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct SwapQuery {
     /// Contract address of a token to sell.
     pub sell_token: H160,
@@ -35,8 +35,6 @@ pub struct SwapQuery {
     pub buy_amount: Option<U256>,
     /// Limit of price slippage you are willing to accept.
     pub slippage_percentage: Slippage,
-    /// Flag to disable checks of the required quantities.
-    pub skip_validation: Option<bool>,
 }
 
 impl SwapQuery {
@@ -58,8 +56,6 @@ impl SwapQuery {
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
             .append_pair("slippagePercentage", &self.slippage_percentage.to_string());
-        // I am not setting any affiliate address, in order to save gas
-        // .append_pair("affiliateAddress", "0xgp_address")
         if let Some(amount) = self.sell_amount {
             url.query_pairs_mut()
                 .append_pair("sellAmount", &amount.to_string());
@@ -68,12 +64,13 @@ impl SwapQuery {
             url.query_pairs_mut()
                 .append_pair("buyAmount", &amount.to_string());
         }
-        if let Some(skip_validation) = self.skip_validation {
-            url.query_pairs_mut()
-                .append_pair("skipValidation", &skip_validation.to_string());
-        }
         url.query_pairs_mut()
             .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
+        // We do not provide a takerAddress so validation does not make sense.
+        url.query_pairs_mut().append_pair("skipValidation", "true");
+        // Ensure that we do not request binding quotes that we might be penalized for not taking.
+        url.query_pairs_mut()
+            .append_pair("intentOnFilling", "false");
         url
     }
 }
@@ -111,7 +108,7 @@ pub struct SwapResponse {
 /// Abstract 0x API. Provides a mockable implementation.
 #[mockall::automock]
 #[async_trait::async_trait]
-pub trait ZeroExApi {
+pub trait ZeroExApi: Send + Sync {
     /// Retrieve a swap for the specified parameters from the 1Inch API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
@@ -128,6 +125,7 @@ pub trait ZeroExApi {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
+    api_key: Option<String>,
 }
 
 impl DefaultZeroExApi {
@@ -135,16 +133,23 @@ impl DefaultZeroExApi {
     pub const DEFAULT_URL: &'static str = "https://api.0x.org/";
 
     /// Create a new 0x HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl, client: Client) -> Result<Self> {
+    pub fn new(base_url: impl IntoUrl, api_key: Option<String>, client: Client) -> Result<Self> {
         Ok(Self {
             client,
-            base_url: base_url.into_url()?,
+            base_url: base_url.into_url().context("zeroex api url")?,
+            api_key,
         })
     }
 
     /// Create a new 0x HTTP API client using the default URL.
     pub fn with_default_url(client: Client) -> Self {
-        Self::new(Self::DEFAULT_URL, client).unwrap()
+        Self::new(Self::DEFAULT_URL, None, client).unwrap()
+    }
+}
+
+impl Default for DefaultZeroExApi {
+    fn default() -> Self {
+        Self::new(Self::DEFAULT_URL, None, Client::new()).unwrap()
     }
 }
 
@@ -192,9 +197,11 @@ impl DefaultZeroExApi {
         endpoint: &str,
         query: SwapQuery,
     ) -> Result<T, ZeroExResponseError> {
-        let response_text = self
-            .client
-            .get(query.format_url(&self.base_url, endpoint))
+        let mut request = self.client.get(query.format_url(&self.base_url, endpoint));
+        if let Some(key) = &self.api_key {
+            request = request.header("0x-api-key", key);
+        }
+        let response_text = request
             .send()
             .await
             .map_err(ZeroExResponseError::Send)?
@@ -223,69 +230,40 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_api_e2e() {
-        let zeroex_client = DefaultZeroExApi::with_default_url(Client::new());
-        let sell_token = crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
-        let buy_token = crate::addr!("1a5f9352af8af974bfc03399e3767df6370d82e4");
+        let zeroex_client = DefaultZeroExApi::default();
         let swap_query = SwapQuery {
-            sell_token,
-            buy_token,
-            sell_amount: Some(1_000_000_000_000_000_000u128.into()),
+            sell_token: crate::addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            buy_token: crate::addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
-            skip_validation: Some(true),
         };
 
         let price_response = zeroex_client.get_swap(swap_query).await;
+        dbg!(&price_response);
         assert!(price_response.is_ok());
     }
 
-    #[test]
-    fn swap_query_serialization_0x_sell_order() {
-        let base_url = Url::parse("https://api.0x.org/").unwrap();
-        let url = SwapQuery {
-            sell_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            buy_token: crate::addr!("111111111117dc0aa78b770fa6a738034120c302"),
-            sell_amount: Some(1_000_000_000_000_000_000u128.into()),
+    #[tokio::test]
+    #[ignore]
+    async fn test_api_e2e_private() {
+        let url = std::env::var("ZEROEX_URL").unwrap();
+        let api_key = std::env::var("ZEROEX_API_KEY").unwrap();
+        let zeroex_client = DefaultZeroExApi::new(url, Some(api_key), Client::new()).unwrap();
+        let swap_query = SwapQuery {
+            sell_token: crate::addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+            buy_token: crate::addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
-            skip_validation: None,
-        }
-        .format_url(&base_url, "quote");
+            slippage_percentage: Slippage(0.1_f64),
+        };
 
-        assert_eq!(
-            url.as_str(),
-            "https://api.0x.org/swap/v1/quote\
-                    ?sellToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
-                    &buyToken=0x111111111117dc0aa78b770fa6a738034120c302\
-                    &slippagePercentage=0.003\
-                    &sellAmount=1000000000000000000\
-                    &affiliateAddress=0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
-        );
-    }
-
-    #[test]
-    fn swap_query_serialization_0x_buy_order() {
-        let base_url = Url::parse("https://api.0x.org/").unwrap();
-        let url = SwapQuery {
-            sell_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            buy_token: crate::addr!("111111111117dc0aa78b770fa6a738034120c302"),
-            buy_amount: Some(1_000_000_000_000_000_000u128.into()),
-            sell_amount: None,
-            slippage_percentage: Slippage::number_from_basis_points(30).unwrap(),
-            skip_validation: Some(true),
-        }
-        .format_url(&base_url, "quote");
-
-        assert_eq!(
-            url.as_str(),
-            "https://api.0x.org/swap/v1/quote\
-                    ?sellToken=0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\
-                    &buyToken=0x111111111117dc0aa78b770fa6a738034120c302\
-                    &slippagePercentage=0.003\
-                    &buyAmount=1000000000000000000\
-                    &skipValidation=true\
-                    &affiliateAddress=0x9008D19f58AAbD9eD0D60971565AA8510560ab41",
-        );
+        let price_response = zeroex_client.get_price(swap_query).await;
+        dbg!(&price_response);
+        assert!(price_response.is_ok());
+        let swap_response = zeroex_client.get_swap(swap_query).await;
+        dbg!(&swap_response);
+        assert!(swap_response.is_ok());
     }
 
     #[test]

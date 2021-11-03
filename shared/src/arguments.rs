@@ -126,6 +126,12 @@ pub struct Arguments {
         use_delimiter = true
     )]
     pub price_estimators: Vec<PriceEstimatorType>,
+
+    #[structopt(long, env)]
+    pub zeroex_url: Option<String>,
+
+    #[structopt(long, env)]
+    pub zeroex_api_key: Option<String>,
 }
 
 pub fn parse_fee_factor(s: &str) -> Result<f64> {

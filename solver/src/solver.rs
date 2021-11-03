@@ -13,6 +13,7 @@ use num::BigRational;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
+use shared::zeroex_api::ZeroExApi;
 use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, price_estimation::PriceEstimating,
     token_info::TokenInfoFetching, Web3,
@@ -154,6 +155,7 @@ pub fn create(
     client: Client,
     native_token_amount_to_estimate_prices_with: U256,
     solver_metrics: Arc<dyn SolverMetrics>,
+    zeroex_api: Arc<dyn ZeroExApi>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -236,7 +238,7 @@ pub fn create(
                         web3.clone(),
                         settlement_contract.clone(),
                         chain_id,
-                        client.clone(),
+                        zeroex_api.clone(),
                     )
                     .unwrap();
                     shared(SingleOrderSolver::new(

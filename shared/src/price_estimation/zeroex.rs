@@ -11,7 +11,7 @@ use primitive_types::U256;
 use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator {
-    pub client: Arc<dyn ZeroExApi + Send + Sync>,
+    pub api: Arc<dyn ZeroExApi>,
     pub bad_token_detector: Arc<dyn BadTokenDetecting>,
 }
 
@@ -33,14 +33,13 @@ impl ZeroExPriceEstimator {
         };
 
         let swap = self
-            .client
+            .api
             .get_swap(SwapQuery {
                 sell_token: query.sell_token,
                 buy_token: query.buy_token,
                 sell_amount,
                 buy_amount,
                 slippage_percentage: Default::default(),
-                skip_validation: Some(true),
             })
             .await
             .map_err(|err| PriceEstimationError::Other(err.into()))?;
@@ -107,7 +106,7 @@ mod tests {
         let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let estimator = ZeroExPriceEstimator {
-            client: Arc::new(zeroex_api),
+            api: Arc::new(zeroex_api),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
@@ -153,7 +152,7 @@ mod tests {
         let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let estimator = ZeroExPriceEstimator {
-            client: Arc::new(zeroex_api),
+            api: Arc::new(zeroex_api),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
@@ -174,7 +173,7 @@ mod tests {
     #[tokio::test]
     async fn same_token() {
         let estimator = ZeroExPriceEstimator {
-            client: Arc::new(MockZeroExApi::new()),
+            api: Arc::new(MockZeroExApi::new()),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
@@ -200,7 +199,7 @@ mod tests {
         let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let estimator = ZeroExPriceEstimator {
-            client: Arc::new(MockZeroExApi::new()),
+            api: Arc::new(MockZeroExApi::new()),
             // we don't support this shady token -_-
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![gno])),
         };
@@ -229,7 +228,7 @@ mod tests {
         let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
 
         let estimator = ZeroExPriceEstimator {
-            client: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
+            api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
