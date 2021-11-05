@@ -21,4 +21,4 @@ pub const TRADE: u64 =
 pub const ERC20_TRANSFER: u64 = 25_551;
 
 /// a settlement that contains one trade
-pub const SETTLEMENT_SINGLE_TRADE: u64 = SETTLEMENT + TRADE + 2 * ERC20_TRANSFER;
+pub const SETTLEMENT_SINGLE_TRADE: u64 = 80_000;
