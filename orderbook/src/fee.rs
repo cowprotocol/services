@@ -90,6 +90,29 @@ impl UnsubsidizedFee {
     fn amount_in_sell_token(&self) -> f64 {
         self.gas_amount * self.gas_price * self.sell_token_price
     }
+
+    fn apply_fee_factor(
+        &self,
+        fee_configuration: &FeeSubsidyConfiguration,
+        app_data: AppId,
+    ) -> U256 {
+        let fee_in_eth = self.gas_amount * self.gas_price;
+        let mut discounted_fee_in_eth = fee_in_eth - fee_configuration.fee_discount;
+        if discounted_fee_in_eth < 0. {
+            tracing::warn!(
+                "Computed negative fee after applying fee discount: {}, capping at 0",
+                discounted_fee_in_eth
+            );
+            discounted_fee_in_eth = 0.;
+        }
+        let factor = fee_configuration
+            .partner_additional_fee_factors
+            .get(&app_data)
+            .copied()
+            .unwrap_or(1.0)
+            * fee_configuration.fee_factor;
+        U256::from_f64_lossy(discounted_fee_in_eth * self.sell_token_price * factor)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -225,13 +248,6 @@ impl MinFeeCalculator {
         native_token_price_estimation_amount: U256,
         fee_subsidy: FeeSubsidyConfiguration,
     ) -> Self {
-        // For now, assert we always have a fee discount of 0, since we don't
-        // support it yet.
-        assert!(
-            fee_subsidy.fee_discount == 0.,
-            "non-0 fee discount currently not supported",
-        );
-
         Self {
             price_estimator,
             gas_estimator,
@@ -283,17 +299,6 @@ impl MinFeeCalculator {
             sell_token_price,
         })
     }
-
-    fn apply_fee_factor(&self, fee: UnsubsidizedFee, app_data: AppId) -> U256 {
-        let factor = self
-            .fee_subsidy
-            .partner_additional_fee_factors
-            .get(&app_data)
-            .copied()
-            .unwrap_or(1.0)
-            * self.fee_subsidy.fee_factor;
-        U256::from_f64_lossy(fee.amount_in_sell_token() * factor)
-    }
 }
 
 #[async_trait::async_trait]
@@ -334,7 +339,7 @@ impl MinFeeCalculating for MinFeeCalculator {
             current_fee
         };
 
-        let subsidized_min_fee = self.apply_fee_factor(unsubsidized_min_fee, app_data);
+        let subsidized_min_fee = unsubsidized_min_fee.apply_fee_factor(&self.fee_subsidy, app_data);
         tracing::debug!(
             "computed subsidized fee of {:?}",
             (subsidized_min_fee, fee_data.sell_token),
@@ -364,7 +369,7 @@ impl MinFeeCalculating for MinFeeCalculator {
             .find_measurement_including_larger_amount(fee_data, (self.now)())
             .await
         {
-            if subsidized_fee >= self.apply_fee_factor(past_fee, app_data) {
+            if subsidized_fee >= past_fee.apply_fee_factor(&self.fee_subsidy, app_data) {
                 return Ok(std::cmp::max(
                     subsidized_fee,
                     U256::from_f64_lossy(past_fee.amount_in_sell_token()),
@@ -373,7 +378,7 @@ impl MinFeeCalculating for MinFeeCalculator {
         }
 
         if let Ok(current_fee) = self.compute_unsubsidized_min_fee(fee_data).await {
-            if subsidized_fee >= self.apply_fee_factor(current_fee, app_data) {
+            if subsidized_fee >= current_fee.apply_fee_factor(&self.fee_subsidy, app_data) {
                 return Ok(std::cmp::max(
                     subsidized_fee,
                     U256::from_f64_lossy(current_fee.amount_in_sell_token()),
@@ -868,6 +873,55 @@ mod tests {
         assert_eq!(
             fee,
             U256::from_f64_lossy(unsubsidized_min_fee.amount_in_sell_token() * 0.8)
+        );
+    }
+
+    #[test]
+    fn test_apply_fee_factor_capped_at_zero() {
+        let unsubsidized = UnsubsidizedFee {
+            gas_amount: 100_000_f64,
+            gas_price: 1_000_000_000_f64,
+            sell_token_price: 1.,
+        };
+
+        let fee_configuration = FeeSubsidyConfiguration {
+            fee_discount: 500_000_000_000_000_f64,
+            fee_factor: 0.5,
+            partner_additional_fee_factors: HashMap::new(),
+        };
+
+        assert_eq!(
+            unsubsidized.apply_fee_factor(&fee_configuration, Default::default()),
+            U256::zero()
+        );
+    }
+
+    #[test]
+    fn test_apply_fee_factor_order() {
+        let unsubsidized = UnsubsidizedFee {
+            gas_amount: 100_000_f64,
+            gas_price: 1_000_000_000_f64,
+            sell_token_price: 1.,
+        };
+
+        let app_id = AppId([1u8; 32]);
+        let fee_configuration = FeeSubsidyConfiguration {
+            fee_discount: 50_000_000_000_000_f64,
+            fee_factor: 0.5,
+            partner_additional_fee_factors: maplit::hashmap! {
+                app_id => 0.1,
+            },
+        };
+
+        // (100G - 50G) * 0.5
+        assert_eq!(
+            unsubsidized.apply_fee_factor(&fee_configuration, Default::default()),
+            25_000_000_000_000u128.into()
+        );
+        // Additionally multiply with 0.1 if partner app id is used
+        assert_eq!(
+            unsubsidized.apply_fee_factor(&fee_configuration, app_id),
+            2_500_000_000_000u128.into()
         );
     }
 }
