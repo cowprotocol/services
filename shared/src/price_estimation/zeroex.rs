@@ -49,7 +49,7 @@ impl ZeroExPriceEstimator {
                 OrderKind::Buy => swap.price.sell_amount,
                 OrderKind::Sell => swap.price.buy_amount,
             },
-            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + swap.price.estimated_gas,
+            gas: U256::from(gas::SETTLEMENT_OVERHEAD) + swap.price.estimated_gas,
         })
     }
 }

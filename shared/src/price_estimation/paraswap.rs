@@ -64,7 +64,7 @@ impl ParaswapPriceEstimator {
                 OrderKind::Buy => response.src_amount,
                 OrderKind::Sell => response.dest_amount,
             },
-            gas: U256::from(gas::SETTLEMENT_SINGLE_TRADE) + response.gas_cost,
+            gas: U256::from(gas::SETTLEMENT_OVERHEAD) + response.gas_cost,
         })
     }
 }
