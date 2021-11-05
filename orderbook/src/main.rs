@@ -10,7 +10,7 @@ use orderbook::{
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::EthAwareMinFeeCalculator,
+    fee::{EthAwareMinFeeCalculator, FeeSubsidyConfiguration},
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     orderbook::Orderbook,
@@ -130,10 +130,17 @@ struct Arguments {
     )]
     solvable_orders_max_update_age: Duration,
 
+    /// A flat fee discount denominated in the network's native token (i.e. Ether for Mainnet).
+    ///
+    /// Note that flat fee discounts are applied BEFORE any multiplicative factors from either
+    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    #[structopt(long, env, default_value = "0")]
+    fee_discount: f64,
+
     /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
     /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
     #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
-    pub fee_factor: f64,
+    fee_factor: f64,
 
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
     /// Should take the form of a json string as shown in the following example:
@@ -415,10 +422,13 @@ async fn main() {
         gas_price_estimator,
         native_token.address(),
         database.clone(),
-        args.fee_factor,
         bad_token_detector.clone(),
-        args.partner_additional_fee_factors,
         native_token_price_estimation_amount,
+        FeeSubsidyConfiguration {
+            fee_discount: args.fee_discount,
+            fee_factor: args.fee_factor,
+            partner_additional_fee_factors: args.partner_additional_fee_factors,
+        },
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

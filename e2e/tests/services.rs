@@ -4,9 +4,14 @@ use contracts::{
 use ethcontract::{prelude::U256, H160};
 use model::DomainSeparator;
 use orderbook::{
-    account_balances::Web3BalanceFetcher, api::order_validation::OrderValidator,
-    api::post_quote::OrderQuoter, database::Postgres, event_updater::EventUpdater,
-    fee::EthAwareMinFeeCalculator, metrics::Metrics, orderbook::Orderbook,
+    account_balances::Web3BalanceFetcher,
+    api::order_validation::OrderValidator,
+    api::post_quote::OrderQuoter,
+    database::Postgres,
+    event_updater::EventUpdater,
+    fee::{EthAwareMinFeeCalculator, FeeSubsidyConfiguration},
+    metrics::Metrics,
+    orderbook::Orderbook,
     solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
@@ -23,9 +28,7 @@ use shared::{
     Web3,
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
-use std::{
-    collections::HashMap, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
-};
+use std::{future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
@@ -196,10 +199,12 @@ impl OrderbookServices {
             gas_estimator,
             gpv2.native_token.address(),
             db.clone(),
-            0.0,
             bad_token_detector.clone(),
-            HashMap::default(),
             1_000_000_000_000_000_000_u128.into(),
+            FeeSubsidyConfiguration {
+                fee_factor: 0.,
+                ..Default::default()
+            },
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

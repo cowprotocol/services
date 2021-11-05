@@ -24,16 +24,49 @@ pub struct EthAdapter<T> {
     weth: H160,
 }
 
+/// Fee subsidy configuration.
+///
+/// Given an estimated fee for a trade, the mimimum fee required for an order is
+/// computed using the following formula:
+/// ```text
+/// (estimated_fee_in_eth - fee_discount) * fee_factor * (partner_additional_fee_factor || 1.0)
+/// ```
+pub struct FeeSubsidyConfiguration {
+    /// A flat discount nominated in the native token to discount from fees.
+    ///
+    /// Flat fee discounts are applied **before** any multiplicative discounts.
+    pub fee_discount: f64,
+    /// A factor to multiply the estimated trading fee with in order to compute
+    /// subsidized minimum fee.
+    ///
+    /// Fee factors are applied **after** flat fee discounts.
+    pub fee_factor: f64,
+    /// Additional factors per order app ID for computing the subsidized minimum
+    /// fee.
+    ///
+    /// Fee factors are applied **after** flat fee discounts.
+    pub partner_additional_fee_factors: HashMap<AppId, f64>,
+}
+
+impl Default for FeeSubsidyConfiguration {
+    fn default() -> Self {
+        Self {
+            fee_discount: 0.,
+            fee_factor: 1.,
+            partner_additional_fee_factors: HashMap::new(),
+        }
+    }
+}
+
 pub struct MinFeeCalculator {
     price_estimator: Arc<dyn PriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
     native_token: H160,
     measurements: Arc<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
-    fee_factor: f64,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    partner_additional_fee_factors: HashMap<AppId, f64>,
     native_token_price_estimation_amount: U256,
+    fee_subsidy: FeeSubsidyConfiguration,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -119,10 +152,9 @@ impl EthAwareMinFeeCalculator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
-        fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        partner_additional_fee_factors: HashMap<AppId, f64>,
         native_token_price_estimation_amount: U256,
+        fee_subsidy: FeeSubsidyConfiguration,
     ) -> Self {
         Self {
             calculator: MinFeeCalculator::new(
@@ -130,10 +162,9 @@ impl EthAwareMinFeeCalculator {
                 gas_estimator,
                 native_token,
                 measurements,
-                fee_factor,
                 bad_token_detector,
-                partner_additional_fee_factors,
                 native_token_price_estimation_amount,
+                fee_subsidy,
             ),
             weth: native_token,
         }
@@ -176,21 +207,26 @@ impl MinFeeCalculator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
-        fee_factor: f64,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        partner_additional_fee_factors: HashMap<AppId, f64>,
         native_token_price_estimation_amount: U256,
+        fee_subsidy: FeeSubsidyConfiguration,
     ) -> Self {
+        // For now, assert we always have a fee discount of 0, since we don't
+        // support it yet.
+        assert!(
+            fee_subsidy.fee_discount == 0.,
+            "non-0 fee discount currently not supported",
+        );
+
         Self {
             price_estimator,
             gas_estimator,
             native_token,
             measurements,
             now: Box::new(Utc::now),
-            fee_factor,
             bad_token_detector,
-            partner_additional_fee_factors,
             native_token_price_estimation_amount,
+            fee_subsidy,
         }
     }
 
@@ -232,11 +268,12 @@ impl MinFeeCalculator {
 
     fn apply_fee_factor(&self, fee: U256, app_data: AppId) -> U256 {
         let factor = self
+            .fee_subsidy
             .partner_additional_fee_factors
             .get(&app_data)
             .copied()
             .unwrap_or(1.0)
-            * self.fee_factor;
+            * self.fee_subsidy.fee_factor;
         U256::from_f64_lossy(fee.to_f64_lossy() * factor)
     }
 }
@@ -481,10 +518,9 @@ mod tests {
                 native_token: Default::default(),
                 measurements: Arc::new(InMemoryFeeStore::default()),
                 now,
-                fee_factor: 1.0,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
-                partner_additional_fee_factors: hashmap! {},
                 native_token_price_estimation_amount: 1.into(),
+                fee_subsidy: Default::default(),
             }
         }
     }
@@ -626,10 +662,9 @@ mod tests {
             native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
-            fee_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
-            partner_additional_fee_factors: hashmap! {},
             native_token_price_estimation_amount: 1.into(),
+            fee_subsidy: Default::default(),
         };
 
         // Selling unsupported token
@@ -696,10 +731,12 @@ mod tests {
             native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
-            fee_factor: 1.0,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            partner_additional_fee_factors: hashmap! { app_data => 0.5 },
             native_token_price_estimation_amount: 1.into(),
+            fee_subsidy: FeeSubsidyConfiguration {
+                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+                ..Default::default()
+            },
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data)
@@ -776,12 +813,15 @@ mod tests {
             native_token: Default::default(),
             measurements: Arc::new(measurements),
             now: Box::new(Utc::now),
-            fee_factor: 0.8,
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            partner_additional_fee_factors: hashmap! { app_data => 0.5 },
             native_token_price_estimation_amount: U256::from_f64_lossy(
                 native_token_price_estimation_amount,
             ),
+            fee_subsidy: FeeSubsidyConfiguration {
+                fee_factor: 0.8,
+                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+                ..Default::default()
+            },
         };
 
         let (fee, _) = fee_estimator
