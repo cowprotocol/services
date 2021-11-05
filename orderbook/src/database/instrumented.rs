@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::fee::MinFeeStoring;
+use crate::fee::{MinFeeStoring, UnsubsidizedFee};
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -63,14 +63,14 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         expiry: chrono::DateTime<chrono::Utc>,
-        min_fee: ethcontract::U256,
+        estimate: UnsubsidizedFee,
     ) -> anyhow::Result<()> {
         let _timer = self
             .metrics
             .database_query_histogram("save_fee_measurement")
             .start_timer();
         self.inner
-            .save_fee_measurement(fee_data, expiry, min_fee)
+            .save_fee_measurement(fee_data, expiry, estimate)
             .await
     }
 
@@ -78,7 +78,7 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<ethcontract::U256>> {
+    ) -> anyhow::Result<Option<UnsubsidizedFee>> {
         let _timer = self
             .metrics
             .database_query_histogram("find_measurement_exact")
@@ -92,7 +92,7 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<ethcontract::U256>> {
+    ) -> anyhow::Result<Option<UnsubsidizedFee>> {
         let _timer = self
             .metrics
             .database_query_histogram("find_measurement_including_larger_amount")

@@ -1,14 +1,29 @@
 use super::{orders::DbOrderKind, Postgres};
 use crate::{
     conversions::*,
-    fee::{FeeData, MinFeeStoring},
+    fee::{FeeData, MinFeeStoring, UnsubsidizedFee},
 };
 
-use anyhow::{anyhow, Context, Result};
-use bigdecimal::BigDecimal;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use ethcontract::U256;
 use shared::maintenance::Maintaining;
+
+#[derive(sqlx::FromRow)]
+struct FeeRow {
+    gas_amount: f64,
+    gas_price: f64,
+    sell_token_price: f64,
+}
+
+impl FeeRow {
+    fn into_fee(self) -> UnsubsidizedFee {
+        UnsubsidizedFee {
+            gas_amount: self.gas_amount,
+            gas_price: self.gas_price,
+            sell_token_price: self.sell_token_price,
+        }
+    }
+}
 
 #[async_trait::async_trait]
 impl MinFeeStoring for Postgres {
@@ -16,17 +31,19 @@ impl MinFeeStoring for Postgres {
         &self,
         fee_data: FeeData,
         expiry: DateTime<Utc>,
-        min_fee: U256,
+        estimate: UnsubsidizedFee,
     ) -> Result<()> {
         const QUERY: &str =
-            "INSERT INTO min_fee_measurements (sell_token, buy_token, amount, order_kind, expiration_timestamp, min_fee) VALUES ($1, $2, $3, $4, $5, $6);";
+            "INSERT INTO min_fee_measurements (sell_token, buy_token, amount, order_kind, expiration_timestamp, gas_amount, gas_price, sell_token_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);";
         sqlx::query(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
             .bind(u256_to_big_decimal(&fee_data.amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(expiry)
-            .bind(u256_to_big_decimal(&min_fee))
+            .bind(&estimate.gas_amount)
+            .bind(&estimate.gas_price)
+            .bind(&estimate.sell_token_price)
             .execute(&self.pool)
             .await
             .context("insert MinFeeMeasurement failed")
@@ -37,69 +54,60 @@ impl MinFeeStoring for Postgres {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<U256>> {
+    ) -> Result<Option<UnsubsidizedFee>> {
+        // Fetches the lowest fee estimate we may have for the user
         const QUERY: &str = "\
-            SELECT MIN(min_fee) FROM min_fee_measurements \
+            SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
             WHERE
                 sell_token = $1 AND \
                 buy_token = $2 AND \
                 amount = $3 AND \
                 order_kind = $4 AND \
                 expiration_timestamp >= $5 \
+            ORDER BY gas_amount * gas_price * sell_token_price ASC \
+            LIMIT 1 \
             ;";
 
-        let result: Option<BigDecimal> = sqlx::query_scalar(QUERY)
+        let result: Option<FeeRow> = sqlx::query_as(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
             .bind(u256_to_big_decimal(&fee_data.amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(min_expiry)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await
             .context("find_measurement_exact")?;
-        match result {
-            Some(row) => {
-                Ok(Some(big_decimal_to_u256(&row).ok_or_else(|| {
-                    anyhow!("min fee is not an unsigned integer")
-                })?))
-            }
-            None => Ok(None),
-        }
+        Ok(result.map(FeeRow::into_fee))
     }
 
     async fn find_measurement_including_larger_amount(
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<U256>> {
+    ) -> Result<Option<UnsubsidizedFee>> {
         // Same as above but with `amount >=` instead of `=`.
         const QUERY: &str = "\
-            SELECT MIN(min_fee) FROM min_fee_measurements \
+            SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
             WHERE
                 sell_token = $1 AND \
                 buy_token = $2 AND \
                 amount >= $3 AND \
                 order_kind = $4 AND \
                 expiration_timestamp >= $5 \
+            ORDER BY gas_amount * gas_price * sell_token_price ASC \
+            LIMIT 1 \
             ;";
 
-        let result: Option<BigDecimal> = sqlx::query_scalar(QUERY)
+        let result: Option<FeeRow> = sqlx::query_as(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
             .bind(u256_to_big_decimal(&fee_data.amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(min_expiry)
-            .fetch_one(&self.pool)
+            .fetch_optional(&self.pool)
             .await
             .context("find_measurement_including_larger_amount")?;
-        match result {
-            Some(row) => {
-                Ok(Some(big_decimal_to_u256(&row).ok_or_else(|| {
-                    anyhow!("min fee is not an unsigned integer")
-                })?))
-            }
-            None => Ok(None),
-        }
+        Ok(result.map(FeeRow::into_fee))
     }
 }
 
@@ -130,6 +138,17 @@ mod tests {
     use chrono::Duration;
     use model::order::OrderKind;
     use primitive_types::H160;
+
+    // Convenience to allow using u32 in tests instead of the struct
+    impl From<u32> for UnsubsidizedFee {
+        fn from(v: u32) -> Self {
+            UnsubsidizedFee {
+                gas_amount: v as f64,
+                gas_price: 1.0,
+                sell_token_price: 1.0,
+            }
+        }
+    }
 
     #[tokio::test]
     #[ignore]
