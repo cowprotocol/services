@@ -1,6 +1,8 @@
 pub mod archer_api;
 pub mod archer_settlement;
 mod dry_run;
+pub mod flashbots_api;
+pub mod flashbots_settlement;
 mod gas_price_stream;
 pub mod retry;
 pub mod rpc;
@@ -10,6 +12,7 @@ use anyhow::{bail, Result};
 use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
 use ethcontract::Account;
+use flashbots_api::FlashbotsApi;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
@@ -19,7 +22,9 @@ use std::{
 };
 use web3::types::TransactionReceipt;
 
-use self::archer_settlement::ArcherSolutionSubmitter;
+use self::{
+    archer_settlement::ArcherSolutionSubmitter, flashbots_settlement::FlashbotsSolutionSubmitter,
+};
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
@@ -38,6 +43,9 @@ pub enum TransactionStrategy {
     ArcherNetwork {
         archer_api: ArcherApi,
         max_confirm_time: Duration,
+    },
+    Flashbots {
+        flashbots_api: FlashbotsApi,
     },
     CustomNodes(Vec<Web3>),
     DryRun,
@@ -88,6 +96,24 @@ impl SolutionSubmitter {
                         settlement,
                         gas_estimate,
                     )
+                    .await;
+                match result {
+                    Ok(Some(hash)) => Ok(hash),
+                    Ok(None) => bail!("transaction did not get mined in time"),
+                    Err(err) => Err(err),
+                }
+            }
+            TransactionStrategy::Flashbots { flashbots_api } => {
+                let submitter = FlashbotsSolutionSubmitter::new(
+                    &self.web3,
+                    &self.contract,
+                    &account,
+                    flashbots_api,
+                    self.gas_price_estimator.as_ref(),
+                    self.gas_price_cap,
+                )?;
+                let result = submitter
+                    .submit(self.target_confirm_time, settlement, gas_estimate)
                     .await;
                 match result {
                     Ok(Some(hash)) => Ok(hash),
