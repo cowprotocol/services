@@ -336,7 +336,7 @@ impl Driver {
                 gas_estimate,
                 gas_price: gas_price_normalized.clone(),
             };
-            tracing::debug!(
+            tracing::info!(
                 "Objective value for solver {} is {:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}",
                 solver,
                 rated_settlement.objective_value().to_f64().unwrap_or(f64::NAN),
