@@ -19,7 +19,7 @@ impl FlashbotsApi {
         let body = serde_json::json!({
           "jsonrpc": "2.0",
           "id": 1,
-          "method": "eth_sendRawTransaction",
+          "method": "eth_sendRawTransactions",
           "params": [params],
         });
         tracing::debug!(
@@ -35,11 +35,7 @@ impl FlashbotsApi {
             Ok(body) => match body {
                 jsonrpc_core::Output::Success(body) => match body.result.as_str() {
                     Some(result) => {
-                        tracing::debug!(
-                            "flashbots bundle id: {}",
-                            serde_json::to_string(&result)
-                                .unwrap_or_else(|err| format!("error: {:?}", err)),
-                        );
+                        tracing::debug!("flashbots bundle id: {}", result);
                         Ok(result.to_string())
                     }
                     None => Err(anyhow!("result not a string")),
@@ -69,20 +65,19 @@ impl FlashbotsApi {
 
         match serde_json::from_str::<jsonrpc_core::Output>(&body) {
             Ok(body) => match body {
-                jsonrpc_core::Output::Success(body) => match body.result.as_str() {
+                jsonrpc_core::Output::Success(body) => match body.result.as_bool() {
                     Some(result) => {
-                        tracing::debug!(
-                            "flashbots bundle id: {}",
-                            serde_json::to_string(&result)
-                                .unwrap_or_else(|err| format!("error: {:?}", err)),
-                        );
+                        tracing::debug!("flashbots bundle id: {}", result);
                         Ok(())
                     }
-                    None => Err(anyhow!("result not a string")),
+                    None => Err(anyhow!("result not a bool")),
                 },
                 jsonrpc_core::Output::Failure(body) => Err(anyhow!(body.error)),
             },
-            Err(err) => Err(anyhow!(err)),
+            Err(err) => {
+                tracing::info!("flashbot cancellation response: {}", body);
+                Err(anyhow!(err))
+            }
         }
     }
 
