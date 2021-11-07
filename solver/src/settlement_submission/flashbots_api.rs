@@ -32,27 +32,21 @@ impl FlashbotsApi {
         ensure!(status.is_success(), "status {}: {:?}", status, body);
 
         match serde_json::from_str::<jsonrpc_core::Output>(&body) {
-            Ok(body) => {
-                if let jsonrpc_core::Output::Success(ref x) = body {
-                    match x.result.as_str() {
-                        Some(result) => {
-                            tracing::debug!(
-                                "flashbots bundle id: {}",
-                                serde_json::to_string(&result)
-                                    .unwrap_or_else(|err| format!("error: {:?}", err)),
-                            );
-                            Ok(result.to_string())
-                        }
-                        None => Err(anyhow!("failed to submit: result not a string")),
+            Ok(body) => match body {
+                jsonrpc_core::Output::Success(body) => match body.result.as_str() {
+                    Some(result) => {
+                        tracing::debug!(
+                            "flashbots bundle id: {}",
+                            serde_json::to_string(&result)
+                                .unwrap_or_else(|err| format!("error: {:?}", err)),
+                        );
+                        Ok(result.to_string())
                     }
-                } else {
-                    Err(anyhow!("failed to submit: response not success"))
-                }
-            }
-            Err(err) => {
-                tracing::debug!("failed to submit: {}", err);
-                Err(anyhow!("failed to submit. Error: {}", err))
-            }
+                    None => Err(anyhow!("result not a string")),
+                },
+                jsonrpc_core::Output::Failure(body) => Err(anyhow!(body.error)),
+            },
+            Err(err) => Err(anyhow!(err)),
         }
     }
 
@@ -72,7 +66,24 @@ impl FlashbotsApi {
         let status = response.status();
         let body = response.text().await?;
         ensure!(status.is_success(), "status {}: {:?}", status, body);
-        Ok(())
+
+        match serde_json::from_str::<jsonrpc_core::Output>(&body) {
+            Ok(body) => match body {
+                jsonrpc_core::Output::Success(body) => match body.result.as_str() {
+                    Some(result) => {
+                        tracing::debug!(
+                            "flashbots bundle id: {}",
+                            serde_json::to_string(&result)
+                                .unwrap_or_else(|err| format!("error: {:?}", err)),
+                        );
+                        Ok(())
+                    }
+                    None => Err(anyhow!("result not a string")),
+                },
+                jsonrpc_core::Output::Failure(body) => Err(anyhow!(body.error)),
+            },
+            Err(err) => Err(anyhow!(err)),
+        }
     }
 
     /// Query status of a previously submitted transaction.

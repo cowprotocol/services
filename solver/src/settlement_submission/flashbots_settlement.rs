@@ -174,7 +174,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         gas_estimate: U256,
         transactions: &mut Vec<H256>,
     ) -> MethodError {
-        const UPDATE_INTERVAL: Duration = Duration::from_secs(10);
+        const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
         // The amount of extra gas it costs to include the payment to block.coinbase interaction in
         // an existing settlement.
@@ -232,7 +232,10 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             // If gas price has increased cancel old and submit new new transaction.
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
-                if gas_price.cap() > previous_gas_price.cap() {
+                let previous_gas_price = previous_gas_price.bump(1.125);
+                if gas_price.cap() > previous_gas_price.cap()
+                    && gas_price.tip() > previous_gas_price.tip()
+                {
                     if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
                         tracing::error!("flashbots cancellation failed: {:?}", err);
                     }
