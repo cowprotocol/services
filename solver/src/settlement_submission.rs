@@ -46,6 +46,7 @@ pub enum TransactionStrategy {
     },
     Flashbots {
         flashbots_api: FlashbotsApi,
+        max_confirm_time: Duration,
     },
     CustomNodes(Vec<Web3>),
     DryRun,
@@ -103,7 +104,10 @@ impl SolutionSubmitter {
                     Err(err) => Err(err),
                 }
             }
-            TransactionStrategy::Flashbots { flashbots_api } => {
+            TransactionStrategy::Flashbots {
+                flashbots_api,
+                max_confirm_time,
+            } => {
                 let submitter = FlashbotsSolutionSubmitter::new(
                     &self.web3,
                     &self.contract,
@@ -113,7 +117,12 @@ impl SolutionSubmitter {
                     self.gas_price_cap,
                 )?;
                 let result = submitter
-                    .submit(self.target_confirm_time, settlement, gas_estimate)
+                    .submit(
+                        self.target_confirm_time,
+                        SystemTime::now() + *max_confirm_time,
+                        settlement,
+                        gas_estimate,
+                    )
                     .await;
                 match result {
                     Ok(Some(hash)) => Ok(hash),
