@@ -190,7 +190,12 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             let gas_limit = gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
             let gas_price = match self.gas_price(gas_limit, time_limit).await {
-                Ok(gas_price) => gas_price,
+                Ok(mut gas_price) => {
+                    if let Some(ref mut eip1559) = gas_price.eip1559 {
+                        eip1559.max_priority_fee_per_gas = 10_000_000_000.0;
+                    }
+                    gas_price
+                }
                 Err(err) => {
                     tracing::error!("gas estimation failed: {:?}", err);
                     tokio::time::sleep(UPDATE_INTERVAL).await;
@@ -200,8 +205,6 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
 
             // create transaction
 
-            let tx_gas_cost_in_ether_wei =
-                U256::from_f64_lossy(gas_price.effective_gas_price()) * gas_estimate;
             let tx_gas_price = if let Some(eip1559) = gas_price.eip1559 {
                 (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
             } else {
@@ -233,11 +236,17 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
                 let previous_gas_price = previous_gas_price.bump(1.125);
-                if gas_price.cap() > previous_gas_price.cap()
-                    && gas_price.tip() > previous_gas_price.tip()
-                {
+                if gas_price.cap() > previous_gas_price.cap() {
                     if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
-                        tracing::error!("flashbots cancellation failed: {:?}", err);
+                        tracing::error!(
+                            "flashbots cancellation failed, probably already completed: {:?}",
+                            err
+                        );
+
+                        // if cancelation fails, we dont want to submit a new tx, rather contine and wait
+                        // for a nonce to change and end this function or a next cancelation to succeed.
+                        tokio::time::sleep(UPDATE_INTERVAL).await;
+                        continue;
                     }
                 } else {
                     tokio::time::sleep(UPDATE_INTERVAL).await;
@@ -253,9 +262,8 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                 };
 
             tracing::info!(
-                "creating flashbots transaction with hash {:?}, tip to miner {:.3e}, gas price {:?}, gas estimate {}",
+                "creating flashbots transaction with hash {:?}, gas price {:?}, gas estimate {}",
                 hash,
-                tx_gas_cost_in_ether_wei.to_f64_lossy(),
                 gas_price,
                 gas_estimate,
             );
