@@ -1,3 +1,7 @@
+use crate::services::{
+    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
+    OrderbookServices, UniswapContracts, API_HOST,
+};
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use model::{
@@ -15,16 +19,7 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
-use tracing::level_filters::LevelFilter;
 use web3::signing::SecretKeyRef;
-
-mod ganache;
-#[macro_use]
-mod services;
-use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
-    OrderbookServices, UniswapContracts, API_HOST,
-};
 
 const TRADER: [u8; 32] = [1; 32];
 
@@ -32,11 +27,11 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 async fn ganache_vault_balances() {
-    ganache::test(vault_balances).await;
+    crate::ganache::test(vault_balances).await;
 }
 
 async fn vault_balances(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::OFF);
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
         .chain_id()

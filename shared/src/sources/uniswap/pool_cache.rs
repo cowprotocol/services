@@ -14,6 +14,11 @@ pub trait PoolCacheMetrics: Send + Sync {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
 }
 
+pub struct NoopPoolCacheMetrics;
+impl PoolCacheMetrics for NoopPoolCacheMetrics {
+    fn pools_fetched(&self, _: usize, _: usize) {}
+}
+
 pub struct PoolCache(
     RecentBlockCache<TokenPair, Pool, Box<dyn PoolFetching>, Arc<dyn PoolCacheMetrics>>,
 );

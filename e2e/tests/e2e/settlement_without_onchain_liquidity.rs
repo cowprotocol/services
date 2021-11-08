@@ -1,22 +1,20 @@
-mod ganache;
-#[macro_use]
-mod services;
-
 use crate::services::{
     create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
     OrderbookServices, UniswapContracts, API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
+use hex_literal::hex;
 use model::{
-    order::{OrderBuilder, OrderKind, BUY_ETH_ADDRESS},
+    order::{OrderBuilder, OrderKind},
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
 use serde_json::json;
+use shared::maintenance::Maintaining;
 use shared::{
-    maintenance::Maintaining,
     sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
+    token_list::{Token, TokenList},
     Web3,
 };
 use solver::{
@@ -24,22 +22,20 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
-use tracing::level_filters::LevelFilter;
 use web3::signing::SecretKeyRef;
 
-const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
-const TRADER_BUY_ETH_B_PK: [u8; 32] = [2; 32];
+const TRADER_A_PK: [u8; 32] =
+    hex!("0000000000000000000000000000000000000000000000000000000000000001");
 
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
-const FEE_ENDPOINT: &str = "/api/v1/fee/";
 
 #[tokio::test]
-async fn ganache_eth_integration() {
-    ganache::test(eth_integration).await;
+async fn ganache_onchain_settlement_without_liquidity() {
+    crate::ganache::test(onchain_settlement_without_liquidity).await;
 }
 
-async fn eth_integration(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::OFF);
+async fn onchain_settlement_without_liquidity(web3: Web3) {
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -49,10 +45,7 @@ async fn eth_integration(web3: Web3) {
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
-    let trader_buy_eth_a =
-        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_A_PK).unwrap(), None);
-    let trader_buy_eth_b =
-        Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
+    let trader_account = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
 
     let gpv2 = GPv2::fetch(&web3).await;
     let UniswapContracts {
@@ -61,41 +54,45 @@ async fn eth_integration(web3: Web3) {
     } = UniswapContracts::fetch(&web3).await;
 
     // Create & Mint tokens to trade
-    let token = deploy_mintable_token(&web3).await;
-    tx!(
-        solver_account,
-        token.mint(solver_account.address(), to_wei(100_000))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_a.address(), to_wei(51))
-    );
-    tx!(
-        solver_account,
-        token.mint(trader_buy_eth_b.address(), to_wei(51))
-    );
+    let token_a = deploy_mintable_token(&web3).await;
+    let token_b = deploy_mintable_token(&web3).await;
 
-    let weth = gpv2.native_token.clone();
-    tx_value!(solver_account, to_wei(100_000), weth.deposit());
+    // Fund trader and settlement accounts
+    tx!(
+        solver_account,
+        token_a.mint(trader_account.address(), to_wei(100))
+    );
+    tx!(
+        solver_account,
+        token_b.mint(gpv2.settlement.address(), to_wei(100))
+    );
 
     // Create and fund Uniswap pool
     tx!(
         solver_account,
-        uniswap_factory.create_pair(token.address(), weth.address())
+        uniswap_factory.create_pair(token_a.address(), token_b.address())
     );
     tx!(
         solver_account,
-        token.approve(uniswap_router.address(), to_wei(100_000))
+        token_a.mint(solver_account.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        weth.approve(uniswap_router.address(), to_wei(100_000))
+        token_b.mint(solver_account.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_a.approve(uniswap_router.address(), to_wei(100_000))
+    );
+    tx!(
+        solver_account,
+        token_b.approve(uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
         uniswap_router.add_liquidity(
-            token.address(),
-            weth.address(),
+            token_a.address(),
+            token_b.address(),
             to_wei(100_000),
             to_wei(100_000),
             0_u64.into(),
@@ -105,13 +102,44 @@ async fn eth_integration(web3: Web3) {
         )
     );
 
-    // Approve GPv2 for trading
-    tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(51)));
-    tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(51)));
+    // Create and fund pools for fee connections.
+    for token in [&token_a, &token_b] {
+        tx!(
+            solver_account,
+            token.mint(solver_account.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            token.approve(uniswap_router.address(), to_wei(100_000))
+        );
+        tx_value!(solver_account, to_wei(100_000), gpv2.native_token.deposit());
+        tx!(
+            solver_account,
+            gpv2.native_token
+                .approve(uniswap_router.address(), to_wei(100_000))
+        );
+        tx!(
+            solver_account,
+            uniswap_router.add_liquidity(
+                token.address(),
+                gpv2.native_token.address(),
+                to_wei(100_000),
+                to_wei(100_000),
+                0_u64.into(),
+                0_u64.into(),
+                solver_account.address(),
+                U256::max_value(),
+            )
+        );
+    }
 
+    // Approve GPv2 for trading
+    tx!(trader_account, token_a.approve(gpv2.allowance, to_wei(100)));
+
+    // Place Orders
     let OrderbookServices {
-        maintenance,
         price_estimator,
+        maintenance,
         block_stream,
         solvable_orders_cache,
         base_tokens,
@@ -119,81 +147,35 @@ async fn eth_integration(web3: Web3) {
 
     let client = reqwest::Client::new();
 
-    // Test fee endpoint
-    let client_ref = &client;
-    let estimate_fee = |sell_token, buy_token| async move {
-        client_ref
-            .get(&format!(
-                "{}{}?sellToken={:?}&buyToken={:?}&amount={}&kind=sell",
-                API_HOST,
-                FEE_ENDPOINT,
-                sell_token,
-                buy_token,
-                to_wei(42)
-            ))
-            .send()
-            .await
-            .unwrap()
-    };
-    let fee_buy_eth = estimate_fee(token.address(), BUY_ETH_ADDRESS).await;
-    assert_eq!(fee_buy_eth.status(), 200);
-    // Eth is only supported as the buy token
-    let fee_invalid_token = estimate_fee(BUY_ETH_ADDRESS, token.address()).await;
-    assert_eq!(fee_invalid_token.status(), 404);
-
-    // Place Orders
-    assert_ne!(weth.address(), BUY_ETH_ADDRESS);
-    let order_buy_eth_a = OrderBuilder::default()
-        .with_kind(OrderKind::Buy)
-        .with_sell_token(token.address())
-        .with_sell_amount(to_wei(50))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(BUY_ETH_ADDRESS)
-        .with_buy_amount(to_wei(49))
+    let order = OrderBuilder::default()
+        .with_sell_token(token_a.address())
+        .with_sell_amount(to_wei(100))
+        .with_buy_token(token_b.address())
+        .with_buy_amount(to_wei(90))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
-        .sign_with(
-            EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_A_PK).unwrap()),
-        )
-        .build()
-        .order_creation;
-    let placement = client
-        .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_buy_eth_a).to_string())
-        .send()
-        .await;
-    assert_eq!(placement.unwrap().status(), 201);
-    let order_buy_eth_b = OrderBuilder::default()
         .with_kind(OrderKind::Sell)
-        .with_sell_token(token.address())
-        .with_sell_amount(to_wei(50))
-        .with_fee_amount(to_wei(1))
-        .with_buy_token(BUY_ETH_ADDRESS)
-        .with_buy_amount(to_wei(49))
-        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
             &gpv2.domain_separator,
-            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_B_PK).unwrap()),
+            SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
         .build()
         .order_creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_buy_eth_b).to_string())
+        .body(json!(order).to_string())
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
     solvable_orders_cache.update(0).await.unwrap();
 
-    // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
         factory: uniswap_factory.clone(),
         chain_id,
     });
 
+    // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, uniswap_router.address()),
         gpv2.settlement.clone(),
@@ -210,20 +192,28 @@ async fn eth_integration(web3: Web3) {
         balancer_v2_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
+    let market_makable_token_list = TokenList::new(maplit::hashmap! {
+        token_a.address() => Token {
+            address: token_a.address(),
+            name: "Test Coin".into(),
+            symbol: "TC".into(),
+            decimals: 18,
+        }
+    });
     let mut driver = solver::driver::Driver::new(
         gpv2.settlement.clone(),
         liquidity_collector,
         price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
-        weth.address(),
+        gpv2.native_token.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
         network_id,
         1,
-        Duration::from_secs(30),
-        None,
+        Duration::from_secs(10),
+        Some(market_makable_token_list),
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
@@ -242,25 +232,36 @@ async fn eth_integration(web3: Web3) {
     );
     driver.single_run().await.unwrap();
 
-    // Check matching
-    let web3_ref = &web3;
-    let eth_balance = |trader: Account| async move {
-        web3_ref
-            .eth()
-            .balance(trader.address(), None)
-            .await
-            .expect("Couldn't fetch ETH balance")
-    };
-    assert_eq!(eth_balance(trader_buy_eth_a).await, to_wei(49));
-    assert_eq!(
-        eth_balance(trader_buy_eth_b).await,
-        U256::from(49_800_747_827_208_136_744_u128)
-    );
+    // Check that trader traded.
+    let balance = token_a
+        .balance_of(trader_account.address())
+        .call()
+        .await
+        .expect("Couldn't fetch trader TokenA's balance");
+    assert_eq!(balance, U256::from(0_u128));
 
-    // Drive orderbook in order to check that all orders were settled
+    let balance = token_b
+        .balance_of(trader_account.address())
+        .call()
+        .await
+        .expect("Couldn't fetch trader TokenB's balance");
+    assert!(balance > U256::zero());
+
+    // Check that settlement buffers were traded.
+    let balance = token_a
+        .balance_of(gpv2.settlement.address())
+        .call()
+        .await
+        .expect("Couldn't fetch settlements TokenA's balance");
+    assert_eq!(balance, to_wei(100));
+
+    // Drive orderbook in order to check the removal of settled order_b
     maintenance.run_maintenance().await.unwrap();
     solvable_orders_cache.update(0).await.unwrap();
 
     let orders = create_orderbook_api().get_orders().await.unwrap();
     assert!(orders.orders.is_empty());
+
+    // Drive again to ensure we can continue solution finding
+    driver.single_run().await.unwrap();
 }

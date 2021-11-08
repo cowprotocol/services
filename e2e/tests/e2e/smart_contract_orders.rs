@@ -1,7 +1,3 @@
-mod ganache;
-#[macro_use]
-mod services;
-
 use crate::services::{
     create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
     OrderbookServices, UniswapContracts, API_HOST,
@@ -19,7 +15,6 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
-use tracing::level_filters::LevelFilter;
 
 const TRADER: [u8; 32] = [1; 32];
 
@@ -27,11 +22,11 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 async fn ganache_smart_contract_orders() {
-    ganache::test(smart_contract_orders).await;
+    crate::ganache::test(smart_contract_orders).await;
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::OFF);
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
         .chain_id()

@@ -1,3 +1,10 @@
+use crate::{
+    services::{
+        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
+        OrderbookServices, UniswapContracts, API_HOST,
+    },
+    tx, tx_value,
+};
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
 use hex_literal::hex;
@@ -7,6 +14,7 @@ use model::{
 };
 use secp256k1::SecretKey;
 use serde_json::json;
+use shared::maintenance::Maintaining;
 use shared::{
     sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     Web3,
@@ -16,17 +24,7 @@ use solver::{
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};
-use tracing::level_filters::LevelFilter;
 use web3::signing::SecretKeyRef;
-
-mod ganache;
-#[macro_use]
-mod services;
-use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
-    OrderbookServices, UniswapContracts, API_HOST,
-};
-use shared::maintenance::Maintaining;
 
 const TRADER_A_PK: [u8; 32] =
     hex!("0000000000000000000000000000000000000000000000000000000000000001");
@@ -37,11 +35,11 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
 async fn ganache_onchain_settlement() {
-    ganache::test(onchain_settlement).await;
+    crate::ganache::test(onchain_settlement).await;
 }
 
 async fn onchain_settlement(web3: Web3) {
-    shared::tracing::initialize("warn,orderbook=debug,solver=debug", LevelFilter::ERROR);
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
     let chain_id = web3
         .eth()
         .chain_id()
