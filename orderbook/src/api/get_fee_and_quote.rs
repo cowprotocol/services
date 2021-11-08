@@ -8,7 +8,7 @@ use ethcontract::{H160, U256};
 use model::u256_decimal;
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,7 +117,7 @@ fn buy_request() -> impl Filter<Extract = (BuyQuery,), Error = Rejection> + Clon
 
 pub fn get_fee_and_quote_sell(
     quoter: Arc<OrderQuoter>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     sell_request().and_then(move |query: SellQuery| {
         let quoter = quoter.clone();
         async move {
@@ -133,7 +133,7 @@ pub fn get_fee_and_quote_sell(
 
 pub fn get_fee_and_quote_buy(
     quoter: Arc<OrderQuoter>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     buy_request().and_then(move |query: BuyQuery| {
         let quoter = quoter.clone();
         async move {

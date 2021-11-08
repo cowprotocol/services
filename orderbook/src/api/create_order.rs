@@ -6,7 +6,7 @@ use anyhow::Result;
 use model::order::OrderCreationPayload;
 use std::{convert::Infallible, sync::Arc};
 use warp::reply::with_status;
-use warp::{hyper::StatusCode, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, Filter, Rejection};
 
 pub fn create_order_request(
 ) -> impl Filter<Extract = (OrderCreationPayload,), Error = Rejection> + Clone {
@@ -15,7 +15,7 @@ pub fn create_order_request(
         .and(extract_payload())
 }
 
-pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
+pub fn create_order_response(result: Result<AddOrderResult>) -> super::ApiReply {
     match result {
         Ok(AddOrderResult::Added(uid)) => with_status(warp::reply::json(&uid), StatusCode::CREATED),
         Ok(AddOrderResult::OrderValidation(err)) => err.into_warp_reply(),
@@ -36,7 +36,7 @@ pub fn create_order_response(result: Result<AddOrderResult>) -> impl Reply {
 
 pub fn create_order(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     create_order_request().and_then(move |order_payload: OrderCreationPayload| {
         let orderbook = orderbook.clone();
         async move {
@@ -60,7 +60,7 @@ mod tests {
     use crate::api::response_body;
     use model::order::{OrderCreationPayload, OrderUid};
     use serde_json::json;
-    use warp::test::request;
+    use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn create_order_request_ok() {

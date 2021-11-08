@@ -7,7 +7,7 @@ use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::sync::Arc;
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,7 +35,7 @@ fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> 
 
 pub fn get_fee_info(
     fee_calculator: Arc<dyn MinFeeCalculating>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
         let fee_calculator = fee_calculator.clone();
         async move {
@@ -67,7 +67,7 @@ mod tests {
     use chrono::FixedOffset;
     use shared::price_estimation::PriceEstimationError;
     use warp::hyper::StatusCode;
-    use warp::test::request;
+    use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn get_fee_info_request_ok() {

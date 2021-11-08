@@ -13,10 +13,7 @@ use model::{
 };
 use shared::{bad_token::BadTokenDetecting, web3_traits::CodeFetching};
 use std::{sync::Arc, time::Duration};
-use warp::{
-    http::StatusCode,
-    reply::{with_status, Json, WithStatus},
-};
+use warp::{http::StatusCode, reply::with_status};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -66,7 +63,7 @@ pub enum PartialValidationError {
 }
 
 impl IntoWarpReply for PartialValidationError {
-    fn into_warp_reply(self) -> WithStatus<Json> {
+    fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::UnsupportedBuyTokenDestination(dest) => with_status(
                 super::error("UnsupportedBuyTokenDestination", format!("Type {:?}", dest)),
@@ -122,7 +119,7 @@ pub enum ValidationError {
 }
 
 impl IntoWarpReply for ValidationError {
-    fn into_warp_reply(self) -> WithStatus<Json> {
+    fn into_warp_reply(self) -> super::ApiReply {
         match self {
             ValidationError::Partial(pre) => pre.into_warp_reply(),
             Self::UnsupportedToken(token) => with_status(

@@ -17,6 +17,7 @@ use futures::Future;
 use model::DomainSeparator;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
+use warp::Filter;
 
 pub fn serve_api(
     database: Arc<dyn TradeRetrieving>,
@@ -25,7 +26,7 @@ pub fn serve_api(
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(database, orderbook, quoter);
+    let filter = api::handle_all_routes(database, orderbook, quoter).boxed();
     tracing::info!(%address, "serving order book");
     let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
     task::spawn(server)

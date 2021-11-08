@@ -2,31 +2,31 @@ use crate::{api::IntoWarpReply, orderbook::Orderbook};
 use anyhow::Result;
 use model::order::{Order, OrderUid};
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, reply, Filter, Rejection};
 
 pub fn get_order_by_uid_request() -> impl Filter<Extract = (OrderUid,), Error = Rejection> + Clone {
     warp::path!("orders" / OrderUid).and(warp::get())
 }
 
-pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> impl Reply {
+pub fn get_order_by_uid_response(result: Result<Option<Order>>) -> super::ApiReply {
     let order = match result {
         Ok(order) => order,
         Err(err) => {
-            return Ok(err.into_warp_reply());
+            return err.into_warp_reply();
         }
     };
-    Ok(match order {
+    match order {
         Some(order) => reply::with_status(reply::json(&order), StatusCode::OK),
         None => reply::with_status(
             super::error("NotFound", "Order was not found"),
             StatusCode::NOT_FOUND,
         ),
-    })
+    }
 }
 
 pub fn get_order_by_uid(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_order_by_uid_request().and_then(move |uid| {
         let orderbook = orderbook.clone();
         async move {
@@ -40,7 +40,7 @@ pub fn get_order_by_uid(
 mod tests {
     use super::*;
     use crate::api::response_body;
-    use warp::test::request;
+    use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn get_order_by_uid_request_ok() {

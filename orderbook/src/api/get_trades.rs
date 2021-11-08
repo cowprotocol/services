@@ -7,7 +7,7 @@ use model::order::OrderUid;
 use primitive_types::H160;
 use serde::Deserialize;
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, Filter, Rejection};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,7 +49,7 @@ fn get_trades_request(
 
 pub fn get_trades(
     db: Arc<dyn TradeRetrieving>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_trades_request().and_then(move |request_result| {
         let database = db.clone();
         async move {

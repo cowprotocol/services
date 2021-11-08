@@ -32,20 +32,22 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     quoter: Arc<OrderQuoter>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let create_order = create_order::create_order(orderbook.clone());
-    let get_orders = get_orders::get_orders(orderbook.clone());
-    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone());
-    let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone());
-    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone());
-    let get_solvable_orders_v2 = get_solvable_orders_v2::get_solvable_orders(orderbook.clone());
-    let get_trades = get_trades::get_trades(database);
-    let cancel_order = cancel_order::cancel_order(orderbook.clone());
-    let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone());
-    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone());
-    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone());
-    let get_user_orders = get_user_orders::get_user_orders(orderbook.clone());
-    let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook);
-    let post_quote = post_quote::post_quote(quoter);
+    let create_order = create_order::create_order(orderbook.clone()).boxed();
+    let get_orders = get_orders::get_orders(orderbook.clone()).boxed();
+    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone()).boxed();
+    let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone()).boxed();
+    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone()).boxed();
+    let get_solvable_orders_v2 =
+        get_solvable_orders_v2::get_solvable_orders(orderbook.clone()).boxed();
+    let get_trades = get_trades::get_trades(database).boxed();
+    let cancel_order = cancel_order::cancel_order(orderbook.clone()).boxed();
+    let get_amount_estimate =
+        get_markets::get_amount_estimate(quoter.price_estimator.clone()).boxed();
+    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone()).boxed();
+    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone()).boxed();
+    let get_user_orders = get_user_orders::get_user_orders(orderbook.clone()).boxed();
+    let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook).boxed();
+    let post_quote = post_quote::post_quote(quoter).boxed();
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
@@ -73,6 +75,8 @@ pub fn handle_all_routes(
 
     routes_with_labels.recover(handle_rejection).with(cors)
 }
+
+pub type ApiReply = warp::reply::WithStatus<warp::reply::Json>;
 
 // We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
@@ -138,11 +142,11 @@ where
 }
 
 pub trait IntoWarpReply {
-    fn into_warp_reply(self) -> WithStatus<Json>;
+    fn into_warp_reply(self) -> ApiReply;
 }
 
 impl IntoWarpReply for anyhowError {
-    fn into_warp_reply(self) -> WithStatus<Json> {
+    fn into_warp_reply(self) -> ApiReply {
         with_status(internal_error(self), StatusCode::INTERNAL_SERVER_ERROR)
     }
 }

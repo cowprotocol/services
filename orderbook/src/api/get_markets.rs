@@ -5,7 +5,7 @@ use model::order::OrderKind;
 use serde::{Deserialize, Serialize};
 use shared::price_estimation::{self, PriceEstimating};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
 #[derive(Clone, Debug, PartialEq)]
 struct AmountEstimateQuery {
@@ -67,7 +67,7 @@ fn get_amount_estimate_request(
 
 pub fn get_amount_estimate(
     price_estimator: Arc<dyn PriceEstimating>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_amount_estimate_request().and_then(move |query: AmountEstimateQuery| {
         let price_estimator = price_estimator.clone();
         async move {
@@ -103,7 +103,7 @@ mod tests {
     use hex_literal::hex;
     use shared::price_estimation::PriceEstimationError;
     use warp::hyper::StatusCode;
-    use warp::test::request;
+    use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn test_get_amount_estimate_request() {

@@ -8,7 +8,7 @@ use model::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, Filter, Rejection};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -29,7 +29,7 @@ pub fn cancel_order_request(
         })
 }
 
-pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Reply {
+pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> super::ApiReply {
     let (body, status_code) = match result {
         Ok(OrderCancellationResult::Cancelled) => (warp::reply::json(&"Cancelled"), StatusCode::OK),
         Ok(OrderCancellationResult::InvalidSignature) => (
@@ -73,7 +73,7 @@ pub fn cancel_order_response(result: Result<OrderCancellationResult>) -> impl Re
 
 pub fn cancel_order(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     cancel_order_request().and_then(move |order| {
         let orderbook = orderbook.clone();
         async move {
@@ -89,7 +89,7 @@ mod tests {
     use ethcontract::H256;
     use hex_literal::hex;
     use serde_json::json;
-    use warp::test::request;
+    use warp::{test::request, Reply};
 
     #[test]
     fn cancellation_payload_deserialization() {

@@ -3,7 +3,7 @@ use anyhow::Result;
 use primitive_types::H160;
 use serde::Deserialize;
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 struct Query {
@@ -19,7 +19,7 @@ fn request() -> impl Filter<Extract = (H160, Query), Error = Rejection> + Clone 
 
 pub fn get_user_orders(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     request().and_then(move |owner: H160, query: Query| {
         let orderbook = orderbook.clone();
         async move {

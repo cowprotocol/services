@@ -2,7 +2,7 @@ use crate::{api::convert_json_response, orderbook::Orderbook};
 use anyhow::Result;
 use ethcontract::H256;
 use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection, Reply};
+use warp::{Filter, Rejection};
 
 pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Rejection> + Clone {
     warp::path!("transactions" / H256 / "orders").and(warp::get())
@@ -10,7 +10,7 @@ pub fn get_orders_by_tx_request() -> impl Filter<Extract = (H256,), Error = Reje
 
 pub fn get_orders_by_tx(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_orders_by_tx_request().and_then(move |hash: H256| {
         let orderbook = orderbook.clone();
         async move {

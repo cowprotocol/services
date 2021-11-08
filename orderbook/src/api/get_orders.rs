@@ -7,7 +7,7 @@ use primitive_types::H160;
 use serde::Deserialize;
 use shared::time::now_in_epoch_seconds;
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection, Reply};
+use warp::{hyper::StatusCode, Filter, Rejection};
 
 // The default values create a filter that only includes valid orders.
 #[derive(Default, Deserialize)]
@@ -60,7 +60,7 @@ pub fn get_orders_request(
 
 pub fn get_orders(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_orders_request().and_then(move |order_filter| {
         let orderbook = orderbook.clone();
         async move {
