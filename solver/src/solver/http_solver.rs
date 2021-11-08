@@ -246,12 +246,7 @@ impl HttpSolver {
             .append_pair("instance_name", &instance_name)
             .append_pair("time_limit", &timeout.as_secs().to_string());
 
-        let ucp_policy = if model.orders.len() > 1 {
-            "Enforce"
-        } else {
-            "EnforceForOrders"
-        };
-        self.config.add_to_query(&mut url, ucp_policy);
+        self.config.add_to_query(&mut url, "EnforceForOrders");
 
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         // The default Client created in main has a short http request timeout which we might
