@@ -288,10 +288,17 @@ impl HttpSolver {
         let now = chrono::Utc::now();
         format!(
             "{}_{}_{}",
-            now.to_string().replace(" ", "_"),
+            now.to_string(),
             self.network_name,
             self.chain_id
         )
+        .chars()
+        .map(|x| match x {
+            ' ' => '_',
+            '/' => '_',
+            _ => x,
+        })
+        .collect()
     }
 }
 
