@@ -183,7 +183,7 @@ struct Arguments {
     /// network before going to back to solving.
     #[structopt(
         long,
-        default_value = "90",
+        default_value = "120",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     max_flashbots_submission_seconds: Duration,
