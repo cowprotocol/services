@@ -89,7 +89,7 @@ pub struct HttpSolver {
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     price_estimator: Arc<dyn PriceEstimating>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
-    network_id: String,
+    network_name: String,
     chain_id: u64,
     instance_cache: InstanceCache,
     native_token_amount_to_estimate_prices_with: U256,
@@ -107,7 +107,7 @@ impl HttpSolver {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         price_estimator: Arc<dyn PriceEstimating>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
-        network_id: String,
+        network_name: String,
         chain_id: u64,
         client: Client,
         instance_cache: InstanceCache,
@@ -124,7 +124,7 @@ impl HttpSolver {
             token_info_fetcher,
             price_estimator,
             buffer_retriever,
-            network_id,
+            network_name,
             chain_id,
             instance_cache,
             native_token_amount_to_estimate_prices_with,
@@ -219,7 +219,7 @@ impl HttpSolver {
             orders: order_models,
             amms: amm_models,
             metadata: Some(MetadataModel {
-                environment: Some(self.network_id.clone()),
+                environment: Some(self.network_name.clone()),
             }),
         };
         Ok((model, SettlementContext { orders, liquidity }))
@@ -294,7 +294,7 @@ impl HttpSolver {
         format!(
             "{}_{}_{}",
             now.to_string().replace(" ", "_"),
-            self.network_id,
+            self.network_name,
             self.chain_id
         )
     }
