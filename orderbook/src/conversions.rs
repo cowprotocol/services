@@ -1,7 +1,8 @@
 use anyhow::{anyhow, Result};
-use bigdecimal::BigDecimal;
-use num_bigint::{BigInt, BigUint, Sign, ToBigInt};
+use bigdecimal::num_bigint::ToBigInt;
+use num::bigint::{BigInt, BigUint, Sign};
 use primitive_types::{H160, H256, U256};
+use sqlx::types::BigDecimal;
 use std::convert::TryInto;
 // TODO: It would be nice to avoid copying the underlying BigInt when converting BigDecimal to
 // anything else but the simple big_decimal.to_bigint makes a copy internally.
@@ -14,7 +15,7 @@ pub fn u256_to_big_uint(input: &U256) -> BigUint {
 
 pub fn u256_to_big_decimal(u256: &U256) -> BigDecimal {
     let big_uint = u256_to_big_uint(u256);
-    BigDecimal::from(BigInt::from(big_uint))
+    BigDecimal::from(bigint_04_to_03(BigInt::from(big_uint)))
 }
 
 pub fn bigint_to_u256(input: &BigInt) -> Option<U256> {
@@ -26,14 +27,14 @@ pub fn bigint_to_u256(input: &BigInt) -> Option<U256> {
 }
 
 pub fn big_decimal_to_big_uint(big_decimal: &BigDecimal) -> Option<BigUint> {
-    big_decimal.to_bigint()?.try_into().ok()
+    bigint_03_to_04(big_decimal.to_bigint()?).try_into().ok()
 }
 
 pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
     if !big_decimal.is_integer() {
         return None;
     }
-    let big_int = big_decimal.to_bigint()?;
+    let big_int = bigint_03_to_04(big_decimal.to_bigint()?);
     bigint_to_u256(&big_int)
 }
 
@@ -49,6 +50,30 @@ pub fn h256_from_vec(vec: Vec<u8>) -> Result<H256> {
         .try_into()
         .map_err(|_| anyhow!("h256 has wrong length"))?;
     Ok(H256::from(array))
+}
+
+fn bigint_03_to_04(input: bigdecimal::num_bigint::BigInt) -> BigInt {
+    let (sign, digits) = input.to_u32_digits();
+    BigInt::new(
+        match sign {
+            bigdecimal::num_bigint::Sign::Minus => Sign::Minus,
+            bigdecimal::num_bigint::Sign::NoSign => Sign::NoSign,
+            bigdecimal::num_bigint::Sign::Plus => Sign::Plus,
+        },
+        digits,
+    )
+}
+
+fn bigint_04_to_03(input: BigInt) -> bigdecimal::num_bigint::BigInt {
+    let (sign, digits) = input.to_u32_digits();
+    bigdecimal::num_bigint::BigInt::new(
+        match sign {
+            Sign::Minus => bigdecimal::num_bigint::Sign::Minus,
+            Sign::NoSign => bigdecimal::num_bigint::Sign::NoSign,
+            Sign::Plus => bigdecimal::num_bigint::Sign::Plus,
+        },
+        digits,
+    )
 }
 
 #[cfg(test)]

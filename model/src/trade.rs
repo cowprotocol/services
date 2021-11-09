@@ -1,7 +1,7 @@
 //! Contains the Trade type as described by the specification with serialization as described by the openapi documentation.
 
 use crate::order::OrderUid;
-use num_bigint::BigUint;
+use num::BigUint;
 use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
 

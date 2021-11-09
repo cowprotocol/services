@@ -11,12 +11,12 @@ use crate::{
 };
 use ::model::order::OrderKind;
 use anyhow::{anyhow, ensure, Context, Result};
-use bigdecimal::ToPrimitive;
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
 use futures::{join, lock::Mutex};
 use lazy_static::lazy_static;
 use maplit::{btreemap, hashset};
+use num::ToPrimitive;
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use reqwest::{header::HeaderValue, Client, Url};

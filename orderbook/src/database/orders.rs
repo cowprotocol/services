@@ -1,7 +1,6 @@
 use super::*;
 use crate::conversions::*;
 use anyhow::{anyhow, Context, Result};
-use bigdecimal::{BigDecimal, Zero};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
 use ethcontract::H256;
@@ -14,8 +13,9 @@ use model::{
     },
     signature::{Signature, SigningScheme},
 };
+use num::Zero;
 use primitive_types::H160;
-use sqlx::Connection;
+use sqlx::{types::BigDecimal, Connection};
 use std::{borrow::Cow, convert::TryInto};
 
 #[cfg_attr(test, mockall::automock)]
@@ -599,7 +599,7 @@ mod tests {
     use super::events::*;
     use super::*;
     use chrono::{Duration, NaiveDateTime};
-    use num_bigint::BigUint;
+    use num::BigUint;
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
     use sqlx::Executor;

@@ -1,11 +1,10 @@
 use crate::conversions::{big_decimal_to_big_uint, h160_from_vec, h256_from_vec};
 use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
-use bigdecimal::BigDecimal;
 use ethcontract::H160;
 use futures::stream::TryStreamExt;
-use model::order::OrderUid;
-use model::trade::Trade;
+use model::{order::OrderUid, trade::Trade};
+use sqlx::types::BigDecimal;
 use std::convert::TryInto;
 
 #[async_trait::async_trait]

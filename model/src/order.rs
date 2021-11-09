@@ -9,11 +9,10 @@ use crate::{
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use derivative::Derivative;
 use hex_literal::hex;
-use num_bigint::BigUint;
+use num::BigUint;
 use primitive_types::{H160, H256, U256};
 use secp256k1::key::ONE_KEY;
-use serde::{de, Deserialize, Serialize};
-use serde::{Deserializer, Serializer};
+use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_with::serde_as;
 use std::{
     collections::HashSet,

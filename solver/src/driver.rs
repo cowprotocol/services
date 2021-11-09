@@ -14,14 +14,13 @@ use crate::{
     solver::{Auction, SettlementWithSolver, Solvers},
 };
 use anyhow::{anyhow, Context, Result};
-use bigdecimal::ToPrimitive;
 use contracts::GPv2Settlement;
 use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use model::order::BUY_ETH_ADDRESS;
-use num::BigRational;
+use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use rand::prelude::SliceRandom;
 use shared::{
