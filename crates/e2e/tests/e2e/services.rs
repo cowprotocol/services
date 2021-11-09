@@ -1,8 +1,6 @@
-use contracts::{
-    BalancerV2Vault, ERC20Mintable, GPv2Settlement, UniswapV2Factory, UniswapV2Router02, WETH9,
-};
+use crate::deploy::Contracts;
+use contracts::{ERC20Mintable, WETH9};
 use ethcontract::{prelude::U256, H160};
-use model::DomainSeparator;
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     api::order_validation::OrderValidator,
@@ -70,67 +68,6 @@ pub fn create_order_converter(web3: &Web3, weth_address: H160) -> OrderConverter
     }
 }
 
-pub struct GPv2 {
-    pub vault: BalancerV2Vault,
-    pub settlement: GPv2Settlement,
-    pub native_token: WETH9,
-    pub allowance: H160,
-    pub domain_separator: DomainSeparator,
-}
-
-impl GPv2 {
-    pub async fn fetch(web3: &Web3) -> Self {
-        let vault = BalancerV2Vault::deployed(web3)
-            .await
-            .expect("Failed to load deployed BalancerV2Vault");
-        let settlement = solver::get_settlement_contract(web3)
-            .await
-            .expect("Failed to load deployed GPv2Settlement");
-        let allowance = settlement
-            .vault_relayer()
-            .call()
-            .await
-            .expect("Couldn't get vault relayer address");
-        let domain_separator = DomainSeparator(
-            settlement
-                .domain_separator()
-                .call()
-                .await
-                .expect("Couldn't query domain separator")
-                .0,
-        );
-        let native_token = WETH9::deployed(web3)
-            .await
-            .expect("Couldn't get deployed WETH contract");
-        Self {
-            vault,
-            settlement,
-            native_token,
-            allowance,
-            domain_separator,
-        }
-    }
-}
-
-pub struct UniswapContracts {
-    pub uniswap_factory: UniswapV2Factory,
-    pub uniswap_router: UniswapV2Router02,
-}
-impl UniswapContracts {
-    pub async fn fetch(web3: &Web3) -> Self {
-        let uniswap_factory = UniswapV2Factory::deployed(web3)
-            .await
-            .expect("Failed to load deployed UniswapFactory");
-        let uniswap_router = UniswapV2Router02::deployed(web3)
-            .await
-            .expect("Failed to load deployed UniswapRouter");
-        Self {
-            uniswap_factory,
-            uniswap_router,
-        }
-    }
-}
-
 pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
     ERC20Mintable::builder(web3)
         .deploy()
@@ -147,7 +84,7 @@ pub struct OrderbookServices {
 }
 
 impl OrderbookServices {
-    pub async fn new(web3: &Web3, gpv2: &GPv2, uniswap_factory: &UniswapV2Factory) -> Self {
+    pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
         let chain_id = web3
             .eth()
             .chain_id()
@@ -157,12 +94,12 @@ impl OrderbookServices {
         let db = Arc::new(Postgres::new("postgresql://").unwrap());
         db.clear().await.unwrap();
         let event_updater = Arc::new(EventUpdater::new(
-            gpv2.settlement.clone(),
+            contracts.gp_settlement.clone(),
             db.as_ref().clone(),
             None,
         ));
         let pair_provider = Arc::new(UniswapPairProvider {
-            factory: uniswap_factory.clone(),
+            factory: contracts.uniswap_factory.clone(),
             chain_id,
         });
         let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(5))
@@ -185,19 +122,19 @@ impl OrderbookServices {
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());
         let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
-        let base_tokens = Arc::new(BaseTokens::new(gpv2.native_token.address(), &[]));
+        let base_tokens = Arc::new(BaseTokens::new(contracts.weth.address(), &[]));
         let price_estimator = Arc::new(BaselinePriceEstimator::new(
             Arc::new(pool_fetcher),
             gas_estimator.clone(),
             base_tokens.clone(),
             bad_token_detector.clone(),
-            gpv2.native_token.address(),
+            contracts.weth.address(),
             1_000_000_000_000_000_000_u128.into(),
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
             gas_estimator,
-            gpv2.native_token.address(),
+            contracts.weth.address(),
             db.clone(),
             bad_token_detector.clone(),
             1_000_000_000_000_000_000_u128.into(),
@@ -208,9 +145,9 @@ impl OrderbookServices {
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),
-            Some(gpv2.vault.clone()),
-            gpv2.allowance,
-            gpv2.settlement.address(),
+            Some(contracts.balancer_vault.clone()),
+            contracts.allowance,
+            contracts.gp_settlement.address(),
         ));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
@@ -221,7 +158,7 @@ impl OrderbookServices {
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
-            gpv2.native_token.clone(),
+            contracts.weth.clone(),
             vec![],
             Duration::from_secs(120),
             fee_calculator.clone(),
@@ -229,8 +166,8 @@ impl OrderbookServices {
             balance_fetcher,
         ));
         let orderbook = Arc::new(Orderbook::new(
-            gpv2.domain_separator,
-            gpv2.settlement.address(),
+            contracts.domain_separator,
+            contracts.gp_settlement.address(),
             db.clone(),
             bad_token_detector,
             true,

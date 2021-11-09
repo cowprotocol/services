@@ -16,7 +16,7 @@ fn role_id(target: H160, function_name: &str) -> Bytes<[u8; 32]> {
 }
 
 pub async fn grant_required_roles(
-    authorizer: BalancerV2Authorizer,
+    authorizer: &BalancerV2Authorizer,
     vault: H160,
     vault_relayer: H160,
 ) -> Result<(), MethodError> {

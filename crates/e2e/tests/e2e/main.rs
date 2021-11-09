@@ -2,11 +2,14 @@
 // are compiled into separate binaries which is slow. To avoid this we create one integration test
 // here and in this test we include all the tests we want to run.
 
-mod eth_integration;
-mod local_node;
-mod onchain_settlement;
 #[macro_use]
 mod services;
+mod deploy;
+mod local_node;
+
+// Each of the following modules contains one test.
+mod eth_integration;
+mod onchain_settlement;
 mod settlement_without_onchain_liquidity;
 mod smart_contract_orders;
 mod vault_balances;
