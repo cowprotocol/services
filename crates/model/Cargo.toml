@@ -5,6 +5,9 @@ authors = ["Gnosis Developers <developers@gnosis.io>"]
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
+[lib]
+doctest = false
+
 [dependencies]
 anyhow = "1"
 bigdecimal = "0.3"
