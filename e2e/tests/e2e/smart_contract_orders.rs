@@ -181,6 +181,7 @@ async fn smart_contract_orders(web3: Web3) {
         price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
+        Duration::from_secs(30),
         gpv2.native_token.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),

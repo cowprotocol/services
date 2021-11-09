@@ -74,6 +74,20 @@ struct Arguments {
     )]
     target_confirm_time: Duration,
 
+    /// Specify the interval in seconds between consecutive driver run loops.
+    ///
+    /// This is typically a low value to prevent busy looping in case of some
+    /// internal driver error, but can be set to a larger value for running
+    /// drivers in dry-run mode to prevent repeatedly settling the same
+    /// orders.
+    #[structopt(
+        long,
+        env,
+        default_value = "1",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    settle_interval: Duration,
+
     /// Which type of solver to use
     #[structopt(
         long,
@@ -533,6 +547,7 @@ async fn main() {
         price_estimator,
         solver,
         gas_price_estimator,
+        args.settle_interval,
         native_token_contract.address(),
         args.min_order_age,
         metrics.clone(),

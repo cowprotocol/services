@@ -44,6 +44,7 @@ pub struct Driver {
     price_estimator: Arc<dyn PriceEstimating>,
     solvers: Solvers,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    settle_interval: Duration,
     native_token: H160,
     min_order_age: Duration,
     metrics: Arc<dyn SolverMetrics>,
@@ -69,6 +70,7 @@ impl Driver {
         price_estimator: Arc<dyn PriceEstimating>,
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
+        settle_interval: Duration,
         native_token: H160,
         min_order_age: Duration,
         metrics: Arc<dyn SolverMetrics>,
@@ -90,6 +92,7 @@ impl Driver {
             price_estimator,
             solvers,
             gas_price_estimator,
+            settle_interval,
             native_token,
             min_order_age,
             metrics,
@@ -116,7 +119,7 @@ impl Driver {
                 Err(err) => tracing::error!("single run errored: {:?}", err),
             }
             self.metrics.runloop_completed();
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(self.settle_interval).await;
         }
     }
 
