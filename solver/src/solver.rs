@@ -7,12 +7,13 @@ use anyhow::Result;
 use baseline_solver::BaselineSolver;
 use contracts::GPv2Settlement;
 use ethcontract::{Account, H160, U256};
-use http_solver::{buffers::BufferRetriever, HttpSolver, SolverConfig};
+use http_solver::{buffers::BufferRetriever, HttpSolver};
 use naive_solver::NaiveSolver;
 use num::BigRational;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
+use shared::http_solver_api::{HttpSolverApi, SolverConfig};
 use shared::zeroex_api::ZeroExApi;
 use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, price_estimation::PriceEstimating,
@@ -173,18 +174,19 @@ pub fn create(
     let create_http_solver =
         |account: Account, url: Url, name: &'static str, config: SolverConfig| -> HttpSolver {
             HttpSolver::new(
-                name,
+                HttpSolverApi {
+                    name,
+                    network_name: network_id.clone(),
+                    chain_id,
+                    base: url,
+                    client: client.clone(),
+                    config,
+                },
                 account,
-                url,
-                None,
-                config,
                 native_token,
                 token_info_fetcher.clone(),
                 price_estimator.clone(),
                 buffer_retriever.clone(),
-                network_id.clone(),
-                chain_id,
-                client.clone(),
                 http_solver_cache.clone(),
                 native_token_amount_to_estimate_prices_with,
             )
@@ -201,6 +203,7 @@ pub fn create(
                     mip_solver_url.clone(),
                     "Mip",
                     SolverConfig {
+                        api_key: None,
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: false,
                     },
@@ -210,6 +213,7 @@ pub fn create(
                     quasimodo_solver_url.clone(),
                     "Quasimodo",
                     SolverConfig {
+                        api_key: None,
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: true,
                     },

@@ -1,4 +1,3 @@
-use super::model::*;
 use crate::{
     liquidity::{AmmOrderExecution, LimitOrder, Liquidity},
     settlement::Settlement,
@@ -7,6 +6,7 @@ use anyhow::{anyhow, Result};
 use itertools::Itertools;
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
+use shared::http_solver_api::model::*;
 use std::collections::{hash_map::Entry, HashMap};
 
 // To send an instance to the solver we need to identify tokens and orders through strings. This

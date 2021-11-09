@@ -1,25 +1,25 @@
 pub mod buffers;
-pub mod model;
 mod settlement;
 
-use self::{model::*, settlement::SettlementContext};
+use self::settlement::SettlementContext;
 use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
     settlement_submission::retry::is_transaction_failure,
     solver::{Auction, Solver},
 };
-use ::model::order::OrderKind;
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{Account, U256};
 use futures::{join, lock::Mutex};
 use lazy_static::lazy_static;
 use maplit::{btreemap, hashset};
+use model::order::OrderKind;
 use num::ToPrimitive;
 use num::{BigInt, BigRational};
 use primitive_types::H160;
-use reqwest::{header::HeaderValue, Client, Url};
+use shared::http_solver_api::model::*;
+use shared::http_solver_api::HttpSolverApi;
 use shared::{
     measure_time,
     price_estimation::{self, PriceEstimating},
@@ -29,7 +29,6 @@ use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
     sync::Arc,
-    time::{Duration, Instant},
 };
 
 lazy_static! {
@@ -48,25 +47,6 @@ lazy_static! {
 // TODO: set settlement.fee_factor
 // TODO: special rounding for the prices we get from the solver?
 
-/// The configuration passed as url parameters to the solver.
-#[derive(Debug, Default)]
-pub struct SolverConfig {
-    pub max_nr_exec_orders: u32,
-    pub has_ucp_policy_parameter: bool,
-}
-
-impl SolverConfig {
-    fn add_to_query(&self, url: &mut Url, ucp_policy: &str) {
-        url.query_pairs_mut().append_pair(
-            "max_nr_exec_orders",
-            self.max_nr_exec_orders.to_string().as_str(),
-        );
-        if self.has_ucp_policy_parameter {
-            url.query_pairs_mut().append_pair("ucp_policy", ucp_policy);
-        }
-    }
-}
-
 /// Data shared between multiple instances of the http solver for the same solve id.
 pub struct InstanceData {
     solve_id: u64,
@@ -79,18 +59,12 @@ pub struct InstanceData {
 pub type InstanceCache = Arc<Mutex<Option<InstanceData>>>;
 
 pub struct HttpSolver {
-    name: &'static str,
+    solver: HttpSolverApi,
     account: Account,
-    base: Url,
-    client: Client,
-    api_key: Option<String>,
-    config: SolverConfig,
     native_token: H160,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     price_estimator: Arc<dyn PriceEstimating>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
-    network_name: String,
-    chain_id: u64,
     instance_cache: InstanceCache,
     native_token_amount_to_estimate_prices_with: U256,
 }
@@ -98,34 +72,22 @@ pub struct HttpSolver {
 impl HttpSolver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        name: &'static str,
+        solver: HttpSolverApi,
         account: Account,
-        base: Url,
-        api_key: Option<String>,
-        config: SolverConfig,
         native_token: H160,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         price_estimator: Arc<dyn PriceEstimating>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
-        network_name: String,
-        chain_id: u64,
-        client: Client,
         instance_cache: InstanceCache,
         native_token_amount_to_estimate_prices_with: U256,
     ) -> Self {
         Self {
-            name,
+            solver,
             account,
-            base,
-            client,
-            api_key,
-            config,
             native_token,
             token_info_fetcher,
             price_estimator,
             buffer_retriever,
-            network_name,
-            chain_id,
             instance_cache,
             native_token_amount_to_estimate_prices_with,
         }
@@ -219,86 +181,10 @@ impl HttpSolver {
             orders: order_models,
             amms: amm_models,
             metadata: Some(MetadataModel {
-                environment: Some(self.network_name.clone()),
+                environment: Some(self.solver.network_name.clone()),
             }),
         };
         Ok((model, SettlementContext { orders, liquidity }))
-    }
-
-    async fn send(
-        &self,
-        model: &BatchAuctionModel,
-        deadline: Instant,
-    ) -> Result<SettledBatchAuctionModel> {
-        // The timeout we give to the solver is one second less than the deadline to make up for
-        // overhead from the network.
-        let timeout_buffer = Duration::from_secs(1);
-        let timeout = deadline
-            .checked_duration_since(Instant::now() + timeout_buffer)
-            .ok_or_else(|| anyhow!("no time left to send request"))?;
-
-        let mut url = self.base.clone();
-        url.set_path("/solve");
-
-        let instance_name = self.generate_instance_name();
-        tracing::debug!("http solver instance name is {}", instance_name);
-        url.query_pairs_mut()
-            .append_pair("instance_name", &instance_name)
-            .append_pair("time_limit", &timeout.as_secs().to_string());
-
-        self.config.add_to_query(&mut url, "EnforceForOrders");
-
-        let query = url.query().map(ToString::to_string).unwrap_or_default();
-        // The default Client created in main has a short http request timeout which we might
-        // exceed. We remove it here because the solver already internally enforces the timeout and
-        // the driver code that calls us also enforces the timeout.
-        let mut request = self.client.post(url).timeout(Duration::from_secs(u64::MAX));
-        if let Some(api_key) = &self.api_key {
-            let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
-            header.set_sensitive(true);
-            request = request.header("X-API-KEY", header);
-        }
-        let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::trace!("request {}", body);
-        let request = request.body(body.clone());
-        let response = request.send().await.context("failed to send request")?;
-        let status = response.status();
-        let text = response
-            .text()
-            .await
-            .context("failed to decode response body")?;
-        tracing::trace!("response {}", text);
-        let context = || {
-            format!(
-                "request query {}, request body {}, response body {}",
-                query, body, text
-            )
-        };
-        ensure!(
-            status.is_success(),
-            "solver response is not success: status {}, {}",
-            status,
-            context()
-        );
-        serde_json::from_str(text.as_str())
-            .with_context(|| format!("failed to decode response json, {}", context()))
-    }
-
-    pub fn generate_instance_name(&self) -> String {
-        let now = chrono::Utc::now();
-        format!(
-            "{}_{}_{}",
-            now.to_string(),
-            self.network_name,
-            self.chain_id
-        )
-        .chars()
-        .map(|x| match x {
-            ' ' => '_',
-            '/' => '_',
-            _ => x,
-        })
-        .collect()
     }
 }
 
@@ -582,7 +468,7 @@ impl Solver for HttpSolver {
                 }
             }
         };
-        let settled = self.send(&model, deadline).await?;
+        let settled = self.solver.solve(&model, deadline).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
             return Ok(Vec::new());
@@ -595,7 +481,7 @@ impl Solver for HttpSolver {
     }
 
     fn name(&self) -> &'static str {
-        self.name
+        self.solver.name
     }
 }
 
@@ -608,10 +494,13 @@ mod tests {
     use ethcontract::Address;
     use maplit::hashmap;
     use num::rational::Ratio;
+    use reqwest::Client;
+    use shared::http_solver_api::SolverConfig;
     use shared::price_estimation::mocks::FakePriceEstimator;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
+    use std::time::{Duration, Instant};
 
     // cargo test real_solver -- --ignored --nocapture
     // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer
@@ -658,21 +547,23 @@ mod tests {
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
-            "Test Solver",
-            Account::Local(Address::default(), None),
-            url.parse().unwrap(),
-            None,
-            SolverConfig {
-                max_nr_exec_orders: 100,
-                has_ucp_policy_parameter: false,
+            HttpSolverApi {
+                name: "Test Solver",
+                network_name: "mock_network_id".to_string(),
+                chain_id: 0,
+                base: url.parse().unwrap(),
+                client: Client::new(),
+                config: SolverConfig {
+                    api_key: None,
+                    max_nr_exec_orders: 0,
+                    has_ucp_policy_parameter: false,
+                },
             },
+            Account::Local(Address::default(), None),
             H160::zero(),
             mock_token_info_fetcher,
             mock_price_estimation,
             mock_buffer_retriever,
-            "mock_network_id".to_string(),
-            0,
-            Client::new(),
             Default::default(),
             1.into(),
         );
@@ -700,7 +591,8 @@ mod tests {
             .await
             .unwrap();
         let settled = solver
-            .send(&model, Instant::now() + Duration::from_secs(1000))
+            .solver
+            .solve(&model, Instant::now() + Duration::from_secs(1000))
             .await
             .unwrap();
         dbg!(&settled);
