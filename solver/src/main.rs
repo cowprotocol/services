@@ -162,6 +162,10 @@ struct Arguments {
     #[structopt(long, env, default_value = "10")]
     paraswap_slippage_bps: u32,
 
+    /// The slippage tolerance we apply to the price quoted by zeroEx
+    #[structopt(long, env, default_value = "10")]
+    zeroex_slippage_bps: u32,
+
     /// The authorization for the archer api.
     #[structopt(long, env)]
     archer_authorization: Option<String>,
@@ -459,6 +463,7 @@ async fn main() {
         native_token_price_estimation_amount,
         metrics.clone(),
         zeroex_api,
+        args.zeroex_slippage_bps,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

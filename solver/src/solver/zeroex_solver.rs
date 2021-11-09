@@ -39,14 +39,12 @@ use std::{
     sync::Arc,
 };
 
-/// Constant maximum slippage of 5 BPS (0.05%) to use for on-chain liquidity.
-pub const STANDARD_ZEROEX_SLIPPAGE_BPS: u16 = 5;
-
 /// A GPv2 solver that matches GP orders to direct 0x swaps.
 pub struct ZeroExSolver {
     account: Account,
     api: Arc<dyn ZeroExApi>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
+    zeroex_slippage_bps: u32,
 }
 
 /// Chain ID for Mainnet.
@@ -59,6 +57,7 @@ impl ZeroExSolver {
         settlement_contract: GPv2Settlement,
         chain_id: u64,
         api: Arc<dyn ZeroExApi>,
+        zeroex_slippage_bps: u32,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -69,6 +68,7 @@ impl ZeroExSolver {
             account,
             allowance_fetcher: Box::new(allowance_fetcher),
             api,
+            zeroex_slippage_bps,
         })
     }
 }
@@ -88,7 +88,7 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            slippage_percentage: Slippage::number_from_basis_points(STANDARD_ZEROEX_SLIPPAGE_BPS)
+            slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
                 .unwrap(),
         };
 
@@ -186,6 +186,7 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
+            10u32,
         )
         .unwrap();
         let settlement = solver
@@ -225,6 +226,7 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
+            10u32,
         )
         .unwrap();
         let settlement = solver
@@ -287,6 +289,7 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
+            zeroex_slippage_bps: 10u32,
         };
 
         let buy_order_passing_limit = LimitOrder {
@@ -375,7 +378,8 @@ mod tests {
             web3,
             settlement,
             chain_id,
-            Arc::new(DefaultZeroExApi::default())
+            Arc::new(DefaultZeroExApi::default()),
+            10u32
         )
         .is_err())
     }
@@ -427,6 +431,7 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
+            zeroex_slippage_bps: 10u32,
         };
 
         let order = LimitOrder {
@@ -480,6 +485,7 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
+            zeroex_slippage_bps: 10u32,
         };
 
         let order = LimitOrder {
