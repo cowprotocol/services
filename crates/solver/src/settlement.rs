@@ -7,7 +7,7 @@ use crate::{
 };
 use anyhow::Result;
 use model::order::{Order, OrderKind};
-use num::{BigRational, Signed, Zero};
+use num::{BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext as _;
 use std::collections::HashMap;
@@ -54,6 +54,19 @@ impl Trade {
                 &self.executed_amount.to_big_rational(),
             ),
         }
+    }
+
+    pub fn surplus_ratio(
+        &self,
+        sell_token_price: &BigRational,
+        buy_token_price: &BigRational,
+    ) -> Option<BigRational> {
+        surplus_ratio(
+            sell_token_price,
+            buy_token_price,
+            &self.order.order_creation.sell_amount.to_big_rational(),
+            &self.order.order_creation.buy_amount.to_big_rational(),
+        )
     }
 
     // Returns the executed fee amount (prorated of executed amount)
@@ -251,20 +264,21 @@ impl From<Settlement> for EncodedSettlement {
     }
 }
 
-// The difference between what you were willing to sell (executed_amount * limit_price) converted into reference token (multiplied by buy_token_price)
+// The difference between what you were willing to sell (executed_amount * limit_price)
+// converted into reference token (multiplied by buy_token_price)
 // and what you had to sell denominated in the reference token (executed_amount * buy_token_price)
 fn buy_order_surplus(
     sell_token_price: &BigRational,
     buy_token_price: &BigRational,
     sell_amount_limit: &BigRational,
     buy_amount_limit: &BigRational,
-    executed_amount: &BigRational,
+    executed_buy_amount: &BigRational,
 ) -> Option<BigRational> {
     if buy_amount_limit.is_zero() {
         return None;
     }
-    let res = executed_amount * sell_amount_limit / buy_amount_limit * sell_token_price
-        - (executed_amount * buy_token_price);
+    let limit_sell_amount = executed_buy_amount * sell_amount_limit / buy_amount_limit;
+    let res = (limit_sell_amount * sell_token_price) - (executed_buy_amount * buy_token_price);
     if res.is_negative() {
         None
     } else {
@@ -280,18 +294,40 @@ fn sell_order_surplus(
     buy_token_price: &BigRational,
     sell_amount_limit: &BigRational,
     buy_amount_limit: &BigRational,
-    executed_amount: &BigRational,
+    executed_sell_amount: &BigRational,
 ) -> Option<BigRational> {
     if sell_amount_limit.is_zero() {
         return None;
     }
-    let res = executed_amount * sell_token_price
-        - (executed_amount * buy_amount_limit / sell_amount_limit * buy_token_price);
+    let limit_buy_amount = executed_sell_amount * buy_amount_limit / sell_amount_limit;
+    let res = (executed_sell_amount * sell_token_price) - (limit_buy_amount * buy_token_price);
     if res.is_negative() {
         None
     } else {
         Some(res)
     }
+}
+
+/// Surplus Ratio represents the percentage difference of the executed price with the limit price.
+/// This is calculated for orders with a corresponding trade. This value is always non-negative
+/// since orders are contractually bound to be settled on or beyond their limit price.
+fn surplus_ratio(
+    sell_token_price: &BigRational,
+    buy_token_price: &BigRational,
+    sell_amount_limit: &BigRational,
+    buy_amount_limit: &BigRational,
+) -> Option<BigRational> {
+    if buy_token_price.is_zero() || buy_amount_limit.is_zero() {
+        return None;
+    }
+    // We subtract 1 here to give the give the percent beyond limit price instead of the
+    // whole amount according to the definition of "surplus" (that which is more).
+    let res = (sell_amount_limit * sell_token_price) / (buy_amount_limit * buy_token_price)
+        - BigRational::one();
+    if res.is_negative() {
+        return None;
+    }
+    Some(res)
 }
 
 #[cfg(test)]
@@ -587,7 +623,6 @@ pub mod tests {
     fn test_buy_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to pay up to 60 to receive 50,
         // but ended paying the price (1) we have a surplus of 10 sell units, so a total surplus of 1000.
-
         assert_eq!(
             buy_order_surplus(&r(100), &r(100), &r(60), &r(50), &r(50)),
             Some(r(1000))
@@ -637,7 +672,6 @@ pub mod tests {
     fn test_sell_order_surplus() {
         // Two goods are worth the same (100 each). If we were willing to receive as little as 40,
         // but ended paying the price (1) we have a surplus of 10 bought units, so a total surplus of 1000.
-
         assert_eq!(
             sell_order_surplus(&r(100), &r(100), &r(50), &r(40), &r(50)),
             Some(r(1000))
@@ -674,11 +708,50 @@ pub mod tests {
             Some(r(5000))
         );
 
-        // Buy Token worth twice as much as sell token. If we were willing to buy at 3:1, we will
-        // have a surplus of 10 sell tokens, worth 200 each.
+        // Buy Token worth twice as much as sell token. If we were willing to sell at 3:1, we will
+        // have a surplus of 10 buy tokens, worth 200 each.
         assert_eq!(
-            buy_order_surplus(&r(100), &r(200), &r(60), &r(20), &r(20)),
+            sell_order_surplus(&r(100), &r(200), &r(60), &r(20), &r(60)),
             Some(r(2000))
+        );
+    }
+
+    #[test]
+    #[allow(clippy::just_underscores_and_digits)]
+    fn test_surplus_ratio() {
+        assert_eq!(
+            surplus_ratio(&r(1), &r(1), &r(1), &r(1)),
+            Some(BigRational::zero())
+        );
+        assert_eq!(
+            surplus_ratio(&r(1), &BigRational::new(1.into(), 2.into()), &r(1), &r(1)),
+            Some(r(1))
+        );
+
+        assert_eq!(surplus_ratio(&r(2), &r(1), &r(1), &r(1)), Some(r(1)));
+
+        // Two goods are worth the same (100 each). If we were willing to sell up to 60 to receive 50,
+        // but ended paying the price (1) we have a surplus of 10 sell units, so a total surplus of 1000.
+        assert_eq!(
+            surplus_ratio(&r(100), &r(100), &r(60), &r(50)),
+            Some(BigRational::new(1.into(), 5.into())),
+        );
+
+        // No surplus if trade is filled at limit
+        assert_eq!(surplus_ratio(&r(100), &r(100), &r(50), &r(50)), Some(r(0)));
+
+        // Arithmetic error when limit price not respected
+        assert_eq!(surplus_ratio(&r(100), &r(100), &r(40), &r(50)), None);
+
+        // Sell Token worth twice as much as buy token. If we were willing to sell at parity, we will
+        // have a surplus of 50% of tokens, worth 200 each.
+        assert_eq!(surplus_ratio(&r(200), &r(100), &r(50), &r(50)), Some(r(1)));
+
+        // Buy Token worth twice as much as sell token. If we were willing to sell at 3:1, we will
+        // have a surplus of 20 sell tokens, worth 100 each.
+        assert_eq!(
+            surplus_ratio(&r(100), &r(200), &r(60), &r(20)),
+            Some(BigRational::new(1.into(), 2.into()))
         );
     }
 

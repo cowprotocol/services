@@ -1,3 +1,4 @@
+mod analytics;
 pub mod driver;
 pub mod encoding;
 pub mod in_flight_orders;

@@ -2,6 +2,7 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
+    analytics,
     in_flight_orders::InFlightOrders,
     liquidity::{order_converter::OrderConverter, LimitOrder},
     liquidity_collector::LiquidityCollector,
@@ -273,31 +274,43 @@ impl Driver {
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
     /// the number of orders that were;
+    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
     ///  - matched but not settled in this runloop (effectively queued for the next one)
-    ///  - matched but coming from known liquidity providers.
     /// Should help us to identify how much we can save by parallelizing execution.
-    fn report_matched_orders(
+    fn report_on_batch(
         &self,
-        submitted: &Settlement,
-        all: impl Iterator<Item = RatedSettlement>,
+        submitted: &(Arc<dyn Solver>, RatedSettlement),
+        other_settlements: Vec<(Arc<dyn Solver>, RatedSettlement)>,
     ) {
-        let submitted: HashSet<_> = submitted
+        // Report surplus
+        analytics::report_alternative_settlement_surplus(
+            self.metrics.clone(),
+            (submitted.0.name(), &submitted.1.settlement),
+            other_settlements
+                .iter()
+                .map(|(solver, rated_settlement)| (solver.name(), &rated_settlement.settlement))
+                .collect(),
+        );
+        // Report matched but not settled
+        // TODO - move all this data manipulation into analytics.rs
+        let submitted_orders: HashSet<_> = submitted
+            .1
+            .settlement
             .trades()
             .iter()
             .map(|trade| trade.order.order_meta_data.uid)
             .collect();
-        let all_matched_orders: HashSet<_> = all
-            .flat_map(|solution| solution.settlement.trades().to_vec())
-            .map(|trade| trade.order)
-            .collect();
-        let all_matched_ids: HashSet<_> = all_matched_orders
+        let other_matched_orders: HashSet<_> = other_settlements
             .iter()
-            .map(|order| order.order_meta_data.uid)
+            .flat_map(|(_, solution)| solution.settlement.trades().to_vec())
+            .map(|trade| trade.order.order_meta_data.uid)
             .collect();
-        let matched_but_not_settled: HashSet<_> =
-            all_matched_ids.difference(&submitted).copied().collect();
+        let matched_but_not_settled: HashSet<_> = other_matched_orders
+            .difference(&submitted_orders)
+            .copied()
+            .collect();
         self.metrics
-            .orders_matched_but_not_settled(matched_but_not_settled.len())
+            .orders_matched_but_not_settled(matched_but_not_settled.len());
     }
 
     // Rate settlements, ignoring those for which the rating procedure failed.
@@ -469,7 +482,7 @@ impl Driver {
             }
         }
 
-        let (rated_settlements, errors) = self
+        let (mut rated_settlements, errors) = self
             .rate_settlements(solver_settlements, &estimated_prices, gas_price)
             .await?;
         tracing::info!(
@@ -481,27 +494,28 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
-        if let Some((solver, mut settlement)) = rated_settlements
-            .clone()
-            .into_iter()
-            .max_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()))
-        {
+        rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+        if let Some((wining_solver, mut winning_settlement)) = rated_settlements.pop() {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
-                .can_settle_without_liquidity(solver.clone(), &settlement, gas_price)
+                .can_settle_without_liquidity(wining_solver.clone(), &winning_settlement, gas_price)
                 .await
                 .unwrap_or(false)
             {
-                settlement.settlement = settlement.settlement.without_onchain_liquidity();
+                winning_settlement.settlement =
+                    winning_settlement.settlement.without_onchain_liquidity();
                 tracing::debug!("settlement without onchain liquidity");
             }
 
-            tracing::info!("winning settlement: {:?}", settlement);
+            tracing::info!("winning settlement: {:?}", winning_settlement);
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
-            if let Ok(receipt) = self.submit_settlement(solver, settlement.clone()).await {
-                let orders = settlement
+            if let Ok(receipt) = self
+                .submit_settlement(wining_solver.clone(), winning_settlement.clone())
+                .await
+            {
+                let orders = winning_settlement
                     .settlement
                     .trades()
                     .iter()
@@ -517,15 +531,10 @@ impl Driver {
             }
             self.metrics.transaction_submission(start.elapsed());
 
-            self.report_matched_orders(
-                &settlement.settlement,
-                rated_settlements.into_iter().map(|(_, solution)| solution),
-            );
+            self.report_on_batch(&(wining_solver, winning_settlement), rated_settlements);
         }
-
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
-
         Ok(())
     }
 

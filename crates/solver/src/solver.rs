@@ -119,7 +119,7 @@ impl Default for Auction {
 /// A vector of solvers.
 pub type Solvers = Vec<Arc<dyn Solver>>;
 
-/// A single settlement and a solver that've produced it.
+/// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement);
 
 arg_enum! {

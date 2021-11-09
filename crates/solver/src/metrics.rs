@@ -36,6 +36,7 @@ pub trait SolverMetrics: Send + Sync {
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, successful: bool, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
+    fn report_order_surplus(&self, surplus_diff: f64);
     fn runloop_completed(&self);
     fn complete_runloop_until_transaction(&self, duration: Duration);
     fn transaction_submission(&self, duration: Duration);
@@ -56,6 +57,7 @@ pub struct Metrics {
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
     last_runloop_completed: Mutex<Instant>,
+    order_surplus_report: Histogram,
     complete_runloop_until_transaction: Histogram,
     transaction_submission: Histogram,
 }
@@ -124,6 +126,25 @@ impl Metrics {
         )?;
         registry.register(Box::new(matched_but_unsettled_orders.clone()))?;
 
+        let order_surplus_report = Histogram::with_opts(
+            HistogramOpts::new(
+                "settlement_surplus_report",
+                "Surplus ratio differences between winning and best settlement per order",
+            )
+            .buckets(vec![
+                -f64::INFINITY,
+                -0.1,
+                -0.01,
+                -0.005,
+                0.,
+                0.005,
+                0.01,
+                0.1,
+                f64::INFINITY,
+            ]),
+        )?;
+        registry.register(Box::new(order_surplus_report.clone()))?;
+
         let opts = HistogramOpts::new(
             "transport_requests",
             "RPC Request durations labelled by method",
@@ -177,6 +198,7 @@ impl Metrics {
             pool_cache_hits,
             pool_cache_misses,
             last_runloop_completed: Mutex::new(Instant::now()),
+            order_surplus_report,
             complete_runloop_until_transaction,
             transaction_submission,
         })
@@ -278,6 +300,10 @@ impl SolverMetrics for Metrics {
         self.matched_but_unsettled_orders.inc_by(count as u64);
     }
 
+    fn report_order_surplus(&self, surplus_diff: f64) {
+        self.order_surplus_report.observe(surplus_diff)
+    }
+
     fn runloop_completed(&self) {
         *self
             .last_runloop_completed
@@ -348,6 +374,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: bool, _: &'static str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
+    fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}
     fn complete_runloop_until_transaction(&self, _: Duration) {}
     fn transaction_submission(&self, _: Duration) {}
