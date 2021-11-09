@@ -30,7 +30,7 @@ impl Slippage {
     }
 
     /// Creates a slippage amount from the specified basis points as number.
-    pub fn number_from_basis_points(basis_points: u16) -> Result<Self> {
+    pub fn number_from_basis_points(basis_points: u32) -> Result<Self> {
         let number_representation = (basis_points as f64) / 10000.;
         Ok(Slippage(number_representation))
     }
