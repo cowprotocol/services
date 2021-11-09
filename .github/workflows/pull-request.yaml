@@ -74,7 +74,7 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: npm install @apidevtools/swagger-cli
-      - run: node_modules/.bin/swagger-cli validate orderbook/openapi.yml
+      - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
   coverage:
     runs-on: ubuntu-latest
     steps:

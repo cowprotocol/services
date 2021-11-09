@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 pub fn contract_address_file(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
+        .join("..")
         .join("target")
         .join("deploy")
         .join(format!("{}.addr", name))
@@ -14,6 +15,7 @@ pub fn contract_address_file(name: &str) -> PathBuf {
 /// Path to the file containing the test network ID.
 pub fn network_id_file() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
         .join("..")
         .join("target")
         .join("deploy")
