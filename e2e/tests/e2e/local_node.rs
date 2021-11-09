@@ -11,7 +11,7 @@ use std::{
 use web3::{api::Namespace, helpers::CallFuture, Transport};
 
 lazy_static! {
-    static ref GANACHE_MUTEX: Mutex<()> = Mutex::new(());
+    static ref NODE_MUTEX: Mutex<()> = Mutex::new(());
 }
 
 const NODE_HOST: &str = "http://127.0.0.1:8545";
@@ -31,7 +31,7 @@ where
     // Note that the mutex is expected to become poisoned if a test panics. This
     // is not relevant for us as we are not interested in the data stored in
     // it but rather in the locked state.
-    let _lock = GANACHE_MUTEX.lock();
+    let _lock = NODE_MUTEX.lock();
 
     let http = create_test_transport(NODE_HOST);
     let web3 = Web3::new(http);
@@ -51,13 +51,13 @@ where
 }
 
 struct Resetter<T> {
-    ganache: GanacheApi<T>,
+    ganache: EvmApi<T>,
     snapshot_id: U256,
 }
 
 impl<T: Transport> Resetter<T> {
     async fn new(web3: &web3::Web3<T>) -> Self {
-        let ganache = web3.api::<GanacheApi<_>>();
+        let ganache = web3.api::<EvmApi<_>>();
         let snapshot_id = ganache
             .snapshot()
             .await
@@ -77,16 +77,16 @@ impl<T: Transport> Resetter<T> {
 }
 
 #[derive(Debug, Clone)]
-pub struct GanacheApi<T> {
+pub struct EvmApi<T> {
     transport: T,
 }
 
-impl<T: Transport> Namespace<T> for GanacheApi<T> {
+impl<T: Transport> Namespace<T> for EvmApi<T> {
     fn new(transport: T) -> Self
     where
         Self: Sized,
     {
-        GanacheApi { transport }
+        EvmApi { transport }
     }
 
     fn transport(&self) -> &T {
@@ -94,7 +94,7 @@ impl<T: Transport> Namespace<T> for GanacheApi<T> {
     }
 }
 
-impl<T: Transport> GanacheApi<T> {
+impl<T: Transport> EvmApi<T> {
     pub fn snapshot(&self) -> CallFuture<U256, T::Out> {
         CallFuture::new(self.transport.execute("evm_snapshot", vec![]))
     }

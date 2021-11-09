@@ -21,8 +21,9 @@ const TRADER: [u8; 32] = [1; 32];
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
-async fn ganache_smart_contract_orders() {
-    crate::ganache::test(smart_contract_orders).await;
+#[ignore]
+async fn local_node_smart_contract_orders() {
+    crate::local_node::test(smart_contract_orders).await;
 }
 
 async fn smart_contract_orders(web3: Web3) {

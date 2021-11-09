@@ -38,16 +38,6 @@ jobs:
           path: flyway-${{ env.FLYWAY_VERSION }}
           key: ${{ runner.os }}-build-flyway-${{ env.FLYWAY_VERSION }}
       - run: "[[ -d flyway-${FLYWAY_VERSION} ]] || (curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}.tar.gz -o flyway-commandline-${FLYWAY_VERSION}.tar.gz && tar -xzf flyway-commandline-${FLYWAY_VERSION}.tar.gz && rm flyway-commandline-${FLYWAY_VERSION}.tar.gz)"
-      - run: cargo build --locked --all-features --tests
-      - run: cargo test --locked --all-features
-      - run: |
-          sudo systemctl start postgresql.service
-          sudo -u postgres createuser $USER
-          sudo -u postgres createdb $USER
-          psql -c "ALTER USER $USER PASSWORD '$FLYWAY_PASSWORD';"
-          flyway-${FLYWAY_VERSION}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
-        # Postgres tests should not run in parallel because they use the same database.
-      - run: cargo test --locked --all-features postgres -- --ignored --test-threads 1
       - run: |
           npm install hardhat
           cat > hardhat.config.js <<EOF
@@ -63,8 +53,22 @@ jobs:
           };
           EOF
           node_modules/.bin/hardhat node &
-      - run: cargo run --locked --all-features --bin deploy
-      - run: cargo test --locked --all-features --package e2e
+      - run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres createuser $USER
+          sudo -u postgres createdb $USER
+          psql -c "ALTER USER $USER PASSWORD '$FLYWAY_PASSWORD';"
+          flyway-${FLYWAY_VERSION}/flyway -url="jdbc:postgresql:///" -user=$USER -locations="filesystem:database/sql/" migrate
+      # Running deploy causes rebuild because contracts crate changes so we do it before building
+      # the rest.
+      - run: cargo build --features bin --bin deploy
+      - run: cargo run --features bin --bin deploy
+      - run: cargo test --no-run
+      - run: cargo test
+      # tests requiring a Postgres instance.
+      - run: cargo test postgres -- --ignored --test-threads 1
+      # tests requiring a local ethereum node
+      - run: cargo test local_node -- --ignored --test-threads 1
   openapi:
     runs-on: ubuntu-latest
     steps:

@@ -30,8 +30,9 @@ const TRADER_A_PK: [u8; 32] =
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
-async fn ganache_onchain_settlement_without_liquidity() {
-    crate::ganache::test(onchain_settlement_without_liquidity).await;
+#[ignore]
+async fn local_node_onchain_settlement_without_liquidity() {
+    crate::local_node::test(onchain_settlement_without_liquidity).await;
 }
 
 async fn onchain_settlement_without_liquidity(web3: Web3) {

@@ -26,8 +26,9 @@ const TRADER: [u8; 32] = [1; 32];
 const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 
 #[tokio::test]
-async fn ganache_vault_balances() {
-    crate::ganache::test(vault_balances).await;
+#[ignore]
+async fn local_node_vault_balances() {
+    crate::local_node::test(vault_balances).await;
 }
 
 async fn vault_balances(web3: Web3) {

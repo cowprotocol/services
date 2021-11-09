@@ -9,15 +9,6 @@ members = [
     "solver",
 ]
 
-default-members = [
-    "alerter",
-    "contracts",
-    "model",
-    "orderbook",
-    "shared",
-    "solver",
-]
-
 [patch.crates-io]
 # Warp fork with an extra commit to allow turning rejections into responses.
 warp = { git = 'https://github.com/vkgnosis/warp.git', rev = "87a91e24311b0ca6ed67408d2d302c569331dfec" }

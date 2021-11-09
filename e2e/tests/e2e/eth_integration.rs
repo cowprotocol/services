@@ -32,8 +32,9 @@ const ORDER_PLACEMENT_ENDPOINT: &str = "/api/v1/orders/";
 const FEE_ENDPOINT: &str = "/api/v1/fee/";
 
 #[tokio::test]
-async fn ganache_eth_integration() {
-    crate::ganache::test(eth_integration).await;
+#[ignore]
+async fn local_node_eth_integration() {
+    crate::local_node::test(eth_integration).await;
 }
 
 async fn eth_integration(web3: Web3) {

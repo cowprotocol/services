@@ -3,7 +3,7 @@
 // here and in this test we include all the tests we want to run.
 
 mod eth_integration;
-mod ganache;
+mod local_node;
 mod onchain_settlement;
 #[macro_use]
 mod services;
