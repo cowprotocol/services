@@ -106,8 +106,16 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         // After stopping submission of new transactions we wait for some time to give a potentially
         // mined previously submitted transaction time to propagate to our node.
 
+        // Example:
+        // 1. We submit tx to ethereum node, and we start counting 10s pause before new loop iteration.
+        // 2. In the meantime, block A gets mined somewhere in the network (not containing our tx)
+        // 3. After some time block B is mined somewhere in the network (containing our tx)
+        // 4. Our node receives block A.
+        // 5. Our 10s is up but our node received only block A because of the delay in block propagation. We simulate tx and it fails, we return back
+        // 6. If we don't wait another 20s to receive block B, we wont see mined tx.
+
         if !transactions.is_empty() {
-            const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(60);
+            const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
 
@@ -185,12 +193,10 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         transactions: &mut Vec<H256>,
     ) -> anyhow::Error {
         const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
-        const CANCEL_PROPAGATION_TIME: Duration = Duration::from_secs(2);
         const MINIMAL_MAX_PRIORITY_FEE: f64 = 10_000_000_000.0;
 
         // The amount of extra gas it costs to include the payment to block.coinbase interaction in
         // an existing settlement.
-        let gas_estimate = gas_estimate + U256::from(18346);
         let target_confirm_time = Instant::now() + target_confirm_time;
 
         // gas price and raw signed transaction
@@ -249,26 +255,25 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_tx)) = previous_tx.as_ref() {
                     if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
-                        tracing::error!("flashbots cancellation request not sent: {:?}", err);
+                        tracing::warn!("flashbots cancellation request not sent: {:?}", err);
                     }
                 }
                 return anyhow!("flashbots failed simulation: {}", err);
             }
 
-            // If gas price has increased cancel old and submit new new transaction.
+            // If gas price has increased cancel old and submit new transaction.
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
                 let previous_gas_price = previous_gas_price.bump(1.125);
                 if gas_price.cap() > previous_gas_price.cap() {
-                    if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
-                        tracing::error!("flashbots cancellation request not sent: {:?}", err);
+                    if let Err(err) = self.flashbots_api.cancel_and_wait(previous_tx).await {
+                        // If we are unable to cancel, lets just wait for some time and try again
+                        // Maybe the current tx will get mined in the meantime, or the cancellation will succeed a bit later
 
-                        // if cancellation request was not sent, return from function since we can't send any more txs from the same sender
-                        return anyhow!("flashbots failed to cancel: {}", err);
+                        tracing::warn!("flashbots cancellation failed: {:?}", err);
+                        tokio::time::sleep(UPDATE_INTERVAL).await;
+                        continue;
                     }
-
-                    // wait for a sec to give flashbots api time to update the cancel status before sending a new tx
-                    tokio::time::sleep(CANCEL_PROPAGATION_TIME).await;
                 } else {
                     tokio::time::sleep(UPDATE_INTERVAL).await;
                     continue;
@@ -288,6 +293,8 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                 gas_price,
                 gas_estimate,
             );
+
+            // submit transaction
 
             match self
                 .flashbots_api

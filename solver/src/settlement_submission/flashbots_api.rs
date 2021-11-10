@@ -3,7 +3,8 @@ use gas_estimation::{EstimatedGasPrice, GasPrice1559};
 use jsonrpc_core::Output;
 use primitive_types::U256;
 use reqwest::Client;
-use serde::Deserialize;
+use serde::{de::DeserializeOwned, Deserialize};
+use std::time::Duration;
 
 const URL: &str = "https://protection.flashbots.net/v1/rpc";
 
@@ -24,6 +25,43 @@ struct Eip1559 {
 struct FlashbotGasPrice {
     base_fee_per_gas: U256,
     default: Eip1559,
+}
+
+#[derive(Debug, Deserialize)]
+struct FlashbotStatus {
+    status: Status,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+enum Status {
+    #[serde(rename = "PENDING_BUNDLE")]
+    Pending,
+    #[serde(rename = "FAILED_BUNDLE")]
+    Failed,
+    #[serde(rename = "SUCCESSFUL_BUNDLE")]
+    Successful,
+    #[serde(rename = "CANCEL_BUNDLE_SUCCESSFUL")]
+    Cancelled,
+}
+
+fn parse_json_rpc_response<T>(body: &str) -> Result<T>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str::<Output>(body)
+        .with_context(|| {
+            tracing::info!("flashbot response: {}", body);
+            anyhow!("invalid flashbots response")
+        })
+        .and_then(|output| match output {
+            Output::Success(body) => serde_json::from_value::<T>(body.result).with_context(|| {
+                format!(
+                    "flashbots failed conversion to expected {}",
+                    std::any::type_name::<T>()
+                )
+            }),
+            Output::Failure(body) => bail!("flashbots rpc error: {}", body.error),
+        })
 }
 
 impl FlashbotsApi {
@@ -49,22 +87,12 @@ impl FlashbotsApi {
         let body = response.text().await?;
         ensure!(status.is_success(), "status {}: {:?}", status, body);
 
-        match serde_json::from_str::<Output>(&body) {
-            Ok(body) => match body {
-                Output::Success(body) => match body.result.as_str() {
-                    Some(bundle_id) => {
-                        tracing::debug!("flashbots bundle id: {}", bundle_id);
-                        Ok(bundle_id.to_string())
-                    }
-                    None => Err(anyhow!("result not a string")),
-                },
-                Output::Failure(body) => Err(anyhow!(body.error)),
-            },
-            Err(err) => Err(anyhow!(err)),
-        }
+        let bundle_id = parse_json_rpc_response::<String>(&body)?;
+        tracing::debug!("flashbots bundle id: {}", bundle_id);
+        Ok(bundle_id)
     }
 
-    /// Cancel a previously submitted transaction.
+    /// Send a cancel to a previously submitted transaction. This function does not wait for cancellation result.
     pub async fn cancel(&self, bundle_id: &str) -> Result<()> {
         let body = serde_json::json!({
             "jsonrpc": "2.0",
@@ -81,29 +109,38 @@ impl FlashbotsApi {
         let body = response.text().await?;
         ensure!(status.is_success(), "status {}: {:?}", status, body);
 
-        match serde_json::from_str::<Output>(&body) {
-            Ok(body) => match body {
-                Output::Success(body) => match body.result.as_bool() {
-                    Some(success) => {
-                        tracing::debug!("flashbots cancellation request sent: {}", success);
-                        match success {
-                            true => Ok(()),
-                            false => Err(anyhow!("flashbots cancellation response was false")),
-                        }
-                    }
-                    None => Err(anyhow!("result not a bool")),
-                },
-                Output::Failure(body) => Err(anyhow!(body.error)),
-            },
-            Err(err) => {
-                tracing::info!("flashbot cancellation response: {}", body);
-                Err(anyhow!(err))
-            }
+        let success = parse_json_rpc_response::<bool>(&body)?;
+        tracing::debug!(
+            "flashbots cancellation for bundle {} result: {}",
+            bundle_id,
+            success
+        );
+
+        match success {
+            true => Ok(()),
+            false => bail!("flashbots cancellation response was false"),
         }
     }
 
+    /// Send cancel and wait for some time for the cancellation confirmal
+    pub async fn cancel_and_wait(&self, bundle_id: &str) -> Result<bool> {
+        self.cancel(bundle_id).await?;
+
+        const WAIT_FOR_CANCELLATION_RETRIES: usize = 10usize; // will be a strategy parameter after the refactor!
+        const CANCEL_PROPAGATION_TIME: Duration = Duration::from_secs(2); // will be a strategy parameter after the refactor!
+
+        for _ in 0..std::cmp::max(WAIT_FOR_CANCELLATION_RETRIES, 1usize) {
+            if self.status(bundle_id).await? == Status::Cancelled {
+                return Ok(true);
+            }
+
+            tokio::time::sleep(CANCEL_PROPAGATION_TIME).await;
+        }
+        Ok(false)
+    }
+
     /// Query status of a previously submitted transaction.
-    pub async fn status(&self, bundle_id: &str) -> Result<()> {
+    async fn status(&self, bundle_id: &str) -> Result<Status> {
         let body = serde_json::json!({
             "jsonrpc": "2.0",
             "id": 1,
@@ -118,7 +155,11 @@ impl FlashbotsApi {
         let status = response.status();
         let body = response.text().await?;
         ensure!(status.is_success(), "status {}: {:?}", status, body);
-        Ok(())
+
+        // remove temporary status log in following refactor PR
+        tracing::debug!("flashbot status response: {}", body);
+
+        Ok(parse_json_rpc_response::<FlashbotStatus>(&body)?.status)
     }
 
     /// Query gas_price for the current network state (simplest one for Flashbots)
@@ -134,16 +175,8 @@ impl FlashbotsApi {
         let body = response.text().await?;
         ensure!(status.is_success(), "status {}: {:?}", status, body);
 
-        let gas_price = serde_json::from_str::<Output>(&body)
-            .with_context(|| {
-                tracing::info!("flashbot cancellation response: {}", body);
-                anyhow!("invalid Flashbots RPC response")
-            })
-            .and_then(|output| match output {
-                Output::Success(body) => serde_json::from_value::<FlashbotGasPrice>(body.result)
-                    .context("result not a FlashbotGasPrice"),
-                Output::Failure(body) => bail!("Flashbots RPC error: {}", body.error),
-            })?;
+        let gas_price = parse_json_rpc_response::<FlashbotGasPrice>(&body)?;
+
         Ok(EstimatedGasPrice {
             eip1559: Some(GasPrice1559 {
                 base_fee_per_gas: gas_price.base_fee_per_gas.to_f64_lossy(),
@@ -187,7 +220,7 @@ mod tests {
           },
         });
 
-        let deserialized = serde_json::from_str::<jsonrpc_core::Output>(&body.to_string()).unwrap();
+        let deserialized = serde_json::from_str::<Output>(&body.to_string()).unwrap();
         match deserialized {
             Output::Success(s) => {
                 let deserialized = serde_json::from_value::<FlashbotGasPrice>(s.result).unwrap();
@@ -202,5 +235,26 @@ mod tests {
             }
             Output::Failure(_) => panic!(),
         }
+    }
+
+    #[test]
+    fn deserialize_flashbot_status() {
+        let body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "result": {
+                "status": "FAILED_BUNDLE",
+                "error": "EOA_MORE_THAN_ONE_BUNDLE",
+                "message": "There is already a transaction being processed from that address",
+                "id": "0x9ef2fec1c343354cacb62fb107cf330d3d3cc54345d5f30ba26ce36522b9ee3f"
+            }
+        });
+
+        assert_eq!(
+            parse_json_rpc_response::<FlashbotStatus>(&body.to_string())
+                .unwrap()
+                .status,
+            Status::Failed
+        );
     }
 }
