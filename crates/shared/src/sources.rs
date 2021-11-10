@@ -9,6 +9,7 @@ use self::uniswap::{
 };
 use crate::{recent_block_cache::Block, Web3};
 use anyhow::Result;
+use contracts::UniswapV2Factory;
 use model::TokenPair;
 use std::{
     collections::{HashMap, HashSet},
@@ -29,14 +30,14 @@ pub async fn pair_providers(
     sources: &[BaselineSource],
     chain_id: u64,
     web3: &Web3,
+    // Passed in explicitly to facilitate running with locally deployed contracts.
+    uniswap: &UniswapV2Factory,
 ) -> HashMap<BaselineSource, Arc<dyn AmmPairProvider>> {
     let mut providers = HashMap::new();
     for source in sources.iter().copied() {
         let provider: Arc<dyn AmmPairProvider> = match source {
             BaselineSource::Uniswap => Arc::new(UniswapPairProvider {
-                factory: contracts::UniswapV2Factory::deployed(web3)
-                    .await
-                    .expect("couldn't load deployed uniswap router"),
+                factory: uniswap.clone(),
                 chain_id,
             }),
             BaselineSource::Sushiswap => Arc::new(SushiswapPairProvider {

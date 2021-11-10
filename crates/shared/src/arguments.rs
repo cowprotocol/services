@@ -132,6 +132,11 @@ pub struct Arguments {
 
     #[structopt(long, env)]
     pub zeroex_api_key: Option<String>,
+
+    /// Whether to load addresses of contracts already deployed to local test network through
+    /// `cargo run --bin deploy-contracts`.
+    #[structopt(long, env, parse(try_from_str), default_value = "false")]
+    pub use_local_deployment: bool,
 }
 
 pub fn parse_fee_factor(s: &str) -> Result<f64> {

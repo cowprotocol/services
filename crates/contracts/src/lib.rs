@@ -1,3 +1,4 @@
+pub mod deploy;
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;

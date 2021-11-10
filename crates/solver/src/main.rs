@@ -1,5 +1,8 @@
 use anyhow::anyhow;
-use contracts::{IUniswapLikeRouter, WETH9};
+use contracts::{
+    deploy::{Contracts, Deployment},
+    IUniswapLikeRouter,
+};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
 use shared::{
@@ -302,14 +305,16 @@ async fn main() {
         .await
         .expect("failed to get network id");
     let network_name = network_name(&network_id, chain_id);
-    let settlement_contract = solver::get_settlement_contract(&web3)
-        .await
-        .expect("couldn't load deployed settlement");
-    let native_token_contract = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
+    let contracts = if args.shared.use_local_deployment {
+        let deployment = Deployment::read().expect("read local deployments");
+        Contracts::from_deployment(deployment, &web3)
+    } else {
+        Contracts::from_web3(&web3)
+            .await
+            .expect("load web3 contracts")
+    };
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token_contract.address(),
+        contracts.weth.address(),
         &args.shared.base_tokens,
     ));
 
@@ -347,25 +352,29 @@ async fn main() {
         max_retries: args.shared.pool_cache_maximum_retries,
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
     };
-    let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
-            .await
-            .into_iter()
-            .map(|(source, pair_provider)| {
-                let fetcher = Box::new(PoolFetcher {
-                    pair_provider,
-                    web3: web3.clone(),
-                });
-                let pool_cache = PoolCache::new(
-                    cache_config,
-                    fetcher,
-                    current_block_stream.clone(),
-                    metrics.clone(),
-                )
-                .expect("failed to create pool cache");
-                (source, Arc::new(pool_cache))
-            })
-            .collect();
+    let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> = sources::pair_providers(
+        &args.shared.baseline_sources,
+        chain_id,
+        &web3,
+        &contracts.uniswap_factory,
+    )
+    .await
+    .into_iter()
+    .map(|(source, pair_provider)| {
+        let fetcher = Box::new(PoolFetcher {
+            pair_provider,
+            web3: web3.clone(),
+        });
+        let pool_cache = PoolCache::new(
+            cache_config,
+            fetcher,
+            current_block_stream.clone(),
+            metrics.clone(),
+        )
+        .expect("failed to create pool cache");
+        (source, Arc::new(pool_cache))
+    })
+    .collect();
 
     let pool_aggregator = Arc::new(PoolAggregator {
         pool_fetchers: pool_caches
@@ -410,12 +419,12 @@ async fn main() {
         base_tokens.clone(),
         // Order book already filters bad tokens
         Arc::new(ListBasedDetector::deny_list(Vec::new())),
-        native_token_contract.address(),
+        contracts.weth.address(),
         native_token_price_estimation_amount,
     ));
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
-        settlement_contract.clone(),
+        contracts.gp_settlement.clone(),
         base_tokens.clone(),
         web3.clone(),
     )
@@ -460,10 +469,10 @@ async fn main() {
         web3.clone(),
         solvers,
         base_tokens,
-        native_token_contract.address(),
+        contracts.weth.address(),
         args.mip_solver_url,
         args.quasimodo_solver_url,
-        &settlement_contract,
+        &contracts.gp_settlement,
         token_info_fetcher,
         price_estimator.clone(),
         network_name.to_string(),
@@ -491,7 +500,7 @@ async fn main() {
             .ok();
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
-        contract: settlement_contract.clone(),
+        contract: contracts.gp_settlement.clone(),
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         gas_price_cap: args.gas_price_cap,
@@ -542,18 +551,18 @@ async fn main() {
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {
-        native_token: native_token_contract.clone(),
+        native_token: contracts.weth.clone(),
         liquidity_order_owners: args.liquidity_order_owners.into_iter().collect(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
     };
     let mut driver = Driver::new(
-        settlement_contract,
+        contracts.gp_settlement,
         liquidity_collector,
         price_estimator,
         solver,
         gas_price_estimator,
         args.settle_interval,
-        native_token_contract.address(),
+        contracts.weth.address(),
         args.min_order_age,
         metrics.clone(),
         web3,

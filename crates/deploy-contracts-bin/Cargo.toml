@@ -1,0 +1,10 @@
+[package]
+name = "deploy-contracts"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+contracts = { path = "../contracts" }
+shared = { path = "../shared" }
+tokio = { version = "1.13", features = ["macros"] }

@@ -15,23 +15,21 @@ required-features = ["bin"]
 [features]
 default = []
 bin = [
-    "anyhow",
     "env_logger",
     "ethcontract-generate",
     "log",
-    "serde_json",
 ]
 
 [dependencies]
+anyhow = "1.0"
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }
-serde = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
 
 # [bin-dependencies]
-anyhow = { version = "1.0", optional = true }
 env_logger = { version = "0.9", optional = true }
 ethcontract-generate = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", optional = true }
 log = { version = "0.4", optional = true }
-serde_json = { version = "1.0", optional = true }
 
 [build-dependencies]
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }

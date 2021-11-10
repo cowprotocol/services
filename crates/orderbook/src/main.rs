@@ -1,5 +1,8 @@
 use anyhow::{anyhow, Context, Result};
-use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
+use contracts::{
+    deploy::{Contracts, Deployment},
+    BalancerV2Vault,
+};
 use model::{
     app_id::AppId,
     order::{OrderUid, BUY_ETH_ADDRESS},
@@ -19,8 +22,6 @@ use orderbook::{
     verify_deployed_contract_constants,
 };
 use primitive_types::H160;
-use shared::price_estimation::zeroex::ZeroExPriceEstimator;
-use shared::zeroex_api::DefaultZeroExApi;
 use shared::{
     bad_token::{
         cache::CachingDetector,
@@ -36,8 +37,8 @@ use shared::{
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         baseline::BaselinePriceEstimator, instrumented::InstrumentedPriceEstimator,
-        paraswap::ParaswapPriceEstimator, priority::PriorityPriceEstimator, PriceEstimating,
-        PriceEstimatorType,
+        paraswap::ParaswapPriceEstimator, priority::PriorityPriceEstimator,
+        zeroex::ZeroExPriceEstimator, PriceEstimating, PriceEstimatorType,
     },
     recent_block_cache::CacheConfig,
     sources::{
@@ -49,8 +50,8 @@ use shared::{
         PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::create_instrumented_transport,
-    transport::http::HttpTransport,
+    transport::{create_instrumented_transport, http::HttpTransport},
+    zeroex_api::DefaultZeroExApi,
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
@@ -192,17 +193,21 @@ async fn main() {
         metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
-    let settlement_contract = GPv2Settlement::deployed(&web3)
-        .await
-        .expect("Couldn't load deployed settlement");
-    let vault_relayer = settlement_contract
+
+    let contracts = if args.shared.use_local_deployment {
+        let deployment = Deployment::read().expect("read local deployments");
+        Contracts::from_deployment(deployment, &web3)
+    } else {
+        Contracts::from_web3(&web3)
+            .await
+            .expect("load web3 contracts")
+    };
+    let vault_relayer = contracts
+        .gp_settlement
         .vault_relayer()
         .call()
         .await
         .expect("Couldn't get vault relayer address");
-    let native_token = WETH9::deployed(&web3)
-        .await
-        .expect("couldn't load deployed native token");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -238,10 +243,10 @@ async fn main() {
         None
     };
 
-    verify_deployed_contract_constants(&settlement_contract, chain_id)
+    verify_deployed_contract_constants(&contracts.gp_settlement, chain_id)
         .await
         .expect("Deployed contract constants don't match the ones in this binary");
-    let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
+    let domain_separator = DomainSeparator::new(chain_id, contracts.gp_settlement.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
     let database = Arc::new(database::instrumented::Instrumented::new(
         postgres.clone(),
@@ -259,7 +264,7 @@ async fn main() {
     };
 
     let event_updater = EventUpdater::new(
-        settlement_contract.clone(),
+        contracts.gp_settlement.clone(),
         database.as_ref().clone(),
         sync_start,
     );
@@ -267,7 +272,7 @@ async fn main() {
         web3.clone(),
         vault,
         vault_relayer,
-        settlement_contract.address(),
+        contracts.gp_settlement.address(),
     ));
 
     let gas_price_estimator = Arc::new(InstrumentedGasEstimator::new(
@@ -282,14 +287,19 @@ async fn main() {
         metrics.clone(),
     ));
 
-    let pair_providers = sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
-        .await
-        .values()
-        .cloned()
-        .collect::<Vec<_>>();
+    let pair_providers = sources::pair_providers(
+        &args.shared.baseline_sources,
+        chain_id,
+        &web3,
+        &contracts.uniswap_factory,
+    )
+    .await
+    .values()
+    .cloned()
+    .collect::<Vec<_>>();
 
     let base_tokens = Arc::new(BaseTokens::new(
-        native_token.address(),
+        contracts.weth.address(),
         &args.shared.base_tokens,
     ));
     let mut allowed_tokens = args.allowed_tokens.clone();
@@ -313,7 +323,7 @@ async fn main() {
         web3: web3.clone(),
         finders,
         base_tokens: base_tokens.tokens().clone(),
-        settlement_contract: settlement_contract.address(),
+        settlement_contract: contracts.gp_settlement.address(),
     };
     let caching_detector = CachingDetector::new(
         Box::new(trace_call_detector),
@@ -386,7 +396,7 @@ async fn main() {
                         gas_price_estimator.clone(),
                         base_tokens.clone(),
                         bad_token_detector.clone(),
-                        native_token.address(),
+                        contracts.weth.address(),
                         native_token_price_estimation_amount,
                     ),
                     "Baseline",
@@ -420,7 +430,7 @@ async fn main() {
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,
-        native_token.address(),
+        contracts.weth.address(),
         database.clone(),
         bad_token_detector.clone(),
         native_token_price_estimation_amount,
@@ -445,7 +455,7 @@ async fn main() {
         .expect("failed to perform initial solvable orders update");
     let order_validator = Arc::new(OrderValidator::new(
         Box::new(web3.clone()),
-        native_token.clone(),
+        contracts.weth.clone(),
         args.banned_users,
         args.min_order_validity_period,
         fee_calculator.clone(),
@@ -454,7 +464,7 @@ async fn main() {
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
-        settlement_contract.address(),
+        contracts.gp_settlement.address(),
         database.clone(),
         bad_token_detector,
         args.enable_presign_orders,
