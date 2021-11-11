@@ -1,7 +1,7 @@
 use crate::{
     services::{
-        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
-        OrderbookServices, UniswapContracts, API_HOST,
+        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
+        OrderbookServices, API_HOST,
     },
     tx, tx_value,
 };
@@ -41,6 +41,7 @@ async fn local_node_onchain_settlement() {
 
 async fn onchain_settlement(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
+    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -52,12 +53,6 @@ async fn onchain_settlement(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader_a = Account::Offline(PrivateKey::from_raw(TRADER_A_PK).unwrap(), None);
     let trader_b = Account::Offline(PrivateKey::from_raw(TRADER_B_PK).unwrap(), None);
-
-    let gpv2 = GPv2::fetch(&web3).await;
-    let UniswapContracts {
-        uniswap_factory,
-        uniswap_router,
-    } = UniswapContracts::fetch(&web3).await;
 
     // Create tokens to trade
     let token_a = deploy_mintable_token(&web3).await;
@@ -73,7 +68,9 @@ async fn onchain_settlement(web3: Web3) {
     // Create and fund Uniswap pool
     tx!(
         solver_account,
-        uniswap_factory.create_pair(token_a.address(), token_b.address())
+        contracts
+            .uniswap_factory
+            .create_pair(token_a.address(), token_b.address())
     );
     tx!(
         solver_account,
@@ -85,15 +82,15 @@ async fn onchain_settlement(web3: Web3) {
     );
     tx!(
         solver_account,
-        token_a.approve(uniswap_router.address(), to_wei(100_000))
+        token_a.approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        token_b.approve(uniswap_router.address(), to_wei(100_000))
+        token_b.approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        uniswap_router.add_liquidity(
+        contracts.uniswap_router.add_liquidity(
             token_a.address(),
             token_b.address(),
             to_wei(100_000),
@@ -113,19 +110,20 @@ async fn onchain_settlement(web3: Web3) {
         );
         tx!(
             solver_account,
-            token.approve(uniswap_router.address(), to_wei(100_000))
+            token.approve(contracts.uniswap_router.address(), to_wei(100_000))
         );
-        tx_value!(solver_account, to_wei(100_000), gpv2.native_token.deposit());
+        tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
         tx!(
             solver_account,
-            gpv2.native_token
-                .approve(uniswap_router.address(), to_wei(100_000))
+            contracts
+                .weth
+                .approve(contracts.uniswap_router.address(), to_wei(100_000))
         );
         tx!(
             solver_account,
-            uniswap_router.add_liquidity(
+            contracts.uniswap_router.add_liquidity(
                 token.address(),
-                gpv2.native_token.address(),
+                contracts.weth.address(),
                 to_wei(100_000),
                 to_wei(100_000),
                 0_u64.into(),
@@ -137,8 +135,8 @@ async fn onchain_settlement(web3: Web3) {
     }
 
     // Approve GPv2 for trading
-    tx!(trader_a, token_a.approve(gpv2.allowance, to_wei(101)));
-    tx!(trader_b, token_b.approve(gpv2.allowance, to_wei(51)));
+    tx!(trader_a, token_a.approve(contracts.allowance, to_wei(101)));
+    tx!(trader_b, token_b.approve(contracts.allowance, to_wei(51)));
 
     // Place Orders
     let OrderbookServices {
@@ -147,7 +145,7 @@ async fn onchain_settlement(web3: Web3) {
         block_stream,
         solvable_orders_cache,
         base_tokens,
-    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
+    } = OrderbookServices::new(&web3, &contracts).await;
 
     let client = reqwest::Client::new();
 
@@ -161,7 +159,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
+            &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
         .build()
@@ -183,7 +181,7 @@ async fn onchain_settlement(web3: Web3) {
         .with_kind(OrderKind::Sell)
         .sign_with(
             EcdsaSigningScheme::EthSign,
-            &gpv2.domain_separator,
+            &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
         )
         .build()
@@ -195,7 +193,7 @@ async fn onchain_settlement(web3: Web3) {
         .await;
     assert_eq!(placement.unwrap().status(), 201);
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
-        factory: uniswap_factory.clone(),
+        factory: contracts.uniswap_factory.clone(),
         chain_id,
     });
 
@@ -203,8 +201,8 @@ async fn onchain_settlement(web3: Web3) {
 
     // Drive solution
     let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        gpv2.settlement.clone(),
+        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
+        contracts.gp_settlement.clone(),
         base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher {
@@ -219,13 +217,13 @@ async fn onchain_settlement(web3: Web3) {
     };
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
-        gpv2.settlement.clone(),
+        contracts.gp_settlement.clone(),
         liquidity_collector,
         price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
-        gpv2.native_token.address(),
+        contracts.weth.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
@@ -236,7 +234,7 @@ async fn onchain_settlement(web3: Web3) {
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
-            contract: gpv2.settlement.clone(),
+            contract: contracts.gp_settlement.clone(),
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,
@@ -247,7 +245,7 @@ async fn onchain_settlement(web3: Web3) {
         1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
-        create_order_converter(&web3, gpv2.native_token.address()),
+        create_order_converter(&web3, contracts.weth.address()),
     );
     driver.single_run().await.unwrap();
 

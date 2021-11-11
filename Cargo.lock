@@ -328,12 +328,10 @@ dependencies = [
  "env_logger",
  "ethcontract",
  "ethcontract-generate",
- "filetime",
  "log",
  "maplit",
  "serde",
  "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -635,6 +633,7 @@ checksum = "4bb454f0228b18c7f4c3b0ebbee346ed9c52e7443b0999cd543ff3571205701d"
 name = "e2e"
 version = "1.0.0"
 dependencies = [
+ "anyhow",
  "contracts",
  "criterion",
  "ethcontract",
@@ -835,18 +834,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d32e9bd16cc02eae7db7ef620b392808b89f6a5e16bb3497d159c6b92a0f4f86"
 dependencies = [
  "backtrace",
-]
-
-[[package]]
-name = "filetime"
-version = "0.2.15"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "975ccf83d8d9d0d84682850a38c8169027be83368805971cc4f238c2b245bc98"
-dependencies = [
- "cfg-if",
- "libc",
- "redox_syscall",
- "winapi",
 ]
 
 [[package]]

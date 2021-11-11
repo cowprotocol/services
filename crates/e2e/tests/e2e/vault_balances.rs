@@ -1,6 +1,6 @@
 use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
-    OrderbookServices, UniswapContracts, API_HOST,
+    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, OrderbookServices,
+    API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -33,6 +33,7 @@ async fn local_node_vault_balances() {
 
 async fn vault_balances(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
+    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -44,12 +45,6 @@ async fn vault_balances(web3: Web3) {
     let solver_account = Account::Local(accounts[0], None);
     let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
 
-    let gpv2 = GPv2::fetch(&web3).await;
-    let UniswapContracts {
-        uniswap_factory,
-        uniswap_router,
-    } = UniswapContracts::fetch(&web3).await;
-
     // Create & Mint tokens to trade
     let token = deploy_mintable_token(&web3).await;
     tx!(
@@ -58,27 +53,30 @@ async fn vault_balances(web3: Web3) {
     );
     tx!(solver_account, token.mint(trader.address(), to_wei(10)));
 
-    tx_value!(solver_account, to_wei(100_000), gpv2.native_token.deposit());
+    tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
 
     // Create and fund Uniswap pool
     tx!(
         solver_account,
-        uniswap_factory.create_pair(token.address(), gpv2.native_token.address())
+        contracts
+            .uniswap_factory
+            .create_pair(token.address(), contracts.weth.address())
     );
     tx!(
         solver_account,
-        token.approve(uniswap_router.address(), to_wei(100_000))
+        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        gpv2.native_token
-            .approve(uniswap_router.address(), to_wei(100_000))
+        contracts
+            .weth
+            .approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        uniswap_router.add_liquidity(
+        contracts.uniswap_router.add_liquidity(
             token.address(),
-            gpv2.native_token.address(),
+            contracts.weth.address(),
             to_wei(100_000),
             to_wei(100_000),
             0_u64.into(),
@@ -89,11 +87,15 @@ async fn vault_balances(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader, token.approve(gpv2.vault.address(), to_wei(10)));
     tx!(
         trader,
-        gpv2.vault
-            .set_relayer_approval(trader.address(), gpv2.allowance, true)
+        token.approve(contracts.balancer_vault.address(), to_wei(10))
+    );
+    tx!(
+        trader,
+        contracts
+            .balancer_vault
+            .set_relayer_approval(trader.address(), contracts.allowance, true)
     );
 
     let OrderbookServices {
@@ -102,7 +104,7 @@ async fn vault_balances(web3: Web3) {
         solvable_orders_cache,
         base_tokens,
         ..
-    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
+    } = OrderbookServices::new(&web3, &contracts).await;
 
     let client = reqwest::Client::new();
 
@@ -113,12 +115,12 @@ async fn vault_balances(web3: Web3) {
         .with_sell_amount(to_wei(9))
         .with_sell_token_balance(SellTokenSource::External)
         .with_fee_amount(to_wei(1))
-        .with_buy_token(gpv2.native_token.address())
+        .with_buy_token(contracts.weth.address())
         .with_buy_amount(to_wei(8))
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
+            &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
         )
         .build()
@@ -134,13 +136,13 @@ async fn vault_balances(web3: Web3) {
 
     // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
-        factory: uniswap_factory.clone(),
+        factory: contracts.uniswap_factory.clone(),
         chain_id,
     });
 
     let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        gpv2.settlement.clone(),
+        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
+        contracts.gp_settlement.clone(),
         base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher {
@@ -155,13 +157,13 @@ async fn vault_balances(web3: Web3) {
     };
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
-        gpv2.settlement.clone(),
+        contracts.gp_settlement.clone(),
         liquidity_collector,
         price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
-        gpv2.native_token.address(),
+        contracts.weth.address(),
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
@@ -172,7 +174,7 @@ async fn vault_balances(web3: Web3) {
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
-            contract: gpv2.settlement.clone(),
+            contract: contracts.gp_settlement.clone(),
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,
@@ -183,7 +185,7 @@ async fn vault_balances(web3: Web3) {
         1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
-        create_order_converter(&web3, gpv2.native_token.address()),
+        create_order_converter(&web3, contracts.weth.address()),
     );
     driver.single_run().await.unwrap();
 
@@ -195,8 +197,8 @@ async fn vault_balances(web3: Web3) {
         .expect("Couldn't fetch token balance");
     assert_eq!(balance, U256::zero());
 
-    let balance = gpv2
-        .native_token
+    let balance = contracts
+        .weth
         .balance_of(trader.address())
         .call()
         .await

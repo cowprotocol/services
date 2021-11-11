@@ -406,7 +406,7 @@ mod tests {
             .unwrap());
 
         // Set authorization for allowance target to act as a Vault relayer
-        vault::grant_required_roles(authorizer, vault.address(), allowance_target.address())
+        vault::grant_required_roles(&authorizer, vault.address(), allowance_target.address())
             .await
             .unwrap();
         // Give the trader some balance

@@ -1,7 +1,7 @@
 use crate::{
     services::{
-        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, GPv2,
-        OrderbookServices, UniswapContracts, API_HOST,
+        create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
+        OrderbookServices, API_HOST,
     },
     tx, tx_value,
 };
@@ -39,6 +39,7 @@ async fn local_node_eth_integration() {
 
 async fn eth_integration(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
+    let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -52,12 +53,6 @@ async fn eth_integration(web3: Web3) {
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_A_PK).unwrap(), None);
     let trader_buy_eth_b =
         Account::Offline(PrivateKey::from_raw(TRADER_BUY_ETH_B_PK).unwrap(), None);
-
-    let gpv2 = GPv2::fetch(&web3).await;
-    let UniswapContracts {
-        uniswap_factory,
-        uniswap_router,
-    } = UniswapContracts::fetch(&web3).await;
 
     // Create & Mint tokens to trade
     let token = deploy_mintable_token(&web3).await;
@@ -74,25 +69,27 @@ async fn eth_integration(web3: Web3) {
         token.mint(trader_buy_eth_b.address(), to_wei(51))
     );
 
-    let weth = gpv2.native_token.clone();
+    let weth = contracts.weth.clone();
     tx_value!(solver_account, to_wei(100_000), weth.deposit());
 
     // Create and fund Uniswap pool
     tx!(
         solver_account,
-        uniswap_factory.create_pair(token.address(), weth.address())
+        contracts
+            .uniswap_factory
+            .create_pair(token.address(), weth.address())
     );
     tx!(
         solver_account,
-        token.approve(uniswap_router.address(), to_wei(100_000))
+        token.approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        weth.approve(uniswap_router.address(), to_wei(100_000))
+        weth.approve(contracts.uniswap_router.address(), to_wei(100_000))
     );
     tx!(
         solver_account,
-        uniswap_router.add_liquidity(
+        contracts.uniswap_router.add_liquidity(
             token.address(),
             weth.address(),
             to_wei(100_000),
@@ -105,8 +102,14 @@ async fn eth_integration(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader_buy_eth_a, token.approve(gpv2.allowance, to_wei(51)));
-    tx!(trader_buy_eth_b, token.approve(gpv2.allowance, to_wei(51)));
+    tx!(
+        trader_buy_eth_a,
+        token.approve(contracts.allowance, to_wei(51))
+    );
+    tx!(
+        trader_buy_eth_b,
+        token.approve(contracts.allowance, to_wei(51))
+    );
 
     let OrderbookServices {
         maintenance,
@@ -114,7 +117,7 @@ async fn eth_integration(web3: Web3) {
         block_stream,
         solvable_orders_cache,
         base_tokens,
-    } = OrderbookServices::new(&web3, &gpv2, &uniswap_factory).await;
+    } = OrderbookServices::new(&web3, &contracts).await;
 
     let client = reqwest::Client::new();
 
@@ -152,7 +155,7 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
+            &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_A_PK).unwrap()),
         )
         .build()
@@ -173,7 +176,7 @@ async fn eth_integration(web3: Web3) {
         .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
-            &gpv2.domain_separator,
+            &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_BUY_ETH_B_PK).unwrap()),
         )
         .build()
@@ -189,13 +192,13 @@ async fn eth_integration(web3: Web3) {
 
     // Drive solution
     let uniswap_pair_provider = Arc::new(UniswapPairProvider {
-        factory: uniswap_factory.clone(),
+        factory: contracts.uniswap_factory.clone(),
         chain_id,
     });
 
     let uniswap_liquidity = UniswapLikeLiquidity::new(
-        IUniswapLikeRouter::at(&web3, uniswap_router.address()),
-        gpv2.settlement.clone(),
+        IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
+        contracts.gp_settlement.clone(),
         base_tokens,
         web3.clone(),
         Arc::new(PoolFetcher {
@@ -210,7 +213,7 @@ async fn eth_integration(web3: Web3) {
     };
     let network_id = web3.net().version().await.unwrap();
     let mut driver = solver::driver::Driver::new(
-        gpv2.settlement.clone(),
+        contracts.gp_settlement.clone(),
         liquidity_collector,
         price_estimator,
         vec![solver],
@@ -227,7 +230,7 @@ async fn eth_integration(web3: Web3) {
         block_stream,
         SolutionSubmitter {
             web3: web3.clone(),
-            contract: gpv2.settlement.clone(),
+            contract: contracts.gp_settlement.clone(),
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,
@@ -238,7 +241,7 @@ async fn eth_integration(web3: Web3) {
         1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
-        create_order_converter(&web3, gpv2.native_token.address()),
+        create_order_converter(&web3, contracts.weth.address()),
     );
     driver.single_run().await.unwrap();
 
