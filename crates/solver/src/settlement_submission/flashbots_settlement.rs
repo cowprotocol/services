@@ -15,7 +15,7 @@
 
 use super::{flashbots_api::FlashbotsApi, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::settlement::Settlement;
-use anyhow::{anyhow, ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{transaction::Transaction, Account};
 use futures::FutureExt;
@@ -97,10 +97,19 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                 .unwrap_or_else(|_| Duration::from_secs(0)),
         );
 
-        futures::select! {
-            method_error = submit_future.fuse() => tracing::info!("stopping submission because simulation failed: {:?}", method_error),
-            new_nonce = nonce_future.fuse() => tracing::info!("stopping submission because account nonce changed to {}", new_nonce),
-            _ = deadline_future.fuse() => tracing::info!("stopping submission because deadline has been reached"),
+        let fallback_result = tokio::select! {
+            method_error = submit_future.fuse() => {
+                tracing::info!("stopping submission because simulation failed: {:?}", method_error);
+                Err(method_error)
+            },
+            new_nonce = nonce_future.fuse() => {
+                tracing::info!("stopping submission because account nonce changed to {}", new_nonce);
+                Ok(None)
+            },
+            _ = deadline_future.fuse() => {
+                tracing::info!("stopping submission because deadline has been reached");
+                Ok(None)
+            },
         };
 
         // After stopping submission of new transactions we wait for some time to give a potentially
@@ -137,7 +146,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         }
 
         tracing::info!("did not find any mined transaction");
-        Ok(None)
+        fallback_result
     }
 
     async fn nonce(&self) -> Result<U256> {
@@ -258,7 +267,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                         tracing::warn!("flashbots cancellation request not sent: {:?}", err);
                     }
                 }
-                return anyhow!("flashbots failed simulation: {}", err);
+                return Error::from(err).context("flashbots failed simulation");
             }
 
             // If gas price has increased cancel old and submit new transaction.
