@@ -16,8 +16,7 @@ use reqwest::{Client, Url};
 use shared::http_solver_api::{HttpSolverApi, SolverConfig};
 use shared::zeroex_api::ZeroExApi;
 use shared::{
-    baseline_solver::BaseTokens, conversions::U256Ext, price_estimation::PriceEstimating,
-    token_info::TokenInfoFetching, Web3,
+    baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::SingleOrderSolver;
 use std::{
@@ -145,7 +144,6 @@ pub fn create(
     quasimodo_solver_url: Url,
     settlement_contract: &GPv2Settlement,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
-    price_estimator: Arc<dyn PriceEstimating>,
     network_id: String,
     chain_id: u64,
     min_order_size_one_inch: U256,
@@ -154,7 +152,6 @@ pub fn create(
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
     client: Client,
-    native_token_amount_to_estimate_prices_with: U256,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
@@ -186,10 +183,8 @@ pub fn create(
                 account,
                 native_token,
                 token_info_fetcher.clone(),
-                price_estimator.clone(),
                 buffer_retriever.clone(),
                 http_solver_cache.clone(),
-                native_token_amount_to_estimate_prices_with,
             )
         };
 

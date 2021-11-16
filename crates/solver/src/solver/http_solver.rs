@@ -22,7 +22,6 @@ use shared::http_solver_api::model::*;
 use shared::http_solver_api::HttpSolverApi;
 use shared::{
     measure_time,
-    price_estimation::{self, PriceEstimating},
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use std::{
@@ -63,10 +62,8 @@ pub struct HttpSolver {
     account: Account,
     native_token: H160,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
-    price_estimator: Arc<dyn PriceEstimating>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
     instance_cache: InstanceCache,
-    native_token_amount_to_estimate_prices_with: U256,
 }
 
 impl HttpSolver {
@@ -76,20 +73,16 @@ impl HttpSolver {
         account: Account,
         native_token: H160,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
-        price_estimator: Arc<dyn PriceEstimating>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
         instance_cache: InstanceCache,
-        native_token_amount_to_estimate_prices_with: U256,
     ) -> Self {
         Self {
             solver,
             account,
             native_token,
             token_info_fetcher,
-            price_estimator,
             buffer_retriever,
             instance_cache,
-            native_token_amount_to_estimate_prices_with,
         }
     }
 
@@ -101,26 +94,10 @@ impl HttpSolver {
         price_estimates: HashMap<H160, BigRational>,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         let tokens = map_tokens_for_solver(&orders, &liquidity);
-
-        let queries = tokens
-            .iter()
-            .filter(|token| !price_estimates.contains_key(token))
-            .map(|token| price_estimation::Query {
-                sell_token: self.native_token,
-                buy_token: *token,
-                in_amount: self.native_token_amount_to_estimate_prices_with,
-                kind: OrderKind::Sell,
-            })
-            .collect::<Vec<_>>();
-
-        let (token_infos, new_price_estimates, mut buffers_result) = join!(
+        let (token_infos, buffers_result) = join!(
             measure_time(
                 self.token_info_fetcher.get_token_infos(tokens.as_slice()),
                 |duration| tracing::debug!("get_token_infos took {} s", duration.as_secs_f32()),
-            ),
-            measure_time(
-                self.price_estimator.estimates(&queries),
-                |duration| tracing::debug!("estimate_prices took {} s", duration.as_secs_f32()),
             ),
             measure_time(
                 self.buffer_retriever.get_buffers(tokens.as_slice()),
@@ -129,7 +106,7 @@ impl HttpSolver {
         );
 
         let buffers: HashMap<_, _> = buffers_result
-            .drain()
+            .into_iter()
             .filter_map(|(token, buffer)| match buffer {
                 Err(BufferRetrievalError::Erc20(err)) if is_transaction_failure(&err.inner) => {
                     tracing::debug!(
@@ -151,19 +128,14 @@ impl HttpSolver {
             })
             .collect();
 
-        let mut all_price_estimates: HashMap<H160, f64> = queries
-            .iter()
-            .zip(new_price_estimates)
-            .filter_map(|(query, estimate)| {
-                let price = estimate.ok()?.price_in_sell_token_f64(query);
-                Some((query.buy_token, price))
-            })
+        // We are guaranteed to have price estimates for all tokens that are relevant to the
+        // objective value by the driver. It is possible that we have AMM pools that contain tokens
+        // that are not any order's tokens. We used to fetch these extra prices but it would often
+        // slow down the solver and the solver can estimate them on its own.
+        let price_estimates = price_estimates
+            .into_iter()
+            .filter_map(|(token, price)| Some((token, price.to_f64()?)))
             .collect();
-        all_price_estimates.extend(
-            price_estimates
-                .into_iter()
-                .filter_map(|(token, price)| Some((token, price.to_f64()?))),
-        );
 
         // For the solver to run correctly we need to be sure that there are no
         // isolated islands of tokens without connection between them.
@@ -173,7 +145,7 @@ impl HttpSolver {
             gas_price,
         };
 
-        let token_models = token_models(&token_infos, &all_price_estimates, &buffers, &gas_model);
+        let token_models = token_models(&token_infos, &price_estimates, &buffers, &gas_model);
         let order_models = order_models(&orders, &fee_connected_tokens, &gas_model);
         let amm_models = amm_models(&liquidity, &gas_model);
         let model = BatchAuctionModel {
@@ -496,7 +468,6 @@ mod tests {
     use num::rational::Ratio;
     use reqwest::Client;
     use shared::http_solver_api::SolverConfig;
-    use shared::price_estimation::mocks::FakePriceEstimator;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
@@ -538,12 +509,6 @@ mod tests {
             });
         let mock_buffer_retriever: Arc<dyn BufferRetrieving> = Arc::new(mock_buffer_retriever);
 
-        let mock_price_estimation: Arc<dyn PriceEstimating> =
-            Arc::new(FakePriceEstimator(price_estimation::Estimate {
-                out_amount: 1.into(),
-                gas: 1.into(),
-            }));
-
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
@@ -562,10 +527,8 @@ mod tests {
             Account::Local(Address::default(), None),
             H160::zero(),
             mock_token_info_fetcher,
-            mock_price_estimation,
             mock_buffer_retriever,
             Default::default(),
-            1.into(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
