@@ -495,10 +495,14 @@ impl Driver {
         }
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
-        if let Some((wining_solver, mut winning_settlement)) = rated_settlements.pop() {
+        if let Some((winning_solver, mut winning_settlement)) = rated_settlements.pop() {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
-                .can_settle_without_liquidity(wining_solver.clone(), &winning_settlement, gas_price)
+                .can_settle_without_liquidity(
+                    winning_solver.clone(),
+                    &winning_settlement,
+                    gas_price,
+                )
                 .await
                 .unwrap_or(false)
             {
@@ -507,12 +511,16 @@ impl Driver {
                 tracing::debug!("settlement without onchain liquidity");
             }
 
-            tracing::info!("winning settlement: {:?}", winning_settlement);
+            tracing::info!(
+                "winning settlement by {}: {:?}",
+                winning_solver.name(),
+                winning_settlement
+            );
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
             if let Ok(receipt) = self
-                .submit_settlement(wining_solver.clone(), winning_settlement.clone())
+                .submit_settlement(winning_solver.clone(), winning_settlement.clone())
                 .await
             {
                 let orders = winning_settlement
@@ -531,7 +539,7 @@ impl Driver {
             }
             self.metrics.transaction_submission(start.elapsed());
 
-            self.report_on_batch(&(wining_solver, winning_settlement), rated_settlements);
+            self.report_on_batch(&(winning_solver, winning_settlement), rated_settlements);
         }
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
