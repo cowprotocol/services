@@ -1,4 +1,5 @@
 pub mod baseline;
+pub mod competition;
 pub mod gas;
 pub mod instrumented;
 pub mod paraswap;
@@ -19,6 +20,13 @@ arg_enum! {
         Baseline,
         Paraswap,
         ZeroEx,
+    }
+}
+
+impl PriceEstimatorType {
+    /// Returns the name of this price estimator type.
+    pub fn name(&self) -> String {
+        format!("{:?}", self)
     }
 }
 
@@ -57,7 +65,7 @@ pub struct Query {
     pub kind: OrderKind,
 }
 
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
