@@ -1,6 +1,6 @@
 use crate::{
     baseline_solver::BaselineSolvable,
-    sources::balancer::{
+    sources::balancer_v2::{
         pool_fetching::{StablePool, TokenState, WeightedPool, WeightedTokenState},
         swap::math::BalU256,
     },
@@ -277,7 +277,7 @@ impl BaselineSolvable for StablePool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::pool_fetching::{AmplificationParameter, CommonPoolState};
+    use crate::sources::balancer_v2::pool_fetching::{AmplificationParameter, CommonPoolState};
     use std::collections::HashMap;
 
     fn create_weighted_pool_with(

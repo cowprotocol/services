@@ -17,7 +17,7 @@ use ethcontract::H256;
 use model::TokenPair;
 use shared::{
     baseline_solver::BaseTokens, recent_block_cache::Block,
-    sources::balancer::pool_fetching::BalancerPoolFetching, Web3,
+    sources::balancer_v2::pool_fetching::BalancerPoolFetching, Web3,
 };
 use std::sync::Arc;
 
@@ -171,11 +171,11 @@ mod tests {
     use model::TokenPair;
     use num::BigRational;
     use primitive_types::H160;
-    use shared::sources::balancer::pool_fetching::AmplificationParameter;
+    use shared::sources::balancer_v2::pool_fetching::AmplificationParameter;
     use shared::{
         dummy_contract,
-        sources::balancer::pool_fetching::{CommonPoolState, FetchedBalancerPools},
-        sources::balancer::pool_fetching::{
+        sources::balancer_v2::pool_fetching::{CommonPoolState, FetchedBalancerPools},
+        sources::balancer_v2::pool_fetching::{
             MockBalancerPoolFetching, StablePool, TokenState, WeightedPool, WeightedTokenState,
         },
     };

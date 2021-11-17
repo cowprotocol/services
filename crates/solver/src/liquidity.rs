@@ -1,7 +1,7 @@
-pub mod balancer;
+pub mod balancer_v2;
 pub mod order_converter;
 pub mod slippage;
-pub mod uniswap;
+pub mod uniswap_v2;
 
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
@@ -12,12 +12,12 @@ use model::order::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
-use shared::sources::balancer::{
+use shared::sources::balancer_v2::{
     pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
     swap::fixed_point::Bfp,
 };
 #[cfg(test)]
-use shared::sources::uniswap::pool_fetching::Pool;
+use shared::sources::uniswap_v2::pool_fetching::Pool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use strum::{EnumVariantNames, IntoStaticStr};

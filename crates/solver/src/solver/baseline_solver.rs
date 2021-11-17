@@ -12,7 +12,7 @@ use maplit::hashmap;
 use model::TokenPair;
 use shared::{
     baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
-    sources::{balancer::swap::WeightedPoolRef, uniswap::pool_fetching::Pool},
+    sources::{balancer_v2::swap::WeightedPoolRef, uniswap_v2::pool_fetching::Pool},
 };
 use std::{collections::HashMap, sync::Arc};
 
@@ -299,10 +299,10 @@ mod tests {
     use crate::test::account;
     use model::order::OrderKind;
     use num::rational::Ratio;
-    use shared::sources::balancer::swap::fixed_point::Bfp;
+    use shared::sources::balancer_v2::swap::fixed_point::Bfp;
     use shared::{
         addr,
-        sources::balancer::pool_fetching::{TokenState, WeightedTokenState},
+        sources::balancer_v2::pool_fetching::{TokenState, WeightedTokenState},
     };
 
     #[test]

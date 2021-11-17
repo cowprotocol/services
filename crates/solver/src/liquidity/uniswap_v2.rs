@@ -12,7 +12,7 @@ use model::TokenPair;
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::BaseTokens, recent_block_cache::Block,
-    sources::uniswap::pool_fetching::PoolFetching, Web3,
+    sources::uniswap_v2::pool_fetching::PoolFetching, Web3,
 };
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex};

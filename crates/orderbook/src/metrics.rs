@@ -4,7 +4,7 @@ use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
 use shared::{
-    metrics::get_metrics_registry, sources::uniswap::pool_cache::PoolCacheMetrics,
+    metrics::get_metrics_registry, sources::uniswap_v2::pool_cache::PoolCacheMetrics,
     transport::instrumented::TransportMetrics,
 };
 use std::{

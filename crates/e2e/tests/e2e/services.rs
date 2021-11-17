@@ -19,7 +19,7 @@ use shared::{
     maintenance::ServiceMaintenance,
     price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
-    sources::uniswap::{
+    sources::uniswap_v2::{
         pair_provider::UniswapPairProvider,
         pool_cache::{NoopPoolCacheMetrics, PoolCache},
         pool_fetching::PoolFetcher,

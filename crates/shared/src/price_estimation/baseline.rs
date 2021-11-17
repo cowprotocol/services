@@ -5,7 +5,7 @@ use crate::{
     conversions::U256Ext,
     price_estimation::gas,
     recent_block_cache::Block,
-    sources::uniswap::pool_fetching::{Pool, PoolFetching},
+    sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::Result;
 use ethcontract::{H160, U256};
@@ -333,7 +333,7 @@ mod tests {
         bad_token::list_based::ListBasedDetector,
         baseline_solver::BaselineSolvable,
         gas_price_estimation::FakeGasPriceEstimator,
-        sources::uniswap::pool_fetching::{Pool, PoolFetching},
+        sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     };
     use assert_approx_eq::assert_approx_eq;
     use gas_estimation::gas_price::EstimatedGasPrice;

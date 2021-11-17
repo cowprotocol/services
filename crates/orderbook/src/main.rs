@@ -42,7 +42,7 @@ use shared::{
     recent_block_cache::CacheConfig,
     sources::{
         self,
-        uniswap::{
+        uniswap_v2::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
         },

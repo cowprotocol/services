@@ -5,8 +5,10 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pkg/pool-stable/contracts/StableMath.sol
 
 use super::error::Error;
-use crate::sources::balancer::swap::fixed_point::Bfp;
-use crate::sources::balancer::swap::math::{rounded_div, BalU256};
+use crate::sources::balancer_v2::swap::{
+    fixed_point::Bfp,
+    math::{rounded_div, BalU256},
+};
 use ethcontract::U256;
 use lazy_static::lazy_static;
 
@@ -235,7 +237,7 @@ fn convergence_criteria(curr_value: U256, prev_value: U256) -> Option<U256> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::swap::fixed_point::Bfp;
+    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
     use ethcontract::U256;
     use std::str::FromStr;
 

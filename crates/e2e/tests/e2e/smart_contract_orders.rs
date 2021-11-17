@@ -7,11 +7,11 @@ use ethcontract::prelude::{Account, Address, Bytes, PrivateKey, U256};
 use model::order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid};
 use shared::{
     maintenance::Maintaining,
-    sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
+    sources::uniswap_v2::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     Web3,
 };
 use solver::{
-    liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
+    liquidity::uniswap_v2::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};

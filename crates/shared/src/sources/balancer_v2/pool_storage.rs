@@ -26,7 +26,7 @@
 //! Tests included here are those pertaining to the expected functionality of `PoolStorage`
 use crate::{
     event_handling::EventIndex,
-    sources::balancer::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp},
+    sources::balancer_v2::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp},
 };
 use anyhow::Result;
 use derivative::Derivative;
@@ -358,7 +358,7 @@ fn construct_pool_map<T: PoolEvaluating>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::info_fetching::{
+    use crate::sources::balancer_v2::info_fetching::{
         CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo,
     };
     use maplit::{hashmap, hashset};

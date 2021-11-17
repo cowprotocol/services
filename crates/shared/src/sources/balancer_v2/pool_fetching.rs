@@ -7,7 +7,7 @@ use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
-    sources::balancer::{
+    sources::balancer_v2::{
         event_handler::BalancerPoolRegistry,
         info_fetching::PoolInfoFetcher,
         pool_cache::{

@@ -10,7 +10,7 @@
 
 use crate::{
     event_handling::MAX_REORG_BLOCK_COUNT,
-    sources::balancer::{
+    sources::balancer_v2::{
         graph_api::pools_query::{PoolData, StableToken, WeightedToken},
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
     },
@@ -154,8 +154,8 @@ pub struct RegisteredPools {
 }
 
 mod pools_query {
-    use crate::sources::balancer::pool_storage::CommonPoolData;
-    use crate::sources::balancer::{
+    use crate::sources::balancer_v2::{
+        pool_storage::CommonPoolData,
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
     };
@@ -333,7 +333,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::{
+    use crate::sources::balancer_v2::{
         graph_api::pools_query::scaling_exponent_from_decimals,
         pool_storage::{CommonPoolData, RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,

@@ -177,8 +177,8 @@ mod tests {
     use model::TokenPair;
     use num::rational::Ratio;
     use num::BigRational;
-    use shared::sources::balancer::pool_fetching::AmplificationParameter;
-    use shared::sources::balancer::{
+    use shared::sources::balancer_v2::{
+        pool_fetching::AmplificationParameter,
         pool_fetching::{TokenState, WeightedTokenState},
         swap::fixed_point::Bfp,
     };

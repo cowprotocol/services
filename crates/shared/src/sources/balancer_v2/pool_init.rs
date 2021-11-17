@@ -3,7 +3,7 @@
 //! This module contains a component used to initialize Balancer pool registries
 //! with existing data in order to reduce the "cold start" time of the service.
 
-use crate::sources::balancer::{
+use crate::sources::balancer_v2::{
     graph_api::{BalancerSubgraphClient, RegisteredPools},
     info_fetching::PoolInfoFetching,
     pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
@@ -350,7 +350,7 @@ async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer::{
+    use crate::sources::balancer_v2::{
         info_fetching::{CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo},
         pool_storage::{common_pool, CommonPoolData, RegisteredStablePool},
         swap::fixed_point::Bfp,

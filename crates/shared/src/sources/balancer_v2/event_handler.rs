@@ -16,7 +16,7 @@ use crate::{
     event_handling::{BlockNumber, EventHandler, EventIndex, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
-    sources::balancer::{
+    sources::balancer_v2::{
         info_fetching::PoolInfoFetching,
         pool_init::PoolInitializing,
         pool_storage::{

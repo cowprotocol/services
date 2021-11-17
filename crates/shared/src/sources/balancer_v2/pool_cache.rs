@@ -1,13 +1,13 @@
 use crate::{
     recent_block_cache::{Block, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache},
     sources::{
-        balancer::{
+        balancer_v2::{
             event_handler::BalancerPoolRegistry,
             pool_fetching::{BalancerPoolEvaluating, StablePool, WeightedPool},
             pool_storage::{PoolEvaluating, RegisteredStablePool, RegisteredWeightedPool},
             swap::fixed_point::Bfp,
         },
-        uniswap::pool_fetching::handle_contract_error,
+        uniswap_v2::pool_fetching::handle_contract_error,
     },
     transport::MAX_BATCH_SIZE,
     Web3,
@@ -291,8 +291,7 @@ impl FetchedBalancerPoolConverting<WeightedPool> for FetchedWeightedPool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ethcontract_error;
-    use crate::sources::balancer::pool_storage::RegisteredWeightedPool;
+    use crate::{ethcontract_error, sources::balancer_v2::pool_storage::RegisteredWeightedPool};
 
     #[test]
     fn pool_fetcher_forwards_node_error() {

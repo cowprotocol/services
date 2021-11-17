@@ -13,12 +13,12 @@ use secp256k1::SecretKey;
 use serde_json::json;
 use shared::maintenance::Maintaining;
 use shared::{
-    sources::uniswap::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
+    sources::uniswap_v2::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
     token_list::{Token, TokenList},
     Web3,
 };
 use solver::{
-    liquidity::uniswap::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
+    liquidity::uniswap_v2::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
 };
 use std::{sync::Arc, time::Duration};

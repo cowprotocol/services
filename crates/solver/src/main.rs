@@ -13,8 +13,8 @@ use shared::{
     recent_block_cache::CacheConfig,
     sources::{
         self,
-        balancer::pool_fetching::BalancerPoolFetcher,
-        uniswap::{
+        balancer_v2::pool_fetching::BalancerPoolFetcher,
+        uniswap_v2::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
         },
@@ -28,8 +28,8 @@ use shared::{
 use solver::{
     driver::Driver,
     liquidity::{
-        balancer::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap::UniswapLikeLiquidity,
+        balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
+        uniswap_v2::UniswapLikeLiquidity,
     },
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,

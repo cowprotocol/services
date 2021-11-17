@@ -1,9 +1,9 @@
 //! Top-level module organizing all baseline liquidity sources.
 
-pub mod balancer;
-pub mod uniswap;
+pub mod balancer_v2;
+pub mod uniswap_v2;
 
-use self::uniswap::{
+use self::uniswap_v2::{
     pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider},
     pool_fetching::{Pool, PoolFetching},
 };

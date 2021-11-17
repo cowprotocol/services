@@ -306,7 +306,7 @@ mod tests {
         TokenPair,
     };
     use num::rational::Ratio;
-    use shared::{baseline_solver::BaselineSolvable, sources::uniswap::pool_fetching::Pool};
+    use shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool};
 
     use super::*;
 

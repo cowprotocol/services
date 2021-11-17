@@ -226,7 +226,7 @@ fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::uniswap::pool_fetching::Pool;
+    use crate::sources::uniswap_v2::pool_fetching::Pool;
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
     use model::TokenPair;

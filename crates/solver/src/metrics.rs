@@ -8,7 +8,7 @@ use shared::{
     metrics::get_metrics_registry,
     metrics::LivenessChecking,
     sources::{
-        balancer::pool_cache::BalancerPoolCacheMetrics, uniswap::pool_cache::PoolCacheMetrics,
+        balancer_v2::pool_cache::BalancerPoolCacheMetrics, uniswap_v2::pool_cache::PoolCacheMetrics,
     },
     transport::instrumented::TransportMetrics,
 };
