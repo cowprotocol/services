@@ -75,6 +75,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         deadline: SystemTime,
         settlement: Settlement,
         gas_estimate: U256,
+        flashbots_tip: f64,
     ) -> Result<Option<TransactionReceipt>> {
         let nonce = self.nonce().await?;
 
@@ -86,6 +87,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             nonce,
             settlement,
             gas_estimate,
+            flashbots_tip,
             &mut transactions,
         );
 
@@ -199,10 +201,10 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         nonce: U256,
         settlement: Settlement,
         gas_estimate: U256,
+        flashbots_tip: f64,
         transactions: &mut Vec<H256>,
     ) -> anyhow::Error {
         const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
-        const MINIMAL_MAX_PRIORITY_FEE: f64 = 10_000_000_000.0;
 
         // The amount of extra gas it costs to include the payment to block.coinbase interaction in
         // an existing settlement.
@@ -216,28 +218,17 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
-            let gas_price = match self.flashbots_api.gas_price().await {
-                Ok(gas_price) => gas_price,
-                Err(err) => {
-                    tracing::warn!("flashbots gas price estimator failed: {:?}", err);
-
-                    // fallback to standard gas price estimators, with hardcoded max_priority_fee if less than 10gwei
-                    match self.gas_price(gas_limit, time_limit).await {
-                        Ok(mut gas_price) => {
-                            if let Some(ref mut eip1559) = gas_price.eip1559 {
-                                if eip1559.max_priority_fee_per_gas < MINIMAL_MAX_PRIORITY_FEE {
-                                    tracing::debug!("max_priority_fee_per_gas old value {} replaced with minimal value {}", eip1559.max_priority_fee_per_gas, MINIMAL_MAX_PRIORITY_FEE);
-                                    eip1559.max_priority_fee_per_gas = MINIMAL_MAX_PRIORITY_FEE;
-                                }
-                            }
-                            gas_price
-                        }
-                        Err(err) => {
-                            tracing::error!("gas estimation failed: {:?}", err);
-                            tokio::time::sleep(UPDATE_INTERVAL).await;
-                            continue;
-                        }
+            let gas_price = match self.gas_price(gas_limit, time_limit).await {
+                Ok(mut gas_price) => {
+                    if let Some(ref mut eip1559) = gas_price.eip1559 {
+                        eip1559.max_priority_fee_per_gas += flashbots_tip;
                     }
+                    gas_price
+                }
+                Err(err) => {
+                    tracing::error!("gas estimation failed: {:?}", err);
+                    tokio::time::sleep(UPDATE_INTERVAL).await;
+                    continue;
                 }
             };
 
@@ -273,15 +264,10 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             // If gas price has increased cancel old and submit new transaction.
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
-                let previous_gas_price = previous_gas_price.bump(1.125);
+                let previous_gas_price = previous_gas_price.bump(1.125).ceil();
                 if gas_price.cap() > previous_gas_price.cap() {
-                    if let Err(err) = self.flashbots_api.cancel_and_wait(previous_tx).await {
-                        // If we are unable to cancel, lets just wait for some time and try again
-                        // Maybe the current tx will get mined in the meantime, or the cancellation will succeed a bit later
-
+                    if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
                         tracing::warn!("flashbots cancellation failed: {:?}", err);
-                        tokio::time::sleep(UPDATE_INTERVAL).await;
-                        continue;
                     }
                 } else {
                     tokio::time::sleep(UPDATE_INTERVAL).await;
@@ -416,6 +402,7 @@ mod tests {
                 SystemTime::now() + Duration::from_secs(90),
                 settlement,
                 gas_estimate,
+                3.0,
             )
             .await;
         tracing::info!("finished with result {:?}", result);

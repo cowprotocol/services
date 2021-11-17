@@ -47,6 +47,7 @@ pub enum TransactionStrategy {
     Flashbots {
         flashbots_api: FlashbotsApi,
         max_confirm_time: Duration,
+        flashbots_tip: f64,
     },
     CustomNodes(Vec<Web3>),
     DryRun,
@@ -107,6 +108,7 @@ impl SolutionSubmitter {
             TransactionStrategy::Flashbots {
                 flashbots_api,
                 max_confirm_time,
+                flashbots_tip,
             } => {
                 let submitter = FlashbotsSolutionSubmitter::new(
                     &self.web3,
@@ -122,6 +124,7 @@ impl SolutionSubmitter {
                         SystemTime::now() + *max_confirm_time,
                         settlement,
                         gas_estimate,
+                        *flashbots_tip,
                     )
                     .await;
                 match result {

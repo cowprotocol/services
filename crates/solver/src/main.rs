@@ -206,6 +206,15 @@ struct Arguments {
     )]
     max_flashbots_submission_seconds: Duration,
 
+    /// Additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
+    #[structopt(
+        long,
+        env,
+        default_value = "3",
+        parse(try_from_str = shared::arguments::wei_from_gwei)
+    )]
+    additional_flashbot_tip: f64,
+
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
     #[structopt(long, env, use_delimiter = true)]
     transaction_submission_nodes: Vec<Url>,
@@ -510,6 +519,7 @@ async fn main() {
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots {
                 flashbots_api: FlashbotsApi::new(client.clone()),
                 max_confirm_time: args.max_flashbots_submission_seconds,
+                flashbots_tip: args.additional_flashbot_tip,
             },
             TransactionStrategyArg::CustomNodes => {
                 assert!(
