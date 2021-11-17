@@ -150,7 +150,7 @@ pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
 
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     let in_gwei: f64 = s.parse()?;
-    Ok(in_gwei * 10e9)
+    Ok(in_gwei * 1e9)
 }
 
 pub fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
