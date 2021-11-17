@@ -244,6 +244,7 @@ impl OrderQuoter {
                     )
                     .await
                     .map_err(FeeError::PriceEstimate)?;
+                let fee = U256::from_f64_lossy(fee);
                 let sell_amount_after_fee = sell_amount_before_fee
                     .checked_sub(fee)
                     .ok_or(FeeError::SellAmountDoesNotCoverFee)?
@@ -308,7 +309,7 @@ impl OrderQuoter {
                 FeeParameters {
                     buy_amount: buy_amount_after_fee,
                     sell_amount: sell_amount_after_fee,
-                    fee_amount: fee,
+                    fee_amount: U256::from_f64_lossy(fee),
                     expiration,
                     kind: OrderKind::Buy,
                 }
@@ -539,7 +540,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((U256::from(3), expiration)));
+            .returning(move |_, _| Ok((3., expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -581,7 +582,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(|_, _| Ok((U256::from(3), Utc::now())));
+            .returning(|_, _| Ok((3., Utc::now())));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -618,7 +619,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((U256::from(3), expiration)));
+            .returning(move |_, _| Ok((3., expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -678,7 +679,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((U256::from(3), Utc::now())));
+            .returning(move |_, _| Ok((3., Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
             gas: 1000.into(),

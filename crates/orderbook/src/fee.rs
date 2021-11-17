@@ -15,7 +15,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-pub type Measurement = (U256, DateTime<Utc>);
+pub type Measurement = (f64, DateTime<Utc>);
 
 pub type EthAwareMinFeeCalculator = EthAdapter<MinFeeCalculator>;
 
@@ -79,15 +79,15 @@ pub struct FeeData {
 }
 
 /// Everything required to compute the fee amount in sell token
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct UnsubsidizedFee {
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct FeeParameters {
     pub gas_amount: f64,
     pub gas_price: f64,
     pub sell_token_price: f64,
 }
 
-impl UnsubsidizedFee {
-    fn amount_in_sell_token(&self) -> f64 {
+impl FeeParameters {
+    pub fn amount_in_sell_token(&self) -> f64 {
         self.gas_amount * self.gas_price * self.sell_token_price
     }
 
@@ -95,7 +95,7 @@ impl UnsubsidizedFee {
         &self,
         fee_configuration: &FeeSubsidyConfiguration,
         app_data: AppId,
-    ) -> U256 {
+    ) -> f64 {
         let fee_in_eth = self.gas_amount * self.gas_price;
         let mut discounted_fee_in_eth = fee_in_eth - fee_configuration.fee_discount;
         if discounted_fee_in_eth < 0. {
@@ -111,7 +111,19 @@ impl UnsubsidizedFee {
             .copied()
             .unwrap_or(1.0)
             * fee_configuration.fee_factor;
-        U256::from_f64_lossy(discounted_fee_in_eth * self.sell_token_price * factor)
+        discounted_fee_in_eth * self.sell_token_price * factor
+    }
+}
+
+// Convenience to allow using u32 in tests instead of the struct
+#[cfg(test)]
+impl From<u32> for FeeParameters {
+    fn from(v: u32) -> Self {
+        FeeParameters {
+            gas_amount: v as f64,
+            gas_price: 1.0,
+            sell_token_price: 1.0,
+        }
     }
 }
 
@@ -137,8 +149,8 @@ pub trait MinFeeCalculating: Send + Sync {
         &self,
         fee_data: FeeData,
         app_data: AppId,
-        subsidized_fee: U256,
-    ) -> Result<U256, ()>;
+        subsidized_fee: f64,
+    ) -> Result<FeeParameters, ()>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -149,7 +161,7 @@ pub trait MinFeeStoring: Send + Sync {
         &self,
         fee_data: FeeData,
         expiry: DateTime<Utc>,
-        estimate: UnsubsidizedFee,
+        estimate: FeeParameters,
     ) -> Result<()>;
 
     /// Returns lowest previously stored measurements that hasn't expired. FeeData has to match
@@ -158,7 +170,7 @@ pub trait MinFeeStoring: Send + Sync {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>>;
+    ) -> Result<Option<FeeParameters>>;
 
     /// Returns lowest previously stored measurements that hasn't expired. FeeData has to match
     /// exactly except for the amount which is allowed to be larger than the amount in fee data.
@@ -166,7 +178,7 @@ pub trait MinFeeStoring: Send + Sync {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>>;
+    ) -> Result<Option<FeeParameters>>;
 }
 
 // We use a longer validity internally for persistence to avoid writing a value to storage on every request
@@ -228,8 +240,8 @@ where
         &self,
         mut fee_data: FeeData,
         app_data: AppId,
-        subsidized_fee: U256,
-    ) -> Result<U256, ()> {
+        subsidized_fee: f64,
+    ) -> Result<FeeParameters, ()> {
         fee_data.buy_token = normalize_buy_token(fee_data.buy_token, self.weth);
         self.calculator
             .get_unsubsidized_min_fee(fee_data, app_data, subsidized_fee)
@@ -264,7 +276,7 @@ impl MinFeeCalculator {
     async fn compute_unsubsidized_min_fee(
         &self,
         fee_data: FeeData,
-    ) -> Result<UnsubsidizedFee, PriceEstimationError> {
+    ) -> Result<FeeParameters, PriceEstimationError> {
         let gas_price = self.gas_estimator.estimate().await?.effective_gas_price();
         let gas_amount = self
             .price_estimator
@@ -293,7 +305,7 @@ impl MinFeeCalculator {
             "unsubsidized fee amount"
         );
 
-        Ok(UnsubsidizedFee {
+        Ok(FeeParameters {
             gas_amount,
             gas_price,
             sell_token_price,
@@ -352,8 +364,8 @@ impl MinFeeCalculating for MinFeeCalculator {
         &self,
         fee_data: FeeData,
         app_data: AppId,
-        subsidized_fee: U256,
-    ) -> Result<U256, ()> {
+        subsidized_fee: f64,
+    ) -> Result<FeeParameters, ()> {
         // When validating we allow fees taken for larger amounts because as the amount increases
         // the fee increases too because it is worth to trade off more gas use for a slightly better
         // price. Thus it is acceptable if the new order has an amount <= an existing fee
@@ -370,19 +382,13 @@ impl MinFeeCalculating for MinFeeCalculator {
             .await
         {
             if subsidized_fee >= past_fee.apply_fee_factor(&self.fee_subsidy, app_data) {
-                return Ok(std::cmp::max(
-                    subsidized_fee,
-                    U256::from_f64_lossy(past_fee.amount_in_sell_token()),
-                ));
+                return Ok(past_fee);
             }
         }
 
         if let Ok(current_fee) = self.compute_unsubsidized_min_fee(fee_data).await {
             if subsidized_fee >= current_fee.apply_fee_factor(&self.fee_subsidy, app_data) {
-                return Ok(std::cmp::max(
-                    subsidized_fee,
-                    U256::from_f64_lossy(current_fee.amount_in_sell_token()),
-                ));
+                return Ok(current_fee);
             }
         }
 
@@ -393,7 +399,7 @@ impl MinFeeCalculating for MinFeeCalculator {
 struct FeeMeasurement {
     fee_data: FeeData,
     expiry: DateTime<Utc>,
-    estimate: UnsubsidizedFee,
+    estimate: FeeParameters,
 }
 
 #[derive(Default)]
@@ -405,7 +411,7 @@ impl MinFeeStoring for InMemoryFeeStore {
         &self,
         fee_data: FeeData,
         expiry: DateTime<Utc>,
-        estimate: UnsubsidizedFee,
+        estimate: FeeParameters,
     ) -> Result<()> {
         self.0
             .lock()
@@ -422,7 +428,7 @@ impl MinFeeStoring for InMemoryFeeStore {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>> {
+    ) -> Result<Option<FeeParameters>> {
         let guard = self.0.lock().expect("Thread holding Mutex panicked");
         Ok(guard
             .iter()
@@ -437,7 +443,7 @@ impl MinFeeStoring for InMemoryFeeStore {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>> {
+    ) -> Result<Option<FeeParameters>> {
         let guard = self.0.lock().expect("Thread holding Mutex panicked");
         Ok(guard
             .iter()
@@ -454,6 +460,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use chrono::{Duration, NaiveDateTime};
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
@@ -513,26 +520,25 @@ mod tests {
             .expect_get_unsubsidized_min_fee()
             .withf(move |&fee_data, &app_data, &subsidized_fee| {
                 fee_data.sell_token == token
-                    && subsidized_fee == 42.into()
+                    && subsidized_fee == 42.
                     && app_data == Default::default()
             })
             .times(1)
-            .returning(|_, _, fee| Ok(fee));
+            .returning(|_, _, fee| Ok((fee as u32).into()));
 
         let eth_aware = EthAdapter { calculator, weth };
-        assert_eq!(
-            eth_aware
-                .get_unsubsidized_min_fee(
-                    FeeData {
-                        sell_token: token,
-                        ..Default::default()
-                    },
-                    Default::default(),
-                    42.into()
-                )
-                .await,
-            Ok(42.into())
-        );
+        let result = eth_aware
+            .get_unsubsidized_min_fee(
+                FeeData {
+                    sell_token: token,
+                    ..Default::default()
+                },
+                Default::default(),
+                42.into(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result, 42.into());
     }
 
     impl MinFeeCalculator {
@@ -649,7 +655,7 @@ mod tests {
             .unwrap();
 
         dbg!(fee);
-        let lower_fee = fee - U256::one();
+        let lower_fee = fee - 1.;
         // slightly lower fee is not valid
         assert!(fee_estimator
             .get_unsubsidized_min_fee(fee_data, Default::default(), lower_fee)
@@ -774,14 +780,16 @@ mod tests {
         assert_eq!(
             fee_estimator
                 .get_unsubsidized_min_fee(fee_data, app_data, fee)
-                .await,
-            Ok(fee * 2)
+                .await
+                .unwrap()
+                .amount_in_sell_token(),
+            fee * 2.
         );
         assert!(fee_estimator
             .get_unsubsidized_min_fee(fee_data, Default::default(), fee)
             .await
             .is_err());
-        let lower_fee = fee - U256::one();
+        let lower_fee = fee - 1.;
         assert!(fee_estimator
             .get_unsubsidized_min_fee(fee_data, app_data, lower_fee)
             .await
@@ -799,7 +807,7 @@ mod tests {
         let sell_token_price = 1.25;
         let gas_estimate = 42.;
 
-        let unsubsidized_min_fee = UnsubsidizedFee {
+        let unsubsidized_min_fee = FeeParameters {
             gas_amount: 1337.,
             sell_token_price,
             gas_price: gas_estimate,
@@ -861,24 +869,18 @@ mod tests {
             .compute_subsidized_min_fee(fee_data, app_data)
             .await
             .unwrap();
-        assert_eq!(
-            fee,
-            U256::from_f64_lossy(unsubsidized_min_fee.amount_in_sell_token() * 0.8 * 0.5)
-        );
+        assert_eq!(fee, unsubsidized_min_fee.amount_in_sell_token() * 0.8 * 0.5);
 
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default())
             .await
             .unwrap();
-        assert_eq!(
-            fee,
-            U256::from_f64_lossy(unsubsidized_min_fee.amount_in_sell_token() * 0.8)
-        );
+        assert_eq!(fee, unsubsidized_min_fee.amount_in_sell_token() * 0.8);
     }
 
     #[test]
     fn test_apply_fee_factor_capped_at_zero() {
-        let unsubsidized = UnsubsidizedFee {
+        let unsubsidized = FeeParameters {
             gas_amount: 100_000_f64,
             gas_price: 1_000_000_000_f64,
             sell_token_price: 1.,
@@ -892,13 +894,13 @@ mod tests {
 
         assert_eq!(
             unsubsidized.apply_fee_factor(&fee_configuration, Default::default()),
-            U256::zero()
+            0.
         );
     }
 
     #[test]
     fn test_apply_fee_factor_order() {
-        let unsubsidized = UnsubsidizedFee {
+        let unsubsidized = FeeParameters {
             gas_amount: 100_000_f64,
             gas_price: 1_000_000_000_f64,
             sell_token_price: 1.,
@@ -916,12 +918,12 @@ mod tests {
         // (100G - 50G) * 0.5
         assert_eq!(
             unsubsidized.apply_fee_factor(&fee_configuration, Default::default()),
-            25_000_000_000_000u128.into()
+            25_000_000_000_000.
         );
         // Additionally multiply with 0.1 if partner app id is used
         assert_eq!(
             unsubsidized.apply_fee_factor(&fee_configuration, app_id),
-            2_500_000_000_000u128.into()
+            2_500_000_000_000.
         );
     }
 }

@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::fee::{MinFeeStoring, UnsubsidizedFee};
+use crate::fee::{FeeParameters, MinFeeStoring};
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -63,7 +63,7 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         expiry: chrono::DateTime<chrono::Utc>,
-        estimate: UnsubsidizedFee,
+        estimate: FeeParameters,
     ) -> anyhow::Result<()> {
         let _timer = self
             .metrics
@@ -78,7 +78,7 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<UnsubsidizedFee>> {
+    ) -> anyhow::Result<Option<FeeParameters>> {
         let _timer = self
             .metrics
             .database_query_histogram("find_measurement_exact")
@@ -92,7 +92,7 @@ impl MinFeeStoring for Instrumented {
         &self,
         fee_data: crate::fee::FeeData,
         min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<UnsubsidizedFee>> {
+    ) -> anyhow::Result<Option<FeeParameters>> {
         let _timer = self
             .metrics
             .database_query_histogram("find_measurement_including_larger_amount")
@@ -108,12 +108,13 @@ impl OrderStoring for Instrumented {
     async fn insert_order(
         &self,
         order: &model::order::Order,
+        fee: FeeParameters,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = self
             .metrics
             .database_query_histogram("insert_order")
             .start_timer();
-        self.inner.insert_order(order).await
+        self.inner.insert_order(order, fee).await
     }
 
     async fn cancel_order(

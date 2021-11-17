@@ -1,5 +1,5 @@
 use super::*;
-use crate::conversions::*;
+use crate::{conversions::*, fee::FeeParameters};
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
@@ -21,7 +21,7 @@ use std::{borrow::Cow, convert::TryInto};
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait OrderStoring: Send + Sync {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError>;
+    async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
     // Legacy generic orders route that we are phasing out.
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
@@ -220,56 +220,95 @@ const ORDERS_FROM: &str = "\
     orders o \
 ";
 
-#[async_trait::async_trait]
-impl OrderStoring for Postgres {
-    async fn insert_order(&self, order: &Order) -> Result<(), InsertionError> {
-        const QUERY: &str = "\
+async fn insert_order(
+    order: &Order,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), InsertionError> {
+    const QUERY: &str = "\
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
                 valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme, \
                 settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount) \
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);";
-        let receiver = order
-            .order_creation
-            .receiver
-            .map(|address| address.as_bytes().to_vec());
-        sqlx::query(QUERY)
-            .bind(order.order_meta_data.uid.0.as_ref())
-            .bind(order.order_meta_data.owner.as_bytes())
-            .bind(order.order_meta_data.creation_date)
-            .bind(order.order_creation.sell_token.as_bytes())
-            .bind(order.order_creation.buy_token.as_bytes())
-            .bind(receiver)
-            .bind(u256_to_big_decimal(&order.order_creation.sell_amount))
-            .bind(u256_to_big_decimal(&order.order_creation.buy_amount))
-            .bind(order.order_creation.valid_to)
-            .bind(&order.order_creation.app_data.0[..])
-            .bind(u256_to_big_decimal(&order.order_creation.fee_amount))
-            .bind(DbOrderKind::from(order.order_creation.kind))
-            .bind(order.order_creation.partially_fillable)
-            .bind(&*order.order_creation.signature.to_bytes())
-            .bind(DbSigningScheme::from(
-                order.order_creation.signature.scheme(),
-            ))
-            .bind(order.order_meta_data.settlement_contract.as_bytes())
-            .bind(DbSellTokenSource::from(
-                order.order_creation.sell_token_balance,
-            ))
-            .bind(DbBuyTokenDestination::from(
-                order.order_creation.buy_token_balance,
-            ))
-            .bind(u256_to_big_decimal(&order.order_meta_data.full_fee_amount))
-            .execute(&self.pool)
-            .await
-            .map(|_| ())
-            .map_err(|err| {
-                if let sqlx::Error::Database(db_err) = &err {
-                    if let Some(Cow::Borrowed("23505")) = db_err.code() {
-                        return InsertionError::DuplicatedRecord;
-                    }
+    let receiver = order
+        .order_creation
+        .receiver
+        .map(|address| address.as_bytes().to_vec());
+    sqlx::query(QUERY)
+        .bind(order.order_meta_data.uid.0.as_ref())
+        .bind(order.order_meta_data.owner.as_bytes())
+        .bind(order.order_meta_data.creation_date)
+        .bind(order.order_creation.sell_token.as_bytes())
+        .bind(order.order_creation.buy_token.as_bytes())
+        .bind(receiver)
+        .bind(u256_to_big_decimal(&order.order_creation.sell_amount))
+        .bind(u256_to_big_decimal(&order.order_creation.buy_amount))
+        .bind(order.order_creation.valid_to)
+        .bind(&order.order_creation.app_data.0[..])
+        .bind(u256_to_big_decimal(&order.order_creation.fee_amount))
+        .bind(DbOrderKind::from(order.order_creation.kind))
+        .bind(order.order_creation.partially_fillable)
+        .bind(&*order.order_creation.signature.to_bytes())
+        .bind(DbSigningScheme::from(
+            order.order_creation.signature.scheme(),
+        ))
+        .bind(order.order_meta_data.settlement_contract.as_bytes())
+        .bind(DbSellTokenSource::from(
+            order.order_creation.sell_token_balance,
+        ))
+        .bind(DbBuyTokenDestination::from(
+            order.order_creation.buy_token_balance,
+        ))
+        .bind(u256_to_big_decimal(&order.order_meta_data.full_fee_amount))
+        .execute(transaction)
+        .await
+        .map(|_| ())
+        .map_err(|err| {
+            if let sqlx::Error::Database(db_err) = &err {
+                if let Some(Cow::Borrowed("23505")) = db_err.code() {
+                    return InsertionError::DuplicatedRecord;
                 }
-                InsertionError::DbError(err)
+            }
+            InsertionError::DbError(err)
+        })
+}
+
+async fn insert_fee(
+    uid: &OrderUid,
+    fee: &FeeParameters,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), InsertionError> {
+    const QUERY: &str = "\
+                INSERT INTO order_fee_parameters (\
+                    order_uid, gas_amount, gas_price, sell_token_price) \
+                VALUES($1, $2, $3, $4)\
+            ;";
+    sqlx::query(QUERY)
+        .bind(uid.0.as_ref())
+        .bind(fee.gas_amount)
+        .bind(fee.gas_price)
+        .bind(fee.sell_token_price)
+        .execute(transaction)
+        .await
+        .map(|_| ())
+        .map_err(InsertionError::DbError)
+}
+
+#[async_trait::async_trait]
+impl OrderStoring for Postgres {
+    async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError> {
+        let order = order.clone();
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move {
+                    insert_order(&order, transaction).await?;
+                    insert_fee(&order.order_meta_data.uid, &fee, transaction).await?;
+                    Ok(())
+                }
+                .boxed()
             })
+            .await
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
@@ -824,14 +863,41 @@ mod tests {
         db.clear().await.unwrap();
 
         let mut order = Order::default();
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         // Note that order UIDs do not care about the signing scheme.
         order.order_creation.signature = Signature::default_with(SigningScheme::PreSign);
         assert!(matches!(
-            db.insert_order(&order).await,
+            db.insert_order(&order, Default::default()).await,
             Err(InsertionError::DuplicatedRecord)
         ));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    #[allow(clippy::float_cmp)]
+    async fn postgres_insert_fee() {
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let order = Order::default();
+        let fee = FeeParameters {
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+        };
+        db.insert_order(&order, fee).await.unwrap();
+        let query = "SELECT * FROM order_fee_parameters;";
+        let (uid, gas_amount, gas_price, sell_token_price): (Vec<u8>, f64, f64, f64) =
+            sqlx::query_as(query)
+                .bind(order.order_meta_data.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(uid, order.order_meta_data.uid.0.as_ref());
+        assert_eq!(gas_amount, 1.);
+        assert_eq!(gas_price, 2.);
+        assert_eq!(sell_token_price, 3.);
     }
 
     #[tokio::test]
@@ -874,7 +940,7 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Internal,
                 },
             };
-            db.insert_order(&order).await.unwrap();
+            db.insert_order(&order, Default::default()).await.unwrap();
             assert_eq!(db.orders(&filter).await.unwrap(), vec![order]);
         }
     }
@@ -893,7 +959,7 @@ mod tests {
         assert!(db.orders(&filter).await.unwrap().is_empty());
 
         let order = Order::default();
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
         let db_orders = db.orders(&filter).await.unwrap();
         assert!(!db_orders[0].order_meta_data.invalidated);
 
@@ -980,7 +1046,7 @@ mod tests {
             },
         ];
         for order in orders.iter() {
-            db.insert_order(order).await.unwrap();
+            db.insert_order(order, Default::default()).await.unwrap();
         }
 
         async fn assert_orders(db: &Postgres, filter: &OrderFilter, expected: &[Order]) {
@@ -1073,7 +1139,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         let get_order = |exclude_fully_executed| {
             let db = db.clone();
@@ -1180,7 +1246,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         for i in 0..10 {
             db.append_events_(vec![(
@@ -1224,7 +1290,7 @@ mod tests {
             },
             ..Default::default()
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         let is_order_valid = || async {
             !db.orders(&OrderFilter {
@@ -1290,7 +1356,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         let get_order = || {
             let db = db.clone();
@@ -1388,7 +1454,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         let get_order = |min_valid_to| {
             let db = db.clone();
@@ -1474,8 +1540,8 @@ mod tests {
             ..Default::default()
         };
         assert!(order0.order_meta_data.uid != order1.order_meta_data.uid);
-        db.insert_order(&order0).await.unwrap();
-        db.insert_order(&order1).await.unwrap();
+        db.insert_order(&order0, Default::default()).await.unwrap();
+        db.insert_order(&order1, Default::default()).await.unwrap();
 
         let get_order = |uid| {
             let db = db.clone();
@@ -1503,7 +1569,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
 
         let order_status = || async {
             db.orders(&OrderFilter {
@@ -1579,11 +1645,11 @@ mod tests {
             },
         };
 
-        db.insert_order(&order(0, SigningScheme::Eip712))
+        db.insert_order(&order(0, SigningScheme::Eip712), Default::default())
             .await
             .unwrap();
         for i in 1..=4 {
-            db.insert_order(&order(i, SigningScheme::PreSign))
+            db.insert_order(&order(i, SigningScheme::PreSign), Default::default())
                 .await
                 .unwrap();
         }
@@ -1711,7 +1777,7 @@ mod tests {
         ];
 
         for order in &orders {
-            db.insert_order(order).await.unwrap();
+            db.insert_order(order, Default::default()).await.unwrap();
         }
 
         let result = db.user_orders(&owners[0], 0, None).await.unwrap();
@@ -1748,7 +1814,7 @@ mod tests {
 
         // Each order was traded in the consecutive blocks.
         for (i, order) in orders.clone().iter().enumerate() {
-            db.insert_order(order).await.unwrap();
+            db.insert_order(order, Default::default()).await.unwrap();
             db.append_events_(vec![
                 // Add settlement
                 (

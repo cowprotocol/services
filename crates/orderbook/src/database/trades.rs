@@ -182,7 +182,7 @@ mod tests {
                 ..Default::default()
             },
         };
-        db.insert_order(&order).await.unwrap();
+        db.insert_order(&order, Default::default()).await.unwrap();
         add_trade(db, owner, order_uid, event_index, tx_hash).await
     }
 

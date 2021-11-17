@@ -1,7 +1,7 @@
 use crate::{
     account_balances::BalanceFetching,
     api::IntoWarpReply,
-    fee::{FeeData, MinFeeCalculating},
+    fee::{FeeData, FeeParameters, MinFeeCalculating},
 };
 use contracts::WETH9;
 use ethcontract::{H160, U256};
@@ -48,7 +48,7 @@ pub trait OrderValidating: Send + Sync {
         sender: Option<H160>,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
-    ) -> Result<Order, ValidationError>;
+    ) -> Result<(Order, FeeParameters), ValidationError>;
 }
 
 #[derive(Debug)]
@@ -269,8 +269,8 @@ impl OrderValidating for OrderValidator {
         sender: Option<H160>,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
-    ) -> Result<Order, ValidationError> {
-        let full_fee_amount = match self
+    ) -> Result<(Order, FeeParameters), ValidationError> {
+        let unsubsidized_fee = self
             .fee_validator
             .get_unsubsidized_min_fee(
                 FeeData {
@@ -283,19 +283,16 @@ impl OrderValidating for OrderValidator {
                     kind: order_creation.kind,
                 },
                 order_creation.app_data,
-                order_creation.fee_amount,
+                order_creation.fee_amount.to_f64_lossy(),
             )
             .await
-        {
-            Ok(full_fee_amount) => full_fee_amount,
-            Err(()) => return Err(ValidationError::InsufficientFee),
-        };
+            .map_err(|()| ValidationError::InsufficientFee)?;
 
         let order = match Order::from_order_creation(
             order_creation,
             domain_separator,
             settlement_contract,
-            full_fee_amount,
+            unsubsidized_fee.amount_in_sell_token(),
         ) {
             Some(order) => order,
             None => return Err(ValidationError::InvalidSignature),
@@ -343,7 +340,7 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::InsufficientFunds);
         }
 
-        Ok(order)
+        Ok((order, unsubsidized_fee))
     }
 }
 
@@ -618,17 +615,17 @@ mod tests {
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(2)
-            .returning(|_, _, fee| Ok(fee));
+            .returning(|_, _, _| Ok(Default::default()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(1)
             .returning(|_, _, _| Err(()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, fee| Ok(fee));
+            .returning(|_, _, _| Ok(Default::default()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, fee| Ok(fee));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .times(1)
@@ -778,7 +775,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, fee| Ok(fee));
+            .returning(|_, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -802,7 +799,7 @@ mod tests {
             sell_amount: U256::from(1),
             ..Default::default()
         };
-        let order = validator
+        let (order, _) = validator
             .validate_and_construct_order(order, None, &Default::default(), Default::default())
             .await
             .unwrap();

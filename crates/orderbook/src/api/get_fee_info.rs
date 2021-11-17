@@ -53,7 +53,7 @@ pub fn get_fee_info(
             Result::<_, Infallible>::Ok(convert_json_response(result.map(
                 |(amount, expiration_date)| FeeInfo {
                     expiration_date,
-                    amount,
+                    amount: U256::from_f64_lossy(amount),
                 },
             )))
         }

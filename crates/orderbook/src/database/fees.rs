@@ -1,7 +1,7 @@
 use super::{orders::DbOrderKind, Postgres};
 use crate::{
     conversions::*,
-    fee::{FeeData, MinFeeStoring, UnsubsidizedFee},
+    fee::{FeeData, FeeParameters, MinFeeStoring},
 };
 
 use anyhow::{Context, Result};
@@ -16,8 +16,8 @@ struct FeeRow {
 }
 
 impl FeeRow {
-    fn into_fee(self) -> UnsubsidizedFee {
-        UnsubsidizedFee {
+    fn into_fee(self) -> FeeParameters {
+        FeeParameters {
             gas_amount: self.gas_amount,
             gas_price: self.gas_price,
             sell_token_price: self.sell_token_price,
@@ -31,7 +31,7 @@ impl MinFeeStoring for Postgres {
         &self,
         fee_data: FeeData,
         expiry: DateTime<Utc>,
-        estimate: UnsubsidizedFee,
+        estimate: FeeParameters,
     ) -> Result<()> {
         const QUERY: &str =
             "INSERT INTO min_fee_measurements (sell_token, buy_token, amount, order_kind, expiration_timestamp, gas_amount, gas_price, sell_token_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);";
@@ -54,7 +54,7 @@ impl MinFeeStoring for Postgres {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>> {
+    ) -> Result<Option<FeeParameters>> {
         // Fetches the lowest fee estimate we may have for the user
         const QUERY: &str = "\
             SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
@@ -84,7 +84,7 @@ impl MinFeeStoring for Postgres {
         &self,
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
-    ) -> Result<Option<UnsubsidizedFee>> {
+    ) -> Result<Option<FeeParameters>> {
         // Same as above but with `amount >=` instead of `=`.
         const QUERY: &str = "\
             SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
@@ -138,17 +138,6 @@ mod tests {
     use chrono::Duration;
     use model::order::OrderKind;
     use primitive_types::H160;
-
-    // Convenience to allow using u32 in tests instead of the struct
-    impl From<u32> for UnsubsidizedFee {
-        fn from(v: u32) -> Self {
-            UnsubsidizedFee {
-                gas_amount: v as f64,
-                gas_price: 1.0,
-                sell_token_price: 1.0,
-            }
-        }
-    }
 
     #[tokio::test]
     #[ignore]

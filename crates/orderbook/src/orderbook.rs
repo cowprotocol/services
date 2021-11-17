@@ -83,7 +83,7 @@ impl Orderbook {
             return Ok(AddOrderResult::UnsupportedSignature);
         }
 
-        let order = match self
+        let (order, fee) = match self
             .order_validator
             .validate_and_construct_order(
                 order_creation,
@@ -97,7 +97,7 @@ impl Orderbook {
             Err(validation_err) => return Ok(AddOrderResult::OrderValidation(validation_err)),
         };
 
-        match self.database.insert_order(&order).await {
+        match self.database.insert_order(&order, fee).await {
             Err(InsertionError::DuplicatedRecord) => return Ok(AddOrderResult::DuplicatedOrder),
             Err(InsertionError::DbError(err)) => return Err(err.into()),
             _ => (),
