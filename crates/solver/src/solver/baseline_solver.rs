@@ -10,7 +10,6 @@ use anyhow::Result;
 use ethcontract::{Account, H160, U256};
 use maplit::hashmap;
 use model::TokenPair;
-use num::BigRational;
 use shared::{
     baseline_solver::{estimate_buy_amount, estimate_sell_amount, BaseTokens, BaselineSolvable},
     sources::{balancer::swap::WeightedPoolRef, uniswap::pool_fetching::Pool},
@@ -65,10 +64,6 @@ impl BaselineSolvable for ConstantProductOrder {
         amm_to_pool(self).get_amount_in(in_token, output)
     }
 
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        amm_to_pool(self).get_spot_price(base_token, quote_token)
-    }
-
     fn gas_cost(&self) -> usize {
         amm_to_pool(self).gas_cost()
     }
@@ -81,10 +76,6 @@ impl BaselineSolvable for WeightedProductOrder {
 
     fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
         amm_to_weighted_pool(self).get_amount_in(in_token, output)
-    }
-
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        amm_to_weighted_pool(self).get_spot_price(base_token, quote_token)
     }
 
     fn gas_cost(&self) -> usize {
@@ -104,13 +95,6 @@ impl BaselineSolvable for Amm {
         match &self.order {
             AmmOrder::ConstantProduct(order) => order.get_amount_in(in_token, output),
             AmmOrder::WeightedProduct(order) => order.get_amount_in(in_token, output),
-        }
-    }
-
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        match &self.order {
-            AmmOrder::ConstantProduct(order) => order.get_spot_price(base_token, quote_token),
-            AmmOrder::WeightedProduct(order) => order.get_spot_price(base_token, quote_token),
         }
     }
 

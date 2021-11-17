@@ -1,6 +1,5 @@
 use crate::{
     baseline_solver::BaselineSolvable,
-    conversions::u256_to_big_int,
     sources::balancer::{
         pool_fetching::{StablePool, TokenState, WeightedPool, WeightedTokenState},
         swap::math::BalU256,
@@ -9,7 +8,6 @@ use crate::{
 use error::Error;
 use ethcontract::{H160, U256};
 use fixed_point::Bfp;
-use num::{BigRational, CheckedDiv};
 use std::collections::HashMap;
 
 mod error;
@@ -122,41 +120,6 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         add_swap_fee_amount(amount_in_before_fee, self.swap_fee_percentage).ok()
     }
 
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        // https://balancer.fi/whitepaper.pdf#spot-price
-        let WeightedTokenState {
-            token_state:
-                TokenState {
-                    balance: base_balance,
-                    ..
-                },
-            weight: base_weight,
-        } = self.reserves.get(&base_token)?;
-        let WeightedTokenState {
-            token_state:
-                TokenState {
-                    balance: quote_balance,
-                    ..
-                },
-            weight: quote_weight,
-        } = self.reserves.get(&quote_token)?;
-        if base_weight.is_zero() || quote_weight.is_zero() {
-            return None;
-        }
-
-        // note: no need to scale, as the balances are already stored in token
-        // units and weights are all rescaled by the same amount.
-        let base_rate = BigRational::new(
-            u256_to_big_int(base_balance),
-            u256_to_big_int(&base_weight.as_uint256()),
-        );
-        let quote_rate = BigRational::new(
-            u256_to_big_int(quote_balance),
-            u256_to_big_int(&quote_weight.as_uint256()),
-        );
-        quote_rate.checked_div(&base_rate)
-    }
-
     fn gas_cost(&self) -> usize {
         WEIGHTED_SWAP_GAS_COST
     }
@@ -259,10 +222,6 @@ impl BaselineSolvable for StablePoolRef<'_> {
         add_swap_fee_amount(amount_in_before_fee, self.swap_fee_percentage).ok()
     }
 
-    fn get_spot_price(&self, _base_token: H160, _quote_token: H160) -> Option<BigRational> {
-        todo!("https://github.com/gnosis/gp-v2-services/issues/1331")
-    }
-
     fn gas_cost(&self) -> usize {
         STABLE_SWAP_GAS_COST
     }
@@ -296,10 +255,6 @@ impl BaselineSolvable for WeightedPool {
         self.as_pool_ref().get_amount_in(in_token, output)
     }
 
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        self.as_pool_ref().get_spot_price(base_token, quote_token)
-    }
-
     fn gas_cost(&self) -> usize {
         self.as_pool_ref().gas_cost()
     }
@@ -312,10 +267,6 @@ impl BaselineSolvable for StablePool {
 
     fn get_amount_in(&self, in_token: H160, output: (U256, H160)) -> Option<U256> {
         self.as_pool_ref().get_amount_in(in_token, output)
-    }
-
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        self.as_pool_ref().get_spot_price(base_token, quote_token)
     }
 
     fn gas_cost(&self) -> usize {
@@ -451,53 +402,6 @@ mod tests {
             b.get_amount_in(weth, (5_000_000_i128.into(), tusd))
                 .unwrap(),
             1_225_715_511_430_411_i128.into()
-        );
-    }
-
-    #[test]
-    fn weighted_balanced_spot_price() {
-        let weth = H160::repeat_byte(21);
-        let usdc = H160::repeat_byte(42);
-        let b = create_weighted_pool_with(
-            vec![weth, usdc],
-            vec![U256::exp10(22), U256::exp10(22) * U256::from(2500)],
-            vec!["0.5".parse().unwrap(), "0.5".parse().unwrap()],
-            vec![0, 12],
-            0.into(),
-        );
-
-        assert_eq!(
-            b.get_spot_price(weth, usdc).unwrap(),
-            BigRational::new(2500.into(), 1.into())
-        );
-        assert_eq!(
-            b.get_spot_price(usdc, weth).unwrap(),
-            BigRational::new(1.into(), 2500.into())
-        );
-        assert_eq!(b.get_spot_price(weth, H160::zero()), None);
-        assert_eq!(b.get_spot_price(H160::zero(), usdc), None);
-        assert_eq!(b.get_spot_price(H160::zero(), H160::zero()), None);
-    }
-
-    #[test]
-    fn weighted_unbalanced_spot_price() {
-        let weth = H160::repeat_byte(21);
-        let dai = H160::repeat_byte(42);
-        let b = create_weighted_pool_with(
-            vec![weth, dai],
-            vec![U256::exp10(22), U256::exp10(22) * U256::from(7500)],
-            vec!["0.25".parse().unwrap(), "0.75".parse().unwrap()],
-            vec![0, 0],
-            0.into(),
-        );
-
-        assert_eq!(
-            b.get_spot_price(weth, dai).unwrap(),
-            BigRational::new(2500.into(), 1.into())
-        );
-        assert_eq!(
-            b.get_spot_price(dai, weth).unwrap(),
-            BigRational::new(1.into(), 2500.into())
         );
     }
 

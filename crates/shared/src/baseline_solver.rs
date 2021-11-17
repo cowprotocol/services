@@ -2,7 +2,6 @@
 
 use ethcontract::{H160, U256};
 use model::TokenPair;
-use num::BigRational;
 use std::collections::{HashMap, HashSet};
 
 /// The maximum number of hops to use when trading with AMMs along a path.
@@ -21,11 +20,6 @@ pub trait BaselineSolvable {
 
     // Given the input token, the amount and token we want output, return the required amount of input token that needs to be provided.
     fn get_amount_in(&self, in_token: H160, out: (U256, H160)) -> Option<U256>;
-
-    // Returns the current price as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18.
-    // E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD), the spot price is 125/100.
-    // Implementation may assume no amount is actually being traded, e.g. no fee incurs
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational>;
 
     // Returns the approximate amount of gas that using this piece of liquidity would incur
     fn gas_cost(&self) -> usize;
@@ -120,34 +114,6 @@ pub fn estimate_sell_amount<'a, L: BaselineSolvable>(
             value: amount,
             // Since we reversed the path originally, we need to re-reverse it here.
             path: liquidity.into_iter().rev().collect(),
-        })
-}
-
-/// Maximum amount of units of the last token of the path you get when selling 1 unit of the first
-/// token along the path.
-pub fn estimate_spot_price<'a, L: BaselineSolvable>(
-    path: &[H160],
-    liquidity: &'a HashMap<TokenPair, Vec<L>>,
-) -> Option<Estimate<'a, BigRational, L>> {
-    let sell_token = path.first()?;
-    path.iter()
-        .skip(1)
-        .fold(
-            Some((BigRational::from_integer(1.into()), *sell_token, Vec::new())),
-            |previous, current| {
-                let (price_so_far, previous, mut path) = previous?;
-                let (best_liquidity, price) = liquidity
-                    .get(&TokenPair::new(*current, previous)?)?
-                    .iter()
-                    .map(|liquidity| (liquidity, liquidity.get_spot_price(previous, *current)))
-                    .max_by(|(_, amount_a), (_, amount_b)| amount_a.cmp(amount_b))?;
-                path.push(best_liquidity);
-                Some((price_so_far * price?, *current, path))
-            },
-        )
-        .map(|(amount, _, liquidity)| Estimate {
-            value: amount,
-            path: liquidity,
         })
 }
 
@@ -260,7 +226,6 @@ fn base_token_pairs(base_tokens: &[H160]) -> impl Iterator<Item = TokenPair> + '
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::conversions::big_rational_to_float;
     use crate::sources::uniswap::pool_fetching::Pool;
     use ethcontract::H160;
     use maplit::{hashmap, hashset};
@@ -410,28 +375,6 @@ mod tests {
     }
 
     #[test]
-    fn test_estimate_spot_price() {
-        let sell_token = H160::from_low_u64_be(1);
-        let intermediate = H160::from_low_u64_be(2);
-        let buy_token = H160::from_low_u64_be(3);
-
-        let path = vec![sell_token, intermediate, buy_token];
-        let pools = [
-            Pool::uniswap(TokenPair::new(path[0], path[1]).unwrap(), (100, 100)),
-            Pool::uniswap(TokenPair::new(path[1], path[2]).unwrap(), (200, 50)),
-        ];
-        let pools = hashmap! {
-            pools[0].tokens => vec![pools[0]],
-            pools[1].tokens => vec![pools[1]]
-        };
-
-        assert_eq!(
-            big_rational_to_float(&estimate_spot_price(&path, &pools).unwrap().value),
-            Some(0.25)
-        );
-    }
-
-    #[test]
     fn test_estimate_amount_multiple_pools() {
         let sell_token = H160::from_low_u64_be(1);
         let intermediate = H160::from_low_u64_be(2);
@@ -462,12 +405,6 @@ mod tests {
             [&first_hop_low_price, &second_hop_low_slippage]
         );
 
-        let spot_price = estimate_spot_price(&path, &pools).unwrap();
-        assert_eq!(
-            spot_price.path,
-            [&first_hop_low_price, &second_hop_low_slippage]
-        );
-
         // For the reverse path we now expect to use the higher price for the first hop, but still low slippage for the second
         path.reverse();
         let buy_estimate = estimate_buy_amount(1000.into(), &path, &pools).unwrap();
@@ -479,12 +416,6 @@ mod tests {
         let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
         assert_eq!(
             sell_estimate.path,
-            [&second_hop_low_slippage, &first_hop_high_price]
-        );
-
-        let spot_price = estimate_spot_price(&path, &pools).unwrap();
-        assert_eq!(
-            spot_price.path,
             [&second_hop_low_slippage, &first_hop_high_price]
         );
     }
@@ -507,9 +438,6 @@ mod tests {
 
         let sell_estimate = estimate_sell_amount(1000.into(), &path, &pools).unwrap();
         assert_eq!(sell_estimate.path, [&valid_pool]);
-
-        let spot_price = estimate_spot_price(&path, &pools).unwrap();
-        assert_eq!(spot_price.path, [&valid_pool]);
     }
 
     #[test]

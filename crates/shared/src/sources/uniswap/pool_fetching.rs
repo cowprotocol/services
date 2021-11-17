@@ -7,7 +7,7 @@ use anyhow::Result;
 use contracts::{IUniswapLikePair, ERC20};
 use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, H160, U256};
 use model::TokenPair;
-use num::{rational::Ratio, BigInt, BigRational, Zero};
+use num::rational::Ratio;
 use std::{collections::HashSet, sync::Arc};
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
@@ -85,30 +85,6 @@ impl Pool {
         }
     }
 
-    // Given the base token returns the price (as defined in https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18)
-    // and quote token. E.g. for the EUR/USD pool with balances 100 (base, EUR) & 125 (quote, USD) the spot price is 125/100
-    fn get_spot_price(&self, base_token: H160) -> Option<(BigRational, H160)> {
-        let (reserve_base, reserve_quote, quote_token) = if base_token == self.tokens.get().0 {
-            (
-                BigInt::from(self.reserves.0),
-                BigInt::from(self.reserves.1),
-                self.tokens.get().1,
-            )
-        } else {
-            assert_eq!(base_token, self.tokens.get().1, "Token not part of pool");
-            (
-                BigInt::from(self.reserves.1),
-                BigInt::from(self.reserves.0),
-                self.tokens.get().0,
-            )
-        };
-        if reserve_base == BigInt::zero() {
-            return None;
-        }
-
-        Some((BigRational::new(reserve_quote, reserve_base), quote_token))
-    }
-
     fn amount_out(&self, amount_in: U256, reserve_in: U256, reserve_out: U256) -> Option<U256> {
         if amount_in.is_zero() || reserve_in.is_zero() || reserve_out.is_zero() {
             return None;
@@ -175,13 +151,6 @@ impl BaselineSolvable for Pool {
                 assert_eq!(token, in_token);
                 in_amount
             })
-    }
-
-    fn get_spot_price(&self, base_token: H160, quote_token: H160) -> Option<BigRational> {
-        self.get_spot_price(base_token).map(|(price, token)| {
-            assert_eq!(token, quote_token);
-            price
-        })
     }
 
     fn gas_cost(&self) -> usize {
@@ -294,8 +263,7 @@ fn handle_results(results: Vec<FetchedPool>) -> Result<Vec<Pool>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{conversions::big_rational_to_float, ethcontract_error};
-    use assert_approx_eq::assert_approx_eq;
+    use crate::ethcontract_error;
 
     #[test]
     fn test_get_amounts_out() {
@@ -386,29 +354,6 @@ mod tests {
             pool.get_amount_in(buy_token, 10u128.pow(20).into()),
             Some((100_300_910_810_367_424_267u128.into(), sell_token)),
         );
-    }
-
-    #[test]
-    fn test_spot_price() {
-        // Example from https://www.investopedia.com/terms/c/currencypair.asp#mntl-sc-block_1-0-18
-        let token_a = H160::from_low_u64_be(1);
-        let token_b = H160::from_low_u64_be(2);
-
-        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (100, 125));
-        assert_approx_eq!(
-            big_rational_to_float(&pool.get_spot_price(token_a).unwrap().0).unwrap(),
-            1.25
-        );
-        assert_approx_eq!(
-            big_rational_to_float(&pool.get_spot_price(token_b).unwrap().0).unwrap(),
-            0.8
-        );
-
-        assert_eq!(pool.get_spot_price(token_a).unwrap().1, token_b);
-        assert_eq!(pool.get_spot_price(token_b).unwrap().1, token_a);
-
-        let pool = Pool::uniswap(TokenPair::new(token_a, token_b).unwrap(), (0, 0));
-        assert_eq!(pool.get_spot_price(token_a), None);
     }
 
     #[test]
