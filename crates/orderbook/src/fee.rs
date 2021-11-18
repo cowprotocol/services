@@ -366,6 +366,9 @@ impl MinFeeCalculating for MinFeeCalculator {
         app_data: AppId,
         subsidized_fee: f64,
     ) -> Result<FeeParameters, ()> {
+        // As a temporary workaround to make sure rounding issues from the U256 f64 conversion
+        // don't cause fees to be rejected we increase the fee slightly.
+        let subsidized_fee = subsidized_fee * 1.01;
         // When validating we allow fees taken for larger amounts because as the amount increases
         // the fee increases too because it is worth to trade off more gas use for a slightly better
         // price. Thus it is acceptable if the new order has an amount <= an existing fee
@@ -789,7 +792,7 @@ mod tests {
             .get_unsubsidized_min_fee(fee_data, Default::default(), fee)
             .await
             .is_err());
-        let lower_fee = fee - 1.;
+        let lower_fee = fee * 0.9;
         assert!(fee_estimator
             .get_unsubsidized_min_fee(fee_data, app_data, lower_fee)
             .await
