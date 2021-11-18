@@ -341,32 +341,22 @@ impl Driver {
                 .get(&self.native_token)
                 .expect("Price of native token must be known.");
 
-        let rate_settlement = |solver, settlement: Settlement, gas_estimate| {
+        let rate_settlement = |settlement: Settlement, gas_estimate| {
             let surplus = settlement.total_surplus(prices);
             let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
-            let rated_settlement = RatedSettlement {
+            RatedSettlement {
                 settlement,
                 surplus,
                 solver_fees: scaled_solver_fees,
                 gas_estimate,
                 gas_price: gas_price_normalized.clone(),
-            };
-            tracing::info!(
-                "Objective value for solver {} is {:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}",
-                solver,
-                rated_settlement.objective_value().to_f64().unwrap_or(f64::NAN),
-                rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                rated_settlement.gas_estimate.to_f64_lossy(),
-                rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-            );
-            rated_settlement
+            }
         };
         Ok(settlements.into_iter().zip(simulations).partition_map(
             |((solver, settlement), result)| match result {
-                Ok(gas_estimate) => Either::Left((
-                    solver.clone(),
-                    rate_settlement(solver.name(), settlement, gas_estimate),
-                )),
+                Ok(gas_estimate) => {
+                    Either::Left((solver.clone(), rate_settlement(settlement, gas_estimate)))
+                }
                 Err(err) => Either::Right((solver, settlement, err)),
             },
         ))
@@ -495,6 +485,7 @@ impl Driver {
         }
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+        print_settlements(&rated_settlements);
         if let Some((winning_solver, mut winning_settlement)) = rated_settlements.pop() {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
@@ -642,6 +633,24 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
 // access to the creation date which is a more involved change.
 fn has_at_least_one_user_order(orders: &[LimitOrder]) -> bool {
     orders.iter().any(|order| !order.is_liquidity_order)
+}
+
+fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
+    tracing::info!(
+        "Rated Settlements: {:?}",
+        rated_settlements
+            .iter()
+            .rev()
+            .map(|(solver, settlement)| format!(
+                "{}: objective={:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}",
+                solver.name(),
+                settlement.objective_value().to_f64().unwrap_or(f64::NAN),
+                settlement.surplus.to_f64().unwrap_or(f64::NAN),
+                settlement.gas_estimate.to_f64_lossy(),
+                settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+            ))
+            .collect::<Vec<_>>()
+    );
 }
 
 #[cfg(test)]
