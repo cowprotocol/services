@@ -30,6 +30,8 @@ pub struct OrderModel {
     pub fee: FeeModel,
     pub cost: CostModel,
     pub is_liquidity_order: bool,
+    #[serde(default)]
+    pub mandatory: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -106,7 +108,7 @@ pub struct StablePoolParameters {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct TokenInfoModel {
     pub decimals: Option<u8>,
     pub alias: Option<String>,
@@ -123,7 +125,7 @@ pub struct CostModel {
     pub token: H160,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct FeeModel {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
@@ -163,12 +165,15 @@ pub struct ExecutedOrderModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
+    pub cost: Option<CostModel>,
+    pub fee: Option<FeeModel>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
+    pub cost: Option<CostModel>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -211,7 +216,11 @@ mod tests {
 
     #[test]
     fn updated_amm_model_is_non_trivial() {
-        assert!(!UpdatedAmmModel { execution: vec![] }.is_non_trivial());
+        assert!(!UpdatedAmmModel {
+            execution: vec![],
+            cost: Default::default(),
+        }
+        .is_non_trivial());
 
         let trivial_execution_without_plan = ExecutedAmmModel {
             exec_plan: None,
@@ -231,6 +240,7 @@ mod tests {
                 trivial_execution_with_plan.clone(),
                 trivial_execution_without_plan
             ],
+            cost: Default::default(),
         }
         .is_non_trivial());
 
@@ -245,18 +255,21 @@ mod tests {
         };
 
         assert!(UpdatedAmmModel {
-            execution: vec![execution_with_buy.clone()]
+            execution: vec![execution_with_buy.clone()],
+            cost: Default::default(),
         }
         .is_non_trivial());
 
         assert!(UpdatedAmmModel {
-            execution: vec![execution_with_sell]
+            execution: vec![execution_with_sell],
+            cost: Default::default(),
         }
         .is_non_trivial());
 
         assert!(UpdatedAmmModel {
             // One trivial and one non-trivial -> non-trivial
-            execution: vec![execution_with_buy, trivial_execution_with_plan]
+            execution: vec![execution_with_buy, trivial_execution_with_plan],
+            cost: Default::default(),
         }
         .is_non_trivial());
     }
@@ -282,6 +295,7 @@ mod tests {
                 token: native_token,
             },
             is_liquidity_order: false,
+            mandatory: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -400,6 +414,7 @@ mod tests {
                 "amount": "1",
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
+              "mandatory": false,
             },
           },
           "amms": {

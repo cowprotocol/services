@@ -11,7 +11,7 @@ use mockall::*;
 const MAX_BATCH_SIZE: usize = 100;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct TokenInfo {
     pub decimals: Option<u8>,
     pub symbol: Option<String>,

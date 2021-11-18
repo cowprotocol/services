@@ -144,7 +144,7 @@ impl BaseTokens {
     }
 
     /// All pool token pairs that could be used along a path candidate for these token pairs.
-    pub fn relevant_pairs(&self, pairs: &mut dyn Iterator<Item = TokenPair>) -> HashSet<TokenPair> {
+    pub fn relevant_pairs(&self, pairs: impl Iterator<Item = TokenPair>) -> HashSet<TokenPair> {
         let mut result = HashSet::new();
         for pair in pairs {
             result.insert(pair);

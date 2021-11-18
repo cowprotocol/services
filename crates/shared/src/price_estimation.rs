@@ -4,6 +4,7 @@ pub mod gas;
 pub mod instrumented;
 pub mod paraswap;
 pub mod priority;
+pub mod quasimodo;
 pub mod zeroex;
 
 use crate::{bad_token::BadTokenDetecting, conversions::U256Ext};
@@ -20,6 +21,7 @@ arg_enum! {
         Baseline,
         Paraswap,
         ZeroEx,
+        Quasimodo,
     }
 }
 
