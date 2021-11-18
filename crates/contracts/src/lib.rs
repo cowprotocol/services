@@ -3,18 +3,20 @@ pub mod paths;
 pub mod vault;
 
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Authorizer.rs"));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
-include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
-include!(concat!(
-    env!("OUT_DIR"),
-    "/BalancerV2WeightedPoolFactory.rs"
-));
 include!(concat!(
     env!("OUT_DIR"),
     "/BalancerV2WeightedPool2TokensFactory.rs"
 ));
-include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/BalancerV2WeightedPoolFactory.rs"
+));
+include!(concat!(env!("OUT_DIR"), "/BaoswapFactory.rs"));
+include!(concat!(env!("OUT_DIR"), "/BaoswapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20Mintable.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2AllowListAuthentication.rs"));

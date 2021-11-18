@@ -1,31 +1,15 @@
 //! Uniswap V2 baseline liquidity source implementation.
 
+pub mod macros;
 pub mod pair_provider;
 pub mod pool_cache;
 pub mod pool_fetching;
 
-use self::pair_provider::PairProvider;
-use crate::Web3;
-use anyhow::Result;
-use contracts::UniswapV2Factory;
-use ethcontract::H160;
-use hex_literal::hex;
+use macros::impl_uniswap_like_liquidity;
 
-const INIT_CODE_DIGEST: [u8; 32] =
-    hex!("96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f");
-
-/// Creates the pair provider for the specified Web3 instance.
-pub async fn get_pair_provider(web3: &Web3) -> Result<PairProvider> {
-    let factory = UniswapV2Factory::deployed(web3).await?;
-    Ok(pair_provider_for_factory(factory.address()))
-}
-
-/// Returns a pair provider for the specified factory contract address.
-pub fn pair_provider_for_factory(factory_address: H160) -> PairProvider {
-    PairProvider {
-        factory: factory_address,
-        init_code_digest: INIT_CODE_DIGEST,
-    }
+impl_uniswap_like_liquidity! {
+    factory: contracts::UniswapV2Factory,
+    init_code_digest: "96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f",
 }
 
 #[cfg(test)]

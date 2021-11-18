@@ -78,7 +78,10 @@ pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
 }
 
 pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
-    uniswap_v2::pair_provider_for_factory(contracts.uniswap_factory.address())
+    PairProvider {
+        factory: contracts.uniswap_factory.address(),
+        init_code_digest: uniswap_v2::INIT_CODE_DIGEST,
+    }
 }
 
 pub struct OrderbookServices {

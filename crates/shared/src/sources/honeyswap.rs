@@ -1,21 +1,10 @@
 //! Honeyswap baseline liquidity source implementation.
 
-use super::uniswap_v2::pair_provider::PairProvider;
-use crate::Web3;
-use anyhow::Result;
-use contracts::HoneyswapFactory;
-use hex_literal::hex;
+use super::uniswap_v2::macros::impl_uniswap_like_liquidity;
 
-const INIT_CODE_DIGEST: [u8; 32] =
-    hex!("3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93");
-
-/// Creates the pair provider for the specified Web3 instance.
-pub async fn get_pair_provider(web3: &Web3) -> Result<PairProvider> {
-    let factory = HoneyswapFactory::deployed(web3).await?;
-    Ok(PairProvider {
-        factory: factory.address(),
-        init_code_digest: INIT_CODE_DIGEST,
-    })
+impl_uniswap_like_liquidity! {
+    factory: contracts::HoneyswapFactory,
+    init_code_digest: "3f88503e8580ab941773b59034fb4b2a63e86dbc031b3633a925533ad3ed2b93",
 }
 
 #[cfg(test)]

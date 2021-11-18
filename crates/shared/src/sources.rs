@@ -1,6 +1,7 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
+pub mod baoswap;
 pub mod honeyswap;
 pub mod sushiswap;
 pub mod uniswap_v2;
@@ -25,6 +26,7 @@ arg_enum! {
         Honeyswap,
         SushiSwap,
         BalancerV2,
+        Baoswap,
     }
 }
 
@@ -39,6 +41,7 @@ pub async fn pair_providers(
             BaselineSource::UniswapV2 => uniswap_v2::get_pair_provider(web3).await?,
             BaselineSource::SushiSwap => sushiswap::get_pair_provider(web3).await?,
             BaselineSource::Honeyswap => honeyswap::get_pair_provider(web3).await?,
+            BaselineSource::Baoswap => baoswap::get_pair_provider(web3).await?,
             BaselineSource::BalancerV2 => continue,
         };
 

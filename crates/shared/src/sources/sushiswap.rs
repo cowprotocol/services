@@ -1,21 +1,10 @@
 //! SushiSwap baseline liquidity source implementation.
 
-use super::uniswap_v2::pair_provider::PairProvider;
-use crate::Web3;
-use anyhow::Result;
-use contracts::SushiSwapFactory;
-use hex_literal::hex;
+use super::uniswap_v2::macros::impl_uniswap_like_liquidity;
 
-const INIT_CODE_DIGEST: [u8; 32] =
-    hex!("e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303");
-
-/// Creates the pair provider for the specified Web3 instance.
-pub async fn get_pair_provider(web3: &Web3) -> Result<PairProvider> {
-    let factory = SushiSwapFactory::deployed(web3).await?;
-    Ok(PairProvider {
-        factory: factory.address(),
-        init_code_digest: INIT_CODE_DIGEST,
-    })
+impl_uniswap_like_liquidity! {
+    factory: contracts::SushiSwapFactory,
+    init_code_digest: "e18a34eb0e04b04f7a0ac29a6e80748dca96319b42c54d679cb821dca90c6303",
 }
 
 #[cfg(test)]
