@@ -11,7 +11,7 @@ use self::uniswap_v2::{
     pool_fetching::{Pool, PoolFetching},
 };
 use crate::{recent_block_cache::Block, Web3};
-use anyhow::Result;
+use anyhow::{bail, Result};
 use model::TokenPair;
 use std::{
     collections::{HashMap, HashSet},
@@ -28,6 +28,22 @@ arg_enum! {
         BalancerV2,
         Baoswap,
     }
+}
+
+pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
+    Ok(match chain_id {
+        1 | 4 => vec![
+            BaselineSource::UniswapV2,
+            BaselineSource::SushiSwap,
+            BaselineSource::BalancerV2,
+        ],
+        100 => vec![
+            BaselineSource::Honeyswap,
+            BaselineSource::SushiSwap,
+            BaselineSource::Baoswap,
+        ],
+        _ => bail!("unsupported chain {:#x}", chain_id),
+    })
 }
 
 /// Returns a mapping of baseline sources to their respective pair providers.

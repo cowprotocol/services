@@ -356,8 +356,12 @@ async fn main() {
         max_retries: args.shared.pool_cache_maximum_retries,
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
     };
+    let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
+        sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
+    });
+    tracing::info!(?baseline_sources, "using baseline sources");
     let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        sources::pair_providers(&web3, &args.shared.baseline_sources)
+        sources::pair_providers(&web3, &baseline_sources)
             .await
             .expect("failed to load baseline source pair providers")
             .into_iter()
@@ -384,9 +388,7 @@ async fn main() {
             .collect(),
     });
 
-    let (balancer_pool_maintainer, balancer_v2_liquidity) = if args
-        .shared
-        .baseline_sources
+    let (balancer_pool_maintainer, balancer_v2_liquidity) = if baseline_sources
         .contains(&BaselineSource::BalancerV2)
     {
         let balancer_pool_fetcher = Arc::new(

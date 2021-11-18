@@ -66,12 +66,11 @@ pub struct Arguments {
     #[structopt(
         long,
         env,
-        default_value = "Uniswap,Sushiswap",
         possible_values = &BaselineSource::variants(),
         case_insensitive = true,
         use_delimiter = true
     )]
-    pub baseline_sources: Vec<BaselineSource>,
+    pub baseline_sources: Option<Vec<BaselineSource>>,
 
     /// The number of blocks kept in the pool cache.
     #[structopt(long, env, default_value = "10")]
