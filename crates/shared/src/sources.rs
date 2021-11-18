@@ -4,6 +4,7 @@ pub mod balancer_v2;
 pub mod baoswap;
 pub mod honeyswap;
 pub mod sushiswap;
+pub mod swapr;
 pub mod uniswap_v2;
 
 use self::uniswap_v2::{
@@ -27,6 +28,7 @@ arg_enum! {
         SushiSwap,
         BalancerV2,
         Baoswap,
+        Swapr,
     }
 }
 
@@ -41,6 +43,7 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,
             BaselineSource::Baoswap,
+            BaselineSource::Swapr,
         ],
         _ => bail!("unsupported chain {:#x}", chain_id),
     })
@@ -58,6 +61,7 @@ pub async fn pair_providers(
             BaselineSource::SushiSwap => sushiswap::get_pair_provider(web3).await?,
             BaselineSource::Honeyswap => honeyswap::get_pair_provider(web3).await?,
             BaselineSource::Baoswap => baoswap::get_pair_provider(web3).await?,
+            BaselineSource::Swapr => swapr::get_pair_provider(web3).await?,
             BaselineSource::BalancerV2 => continue,
         };
 

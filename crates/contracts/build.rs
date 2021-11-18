@@ -175,6 +175,12 @@ fn main() {
             .add_network_str("4", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str("100", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
     });
+    generate_contract_with_config("SwaprFactory", |builder| {
+        builder.add_network_str("100", "0x5D48C95AdfFD4B40c1AAADc4e08fc44117E02179")
+    });
+    generate_contract_with_config("SwaprRouter", |builder| {
+        builder.add_network_str("100", "0xE43e60736b1cb4a75ad25240E2f9a62Bff65c0C0")
+    });
     generate_contract_with_config("UniswapV2Factory", |builder| {
         builder
             .add_network_str("1", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
