@@ -108,7 +108,7 @@ where
             .past_events(&range)
             .await
             .context("failed to get past events")?
-            .ready_chunks(INSERT_EVENT_BATCH_SIZE)
+            .chunks(INSERT_EVENT_BATCH_SIZE)
             .map(|chunk| chunk.into_iter().collect::<Result<Vec<_>, _>>());
         futures::pin_mut!(events);
         // We intentionally do not go with the obvious approach of deleting old events first and
@@ -118,6 +118,8 @@ where
         // 1. It ensures that we only delete if we really have new events. Otherwise if fetching new
         //    events from the node fails for whatever reason we might keep deleting events over and
         //    over without inserting new ones resulting in the database table getting cleared.
+        //    Note that we do want to delete events if the new events are empty while fetching was
+        //    successful.
         // 2. It ensures that other users of the database are unlikely to see an inconsistent state
         //    some events have been deleted but new ones not yet inserted. This is important in case
         //    for example another part of the code calculates the total executed amount of an order.
@@ -133,6 +135,8 @@ where
         // in one transaction.
         let mut have_deleted_old_events = false;
         while let Some(events_chunk) = events.next().await {
+            // Early return on error (through `?`) is important here so that the second
+            // !have_deleted_old_eventsS check (after the loop) is correct.
             let unwrapped_events = events_chunk.context("failed to get next chunk of events")?;
             if !have_deleted_old_events {
                 self.store
@@ -142,6 +146,12 @@ where
             } else {
                 self.store.append_events(unwrapped_events).await?;
             };
+        }
+        // The `chunks` adaptor does not return an empty chunk if the stream was completely empty.
+        // However we do want to delete old events in this case as a rerorg might have removed
+        // events without adding new ones.
+        if !have_deleted_old_events {
+            self.store.replace_events(Vec::new(), range.clone()).await?;
         }
         self.last_handled_block = Some(range.end().to_u64());
         Ok(())
