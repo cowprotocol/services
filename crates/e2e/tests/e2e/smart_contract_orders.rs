@@ -1,15 +1,11 @@
 use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei, OrderbookServices,
-    API_HOST,
+    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
+    uniswap_pair_provider, OrderbookServices, API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, Bytes, PrivateKey, U256};
 use model::order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid};
-use shared::{
-    maintenance::Maintaining,
-    sources::uniswap_v2::{pair_provider::UniswapPairProvider, pool_fetching::PoolFetcher},
-    Web3,
-};
+use shared::{maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
@@ -29,12 +25,6 @@ async fn local_node_smart_contract_orders() {
 async fn smart_contract_orders(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
-    let chain_id = web3
-        .eth()
-        .chain_id()
-        .await
-        .expect("Could not get chainId")
-        .as_u64();
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
@@ -154,11 +144,7 @@ async fn smart_contract_orders(web3: Web3) {
     assert_eq!(order_status().await, OrderStatus::Open);
 
     // Drive solution
-    let uniswap_pair_provider = Arc::new(UniswapPairProvider {
-        factory: contracts.uniswap_factory.clone(),
-        chain_id,
-    });
-
+    let uniswap_pair_provider = uniswap_pair_provider(&contracts);
     let uniswap_liquidity = UniswapLikeLiquidity::new(
         IUniswapLikeRouter::at(&web3, contracts.uniswap_router.address()),
         contracts.gp_settlement.clone(),

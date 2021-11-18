@@ -198,13 +198,12 @@ mod tests {
     use crate::http_solver_api::SolverConfig;
     use crate::price_estimation::Query;
     use crate::recent_block_cache::CacheConfig;
-    use crate::sources::uniswap_v2::pair_provider::UniswapPairProvider;
+    use crate::sources::uniswap_v2;
     use crate::sources::uniswap_v2::pool_cache::NoopPoolCacheMetrics;
     use crate::sources::uniswap_v2::pool_fetching::PoolFetcher;
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
-    use contracts::UniswapV2Factory;
     use ethcontract::dyns::DynTransport;
     use model::order::OrderKind;
     use reqwest::Client;
@@ -261,10 +260,7 @@ mod tests {
             PoolCache::new(
                 CacheConfig::default(),
                 Box::new(PoolFetcher {
-                    pair_provider: Arc::new(UniswapPairProvider {
-                        factory: UniswapV2Factory::deployed(&web3).await.unwrap(),
-                        chain_id: 1,
-                    }),
+                    pair_provider: uniswap_v2::get_pair_provider(&web3).await.unwrap(),
                     web3: web3.clone(),
                 }),
                 current_block_stream(web3.clone(), Duration::from_secs(1))

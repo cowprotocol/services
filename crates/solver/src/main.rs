@@ -357,8 +357,9 @@ async fn main() {
         delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
     };
     let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
+        sources::pair_providers(&web3, &args.shared.baseline_sources)
             .await
+            .expect("failed to load baseline source pair providers")
             .into_iter()
             .map(|(source, pair_provider)| {
                 let fetcher = Box::new(PoolFetcher {
@@ -597,34 +598,29 @@ async fn build_amm_artifacts(
     web3: shared::Web3,
 ) -> Vec<UniswapLikeLiquidity> {
     let mut res = vec![];
-    for (key, value) in sources {
-        match key {
-            BaselineSource::Uniswap => {
-                let router = contracts::UniswapV2Router02::deployed(&web3)
-                    .await
-                    .expect("couldn't load deployed uniswap router");
-                res.push(UniswapLikeLiquidity::new(
-                    IUniswapLikeRouter::at(&web3, router.address()),
-                    settlement_contract.clone(),
-                    base_tokens.clone(),
-                    web3.clone(),
-                    value.clone(),
-                ));
-            }
-            BaselineSource::Sushiswap => {
-                let router = contracts::SushiswapV2Router02::deployed(&web3)
-                    .await
-                    .expect("couldn't load deployed sushiswap router");
-                res.push(UniswapLikeLiquidity::new(
-                    IUniswapLikeRouter::at(&web3, router.address()),
-                    settlement_contract.clone(),
-                    base_tokens.clone(),
-                    web3.clone(),
-                    value.clone(),
-                ));
-            }
-            BaselineSource::BalancerV2 => (),
-        }
+    for (source, pool_cache) in sources {
+        let router_address = match source {
+            BaselineSource::UniswapV2 => contracts::UniswapV2Router02::deployed(&web3)
+                .await
+                .expect("couldn't load deployed UniswapV2 router")
+                .address(),
+            BaselineSource::SushiSwap => contracts::SushiSwapRouter::deployed(&web3)
+                .await
+                .expect("couldn't load deployed SushiSwap router")
+                .address(),
+            BaselineSource::Honeyswap => contracts::HoneyswapRouter::deployed(&web3)
+                .await
+                .expect("couldn't load deployed Honeyswap router")
+                .address(),
+            _ => continue,
+        };
+        res.push(UniswapLikeLiquidity::new(
+            IUniswapLikeRouter::at(&web3, router_address),
+            settlement_contract.clone(),
+            base_tokens.clone(),
+            web3.clone(),
+            pool_cache.clone(),
+        ));
     }
     res
 }

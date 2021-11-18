@@ -1,4 +1,4 @@
-use super::pair_provider::AmmPairProvider;
+use super::pair_provider::PairProvider;
 use crate::{
     baseline_solver::BaselineSolvable, ethcontract_error::EthcontractErrorType,
     recent_block_cache::Block, transport::MAX_BATCH_SIZE, Web3,
@@ -8,7 +8,7 @@ use contracts::{IUniswapLikePair, ERC20};
 use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, H160, U256};
 use model::TokenPair;
 use num::rational::Ratio;
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 const POOL_SWAP_GAS_COST: usize = 60_000;
 
@@ -159,7 +159,7 @@ impl BaselineSolvable for Pool {
 }
 
 pub struct PoolFetcher {
-    pub pair_provider: Arc<dyn AmmPairProvider>,
+    pub pair_provider: PairProvider,
     pub web3: Web3,
 }
 

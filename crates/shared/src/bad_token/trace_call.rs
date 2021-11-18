@@ -1,6 +1,6 @@
 use super::{BadTokenDetecting, TokenQuality};
 use crate::{
-    ethcontract_error::EthcontractErrorType, sources::uniswap_v2::pair_provider::AmmPairProvider,
+    ethcontract_error::EthcontractErrorType, sources::uniswap_v2::pair_provider::PairProvider,
     trace_many, Web3,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
@@ -25,13 +25,13 @@ pub trait TokenOwnerFinding: Send + Sync {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
 }
 
-pub struct AmmPairProviderFinder {
-    pub inner: Arc<dyn AmmPairProvider>,
+pub struct UniswapLikePairProviderFinder {
+    pub inner: PairProvider,
     pub base_tokens: Vec<H160>,
 }
 
 #[async_trait::async_trait]
-impl TokenOwnerFinding for AmmPairProviderFinder {
+impl TokenOwnerFinding for UniswapLikePairProviderFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
         Ok(self
             .base_tokens
@@ -327,7 +327,7 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
 mod tests {
     use super::*;
     use crate::{
-        sources::uniswap_v2::pair_provider::{SushiswapPairProvider, UniswapPairProvider},
+        sources::{sushiswap, uniswap_v2},
         transport::create_env_test_transport,
     };
     use hex_literal::hex;
@@ -593,22 +593,12 @@ mod tests {
         //   Not sure why deny listed.
 
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
-        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let uniswap = Arc::new(UniswapPairProvider {
-            factory: contracts::UniswapV2Factory::deployed(&web3).await.unwrap(),
-            chain_id,
-        });
-        let uniswap = Arc::new(AmmPairProviderFinder {
-            inner: uniswap,
+        let uniswap = Arc::new(UniswapLikePairProviderFinder {
+            inner: uniswap_v2::get_pair_provider(&web3).await.unwrap(),
             base_tokens: base_tokens.to_vec(),
         });
-        let sushiswap = Arc::new(SushiswapPairProvider {
-            factory: contracts::SushiswapV2Factory::deployed(&web3)
-                .await
-                .unwrap(),
-        });
-        let sushiswap = Arc::new(AmmPairProviderFinder {
-            inner: sushiswap,
+        let sushiswap = Arc::new(UniswapLikePairProviderFinder {
+            inner: sushiswap::get_pair_provider(&web3).await.unwrap(),
             base_tokens: base_tokens.to_vec(),
         });
         let token_cache = TraceCallDetector {

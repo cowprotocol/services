@@ -48,7 +48,8 @@ fn run() -> Result<()> {
         )?
         .github(
             "BalancerV2StablePoolFactory",
-            "balancer-labs/balancer-v2-monorepo/stable-deployment/pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
+            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
+             pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
         )?
         .npm(
             "ERC20Mintable",
@@ -84,19 +85,24 @@ fn run() -> Result<()> {
         )?
         .github(
             "BalancerV2StablePool",
-            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/abis/StablePool.json",
+            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
+             pkg/deployments/tasks/20210624-stable-pool/abi/StablePool.json",
         )?
         .npm(
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",
         )?
         .npm(
-            "IUniswapLikeRouter",
-            "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Router02.json",
+            "IUniswapLikeFactory",
+            "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Factory.json",
         )?
         .npm(
             "IUniswapLikePair",
             "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Pair.json",
+        )?
+        .npm(
+            "IUniswapLikeRouter",
+            "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Router02.json",
         )?;
 
     Ok(())

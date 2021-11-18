@@ -20,7 +20,8 @@ use shared::{
     price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     sources::uniswap_v2::{
-        pair_provider::UniswapPairProvider,
+        self,
+        pair_provider::PairProvider,
         pool_cache::{NoopPoolCacheMetrics, PoolCache},
         pool_fetching::PoolFetcher,
     },
@@ -44,6 +45,7 @@ macro_rules! tx_value {
             .expect(&format!("{} failed", NAME))
     }};
 }
+
 #[macro_export]
 macro_rules! tx {
     ($acc:ident, $call:expr) => {
@@ -75,6 +77,10 @@ pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
         .expect("MintableERC20 deployment failed")
 }
 
+pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
+    uniswap_v2::pair_provider_for_factory(contracts.uniswap_factory.address())
+}
+
 pub struct OrderbookServices {
     pub price_estimator: Arc<BaselinePriceEstimator>,
     pub maintenance: ServiceMaintenance,
@@ -85,12 +91,6 @@ pub struct OrderbookServices {
 
 impl OrderbookServices {
     pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
-        let chain_id = web3
-            .eth()
-            .chain_id()
-            .await
-            .expect("Could not get chainId")
-            .as_u64();
         let db = Arc::new(Postgres::new("postgresql://").unwrap());
         db.clear().await.unwrap();
         let event_updater = Arc::new(EventUpdater::new(
@@ -98,10 +98,7 @@ impl OrderbookServices {
             db.as_ref().clone(),
             None,
         ));
-        let pair_provider = Arc::new(UniswapPairProvider {
-            factory: contracts.uniswap_factory.clone(),
-            chain_id,
-        });
+        let pair_provider = uniswap_pair_provider(contracts);
         let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(5))
             .await
             .unwrap();

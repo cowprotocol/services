@@ -149,15 +149,21 @@ fn main() {
                 },
             )
     });
+    generate_contract_with_config("HoneyswapRouter", |builder| {
+        builder.add_network_str("100", "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
+    });
+    generate_contract_with_config("HoneyswapFactory", |builder| {
+        builder.add_network_str("100", "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
+    });
     generate_contract("IUniswapLikeRouter");
     generate_contract("IUniswapLikePair");
-    generate_contract_with_config("SushiswapV2Router02", |builder| {
+    generate_contract_with_config("SushiSwapRouter", |builder| {
         builder
             .add_network_str("1", "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
             .add_network_str("4", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str("100", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
     });
-    generate_contract_with_config("SushiswapV2Factory", |builder| {
+    generate_contract_with_config("SushiSwapFactory", |builder| {
         builder
             .add_network_str("1", "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
             .add_network_str("4", "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
@@ -167,13 +173,11 @@ fn main() {
         builder
             .add_network_str("1", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str("4", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
-            .add_network_str("100", "0x1C232F01118CB8B424793ae03F870aa7D0ac7f77")
     });
     generate_contract_with_config("UniswapV2Factory", |builder| {
         builder
             .add_network_str("1", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str("4", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
-            .add_network_str("100", "0xA818b4F111Ccac7AA31D0BCc0806d64F2E0737D7")
     });
     generate_contract_with_config("WETH9", |builder| {
         builder

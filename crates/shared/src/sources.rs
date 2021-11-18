@@ -1,10 +1,12 @@
 //! Top-level module organizing all baseline liquidity sources.
 
 pub mod balancer_v2;
+pub mod honeyswap;
+pub mod sushiswap;
 pub mod uniswap_v2;
 
 use self::uniswap_v2::{
-    pair_provider::{AmmPairProvider, SushiswapPairProvider, UniswapPairProvider},
+    pair_provider::PairProvider,
     pool_fetching::{Pool, PoolFetching},
 };
 use crate::{recent_block_cache::Block, Web3};
@@ -19,36 +21,30 @@ use structopt::clap::arg_enum;
 arg_enum! {
     #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
     pub enum BaselineSource {
-        Uniswap,
-        Sushiswap,
+        UniswapV2,
+        Honeyswap,
+        SushiSwap,
         BalancerV2,
     }
 }
 
+/// Returns a mapping of baseline sources to their respective pair providers.
 pub async fn pair_providers(
-    sources: &[BaselineSource],
-    chain_id: u64,
     web3: &Web3,
-) -> HashMap<BaselineSource, Arc<dyn AmmPairProvider>> {
+    sources: &[BaselineSource],
+) -> Result<HashMap<BaselineSource, PairProvider>> {
     let mut providers = HashMap::new();
-    for source in sources.iter().copied() {
-        let provider: Arc<dyn AmmPairProvider> = match source {
-            BaselineSource::Uniswap => Arc::new(UniswapPairProvider {
-                factory: contracts::UniswapV2Factory::deployed(web3)
-                    .await
-                    .expect("couldn't load deployed uniswap router"),
-                chain_id,
-            }),
-            BaselineSource::Sushiswap => Arc::new(SushiswapPairProvider {
-                factory: contracts::SushiswapV2Factory::deployed(web3)
-                    .await
-                    .expect("couldn't load deployed sushiswap router"),
-            }),
+    for source in sources {
+        let provider = match source {
+            BaselineSource::UniswapV2 => uniswap_v2::get_pair_provider(web3).await?,
+            BaselineSource::SushiSwap => sushiswap::get_pair_provider(web3).await?,
+            BaselineSource::Honeyswap => honeyswap::get_pair_provider(web3).await?,
             BaselineSource::BalancerV2 => continue,
         };
-        providers.insert(source, provider);
+
+        providers.insert(*source, provider);
     }
-    providers
+    Ok(providers)
 }
 
 pub struct PoolAggregator {

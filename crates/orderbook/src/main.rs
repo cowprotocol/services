@@ -29,7 +29,8 @@ use shared::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         trace_call::{
-            AmmPairProviderFinder, BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
+            BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
+            UniswapLikePairProviderFinder,
         },
     },
     baseline_solver::BaseTokens,
@@ -289,8 +290,9 @@ async fn main() {
         metrics.clone(),
     ));
 
-    let pair_providers = sources::pair_providers(&args.shared.baseline_sources, chain_id, &web3)
+    let pair_providers = sources::pair_providers(&web3, &args.shared.baseline_sources)
         .await
+        .expect("failed to load baseline source pair providers")
         .values()
         .cloned()
         .collect::<Vec<_>>();
@@ -307,7 +309,7 @@ async fn main() {
     let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
         .iter()
         .map(|provider| -> Arc<dyn TokenOwnerFinding> {
-            Arc::new(AmmPairProviderFinder {
+            Arc::new(UniswapLikePairProviderFinder {
                 inner: provider.clone(),
                 base_tokens: base_tokens.tokens().iter().copied().collect(),
             })
