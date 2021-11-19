@@ -13,7 +13,7 @@ use num::BigRational;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
 use reqwest::{Client, Url};
-use shared::http_solver_api::{HttpSolverApi, SolverConfig};
+use shared::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
 use shared::zeroex_api::ZeroExApi;
 use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
@@ -172,7 +172,7 @@ pub fn create(
     let create_http_solver =
         |account: Account, url: Url, name: &'static str, config: SolverConfig| -> HttpSolver {
             HttpSolver::new(
-                HttpSolverApi {
+                DefaultHttpSolverApi {
                     name,
                     network_name: network_id.clone(),
                     chain_id,

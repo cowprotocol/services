@@ -19,7 +19,7 @@ use orderbook::{
     verify_deployed_contract_constants,
 };
 use primitive_types::H160;
-use shared::http_solver_api::{HttpSolverApi, SolverConfig};
+use shared::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
 use shared::network::network_name;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
 use shared::price_estimation::zeroex::ZeroExPriceEstimator;
@@ -430,7 +430,7 @@ async fn main() {
                     )),
                     PriceEstimatorType::Quasimodo => Box::new(InstrumentedPriceEstimator::new(
                         QuasimodoPriceEstimator {
-                            api: Arc::new(HttpSolverApi {
+                            api: Arc::new(DefaultHttpSolverApi {
                                 name: "quasimodo-price-estimator",
                                 network_name: network_name.to_string(),
                                 chain_id,

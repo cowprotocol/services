@@ -5,20 +5,20 @@ use std::time::{Duration, Instant};
 
 pub mod model;
 
-/// Configuration for solver requests.
-#[derive(Debug, Default)]
-pub struct SolverConfig {
-    /// Optional value for the `X-API-KEY` header.
-    pub api_key: Option<String>,
-
-    /// Controls value of the `max_nr_exec_orders` parameter.
-    pub max_nr_exec_orders: u32,
-
-    /// Controls if we should fill the `ucp_policy` parameter.
-    pub has_ucp_policy_parameter: bool,
+/// Implements an abstract HTTP solver API, can be mocked, instrumented, etc.
+#[mockall::automock]
+#[async_trait::async_trait]
+pub trait HttpSolverApi: Send + Sync {
+    /// Submit a batch auction to the solver and wait for a solution.
+    async fn solve(
+        &self,
+        model: &model::BatchAuctionModel,
+        deadline: Instant,
+    ) -> Result<model::SettledBatchAuctionModel>;
 }
 
-pub struct HttpSolverApi {
+/// Default implementation for HTTP solver API that uses the reqwest client.
+pub struct DefaultHttpSolverApi {
     /// Name of this solver.
     ///
     /// Used for logging and metrics reporting purposes.
@@ -44,9 +44,22 @@ pub struct HttpSolverApi {
     pub config: SolverConfig,
 }
 
-impl HttpSolverApi {
-    /// Submit a batch auction to the solver and wait for a solution.
-    pub async fn solve(
+/// Configuration for solver requests.
+#[derive(Debug, Default)]
+pub struct SolverConfig {
+    /// Optional value for the `X-API-KEY` header.
+    pub api_key: Option<String>,
+
+    /// Controls value of the `max_nr_exec_orders` parameter.
+    pub max_nr_exec_orders: u32,
+
+    /// Controls if we should fill the `ucp_policy` parameter.
+    pub has_ucp_policy_parameter: bool,
+}
+
+#[async_trait::async_trait]
+impl HttpSolverApi for DefaultHttpSolverApi {
+    async fn solve(
         &self,
         model: &model::BatchAuctionModel,
         deadline: Instant,
@@ -110,7 +123,9 @@ impl HttpSolverApi {
         serde_json::from_str(text.as_str())
             .with_context(|| format!("failed to decode response json, {}", context()))
     }
+}
 
+impl DefaultHttpSolverApi {
     fn generate_instance_name(&self) -> String {
         let now = chrono::Utc::now();
         format!(

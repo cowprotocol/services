@@ -18,7 +18,7 @@ use num::ToPrimitive;
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::http_solver_api::model::*;
-use shared::http_solver_api::HttpSolverApi;
+use shared::http_solver_api::{DefaultHttpSolverApi, HttpSolverApi};
 use shared::price_estimation::gas::{GAS_PER_BALANCER_SWAP, GAS_PER_ORDER, GAS_PER_UNISWAP};
 use shared::{
     measure_time,
@@ -46,7 +46,7 @@ pub struct InstanceData {
 pub type InstanceCache = Arc<Mutex<Option<InstanceData>>>;
 
 pub struct HttpSolver {
-    solver: HttpSolverApi,
+    solver: DefaultHttpSolverApi,
     account: Account,
     native_token: H160,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
@@ -57,7 +57,7 @@ pub struct HttpSolver {
 impl HttpSolver {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        solver: HttpSolverApi,
+        solver: DefaultHttpSolverApi,
         account: Account,
         native_token: H160,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
@@ -501,7 +501,7 @@ mod tests {
         let gas_price = 100.;
 
         let solver = HttpSolver::new(
-            HttpSolverApi {
+            DefaultHttpSolverApi {
                 name: "Test Solver",
                 network_name: "mock_network_id".to_string(),
                 chain_id: 0,

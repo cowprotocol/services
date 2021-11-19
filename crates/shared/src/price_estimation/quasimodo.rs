@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 pub struct QuasimodoPriceEstimator {
-    pub api: Arc<HttpSolverApi>,
+    pub api: Arc<dyn HttpSolverApi>,
     pub pools: Arc<PoolCache>,
     pub bad_token_detector: Arc<dyn BadTokenDetecting>,
     pub token_info: Arc<dyn TokenInfoFetching>,
@@ -195,7 +195,7 @@ mod tests {
     use super::*;
     use crate::bad_token::list_based::ListBasedDetector;
     use crate::current_block::current_block_stream;
-    use crate::http_solver_api::SolverConfig;
+    use crate::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
     use crate::price_estimation::Query;
     use crate::recent_block_cache::CacheConfig;
     use crate::sources::uniswap_v2;
@@ -275,7 +275,7 @@ mod tests {
         let gas_info = Arc::new(web3);
 
         let estimator = QuasimodoPriceEstimator {
-            api: Arc::new(HttpSolverApi {
+            api: Arc::new(DefaultHttpSolverApi {
                 name: "test",
                 network_name: "1".to_string(),
                 chain_id: 1,
