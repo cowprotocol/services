@@ -58,7 +58,7 @@ impl PriceEstimating for CompetitionPriceEstimator {
 struct EstimateData<'a> {
     estimator_name: &'a str,
     estimate: Estimate,
-    price: BigRational,
+    sell_over_buy: BigRational,
 }
 
 fn fold_price_estimation_result<'a>(
@@ -79,19 +79,23 @@ fn fold_price_estimation_result<'a>(
     }
 
     let estimate_with_price = estimate.and_then(|estimate| {
-        let price = estimate
+        let sell_over_buy = estimate
             .price_in_sell_token_rational(query)
             .ok_or(PriceEstimationError::ZeroAmount)?;
         Ok(EstimateData {
             estimator_name,
             estimate,
-            price,
+            sell_over_buy,
         })
     });
 
     match (previous_result, estimate_with_price) {
-        (Ok(previous), Ok(estimate)) => Ok(cmp::max_by_key(previous, estimate, |data| {
-            data.price.clone()
+        // We want to MINIMIZE the `price_in_sell_token_rational` which is
+        // computed as `sell_amount / buy_amount`. Minimizing this means
+        // increasing the `buy_amount` (i.e. user gets more) or decreasing the
+        // `sell_amount` (i.e. user pays less).
+        (Ok(previous), Ok(estimate)) => Ok(cmp::min_by_key(previous, estimate, |data| {
+            data.sell_over_buy.clone()
         })),
         (Ok(estimate), Err(_)) | (Err(_), Ok(estimate)) => Ok(estimate),
         (Err(previous_err), Err(err)) => Err(join_error(previous_err, err)),
@@ -137,6 +141,12 @@ mod tests {
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: 1.into(),
+                kind: OrderKind::Sell,
+            },
+            Query {
+                sell_token: H160::from_low_u64_le(2),
+                buy_token: H160::from_low_u64_le(3),
+                in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
             Query {
@@ -165,8 +175,9 @@ mod tests {
 
         let mut first = MockPriceEstimating::new();
         first.expect_estimates().times(1).returning(move |queries| {
-            assert_eq!(queries.len(), 4);
+            assert_eq!(queries.len(), 5);
             vec![
+                Ok(estimates[0]),
                 Ok(estimates[0]),
                 Ok(estimates[0]),
                 Err(PriceEstimationError::Other(anyhow!(""))),
@@ -178,9 +189,10 @@ mod tests {
             .expect_estimates()
             .times(1)
             .returning(move |queries| {
-                assert_eq!(queries.len(), 4);
+                assert_eq!(queries.len(), 5);
                 vec![
                     Err(PriceEstimationError::Other(anyhow!(""))),
+                    Ok(estimates[1]),
                     Ok(estimates[1]),
                     Err(PriceEstimationError::Other(anyhow!(""))),
                     Err(PriceEstimationError::UnsupportedToken(H160([0; 20]))),
@@ -193,16 +205,17 @@ mod tests {
         ]);
 
         let result = priority.estimates(&queries).await;
-        assert_eq!(result.len(), 4);
+        assert_eq!(result.len(), 5);
         assert_eq!(result[0].as_ref().unwrap(), &estimates[0]);
-        assert_eq!(result[1].as_ref().unwrap(), &estimates[1]);
+        assert_eq!(result[1].as_ref().unwrap(), &estimates[1]); // buy 2 is better than buy 1
+        assert_eq!(result[2].as_ref().unwrap(), &estimates[0]); // pay 1 is better than pay 2
         assert!(matches!(
-            result[2].as_ref().unwrap_err(),
+            result[3].as_ref().unwrap_err(),
             PriceEstimationError::Other(err)
                 if err.to_string() == "no successful price estimates",
         ));
         assert!(matches!(
-            result[3].as_ref().unwrap_err(),
+            result[4].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken(_),
         ));
     }
