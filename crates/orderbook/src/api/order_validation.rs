@@ -283,7 +283,7 @@ impl OrderValidating for OrderValidator {
                     kind: order_creation.kind,
                 },
                 order_creation.app_data,
-                order_creation.fee_amount.to_f64_lossy(),
+                order_creation.fee_amount,
             )
             .await
             .map_err(|()| ValidationError::InsufficientFee)?;
