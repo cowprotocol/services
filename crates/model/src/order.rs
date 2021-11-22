@@ -64,7 +64,7 @@ impl Order {
         order_creation: OrderCreation,
         domain: &DomainSeparator,
         settlement_contract: H160,
-        full_fee_amount: f64,
+        full_fee_amount: U256,
     ) -> Option<Self> {
         let owner = order_creation
             .signature
@@ -75,7 +75,7 @@ impl Order {
                 owner,
                 uid: order_creation.uid(domain, &owner),
                 settlement_contract,
-                full_fee_amount: U256::from_f64_lossy(full_fee_amount),
+                full_fee_amount,
                 ..Default::default()
             },
             order_creation,
