@@ -132,15 +132,8 @@ impl Metrics {
                 "Surplus ratio differences between winning and best settlement per order",
             )
             .buckets(vec![
-                -f64::INFINITY,
-                -0.1,
-                -0.01,
-                -0.005,
-                0.,
-                0.005,
-                0.01,
-                0.1,
-                f64::INFINITY,
+                -2.0, // Difference of percentages can not exceed +/- 2
+                -1.0, -0.1, -0.01, -0.005, 0., 0.005, 0.01, 0.1, 1.0, 2.0,
             ]),
         )?;
         registry.register(Box::new(order_surplus_report.clone()))?;
