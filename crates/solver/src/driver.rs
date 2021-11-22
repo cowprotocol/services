@@ -2,9 +2,9 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
-    analytics,
+    analytics, auction_preprocessing,
     in_flight_orders::InFlightOrders,
-    liquidity::{order_converter::OrderConverter, LimitOrder},
+    liquidity::order_converter::OrderConverter,
     liquidity_collector::LiquidityCollector,
     metrics::SolverMetrics,
     orderbook::OrderBookApi,
@@ -20,13 +20,12 @@ use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
-use model::order::BUY_ETH_ADDRESS;
 use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use rand::prelude::SliceRandom;
 use shared::{
     current_block::{self, CurrentBlockStream},
-    price_estimation::{self, PriceEstimating},
+    price_estimation::PriceEstimating,
     recent_block_cache::Block,
     token_list::TokenList,
     Web3,
@@ -389,7 +388,7 @@ impl Driver {
             .liquidity_collector
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
             .await?;
-        let estimated_prices = collect_estimated_prices(
+        let estimated_prices = auction_preprocessing::collect_estimated_prices(
             self.price_estimator.as_ref(),
             self.native_token_amount_to_estimate_prices_with,
             self.native_token,
@@ -397,12 +396,12 @@ impl Driver {
         )
         .await;
         tracing::debug!("estimated prices: {:?}", estimated_prices);
-        let orders = orders_with_price_estimates(orders, &estimated_prices);
+        let orders = auction_preprocessing::orders_with_price_estimates(orders, &estimated_prices);
 
         self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
 
-        if !has_at_least_one_user_order(&orders) {
+        if !auction_preprocessing::has_at_least_one_user_order(&orders) {
             return Ok(());
         }
 
@@ -544,95 +543,12 @@ impl Driver {
     }
 }
 
-pub async fn collect_estimated_prices(
-    price_estimator: &dyn PriceEstimating,
-    native_token_amount_to_estimate_prices_with: U256,
-    native_token: H160,
-    orders: &[LimitOrder],
-) -> HashMap<H160, BigRational> {
-    // Computes set of traded tokens (limit orders only).
-    // NOTE: The native token is always added.
-
-    let queries = orders
-        .iter()
-        .flat_map(|order| [order.sell_token, order.buy_token])
-        .filter(|token| *token != native_token)
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .map(|token| price_estimation::Query {
-            // For ranking purposes it doesn't matter how the external price vector is scaled,
-            // but native_token is used here anyway for better logging/debugging.
-            sell_token: native_token,
-            buy_token: token,
-            in_amount: native_token_amount_to_estimate_prices_with,
-            kind: model::order::OrderKind::Sell,
-        })
-        .collect::<Vec<_>>();
-    let estimates = price_estimator.estimates(&queries).await;
-
-    fn log_err(token: H160, err: &str) {
-        tracing::warn!("failed to estimate price for token {}: {}", token, err);
-    }
-    let mut prices: HashMap<_, _> = queries
-        .into_iter()
-        .zip(estimates)
-        .filter_map(|(query, estimate)| {
-            let estimate = match estimate {
-                Ok(estimate) => estimate,
-                Err(err) => {
-                    log_err(query.buy_token, &format!("{:?}", err));
-                    return None;
-                }
-            };
-            let price = match estimate.price_in_sell_token_rational(&query) {
-                Some(price) => price,
-                None => {
-                    log_err(query.buy_token, "infinite price");
-                    return None;
-                }
-            };
-            Some((query.buy_token, price))
-        })
-        .collect();
-
-    // Always include the native token.
-    prices.insert(native_token, num::one());
-    // And the placeholder for its native counterpart.
-    prices.insert(BUY_ETH_ADDRESS, num::one());
-
-    prices
-}
-
-// Filter limit orders for which we don't have price estimates as they cannot be considered for the objective criterion
-fn orders_with_price_estimates(
-    orders: Vec<LimitOrder>,
-    prices: &HashMap<H160, BigRational>,
-) -> Vec<LimitOrder> {
-    let (orders, removed_orders): (Vec<_>, Vec<_>) = orders.into_iter().partition(|order| {
-        prices.contains_key(&order.sell_token) && prices.contains_key(&order.buy_token)
-    });
-    if !removed_orders.is_empty() {
-        tracing::debug!(
-            "pruned {} orders: {:?}",
-            removed_orders.len(),
-            removed_orders,
-        );
-    }
-    orders
-}
-
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
     !settlement.encoder.trades().iter().any(|trade| {
         token_list
             .get(&trade.order.order_creation.sell_token)
             .is_none()
     })
-}
-
-// vk: I would like to extend this to also check that the order has minimum age but for this we need
-// access to the creation date which is a more involved change.
-fn has_at_least_one_user_order(orders: &[LimitOrder]) -> bool {
-    orders.iter().any(|order| !order.is_liquidity_order)
 }
 
 fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
@@ -656,127 +572,10 @@ fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        liquidity::{tests::CapturingSettlementHandler, LimitOrder},
-        settlement::Trade,
-    };
+    use crate::settlement::Trade;
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation, OrderKind};
-    use num::traits::One as _;
-    use shared::{
-        price_estimation::mocks::{FailingPriceEstimator, FakePriceEstimator},
-        token_list::Token,
-    };
-
-    #[tokio::test]
-    async fn collect_estimated_prices_adds_prices_for_buy_and_sell_token_of_limit_orders() {
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 1.into(),
-            gas: 1.into(),
-        });
-
-        let native_token = H160::zero();
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        let orders = vec![LimitOrder {
-            sell_amount: 100_000.into(),
-            buy_amount: 100_000.into(),
-            sell_token,
-            buy_token,
-            kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
-        }];
-        let prices =
-            collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
-        assert_eq!(prices.len(), 4);
-        assert!(prices.contains_key(&sell_token));
-        assert!(prices.contains_key(&buy_token));
-    }
-
-    #[tokio::test]
-    async fn collect_estimated_prices_skips_token_for_which_estimate_fails() {
-        let price_estimator = FailingPriceEstimator();
-
-        let native_token = H160::zero();
-        let sell_token = H160::from_low_u64_be(1);
-        let buy_token = H160::from_low_u64_be(2);
-
-        let orders = vec![LimitOrder {
-            sell_amount: 100_000.into(),
-            buy_amount: 100_000.into(),
-            sell_token,
-            buy_token,
-            kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
-        }];
-        let prices =
-            collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
-        assert_eq!(prices.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn collect_estimated_prices_adds_native_token_if_wrapped_is_traded() {
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 1.into(),
-            gas: 1.into(),
-        });
-
-        let native_token = H160::zero();
-        let sell_token = H160::from_low_u64_be(1);
-
-        let liquidity = vec![LimitOrder {
-            sell_amount: 100_000.into(),
-            buy_amount: 100_000.into(),
-            sell_token,
-            buy_token: native_token,
-            kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
-        }];
-        let prices =
-            collect_estimated_prices(&price_estimator, 1.into(), native_token, &liquidity).await;
-        assert_eq!(prices.len(), 3);
-        assert!(prices.contains_key(&sell_token));
-        assert!(prices.contains_key(&native_token));
-        assert!(prices.contains_key(&BUY_ETH_ADDRESS));
-    }
-
-    #[test]
-    fn liquidity_with_price_removes_liquidity_without_price() {
-        let tokens = [
-            H160::from_low_u64_be(0),
-            H160::from_low_u64_be(1),
-            H160::from_low_u64_be(2),
-            H160::from_low_u64_be(3),
-        ];
-        let prices = hashmap! {tokens[0] => BigRational::one(), tokens[1] => BigRational::one()};
-        let order = |sell_token, buy_token| LimitOrder {
-            sell_token,
-            buy_token,
-            ..Default::default()
-        };
-        let orders = vec![
-            order(tokens[0], tokens[1]),
-            order(tokens[0], tokens[2]),
-            order(tokens[2], tokens[0]),
-            order(tokens[2], tokens[3]),
-        ];
-        let filtered = orders_with_price_estimates(orders, &prices);
-        assert_eq!(filtered.len(), 1);
-        assert!(filtered[0].sell_token == tokens[0] && filtered[0].buy_token == tokens[1]);
-    }
+    use model::order::{Order, OrderCreation};
+    use shared::token_list::Token;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {

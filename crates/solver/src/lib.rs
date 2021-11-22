@@ -1,4 +1,5 @@
 mod analytics;
+mod auction_preprocessing;
 pub mod driver;
 pub mod encoding;
 pub mod in_flight_orders;
