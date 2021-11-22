@@ -526,6 +526,8 @@ impl Driver {
                     }
                 };
                 self.in_flight_orders.mark_settled_orders(block, orders);
+                self.metrics
+                    .transaction_gas_price(receipt.effective_gas_price);
             }
             self.metrics.transaction_submission(start.elapsed());
 

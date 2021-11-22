@@ -1,8 +1,9 @@
 use crate::liquidity::{LimitOrder, Liquidity};
 use anyhow::Result;
+use ethcontract::U256;
 use model::order::Order;
 use prometheus::{
-    Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
+    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
 use shared::{
     metrics::get_metrics_registry,
@@ -40,6 +41,7 @@ pub trait SolverMetrics: Send + Sync {
     fn runloop_completed(&self);
     fn complete_runloop_until_transaction(&self, duration: Duration);
     fn transaction_submission(&self, duration: Duration);
+    fn transaction_gas_price(&self, gas_price: U256);
 }
 
 // TODO add labeled interaction counter once we support more than one interaction
@@ -60,6 +62,7 @@ pub struct Metrics {
     order_surplus_report: Histogram,
     complete_runloop_until_transaction: Histogram,
     transaction_submission: Histogram,
+    transaction_gas_price_gwei: Gauge,
 }
 
 impl Metrics {
@@ -174,6 +177,13 @@ impl Metrics {
         })?;
         registry.register(Box::new(transaction_submission.clone()))?;
 
+        let opts = Opts::new(
+            "transaction_gas_price_gwei",
+            "Actual gas price used by settlement transaction.",
+        );
+        let transaction_gas_price_gwei = Gauge::with_opts(opts).unwrap();
+        registry.register(Box::new(transaction_gas_price_gwei.clone()))?;
+
         Ok(Self {
             trade_counter,
             order_settlement_time,
@@ -191,6 +201,7 @@ impl Metrics {
             order_surplus_report,
             complete_runloop_until_transaction,
             transaction_submission,
+            transaction_gas_price_gwei,
         })
     }
 }
@@ -309,6 +320,11 @@ impl SolverMetrics for Metrics {
     fn transaction_submission(&self, duration: Duration) {
         self.transaction_submission.observe(duration.as_secs_f64());
     }
+
+    fn transaction_gas_price(&self, gas_price: U256) {
+        self.transaction_gas_price_gwei
+            .set(gas_price.to_f64_lossy() / 1e9)
+    }
 }
 
 impl TransportMetrics for Metrics {
@@ -368,6 +384,7 @@ impl SolverMetrics for NoopMetrics {
     fn runloop_completed(&self) {}
     fn complete_runloop_until_transaction(&self, _: Duration) {}
     fn transaction_submission(&self, _: Duration) {}
+    fn transaction_gas_price(&self, _: U256) {}
 }
 
 #[cfg(test)]
