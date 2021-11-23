@@ -268,6 +268,7 @@ impl Maintaining for BalancerPoolRegistry {
         futures::try_join!(
             self.two_token_pool_updater.run_maintenance(),
             self.weighted_pool_updater.run_maintenance(),
+            self.stable_pool_updater.run_maintenance(),
         )?;
         Ok(())
     }
