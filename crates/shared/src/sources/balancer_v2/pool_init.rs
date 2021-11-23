@@ -89,7 +89,8 @@ impl PoolInitializing for DefaultPoolInitializer {
             DefaultPoolInitializer::Fetched(inner) => inner.initialize_pools().await,
         }?;
         tracing::debug!(
-            "initialized registered pools ({} Stable, {} Weighted & {} TwoTokenWeighted)",
+            "initialized registered pools (block {}: {} Stable, {} Weighted & {} TwoTokenWeighted)",
+            registered_pools.fetched_block_number,
             registered_pools.stable_pools.len(),
             registered_pools.weighted_pools.len(),
             registered_pools.weighted_2token_pools.len()
