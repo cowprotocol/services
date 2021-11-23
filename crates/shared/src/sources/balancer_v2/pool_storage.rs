@@ -166,6 +166,9 @@ pub struct PoolStorage {
     stable_pools: HashMap<H256, RegisteredStablePool>,
     #[derivative(Debug = "ignore")]
     data_fetcher: Arc<dyn PoolInfoFetching>,
+    /// The block the initial pools were fetched on. This block is considered
+    /// reorg-safe and events prior to this block do not get replaced.
+    initial_fetched_block: u64,
 }
 
 impl PoolStorage {
@@ -178,12 +181,16 @@ impl PoolStorage {
         let weighted_pools = construct_pool_map(initial_weighted_pools, &mut pools_by_token);
         let stable_pools = construct_pool_map(initial_stable_pools, &mut pools_by_token);
 
-        PoolStorage {
+        let mut storage = PoolStorage {
             pools_by_token,
             weighted_pools,
             stable_pools,
             data_fetcher,
-        }
+            initial_fetched_block: 0,
+        };
+        storage.initial_fetched_block = storage.last_event_block();
+
+        storage
     }
 
     #[cfg(test)]
@@ -286,7 +293,7 @@ impl PoolStorage {
 
     pub async fn replace_events_inner(
         &mut self,
-        delete_from_block_number: u64,
+        mut delete_from_block_number: u64,
         events: Vec<(EventIndex, PoolCreated)>,
     ) -> Result<()> {
         tracing::debug!(
@@ -294,6 +301,15 @@ impl PoolStorage {
             events.len(),
             delete_from_block_number,
         );
+        if delete_from_block_number <= self.initial_fetched_block {
+            tracing::debug!(
+                "skipping deleting events from {}..={}",
+                delete_from_block_number,
+                self.initial_fetched_block,
+            );
+            delete_from_block_number = self.initial_fetched_block + 1;
+        }
+
         self.delete_pools(delete_from_block_number);
         self.insert_events(events).await?;
         Ok(())
