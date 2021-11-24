@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
 use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
@@ -324,6 +324,10 @@ impl MinFeeCalculating for MinFeeCalculator {
         fee_data: FeeData,
         app_data: AppId,
     ) -> Result<Measurement, PriceEstimationError> {
+        if fee_data.buy_token == fee_data.sell_token {
+            return Ok((U256::zero(), MAX_DATETIME));
+        }
+
         ensure_token_supported(fee_data.sell_token, self.bad_token_detector.as_ref()).await?;
         ensure_token_supported(fee_data.buy_token, self.bad_token_detector.as_ref()).await?;
 
