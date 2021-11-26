@@ -132,6 +132,14 @@ pub struct FeeModel {
     pub token: H160,
 }
 
+#[derive(Clone, Debug, Deserialize, PartialEq)]
+pub struct InteractionData {
+    pub target: H160,
+    pub value: U256,
+    pub call_data: Vec<u8>,
+    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Deserialize)]
 pub struct SettledBatchAuctionModel {
@@ -141,6 +149,8 @@ pub struct SettledBatchAuctionModel {
     pub ref_token: Option<H160>,
     #[serde_as(as = "HashMap<_, DecimalU256>")]
     pub prices: HashMap<H160, U256>,
+    #[serde(default)]
+    pub interaction_data: Vec<InteractionData>,
 }
 
 impl SettledBatchAuctionModel {
