@@ -6,7 +6,7 @@ use crate::{
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
     liquidity_collector::LiquidityCollector,
-    metrics::SolverMetrics,
+    metrics::{SolverMetrics, SolverRunOutcome},
     orderbook::OrderBookApi,
     settlement::Settlement,
     settlement_simulation,
@@ -14,7 +14,7 @@ use crate::{
     solver::Solver,
     solver::{Auction, SettlementWithSolver, Solvers},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::errors::{ExecutionError, MethodError};
 use futures::future::join_all;
@@ -126,7 +126,7 @@ impl Driver {
     async fn run_solvers(
         &self,
         auction: Auction,
-    ) -> Vec<(Arc<dyn Solver>, Result<Vec<Settlement>>)> {
+    ) -> Vec<(Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>)> {
         join_all(self.solvers.iter().map(|solver| {
             let auction = auction.clone();
             let metrics = &self.metrics;
@@ -136,8 +136,8 @@ impl Driver {
                     match tokio::time::timeout_at(auction.deadline.into(), solver.solve(auction))
                         .await
                     {
-                        Ok(inner) => inner,
-                        Err(_timeout) => Err(anyhow!("solver timed out")),
+                        Ok(inner) => inner.map_err(SolverRunError::Solving),
+                        Err(_timeout) => Err(SolverRunError::Timeout),
                     };
                 metrics.settlement_computed(solver.name(), start_time);
                 (solver.clone(), result)
@@ -407,19 +407,30 @@ impl Driver {
             let name = solver.name();
 
             let mut settlements = match settlements {
-                Ok(settlement) => {
-                    self.metrics.solver_run_succeeded(name);
+                Ok(mut settlement) => {
+                    // Do not continue with settlements that are empty or only liquidity orders.
+                    settlement.retain(solver_settlements::has_user_order);
+                    if settlement.is_empty() {
+                        self.metrics.solver_run(SolverRunOutcome::Empty, name);
+                        continue;
+                    }
+
+                    self.metrics.solver_run(SolverRunOutcome::Success, name);
                     settlement
                 }
                 Err(err) => {
-                    self.metrics.solver_run_failed(name);
+                    match err {
+                        SolverRunError::Timeout => {
+                            self.metrics.solver_run(SolverRunOutcome::Timeout, name)
+                        }
+                        SolverRunError::Solving(_) => {
+                            self.metrics.solver_run(SolverRunOutcome::Failure, name)
+                        }
+                    }
                     tracing::warn!("solver {} error: {:?}", name, err);
                     continue;
                 }
             };
-
-            // Do not continue with settlements that are empty or only liquidity orders.
-            settlements.retain(solver_settlements::has_user_order);
 
             for settlement in &settlements {
                 tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
@@ -548,6 +559,12 @@ fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
             ))
             .collect::<Vec<_>>()
     );
+}
+
+#[derive(Debug)]
+enum SolverRunError {
+    Timeout,
+    Solving(anyhow::Error),
 }
 
 #[cfg(test)]

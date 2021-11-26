@@ -23,6 +23,19 @@ use strum::VariantNames;
 /// The maximum time between the completion of two run loops. If exceeded the service will be considered unhealthy.
 const MAX_RUNLOOP_DURATION: Duration = Duration::from_secs(7 * 60);
 
+/// The outcome of a solver run.
+pub enum SolverRunOutcome {
+    /// Computed a non-trivial settlement.
+    Success,
+    /// Run succeeded (i.e. did not error), but solver produced no settlement or
+    /// only trivial settlements.
+    Empty,
+    /// The solver timed out.
+    Timeout,
+    /// The solver returned an error.
+    Failure,
+}
+
 pub trait SolverMetrics: Send + Sync {
     fn orders_fetched(&self, orders: &[LimitOrder]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
@@ -30,8 +43,7 @@ pub trait SolverMetrics: Send + Sync {
     fn order_settled(&self, order: &Order, solver: &'static str);
     fn settlement_simulation_succeeded(&self, solver: &'static str);
     fn settlement_simulation_failed_on_latest(&self, solver: &'static str);
-    fn solver_run_succeeded(&self, solver: &'static str);
-    fn solver_run_failed(&self, solver: &'static str);
+    fn solver_run(&self, outcome: SolverRunOutcome, solver: &'static str);
     fn single_order_solver_succeeded(&self, solver: &'static str);
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
@@ -260,16 +272,14 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn solver_run_succeeded(&self, solver: &'static str) {
-        self.solver_runs
-            .with_label_values(&["success", solver])
-            .inc()
-    }
-
-    fn solver_run_failed(&self, solver: &'static str) {
-        self.solver_runs
-            .with_label_values(&["failure", solver])
-            .inc()
+    fn solver_run(&self, outcome: SolverRunOutcome, solver: &'static str) {
+        let result = match outcome {
+            SolverRunOutcome::Success => "success",
+            SolverRunOutcome::Empty => "empty",
+            SolverRunOutcome::Timeout => "timeout",
+            SolverRunOutcome::Failure => "failure",
+        };
+        self.solver_runs.with_label_values(&[result, solver]).inc()
     }
 
     fn single_order_solver_succeeded(&self, solver: &'static str) {
@@ -373,8 +383,7 @@ impl SolverMetrics for NoopMetrics {
     fn order_settled(&self, _: &Order, _: &'static str) {}
     fn settlement_simulation_succeeded(&self, _: &'static str) {}
     fn settlement_simulation_failed_on_latest(&self, _: &'static str) {}
-    fn solver_run_succeeded(&self, _: &'static str) {}
-    fn solver_run_failed(&self, _: &'static str) {}
+    fn solver_run(&self, _: SolverRunOutcome, _: &'static str) {}
     fn single_order_solver_succeeded(&self, _: &'static str) {}
     fn single_order_solver_failed(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
