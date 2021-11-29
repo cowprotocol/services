@@ -24,10 +24,12 @@
 //!     Pool Storage implements all the CRUD methods expected of such a database.
 //!
 //! Tests included here are those pertaining to the expected functionality of `PoolStorage`
-use crate::{
-    event_handling::EventIndex,
-    sources::balancer_v2::{info_fetching::PoolInfoFetching, swap::fixed_point::Bfp},
+
+use super::{
+    info_fetching::PoolInfoFetching,
+    pools::{common, stable, weighted, PoolIndexing},
 };
+use crate::event_handling::EventIndex;
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, H256};
@@ -38,18 +40,7 @@ use std::{
     sync::Arc,
 };
 
-pub trait PoolEvaluating {
-    fn properties(&self) -> CommonPoolData;
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CommonPoolData {
-    pub id: H256,
-    pub address: H160,
-    pub tokens: Vec<H160>,
-    pub scaling_exponents: Vec<u8>,
-    pub block_created: u64,
-}
+pub type CommonPoolData = common::PoolInfo;
 
 #[cfg(test)]
 pub fn common_pool(seed: u8) -> CommonPoolData {
@@ -59,29 +50,6 @@ pub fn common_pool(seed: u8) -> CommonPoolData {
         tokens: vec![H160([seed; 20]), H160([seed + 1; 20])],
         scaling_exponents: vec![0, 0],
         block_created: seed as _,
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RegisteredWeightedPool {
-    pub common: CommonPoolData,
-    pub normalized_weights: Vec<Bfp>,
-}
-
-impl PoolEvaluating for RegisteredWeightedPool {
-    fn properties(&self) -> CommonPoolData {
-        self.common.clone()
-    }
-}
-
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RegisteredStablePool {
-    pub common: CommonPoolData,
-}
-
-impl PoolEvaluating for RegisteredStablePool {
-    fn properties(&self) -> CommonPoolData {
-        self.common.clone()
     }
 }
 
@@ -96,6 +64,8 @@ pub struct PoolCreated {
     pub pool_type: PoolType,
     pub pool_address: H160,
 }
+
+pub type RegisteredWeightedPool = weighted::PoolInfo;
 
 impl RegisteredWeightedPool {
     pub async fn new(
@@ -112,7 +82,7 @@ impl RegisteredWeightedPool {
                 scaling_exponents: pool_data.common.scaling_exponents,
                 block_created,
             },
-            normalized_weights: pool_data.weights,
+            weights: pool_data.weights,
         })
     }
 
@@ -125,6 +95,8 @@ impl RegisteredWeightedPool {
         Self::new(block_created, creation.pool_address, data_fetcher).await
     }
 }
+
+pub type RegisteredStablePool = stable::PoolInfo;
 
 impl RegisteredStablePool {
     pub async fn new(
@@ -352,17 +324,17 @@ impl PoolStorage {
     }
 }
 
-fn construct_pool_map<T: PoolEvaluating>(
+fn construct_pool_map<T: PoolIndexing>(
     initial_pools: Vec<T>,
     pools_by_token: &mut HashMap<H160, HashSet<H256>>,
 ) -> HashMap<H256, T> {
     initial_pools
         .into_iter()
         .map(|pool| {
-            let pool_data = pool.properties();
-            for token in pool_data.tokens {
+            let pool_data = pool.common();
+            for token in &pool_data.tokens {
                 pools_by_token
-                    .entry(token)
+                    .entry(*token)
                     .or_default()
                     .insert(pool_data.id);
             }
@@ -374,8 +346,9 @@ fn construct_pool_map<T: PoolEvaluating>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer_v2::info_fetching::{
-        CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo,
+    use crate::sources::balancer_v2::{
+        info_fetching::{CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo},
+        swap::fixed_point::Bfp,
     };
     use maplit::{hashmap, hashset};
     use mockall::predicate::eq;
@@ -414,7 +387,7 @@ mod tests {
                         scaling_exponents: vec![0, 0],
                         block_created: 0,
                     },
-                    normalized_weights: vec![
+                    weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
                     ],
@@ -427,7 +400,7 @@ mod tests {
                         scaling_exponents: vec![0, 0],
                         block_created: 0,
                     },
-                    normalized_weights: vec![
+                    weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
                     ],
@@ -516,7 +489,7 @@ mod tests {
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64 + 1,
                     },
-                    normalized_weights: vec![weights[i], weights[i + 1]],
+                    weights: vec![weights[i], weights[i + 1]],
                 },
             );
         }
@@ -658,7 +631,7 @@ mod tests {
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64,
                     },
-                    normalized_weights: vec![weights[i], weights[i + 1]],
+                    weights: vec![weights[i], weights[i + 1]],
                 },
             );
         }
@@ -700,7 +673,7 @@ mod tests {
                     scaling_exponents: vec![0],
                     block_created: new_event_block,
                 },
-                normalized_weights: vec![new_weight],
+                weights: vec![new_weight],
             }
         );
 
@@ -873,7 +846,7 @@ mod tests {
                     block_created: 0,
                     address: pool_addresses[i],
                 },
-                normalized_weights: vec![],
+                weights: vec![],
             });
             registry
                 .weighted_pools
