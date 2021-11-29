@@ -4,14 +4,17 @@
 //! The pools retrieved from this client are used to prime the graph event store
 //! to reduce start-up time. We do not use this in general for retrieving pools
 //! as to not rely on external services.
-//! 
+//!
 //! TODO(nlordell): Unified query.
 
+use super::math::fixed_point::Bfp;
 use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
 use anyhow::{bail, Result};
 use ethcontract::{H160, H256};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::json;
+use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
 
 /// The page size when querying pools.
@@ -114,11 +117,37 @@ pub struct RegisteredPools {
     pub pools_by_factory: HashMap<H160, Vec<H256>>,
 }
 
+/// Pool data retrived from the Graph API.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct PoolData {
+    #[serde(rename = "poolType")]
+    pub kind: PoolKind,
+    pub id: H256,
+    pub address: H160,
+    pub factory: Option<H160>,
+    pub tokens: Vec<Token>,
+}
+
+/// Supported pool kinds.
+#[derive(Debug, Deserialize, PartialEq)]
+pub enum PoolKind {
+    Stable,
+    Weighted,
+}
+
+/// Pool tokens with parameters
+#[serde_as]
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Token {
+    pub address: H160,
+    pub decimals: u8,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    pub weight: Option<Bfp>,
+}
+
 mod pools_query {
-    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
-    use ethcontract::{H160, H256};
+    use super::PoolData;
     use serde::Deserialize;
-    use serde_with::{serde_as, DisplayFromStr};
 
     pub const QUERY: &str = r#"
         query Pools($block: Int, $pageSize: Int, $lastId: ID) {
@@ -146,31 +175,6 @@ mod pools_query {
     #[derive(Debug, Deserialize, PartialEq)]
     pub struct Data {
         pub pools: Vec<PoolData>,
-    }
-
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub struct PoolData {
-        #[serde(rename = "poolType")]
-        pub kind: PoolKind,
-        pub id: H256,
-        pub address: H160,
-        pub factory: Option<H160>,
-        pub tokens: Vec<Token>,
-    }
-
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub enum PoolKind {
-        Stable,
-        Weighted,
-    }
-
-    #[serde_as]
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub struct Token {
-        pub address: H160,
-        pub decimals: u8,
-        #[serde_as(as = "Option<DisplayFromStr>")]
-        pub weight: Option<Bfp>,
     }
 }
 
