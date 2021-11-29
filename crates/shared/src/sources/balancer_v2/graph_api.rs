@@ -13,7 +13,7 @@ use super::{
     swap::fixed_point::Bfp,
 };
 use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, ensure, Result};
 use ethcontract::{H160, H256};
 use reqwest::Client;
 use serde::Deserialize;
@@ -151,6 +151,8 @@ impl PoolData {
     /// Returns the Balancer subgraph pool data as an internal representation of
     /// common pool data shared accross all Balancer pools.
     fn as_common_pool_data(&self, block_created: u64) -> Result<CommonPoolData> {
+        ensure!(self.tokens.len() > 1, "insufficient tokens in pool");
+
         Ok(CommonPoolData {
             pool_id: self.id,
             pool_address: self.address,
@@ -450,7 +452,7 @@ mod tests {
     }
 
     #[test]
-    fn pool_conversion_invalid_decimals() {
+    fn pool_conversion_insufficient_tokens() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
@@ -458,9 +460,32 @@ mod tests {
             factory: H160([0; 20]),
             tokens: vec![Token {
                 address: H160([2; 20]),
-                decimals: 19,
+                decimals: 18,
                 weight: Some("1.337".parse().unwrap()),
             }],
+        };
+        assert!(pool.as_common_pool_data(42).is_err());
+    }
+
+    #[test]
+    fn pool_conversion_invalid_decimals() {
+        let pool = PoolData {
+            pool_type: PoolType::Weighted,
+            id: H256([2; 32]),
+            address: H160([1; 20]),
+            factory: H160([0; 20]),
+            tokens: vec![
+                Token {
+                    address: H160([2; 20]),
+                    decimals: 19,
+                    weight: Some("1.337".parse().unwrap()),
+                },
+                Token {
+                    address: H160([3; 20]),
+                    decimals: 18,
+                    weight: Some("1.337".parse().unwrap()),
+                },
+            ],
         };
         assert!(pool.as_common_pool_data(42).is_err());
     }
