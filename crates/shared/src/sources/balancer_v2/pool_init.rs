@@ -349,7 +349,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn subgraph_initialization() {
+    async fn balancer_subgraph_initialization() {
         for (network_name, chain_id) in [("Mainnet", 1), ("Rinkeby", 4)] {
             println!("### {}", network_name);
 
