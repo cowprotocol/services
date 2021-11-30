@@ -13,9 +13,9 @@
 // from outside) so it is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
-use super::{flashbots_api::FlashbotsApi, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{flashbots_api::FlashbotsApi, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::settlement::Settlement;
-use anyhow::{anyhow, ensure, Context, Error, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{transaction::Transaction, Account};
 use futures::FutureExt;
@@ -76,7 +76,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         settlement: Settlement,
         gas_estimate: U256,
         flashbots_tip: f64,
-    ) -> Result<Option<TransactionReceipt>> {
+    ) -> Result<TransactionReceipt, SubmissionError> {
         let nonce = self.nonce().await?;
 
         tracing::info!("starting flashbots solution submission at nonce {}", nonce,);
@@ -138,7 +138,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
             loop {
                 if let Some(receipt) = find_mined_transaction(self.web3, &transactions).await {
                     tracing::info!("found mined transaction {}", receipt.transaction_hash);
-                    return Ok(Some(receipt));
+                    return Ok(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
                     break;
@@ -149,6 +149,8 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
 
         tracing::info!("did not find any mined transaction");
         fallback_result
+            .transpose()
+            .unwrap_or(Err(SubmissionError::Timeout))
     }
 
     async fn nonce(&self) -> Result<U256> {
@@ -203,7 +205,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         gas_estimate: U256,
         flashbots_tip: f64,
         transactions: &mut Vec<H256>,
-    ) -> anyhow::Error {
+    ) -> SubmissionError {
         const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
 
         // The amount of extra gas it costs to include the payment to block.coinbase interaction in
@@ -258,7 +260,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                         tracing::warn!("flashbots cancellation request not sent: {:?}", err);
                     }
                 }
-                return Error::from(err).context("flashbots failed simulation");
+                return SubmissionError::from(err);
             }
 
             // If gas price has increased cancel old and submit new transaction.

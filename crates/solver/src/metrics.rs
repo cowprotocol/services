@@ -36,6 +36,20 @@ pub enum SolverRunOutcome {
     Failure,
 }
 
+/// The outcome of settlement submission.
+pub enum SettlementSubmissionOutcome {
+    /// A settlement transaction was mined and included on the blockchain.
+    Success,
+    /// A transaction reverted.
+    Revert,
+    /// Submission timed-out while waiting for the transaction to get mined.
+    Timeout,
+    /// A transaction failed to be submitted or, in the case of private network
+    /// submission, the blockchain state changed and the transaction is no
+    /// longer valid.
+    Failure,
+}
+
 pub trait SolverMetrics: Send + Sync {
     fn orders_fetched(&self, orders: &[LimitOrder]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
@@ -47,7 +61,7 @@ pub trait SolverMetrics: Send + Sync {
     fn single_order_solver_succeeded(&self, solver: &'static str);
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
-    fn settlement_submitted(&self, successful: bool, solver: &'static str);
+    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn report_order_surplus(&self, surplus_diff: f64);
     fn runloop_completed(&self);
@@ -300,8 +314,13 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn settlement_submitted(&self, successful: bool, solver: &'static str) {
-        let result = if successful { "success" } else { "failures" };
+    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str) {
+        let result = match outcome {
+            SettlementSubmissionOutcome::Success => "success",
+            SettlementSubmissionOutcome::Revert => "revert",
+            SettlementSubmissionOutcome::Timeout => "timeout",
+            SettlementSubmissionOutcome::Failure => "failure",
+        };
         self.settlement_submissions
             .with_label_values(&[result, solver])
             .inc()
@@ -387,7 +406,7 @@ impl SolverMetrics for NoopMetrics {
     fn single_order_solver_succeeded(&self, _: &'static str) {}
     fn single_order_solver_failed(&self, _: &'static str) {}
     fn settlement_simulation_failed(&self, _: &'static str) {}
-    fn settlement_submitted(&self, _: bool, _: &'static str) {}
+    fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &'static str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}
@@ -407,7 +426,7 @@ mod tests {
         metrics.order_settled(&Default::default(), "test");
         metrics.settlement_simulation_succeeded("test");
         metrics.settlement_simulation_failed("test");
-        metrics.settlement_submitted(true, "test");
+        metrics.settlement_submitted(SettlementSubmissionOutcome::Success, "test");
         metrics.orders_matched_but_not_settled(20);
     }
 }

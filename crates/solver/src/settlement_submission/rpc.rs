@@ -1,7 +1,7 @@
 use super::{
     gas_price_stream::gas_price_stream,
     retry::{CancelSender, SettlementSender},
-    ESTIMATE_GAS_LIMIT_FACTOR,
+    SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR,
 };
 use crate::{encoding::EncodedSettlement, pending_transactions::Fee, settlement::Settlement};
 use anyhow::{Context, Result};
@@ -26,7 +26,7 @@ pub async fn submit(
     gas_price_cap: f64,
     settlement: Settlement,
     gas_estimate: U256,
-) -> Result<TransactionReceipt> {
+) -> Result<TransactionReceipt, SubmissionError> {
     let address = account.address();
     let settlement: EncodedSettlement = settlement.into();
 
@@ -79,7 +79,7 @@ pub async fn submit(
     match transaction_retry::retry(settlement_sender, cancel_future, stream).await {
         Some(RetryResult::Submitted(result)) => {
             tracing::info!("completed settlement submission");
-            result.0.context("settlement transaction failed")
+            Ok(result.0?)
         }
         _ => unreachable!(),
     }

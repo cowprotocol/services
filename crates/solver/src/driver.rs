@@ -10,13 +10,12 @@ use crate::{
     orderbook::OrderBookApi,
     settlement::Settlement,
     settlement_simulation,
-    settlement_submission::{retry::is_transaction_failure, SolutionSubmitter},
-    solver::Solver,
-    solver::{Auction, SettlementWithSolver, Solvers},
+    settlement_submission::SolutionSubmitter,
+    solver::{Auction, SettlementWithSolver, Solver, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::errors::{ExecutionError, MethodError};
+use ethcontract::errors::ExecutionError;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
@@ -172,24 +171,19 @@ impl Driver {
                 trades
                     .iter()
                     .for_each(|trade| self.metrics.order_settled(&trade.order, name));
-                self.metrics.settlement_submitted(true, name);
+                self.metrics.settlement_submitted(
+                    crate::metrics::SettlementSubmissionOutcome::Success,
+                    name,
+                );
                 Ok(receipt)
             }
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
-                let name = solver.name();
-                if err
-                    .downcast_ref::<MethodError>()
-                    .map(|e| is_transaction_failure(&e.inner))
-                    .unwrap_or(false)
-                {
-                    tracing::warn!("Failed to submit {} settlement: {:?}", name, err)
-                } else {
-                    tracing::error!("Failed to submit {} settlement: {:?}", name, err)
-                };
-                self.metrics.settlement_submitted(false, name);
-                Err(err)
+                tracing::warn!("Failed to submit {} settlement: {:?}", solver.name(), err);
+                self.metrics
+                    .settlement_submitted(err.as_outcome(), solver.name());
+                Err(err.into_anyhow())
             }
         }
     }
