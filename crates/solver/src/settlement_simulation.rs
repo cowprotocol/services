@@ -139,9 +139,15 @@ pub fn tenderly_link(
     network_id: &str,
     tx: TransactionBuilder<DynTransport>,
 ) -> String {
+    // Tenderly simulates transactions for block N at transaction index 0, while
+    // `eth_call` simulates transactions "on top" of the block (i.e. after the
+    // last transaction index). Therefore, in order for the Tenderly simulation
+    // to be as close as possible to the `eth_call`, we want to create it on the
+    // next block (since `block_N{tx_last} ~= block_(N+1){tx_0}`).
+    let next_block = current_block + 1;
     format!(
         "https://dashboard.tenderly.co/gp-v2/staging/simulator/new?block={}&blockIndex=0&from={:#x}&gas=8000000&gasPrice=0&value=0&contractAddress={:#x}&network={}&rawFunctionInput=0x{}",
-        current_block,
+        next_block,
         tx.from.unwrap().address(),
         tx.to.unwrap(),
         network_id,
