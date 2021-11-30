@@ -8,19 +8,17 @@
 //! - ensure that we are using the latest up-to-date pool data by using events
 //!   from the node
 
-use self::pools_query::{PoolData, PoolType};
-use crate::{
-    event_handling::MAX_REORG_BLOCK_COUNT,
-    sources::balancer_v2::pool_storage::{
-        CommonPoolData, RegisteredStablePool, RegisteredWeightedPool,
-    },
-    subgraph::SubgraphClient,
+use super::{
+    pool_storage::{CommonPoolData, RegisteredStablePool, RegisteredWeightedPool},
+    swap::fixed_point::Bfp,
 };
-use anyhow::{anyhow, bail, Result};
+use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
+use anyhow::{anyhow, bail, ensure, Result};
 use ethcontract::{H160, H256};
 use reqwest::Client;
+use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use serde_with::{serde_as, DisplayFromStr};
 
 /// The page size when querying pools.
 #[cfg(not(test))]
@@ -86,7 +84,10 @@ impl BalancerSubgraphClient {
             }
         }
 
-        RegisteredPools::from_pool_data(block_number, pools)
+        Ok(RegisteredPools {
+            fetched_block_number: block_number,
+            pools,
+        })
     }
 
     /// Retrieves a recent block number for which it is safe to assume no
@@ -114,56 +115,80 @@ pub struct RegisteredPools {
     /// weighted pools can be considered up to date.
     pub fetched_block_number: u64,
     /// The registered Pools
-    pub weighted_pools_by_factory: HashMap<H160, Vec<RegisteredWeightedPool>>,
-    pub stable_pools_by_factory: HashMap<H160, Vec<RegisteredStablePool>>,
+    pub pools: Vec<PoolData>,
 }
 
-impl RegisteredPools {
-    fn from_pool_data(fetched_block_number: u64, pools: Vec<PoolData>) -> Result<Self> {
-        let mut registered_pools = Self {
-            fetched_block_number,
-            weighted_pools_by_factory: Default::default(),
-            stable_pools_by_factory: Default::default(),
-        };
+/// Pool data from the Balancer V2 subgraph.
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct PoolData {
+    #[serde(rename = "poolType")]
+    pub pool_type: PoolType,
+    pub id: H256,
+    pub address: H160,
+    pub factory: H160,
+    pub tokens: Vec<Token>,
+}
 
-        for pool in pools {
-            let common = CommonPoolData {
-                id: pool.id,
-                address: pool.address,
-                tokens: pool.tokens.iter().map(|token| token.address).collect(),
-                scaling_exponents: pool
-                    .tokens
-                    .iter()
-                    .map(|token| scaling_exponent_from_decimals(token.decimals))
-                    .collect::<Result<_>>()?,
-                block_created: fetched_block_number,
-            };
-            match pool.pool_type {
-                PoolType::Weighted => registered_pools
-                    .weighted_pools_by_factory
-                    .entry(pool.factory)
-                    .or_default()
-                    .push(RegisteredWeightedPool {
-                        common,
-                        normalized_weights: pool
-                            .tokens
-                            .iter()
-                            .map(|token| {
-                                token.weight.ok_or_else(|| {
-                                    anyhow!("missing weights for pool {:?}", pool.id)
-                                })
-                            })
-                            .collect::<Result<_>>()?,
-                    }),
-                PoolType::Stable => registered_pools
-                    .stable_pools_by_factory
-                    .entry(pool.factory)
-                    .or_default()
-                    .push(RegisteredStablePool { common }),
-            }
-        }
+/// Supported pool kinds.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Hash)]
+pub enum PoolType {
+    Stable,
+    Weighted,
+}
 
-        Ok(registered_pools)
+/// Token data for pools.
+#[serde_as]
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Token {
+    pub address: H160,
+    pub decimals: u8,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(default)]
+    pub weight: Option<Bfp>,
+}
+
+impl PoolData {
+    /// Returns the Balancer subgraph pool data as an internal representation of
+    /// common pool data shared accross all Balancer pools.
+    fn as_common_pool_data(&self, block_created: u64) -> Result<CommonPoolData> {
+        ensure!(self.tokens.len() > 1, "insufficient tokens in pool");
+
+        Ok(CommonPoolData {
+            id: self.id,
+            address: self.address,
+            tokens: self.tokens.iter().map(|token| token.address).collect(),
+            scaling_exponents: self
+                .tokens
+                .iter()
+                .map(|token| scaling_exponent_from_decimals(token.decimals))
+                .collect::<Result<_>>()?,
+            block_created,
+        })
+    }
+
+    /// Returns the Balancer subgraph pool data as the internal representation
+    /// of a Balancer weighted pool.
+    pub fn as_weighted(&self, block_created: u64) -> Result<RegisteredWeightedPool> {
+        Ok(RegisteredWeightedPool {
+            common: self.as_common_pool_data(block_created)?,
+            normalized_weights: self
+                .tokens
+                .iter()
+                .map(|token| {
+                    token
+                        .weight
+                        .ok_or_else(|| anyhow!("missing weights for pool {:?}", self.id))
+                })
+                .collect::<Result<_>>()?,
+        })
+    }
+
+    /// Returns the Balancer subgraph pool data as the internal representation
+    /// of a Balancer stable pool.
+    pub fn as_stable(&self, block_created: u64) -> Result<RegisteredStablePool> {
+        Ok(RegisteredStablePool {
+            common: self.as_common_pool_data(block_created)?,
+        })
     }
 }
 
@@ -176,10 +201,8 @@ fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
 }
 
 mod pools_query {
-    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
-    use ethcontract::{H160, H256};
+    use super::PoolData;
     use serde::Deserialize;
-    use serde_with::{serde_as, DisplayFromStr};
 
     pub const QUERY: &str = r#"
         query Pools($block: Int, $pageSize: Int, $lastId: ID) {
@@ -207,33 +230,6 @@ mod pools_query {
     #[derive(Debug, Deserialize, PartialEq)]
     pub struct Data {
         pub pools: Vec<PoolData>,
-    }
-
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub struct PoolData {
-        #[serde(rename = "poolType")]
-        pub pool_type: PoolType,
-        pub id: H256,
-        pub address: H160,
-        pub factory: H160,
-        pub tokens: Vec<Token>,
-    }
-
-    /// Supported pool kinds.
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub enum PoolType {
-        Stable,
-        Weighted,
-    }
-
-    #[serde_as]
-    #[derive(Debug, Deserialize, PartialEq)]
-    pub struct Token {
-        pub address: H160,
-        pub decimals: u8,
-        #[serde_as(as = "Option<DisplayFromStr>")]
-        #[serde(default)]
-        pub weight: Option<Bfp>,
     }
 }
 
@@ -271,7 +267,7 @@ mod tests {
         swap::fixed_point::Bfp,
     };
     use ethcontract::{H160, H256};
-    use maplit::hashmap;
+    use std::collections::HashMap;
 
     #[test]
     fn decode_pools_data() {
@@ -382,87 +378,81 @@ mod tests {
     }
 
     #[test]
-    fn convert_pools_to_registered_pools() {
-        // Note that this test also demonstrates unreachable code is indeed unreachable
-        use pools_query::*;
-
-        let pools = vec![
-            PoolData {
-                pool_type: PoolType::Weighted,
-                id: H256([2; 32]),
-                address: H160([1; 20]),
-                factory: H160([0xfa; 20]),
-                tokens: vec![
-                    Token {
-                        address: H160([0x11; 20]),
-                        decimals: 1,
-                        weight: Some("1.337".parse().unwrap()),
-                    },
-                    Token {
-                        address: H160([0x22; 20]),
-                        decimals: 2,
-                        weight: Some("4.2".parse().unwrap()),
-                    },
-                ],
-            },
-            PoolData {
-                pool_type: PoolType::Stable,
-                id: H256([4; 32]),
-                address: H160([3; 20]),
-                factory: H160([0xfb; 20]),
-                tokens: vec![
-                    Token {
-                        address: H160([0x33; 20]),
-                        decimals: 3,
-                        weight: None,
-                    },
-                    Token {
-                        address: H160([0x44; 20]),
-                        decimals: 18,
-                        weight: None,
-                    },
-                ],
-            },
-        ];
+    fn convert_pool_to_registered_weighted_pool() {
+        let pool = PoolData {
+            pool_type: PoolType::Weighted,
+            id: H256([2; 32]),
+            address: H160([1; 20]),
+            factory: H160([0xfa; 20]),
+            tokens: vec![
+                Token {
+                    address: H160([0x11; 20]),
+                    decimals: 1,
+                    weight: Some("1.337".parse().unwrap()),
+                },
+                Token {
+                    address: H160([0x22; 20]),
+                    decimals: 2,
+                    weight: Some("4.2".parse().unwrap()),
+                },
+            ],
+        };
 
         assert_eq!(
-            RegisteredPools::from_pool_data(42, pools).unwrap(),
-            RegisteredPools {
-                fetched_block_number: 42,
-                weighted_pools_by_factory: hashmap! {
-                    H160([0xfa; 20]) => vec![RegisteredWeightedPool {
-                        common: CommonPoolData {
-                            id: H256([2; 32]),
-                            address: H160([1; 20]),
-                            tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                            scaling_exponents: vec![17, 16],
-                            block_created: 42,
-                        },
-                        normalized_weights: vec![
-                            Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
-                            Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
-                        ],
-                    }],
+            pool.as_weighted(42).unwrap(),
+            RegisteredWeightedPool {
+                common: CommonPoolData {
+                    id: H256([2; 32]),
+                    address: H160([1; 20]),
+                    tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
+                    scaling_exponents: vec![17, 16],
+                    block_created: 42,
                 },
-                stable_pools_by_factory: hashmap! {
-                    H160([0xfb; 20]) => vec![RegisteredStablePool {
-                        common: CommonPoolData {
-                            id: H256([4; 32]),
-                            address: H160([3; 20]),
-                            tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
-                            scaling_exponents: vec![15, 0],
-                            block_created: 42,
-                        },
-                    }],
+                normalized_weights: vec![
+                    Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
+                    Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
+                ],
+            },
+        );
+    }
+
+    #[test]
+    fn convert_pool_to_registered_stable_pool() {
+        let pool = PoolData {
+            pool_type: PoolType::Stable,
+            id: H256([4; 32]),
+            address: H160([3; 20]),
+            factory: H160([0xfb; 20]),
+            tokens: vec![
+                Token {
+                    address: H160([0x33; 20]),
+                    decimals: 3,
+                    weight: None,
+                },
+                Token {
+                    address: H160([0x44; 20]),
+                    decimals: 18,
+                    weight: None,
+                },
+            ],
+        };
+
+        assert_eq!(
+            pool.as_stable(42).unwrap(),
+            RegisteredStablePool {
+                common: CommonPoolData {
+                    id: H256([4; 32]),
+                    address: H160([3; 20]),
+                    tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
+                    scaling_exponents: vec![15, 0],
+                    block_created: 42,
                 },
             }
         );
     }
 
     #[test]
-    fn pool_conversion_invalid_decimals() {
-        use pools_query::*;
-
+    fn pool_conversion_insufficient_tokens() {
         let pool = PoolData {
             pool_type: PoolType::Weighted,
             id: H256([2; 32]),
@@ -470,11 +460,34 @@ mod tests {
             factory: H160([0; 20]),
             tokens: vec![Token {
                 address: H160([2; 20]),
-                decimals: 19,
+                decimals: 18,
                 weight: Some("1.337".parse().unwrap()),
             }],
         };
-        assert!(RegisteredPools::from_pool_data(0, vec![pool]).is_err())
+        assert!(pool.as_common_pool_data(42).is_err());
+    }
+
+    #[test]
+    fn pool_conversion_invalid_decimals() {
+        let pool = PoolData {
+            pool_type: PoolType::Weighted,
+            id: H256([2; 32]),
+            address: H160([1; 20]),
+            factory: H160([0; 20]),
+            tokens: vec![
+                Token {
+                    address: H160([2; 20]),
+                    decimals: 19,
+                    weight: Some("1.337".parse().unwrap()),
+                },
+                Token {
+                    address: H160([3; 20]),
+                    decimals: 18,
+                    weight: Some("1.337".parse().unwrap()),
+                },
+            ],
+        };
+        assert!(pool.as_common_pool_data(42).is_err());
     }
 
     #[test]
@@ -495,31 +508,31 @@ mod tests {
             println!("### {}", network_name);
 
             let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
-            let pools = client.get_registered_pools().await.unwrap();
+            let result = client.get_registered_pools().await.unwrap();
             println!(
-                "Retrieved {} total weighted pools at block {}",
-                pools
-                    .weighted_pools_by_factory
-                    .iter()
-                    .map(|(factory, pool)| {
-                        println!("Retrieved {} pools for factory at {}", pool.len(), factory);
-                        pool.len()
-                    })
-                    .sum::<usize>(),
-                pools.fetched_block_number,
+                "Retrieved {} total pools at block {}",
+                result.pools.len(),
+                result.fetched_block_number,
             );
-            println!(
-                "Retrieved {} total stable pools at block {}",
-                pools
-                    .stable_pools_by_factory
-                    .iter()
-                    .map(|(factory, pool)| {
-                        println!("Retrieved {} pools for factory at {}", pool.len(), factory);
-                        pool.len()
-                    })
-                    .sum::<usize>(),
-                pools.fetched_block_number,
+
+            let grouped_by_factory = result.pools.into_iter().fold(
+                HashMap::<_, Vec<_>>::new(),
+                |mut factories, pool| {
+                    factories
+                        .entry((pool.pool_type, pool.factory))
+                        .or_default()
+                        .push(pool);
+                    factories
+                },
             );
+            for ((pool_type, factory), pools) in grouped_by_factory {
+                println!(
+                    "- {} {:?} pools from factory {:?}",
+                    pools.len(),
+                    pool_type,
+                    factory,
+                );
+            }
         }
     }
 }

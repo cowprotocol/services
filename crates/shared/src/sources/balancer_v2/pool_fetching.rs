@@ -14,7 +14,7 @@ use crate::{
             BalancerPoolCacheMetrics, PoolReserveFetcher, StablePoolReserveCache,
             WeightedPoolReserveCache,
         },
-        pool_init::DefaultPoolInitializer,
+        pool_init::SubgraphPoolInitializer,
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
     },
@@ -242,7 +242,7 @@ impl BalancerPoolFetcher {
             token_info_fetcher: token_info_fetcher.clone(),
             vault: BalancerV2Vault::deployed(&web3).await?,
         });
-        let pool_initializer = DefaultPoolInitializer::new(chain_id, pool_info.clone(), client)?;
+        let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
         let pool_registry =
             Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);
         let stable_pool_reserve_fetcher =
