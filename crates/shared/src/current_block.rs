@@ -81,9 +81,6 @@ pub fn block_number(block: &Block) -> Result<u64> {
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
-    // TODO - break down next method into testable components
-    // https://github.com/gnosis/gp-v2-services/issues/659
-    async fn block_number_from_tx_hash(&self, hash: H256) -> Result<u64>;
 }
 
 #[async_trait::async_trait]
@@ -106,17 +103,6 @@ where
             .block_number()
             .await
             .context("failed to get current block number")?
-            .as_u64())
-    }
-
-    async fn block_number_from_tx_hash(&self, hash: H256) -> Result<u64> {
-        Ok(self
-            .eth()
-            .transaction_receipt(hash)
-            .await?
-            .ok_or_else(|| anyhow!("no transaction receipt found"))?
-            .block_number
-            .ok_or_else(|| anyhow!("no block number with transaction receipt"))?
             .as_u64())
     }
 }
