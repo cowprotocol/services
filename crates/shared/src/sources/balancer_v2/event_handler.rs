@@ -350,11 +350,14 @@ mod tests {
 
         let pool_init = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
-        let pool_info = PoolInfoFetcher {
-            web3: web3.clone(),
-            token_info_fetcher: Arc::new(token_infos),
-            vault: BalancerV2Vault::deployed(&web3).await.unwrap(),
-        };
+        let pool_info = PoolInfoFetcher::new(
+            BalancerV2Vault::deployed(&web3).await.unwrap(),
+            Arc::new(token_infos),
+            BalancerV2WeightedPoolFactory::deployed(&web3)
+                .await
+                .unwrap(),
+            BalancerV2StablePoolFactory::deployed(&web3).await.unwrap(),
+        );
         let registry = BalancerPoolRegistry::new(web3, pool_init, Arc::new(pool_info))
             .await
             .unwrap();

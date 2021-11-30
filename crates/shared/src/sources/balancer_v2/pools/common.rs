@@ -1,9 +1,13 @@
 //! Module with data types and logic common to multiple Balancer pool types
 
-use crate::sources::balancer_v2::graph_api::{PoolData, PoolType};
+use crate::{
+    sources::balancer_v2::graph_api::{PoolData, PoolType},
+    token_info::TokenInfoFetching,
+};
 use anyhow::{anyhow, ensure, Result};
 use contracts::{BalancerV2BasePool, BalancerV2Vault};
-use ethcontract::{batch::CallBatch, Bytes, H160, H256, U256};
+use ethcontract::{Bytes, H160, H256};
+use std::sync::Arc;
 
 /// Trait for fetching common pool data by address.
 #[mockall::automock]
@@ -16,11 +20,28 @@ pub trait PoolInfoFetching: Send + Sync {
 /// to recover common `PoolInfo` from an address.
 pub struct PoolInfoFetcher {
     vault: BalancerV2Vault,
+    token_infos: Arc<dyn TokenInfoFetching>,
 }
 
 impl PoolInfoFetcher {
-    pub fn new(vault: BalancerV2Vault) -> Self {
-        Self { vault }
+    pub fn new(vault: BalancerV2Vault, token_infos: Arc<dyn TokenInfoFetching>) -> Self {
+        Self { vault, token_infos }
+    }
+
+    /// Retrieves the scaling exponents for the specified tokens.
+    async fn scaling_exponents(&self, tokens: &[H160]) -> Result<Vec<u8>> {
+        let token_infos = self.token_infos.get_token_infos(tokens).await;
+        tokens
+            .iter()
+            .map(|token| {
+                let decimals = token_infos
+                    .get(token)
+                    .ok_or_else(|| anyhow!("missing token info for {:?}", token))?
+                    .decimals
+                    .ok_or_else(|| anyhow!("missing decimals for token {:?}", token))?;
+                scaling_exponent_from_decimals(decimals)
+            })
+            .collect()
     }
 }
 
@@ -31,23 +52,14 @@ impl PoolInfoFetching for PoolInfoFetcher {
         let web3 = self.vault.raw_instance().web3();
         let pool = BalancerV2BasePool::at(&web3, pool_address);
 
-        // Fetch the pool ID and scaling factors in a single call.
-        let (pool_id, scaling_factors) = {
-            let mut batch = CallBatch::new(web3.transport());
-            let pool_id = pool.methods().get_pool_id().batch_call(&mut batch);
-            let scaling_factors = pool.methods().get_scaling_factors().batch_call(&mut batch);
-            batch.execute_all(2).await;
-
-            (H256(pool_id.await?.0), scaling_factors.await?)
-        };
-
+        let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
         let (tokens, _, _) = self
             .vault
             .methods()
             .get_pool_tokens(Bytes(pool_id.0))
             .call()
             .await?;
-        let scaling_exponents = scaling_exponents_from_factors(&scaling_factors)?;
+        let scaling_exponents = self.scaling_exponents(&tokens).await?;
 
         Ok(PoolInfo {
             id: pool_id,
@@ -100,29 +112,6 @@ impl PoolInfo {
     }
 }
 
-/// Converts a slice of scaling factors to their corresponding exponents.
-fn scaling_exponents_from_factors(factors: &[U256]) -> Result<Vec<u8>> {
-    // Technically this should never fail for Balancer Pools since tokens
-    // with more than 18 decimals (not supported by balancer contracts).
-
-    let ten = U256::from(10);
-    factors
-        .iter()
-        .copied()
-        .map(|mut factor| {
-            let mut exponent = 0u8;
-            while factor > U256::one() {
-                ensure!(exponent < 18, "scaling factor overflow");
-                ensure!((factor % ten).is_zero(), "scaling factor not a power of 10");
-                exponent += 1;
-                factor /= ten;
-            }
-
-            Ok(exponent)
-        })
-        .collect()
-}
-
 /// Converts a token decimal count to its corresponding scaling exponent.
 fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
     // Technically this should never fail for Balancer Pools since tokens
@@ -135,15 +124,19 @@ fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer_v2::graph_api::{PoolType, Token};
+    use crate::{
+        sources::balancer_v2::graph_api::{PoolType, Token},
+        token_info::{MockTokenInfoFetching, TokenInfo},
+    };
+    use ethcontract::U256;
     use ethcontract_mock::Mock;
+    use maplit::hashmap;
     use mockall::predicate;
 
     #[tokio::test]
     async fn fetch_pool_info() {
         let pool_id = H256([0x90; 32]);
         let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
-        let scaling_factors = [U256::one(), U256::from(1), U256::from(1_000_000_000)];
 
         let mock = Mock::new(42);
         let web3 = mock.web3();
@@ -151,8 +144,6 @@ mod tests {
         let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
         pool.expect_call(BalancerV2BasePool::signatures().get_pool_id())
             .returns(Bytes(pool_id.0));
-        pool.expect_call(BalancerV2BasePool::signatures().get_scaling_factors())
-            .returns(scaling_factors.to_vec());
 
         let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
         vault
@@ -160,8 +151,21 @@ mod tests {
             .predicate((predicate::eq(Bytes(pool_id.0)),))
             .returns((tokens.to_vec(), vec![], U256::zero()));
 
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos
+            .expect_get_token_infos()
+            .withf(move |t| t == tokens)
+            .returning(move |_| {
+                hashmap! {
+                    tokens[0] => TokenInfo { decimals: Some(18), symbol: None },
+                    tokens[1] => TokenInfo { decimals: Some(18), symbol: None },
+                    tokens[2] => TokenInfo { decimals: Some(6), symbol: None },
+                }
+            });
+
         let pool_info_fetcher = PoolInfoFetcher {
             vault: BalancerV2Vault::at(&web3, vault.address()),
+            token_infos: Arc::new(token_infos),
         };
         let pool_info = pool_info_fetcher
             .pool_info(pool.address(), 1337)
@@ -174,7 +178,7 @@ mod tests {
                 id: pool_id,
                 address: pool.address(),
                 tokens: tokens.to_vec(),
-                scaling_exponents: vec![0, 0, 9],
+                scaling_exponents: vec![0, 0, 12],
                 block_created: 1337,
             }
         )
@@ -250,19 +254,6 @@ mod tests {
             ],
         };
         assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
-    }
-
-    #[test]
-    fn scaling_exponents_from_factors_ok_and_err() {
-        let scaling_exponents = scaling_exponents_from_factors(
-            &(0..=18)
-                .map(|i| U256::from(10_u128.pow(i)))
-                .collect::<Vec<_>>(),
-        )
-        .unwrap();
-        assert_eq!(scaling_exponents, (0..=18).collect::<Vec<_>>());
-
-        assert!(scaling_exponents_from_factors(&[19.into()]).is_err());
     }
 
     #[test]

@@ -395,6 +395,7 @@ async fn main() {
             BalancerPoolFetcher::new(
                 chain_id,
                 web3.clone(),
+                token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
                 metrics.clone(),

@@ -18,6 +18,7 @@ use crate::{
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
     },
+    token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::{ensure, Result};
@@ -230,6 +231,7 @@ impl BalancerPoolFetcher {
     pub async fn new(
         chain_id: u64,
         web3: Web3,
+        token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
@@ -237,6 +239,7 @@ impl BalancerPoolFetcher {
     ) -> Result<Self> {
         let pool_info = Arc::new(PoolInfoFetcher::new(
             BalancerV2Vault::deployed(&web3).await?,
+            token_info_fetcher,
             BalancerV2WeightedPoolFactory::deployed(&web3).await?,
             BalancerV2StablePoolFactory::deployed(&web3).await?,
         ));

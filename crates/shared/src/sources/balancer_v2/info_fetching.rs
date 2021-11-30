@@ -8,9 +8,11 @@ use super::{
         FactoryIndexing as _,
     },
 };
+use crate::token_info::TokenInfoFetching;
 use anyhow::Result;
 use contracts::{BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPoolFactory};
 use ethcontract::H160;
+use std::sync::Arc;
 
 /// Legacy pool info fetching implementation.
 ///
@@ -26,11 +28,12 @@ pub struct PoolInfoFetcher {
 impl PoolInfoFetcher {
     pub fn new(
         vault: BalancerV2Vault,
+        token_infos: Arc<dyn TokenInfoFetching>,
         weighted_factory: BalancerV2WeightedPoolFactory,
         stable_factory: BalancerV2StablePoolFactory,
     ) -> Self {
         Self {
-            inner: common::PoolInfoFetcher::new(vault),
+            inner: common::PoolInfoFetcher::new(vault, token_infos),
             weighted_factory,
             stable_factory,
         }
