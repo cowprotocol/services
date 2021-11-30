@@ -18,11 +18,10 @@ use crate::{
         pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
         swap::fixed_point::Bfp,
     },
-    token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::{ensure, Result};
-use contracts::BalancerV2Vault;
+use contracts::{BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPoolFactory};
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
 use num::BigRational;
@@ -231,17 +230,16 @@ impl BalancerPoolFetcher {
     pub async fn new(
         chain_id: u64,
         web3: Web3,
-        token_info_fetcher: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
     ) -> Result<Self> {
-        let pool_info = Arc::new(PoolInfoFetcher {
-            web3: web3.clone(),
-            token_info_fetcher: token_info_fetcher.clone(),
-            vault: BalancerV2Vault::deployed(&web3).await?,
-        });
+        let pool_info = Arc::new(PoolInfoFetcher::new(
+            BalancerV2Vault::deployed(&web3).await?,
+            BalancerV2WeightedPoolFactory::deployed(&web3).await?,
+            BalancerV2StablePoolFactory::deployed(&web3).await?,
+        ));
         let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
         let pool_registry =
             Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);

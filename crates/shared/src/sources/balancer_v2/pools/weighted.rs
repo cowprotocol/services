@@ -6,7 +6,7 @@ use crate::sources::balancer_v2::{
     swap::fixed_point::Bfp,
 };
 use anyhow::{anyhow, Result};
-use contracts::BalancerV2WeightedPoolFactory;
+use contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory};
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
@@ -38,6 +38,23 @@ impl PoolIndexing for PoolInfo {
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2WeightedPoolFactory {
     type PoolInfo = PoolInfo;
+
+    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        let pool_contract = BalancerV2WeightedPool::at(&self.raw_instance().web3(), pool.address);
+        let weights = pool_contract
+            .methods()
+            .get_normalized_weights()
+            .call()
+            .await?
+            .into_iter()
+            .map(Bfp::from_wei)
+            .collect();
+
+        Ok(PoolInfo {
+            common: pool,
+            weights,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -45,6 +62,11 @@ mod tests {
     use super::*;
     use crate::sources::balancer_v2::graph_api::Token;
     use ethcontract::{H160, H256};
+    use ethcontract_mock::Mock;
+
+    fn bfp(amount: &str) -> Bfp {
+        amount.parse().unwrap()
+    }
 
     #[test]
     fn convert_graph_pool_to_weighted_pool_info() {
@@ -57,12 +79,12 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some("1.337".parse().unwrap()),
+                    weight: Some(bfp("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some("4.2".parse().unwrap()),
+                    weight: Some(bfp("4.2")),
                 },
             ],
         };
@@ -96,16 +118,42 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some("1.337".parse().unwrap()),
+                    weight: Some(bfp("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some("4.2".parse().unwrap()),
+                    weight: Some(bfp("4.2")),
                 },
             ],
         };
 
         assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
+    }
+
+    #[tokio::test]
+    async fn fetch_weighted_pool() {
+        let weights = [bfp("0.5"), bfp("0.25"), bfp("0.25")];
+
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
+        pool.expect_call(BalancerV2WeightedPool::signatures().get_normalized_weights())
+            .returns(weights.iter().copied().map(Bfp::as_uint256).collect());
+
+        let factory = BalancerV2WeightedPoolFactory::at(&web3, H160([0xfa; 20]));
+        let pool = factory
+            .pool_info(common::PoolInfo {
+                id: H256([0x90; 32]),
+                tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
+                address: pool.address(),
+                scaling_exponents: vec![0, 0, 0],
+                block_created: 42,
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(pool.weights, weights);
     }
 }

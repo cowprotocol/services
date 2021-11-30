@@ -24,6 +24,9 @@ pub trait FactoryIndexing {
     /// be retrieved once. This data will be passed in when fetching the current
     /// pool state via `fetch_pool`.
     type PoolInfo: PoolIndexing;
+
+    /// Retrive the permanent pool info for the specified common pool info.
+    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo>;
 }
 
 /// Required information needed for indexing pools.
