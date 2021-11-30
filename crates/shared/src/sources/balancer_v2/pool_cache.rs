@@ -50,7 +50,7 @@ impl CacheKey<StablePool> for H256 {
     }
 
     fn for_value(value: &StablePool) -> Self {
-        value.properties().pool_id
+        value.properties().id
     }
 }
 
@@ -60,7 +60,7 @@ impl CacheKey<WeightedPool> for H256 {
     }
 
     fn for_value(value: &WeightedPool) -> Self {
-        value.properties().pool_id
+        value.properties().id
     }
 }
 
@@ -80,14 +80,14 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
             .into_iter()
             .map(|registered_pool| {
                 let pool_contract =
-                    BalancerV2WeightedPool::at(&self.web3, registered_pool.common.pool_address);
+                    BalancerV2WeightedPool::at(&self.web3, registered_pool.common.address);
                 let swap_fee = pool_contract
                     .get_swap_fee_percentage()
                     .block(block)
                     .batch_call(&mut batch);
                 let reserves = self
                     .vault
-                    .get_pool_tokens(Bytes(registered_pool.common.pool_id.0))
+                    .get_pool_tokens(Bytes(registered_pool.common.id.0))
                     .block(block)
                     .batch_call(&mut batch);
                 let paused_state = pool_contract
@@ -99,7 +99,7 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
                     FetchedWeightedPool {
                         registered_pool,
                         common: FetchedCommonPool {
-                            swap_fee_percentage: swap_fee.await,
+                            swap_fee: swap_fee.await,
                             reserves: reserves.await,
                             paused_state: paused_state.await,
                         },
@@ -135,14 +135,14 @@ impl CacheFetching<H256, StablePool> for PoolReserveFetcher {
             .into_iter()
             .map(|registered_pool| {
                 let pool_contract =
-                    BalancerV2StablePool::at(&self.web3, registered_pool.properties().pool_address);
+                    BalancerV2StablePool::at(&self.web3, registered_pool.properties().address);
                 let swap_fee = pool_contract
                     .get_swap_fee_percentage()
                     .block(block)
                     .batch_call(&mut batch);
                 let reserves = self
                     .vault
-                    .get_pool_tokens(Bytes(registered_pool.properties().pool_id.0))
+                    .get_pool_tokens(Bytes(registered_pool.properties().id.0))
                     .block(block)
                     .batch_call(&mut batch);
                 let paused_state = pool_contract
@@ -158,7 +158,7 @@ impl CacheFetching<H256, StablePool> for PoolReserveFetcher {
                     FetchedStablePool {
                         registered_pool,
                         common: FetchedCommonPool {
-                            swap_fee_percentage: swap_fee.await,
+                            swap_fee: swap_fee.await,
                             reserves: reserves.await,
                             paused_state: paused_state.await,
                         },
@@ -187,7 +187,7 @@ impl CacheMetrics for Arc<dyn BalancerPoolCacheMetrics> {
 }
 
 struct FetchedCommonPool {
-    swap_fee_percentage: Result<U256, MethodError>,
+    swap_fee: Result<U256, MethodError>,
     /// getPoolTokens returns (Tokens, Balances, LastBlockUpdated)
     reserves: Result<(Vec<H160>, Vec<U256>, U256), MethodError>,
     /// getPausedState returns (paused, pauseWindowEndTime, bufferPeriodEndTime)
@@ -232,7 +232,7 @@ impl FetchedBalancerPoolConverting<CommonFetchedPoolInfo> for FetchedCommonPool 
             Some(reserves) => reserves.1,
             None => return Ok(None),
         };
-        let swap_fee_percentage = match handle_contract_error(self.swap_fee_percentage)? {
+        let swap_fee_percentage = match handle_contract_error(self.swap_fee)? {
             Some(swap_fee) => swap_fee,
             None => return Ok(None),
         };
@@ -298,7 +298,7 @@ mod tests {
         let fetched_weighted_pool = FetchedWeightedPool {
             registered_pool: RegisteredWeightedPool::default(),
             common: FetchedCommonPool {
-                swap_fee_percentage: Ok(U256::zero()),
+                swap_fee: Ok(U256::zero()),
                 reserves: Err(ethcontract_error::testing_node_error()),
                 paused_state: Ok((true, U256::zero(), U256::zero())),
             },
@@ -307,7 +307,7 @@ mod tests {
         let fetched_weighted_pool = FetchedWeightedPool {
             registered_pool: RegisteredWeightedPool::default(),
             common: FetchedCommonPool {
-                swap_fee_percentage: Err(ethcontract_error::testing_node_error()),
+                swap_fee: Err(ethcontract_error::testing_node_error()),
                 reserves: Ok((vec![], vec![], U256::zero())),
                 paused_state: Ok((true, U256::zero(), U256::zero())),
             },
@@ -321,7 +321,7 @@ mod tests {
             FetchedWeightedPool {
                 registered_pool: RegisteredWeightedPool::default(),
                 common: FetchedCommonPool {
-                    swap_fee_percentage: Ok(U256::zero()),
+                    swap_fee: Ok(U256::zero()),
                     reserves: Err(ethcontract_error::testing_contract_error()),
                     paused_state: Ok((true, U256::zero(), U256::zero())),
                 },
@@ -329,7 +329,7 @@ mod tests {
             FetchedWeightedPool {
                 registered_pool: RegisteredWeightedPool::default(),
                 common: FetchedCommonPool {
-                    swap_fee_percentage: Err(ethcontract_error::testing_contract_error()),
+                    swap_fee: Err(ethcontract_error::testing_contract_error()),
                     reserves: Ok((vec![], vec![], U256::zero())),
                     paused_state: Ok((true, U256::zero(), U256::zero())),
                 },
@@ -337,7 +337,7 @@ mod tests {
             FetchedWeightedPool {
                 registered_pool: RegisteredWeightedPool::default(),
                 common: FetchedCommonPool {
-                    swap_fee_percentage: Ok(U256::zero()),
+                    swap_fee: Ok(U256::zero()),
                     reserves: Ok((vec![], vec![], U256::zero())),
                     paused_state: Ok((true, U256::zero(), U256::zero())),
                 },

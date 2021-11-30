@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct CommonPoolInfo {
-    pub pool_id: H256,
+    pub id: H256,
     pub tokens: Vec<H160>,
     pub scaling_exponents: Vec<u8>,
 }
@@ -77,7 +77,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
         let scaling_exponents = self.get_scaling_exponents(&tokens).await?;
         Ok(WeightedPoolInfo {
             common: CommonPoolInfo {
-                pool_id,
+                id: pool_id,
                 tokens,
                 scaling_exponents,
             },
@@ -106,7 +106,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
         let scaling_exponents = self.get_scaling_exponents(&tokens).await?;
         Ok(StablePoolInfo {
             common: CommonPoolInfo {
-                pool_id,
+                id: pool_id,
                 tokens,
                 scaling_exponents,
             },
@@ -280,7 +280,7 @@ mod tests {
             pool_info.common.tokens,
             vec![H160::from_low_u64_be(1), H160::from_low_u64_be(2)]
         );
-        assert_eq!(pool_info.common.pool_id, pool_id);
+        assert_eq!(pool_info.common.id, pool_id);
         assert_eq!(pool_info.common.scaling_exponents, vec![0u8, 1u8]);
         assert_eq!(pool_info.weights, vec![Bfp::from_wei(weight)]);
     }
@@ -334,7 +334,7 @@ mod tests {
             pool_info.common.tokens,
             vec![H160::from_low_u64_be(1), H160::from_low_u64_be(2)]
         );
-        assert_eq!(pool_info.common.pool_id, pool_id);
+        assert_eq!(pool_info.common.id, pool_id);
         assert_eq!(pool_info.common.scaling_exponents, vec![0u8, 1u8]);
     }
 }

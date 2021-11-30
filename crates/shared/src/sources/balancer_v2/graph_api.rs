@@ -253,8 +253,8 @@ mod pools_query {
             self.tokens.iter().try_fold(
                 RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: self.id,
-                        pool_address: self.address,
+                        id: self.id,
+                        address: self.address,
                         tokens: Vec::with_capacity(token_count),
                         scaling_exponents: Vec::with_capacity(token_count),
                         block_created: block_created_upper_bound,
@@ -285,8 +285,8 @@ mod pools_query {
             self.tokens.iter().try_fold(
                 RegisteredStablePool {
                     common: CommonPoolData {
-                        pool_id: self.id,
-                        pool_address: self.address,
+                        id: self.id,
+                        address: self.address,
                         tokens: Vec::with_capacity(token_count),
                         scaling_exponents: Vec::with_capacity(token_count),
                         block_created: block_created_upper_bound,
@@ -455,8 +455,8 @@ mod tests {
         // Note that this test also demonstrates unreachable code is indeed unreachable
         use pools_query::*;
         let common = CommonPoolData {
-            pool_id: H256([2; 32]),
-            pool_address: H160([1; 20]),
+            id: H256([2; 32]),
+            address: H160([1; 20]),
             tokens: vec![H160([2; 20]), H160([3; 20])],
             scaling_exponents: vec![17, 16],
             block_created: 42,

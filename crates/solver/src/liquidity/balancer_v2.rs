@@ -86,9 +86,9 @@ impl BalancerV2Liquidity {
             .into_iter()
             .map(|pool| WeightedProductOrder {
                 reserves: pool.reserves,
-                fee: pool.common.swap_fee_percentage,
+                fee: pool.common.swap_fee,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.pool_id,
+                    pool_id: pool.common.id,
                     contracts: self.contracts.clone(),
                     allowances: allowances.clone(),
                 }),
@@ -99,10 +99,10 @@ impl BalancerV2Liquidity {
             .into_iter()
             .map(|pool| StablePoolOrder {
                 reserves: pool.reserves,
-                fee: pool.common.swap_fee_percentage.into(),
+                fee: pool.common.swap_fee.into(),
                 amplification_parameter: pool.amplification_parameter,
                 settlement_handling: Arc::new(SettlementHandler {
-                    pool_id: pool.common.pool_id,
+                    pool_id: pool.common.id,
                     contracts: self.contracts.clone(),
                     allowances: allowances.clone(),
                 }),
@@ -199,28 +199,28 @@ mod tests {
         let weighted_pools = vec![
             WeightedPool {
                 common: CommonPoolState {
-                    pool_id: H256([0x90; 32]),
-                    pool_address: H160([0x90; 20]),
-                    swap_fee_percentage: "0.002".parse().unwrap(),
+                    id: H256([0x90; 32]),
+                    address: H160([0x90; 20]),
+                    swap_fee: "0.002".parse().unwrap(),
                     paused: true,
                 },
                 reserves: hashmap! {
                     H160([0x70; 20]) => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 100.into(),
                             scaling_exponent: 16,
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0x71; 20]) => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 1_000_000.into(),
                             scaling_exponent: 12,
                         },
                         weight: "0.25".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
                             scaling_exponent: 0,
                         },
@@ -230,21 +230,21 @@ mod tests {
             },
             WeightedPool {
                 common: CommonPoolState {
-                    pool_id: H256([0x91; 32]),
-                    pool_address: H160([0x91; 20]),
-                    swap_fee_percentage: "0.001".parse().unwrap(),
+                    id: H256([0x91; 32]),
+                    address: H160([0x91; 20]),
+                    swap_fee: "0.001".parse().unwrap(),
                     paused: true,
                 },
                 reserves: hashmap! {
                     H160([0x73; 20]) => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
                             scaling_exponent: 0,
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     H160([0xb0; 20]) => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 1_000_000_000_000_000_000u128.into(),
                             scaling_exponent: 0,
                         },
@@ -256,9 +256,9 @@ mod tests {
 
         let stable_pools = vec![StablePool {
             common: CommonPoolState {
-                pool_id: H256([0x92; 32]),
-                pool_address: H160([0x92; 20]),
-                swap_fee_percentage: "0.002".parse().unwrap(),
+                id: H256([0x92; 32]),
+                address: H160([0x92; 20]),
+                swap_fee: "0.002".parse().unwrap(),
                 paused: true,
             },
             amplification_parameter: AmplificationParameter::new(1.into(), 1.into()).unwrap(),

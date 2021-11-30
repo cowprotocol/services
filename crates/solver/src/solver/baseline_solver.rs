@@ -286,7 +286,7 @@ fn amm_to_pool(amm: &ConstantProductOrder) -> Pool {
 fn amm_to_weighted_pool(amm: &WeightedProductOrder) -> WeightedPoolRef {
     WeightedPoolRef {
         reserves: &amm.reserves,
-        swap_fee_percentage: amm.fee,
+        swap_fee: amm.fee,
     }
 }
 
@@ -587,14 +587,14 @@ mod tests {
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 reserves: hashmap! {
                     addr!("c778417e063141139fce010982780140aa0cd5ab") => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 799_086_982_149_629_058_u128.into(),
                             scaling_exponent: 0,
                         },
                         weight: "0.5".parse().unwrap(),
                     },
                     addr!("e4b9895e638f54c3bee2a3a78d6a297cc03e0353") => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 1_251_682_293_173_877_359_u128.into(),
                             scaling_exponent: 0,
                         },
@@ -640,7 +640,7 @@ mod tests {
                 (
                     tokens[0],
                     WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 4294966784u64.into(),
                             scaling_exponent: 0,
                         },
@@ -650,7 +650,7 @@ mod tests {
                 (
                     tokens[1],
                     WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: 4278190173u64.into(),
                             scaling_exponent: 0,
                         },

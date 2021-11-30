@@ -44,8 +44,8 @@ pub trait PoolEvaluating {
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommonPoolData {
-    pub pool_id: H256,
-    pub pool_address: H160,
+    pub id: H256,
+    pub address: H160,
     pub tokens: Vec<H160>,
     pub scaling_exponents: Vec<u8>,
     pub block_created: u64,
@@ -54,8 +54,8 @@ pub struct CommonPoolData {
 #[cfg(test)]
 pub fn common_pool(seed: u8) -> CommonPoolData {
     CommonPoolData {
-        pool_id: H256([seed; 32]),
-        pool_address: H160([seed; 20]),
+        id: H256([seed; 32]),
+        address: H160([seed; 20]),
         tokens: vec![H160([seed; 20]), H160([seed + 1; 20])],
         scaling_exponents: vec![0, 0],
         block_created: seed as _,
@@ -106,8 +106,8 @@ impl RegisteredWeightedPool {
         let pool_data = data_fetcher.get_weighted_pool_data(pool_address).await?;
         Ok(RegisteredWeightedPool {
             common: CommonPoolData {
-                pool_id: pool_data.common.pool_id,
-                pool_address,
+                id: pool_data.common.id,
+                address: pool_address,
                 tokens: pool_data.common.tokens,
                 scaling_exponents: pool_data.common.scaling_exponents,
                 block_created,
@@ -135,8 +135,8 @@ impl RegisteredStablePool {
         let pool_data = data_fetcher.get_stable_pool_data(pool_address).await?;
         Ok(RegisteredStablePool {
             common: CommonPoolData {
-                pool_id: pool_data.common.pool_id,
-                pool_address,
+                id: pool_data.common.id,
+                address: pool_address,
                 tokens: pool_data.common.tokens,
                 scaling_exponents: pool_data.common.scaling_exponents,
                 block_created,
@@ -261,7 +261,7 @@ impl PoolStorage {
                         &*self.data_fetcher,
                     )
                     .await?;
-                    let pool_id = pool.common.pool_id;
+                    let pool_id = pool.common.id;
                     self.stable_pools.insert(pool_id, pool.clone());
                     for token in pool.common.tokens {
                         self.pools_by_token
@@ -277,7 +277,7 @@ impl PoolStorage {
                         &*self.data_fetcher,
                     )
                     .await?;
-                    let pool_id = pool.common.pool_id;
+                    let pool_id = pool.common.id;
                     self.weighted_pools.insert(pool_id, pool.clone());
                     for token in pool.common.tokens {
                         self.pools_by_token
@@ -364,9 +364,9 @@ fn construct_pool_map<T: PoolEvaluating>(
                 pools_by_token
                     .entry(token)
                     .or_default()
-                    .insert(pool_data.pool_id);
+                    .insert(pool_data.id);
             }
-            (pool_data.pool_id, pool)
+            (pool_data.id, pool)
         })
         .collect()
 }
@@ -408,8 +408,8 @@ mod tests {
             vec![
                 RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: H256([1; 32]),
-                        pool_address: H160([1; 20]),
+                        id: H256([1; 32]),
+                        address: H160([1; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                         scaling_exponents: vec![0, 0],
                         block_created: 0,
@@ -421,8 +421,8 @@ mod tests {
                 },
                 RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: H256([2; 32]),
-                        pool_address: H160([2; 20]),
+                        id: H256([2; 32]),
+                        address: H160([2; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x77; 20])],
                         scaling_exponents: vec![0, 0],
                         block_created: 0,
@@ -435,8 +435,8 @@ mod tests {
             ],
             vec![RegisteredStablePool {
                 common: CommonPoolData {
-                    pool_id: H256([3; 32]),
-                    pool_address: H160([3; 20]),
+                    id: H256([3; 32]),
+                    address: H160([3; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x77; 20])],
                     scaling_exponents: vec![0, 0],
                     block_created: 0,
@@ -472,7 +472,7 @@ mod tests {
         for i in 0..n {
             let expected_pool_data = WeightedPoolInfo {
                 common: CommonPoolInfo {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
@@ -510,8 +510,8 @@ mod tests {
                 pool_store.weighted_pools.get(&pool_ids[i]).unwrap(),
                 &RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: pool_ids[i],
-                        pool_address: pool_addresses[i],
+                        id: pool_ids[i],
+                        address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64 + 1,
@@ -538,7 +538,7 @@ mod tests {
         for i in 0..n {
             let expected_pool_data = StablePoolInfo {
                 common: CommonPoolInfo {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
@@ -575,8 +575,8 @@ mod tests {
                 pool_store.stable_pools.get(&pool_ids[i]).unwrap(),
                 &RegisteredStablePool {
                     common: CommonPoolData {
-                        pool_id: pool_ids[i],
-                        pool_address: pool_addresses[i],
+                        id: pool_ids[i],
+                        address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64 + 1
@@ -602,7 +602,7 @@ mod tests {
         for i in start_block..end_block + 1 {
             let expected_pool_data = WeightedPoolInfo {
                 common: CommonPoolInfo {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
@@ -630,7 +630,7 @@ mod tests {
             .returning(move |_| {
                 Ok(WeightedPoolInfo {
                     common: CommonPoolInfo {
-                        pool_id: new_pool_id,
+                        id: new_pool_id,
                         tokens: vec![new_token],
                         scaling_exponents: vec![0],
                     },
@@ -652,8 +652,8 @@ mod tests {
                 pool_store.weighted_pools.get(&pool_ids[i]).unwrap(),
                 &RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: pool_ids[i],
-                        pool_address: pool_addresses[i],
+                        id: pool_ids[i],
+                        address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64,
@@ -694,8 +694,8 @@ mod tests {
             pool_store.weighted_pools.get(&new_pool_id).unwrap(),
             &RegisteredWeightedPool {
                 common: CommonPoolData {
-                    pool_id: new_pool_id,
-                    pool_address: new_pool_address,
+                    id: new_pool_id,
+                    address: new_pool_address,
                     tokens: vec![new_token],
                     scaling_exponents: vec![0],
                     block_created: new_event_block,
@@ -723,7 +723,7 @@ mod tests {
         for i in start_block..end_block + 1 {
             let expected_pool_data = StablePoolInfo {
                 common: CommonPoolInfo {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
                 },
@@ -749,7 +749,7 @@ mod tests {
             .returning(move |_| {
                 Ok(StablePoolInfo {
                     common: CommonPoolInfo {
-                        pool_id: new_pool_id,
+                        id: new_pool_id,
                         tokens: vec![new_token],
                         scaling_exponents: vec![0],
                     },
@@ -770,8 +770,8 @@ mod tests {
                 pool_store.stable_pools.get(&pool_ids[i]).unwrap(),
                 &RegisteredStablePool {
                     common: CommonPoolData {
-                        pool_id: pool_ids[i],
-                        pool_address: pool_addresses[i],
+                        id: pool_ids[i],
+                        address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
                         block_created: i as u64
@@ -811,8 +811,8 @@ mod tests {
             pool_store.stable_pools.get(&new_pool_id).unwrap(),
             &RegisteredStablePool {
                 common: CommonPoolData {
-                    pool_id: new_pool_id,
-                    pool_address: new_pool_address,
+                    id: new_pool_id,
+                    address: new_pool_address,
                     tokens: vec![new_token],
                     scaling_exponents: vec![0],
                     block_created: new_event_block,
@@ -837,7 +837,7 @@ mod tests {
         for i in 0..n {
             let expected_pool_data = WeightedPoolInfo {
                 common: CommonPoolInfo {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],
                 },
@@ -867,11 +867,11 @@ mod tests {
             // This is weighted_pools[i] has tokens [tokens[i], tokens[i+1], ... , tokens[n]]
             weighted_pools.push(RegisteredWeightedPool {
                 common: CommonPoolData {
-                    pool_id: pool_ids[i],
+                    id: pool_ids[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],
                     block_created: 0,
-                    pool_address: pool_addresses[i],
+                    address: pool_addresses[i],
                 },
                 normalized_weights: vec![],
             });

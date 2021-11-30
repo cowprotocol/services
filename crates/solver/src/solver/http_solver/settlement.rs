@@ -265,14 +265,14 @@ mod tests {
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 reserves: hashmap! {
                     t0 => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: U256::from(200),
                             scaling_exponent: 4,
                         },
                         weight: Bfp::from(200_000_000_000_000_000),
                     },
                     t1 => WeightedTokenState {
-                        token_state: TokenState {
+                        common: TokenState {
                             balance: U256::from(800),
                             scaling_exponent: 6,
                         },
@@ -406,14 +406,14 @@ mod tests {
         let wpo = WeightedProductOrder {
             reserves: hashmap! {
                 token_c => WeightedTokenState {
-                    token_state: TokenState {
+                    common: TokenState {
                         balance: U256::from(1251682293173877359u128),
                         scaling_exponent: 0,
                     },
                     weight: Bfp::from(500_000_000_000_000_000),
                 },
                 token_b => WeightedTokenState {
-                    token_state: TokenState {
+                    common: TokenState {
                         balance: U256::from(799086982149629058u128),
                         scaling_exponent: 0,
                     },

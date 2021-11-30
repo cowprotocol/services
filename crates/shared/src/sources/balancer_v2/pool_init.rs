@@ -282,7 +282,7 @@ where
             .then(|pool| {
                 let pool_info = self.pool_info.clone();
                 async move {
-                    RegisteredWeightedPool::new(block_number, pool.common.pool_address, &*pool_info)
+                    RegisteredWeightedPool::new(block_number, pool.common.address, &*pool_info)
                         .await
                 }
             })
@@ -299,8 +299,7 @@ where
             .then(|pool| {
                 let pool_info = self.pool_info.clone();
                 async move {
-                    RegisteredStablePool::new(block_number, pool.common.pool_address, &*pool_info)
-                        .await
+                    RegisteredStablePool::new(block_number, pool.common.address, &*pool_info).await
                 }
             })
             .try_collect()
@@ -542,8 +541,8 @@ mod tests {
                 weighted_pools_by_factory: hashmap! {
                     weighted_factory => vec![RegisteredWeightedPool {
                         common: CommonPoolData {
-                            pool_id: H256([1; 32]),
-                            pool_address: H160([1; 20]),
+                            id: H256([1; 32]),
+                            address: H160([1; 20]),
                             tokens: vec![],
                             scaling_exponents: vec![],
                             block_created: 42,
@@ -552,8 +551,8 @@ mod tests {
                     }],
                     weighted_2token_factory => vec![RegisteredWeightedPool {
                         common: CommonPoolData {
-                            pool_id: H256([2; 32]),
-                            pool_address: H160([2; 20]),
+                            id: H256([2; 32]),
+                            address: H160([2; 20]),
                             tokens: vec![],
                             scaling_exponents: vec![],
                             block_created: 42,
@@ -563,8 +562,8 @@ mod tests {
                     addr!("0102030405060708091011121314151617181920") => vec![
                         RegisteredWeightedPool {
                             common: CommonPoolData {
-                                pool_id: H256([4; 32]),
-                                pool_address: H160([4; 20]),
+                                id: H256([4; 32]),
+                                address: H160([4; 20]),
                                 tokens: vec![],
                                 scaling_exponents: vec![],
                                 block_created: 42,
@@ -576,8 +575,8 @@ mod tests {
                 stable_pools_by_factory: hashmap! {
                     stable_factory => vec![RegisteredStablePool {
                         common: CommonPoolData {
-                            pool_id: H256([3; 32]),
-                            pool_address: H160([3; 20]),
+                            id: H256([3; 32]),
+                            address: H160([3; 20]),
                             tokens: vec![],
                             scaling_exponents: vec![],
                             block_created: 42,
@@ -586,8 +585,8 @@ mod tests {
                     addr!("0102030405060708091011121314151617181920") => vec![
                         RegisteredStablePool {
                             common: CommonPoolData {
-                                pool_id: H256([5; 32]),
-                                pool_address: H160([5; 20]),
+                                id: H256([5; 32]),
+                                address: H160([5; 20]),
                                 tokens: vec![],
                                 scaling_exponents: vec![],
                                 block_created: 42,
@@ -609,7 +608,7 @@ mod tests {
             .returning(|_| {
                 Ok(WeightedPoolInfo {
                     common: CommonPoolInfo {
-                        pool_id: H256([1; 32]),
+                        id: H256([1; 32]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                         scaling_exponents: vec![0, 0],
                     },
@@ -627,7 +626,7 @@ mod tests {
             .returning(|_| {
                 Ok(WeightedPoolInfo {
                     common: CommonPoolInfo {
-                        pool_id: H256([2; 32]),
+                        id: H256([2; 32]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x44; 20])],
                         scaling_exponents: vec![0, 0, 0],
                     },
@@ -646,7 +645,7 @@ mod tests {
             .returning(|_| {
                 Ok(StablePoolInfo {
                     common: CommonPoolInfo {
-                        pool_id: H256([3; 32]),
+                        id: H256([3; 32]),
                         tokens: vec![],
                         scaling_exponents: vec![],
                     },
@@ -664,8 +663,8 @@ mod tests {
             BalancerRegisteredPools {
                 weighted_pools: vec![RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: H256([1; 32]),
-                        pool_address: H160([1; 20]),
+                        id: H256([1; 32]),
+                        address: H160([1; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                         scaling_exponents: vec![0, 0],
                         block_created: 42,
@@ -677,8 +676,8 @@ mod tests {
                 }],
                 weighted_2token_pools: vec![RegisteredWeightedPool {
                     common: CommonPoolData {
-                        pool_id: H256([2; 32]),
-                        pool_address: H160([2; 20]),
+                        id: H256([2; 32]),
+                        address: H160([2; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x44; 20])],
                         scaling_exponents: vec![0, 0, 0],
                         block_created: 42,
@@ -691,8 +690,8 @@ mod tests {
                 }],
                 stable_pools: vec![RegisteredStablePool {
                     common: CommonPoolData {
-                        pool_id: H256([3; 32]),
-                        pool_address: H160([3; 20]),
+                        id: H256([3; 32]),
+                        address: H160([3; 20]),
                         tokens: vec![],
                         scaling_exponents: vec![],
                         block_created: 42,

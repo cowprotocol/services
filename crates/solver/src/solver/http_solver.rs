@@ -293,7 +293,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                                 (
                                     *token,
                                     WeightedPoolTokenData {
-                                        balance: state.token_state.balance,
+                                        balance: state.common.balance,
                                         weight: BigRational::from(state.weight),
                                     },
                                 )

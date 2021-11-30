@@ -20,16 +20,16 @@ const WEIGHTED_SWAP_GAS_COST: usize = 100_000;
 // See https://dune.xyz/queries/219641 for cost of pure stable swaps
 const STABLE_SWAP_GAS_COST: usize = 183_520;
 
-fn add_swap_fee_amount(amount: U256, swap_fee_percentage: Bfp) -> Result<U256, Error> {
+fn add_swap_fee_amount(amount: U256, swap_fee: Bfp) -> Result<U256, Error> {
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BasePool.sol#L454-L457
-    let amount_with_fees = Bfp::from_wei(amount).div_up(swap_fee_percentage.complement())?;
+    let amount_with_fees = Bfp::from_wei(amount).div_up(swap_fee.complement())?;
     Ok(amount_with_fees.as_uint256())
 }
 
-fn subtract_swap_fee_amount(amount: U256, swap_fee_percentage: Bfp) -> Result<U256, Error> {
+fn subtract_swap_fee_amount(amount: U256, swap_fee: Bfp) -> Result<U256, Error> {
     // https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/core/contracts/pools/BasePool.sol#L462-L466
     let amount = Bfp::from_wei(amount);
-    let fee_amount = amount.mul_up(swap_fee_percentage)?;
+    let fee_amount = amount.mul_up(swap_fee)?;
     let amount_without_fees = amount.sub(fee_amount)?;
     Ok(amount_without_fees.as_uint256())
 }
@@ -76,7 +76,7 @@ impl TokenState {
 /// Weighted pool data as a reference used for computing input and output amounts.
 pub struct WeightedPoolRef<'a> {
     pub reserves: &'a HashMap<H160, WeightedTokenState>,
-    pub swap_fee_percentage: Bfp,
+    pub swap_fee: Bfp,
 }
 
 impl BaselineSolvable for WeightedPoolRef<'_> {
@@ -87,18 +87,17 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         let in_reserves = self.reserves.get(&in_token)?;
         let out_reserves = self.reserves.get(&out_token)?;
 
-        let in_amount_minus_fees =
-            subtract_swap_fee_amount(in_amount, self.swap_fee_percentage).ok()?;
+        let in_amount_minus_fees = subtract_swap_fee_amount(in_amount, self.swap_fee).ok()?;
 
         let out_amount = weighted_math::calc_out_given_in(
-            in_reserves.token_state.upscaled_balance()?,
+            in_reserves.common.upscaled_balance()?,
             in_reserves.weight,
-            out_reserves.token_state.upscaled_balance()?,
+            out_reserves.common.upscaled_balance()?,
             out_reserves.weight,
-            in_reserves.token_state.upscale(in_amount_minus_fees)?,
+            in_reserves.common.upscale(in_amount_minus_fees)?,
         )
         .ok()?;
-        out_reserves.token_state.downscale_down(out_amount)
+        out_reserves.common.downscale_down(out_amount)
     }
 
     fn get_amount_in(&self, in_token: H160, (out_amount, out_token): (U256, H160)) -> Option<U256> {
@@ -109,15 +108,15 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
         let out_reserves = self.reserves.get(&out_token)?;
 
         let in_amount = weighted_math::calc_in_given_out(
-            in_reserves.token_state.upscaled_balance()?,
+            in_reserves.common.upscaled_balance()?,
             in_reserves.weight,
-            out_reserves.token_state.upscaled_balance()?,
+            out_reserves.common.upscaled_balance()?,
             out_reserves.weight,
-            out_reserves.token_state.upscale(out_amount)?,
+            out_reserves.common.upscale(out_amount)?,
         )
         .ok()?;
-        let amount_in_before_fee = in_reserves.token_state.downscale_up(in_amount).ok()?;
-        add_swap_fee_amount(amount_in_before_fee, self.swap_fee_percentage).ok()
+        let amount_in_before_fee = in_reserves.common.downscale_up(in_amount).ok()?;
+        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
     }
 
     fn gas_cost(&self) -> usize {
@@ -128,7 +127,7 @@ impl BaselineSolvable for WeightedPoolRef<'_> {
 /// Stable pool data as a reference used for computing input and output amounts.
 pub struct StablePoolRef<'a> {
     pub reserves: &'a HashMap<H160, TokenState>,
-    pub swap_fee_percentage: Bfp,
+    pub swap_fee: Bfp,
     pub amplification_parameter: U256,
 }
 
@@ -187,8 +186,7 @@ impl BaselineSolvable for StablePoolRef<'_> {
             token_index_out,
             mut balances,
         } = self.upscale_balances_with_token_indices(&in_token, &out_token)?;
-        let in_amount_minus_fees =
-            subtract_swap_fee_amount(in_amount, self.swap_fee_percentage).ok()?;
+        let in_amount_minus_fees = subtract_swap_fee_amount(in_amount, self.swap_fee).ok()?;
         let out_amount = stable_math::calc_out_given_in(
             self.amplification_parameter,
             balances.as_mut_slice(),
@@ -219,7 +217,7 @@ impl BaselineSolvable for StablePoolRef<'_> {
         )
         .ok()?;
         let amount_in_before_fee = in_reserves.downscale_up(in_amount).ok()?;
-        add_swap_fee_amount(amount_in_before_fee, self.swap_fee_percentage).ok()
+        add_swap_fee_amount(amount_in_before_fee, self.swap_fee).ok()
     }
 
     fn gas_cost(&self) -> usize {
@@ -231,7 +229,7 @@ impl StablePool {
     fn as_pool_ref(&self) -> StablePoolRef {
         StablePoolRef {
             reserves: &self.reserves,
-            swap_fee_percentage: self.common.swap_fee_percentage,
+            swap_fee: self.common.swap_fee,
             amplification_parameter: self.amplification_parameter.as_u256(),
         }
     }
@@ -241,7 +239,7 @@ impl WeightedPool {
     fn as_pool_ref(&self) -> WeightedPoolRef {
         WeightedPoolRef {
             reserves: &self.reserves,
-            swap_fee_percentage: self.common.swap_fee_percentage,
+            swap_fee: self.common.swap_fee,
         }
     }
 }
@@ -285,7 +283,7 @@ mod tests {
         balances: Vec<U256>,
         weights: Vec<Bfp>,
         scaling_exps: Vec<u8>,
-        swap_fee_percentage: U256,
+        swap_fee: U256,
     ) -> WeightedPool {
         let mut reserves = HashMap::new();
         for i in 0..tokens.len() {
@@ -294,7 +292,7 @@ mod tests {
             reserves.insert(
                 token,
                 WeightedTokenState {
-                    token_state: TokenState {
+                    common: TokenState {
                         balance,
                         scaling_exponent,
                     },
@@ -304,9 +302,9 @@ mod tests {
         }
         WeightedPool {
             common: CommonPoolState {
-                pool_id: Default::default(),
-                pool_address: H160::zero(),
-                swap_fee_percentage: Bfp::from_wei(swap_fee_percentage),
+                id: Default::default(),
+                address: H160::zero(),
+                swap_fee: Bfp::from_wei(swap_fee),
                 paused: true,
             },
             reserves,
@@ -318,7 +316,7 @@ mod tests {
         balances: Vec<U256>,
         amplification_parameter: AmplificationParameter,
         scaling_exps: Vec<u8>,
-        swap_fee_percentage: U256,
+        swap_fee: U256,
     ) -> StablePool {
         let mut reserves = HashMap::new();
         for i in 0..tokens.len() {
@@ -333,9 +331,9 @@ mod tests {
         }
         StablePool {
             common: CommonPoolState {
-                pool_id: Default::default(),
-                pool_address: H160::zero(),
-                swap_fee_percentage: Bfp::from_wei(swap_fee_percentage),
+                id: Default::default(),
+                address: H160::zero(),
+                swap_fee: Bfp::from_wei(swap_fee),
                 paused: true,
             },
             reserves,

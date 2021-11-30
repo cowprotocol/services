@@ -40,7 +40,7 @@ pub struct TokenState {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WeightedTokenState {
-    pub token_state: TokenState,
+    pub common: TokenState,
     pub weight: Bfp,
 }
 
@@ -50,9 +50,9 @@ pub trait BalancerPoolEvaluating {
 
 #[derive(Clone, Debug)]
 pub struct CommonPoolState {
-    pub pool_id: H256,
-    pub pool_address: H160, // This one isn't actually used (yet)
-    pub swap_fee_percentage: Bfp,
+    pub id: H256,
+    pub address: H160,
+    pub swap_fee: Bfp,
     pub paused: bool,
 }
 
@@ -66,7 +66,7 @@ impl WeightedPool {
     pub fn new(
         pool_data: RegisteredWeightedPool,
         balances: Vec<U256>,
-        swap_fee_percentage: Bfp,
+        swap_fee: Bfp,
         paused: bool,
     ) -> Self {
         let mut reserves = HashMap::new();
@@ -82,7 +82,7 @@ impl WeightedPool {
             reserves.insert(
                 token,
                 WeightedTokenState {
-                    token_state: TokenState {
+                    common: TokenState {
                         balance,
                         scaling_exponent,
                     },
@@ -92,9 +92,9 @@ impl WeightedPool {
         }
         WeightedPool {
             common: CommonPoolState {
-                pool_id: pool_data.common.pool_id,
-                pool_address: pool_data.common.pool_address,
-                swap_fee_percentage,
+                id: pool_data.common.id,
+                address: pool_data.common.address,
+                swap_fee,
                 paused,
             },
             reserves,
@@ -146,7 +146,7 @@ impl StablePool {
     pub fn new(
         pool_data: RegisteredStablePool,
         balances: Vec<U256>,
-        swap_fee_percentage: Bfp,
+        swap_fee: Bfp,
         amplification_factor: U256,
         amplification_precision: U256,
         paused: bool,
@@ -172,9 +172,9 @@ impl StablePool {
             AmplificationParameter::new(amplification_factor, amplification_precision)?;
         Ok(StablePool {
             common: CommonPoolState {
-                pool_id: pool_data.common.pool_id,
-                pool_address: pool_data.common.pool_address,
-                swap_fee_percentage,
+                id: pool_data.common.id,
+                address: pool_data.common.address,
+                swap_fee,
                 paused,
             },
             reserves,
@@ -320,18 +320,18 @@ mod tests {
         let pools = vec![
             WeightedPool {
                 common: CommonPoolState {
-                    pool_id: H256::from_low_u64_be(0),
-                    pool_address: Default::default(),
-                    swap_fee_percentage: Bfp::zero(),
+                    id: H256::from_low_u64_be(0),
+                    address: Default::default(),
+                    swap_fee: Bfp::zero(),
                     paused: true,
                 },
                 reserves: Default::default(),
             },
             WeightedPool {
                 common: CommonPoolState {
-                    pool_id: H256::from_low_u64_be(1),
-                    pool_address: Default::default(),
-                    swap_fee_percentage: Bfp::zero(),
+                    id: H256::from_low_u64_be(1),
+                    address: Default::default(),
+                    swap_fee: Bfp::zero(),
                     paused: false,
                 },
                 reserves: Default::default(),
@@ -340,7 +340,7 @@ mod tests {
 
         let filtered_pools = filter_paused(pools.clone());
         assert_eq!(filtered_pools.len(), 1);
-        assert_eq!(filtered_pools[0].common.pool_id, pools[1].common.pool_id);
+        assert_eq!(filtered_pools[0].common.id, pools[1].common.id);
     }
 
     #[test]
