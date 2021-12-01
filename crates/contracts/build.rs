@@ -31,9 +31,8 @@ fn main() {
                 "1",
                 Network {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
-                    deployment_information: Some(tx(
-                        "0x28c44bb10d469cbd42accf97bd00b73eabbace138e9d44593e851231fbed1cb7",
-                    )),
+                    // <https://etherscan.io/tx/0x28c44bb10d469cbd42accf97bd00b73eabbace138e9d44593e851231fbed1cb7>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12272146)),
                 },
             )
             .add_network(
@@ -52,18 +51,16 @@ fn main() {
                 "1",
                 Network {
                     address: addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
-                    deployment_information: Some(tx(
-                        "0x0f9bb3624c185b4e107eaf9176170d2dc9cb1c48d0f070ed18416864b3202792",
-                    )),
+                    // <https://etherscan.io/tx/0x0f9bb3624c185b4e107eaf9176170d2dc9cb1c48d0f070ed18416864b3202792>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12272147)),
                 },
             )
             .add_network(
                 "4",
                 Network {
                     address: addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
-                    deployment_information: Some(tx(
-                        "0xae8c45c1d40756d0eb312723a2993341e379ea6d8bef4adfae2709345939f8eb",
-                    )),
+                    // <https://rinkeby.etherscan.io/tx/0xae8c45c1d40756d0eb312723a2993341e379ea6d8bef4adfae2709345939f8eb>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8441703)),
                 },
             )
     });
@@ -74,18 +71,16 @@ fn main() {
                 "1",
                 Network {
                     address: addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
-                    deployment_information: Some(tx(
-                        "0xf40c05058422d730b7035c254f8b765722935a5d3003ac37b13a61860adbaf08",
-                    )),
+                    // <https://etherscan.io/tx/0xf40c05058422d730b7035c254f8b765722935a5d3003ac37b13a61860adbaf08>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12349891)),
                 },
             )
             .add_network(
                 "4",
                 Network {
                     address: addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
-                    deployment_information: Some(tx(
-                        "be28062b575c2743b3b4525c3a175b9acad36695c15dba1c69af5f3fc3ceca37",
-                    )),
+                    // <https://rinkeby.etherscan.io/tx/0xbe28062b575c2743b3b4525c3a175b9acad36695c15dba1c69af5f3fc3ceca37>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8510540)),
                 },
             )
     });
@@ -96,18 +91,16 @@ fn main() {
                 "1",
                 Network {
                     address: addr("0xc66ba2b6595d3613ccab350c886ace23866ede24"),
-                    deployment_information: Some(tx(
-                        "0xfd417511f3902a304cca51023e8e771de22ffa7f30b9c8650ec5757328ab89a6",
-                    )),
+                    // <https://etherscan.io/tx/0xfd417511f3902a304cca51023e8e771de22ffa7f30b9c8650ec5757328ab89a6>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12703127)),
                 },
             )
             .add_network(
                 "4",
                 Network {
                     address: addr("0xc66ba2b6595d3613ccab350c886ace23866ede24"),
-                    deployment_information: Some(tx(
-                        "26ccac4bd7af78607107489fa05868a68291b5e6f217f6829fc3767d8926264a",
-                    )),
+                    // <https://rinkeby.etherscan.io/tx/0x26ccac4bd7af78607107489fa05868a68291b5e6f217f6829fc3767d8926264a>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8822477)),
                 },
             )
     });
@@ -134,27 +127,24 @@ fn main() {
                 "1",
                 Network {
                     address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
-                    deployment_information: Some(tx(
-                        "f49f90aa5a268c40001d1227b76bb4dd8247f18361fcad9fffd4a7a44f1320d3",
-                    )),
+                    // <https://etherscan.io/tx/0xf49f90aa5a268c40001d1227b76bb4dd8247f18361fcad9fffd4a7a44f1320d3>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12593265)),
                 },
             )
             .add_network(
                 "4",
                 Network {
                     address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
-                    deployment_information: Some(tx(
-                        "609fa2e8f32c73c1f5dc21ff60a26238dacb50d4674d336c90d6950bdda17a21",
-                    )),
+                    // <https://rinkeby.etherscan.io/tx/0x609fa2e8f32c73c1f5dc21ff60a26238dacb50d4674d336c90d6950bdda17a21>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8727415)),
                 },
             )
             .add_network(
                 "100",
                 Network {
                     address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
-                    deployment_information: Some(tx(
-                        "9ddc538f89cd8433f4a19bc4de0de27e7c68a1d04a14b327185e4bba9af87133",
-                    )),
+                    // <https://blockscout.com/xdai/mainnet/tx/0x9ddc538f89cd8433f4a19bc4de0de27e7c68a1d04a14b327185e4bba9af87133>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(16465100)),
                 },
             )
     });
@@ -230,8 +220,4 @@ fn generate_contract_with_config(
 
 fn addr(s: &str) -> Address {
     s.parse().unwrap()
-}
-
-fn tx(s: &str) -> DeploymentInformation {
-    DeploymentInformation::TransactionHash(s.parse().unwrap())
 }

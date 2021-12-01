@@ -37,6 +37,14 @@ pub trait PoolInitializing: Send + Sync {
 /// Balancer subgraph for example.
 pub struct EmptyPoolInitializer(u64);
 
+impl EmptyPoolInitializer {
+    /// Creates a new empty pool initializer for the specified chain ID.
+    #[cfg(test)]
+    pub fn for_chain(chain_id: u64) -> Self {
+        Self(chain_id)
+    }
+}
+
 #[async_trait::async_trait]
 impl PoolInitializing for EmptyPoolInitializer {
     async fn initialize_pools(&self) -> Result<BalancerRegisteredPools> {

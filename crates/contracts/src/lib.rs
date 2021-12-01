@@ -37,6 +37,7 @@ include!(concat!(env!("OUT_DIR"), "/WETH9.rs"));
 mod tests {
     use super::*;
     use ethcontract::{
+        common::DeploymentInformation,
         futures::future::{self, FutureExt as _, Ready},
         json::json,
         jsonrpc::{Call, Id, MethodCall, Params, Value},
@@ -119,7 +120,10 @@ mod tests {
             ($contract:ident for $network:expr) => {{
                 let web3 = Web3::new(ChainIdTransport($network));
                 let instance = $contract::deployed(&web3).now_or_never().unwrap().unwrap();
-                assert!(instance.deployment_information().is_some());
+                assert!(matches!(
+                    instance.deployment_information(),
+                    Some(DeploymentInformation::BlockNumber(_)),
+                ));
             }};
         }
 

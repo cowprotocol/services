@@ -322,3 +322,90 @@ fn convert_stable_pool_created(
         },
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        sources::balancer_v2::{
+            info_fetching::PoolInfoFetcher,
+            pool_init::{EmptyPoolInitializer, SubgraphPoolInitializer},
+        },
+        token_info::TokenInfoFetcher,
+        transport,
+    };
+    use contracts::BalancerV2Vault;
+    use maplit::hashset;
+    use reqwest::Client;
+
+    #[tokio::test]
+    #[ignore]
+    async fn balancer_indexed_pool_events_match_subgraph() {
+        let transport = transport::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+
+        println!("Indexing events for chain {}", chain_id);
+        crate::tracing::initialize_for_tests("warn,shared=debug");
+
+        let pool_init = EmptyPoolInitializer::for_chain(chain_id);
+        let token_infos = TokenInfoFetcher { web3: web3.clone() };
+        let pool_info = PoolInfoFetcher {
+            web3: web3.clone(),
+            token_info_fetcher: Arc::new(token_infos),
+            vault: BalancerV2Vault::deployed(&web3).await.unwrap(),
+        };
+        let registry = BalancerPoolRegistry::new(web3, pool_init, Arc::new(pool_info))
+            .await
+            .unwrap();
+
+        // index all the pools.
+        registry.run_maintenance().await.unwrap();
+
+        // compare to what the subgraph says.
+        let client = SubgraphPoolInitializer::new(chain_id, Client::new()).unwrap();
+        let subgraph_pools = client.initialize_pools().await.unwrap();
+
+        for mut subgraph_pool in subgraph_pools.weighted_pools {
+            let indexed_pool = registry
+                .weighted_pool_updater
+                .lock()
+                .await
+                .store
+                .weighted_pools_for(&hashset!(subgraph_pool.common.id));
+
+            subgraph_pool.common.block_created = indexed_pool[0].common.block_created;
+            assert_eq!(indexed_pool, [subgraph_pool]);
+
+            tracing::info!(weighted_pool = ?indexed_pool[0]);
+        }
+
+        for mut subgraph_pool in subgraph_pools.weighted_2token_pools {
+            let indexed_pool = registry
+                .two_token_pool_updater
+                .lock()
+                .await
+                .store
+                .weighted_pools_for(&hashset!(subgraph_pool.common.id));
+
+            subgraph_pool.common.block_created = indexed_pool[0].common.block_created;
+            assert_eq!(indexed_pool, [subgraph_pool]);
+
+            tracing::info!(weighted_2token_pool = ?indexed_pool[0]);
+        }
+
+        for mut subgraph_pool in subgraph_pools.stable_pools {
+            let indexed_pool = registry
+                .stable_pool_updater
+                .lock()
+                .await
+                .store
+                .stable_pools_for(&hashset!(subgraph_pool.common.id));
+
+            subgraph_pool.common.block_created = indexed_pool[0].common.block_created;
+            assert_eq!(indexed_pool, [subgraph_pool]);
+
+            tracing::info!(stable_pool = ?indexed_pool[0]);
+        }
+    }
+}
