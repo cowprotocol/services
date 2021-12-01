@@ -13,7 +13,7 @@ harness = false
 anyhow = "1.0"
 contracts = { path = "../contracts" }
 criterion = "0.3"
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", rev = "cafcac443f37cfe1e0e18b03a987a30b61b54695", default-features = false }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"
