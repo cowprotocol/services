@@ -184,6 +184,40 @@ mod tests {
         )
     }
 
+    #[tokio::test]
+    async fn scaling_exponent_error_on_missing_info() {
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos
+            .expect_get_token_infos()
+            .returning(|_| hashmap! {});
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault: dummy_contract!(BalancerV2Vault, H160([0xba; 20])),
+            token_infos: Arc::new(token_infos),
+        };
+        assert!(pool_info_fetcher
+            .scaling_exponents(&[H160([0xff; 20])])
+            .await
+            .is_err());
+    }
+
+    #[tokio::test]
+    async fn scaling_exponent_error_on_missing_decimals() {
+        let token = H160([0xff; 20]);
+        let mut token_infos = MockTokenInfoFetching::new();
+        token_infos.expect_get_token_infos().returning(move |_| {
+            hashmap! {
+                token => TokenInfo { decimals: None, symbol: None },
+            }
+        });
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault: dummy_contract!(BalancerV2Vault, H160([0xba; 20])),
+            token_infos: Arc::new(token_infos),
+        };
+        assert!(pool_info_fetcher.scaling_exponents(&[token]).await.is_err());
+    }
+
     #[test]
     fn convert_graph_pool_to_common_pool_info() {
         let pool = PoolData {
