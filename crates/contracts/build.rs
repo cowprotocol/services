@@ -21,6 +21,9 @@ fn main() {
     generate_contract_with_config("BalancerV2Authorizer", |builder| {
         builder.contract_mod_override("balancer_v2_authorizer")
     });
+    generate_contract_with_config("BalancerV2BasePool", |builder| {
+        builder.contract_mod_override("balancer_v2_base_pool")
+    });
     generate_contract_with_config("BalancerV2BasePoolFactory", |builder| {
         builder.contract_mod_override("balancer_v2_base_pool_factory")
     });

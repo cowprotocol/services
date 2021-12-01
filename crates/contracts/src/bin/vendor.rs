@@ -105,6 +105,10 @@ fn run() -> Result<()> {
             "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Router02.json",
         )?
         .manual(
+            "BalancerV2BasePool",
+            "Balancer does not publish ABIs for base contracts",
+        )
+        .manual(
             "BalancerV2BasePoolFactory",
             "Balancer does not publish ABIs for base contracts",
         );
