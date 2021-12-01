@@ -1,7 +1,6 @@
 //! Module with data types and logic common to multiple Balancer pool types
 
-use super::PoolIndexing;
-use crate::sources::balancer_v2::graph_api::PoolData;
+use crate::sources::balancer_v2::graph_api::{PoolData, PoolType};
 use anyhow::{anyhow, ensure, Result};
 use ethcontract::{H160, H256};
 
@@ -15,8 +14,9 @@ pub struct PoolInfo {
     pub block_created: u64,
 }
 
-impl PoolIndexing for PoolInfo {
-    fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
+impl PoolInfo {
+    /// Loads a pool info from Graph pool data.
+    pub fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
         ensure!(pool.tokens.len() > 1, "insufficient tokens in pool");
 
         Ok(PoolInfo {
@@ -32,8 +32,16 @@ impl PoolIndexing for PoolInfo {
         })
     }
 
-    fn common(&self) -> &PoolInfo {
-        self
+    /// Loads a common pool info from Graph pool data, requiring the pool type
+    /// to be the specified value.
+    pub fn for_type(pool_type: PoolType, pool: &PoolData, block_created: u64) -> Result<Self> {
+        ensure!(
+            pool.pool_type == pool_type,
+            "cannot convert {:?} pool to {:?} pool",
+            pool.pool_type,
+            pool_type,
+        );
+        Self::from_graph_data(pool, block_created)
     }
 }
 

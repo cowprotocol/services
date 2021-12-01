@@ -2,7 +2,7 @@
 
 use super::{common, FactoryIndexing, PoolIndexing};
 use crate::sources::balancer_v2::graph_api::{PoolData, PoolType};
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use contracts::BalancerV2StablePoolFactory;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -12,14 +12,8 @@ pub struct PoolInfo {
 
 impl PoolIndexing for PoolInfo {
     fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
-        ensure!(
-            pool.pool_type == PoolType::Stable,
-            "cannot convert {:?} pool to stable pool",
-            pool.pool_type,
-        );
-
         Ok(PoolInfo {
-            common: common::PoolInfo::from_graph_data(pool, block_created)?,
+            common: common::PoolInfo::for_type(PoolType::Stable, pool, block_created)?,
         })
     }
 

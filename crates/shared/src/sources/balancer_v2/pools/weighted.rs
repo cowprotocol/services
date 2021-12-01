@@ -5,7 +5,7 @@ use crate::sources::balancer_v2::{
     graph_api::{PoolData, PoolType},
     swap::fixed_point::Bfp,
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use contracts::BalancerV2WeightedPoolFactory;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -16,14 +16,8 @@ pub struct PoolInfo {
 
 impl PoolIndexing for PoolInfo {
     fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
-        ensure!(
-            pool.pool_type == PoolType::Weighted,
-            "cannot convert {:?} pool to weighted pool",
-            pool.pool_type,
-        );
-
         Ok(PoolInfo {
-            common: common::PoolInfo::from_graph_data(pool, block_created)?,
+            common: common::PoolInfo::for_type(PoolType::Weighted, pool, block_created)?,
             weights: pool
                 .tokens
                 .iter()
