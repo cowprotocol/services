@@ -26,7 +26,7 @@ impl PoolIndexing for PoolInfo {
 impl FactoryIndexing for BalancerV2StablePoolFactory {
     type PoolInfo = PoolInfo;
 
-    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+    async fn augment_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
         Ok(PoolInfo { common: pool })
     }
 }

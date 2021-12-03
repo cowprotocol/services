@@ -39,7 +39,7 @@ impl PoolIndexing for PoolInfo {
 impl FactoryIndexing for BalancerV2WeightedPoolFactory {
     type PoolInfo = PoolInfo;
 
-    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+    async fn augment_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
         let pool_contract = BalancerV2WeightedPool::at(&self.raw_instance().web3(), pool.address);
         let weights = pool_contract
             .methods()
@@ -144,7 +144,7 @@ mod tests {
 
         let factory = BalancerV2WeightedPoolFactory::at(&web3, H160([0xfa; 20]));
         let pool = factory
-            .pool_info(common::PoolInfo {
+            .augment_pool_info(common::PoolInfo {
                 id: H256([0x90; 32]),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 address: pool.address(),

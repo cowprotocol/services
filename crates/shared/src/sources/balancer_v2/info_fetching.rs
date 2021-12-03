@@ -63,8 +63,11 @@ impl PoolInfoFetching for PoolInfoFetcher {
         pool_address: H160,
         block_created: u64,
     ) -> Result<RegisteredWeightedPool> {
-        let common_info = self.inner.pool_info(pool_address, block_created).await?;
-        self.weighted_factory.pool_info(common_info).await
+        let common_info = self
+            .inner
+            .fetch_common_pool_info(pool_address, block_created)
+            .await?;
+        self.weighted_factory.augment_pool_info(common_info).await
     }
 
     async fn get_stable_pool_data(
@@ -72,7 +75,10 @@ impl PoolInfoFetching for PoolInfoFetcher {
         pool_address: H160,
         block_created: u64,
     ) -> Result<RegisteredStablePool> {
-        let common_info = self.inner.pool_info(pool_address, block_created).await?;
-        self.stable_factory.pool_info(common_info).await
+        let common_info = self
+            .inner
+            .fetch_common_pool_info(pool_address, block_created)
+            .await?;
+        self.stable_factory.augment_pool_info(common_info).await
     }
 }

@@ -13,7 +13,11 @@ use std::sync::Arc;
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait PoolInfoFetching: Send + Sync {
-    async fn pool_info(&self, pool_address: H160, block_created: u64) -> Result<PoolInfo>;
+    async fn fetch_common_pool_info(
+        &self,
+        pool_address: H160,
+        block_created: u64,
+    ) -> Result<PoolInfo>;
 }
 
 /// Via `PoolInfoFetcher` leverages a combination of `Web3` and `TokenInfoFetching`
@@ -48,7 +52,11 @@ impl PoolInfoFetcher {
 #[async_trait::async_trait]
 impl PoolInfoFetching for PoolInfoFetcher {
     /// Could result in ethcontract::{NodeError, MethodError or ContractError}
-    async fn pool_info(&self, pool_address: H160, block_created: u64) -> Result<PoolInfo> {
+    async fn fetch_common_pool_info(
+        &self,
+        pool_address: H160,
+        block_created: u64,
+    ) -> Result<PoolInfo> {
         let web3 = self.vault.raw_instance().web3();
         let pool = BalancerV2BasePool::at(&web3, pool_address);
 
@@ -168,7 +176,7 @@ mod tests {
             token_infos: Arc::new(token_infos),
         };
         let pool_info = pool_info_fetcher
-            .pool_info(pool.address(), 1337)
+            .fetch_common_pool_info(pool.address(), 1337)
             .await
             .unwrap();
 

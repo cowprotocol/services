@@ -9,8 +9,8 @@ use contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFact
 impl FactoryIndexing for BalancerV2WeightedPool2TokensFactory {
     type PoolInfo = PoolInfo;
 
-    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
-        as_weighted_factory(self).pool_info(pool).await
+    async fn augment_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        as_weighted_factory(self).augment_pool_info(pool).await
     }
 }
 

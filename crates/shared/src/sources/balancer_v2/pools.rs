@@ -25,8 +25,15 @@ pub trait FactoryIndexing {
     /// pool state via `fetch_pool`.
     type PoolInfo: PoolIndexing;
 
-    /// Retrive the permanent pool info for the specified common pool info.
-    async fn pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo>;
+    /// Augments the specified common pool info for this factory.
+    ///
+    /// This allows pool factories like the `WeightedPoolFactory` to add
+    /// `weights` to the common pool info, since these are declared as
+    /// `immuatble` in the smart contract and thus can never change and don't
+    /// need to be re-fetched.
+    ///
+    /// Returns an error if fetching the augmented pool data fails.
+    async fn augment_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo>;
 }
 
 /// Required information needed for indexing pools.
