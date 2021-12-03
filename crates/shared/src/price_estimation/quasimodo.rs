@@ -135,11 +135,31 @@ impl QuasimodoPriceEstimator {
                     amms,
                     metadata: None,
                 },
-                Instant::now() + Duration::from_secs(1),
+                // We need at least two seconds of timeout. Quasimodo
+                // reserves one second of timeout for shutdown, plus some
+                // of the timeout reserved for network interactions.
+                Instant::now() + Duration::from_secs(2),
             )
             .await?;
 
-        if settlement.orders.is_empty() {
+        if let Some(metadata) = settlement.metadata {
+            if !metadata.has_solution.unwrap_or(true) {
+                return match metadata.result.as_deref() {
+                    Some("Infeasible" | "InfeasibleOrUnbounded" | "Unbounded") => {
+                        Err(PriceEstimationError::NoLiquidity)
+                    }
+                    Some(error) => Err(PriceEstimationError::Other(anyhow::anyhow!(
+                        "quasimodo didn't return a solution: {}",
+                        error
+                    ))),
+                    None => Err(PriceEstimationError::Other(anyhow::anyhow!(
+                        "quasimodo didn't return a solution"
+                    ))),
+                };
+            }
+        }
+
+        if !settlement.orders.contains_key(&0) {
             return Err(PriceEstimationError::NoLiquidity);
         }
 
@@ -209,7 +229,7 @@ mod tests {
     use reqwest::Client;
     use url::Url;
 
-    // TODO: to imolement these tests, we'll need to make HTTP solver API mockable.
+    // TODO: to implement these tests, we'll need to make HTTP solver API mockable.
 
     #[tokio::test]
     async fn estimate_sell() {}
@@ -221,7 +241,13 @@ mod tests {
     async fn quasimodo_error() {}
 
     #[tokio::test]
+    async fn quasimodo_hard_error() {}
+
+    #[tokio::test]
     async fn quasimodo_no_liquidity() {}
+
+    #[tokio::test]
+    async fn quasimodo_infeasible() {}
 
     #[tokio::test]
     async fn same_token() {}
@@ -244,8 +270,8 @@ mod tests {
         let _dai = ("dai", addr!("6B175474E89094C44Da98b954EedeAC495271d0F"));
 
         let t1 = _weth;
-        let t2 = _owl;
-        let amount: U256 = U256::from(1) * U256::exp10(8);
+        let t2 = _gno;
+        let amount: U256 = U256::from(1) * U256::exp10(18);
 
         let client = Client::new();
 

@@ -151,6 +151,7 @@ pub struct SettledBatchAuctionModel {
     pub prices: HashMap<H160, U256>,
     #[serde(default)]
     pub interaction_data: Vec<InteractionData>,
+    pub metadata: Option<SettledBatchAuctionMetadataModel>,
 }
 
 impl SettledBatchAuctionModel {
@@ -167,6 +168,12 @@ impl SettledBatchAuctionModel {
 #[derive(Clone, Debug, Serialize)]
 pub struct MetadataModel {
     pub environment: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct SettledBatchAuctionMetadataModel {
+    pub has_solution: Option<bool>,
+    pub result: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

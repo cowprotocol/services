@@ -350,6 +350,7 @@ mod tests {
             ref_token: Some(t0),
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
             interaction_data: Vec::new(),
+            metadata: None,
         };
 
         let prepared = SettlementContext { orders, liquidity };

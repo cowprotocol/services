@@ -67,10 +67,10 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .ok_or_else(|| anyhow!("no time left to send request"))?;
-        // The timeout we give to the solver is one second less than the deadline to make up for
-        // overhead from the network.
+        // The timeout we give to the solver is a few milliseconds less than
+        // the deadline to make up for overhead from the network.
         let solver_timeout = timeout
-            .checked_sub(Duration::from_secs(1))
+            .checked_sub(Duration::from_millis(250))
             .ok_or_else(|| anyhow!("no time left to send request"))?;
 
         let mut url = self.base.clone();
@@ -81,7 +81,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
-            .append_pair("time_limit", &solver_timeout.as_secs().to_string())
+            .append_pair("time_limit", &solver_timeout.as_secs_f64().to_string())
             .append_pair(
                 "max_nr_exec_orders",
                 self.config.max_nr_exec_orders.to_string().as_str(),
