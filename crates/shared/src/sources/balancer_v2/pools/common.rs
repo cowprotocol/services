@@ -1,13 +1,18 @@
 //! Module with data types and logic common to multiple Balancer pool types
 
 use crate::{
-    sources::balancer_v2::graph_api::{PoolData, PoolType},
+    sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
+    },
     token_info::TokenInfoFetching,
+    Web3CallBatch,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::{BalancerV2BasePool, BalancerV2Vault};
-use ethcontract::{Bytes, H160, H256};
-use std::sync::Arc;
+use ethcontract::{BlockId, Bytes, H160, H256, U256};
+use futures::{future::BoxFuture, FutureExt as _};
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Trait for fetching common pool data by address.
 #[mockall::automock]
@@ -18,6 +23,13 @@ pub trait PoolInfoFetching: Send + Sync {
         pool_address: H160,
         block_created: u64,
     ) -> Result<PoolInfo>;
+
+    fn fetch_common_pool_state(
+        &self,
+        pool: &PoolInfo,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<PoolState>>;
 }
 
 /// Via `PoolInfoFetcher` leverages a combination of `Web3` and `TokenInfoFetching`
@@ -30,6 +42,12 @@ pub struct PoolInfoFetcher {
 impl PoolInfoFetcher {
     pub fn new(vault: BalancerV2Vault, token_infos: Arc<dyn TokenInfoFetching>) -> Self {
         Self { vault, token_infos }
+    }
+
+    /// Returns a Balancer base pool contract instance at the specified address.
+    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
+        let web3 = self.vault.raw_instance().web3();
+        BalancerV2BasePool::at(&web3, pool_address)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -57,8 +75,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
         pool_address: H160,
         block_created: u64,
     ) -> Result<PoolInfo> {
-        let web3 = self.vault.raw_instance().web3();
-        let pool = BalancerV2BasePool::at(&web3, pool_address);
+        let pool = self.base_pool_at(pool_address);
 
         let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
         let (tokens, _, _) = self
@@ -76,6 +93,59 @@ impl PoolInfoFetching for PoolInfoFetcher {
             scaling_exponents,
             block_created,
         })
+    }
+
+    fn fetch_common_pool_state(
+        &self,
+        pool: &PoolInfo,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<PoolState>> {
+        let pool_contract = self.base_pool_at(pool.address);
+        let paused = pool_contract
+            .get_paused_state()
+            .block(block)
+            .batch_call(batch);
+        let swap_fee = pool_contract
+            .get_swap_fee_percentage()
+            .block(block)
+            .batch_call(batch);
+        let balances = self
+            .vault
+            .get_pool_tokens(Bytes(pool.id.0))
+            .block(block)
+            .batch_call(batch);
+
+        // Because of a `mockall` limitation, we **need** the future returned
+        // here to be `'static`. This requires us to clone and move `pool` into
+        // the async closure - otherwise it would only live for as long as
+        // `pool`, i.e. `'_`.
+        let pool = pool.clone();
+        async move {
+            let (paused, _, _) = paused.await?;
+            let swap_fee = Bfp::from_wei(swap_fee.await?);
+
+            let (token_addresses, balances, _) = balances.await?;
+            ensure!(pool.tokens == token_addresses, "pool token mismatch");
+            let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_exponents)
+                .map(|(&address, balance, &scaling_exponent)| {
+                    (
+                        address,
+                        TokenState {
+                            balance,
+                            scaling_exponent,
+                        },
+                    )
+                })
+                .collect();
+
+            Ok(PoolState {
+                paused,
+                swap_fee,
+                tokens,
+            })
+        }
+        .boxed()
     }
 }
 
@@ -118,6 +188,21 @@ impl PoolInfo {
         );
         Self::from_graph_data(pool, block_created)
     }
+}
+
+/// Common pool state information shared across all pool types.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolState {
+    pub paused: bool,
+    pub swap_fee: Bfp,
+    pub tokens: BTreeMap<H160, TokenState>,
+}
+
+/// Common pool token state information that is shared among all pool types.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenState {
+    pub balance: U256,
+    pub scaling_exponent: u8,
 }
 
 /// Converts a token decimal count to its corresponding scaling exponent.

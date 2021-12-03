@@ -12,8 +12,32 @@ pub mod stable;
 pub mod weighted;
 pub mod weighted_2token;
 
-use super::graph_api::PoolData;
+use super::{graph_api::PoolData, swap::fixed_point::Bfp};
+use crate::Web3CallBatch;
 use anyhow::Result;
+use ethcontract::{BlockId, H256};
+use futures::future::BoxFuture;
+
+/// A Balancer pool.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Pool {
+    /// The ID of the pool.
+    pub id: H256,
+    /// The Balancer pool swap fees.
+    ///
+    /// Note that this is part of a Balancer `BasePool` and is shared across all
+    /// pool types.
+    pub swap_fee: Bfp,
+    /// The pool-specific state.
+    pub state: PoolState,
+}
+
+/// Balancer pool state.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PoolState {
+    Weighted(weighted::PoolState),
+    Stable(stable::PoolState),
+}
 
 /// A Balancer factory indexing implementation.
 #[mockall::automock(type PoolInfo = weighted::PoolInfo;)]
@@ -35,6 +59,23 @@ pub trait FactoryIndexing: Send + Sync + 'static {
     ///
     /// Returns an error if fetching the augmented pool data fails.
     async fn augment_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo>;
+
+    /// Fetches specialized pool state for the specified pool specialized info
+    /// and common state.
+    ///
+    /// Additionally, a block spec and a batch call context is passed in to
+    /// specify exactly the block number the state should be read for, and allow
+    /// for more optimal performance when fetching a large number of pools.
+    fn fetch_pool_state(
+        &self,
+        pool_info: Self::PoolInfo,
+        // This **needs** to be `'static` because of a `mockall` limitation
+        // where we can't use other lifetimes here.
+        // <https://github.com/asomers/mockall/issues/299>
+        common_pool_state: BoxFuture<'static, common::PoolState>,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<PoolState>>;
 }
 
 /// Required information needed for indexing pools.

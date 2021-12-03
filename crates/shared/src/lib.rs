@@ -28,7 +28,10 @@ pub mod transport;
 pub mod web3_traits;
 pub mod zeroex_api;
 
-use ethcontract::dyns::{DynTransport, DynWeb3};
+use ethcontract::{
+    batch::CallBatch,
+    dyns::{DynTransport, DynWeb3},
+};
 use std::{
     future::Future,
     time::{Duration, Instant},
@@ -37,6 +40,7 @@ use web3::types::Bytes;
 
 pub type Web3Transport = DynTransport;
 pub type Web3 = DynWeb3;
+pub type Web3CallBatch = CallBatch<Web3Transport>;
 
 /// The standard http client we use in the api and driver.
 pub fn http_client(timeout: Duration) -> reqwest::Client {

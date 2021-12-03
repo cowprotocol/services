@@ -1,17 +1,34 @@
 //! Module implementing weighted pool specific indexing logic.
 
 use super::{common, FactoryIndexing, PoolIndexing};
-use crate::sources::balancer_v2::{
-    graph_api::{PoolData, PoolType},
-    swap::fixed_point::Bfp,
+use crate::{
+    sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
+    },
+    Web3CallBatch,
 };
 use anyhow::{anyhow, Result};
 use contracts::{BalancerV2WeightedPool, BalancerV2WeightedPoolFactory};
+use ethcontract::{BlockId, H160};
+use futures::{future::BoxFuture, FutureExt as _};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct PoolInfo {
     pub common: common::PoolInfo,
     pub weights: Vec<Bfp>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolState {
+    pub tokens: BTreeMap<H160, TokenState>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenState {
+    pub common: common::TokenState,
+    pub weight: Bfp,
 }
 
 impl PoolIndexing for PoolInfo {
@@ -54,6 +71,27 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
             common: pool,
             weights,
         })
+    }
+
+    fn fetch_pool_state(
+        &self,
+        pool_info: Self::PoolInfo,
+        common_pool_state: BoxFuture<'static, common::PoolState>,
+        _: &mut Web3CallBatch,
+        _: BlockId,
+    ) -> BoxFuture<'static, Result<super::PoolState>> {
+        async move {
+            let tokens = common_pool_state
+                .await
+                .tokens
+                .into_iter()
+                .zip(&pool_info.weights)
+                .map(|((address, common), &weight)| (address, TokenState { common, weight }))
+                .collect();
+
+            Ok(super::PoolState::Weighted(PoolState { tokens }))
+        }
+        .boxed()
     }
 }
 
