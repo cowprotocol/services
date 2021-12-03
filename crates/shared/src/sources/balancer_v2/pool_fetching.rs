@@ -15,18 +15,16 @@ use super::{
     swap::fixed_point::Bfp,
 };
 use crate::{
-    conversions::U256Ext,
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
     token_info::TokenInfoFetching,
     Web3,
 };
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use contracts::BalancerV2Vault;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
-use num::BigRational;
 use reqwest::Client;
 use std::{
     collections::{HashMap, HashSet},
@@ -109,32 +107,7 @@ impl BalancerPoolEvaluating for WeightedPool {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct AmplificationParameter {
-    factor: U256,
-    precision: U256,
-}
-
-impl AmplificationParameter {
-    pub fn new(factor: U256, precision: U256) -> Result<Self> {
-        ensure!(!precision.is_zero(), "Zero precision not allowed");
-        Ok(Self { factor, precision })
-    }
-
-    /// This is the format used to pass into smart contracts.
-    pub fn as_u256(&self) -> U256 {
-        self.factor * self.precision
-    }
-
-    /// This is the format used to pass along to HTTP solver.
-    pub fn as_big_rational(&self) -> BigRational {
-        // We can assert that the precision is non-zero as we check when constructing
-        // new `AmplificationParameter` instances that this invariant holds, and we don't
-        // allow modifications of `self.precision` such that it could become 0.
-        debug_assert!(!self.precision.is_zero());
-        BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
-    }
-}
+pub type AmplificationParameter = super::pools::stable::AmplificationParameter;
 
 #[derive(Clone, Debug)]
 pub struct StablePool {
@@ -314,6 +287,7 @@ impl Maintaining for BalancerPoolFetcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num::BigRational;
 
     #[test]
     fn filters_paused_pools() {
