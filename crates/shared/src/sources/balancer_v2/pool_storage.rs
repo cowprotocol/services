@@ -378,7 +378,7 @@ mod tests {
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
-                        block_created: i as u64 + 1,
+                        block_created: i as _,
                     },
                     weights: vec![weights[i], weights[i + 1]],
                 },
