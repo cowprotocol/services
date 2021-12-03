@@ -109,7 +109,8 @@ where
         pools0
             .zip(pools1)
             .into_iter()
-            .flat_map(|(pools0, pools1)| pools0.intersection(pools1).copied())
+            .flat_map(|(pools0, pools1)| pools0.intersection(pools1))
+            .copied()
     }
 
     /// Given a collection of `TokenPair`, returns all pools containing at least
