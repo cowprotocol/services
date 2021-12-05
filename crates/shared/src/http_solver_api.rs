@@ -81,7 +81,10 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 
         url.query_pairs_mut()
             .append_pair("instance_name", &instance_name)
-            .append_pair("time_limit", &solver_timeout.as_secs_f64().to_string())
+            // Use integer remaining seconds for the time limit as the MIP solver
+            // does not support fractional values here. Note that this means that
+            // we don't have much granularity with the time limit.
+            .append_pair("time_limit", &solver_timeout.as_secs().to_string())
             .append_pair(
                 "max_nr_exec_orders",
                 self.config.max_nr_exec_orders.to_string().as_str(),
