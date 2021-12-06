@@ -1,7 +1,7 @@
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Url};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub mod model;
 
@@ -13,7 +13,7 @@ pub trait HttpSolverApi: Send + Sync {
     async fn solve(
         &self,
         model: &model::BatchAuctionModel,
-        deadline: Instant,
+        timeout: Duration,
     ) -> Result<model::SettledBatchAuctionModel>;
 }
 
@@ -62,15 +62,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
     async fn solve(
         &self,
         model: &model::BatchAuctionModel,
-        deadline: Instant,
+        timeout: Duration,
     ) -> Result<model::SettledBatchAuctionModel> {
-        let timeout = deadline
-            .checked_duration_since(Instant::now())
-            .ok_or_else(|| anyhow!("no time left to send request"))?;
-        // The timeout we give to the solver is a few milliseconds less than
+        // The timeout we give to the solver is one second less than
         // the deadline to make up for overhead from the network.
+        // We use one second because the old MIP solver uses integer timeouts.
         let solver_timeout = timeout
-            .checked_sub(Duration::from_millis(250))
+            .checked_sub(Duration::from_secs(1))
             .ok_or_else(|| anyhow!("no time left to send request"))?;
 
         let mut url = self.base.clone();

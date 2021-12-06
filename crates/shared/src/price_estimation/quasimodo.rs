@@ -22,7 +22,7 @@ use model::TokenPair;
 use num::{BigInt, BigRational};
 use std::collections::BTreeMap;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 pub struct QuasimodoPriceEstimator {
     pub api: Arc<dyn HttpSolverApi>,
@@ -135,10 +135,10 @@ impl QuasimodoPriceEstimator {
                     amms,
                     metadata: None,
                 },
-                // We need at least two seconds of timeout. Quasimodo
-                // reserves one second of timeout for shutdown, plus some
-                // of the timeout reserved for network interactions.
-                Instant::now() + Duration::from_secs(2),
+                // We need at least three seconds of timeout. Quasimodo
+                // reserves one second of timeout for shutdown, plus one
+                // more second is reserved for network interactions.
+                Duration::from_secs(3),
             )
             .await?;
 
@@ -260,6 +260,8 @@ mod tests {
     async fn real_estimate() {
         let quasimodo_url =
             std::env::var("QUASIMODO_URL").expect("env variable QUASIMODO_URL is required");
+        let infura_project_id =
+            std::env::var("INFURA_PROJECT_ID").expect("env variable INFURA_PROJECT_ID is required");
 
         let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
 
@@ -277,7 +279,10 @@ mod tests {
 
         let transport = HttpTransport::new(
             client.clone(),
-            Url::parse("https://mainnet.infura.io/v3/5a2827cf14c44719baa03f3e6ed22118").unwrap(),
+            Url::parse("https://mainnet.infura.io/v3/")
+                .unwrap()
+                .join(&infura_project_id)
+                .unwrap(),
             "main".into(),
         );
         let web3 = Web3::new(DynTransport::new(transport));

@@ -24,6 +24,7 @@ use shared::{
     measure_time,
     token_info::{TokenInfo, TokenInfoFetching},
 };
+use std::time::Instant;
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator as _,
@@ -429,7 +430,10 @@ impl Solver for HttpSolver {
                 }
             }
         };
-        let settled = self.solver.solve(&model, deadline).await?;
+        let timeout = deadline
+            .checked_duration_since(Instant::now())
+            .ok_or_else(|| anyhow!("no time left to send request"))?;
+        let settled = self.solver.solve(&model, timeout).await?;
         tracing::trace!(?settled);
         if !settled.has_execution_plan() {
             return Ok(Vec::new());
@@ -460,7 +464,7 @@ mod tests {
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     // cargo test real_solver -- --ignored --nocapture
     // set the env variable GP_V2_OPTIMIZER_URL to use a non localhost optimizer
@@ -544,7 +548,7 @@ mod tests {
             .unwrap();
         let settled = solver
             .solver
-            .solve(&model, Instant::now() + Duration::from_secs(1000))
+            .solve(&model, Duration::from_secs(1000))
             .await
             .unwrap();
         dbg!(&settled);
