@@ -1,9 +1,10 @@
 //! Module implementing stable pool specific indexing logic.
 
-use super::{common, FactoryIndexing, PoolIndexing};
+use super::{common, FactoryIndexing, PoolIndexing, PoolKind};
 use crate::{
     conversions::U256Ext as _,
     sources::balancer_v2::graph_api::{PoolData, PoolType},
+    Web3CallBatch,
 };
 use anyhow::{ensure, Result};
 use contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory};
@@ -72,11 +73,11 @@ impl FactoryIndexing for BalancerV2StablePoolFactory {
 
     fn fetch_pool_state(
         &self,
-        pool_info: Self::PoolInfo,
+        pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut crate::Web3CallBatch,
+        batch: &mut Web3CallBatch,
         block: BlockId,
-    ) -> BoxFuture<'static, Result<super::PoolState>> {
+    ) -> BoxFuture<'static, Result<PoolKind>> {
         let pool_contract =
             BalancerV2StablePool::at(&self.raw_instance().web3(), pool_info.common.address);
 
@@ -92,7 +93,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactory {
                 AmplificationParameter::new(factor, precision)?
             };
 
-            Ok(super::PoolState::Stable(PoolState {
+            Ok(PoolKind::Stable(PoolState {
                 tokens,
                 amplification_parameter,
             }))
@@ -106,6 +107,82 @@ mod tests {
     use super::*;
     use crate::sources::balancer_v2::graph_api::Token;
     use ethcontract::{H160, H256};
+    use ethcontract_mock::Mock;
+    use futures::future;
+    use maplit::btreemap;
+
+    #[tokio::test]
+    async fn fetch_pool_state() {
+        let tokens = btreemap! {
+            H160([1; 20]) => common::TokenState {
+                balance: bfp!("1000.0").as_uint256(),
+                scaling_exponent: 0,
+            },
+            H160([2; 20]) => common::TokenState {
+                balance: bfp!("10.0").as_uint256(),
+                scaling_exponent: 0,
+            },
+            H160([3; 20]) => common::TokenState {
+                balance: 15_000_000.into(),
+                scaling_exponent: 12,
+            },
+        };
+        let amplification_parameter =
+            AmplificationParameter::new(200.into(), 10000.into()).unwrap();
+
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let pool = mock.deploy(BalancerV2StablePool::raw_contract().abi.clone());
+        pool.expect_call(BalancerV2StablePool::signatures().get_amplification_parameter())
+            .returns((
+                amplification_parameter.factor,
+                false,
+                amplification_parameter.precision,
+            ));
+
+        let factory = dummy_contract!(BalancerV2StablePoolFactory, H160::default());
+        let pool_info = PoolInfo {
+            common: common::PoolInfo {
+                id: H256([0x90; 32]),
+                address: pool.address(),
+                tokens: tokens.keys().copied().collect(),
+                scaling_exponents: tokens
+                    .values()
+                    .map(|token| token.scaling_exponent)
+                    .collect(),
+                block_created: 1337,
+            },
+        };
+        let common_pool_state = common::PoolState {
+            paused: false,
+            swap_fee: bfp!("0.003"),
+            tokens,
+        };
+
+        let pool_state = {
+            let mut batch = Web3CallBatch::new(web3.transport().clone());
+            let block = web3.eth().block_number().await.unwrap();
+
+            let pool_state = factory.fetch_pool_state(
+                &pool_info,
+                future::ready(common_pool_state.clone()).boxed(),
+                &mut batch,
+                block.into(),
+            );
+
+            batch.execute_all(100).await;
+            pool_state.await.unwrap()
+        };
+
+        assert!(matches!(
+            pool_state,
+            PoolKind::Stable(pool) if pool == PoolState {
+                tokens: common_pool_state.tokens,
+                amplification_parameter,
+            }
+        ));
+    }
 
     #[test]
     fn errors_when_converting_wrong_pool_type() {

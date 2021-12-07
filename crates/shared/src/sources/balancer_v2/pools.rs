@@ -28,13 +28,13 @@ pub struct Pool {
     /// Note that this is part of a Balancer `BasePool` and is shared across all
     /// pool types.
     pub swap_fee: Bfp,
-    /// The pool-specific state.
-    pub state: PoolState,
+    /// The pool-specific kind and state.
+    pub kind: PoolKind,
 }
 
 /// Balancer pool state.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PoolState {
+pub enum PoolKind {
     Weighted(weighted::PoolState),
     Stable(stable::PoolState),
 }
@@ -71,14 +71,14 @@ pub trait FactoryIndexing: Send + Sync + 'static {
     /// for more optimal performance when fetching a large number of pools.
     fn fetch_pool_state(
         &self,
-        pool_info: Self::PoolInfo,
+        pool_info: &Self::PoolInfo,
         // This **needs** to be `'static` because of a `mockall` limitation
         // where we can't use other lifetimes here.
         // <https://github.com/asomers/mockall/issues/299>
         common_pool_state: BoxFuture<'static, common::PoolState>,
         batch: &mut Web3CallBatch,
         block: BlockId,
-    ) -> BoxFuture<'static, Result<PoolState>>;
+    ) -> BoxFuture<'static, Result<PoolKind>>;
 }
 
 /// Required information needed for indexing pools.

@@ -1,6 +1,6 @@
 //! Module implementing weighted pool specific indexing logic.
 
-use super::{common, FactoryIndexing, PoolIndexing};
+use super::{common, FactoryIndexing, PoolIndexing, PoolKind};
 use crate::{
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
@@ -75,11 +75,12 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
 
     fn fetch_pool_state(
         &self,
-        pool_info: Self::PoolInfo,
+        pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
         _: &mut Web3CallBatch,
         _: BlockId,
-    ) -> BoxFuture<'static, Result<super::PoolState>> {
+    ) -> BoxFuture<'static, Result<PoolKind>> {
+        let pool_info = pool_info.clone();
         async move {
             let tokens = common_pool_state
                 .await
@@ -89,7 +90,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
                 .map(|((address, common), &weight)| (address, TokenState { common, weight }))
                 .collect();
 
-            Ok(super::PoolState::Weighted(PoolState { tokens }))
+            Ok(PoolKind::Weighted(PoolState { tokens }))
         }
         .boxed()
     }
@@ -101,10 +102,8 @@ mod tests {
     use crate::sources::balancer_v2::graph_api::Token;
     use ethcontract::{H160, H256};
     use ethcontract_mock::Mock;
-
-    fn bfp(amount: &str) -> Bfp {
-        amount.parse().unwrap()
-    }
+    use futures::future;
+    use maplit::btreemap;
 
     #[test]
     fn convert_graph_pool_to_weighted_pool_info() {
@@ -117,12 +116,12 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some(bfp("1.337")),
+                    weight: Some(bfp!("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some(bfp("4.2")),
+                    weight: Some(bfp!("4.2")),
                 },
             ],
         };
@@ -156,12 +155,12 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some(bfp("1.337")),
+                    weight: Some(bfp!("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some(bfp("4.2")),
+                    weight: Some(bfp!("4.2")),
                 },
             ],
         };
@@ -171,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_weighted_pool() {
-        let weights = [bfp("0.5"), bfp("0.25"), bfp("0.25")];
+        let weights = [bfp!("0.5"), bfp!("0.25"), bfp!("0.25")];
 
         let mock = Mock::new(42);
         let web3 = mock.web3();
@@ -193,5 +192,71 @@ mod tests {
             .unwrap();
 
         assert_eq!(pool.weights, weights);
+    }
+
+    #[tokio::test]
+    async fn fetch_pool_state() {
+        let tokens = btreemap! {
+            H160([1; 20]) => common::TokenState {
+                balance: bfp!("1000.0").as_uint256(),
+                scaling_exponent: 0,
+            },
+            H160([2; 20]) => common::TokenState {
+                balance: 10_000_000.into(),
+                scaling_exponent: 12,
+            },
+        };
+        let weights = [bfp!("0.8"), bfp!("0.2")];
+
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let factory = dummy_contract!(BalancerV2WeightedPoolFactory, H160::default());
+        let pool_info = PoolInfo {
+            common: common::PoolInfo {
+                id: H256([0x90; 32]),
+                address: H160([0x90; 20]),
+                tokens: tokens.keys().copied().collect(),
+                scaling_exponents: tokens
+                    .values()
+                    .map(|token| token.scaling_exponent)
+                    .collect(),
+                block_created: 1337,
+            },
+            weights: weights.to_vec(),
+        };
+        let common_pool_state = common::PoolState {
+            paused: false,
+            swap_fee: bfp!("0.003"),
+            tokens,
+        };
+
+        let pool_state = {
+            let mut batch = Web3CallBatch::new(web3.transport().clone());
+            let block = web3.eth().block_number().await.unwrap();
+
+            let pool_state = factory.fetch_pool_state(
+                &pool_info,
+                future::ready(common_pool_state.clone()).boxed(),
+                &mut batch,
+                block.into(),
+            );
+
+            batch.execute_all(100).await;
+            pool_state.await.unwrap()
+        };
+
+        let weighted_tokens = common_pool_state
+            .tokens
+            .into_iter()
+            .zip(weights)
+            .map(|((address, common), weight)| (address, TokenState { common, weight }))
+            .collect();
+        assert!(matches!(
+            pool_state,
+            PoolKind::Weighted(pool) if pool == PoolState {
+                tokens: weighted_tokens,
+            }
+        ));
     }
 }
