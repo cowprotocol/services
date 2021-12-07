@@ -9,6 +9,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
+use futures::try_join;
 use model::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
@@ -281,9 +282,16 @@ impl OrderQuoter {
                     return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
                 }
 
-                let (fee, expiration) = self
-                    .fee_calculator
-                    .compute_subsidized_min_fee(
+                let price_estimation_query = price_estimation::Query {
+                    sell_token: quote_request.sell_token,
+                    buy_token: quote_request.buy_token,
+                    in_amount: buy_amount_after_fee,
+                    kind: OrderKind::Buy,
+                };
+
+                // Since both futures are long running and independent, run concurrently
+                let ((fee, expiration), estimate) = try_join!(
+                    self.fee_calculator.compute_subsidized_min_fee(
                         FeeData {
                             sell_token: quote_request.sell_token,
                             buy_token: quote_request.buy_token,
@@ -291,19 +299,10 @@ impl OrderQuoter {
                             kind: OrderKind::Buy,
                         },
                         quote_request.app_data,
-                    )
-                    .await
-                    .map_err(FeeError::PriceEstimate)?;
-                let estimate = self
-                    .price_estimator
-                    .estimate(&price_estimation::Query {
-                        sell_token: quote_request.sell_token,
-                        buy_token: quote_request.buy_token,
-                        in_amount: buy_amount_after_fee,
-                        kind: OrderKind::Buy,
-                    })
-                    .await
-                    .map_err(FeeError::PriceEstimate)?;
+                    ),
+                    self.price_estimator.estimate(&price_estimation_query)
+                )
+                .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = estimate.out_amount;
                 FeeParameters {
                     buy_amount: buy_amount_after_fee,
