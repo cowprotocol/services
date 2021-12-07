@@ -6,7 +6,7 @@ use crate::{
     },
     fee::{FeeData, MinFeeCalculating},
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
 use futures::try_join;
@@ -268,12 +268,43 @@ impl OrderQuoter {
                 }
             }
             OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { .. },
+                sell_amount:
+                    SellAmount::AfterFee {
+                        value: sell_amount_after_fee,
+                    },
             } => {
-                // TODO: Nice to have: true sell amount after the fee (more complicated).
-                return Err(FeeError::PriceEstimate(PriceEstimationError::Other(
-                    anyhow!("Currently unsupported route"),
-                )));
+                if sell_amount_after_fee.is_zero() {
+                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
+                }
+
+                let price_estimation_query = price_estimation::Query {
+                    sell_token: quote_request.sell_token,
+                    buy_token: quote_request.buy_token,
+                    in_amount: sell_amount_after_fee,
+                    kind: OrderKind::Sell,
+                };
+
+                // Since both futures are long running and independent, run concurrently
+                let ((fee, expiration), estimate) = try_join!(
+                    self.fee_calculator.compute_subsidized_min_fee(
+                        FeeData {
+                            sell_token: quote_request.sell_token,
+                            buy_token: quote_request.buy_token,
+                            amount: sell_amount_after_fee,
+                            kind: OrderKind::Sell,
+                        },
+                        quote_request.app_data,
+                    ),
+                    self.price_estimator.estimate(&price_estimation_query)
+                )
+                .map_err(FeeError::PriceEstimate)?;
+                FeeParameters {
+                    buy_amount: estimate.out_amount,
+                    sell_amount: sell_amount_after_fee,
+                    fee_amount: fee,
+                    expiration,
+                    kind: OrderKind::Sell,
+                }
             }
             OrderQuoteSide::Buy {
                 buy_amount_after_fee,
@@ -357,6 +388,7 @@ mod tests {
         api::{order_validation::MockOrderValidating, response_body},
         fee::MockMinFeeCalculating,
     };
+    use anyhow::anyhow;
     use chrono::{NaiveDateTime, Utc};
     use futures::FutureExt;
     use serde_json::json;
@@ -578,9 +610,10 @@ mod tests {
     #[test]
     fn calculate_fee_sell_after_fees_quote_request() {
         let mut fee_calculator = MockMinFeeCalculating::new();
+        let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(|_, _| Ok((3.into(), Utc::now())));
+            .returning(move |_, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -604,10 +637,16 @@ mod tests {
             .calculate_fee_parameters(&sell_query)
             .now_or_never()
             .unwrap()
-            .unwrap_err();
+            .unwrap();
         assert_eq!(
-            format!("{:?}", result),
-            "PriceEstimate(Other(Currently unsupported route))"
+            result,
+            FeeParameters {
+                buy_amount: 14.into(),
+                sell_amount: 7.into(),
+                fee_amount: 3.into(),
+                expiration,
+                kind: OrderKind::Sell
+            }
         );
     }
 
