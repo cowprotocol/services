@@ -27,7 +27,7 @@
 
 use super::{
     info_fetching::PoolInfoFetching,
-    pools::{common, stable, weighted, PoolIndexing},
+    pools::{stable, weighted, PoolIndexing},
 };
 use crate::event_handling::EventIndex;
 use anyhow::Result;
@@ -40,7 +40,8 @@ use std::{
     sync::Arc,
 };
 
-pub type CommonPoolData = common::PoolInfo;
+#[cfg(test)]
+pub type CommonPoolData = super::pools::common::PoolInfo;
 
 #[cfg(test)]
 pub fn common_pool(seed: u8) -> CommonPoolData {
@@ -67,64 +68,7 @@ pub struct PoolCreated {
 
 pub type RegisteredWeightedPool = weighted::PoolInfo;
 
-impl RegisteredWeightedPool {
-    pub async fn new(
-        block_created: u64,
-        pool_address: H160,
-        data_fetcher: &dyn PoolInfoFetching,
-    ) -> Result<RegisteredWeightedPool> {
-        let pool_data = data_fetcher.get_weighted_pool_data(pool_address).await?;
-        Ok(RegisteredWeightedPool {
-            common: CommonPoolData {
-                id: pool_data.common.id,
-                address: pool_address,
-                tokens: pool_data.common.tokens,
-                scaling_exponents: pool_data.common.scaling_exponents,
-                block_created,
-            },
-            weights: pool_data.weights,
-        })
-    }
-
-    /// Errors expected here are propagated from `get_pool_data`.
-    pub async fn from_event(
-        block_created: u64,
-        creation: PoolCreated,
-        data_fetcher: &dyn PoolInfoFetching,
-    ) -> Result<RegisteredWeightedPool> {
-        Self::new(block_created, creation.pool_address, data_fetcher).await
-    }
-}
-
 pub type RegisteredStablePool = stable::PoolInfo;
-
-impl RegisteredStablePool {
-    pub async fn new(
-        block_created: u64,
-        pool_address: H160,
-        data_fetcher: &dyn PoolInfoFetching,
-    ) -> Result<RegisteredStablePool> {
-        let pool_data = data_fetcher.get_stable_pool_data(pool_address).await?;
-        Ok(RegisteredStablePool {
-            common: CommonPoolData {
-                id: pool_data.common.id,
-                address: pool_address,
-                tokens: pool_data.common.tokens,
-                scaling_exponents: pool_data.common.scaling_exponents,
-                block_created,
-            },
-        })
-    }
-
-    /// Errors expected here are propagated from `get_pool_data`.
-    pub async fn from_event(
-        block_created: u64,
-        creation: PoolCreated,
-        data_fetcher: &dyn PoolInfoFetching,
-    ) -> Result<RegisteredStablePool> {
-        Self::new(block_created, creation.pool_address, data_fetcher).await
-    }
-}
 
 /// PoolStorage represents in-memory storage of all deployed Balancer Pools
 #[derive(Derivative)]
@@ -227,12 +171,10 @@ impl PoolStorage {
         for (index, creation) in events {
             match creation.pool_type {
                 PoolType::Stable => {
-                    let pool = RegisteredStablePool::from_event(
-                        index.block_number,
-                        creation,
-                        &*self.data_fetcher,
-                    )
-                    .await?;
+                    let pool = self
+                        .data_fetcher
+                        .get_stable_pool_data(creation.pool_address, index.block_number)
+                        .await?;
                     let pool_id = pool.common.id;
                     self.stable_pools.insert(pool_id, pool.clone());
                     for token in pool.common.tokens {
@@ -243,12 +185,10 @@ impl PoolStorage {
                     }
                 }
                 PoolType::Weighted => {
-                    let pool = RegisteredWeightedPool::from_event(
-                        index.block_number,
-                        creation,
-                        &*self.data_fetcher,
-                    )
-                    .await?;
+                    let pool = self
+                        .data_fetcher
+                        .get_weighted_pool_data(creation.pool_address, index.block_number)
+                        .await?;
                     let pool_id = pool.common.id;
                     self.weighted_pools.insert(pool_id, pool.clone());
                     for token in pool.common.tokens {
@@ -347,8 +287,7 @@ fn construct_pool_map<T: PoolIndexing>(
 mod tests {
     use super::*;
     use crate::sources::balancer_v2::{
-        info_fetching::{CommonPoolInfo, MockPoolInfoFetching, StablePoolInfo, WeightedPoolInfo},
-        swap::fixed_point::Bfp,
+        info_fetching::MockPoolInfoFetching, swap::fixed_point::Bfp,
     };
     use maplit::{hashmap, hashset};
     use mockall::predicate::eq;
@@ -443,18 +382,20 @@ mod tests {
 
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in 0..n {
-            let expected_pool_data = WeightedPoolInfo {
-                common: CommonPoolInfo {
+            let expected_pool_data = RegisteredWeightedPool {
+                common: CommonPoolData {
                     id: pool_ids[i],
+                    address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
+                    block_created: events[i].0.block_number,
                 },
                 weights: vec![weights[i], weights[i + 1]],
             };
             dummy_data_fetcher
                 .expect_get_weighted_pool_data()
-                .with(eq(pool_addresses[i]))
-                .returning(move |_| Ok(expected_pool_data.clone()));
+                .with(eq(pool_addresses[i]), eq(events[i].0.block_number))
+                .returning(move |_, _| Ok(expected_pool_data.clone()));
         }
 
         let mut pool_store = PoolStorage::empty(Arc::new(dummy_data_fetcher));
@@ -509,17 +450,19 @@ mod tests {
 
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in 0..n {
-            let expected_pool_data = StablePoolInfo {
-                common: CommonPoolInfo {
+            let expected_pool_data = RegisteredStablePool {
+                common: CommonPoolData {
                     id: pool_ids[i],
+                    address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
+                    block_created: events[i].0.block_number,
                 },
             };
             dummy_data_fetcher
                 .expect_get_stable_pool_data()
-                .with(eq(pool_addresses[i]))
-                .returning(move |_| Ok(expected_pool_data.clone()));
+                .with(eq(pool_addresses[i]), eq(events[i].0.block_number))
+                .returning(move |_, _| Ok(expected_pool_data.clone()));
         }
 
         let mut pool_store = PoolStorage::empty(Arc::new(dummy_data_fetcher));
@@ -573,18 +516,23 @@ mod tests {
 
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in start_block..end_block + 1 {
-            let expected_pool_data = WeightedPoolInfo {
-                common: CommonPoolInfo {
+            let expected_pool_data = RegisteredWeightedPool {
+                common: CommonPoolData {
                     id: pool_ids[i],
+                    address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
+                    block_created: converted_events[i].0.block_number,
                 },
                 weights: vec![weights[i], weights[i + 1]],
             };
             dummy_data_fetcher
                 .expect_get_weighted_pool_data()
-                .with(eq(pool_addresses[i]))
-                .returning(move |_| Ok(expected_pool_data.clone()));
+                .with(
+                    eq(pool_addresses[i]),
+                    eq(converted_events[i].0.block_number),
+                )
+                .returning(move |_, _| Ok(expected_pool_data.clone()));
         }
 
         // Have to prepare return data for new stuff before we pass on the data fetcher
@@ -599,13 +547,15 @@ mod tests {
         let new_event = (EventIndex::new(3, 0), new_creation);
         dummy_data_fetcher
             .expect_get_weighted_pool_data()
-            .with(eq(new_pool_address))
-            .returning(move |_| {
-                Ok(WeightedPoolInfo {
-                    common: CommonPoolInfo {
+            .with(eq(new_pool_address), eq(3))
+            .returning(move |_, _| {
+                Ok(RegisteredWeightedPool {
+                    common: CommonPoolData {
                         id: new_pool_id,
+                        address: new_pool_address,
                         tokens: vec![new_token],
                         scaling_exponents: vec![0],
+                        block_created: 3,
                     },
                     weights: vec![new_weight],
                 })
@@ -694,17 +644,22 @@ mod tests {
 
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         for i in start_block..end_block + 1 {
-            let expected_pool_data = StablePoolInfo {
-                common: CommonPoolInfo {
+            let expected_pool_data = RegisteredStablePool {
+                common: CommonPoolData {
                     id: pool_ids[i],
+                    address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
                     scaling_exponents: vec![0, 0],
+                    block_created: converted_events[i].0.block_number,
                 },
             };
             dummy_data_fetcher
                 .expect_get_stable_pool_data()
-                .with(eq(pool_addresses[i]))
-                .returning(move |_| Ok(expected_pool_data.clone()));
+                .with(
+                    eq(pool_addresses[i]),
+                    eq(converted_events[i].0.block_number),
+                )
+                .returning(move |_, _| Ok(expected_pool_data.clone()));
         }
 
         // Have to prepare return data for new stuff before we pass on the data fetcher
@@ -718,13 +673,15 @@ mod tests {
         let new_event = (EventIndex::new(3, 0), new_creation);
         dummy_data_fetcher
             .expect_get_stable_pool_data()
-            .with(eq(new_pool_address))
-            .returning(move |_| {
-                Ok(StablePoolInfo {
-                    common: CommonPoolInfo {
+            .with(eq(new_pool_address), eq(3))
+            .returning(move |_, _| {
+                Ok(RegisteredStablePool {
+                    common: CommonPoolData {
                         id: new_pool_id,
+                        address: new_pool_address,
                         tokens: vec![new_token],
                         scaling_exponents: vec![0],
+                        block_created: 3,
                     },
                 })
             });
@@ -808,18 +765,20 @@ mod tests {
         let mut dummy_data_fetcher = MockPoolInfoFetching::new();
         // Have to load all expected data into fetcher before it is passed on.
         for i in 0..n {
-            let expected_pool_data = WeightedPoolInfo {
-                common: CommonPoolInfo {
+            let expected_pool_data = RegisteredWeightedPool {
+                common: CommonPoolData {
                     id: pool_ids[i],
+                    address: pool_addresses[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],
+                    block_created: 0,
                 },
                 weights: vec![],
             };
             dummy_data_fetcher
                 .expect_get_weighted_pool_data()
-                .with(eq(pool_addresses[i]))
-                .returning(move |_| Ok(expected_pool_data.clone()));
+                .with(eq(pool_addresses[i]), eq(0))
+                .returning(move |_, _| Ok(expected_pool_data.clone()));
         }
         let mut registry = PoolStorage::empty(Arc::new(dummy_data_fetcher));
         // Test the empty registry.

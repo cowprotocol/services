@@ -25,6 +25,10 @@ impl PoolIndexing for PoolInfo {
 #[async_trait::async_trait]
 impl FactoryIndexing for BalancerV2StablePoolFactory {
     type PoolInfo = PoolInfo;
+
+    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        Ok(PoolInfo { common: pool })
+    }
 }
 
 #[cfg(test)]
