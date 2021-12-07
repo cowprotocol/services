@@ -741,10 +741,12 @@ components:
             [
               DuplicateOrder,
               InsufficientFee,
-              InsufficientFunds,
+              InsufficientAllowance,
+              InsufficientBalance,
               InsufficientValidTo,
               InvalidSignature,
               TransferEthToContract,
+              TransferSimulationFailed,
               UnsupportedToken,
               WrongOwner,
               SameBuyAndSellToken,

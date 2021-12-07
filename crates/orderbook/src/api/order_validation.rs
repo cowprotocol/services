@@ -1,5 +1,5 @@
 use crate::{
-    account_balances::BalanceFetching,
+    account_balances::{BalanceFetching, TransferSimulationError},
     api::IntoWarpReply,
     fee::{FeeData, FeeParameters, MinFeeCalculating},
 };
@@ -110,8 +110,12 @@ impl IntoWarpReply for PartialValidationError {
 pub enum ValidationError {
     Partial(PartialValidationError),
     InsufficientFee,
-    InsufficientFunds,
+    InsufficientBalance,
+    InsufficientAllowance,
     InvalidSignature,
+    // If fee and sell amount overflow u256
+    SellAmountOverflow,
+    TransferSimulationFailed,
     UnsupportedToken(H160),
     WrongOwner(H160),
     ZeroAmount,
@@ -136,10 +140,17 @@ impl IntoWarpReply for ValidationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::InsufficientFunds => with_status(
+            Self::InsufficientBalance => with_status(
                 super::error(
-                    "InsufficientFunds",
+                    "InsufficientBalance",
                     "order owner must have funds worth at least x in his account",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientAllowance => with_status(
+                super::error(
+                    "InsufficientAllowance",
+                    "order owner must give allowance to VaultRelayer",
                 ),
                 StatusCode::BAD_REQUEST,
             ),
@@ -149,6 +160,20 @@ impl IntoWarpReply for ValidationError {
             ),
             Self::InsufficientFee => with_status(
                 super::error("InsufficientFee", "Order does not include sufficient fee"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::SellAmountOverflow => with_status(
+                super::error(
+                    "SellAmountOverflow",
+                    "Sell amount + fee amount must fit in U256",
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Self::TransferSimulationFailed => with_status(
+                super::error(
+                    "TransferSimulationFailed",
+                    "sell token cannot be transferred",
+                ),
                 StatusCode::BAD_REQUEST,
             ),
             Self::ZeroAmount => with_status(
@@ -322,11 +347,12 @@ impl OrderValidating for OrderValidator {
         }
         let min_balance = match minimum_balance(&order) {
             Some(amount) => amount,
-            // TODO - None happens when checked_add overflows - not insufficient funds...
-            //  This error should be changed to SellAmountOverflow.
-            None => return Err(ValidationError::InsufficientFunds),
+            None => return Err(ValidationError::SellAmountOverflow),
         };
-        if !self
+
+        // Fast path to check if transfer is possible with a single node query.
+        // If not, run extra queries for additional information.
+        match self
             .balance_fetcher
             .can_transfer(
                 order_creation.sell_token,
@@ -335,12 +361,24 @@ impl OrderValidating for OrderValidator {
                 order_creation.sell_token_balance,
             )
             .await
-            .unwrap_or(false)
         {
-            return Err(ValidationError::InsufficientFunds);
+            Ok(_) => Ok((order, unsubsidized_fee)),
+            Err(err) => match err {
+                TransferSimulationError::InsufficientAllowance => {
+                    Err(ValidationError::InsufficientAllowance)
+                }
+                TransferSimulationError::InsufficientBalance => {
+                    Err(ValidationError::InsufficientBalance)
+                }
+                TransferSimulationError::TransferFailed => {
+                    Err(ValidationError::TransferSimulationFailed)
+                }
+                TransferSimulationError::Other(err) => {
+                    tracing::warn!("TransferSimulation failed: {:?}", err);
+                    Err(ValidationError::TransferSimulationFailed)
+                }
+            },
         }
-
-        Ok((order, unsubsidized_fee))
     }
 }
 
@@ -470,93 +508,74 @@ mod tests {
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        owner: H160::from_low_u64_be(1),
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "Forbidden"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        buy_token_balance: BuyTokenDestination::Internal,
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "UnsupportedBuyTokenDestination(Internal)"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        sell_token_balance: SellTokenSource::Internal,
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "UnsupportedSellTokenSource(Internal)"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: 0,
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "InsufficientValidTo"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: legit_valid_to,
-                        buy_token: H160::from_low_u64_be(2),
-                        sell_token: H160::from_low_u64_be(2),
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "SameBuyAndSellToken"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: legit_valid_to,
-                        buy_token: BUY_ETH_ADDRESS,
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "TransferEthToContract"
-        );
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    owner: H160::from_low_u64_be(1),
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::Forbidden)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    buy_token_balance: BuyTokenDestination::Internal,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedBuyTokenDestination(
+                BuyTokenDestination::Internal
+            ))
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    sell_token_balance: SellTokenSource::Internal,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedSellTokenSource(
+                SellTokenSource::Internal
+            ))
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: 0,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::InsufficientValidTo)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    buy_token: H160::from_low_u64_be(2),
+                    sell_token: H160::from_low_u64_be(2),
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::SameBuyAndSellToken)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    buy_token: BUY_ETH_ADDRESS,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::TransferEthToContract)
+        ));
 
         let mut code_fetcher = Box::new(MockCodeFetching::new());
+        let _err = anyhow!("Failed to fetch Code Size!");
         code_fetcher
             .expect_code_size()
             .times(1)
-            .return_once(|_| Err(anyhow!("Failed to fetch Code Size!")));
+            .return_once(|_| Err(_err));
         let validator = OrderValidator::new(
             code_fetcher,
             dummy_contract!(WETH9, [0xef; 20]),
@@ -566,20 +585,17 @@ mod tests {
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .partial_validate(PreOrderData {
-                        valid_to: legit_valid_to,
-                        buy_token: BUY_ETH_ADDRESS,
-                        ..Default::default()
-                    })
-                    .await
-                    .unwrap_err()
-            ),
-            "Other(Failed to fetch Code Size!)"
-        );
+
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    buy_token: BUY_ETH_ADDRESS,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::Other(_err))
+        ));
     }
 
     #[tokio::test]
@@ -640,7 +656,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(false));
+            .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -656,116 +672,85 @@ mod tests {
             buy_token: H160::from_low_u64_be(2),
             ..Default::default()
         };
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "ZeroAmount"
-        );
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    None,
+                    &Default::default(),
+                    Default::default()
+                )
+                .await,
+            Err(ValidationError::ZeroAmount)
+        ));
         order.buy_amount = U256::from(1);
         order.sell_amount = U256::from(1);
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        Some(H160::from_low_u64_be(1),),
-                        &Default::default(),
-                        Default::default(),
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "WrongOwner(0x6baa5220f0e9b79b9bd1d2be31bcd641a5b283d0)"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "InsufficientFee"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "Other(failed to detect token)"
-        );
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "UnsupportedToken(0x0000000000000000000000000000000000000001)"
-        );
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    Some(H160::from_low_u64_be(1),),
+                    &Default::default(),
+                    Default::default(),
+                )
+                .await,
+            Err(ValidationError::WrongOwner(_))
+        ));
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    None,
+                    &Default::default(),
+                    Default::default()
+                )
+                .await,
+            Err(ValidationError::InsufficientFee)
+        ));
+        let _err = anyhow!("failed to detect token");
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    None,
+                    &Default::default(),
+                    Default::default()
+                )
+                .await,
+            Err(ValidationError::Other(_err))
+        ));
+        let _token = order.sell_token;
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    None,
+                    &Default::default(),
+                    Default::default()
+                )
+                .await,
+            Err(ValidationError::UnsupportedToken(_token))
+        ));
         order.sell_amount = U256::MAX;
         order.fee_amount = U256::from(1);
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order.clone(),
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "InsufficientFunds"
-        );
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(
+                    order.clone(),
+                    None,
+                    &Default::default(),
+                    Default::default()
+                )
+                .await,
+            Err(ValidationError::SellAmountOverflow)
+        ));
         order.sell_amount = U256::from(1);
-        assert_eq!(
-            format!(
-                "{:?}",
-                validator
-                    .validate_and_construct_order(
-                        order,
-                        None,
-                        &Default::default(),
-                        Default::default()
-                    )
-                    .await
-                    .unwrap_err()
-            ),
-            "InsufficientFunds"
-        );
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(order, None, &Default::default(), Default::default())
+                .await,
+            Err(ValidationError::InsufficientBalance)
+        ));
     }
 
     #[tokio::test]
@@ -781,7 +766,7 @@ mod tests {
             .returning(|_| Ok(TokenQuality::Good));
         balance_fetcher
             .expect_can_transfer()
-            .returning(|_, _, _, _| Ok(true));
+            .returning(|_, _, _, _| Ok(()));
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
