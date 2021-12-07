@@ -4,7 +4,7 @@ use crate::{
         balancer_v2::{
             event_handler::BalancerPoolRegistry,
             pool_fetching::{BalancerPoolEvaluating, StablePool, WeightedPool},
-            pool_storage::{PoolEvaluating, RegisteredStablePool, RegisteredWeightedPool},
+            pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
             swap::fixed_point::Bfp,
         },
         uniswap_v2::pool_fetching::handle_contract_error,
@@ -135,14 +135,14 @@ impl CacheFetching<H256, StablePool> for PoolReserveFetcher {
             .into_iter()
             .map(|registered_pool| {
                 let pool_contract =
-                    BalancerV2StablePool::at(&self.web3, registered_pool.properties().address);
+                    BalancerV2StablePool::at(&self.web3, registered_pool.common.address);
                 let swap_fee = pool_contract
                     .get_swap_fee_percentage()
                     .block(block)
                     .batch_call(&mut batch);
                 let reserves = self
                     .vault
-                    .get_pool_tokens(Bytes(registered_pool.properties().id.0))
+                    .get_pool_tokens(Bytes(registered_pool.common.id.0))
                     .block(block)
                     .batch_call(&mut batch);
                 let paused_state = pool_contract

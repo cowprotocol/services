@@ -6,6 +6,7 @@
 use super::{
     graph_api::{BalancerSubgraphClient, PoolType, RegisteredPools},
     pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
+    pools::PoolIndexing,
 };
 use anyhow::{anyhow, bail, Result};
 use contracts::{
@@ -109,17 +110,26 @@ impl BalancerRegisteredPools {
                 PoolType::Weighted if pool.factory == deployment.weighted_factory => {
                     result
                         .weighted_pools
-                        .push(pool.as_weighted(fetched_block_number)?);
+                        .push(RegisteredWeightedPool::from_graph_data(
+                            &pool,
+                            fetched_block_number,
+                        )?);
                 }
                 PoolType::Weighted if pool.factory == deployment.weighted_2token_factory => {
                     result
                         .weighted_2token_pools
-                        .push(pool.as_weighted(fetched_block_number)?);
+                        .push(RegisteredWeightedPool::from_graph_data(
+                            &pool,
+                            fetched_block_number,
+                        )?);
                 }
                 PoolType::Stable if pool.factory == deployment.stable_factory => {
                     result
                         .stable_pools
-                        .push(pool.as_stable(fetched_block_number)?);
+                        .push(RegisteredStablePool::from_graph_data(
+                            &pool,
+                            fetched_block_number,
+                        )?);
                 }
                 _ => {
                     // Log an error in order to trigger an alert. This will
@@ -268,7 +278,7 @@ mod tests {
                 block_created: fetched_block_number,
                 ..common_pool(seed)
             },
-            normalized_weights: vec![
+            weights: vec![
                 Bfp::from_wei(500_000_000_000_000_000u128.into()),
                 Bfp::from_wei(500_000_000_000_000_000u128.into()),
             ],

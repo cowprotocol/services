@@ -77,7 +77,7 @@ impl WeightedPool {
             &pool_data.common.tokens,
             balances,
             &pool_data.common.scaling_exponents,
-            &pool_data.normalized_weights
+            &pool_data.weights
         ) {
             reserves.insert(
                 token,

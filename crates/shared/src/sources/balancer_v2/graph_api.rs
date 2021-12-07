@@ -8,12 +8,9 @@
 //! - ensure that we are using the latest up-to-date pool data by using events
 //!   from the node
 
-use super::{
-    pool_storage::{CommonPoolData, RegisteredStablePool, RegisteredWeightedPool},
-    swap::fixed_point::Bfp,
-};
+use super::swap::fixed_point::Bfp;
 use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{bail, Result};
 use ethcontract::{H160, H256};
 use reqwest::Client;
 use serde::Deserialize;
@@ -147,59 +144,6 @@ pub struct Token {
     pub weight: Option<Bfp>,
 }
 
-impl PoolData {
-    /// Returns the Balancer subgraph pool data as an internal representation of
-    /// common pool data shared accross all Balancer pools.
-    fn as_common_pool_data(&self, block_created: u64) -> Result<CommonPoolData> {
-        ensure!(self.tokens.len() > 1, "insufficient tokens in pool");
-
-        Ok(CommonPoolData {
-            id: self.id,
-            address: self.address,
-            tokens: self.tokens.iter().map(|token| token.address).collect(),
-            scaling_exponents: self
-                .tokens
-                .iter()
-                .map(|token| scaling_exponent_from_decimals(token.decimals))
-                .collect::<Result<_>>()?,
-            block_created,
-        })
-    }
-
-    /// Returns the Balancer subgraph pool data as the internal representation
-    /// of a Balancer weighted pool.
-    pub fn as_weighted(&self, block_created: u64) -> Result<RegisteredWeightedPool> {
-        Ok(RegisteredWeightedPool {
-            common: self.as_common_pool_data(block_created)?,
-            normalized_weights: self
-                .tokens
-                .iter()
-                .map(|token| {
-                    token
-                        .weight
-                        .ok_or_else(|| anyhow!("missing weights for pool {:?}", self.id))
-                })
-                .collect::<Result<_>>()?,
-        })
-    }
-
-    /// Returns the Balancer subgraph pool data as the internal representation
-    /// of a Balancer stable pool.
-    pub fn as_stable(&self, block_created: u64) -> Result<RegisteredStablePool> {
-        Ok(RegisteredStablePool {
-            common: self.as_common_pool_data(block_created)?,
-        })
-    }
-}
-
-fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
-    // Technically this should never fail for Balancer Pools since tokens
-    // with more than 18 decimals (not supported by balancer contracts)
-    // https://github.com/balancer-labs/balancer-v2-monorepo/blob/deployments-latest/pkg/pool-utils/contracts/BasePool.sol#L476-L487
-    18u8.checked_sub(decimals)
-        .ok_or_else(|| anyhow!("unsupported token with more than 18 decimals"))
-}
-
 mod pools_query {
     use super::PoolData;
     use serde::Deserialize;
@@ -262,10 +206,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sources::balancer_v2::{
-        pool_storage::{CommonPoolData, RegisteredStablePool, RegisteredWeightedPool},
-        swap::fixed_point::Bfp,
-    };
+    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
     use ethcontract::{H160, H256};
     use std::collections::HashMap;
 
@@ -375,130 +316,6 @@ mod tests {
                 }
             }
         );
-    }
-
-    #[test]
-    fn convert_pool_to_registered_weighted_pool() {
-        let pool = PoolData {
-            pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0xfa; 20]),
-            tokens: vec![
-                Token {
-                    address: H160([0x11; 20]),
-                    decimals: 1,
-                    weight: Some("1.337".parse().unwrap()),
-                },
-                Token {
-                    address: H160([0x22; 20]),
-                    decimals: 2,
-                    weight: Some("4.2".parse().unwrap()),
-                },
-            ],
-        };
-
-        assert_eq!(
-            pool.as_weighted(42).unwrap(),
-            RegisteredWeightedPool {
-                common: CommonPoolData {
-                    id: H256([2; 32]),
-                    address: H160([1; 20]),
-                    tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
-                    scaling_exponents: vec![17, 16],
-                    block_created: 42,
-                },
-                normalized_weights: vec![
-                    Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
-                    Bfp::from_wei(4_200_000_000_000_000_000u128.into()),
-                ],
-            },
-        );
-    }
-
-    #[test]
-    fn convert_pool_to_registered_stable_pool() {
-        let pool = PoolData {
-            pool_type: PoolType::Stable,
-            id: H256([4; 32]),
-            address: H160([3; 20]),
-            factory: H160([0xfb; 20]),
-            tokens: vec![
-                Token {
-                    address: H160([0x33; 20]),
-                    decimals: 3,
-                    weight: None,
-                },
-                Token {
-                    address: H160([0x44; 20]),
-                    decimals: 18,
-                    weight: None,
-                },
-            ],
-        };
-
-        assert_eq!(
-            pool.as_stable(42).unwrap(),
-            RegisteredStablePool {
-                common: CommonPoolData {
-                    id: H256([4; 32]),
-                    address: H160([3; 20]),
-                    tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
-                    scaling_exponents: vec![15, 0],
-                    block_created: 42,
-                },
-            }
-        );
-    }
-
-    #[test]
-    fn pool_conversion_insufficient_tokens() {
-        let pool = PoolData {
-            pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0; 20]),
-            tokens: vec![Token {
-                address: H160([2; 20]),
-                decimals: 18,
-                weight: Some("1.337".parse().unwrap()),
-            }],
-        };
-        assert!(pool.as_common_pool_data(42).is_err());
-    }
-
-    #[test]
-    fn pool_conversion_invalid_decimals() {
-        let pool = PoolData {
-            pool_type: PoolType::Weighted,
-            id: H256([2; 32]),
-            address: H160([1; 20]),
-            factory: H160([0; 20]),
-            tokens: vec![
-                Token {
-                    address: H160([2; 20]),
-                    decimals: 19,
-                    weight: Some("1.337".parse().unwrap()),
-                },
-                Token {
-                    address: H160([3; 20]),
-                    decimals: 18,
-                    weight: Some("1.337".parse().unwrap()),
-                },
-            ],
-        };
-        assert!(pool.as_common_pool_data(42).is_err());
-    }
-
-    #[test]
-    fn scaling_exponent_from_decimals_ok_and_err() {
-        for i in 0..=18 {
-            assert_eq!(scaling_exponent_from_decimals(i).unwrap(), 18u8 - i);
-        }
-        assert_eq!(
-            scaling_exponent_from_decimals(19).unwrap_err().to_string(),
-            "unsupported token with more than 18 decimals"
-        )
     }
 
     #[tokio::test]
