@@ -16,8 +16,9 @@ use super::graph_api::PoolData;
 use anyhow::Result;
 
 /// A Balancer factory indexing implementation.
+#[mockall::automock(type PoolInfo = weighted::PoolInfo;)]
 #[async_trait::async_trait]
-pub trait FactoryIndexing {
+pub trait FactoryIndexing: Send + Sync + 'static {
     /// The permanent pool info for this.
     ///
     /// This contains all pool information that never changes and only needs to
@@ -40,7 +41,7 @@ pub trait FactoryIndexing {
 }
 
 /// Required information needed for indexing pools.
-pub trait PoolIndexing {
+pub trait PoolIndexing: Clone + Send + Sync + 'static {
     /// Creates a new instance from a pool
     fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self>
     where

@@ -2,27 +2,28 @@
 //! when given a collection of `TokenPair`. Each of these pools are then queried for
 //! their `token_balances` and the `PoolFetcher` returns all up-to-date `Weighted` and `Stable`
 //! pools to be consumed by external users (e.g. Price Estimators and Solvers).
+
+use super::{
+    event_handler::BalancerPoolRegistry,
+    pool_cache::{
+        BalancerPoolCacheMetrics, PoolReserveFetcher, StablePoolReserveCache,
+        WeightedPoolReserveCache,
+    },
+    pool_init::SubgraphPoolInitializer,
+    pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
+    pools::common::PoolInfoFetcher,
+    swap::fixed_point::Bfp,
+};
 use crate::{
     conversions::U256Ext,
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
-    sources::balancer_v2::{
-        event_handler::BalancerPoolRegistry,
-        info_fetching::PoolInfoFetcher,
-        pool_cache::{
-            BalancerPoolCacheMetrics, PoolReserveFetcher, StablePoolReserveCache,
-            WeightedPoolReserveCache,
-        },
-        pool_init::SubgraphPoolInitializer,
-        pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
-        swap::fixed_point::Bfp,
-    },
     token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::{ensure, Result};
-use contracts::{BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPoolFactory};
+use contracts::BalancerV2Vault;
 use ethcontract::{H160, H256, U256};
 use model::TokenPair;
 use num::BigRational;
@@ -240,8 +241,6 @@ impl BalancerPoolFetcher {
         let pool_info = Arc::new(PoolInfoFetcher::new(
             BalancerV2Vault::deployed(&web3).await?,
             token_info_fetcher,
-            BalancerV2WeightedPoolFactory::deployed(&web3).await?,
-            BalancerV2StablePoolFactory::deployed(&web3).await?,
         ));
         let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
         let pool_registry =
@@ -275,7 +274,7 @@ impl BalancerPoolFetching for BalancerPoolFetcher {
     ) -> Result<FetchedBalancerPools> {
         let pool_ids = self
             .pool_registry
-            .get_pool_ids_containing_token_pairs(token_pairs)
+            .pool_ids_for_token_pairs(&token_pairs)
             .await;
         let fetched_stable_pools = self
             .stable_pool_reserve_cache
