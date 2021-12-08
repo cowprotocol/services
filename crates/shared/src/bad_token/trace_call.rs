@@ -472,13 +472,13 @@ mod tests {
         let web3 = Web3::new(http);
 
         let base_tokens = &[
-            H160(hex!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")), // weth
-            H160(hex!("6B175474E89094C44Da98b954EedeAC495271d0F")), // dai
-            H160(hex!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48")), // usdc
-            H160(hex!("dAC17F958D2ee523a2206206994597C13D831ec7")), // usdt
-            H160(hex!("c00e94Cb662C3520282E6f5717214004A7f26888")), // comp
-            H160(hex!("9f8F72aA9304c8B593d555F12eF6589cC3A579A2")), // mkr
-            H160(hex!("2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599")), // wbtc
+            testlib::tokens::WETH,
+            testlib::tokens::DAI,
+            testlib::tokens::USDC,
+            testlib::tokens::USDT,
+            testlib::tokens::COMP,
+            testlib::tokens::MKR,
+            testlib::tokens::WBTC,
         ];
 
         // tokens from our deny list

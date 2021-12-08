@@ -50,3 +50,4 @@ web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c
 [dev-dependencies]
 secp256k1 = "0.20"
 mockall = "0.10"
+testlib = { path = "../testlib" }

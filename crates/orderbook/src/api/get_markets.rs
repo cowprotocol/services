@@ -100,7 +100,6 @@ pub fn get_amount_estimate(
 mod tests {
     use super::*;
     use crate::api::response_body;
-    use hex_literal::hex;
     use shared::price_estimation::PriceEstimationError;
     use warp::hyper::StatusCode;
     use warp::{test::request, Reply};
@@ -120,8 +119,8 @@ mod tests {
             request,
             AmountEstimateQuery {
                 market: Market {
-                    base_token: H160(hex!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")),
-                    quote_token: H160(hex!("6b175474e89094c44da98b954eedeac495271d0f")),
+                    base_token: testlib::tokens::WETH,
+                    quote_token: testlib::tokens::DAI,
                 },
                 kind: OrderKind::Sell,
                 amount: 100.into()

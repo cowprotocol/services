@@ -102,8 +102,8 @@ mod tests {
             })
         });
 
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
@@ -148,8 +148,8 @@ mod tests {
             })
         });
 
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
@@ -177,7 +177,7 @@ mod tests {
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
+        let weth = testlib::tokens::WETH;
 
         let est = estimator
             .estimate(&Query {
@@ -195,8 +195,8 @@ mod tests {
 
     #[tokio::test]
     async fn unsupported_token() {
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(MockZeroExApi::new()),
@@ -224,8 +224,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn real_estimate() {
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),

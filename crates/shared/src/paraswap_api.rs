@@ -334,7 +334,7 @@ mod tests {
     #[ignore]
     async fn test_api_e2e_sell() {
         let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let dest_token = testlib::tokens::GNO;
         let price_query = PriceQuery {
             src_token,
             dest_token,
@@ -397,7 +397,7 @@ mod tests {
     #[ignore]
     async fn test_api_e2e_buy() {
         let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let dest_token = testlib::tokens::GNO;
         let price_query = PriceQuery {
             src_token,
             dest_token,
@@ -455,7 +455,7 @@ mod tests {
     fn test_price_query_serialization() {
         let query = PriceQuery {
             src_token: crate::addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
-            dest_token: crate::addr!("6810e776880C02933D47DB1b9fc05908e5386b96"),
+            dest_token: testlib::tokens::GNO,
             src_decimals: 18,
             dest_decimals: 8,
             amount: 1_000_000_000_000_000_000u128.into(),
@@ -704,7 +704,7 @@ mod tests {
     #[ignore]
     async fn transaction_response_error() {
         let src_token = crate::addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
-        let dest_token = crate::addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let dest_token = testlib::tokens::GNO;
         let price_query = PriceQuery {
             src_token,
             dest_token,

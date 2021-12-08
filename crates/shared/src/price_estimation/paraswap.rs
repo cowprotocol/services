@@ -137,8 +137,8 @@ mod tests {
             disabled_paraswap_dexs: Vec::new(),
         };
 
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-        let gno = addr!("6810e776880c02933d47db1b9fc05908e5386b96");
+        let weth = testlib::tokens::WETH;
+        let gno = testlib::tokens::GNO;
         let query = Query {
             sell_token: weth,
             buy_token: gno,

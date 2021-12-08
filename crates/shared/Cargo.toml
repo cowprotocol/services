@@ -53,3 +53,4 @@ web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c
 
 [dev-dependencies]
 regex = "1.5.4"
+testlib = { path = "../testlib" }

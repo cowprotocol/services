@@ -263,16 +263,8 @@ mod tests {
         let infura_project_id =
             std::env::var("INFURA_PROJECT_ID").expect("env variable INFURA_PROJECT_ID is required");
 
-        let weth = addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2");
-
-        let _weth = ("weth", weth);
-        let _owl = ("owl", addr!("1A5F9352Af8aF974bFC03399e3767DF6370d82e4"));
-        let _bal = ("bal", addr!("ba100000625a3754423978a60c9317c58a424e3D"));
-        let _gno = ("gno", addr!("6810e776880c02933d47db1b9fc05908e5386b96"));
-        let _dai = ("dai", addr!("6B175474E89094C44Da98b954EedeAC495271d0F"));
-
-        let t1 = _weth;
-        let t2 = _gno;
+        let t1 = ("WETH", testlib::tokens::WETH);
+        let t2 = ("GNO", testlib::tokens::GNO);
         let amount: U256 = U256::from(1) * U256::exp10(18);
 
         let client = Client::new();
@@ -322,8 +314,11 @@ mod tests {
             bad_token_detector,
             token_info,
             gas_info,
-            native_token: weth,
-            base_tokens: Arc::new(BaseTokens::new(weth, &[weth, t1.1, t2.1])),
+            native_token: testlib::tokens::WETH,
+            base_tokens: Arc::new(BaseTokens::new(
+                testlib::tokens::WETH,
+                &[testlib::tokens::WETH, t1.1, t2.1],
+            )),
         };
 
         let result = estimator

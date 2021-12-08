@@ -52,3 +52,4 @@ web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c
 [dev-dependencies]
 tracing-subscriber = "0.3"
 mockall = "0.10"
+testlib = { path = "../testlib" }

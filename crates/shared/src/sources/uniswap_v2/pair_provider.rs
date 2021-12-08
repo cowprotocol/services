@@ -45,11 +45,7 @@ mod tests {
                 "96e8ac4277198ff8b6f785478aa9a39f403cb768dd02cbee326c3e7da348845f"
             ),
         };
-        let pair = TokenPair::new(
-            addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
-            addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
-        )
-        .unwrap();
+        let pair = TokenPair::new(testlib::tokens::GNO, testlib::tokens::WETH).unwrap();
         assert_eq!(
             provider.pair_address(&pair),
             addr!("3e8468f66d30fc99f745481d4b383f89861702c6")
