@@ -1,5 +1,7 @@
+use super::submitter::{TransactionHandle, TransactionSubmitting};
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use jsonrpc_core::Output;
+use primitive_types::H256;
 use reqwest::Client;
 use serde::de::DeserializeOwned;
 
@@ -10,7 +12,8 @@ pub struct FlashbotsApi {
     client: Client,
 }
 
-fn parse_json_rpc_response<T>(body: &str) -> Result<T>
+pub fn parse_json_rpc_response<T>(body: &str) -> Result<T>
+//will be moved to CustomNodes impl in the following PR
 where
     T: DeserializeOwned,
 {
@@ -34,15 +37,20 @@ impl FlashbotsApi {
     pub fn new(client: Client) -> Self {
         Self { client }
     }
+}
 
-    /// Submit a signed transaction to the flashbots protect network.
-    pub async fn submit_transaction(&self, raw_signed_transaction: &[u8]) -> Result<String> {
-        let params = format!("0x{}", hex::encode(raw_signed_transaction));
+#[async_trait::async_trait]
+impl TransactionSubmitting for FlashbotsApi {
+    async fn submit_raw_transaction(
+        &self,
+        raw_signed_transaction: &[u8],
+    ) -> Result<TransactionHandle> {
+        let tx = format!("0x{}", hex::encode(raw_signed_transaction));
         let body = serde_json::json!({
           "jsonrpc": "2.0",
           "id": 1,
           "method": "eth_sendRawTransaction",
-          "params": [params],
+          "params": [tx],
         });
         tracing::debug!(
             "flashbots submit_transaction body: {}",
@@ -54,13 +62,12 @@ impl FlashbotsApi {
         ensure!(status.is_success(), "status {}: {:?}", status, body);
         tracing::debug!("flashbots submit response: {}", body);
 
-        let bundle_id = parse_json_rpc_response::<String>(&body)?;
+        let bundle_id = parse_json_rpc_response::<H256>(&body)?;
         tracing::debug!("flashbots bundle id: {}", bundle_id);
-        Ok(bundle_id)
+        Ok(TransactionHandle(bundle_id))
     }
 
-    /// Send a cancel to a previously submitted transaction. This function does not wait for cancellation result.
-    pub async fn cancel(&self, _bundle_id: &str) -> Result<()> {
+    async fn cancel_transaction(&self, _id: &TransactionHandle) -> Result<()> {
         Ok(())
     }
 }

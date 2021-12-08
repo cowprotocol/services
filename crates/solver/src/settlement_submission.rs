@@ -1,31 +1,26 @@
-pub mod archer_api;
-pub mod archer_settlement;
 mod dry_run;
+pub mod eden_api;
 pub mod flashbots_api;
-pub mod flashbots_settlement;
 mod gas_price_stream;
 pub mod retry;
 pub mod rpc;
+pub mod submitter;
 
-use self::{
-    archer_settlement::ArcherSolutionSubmitter, flashbots_settlement::FlashbotsSolutionSubmitter,
-};
 use crate::{metrics::SettlementSubmissionOutcome, settlement::Settlement};
 use anyhow::{anyhow, Result};
-use archer_api::ArcherApi;
 use contracts::GPv2Settlement;
 use ethcontract::{
     errors::{ExecutionError, MethodError},
     Account,
 };
-use flashbots_api::FlashbotsApi;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
 use std::{
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, Instant},
 };
+use submitter::{Submitter, SubmitterGasEstimator, SubmitterParams, TransactionSubmitting};
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -41,16 +36,15 @@ pub struct SolutionSubmitter {
     pub transaction_strategy: TransactionStrategy,
 }
 
+pub struct StrategyArgs {
+    pub submit_api: Box<dyn TransactionSubmitting>,
+    pub max_confirm_time: Duration,
+    pub retry_interval: Duration,
+    pub additional_tip: f64,
+}
 pub enum TransactionStrategy {
-    ArcherNetwork {
-        archer_api: ArcherApi,
-        max_confirm_time: Duration,
-    },
-    Flashbots {
-        flashbots_api: FlashbotsApi,
-        max_confirm_time: Duration,
-        flashbots_tip: f64,
-    },
+    Eden(StrategyArgs),
+    Flashbots(StrategyArgs),
     CustomNodes(Vec<Web3>),
     DryRun,
 }
@@ -81,50 +75,47 @@ impl SolutionSubmitter {
                 )
                 .await
             }
-            TransactionStrategy::ArcherNetwork {
-                archer_api,
-                max_confirm_time,
-            } => {
-                let submitter = ArcherSolutionSubmitter::new(
+            TransactionStrategy::Eden(args) => {
+                let eden_gas_price_estimator = SubmitterGasEstimator {
+                    inner: self.gas_price_estimator.as_ref(),
+                    additional_tip: Some(args.additional_tip),
+                    gas_price_cap: self.gas_price_cap,
+                };
+                let submitter = Submitter::new(
                     &self.web3,
                     &self.contract,
                     &account,
-                    archer_api,
-                    self.gas_price_estimator.as_ref(),
-                    self.gas_price_cap,
+                    args.submit_api.as_ref(),
+                    &eden_gas_price_estimator,
                 )?;
-                let result = submitter
-                    .submit(
-                        self.target_confirm_time,
-                        SystemTime::now() + *max_confirm_time,
-                        settlement,
-                        gas_estimate,
-                    )
-                    .await;
-                result?.ok_or(SubmissionError::Timeout)
+                let params = SubmitterParams {
+                    target_confirm_time: self.target_confirm_time,
+                    gas_estimate,
+                    deadline: Some(Instant::now() + args.max_confirm_time),
+                    retry_interval: args.retry_interval,
+                };
+                submitter.submit(settlement, params).await
             }
-            TransactionStrategy::Flashbots {
-                flashbots_api,
-                max_confirm_time,
-                flashbots_tip,
-            } => {
-                let submitter = FlashbotsSolutionSubmitter::new(
+            TransactionStrategy::Flashbots(args) => {
+                let flashbots_gas_price_estimator = SubmitterGasEstimator {
+                    inner: self.gas_price_estimator.as_ref(),
+                    additional_tip: Some(args.additional_tip),
+                    gas_price_cap: self.gas_price_cap,
+                };
+                let submitter = Submitter::new(
                     &self.web3,
                     &self.contract,
                     &account,
-                    flashbots_api,
-                    self.gas_price_estimator.as_ref(),
-                    self.gas_price_cap,
+                    args.submit_api.as_ref(),
+                    &flashbots_gas_price_estimator,
                 )?;
-                submitter
-                    .submit(
-                        self.target_confirm_time,
-                        SystemTime::now() + *max_confirm_time,
-                        settlement,
-                        gas_estimate,
-                        *flashbots_tip,
-                    )
-                    .await
+                let params = SubmitterParams {
+                    target_confirm_time: self.target_confirm_time,
+                    gas_estimate,
+                    deadline: Some(Instant::now() + args.max_confirm_time),
+                    retry_interval: args.retry_interval,
+                };
+                submitter.submit(settlement, params).await
             }
             TransactionStrategy::DryRun => {
                 Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)

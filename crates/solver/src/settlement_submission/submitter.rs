@@ -13,91 +13,137 @@
 // from outside) so it is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
-use super::{flashbots_api::FlashbotsApi, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::settlement::Settlement;
 use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{transaction::Transaction, Account};
+use ethcontract::{contract::MethodBuilder, dyns::DynTransport, transaction::Transaction, Account};
 use futures::FutureExt;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
-use std::time::{Duration, Instant, SystemTime};
+use std::time::{Duration, Instant};
 use web3::types::TransactionReceipt;
 
-pub struct FlashbotsSolutionSubmitter<'a> {
-    web3: &'a Web3,
-    contract: &'a GPv2Settlement,
-    // Invariant: MUST be an `Account::Offline`.
-    account: &'a Account,
-    flashbots_api: &'a FlashbotsApi,
-    gas_price_estimator: &'a dyn GasPriceEstimating,
-    gas_price_cap: f64,
+/// Parameters for transaction submitting
+#[derive(Clone, Default)]
+pub struct SubmitterParams {
+    /// Desired duration to include the transaction in a block
+    pub target_confirm_time: Duration, //todo change to blocks in the following PR
+    /// Estimated gas consumption of a transaction
+    pub gas_estimate: U256,
+    /// Maximum duration of a single run loop
+    pub deadline: Option<Instant>,
+    /// Resimulate and resend transaction on every retry_interval seconds
+    pub retry_interval: Duration,
 }
 
-impl<'a> FlashbotsSolutionSubmitter<'a> {
+pub struct TransactionHandle(pub H256);
+
+#[async_trait::async_trait]
+pub trait TransactionSubmitting {
+    /// Submits raw signed transation to the specific network (public mempool, eden, flashbots...).
+    /// Returns transaction handle
+    async fn submit_raw_transaction(&self, tx: &[u8]) -> Result<TransactionHandle>;
+    /// Cancels already submitted transaction using the transaction handle
+    async fn cancel_transaction(&self, id: &TransactionHandle) -> Result<()>;
+}
+
+/// Gas price estimator specialized for sending transactions to the network
+pub struct SubmitterGasEstimator<'a> {
+    pub inner: &'a dyn GasPriceEstimating,
+    /// Boost estimated gas price miner tip in order to increase the chances of a transaction being mined
+    pub additional_tip: Option<f64>,
+    /// Maximum max_fee_per_gas to pay for a transaction
+    pub gas_price_cap: f64,
+}
+
+#[async_trait::async_trait]
+impl GasPriceEstimating for SubmitterGasEstimator<'_> {
+    async fn estimate_with_limits(
+        &self,
+        gas_limit: f64,
+        time_limit: Duration,
+    ) -> Result<EstimatedGasPrice> {
+        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
+            Ok(mut gas_price) if gas_price.cap() <= self.gas_price_cap => {
+                // boost miner tip to increase our chances of being included in a block
+                if let Some(ref mut eip1559) = gas_price.eip1559 {
+                    eip1559.max_priority_fee_per_gas += self.additional_tip.unwrap_or_default();
+                }
+                Ok(gas_price)
+            }
+            Ok(gas_price) => Err(anyhow!(
+                "gas station gas price {} is larger than cap {}",
+                gas_price.cap(),
+                self.gas_price_cap
+            )),
+            Err(err) => Err(err),
+        }
+    }
+}
+
+pub struct Submitter<'a> {
+    web3: &'a Web3,
+    contract: &'a GPv2Settlement,
+    account: &'a Account,
+    submit_api: &'a dyn TransactionSubmitting,
+    gas_price_estimator: &'a SubmitterGasEstimator<'a>,
+}
+
+impl<'a> Submitter<'a> {
     pub fn new(
         web3: &'a Web3,
         contract: &'a GPv2Settlement,
         account: &'a Account,
-        flashbots_api: &'a FlashbotsApi,
-        gas_price_estimator: &'a dyn GasPriceEstimating,
-        gas_price_cap: f64,
+        submit_api: &'a dyn TransactionSubmitting,
+        gas_price_estimator: &'a SubmitterGasEstimator<'a>,
     ) -> Result<Self> {
         ensure!(
             matches!(account, Account::Offline(..)),
-            "Flashbots submission requires offline account for signing"
+            "Submission requires offline account for signing"
         );
 
         Ok(Self {
             web3,
             contract,
             account,
-            flashbots_api,
+            submit_api,
             gas_price_estimator,
-            gas_price_cap,
         })
     }
 }
 
-impl<'a> FlashbotsSolutionSubmitter<'a> {
+impl<'a> Submitter<'a> {
     /// Submit a settlement to the contract, updating the transaction with gas prices if they increase.
-    ///
-    /// Goes through the flashbots network so that failing transactions do not get mined and thus do
-    /// not cost gas.
-    ///
-    /// Returns None if the deadline is reached without a mined transaction.
     ///
     /// Only works on mainnet.
     pub async fn submit(
         &self,
-        target_confirm_time: Duration,
-        deadline: SystemTime,
         settlement: Settlement,
-        gas_estimate: U256,
-        flashbots_tip: f64,
+        params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let nonce = self.nonce().await?;
 
-        tracing::info!("starting flashbots solution submission at nonce {}", nonce,);
+        tracing::info!("starting solution submission at nonce {}", nonce);
 
+        // Continually simulate and submit transactions
         let mut transactions = Vec::new();
         let submit_future = self.submit_with_increasing_gas_prices_until_simulation_fails(
-            target_confirm_time,
-            nonce,
             settlement,
-            gas_estimate,
-            flashbots_tip,
+            nonce,
+            &params,
             &mut transactions,
         );
 
+        // Nonce future is used to detect if tx is mined
         let nonce_future = self.wait_for_nonce_to_change(nonce);
 
-        let deadline_future = tokio::time::sleep(
-            deadline
-                .duration_since(SystemTime::now())
-                .unwrap_or_else(|_| Duration::from_secs(0)),
-        );
+        // If specified, deadline future stops submitting when deadline is reached
+        let deadline_future = tokio::time::sleep(match params.deadline {
+            Some(deadline) => deadline.saturating_duration_since(Instant::now()),
+            None => Duration::from_secs(u64::MAX),
+        });
 
         let fallback_result = tokio::select! {
             method_error = submit_future.fuse() => {
@@ -175,23 +221,7 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
         }
     }
 
-    async fn gas_price(&self, gas_limit: f64, time_limit: Duration) -> Result<EstimatedGasPrice> {
-        match self
-            .gas_price_estimator
-            .estimate_with_limits(gas_limit, time_limit)
-            .await
-        {
-            Ok(gas_price) if gas_price.cap() <= self.gas_price_cap => Ok(gas_price),
-            Ok(gas_price) => Err(anyhow!(
-                "gas station gas price {} is larger than cap {}",
-                gas_price.cap(),
-                self.gas_price_cap
-            )),
-            Err(err) => Err(err),
-        }
-    }
-
-    /// Keep submitting the settlement transaction to the flashbots network as gas price changes.
+    /// Keep submitting the settlement transaction to the network as gas price changes.
     ///
     /// Returns when simulation of the transaction fails. This likely happens if the settlement
     /// becomes invalid due to changing prices or the account's nonce changes.
@@ -199,65 +229,43 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
     /// Potential transaction hashes are communicated back through a shared vector.
     async fn submit_with_increasing_gas_prices_until_simulation_fails(
         &self,
-        target_confirm_time: Duration,
-        nonce: U256,
         settlement: Settlement,
-        gas_estimate: U256,
-        flashbots_tip: f64,
+        nonce: U256,
+        params: &SubmitterParams,
         transactions: &mut Vec<H256>,
     ) -> SubmissionError {
-        const UPDATE_INTERVAL: Duration = Duration::from_secs(5);
-
-        // The amount of extra gas it costs to include the payment to block.coinbase interaction in
-        // an existing settlement.
-        let target_confirm_time = Instant::now() + target_confirm_time;
+        let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         // gas price and raw signed transaction
-        let mut previous_tx: Option<(EstimatedGasPrice, String)> = None;
+        let mut previous_tx: Option<(EstimatedGasPrice, TransactionHandle)> = None;
 
         loop {
-            // get gas price
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
-            let gas_limit = gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
+            let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
-            let gas_price = match self.gas_price(gas_limit, time_limit).await {
-                Ok(mut gas_price) => {
-                    if let Some(ref mut eip1559) = gas_price.eip1559 {
-                        eip1559.max_priority_fee_per_gas += flashbots_tip;
-                    }
-                    gas_price
-                }
+            let gas_price = match self
+                .gas_price_estimator
+                .estimate_with_limits(gas_limit, time_limit)
+                .await
+            {
+                Ok(gas_price) => gas_price,
                 Err(err) => {
                     tracing::error!("gas estimation failed: {:?}", err);
-                    tokio::time::sleep(UPDATE_INTERVAL).await;
+                    tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
             };
 
             // create transaction
 
-            let tx_gas_price = if let Some(eip1559) = gas_price.eip1559 {
-                (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
-            } else {
-                gas_price.legacy.into()
-            };
-            let method = super::retry::settle_method_builder(
-                self.contract,
-                settlement.clone().into(),
-                self.account.clone(),
-            )
-            .nonce(nonce)
-            // Wouldn't work because the function isn't payable.
-            // .value(tx_gas_cost_in_ether_wei)
-            .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(tx_gas_price);
+            let method = self.build_method(settlement.clone(), &gas_price, nonce, gas_limit);
 
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_tx)) = previous_tx.as_ref() {
-                    if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
-                        tracing::warn!("flashbots cancellation request not sent: {:?}", err);
+                    if let Err(err) = self.submit_api.cancel_transaction(previous_tx).await {
+                        tracing::warn!("cancellation failed: {:?}", err);
                     }
                 }
                 return SubmissionError::from(err);
@@ -267,12 +275,14 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
-                if gas_price.cap() > previous_gas_price.cap() {
-                    if let Err(err) = self.flashbots_api.cancel(previous_tx).await {
-                        tracing::warn!("flashbots cancellation failed: {:?}", err);
+                if gas_price.cap() > previous_gas_price.cap()
+                    && gas_price.tip() > previous_gas_price.tip()
+                {
+                    if let Err(err) = self.submit_api.cancel_transaction(previous_tx).await {
+                        tracing::warn!("cancellation failed: {:?}", err);
                     }
                 } else {
-                    tokio::time::sleep(UPDATE_INTERVAL).await;
+                    tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
             }
@@ -285,28 +295,51 @@ impl<'a> FlashbotsSolutionSubmitter<'a> {
                 };
 
             tracing::info!(
-                "creating flashbots transaction with hash {:?}, gas price {:?}, gas estimate {}",
+                "creating transaction with hash {:?}, tip to miner {:.3e}, gas price {:?}, gas estimate {}",
                 hash,
+                tx_gas_cost(&gas_price, params).to_f64_lossy(),
                 gas_price,
-                gas_estimate,
+                params.gas_estimate,
             );
 
-            // submit transaction
-
             match self
-                .flashbots_api
-                .submit_transaction(&raw_signed_transaction)
+                .submit_api
+                .submit_raw_transaction(&raw_signed_transaction)
                 .await
             {
-                Ok(bundle_id) => {
+                Ok(id) => {
                     transactions.push(hash);
-                    previous_tx = Some((gas_price, bundle_id));
+                    previous_tx = Some((gas_price, id));
                 }
-                Err(err) => tracing::error!("flashbots submission failed: {:?}", err),
+                Err(err) => tracing::error!("submission failed: {:?}", err),
             }
-            tokio::time::sleep(UPDATE_INTERVAL).await;
+            tokio::time::sleep(params.retry_interval).await;
         }
     }
+
+    /// Prepare transaction for simulation
+    fn build_method(
+        &self,
+        settlement: Settlement,
+        gas_price: &EstimatedGasPrice,
+        nonce: U256,
+        gas_limit: f64,
+    ) -> MethodBuilder<DynTransport, ()> {
+        let gas_price = if let Some(eip1559) = gas_price.eip1559 {
+            (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
+        } else {
+            gas_price.legacy.into()
+        };
+
+        super::retry::settle_method_builder(self.contract, settlement.into(), self.account.clone())
+            .nonce(nonce)
+            .gas(U256::from_f64_lossy(gas_limit))
+            .gas_price(gas_price)
+    }
+}
+
+fn tx_gas_cost(gas_price: &EstimatedGasPrice, params: &SubmitterParams) -> U256 {
+    U256::from_f64_lossy(gas_price.effective_gas_price()) * params.gas_estimate
 }
 
 /// From a list of potential hashes find one that was mined.
@@ -337,6 +370,7 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
 #[cfg(test)]
 mod tests {
 
+    use super::super::flashbots_api::FlashbotsApi;
     use super::*;
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
@@ -346,7 +380,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn mainnet_settlement() {
+    async fn flashbots_mainnet_settlement() {
         shared::tracing::initialize(
             "solver=debug,shared=debug,shared::transport::http=info",
             LevelFilter::OFF,
@@ -371,7 +405,11 @@ mod tests {
         )
         .await
         .unwrap();
-        let gas_price_cap = 100e9;
+        let gas_price_estimator = SubmitterGasEstimator {
+            inner: &gas_price_estimator,
+            additional_tip: Some(3.0),
+            gas_price_cap: 100e9,
+        };
 
         let settlement = Settlement::new(Default::default());
         let gas_estimate =
@@ -388,25 +426,22 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let submitter = FlashbotsSolutionSubmitter::new(
+        let submitter = Submitter::new(
             &web3,
             &contract,
             &account,
             &flashbots_api,
             &gas_price_estimator,
-            gas_price_cap,
         )
         .unwrap();
 
-        let result = submitter
-            .submit(
-                Duration::from_secs(0),
-                SystemTime::now() + Duration::from_secs(90),
-                settlement,
-                gas_estimate,
-                3.0,
-            )
-            .await;
+        let params = SubmitterParams {
+            target_confirm_time: Duration::from_secs(0),
+            gas_estimate,
+            deadline: Some(Instant::now() + Duration::from_secs(90)),
+            retry_interval: Duration::from_secs(5),
+        };
+        let result = submitter.submit(settlement, params).await;
         tracing::info!("finished with result {:?}", result);
     }
 }

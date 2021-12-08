@@ -35,7 +35,8 @@ use solver::{
     metrics::Metrics,
     orderbook::OrderBookApi,
     settlement_submission::{
-        archer_api::ArcherApi, flashbots_api::FlashbotsApi, SolutionSubmitter, TransactionStrategy,
+        eden_api::EdenApi, flashbots_api::FlashbotsApi, SolutionSubmitter, StrategyArgs,
+        TransactionStrategy,
     },
     solver::SolverType,
 };
@@ -180,22 +181,35 @@ struct Arguments {
     #[structopt(long, env, default_value = "10")]
     zeroex_slippage_bps: u32,
 
-    /// The authorization for the archer api.
-    #[structopt(long, env)]
-    archer_authorization: Option<String>,
-
     /// How to to submit settlement transactions.
     #[structopt(long, env, default_value = "PublicMempool")]
     transaction_strategy: TransactionStrategyArg,
 
-    /// The maximum time in seconds we spend trying to settle a transaction through the archer
+    /// The maximum time in seconds we spend trying to settle a transaction through the eden
     /// network before going to back to solving.
     #[structopt(
         long,
-        default_value = "60",
+        default_value = "120",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
-    max_archer_submission_seconds: Duration,
+    max_eden_submission_seconds: Duration,
+
+    /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
+    #[structopt(
+        long,
+        env,
+        default_value = "3",
+        parse(try_from_str = shared::arguments::wei_from_gwei)
+    )]
+    additional_eden_tip: f64,
+
+    /// Amount of time to wait before retrying to submit the tx to the eden network
+    #[structopt(
+            long,
+            default_value = "10",
+            parse(try_from_str = shared::arguments::duration_from_seconds),
+        )]
+    eden_submission_retry_interval_seconds: Duration,
 
     /// The maximum time in seconds we spend trying to settle a transaction through the flashbots
     /// network before going to back to solving.
@@ -214,6 +228,14 @@ struct Arguments {
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
     additional_flashbot_tip: f64,
+
+    /// Amount of time to wait before retrying to submit the tx to the flashbots network
+    #[structopt(
+        long,
+        default_value = "5",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    flashbots_submission_retry_interval_seconds: Duration,
 
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
     #[structopt(long, env, use_delimiter = true)]
@@ -240,7 +262,7 @@ arg_enum! {
     #[derive(Debug)]
     enum TransactionStrategyArg {
         PublicMempool,
-        ArcherNetwork,
+        Eden,
         Flashbots,
         CustomNodes,
         DryRun,
@@ -509,19 +531,18 @@ async fn main() {
             TransactionStrategyArg::PublicMempool => {
                 TransactionStrategy::CustomNodes(vec![web3.clone()])
             }
-            TransactionStrategyArg::ArcherNetwork => TransactionStrategy::ArcherNetwork {
-                archer_api: ArcherApi::new(
-                    args.archer_authorization
-                        .expect("missing archer authorization"),
-                    client.clone(),
-                ),
-                max_confirm_time: args.max_archer_submission_seconds,
-            },
-            TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots {
-                flashbots_api: FlashbotsApi::new(client.clone()),
+            TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
+                submit_api: Box::new(EdenApi::new(client.clone())),
+                max_confirm_time: args.max_eden_submission_seconds,
+                retry_interval: args.eden_submission_retry_interval_seconds,
+                additional_tip: args.additional_eden_tip,
+            }),
+            TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
+                submit_api: Box::new(FlashbotsApi::new(client.clone())),
                 max_confirm_time: args.max_flashbots_submission_seconds,
-                flashbots_tip: args.additional_flashbot_tip,
-            },
+                retry_interval: args.flashbots_submission_retry_interval_seconds,
+                additional_tip: args.additional_flashbot_tip,
+            }),
             TransactionStrategyArg::CustomNodes => {
                 assert!(
                     !args.transaction_submission_nodes.is_empty(),
