@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
+use futures::{future::TryFutureExt, try_join};
 use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
@@ -281,27 +282,29 @@ impl MinFeeCalculator {
         &self,
         fee_data: FeeData,
     ) -> Result<FeeParameters, PriceEstimationError> {
-        let gas_price = self.gas_estimator.estimate().await?.effective_gas_price();
-        let gas_amount = self
-            .price_estimator
-            .estimate(&price_estimation::Query {
-                sell_token: fee_data.sell_token,
-                buy_token: fee_data.buy_token,
-                in_amount: fee_data.amount,
-                kind: fee_data.kind,
-            })
-            .await?
-            .gas
-            .to_f64_lossy();
-        let fee_in_eth = gas_price * gas_amount;
-        let query = price_estimation::Query {
+        let buy_token_query = price_estimation::Query {
+            sell_token: fee_data.sell_token,
+            buy_token: fee_data.buy_token,
+            in_amount: fee_data.amount,
+            kind: fee_data.kind,
+        };
+        let native_token_query = price_estimation::Query {
             sell_token: fee_data.sell_token,
             buy_token: self.native_token,
             in_amount: self.native_token_price_estimation_amount,
             kind: OrderKind::Buy,
         };
-        let estimate = self.price_estimator.estimate(&query).await?;
-        let sell_token_price = estimate.price_in_sell_token_f64(&query);
+        let (gas_estimate, buy_token_estimate, native_token_estimate) = try_join!(
+            self.gas_estimator
+                .estimate()
+                .map_err(PriceEstimationError::from),
+            self.price_estimator.estimate(&buy_token_query),
+            self.price_estimator.estimate(&native_token_query)
+        )?;
+        let gas_price = gas_estimate.effective_gas_price();
+        let gas_amount = buy_token_estimate.gas.to_f64_lossy();
+        let fee_in_eth = gas_price * gas_amount;
+        let sell_token_price = native_token_estimate.price_in_sell_token_f64(&native_token_query);
         let fee = fee_in_eth * sell_token_price;
 
         tracing::debug!(
