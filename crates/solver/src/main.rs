@@ -60,6 +60,10 @@ struct Arguments {
     #[structopt(long, env, default_value = "http://localhost:8000")]
     quasimodo_solver_url: Url,
 
+    /// The API endpoint to call the cow-dex-ag-solver solver
+    #[structopt(long, env, default_value = "http://localhost:8000")]
+    cow_dex_ag_solver_url: Url,
+
     /// The account used by the driver to sign transactions. This can be either
     /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
     /// for signing with a local node account.
@@ -496,6 +500,7 @@ async fn main() {
         base_tokens,
         native_token_contract.address(),
         args.mip_solver_url,
+        args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
         &settlement_contract,
         token_info_fetcher,

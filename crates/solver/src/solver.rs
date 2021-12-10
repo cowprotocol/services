@@ -127,6 +127,7 @@ arg_enum! {
         Naive,
         Baseline,
         Mip,
+        CowDexAg,
         OneInch,
         Paraswap,
         ZeroEx,
@@ -141,6 +142,7 @@ pub fn create(
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
     mip_solver_url: Url,
+    cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
     settlement_contract: &GPv2Settlement,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
@@ -198,6 +200,16 @@ pub fn create(
                     account,
                     mip_solver_url.clone(),
                     "Mip",
+                    SolverConfig {
+                        api_key: None,
+                        max_nr_exec_orders: 100,
+                        has_ucp_policy_parameter: false,
+                    },
+                )),
+                SolverType::CowDexAg => shared(create_http_solver(
+                    account,
+                    cow_dex_ag_solver_url.clone(),
+                    "CowDexAg",
                     SolverConfig {
                         api_key: None,
                         max_nr_exec_orders: 100,
