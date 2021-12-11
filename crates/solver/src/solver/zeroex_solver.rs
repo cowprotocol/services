@@ -91,10 +91,7 @@ impl SingleOrderSolving for ZeroExSolver {
             slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
                 .unwrap(),
         };
-
-        tracing::debug!("querying 0x swap api with {:?}", query);
         let swap = self.api.get_swap(query).await?;
-        tracing::debug!("proposed 0x swap is {:?}", swap);
 
         if !swap_respects_limit_price(&swap, &order) {
             tracing::debug!("Order limit price not respected");

@@ -197,7 +197,10 @@ impl DefaultZeroExApi {
         endpoint: &str,
         query: SwapQuery,
     ) -> Result<T, ZeroExResponseError> {
-        let mut request = self.client.get(query.format_url(&self.base_url, endpoint));
+        let url = query.format_url(&self.base_url, endpoint);
+        tracing::debug!("Querying 0x API: {}", url);
+
+        let mut request = self.client.get(url);
         if let Some(key) = &self.api_key {
             request = request.header("0x-api-key", key);
         }
@@ -208,6 +211,7 @@ impl DefaultZeroExApi {
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
+        tracing::debug!("Response from 0x API: {}", response_text);
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),
