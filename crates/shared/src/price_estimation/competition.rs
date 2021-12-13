@@ -46,7 +46,12 @@ impl PriceEstimating for CompetitionPriceEstimator {
                         },
                     )
                     .map(|winning_estimate| {
-                        tracing::debug!(?query, ?winning_estimate, "winning price estimate",);
+                        tracing::debug!(
+                            "winning price estimate from estimator {:?} for the query: {:?} is the estimate: {:?}",
+                            winning_estimate.estimator_name,
+                            query,
+                            winning_estimate,
+                        );
                         winning_estimate.estimate
                     })
             })

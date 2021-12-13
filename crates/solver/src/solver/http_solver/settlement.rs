@@ -37,8 +37,8 @@ pub fn convert_settlement(
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 enum Execution {
-    ExecutionAmm(ExecutedAmm),
-    ExecutionCustomInteraction(InteractionData),
+    ExecutionAmm(Box<ExecutedAmm>),
+    ExecutionCustomInteraction(Box<InteractionData>),
 }
 
 impl Execution {
@@ -96,7 +96,7 @@ impl IntermediateSettlement {
         let executions_interactions = settled
             .interaction_data
             .into_iter()
-            .map(Execution::ExecutionCustomInteraction)
+            .map(|x| Execution::ExecutionCustomInteraction(Box::new(x)))
             .collect();
         let executions = merge_and_order_executions(executions_amm, executions_interactions)?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
@@ -134,7 +134,7 @@ impl IntermediateSettlement {
                 Execution::ExecutionCustomInteraction(interaction_data) => {
                     settlement
                         .encoder
-                        .append_to_execution_plan(interaction_data.clone());
+                        .append_to_execution_plan(*interaction_data.clone());
                 }
             }
         }
@@ -173,7 +173,7 @@ fn match_prepared_and_settled_amms(
         .filter(|(_, settled)| settled.is_non_trivial())
         .flat_map(|(index, settled)| settled.execution.into_iter().map(move |exec| (index, exec)))
         .map(|(index, settled)| {
-            Ok(Execution::ExecutionAmm(ExecutedAmm {
+            Ok(Execution::ExecutionAmm(Box::new(ExecutedAmm {
                 order: prepared_amms
                     .get(index)
                     .ok_or_else(|| anyhow!("Invalid AMM {}", index))?
@@ -181,7 +181,7 @@ fn match_prepared_and_settled_amms(
                 input: (settled.buy_token, settled.exec_buy_amount),
                 output: (settled.sell_token, settled.exec_sell_amount),
                 exec_plan: settled.exec_plan,
-            }))
+            })))
         })
         .collect::<Result<Vec<Execution>>>()
 }
@@ -617,7 +617,7 @@ mod tests {
         assert_eq!(
             executions,
             vec![
-                Execution::ExecutionAmm(ExecutedAmm {
+                Execution::ExecutionAmm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
@@ -625,8 +625,8 @@ mod tests {
                         sequence: 0u32,
                         position: 0u32,
                     }),
-                }),
-                Execution::ExecutionAmm(ExecutedAmm {
+                })),
+                Execution::ExecutionAmm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
@@ -634,8 +634,8 @@ mod tests {
                         sequence: 0u32,
                         position: 1u32,
                     }),
-                }),
-                Execution::ExecutionAmm(ExecutedAmm {
+                })),
+                Execution::ExecutionAmm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
@@ -643,8 +643,8 @@ mod tests {
                         sequence: 0u32,
                         position: 2u32,
                     }),
-                }),
-                Execution::ExecutionAmm(ExecutedAmm {
+                })),
+                Execution::ExecutionAmm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
@@ -652,7 +652,7 @@ mod tests {
                         sequence: 0u32,
                         position: 3u32,
                     }),
-                }),
+                })),
             ],
         );
     }
@@ -668,21 +668,23 @@ mod tests {
             fee: Ratio::new(3, 1000),
             settlement_handling: CapturingSettlementHandler::arc(),
         };
-        let executions_amms = vec![Execution::ExecutionAmm(ExecutedAmm {
+        let executions_amms = vec![Execution::ExecutionAmm(Box::new(ExecutedAmm {
             order: Liquidity::ConstantProduct(cpo_1),
             input: (token_a, U256::from(2)),
             output: (token_b, U256::from(1)),
             exec_plan: None,
-        })];
-        let interactions = vec![Execution::ExecutionCustomInteraction(InteractionData {
-            target: H160::zero(),
-            value: U256::zero(),
-            call_data: Vec::new(),
-            exec_plan: Some(ExecutionPlanCoordinatesModel {
-                sequence: 1u32,
-                position: 1u32,
-            }),
-        })];
+        }))];
+        let interactions = vec![Execution::ExecutionCustomInteraction(Box::new(
+            InteractionData {
+                target: H160::zero(),
+                value: U256::zero(),
+                call_data: Vec::new(),
+                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    sequence: 1u32,
+                    position: 1u32,
+                }),
+            },
+        ))];
         let merged_executions =
             merge_and_order_executions(executions_amms.clone(), interactions.clone()).unwrap();
         assert_eq!(
