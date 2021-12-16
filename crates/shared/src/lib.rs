@@ -3,6 +3,7 @@ pub mod macros;
 
 pub mod arguments;
 pub mod bad_token;
+pub mod balancer_sor_api;
 pub mod baseline_solver;
 pub mod conversions;
 pub mod current_block;
