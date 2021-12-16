@@ -11,7 +11,7 @@ use super::{
     },
     pool_init::SubgraphPoolInitializer,
     pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
-    pools::common::PoolInfoFetcher,
+    pools::common::{self, PoolInfoFetcher},
     swap::fixed_point::Bfp,
 };
 use crate::{
@@ -33,11 +33,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TokenState {
-    pub balance: U256,
-    pub scaling_exponent: u8,
-}
+pub use common::TokenState;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct WeightedTokenState {
@@ -64,39 +60,20 @@ pub struct WeightedPool {
 }
 
 impl WeightedPool {
-    pub fn new(
-        pool_data: RegisteredWeightedPool,
-        balances: Vec<U256>,
-        swap_fee: Bfp,
-        paused: bool,
-    ) -> Self {
-        let mut reserves = HashMap::new();
-        // We expect the weight and token indices are aligned with balances returned from EVM query.
-        // If necessary we would also pass the tokens along with the query result,
-        // use them and fetch the weights from the registry by token address.
-        for (&token, balance, &scaling_exponent, &weight) in itertools::izip!(
-            &pool_data.common.tokens,
-            balances,
-            &pool_data.common.scaling_exponents,
-            &pool_data.weights
-        ) {
-            reserves.insert(
-                token,
-                WeightedTokenState {
-                    common: TokenState {
-                        balance,
-                        scaling_exponent,
-                    },
-                    weight,
-                },
-            );
-        }
+    pub fn new(pool_data: RegisteredWeightedPool, common_state: common::PoolState) -> Self {
+        let reserves = common_state
+            .tokens
+            .into_iter()
+            .zip(&pool_data.weights)
+            .map(|((address, common), &weight)| (address, WeightedTokenState { common, weight }))
+            .collect();
+
         WeightedPool {
             common: CommonPoolState {
                 id: pool_data.common.id,
                 address: pool_data.common.address,
-                swap_fee,
-                paused,
+                swap_fee: common_state.swap_fee,
+                paused: common_state.paused,
             },
             reserves,
         }
@@ -146,41 +123,19 @@ pub struct StablePool {
 impl StablePool {
     pub fn new(
         pool_data: RegisteredStablePool,
-        balances: Vec<U256>,
-        swap_fee: Bfp,
-        amplification_factor: U256,
-        amplification_precision: U256,
-        paused: bool,
-    ) -> Result<Self> {
-        let mut reserves = HashMap::new();
-        // We expect the weight and token indices are aligned with balances returned from EVM query.
-        // If necessary we would also pass the tokens along with the query result,
-        // use them and fetch the weights from the registry by token address.
-        for (&token, balance, &scaling_exponent) in itertools::izip!(
-            &pool_data.common.tokens,
-            balances,
-            &pool_data.common.scaling_exponents,
-        ) {
-            reserves.insert(
-                token,
-                TokenState {
-                    balance,
-                    scaling_exponent,
-                },
-            );
-        }
-        let amplification_parameter =
-            AmplificationParameter::new(amplification_factor, amplification_precision)?;
-        Ok(StablePool {
+        common_state: common::PoolState,
+        amplification_parameter: AmplificationParameter,
+    ) -> Self {
+        StablePool {
             common: CommonPoolState {
                 id: pool_data.common.id,
                 address: pool_data.common.address,
-                swap_fee,
-                paused,
+                swap_fee: common_state.swap_fee,
+                paused: common_state.paused,
             },
-            reserves,
+            reserves: common_state.tokens.into_iter().collect(),
             amplification_parameter,
-        })
+        }
     }
 }
 
@@ -243,12 +198,13 @@ impl BalancerPoolFetcher {
             token_info_fetcher,
         ));
         let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
-        let pool_registry =
-            Arc::new(BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info).await?);
+        let pool_registry = Arc::new(
+            BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info.clone()).await?,
+        );
         let stable_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), web3.clone()).await?;
+            PoolReserveFetcher::new(pool_registry.clone(), pool_info.clone(), web3.clone()).await?;
         let weighted_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), web3).await?;
+            PoolReserveFetcher::new(pool_registry.clone(), pool_info, web3).await?;
         let stable_pool_reserve_cache = RecentBlockCache::new(
             config,
             stable_pool_reserve_fetcher,

@@ -64,10 +64,6 @@ mod tests {
     use ethcontract::{H160, H256};
     use ethcontract_mock::Mock;
 
-    fn bfp(amount: &str) -> Bfp {
-        amount.parse().unwrap()
-    }
-
     #[test]
     fn convert_graph_pool_to_weighted_pool_info() {
         let pool = PoolData {
@@ -79,12 +75,12 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some(bfp("1.337")),
+                    weight: Some(bfp!("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some(bfp("4.2")),
+                    weight: Some(bfp!("4.2")),
                 },
             ],
         };
@@ -118,12 +114,12 @@ mod tests {
                 Token {
                     address: H160([0x11; 20]),
                     decimals: 1,
-                    weight: Some(bfp("1.337")),
+                    weight: Some(bfp!("1.337")),
                 },
                 Token {
                     address: H160([0x22; 20]),
                     decimals: 2,
-                    weight: Some(bfp("4.2")),
+                    weight: Some(bfp!("4.2")),
                 },
             ],
         };
@@ -133,7 +129,7 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_weighted_pool() {
-        let weights = [bfp("0.5"), bfp("0.25"), bfp("0.25")];
+        let weights = [bfp!("0.5"), bfp!("0.25"), bfp!("0.25")];
 
         let mock = Mock::new(42);
         let web3 = mock.web3();

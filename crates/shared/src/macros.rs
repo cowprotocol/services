@@ -6,6 +6,15 @@ macro_rules! addr {
 }
 
 #[macro_export]
+macro_rules! bfp {
+    ($val:literal) => {
+        ($val)
+            .parse::<$crate::sources::balancer_v2::swap::fixed_point::Bfp>()
+            .unwrap()
+    };
+}
+
+#[macro_export]
 macro_rules! json_map {
     ($($key:expr => $value:expr),* $(,)?) => {{
         #[allow(unused_mut)]

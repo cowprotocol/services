@@ -1,13 +1,18 @@
 //! Module with data types and logic common to multiple Balancer pool types
 
 use crate::{
-    sources::balancer_v2::graph_api::{PoolData, PoolType},
+    sources::balancer_v2::{
+        graph_api::{PoolData, PoolType},
+        swap::fixed_point::Bfp,
+    },
     token_info::TokenInfoFetching,
+    Web3CallBatch,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::{BalancerV2BasePool, BalancerV2Vault};
-use ethcontract::{Bytes, H160, H256};
-use std::sync::Arc;
+use ethcontract::{BlockId, Bytes, H160, H256, U256};
+use futures::{future::BoxFuture, FutureExt as _};
+use std::{collections::BTreeMap, sync::Arc};
 
 /// Trait for fetching common pool data by address.
 #[mockall::automock]
@@ -18,6 +23,13 @@ pub trait PoolInfoFetching: Send + Sync {
         pool_address: H160,
         block_created: u64,
     ) -> Result<PoolInfo>;
+
+    fn fetch_common_pool_state(
+        &self,
+        pool: &PoolInfo,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<PoolState>>;
 }
 
 /// Via `PoolInfoFetcher` leverages a combination of `Web3` and `TokenInfoFetching`
@@ -30,6 +42,12 @@ pub struct PoolInfoFetcher {
 impl PoolInfoFetcher {
     pub fn new(vault: BalancerV2Vault, token_infos: Arc<dyn TokenInfoFetching>) -> Self {
         Self { vault, token_infos }
+    }
+
+    /// Returns a Balancer base pool contract instance at the specified address.
+    fn base_pool_at(&self, pool_address: H160) -> BalancerV2BasePool {
+        let web3 = self.vault.raw_instance().web3();
+        BalancerV2BasePool::at(&web3, pool_address)
     }
 
     /// Retrieves the scaling exponents for the specified tokens.
@@ -57,8 +75,7 @@ impl PoolInfoFetching for PoolInfoFetcher {
         pool_address: H160,
         block_created: u64,
     ) -> Result<PoolInfo> {
-        let web3 = self.vault.raw_instance().web3();
-        let pool = BalancerV2BasePool::at(&web3, pool_address);
+        let pool = self.base_pool_at(pool_address);
 
         let pool_id = H256(pool.methods().get_pool_id().call().await?.0);
         let (tokens, _, _) = self
@@ -76,6 +93,59 @@ impl PoolInfoFetching for PoolInfoFetcher {
             scaling_exponents,
             block_created,
         })
+    }
+
+    fn fetch_common_pool_state(
+        &self,
+        pool: &PoolInfo,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<PoolState>> {
+        let pool_contract = self.base_pool_at(pool.address);
+        let paused = pool_contract
+            .get_paused_state()
+            .block(block)
+            .batch_call(batch);
+        let swap_fee = pool_contract
+            .get_swap_fee_percentage()
+            .block(block)
+            .batch_call(batch);
+        let balances = self
+            .vault
+            .get_pool_tokens(Bytes(pool.id.0))
+            .block(block)
+            .batch_call(batch);
+
+        // Because of a `mockall` limitation, we **need** the future returned
+        // here to be `'static`. This requires us to clone and move `pool` into
+        // the async closure - otherwise it would only live for as long as
+        // `pool`, i.e. `'_`.
+        let pool = pool.clone();
+        async move {
+            let (paused, _, _) = paused.await?;
+            let swap_fee = Bfp::from_wei(swap_fee.await?);
+
+            let (token_addresses, balances, _) = balances.await?;
+            ensure!(pool.tokens == token_addresses, "pool token mismatch");
+            let tokens = itertools::izip!(&pool.tokens, balances, &pool.scaling_exponents)
+                .map(|(&address, balance, &scaling_exponent)| {
+                    (
+                        address,
+                        TokenState {
+                            balance,
+                            scaling_exponent,
+                        },
+                    )
+                })
+                .collect();
+
+            Ok(PoolState {
+                paused,
+                swap_fee,
+                tokens,
+            })
+        }
+        .boxed()
     }
 }
 
@@ -120,6 +190,21 @@ impl PoolInfo {
     }
 }
 
+/// Common pool state information shared across all pool types.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PoolState {
+    pub paused: bool,
+    pub swap_fee: Bfp,
+    pub tokens: BTreeMap<H160, TokenState>,
+}
+
+/// Common pool token state information that is shared among all pool types.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TokenState {
+    pub balance: U256,
+    pub scaling_exponent: u8,
+}
+
 /// Converts a token decimal count to its corresponding scaling exponent.
 fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
     // Technically this should never fail for Balancer Pools since tokens
@@ -138,7 +223,7 @@ mod tests {
     };
     use ethcontract::U256;
     use ethcontract_mock::Mock;
-    use maplit::hashmap;
+    use maplit::{btreemap, hashmap};
     use mockall::predicate;
 
     #[tokio::test]
@@ -189,7 +274,132 @@ mod tests {
                 scaling_exponents: vec![0, 0, 12],
                 block_created: 1337,
             }
-        )
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_pool_state() {
+        let pool_id = H256([0x90; 32]);
+        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+        let balances = [bfp!("1000.0"), bfp!("10.0"), bfp!("15.0")];
+        let scaling_exponents = [0, 0, 12];
+
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
+        pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
+            .returns((false, 0.into(), 0.into()));
+        pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
+            .returns(bfp!("0.003").as_uint256());
+
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
+        vault
+            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
+            .predicate((predicate::eq(Bytes(pool_id.0)),))
+            .returns((
+                tokens.to_vec(),
+                balances.into_iter().map(Bfp::as_uint256).collect(),
+                0.into(),
+            ));
+
+        let token_infos = MockTokenInfoFetching::new();
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault: BalancerV2Vault::at(&web3, vault.address()),
+            token_infos: Arc::new(token_infos),
+        };
+        let pool_info = PoolInfo {
+            id: pool_id,
+            address: pool.address(),
+            tokens: tokens.to_vec(),
+            scaling_exponents: scaling_exponents.to_vec(),
+            block_created: 1337,
+        };
+
+        let pool_state = {
+            let mut batch = Web3CallBatch::new(web3.transport().clone());
+            let block = web3.eth().block_number().await.unwrap();
+
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, &mut batch, block.into());
+
+            batch.execute_all(100).await;
+            pool_state.await.unwrap()
+        };
+
+        assert_eq!(
+            pool_state,
+            PoolState {
+                paused: false,
+                swap_fee: bfp!("0.003"),
+                tokens: btreemap! {
+                    tokens[0] => TokenState {
+                        balance: balances[0].as_uint256(),
+                        scaling_exponent: scaling_exponents[0],
+                    },
+                    tokens[1] => TokenState {
+                        balance: balances[1].as_uint256(),
+                        scaling_exponent: scaling_exponents[1],
+                    },
+                    tokens[2] => TokenState {
+                        balance: balances[2].as_uint256(),
+                        scaling_exponent: scaling_exponents[2],
+                    },
+                },
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn fetch_state_errors_on_token_mismatch() {
+        let tokens = [H160([1; 20]), H160([2; 20]), H160([3; 20])];
+
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let pool = mock.deploy(BalancerV2BasePool::raw_contract().abi.clone());
+        pool.expect_call(BalancerV2BasePool::signatures().get_paused_state())
+            .returns((false, 0.into(), 0.into()));
+        pool.expect_call(BalancerV2BasePool::signatures().get_swap_fee_percentage())
+            .returns(0.into());
+
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
+        vault
+            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
+            .predicate((predicate::eq(Bytes(Default::default())),))
+            .returns((
+                vec![H160([1; 20]), H160([4; 20])],
+                vec![0.into(), 0.into()],
+                0.into(),
+            ));
+
+        let token_infos = MockTokenInfoFetching::new();
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault: BalancerV2Vault::at(&web3, vault.address()),
+            token_infos: Arc::new(token_infos),
+        };
+        let pool_info = PoolInfo {
+            id: Default::default(),
+            address: pool.address(),
+            tokens: tokens.to_vec(),
+            scaling_exponents: vec![0, 0, 0],
+            block_created: 1337,
+        };
+
+        let pool_state = {
+            let mut batch = Web3CallBatch::new(web3.transport().clone());
+            let block = web3.eth().block_number().await.unwrap();
+
+            let pool_state =
+                pool_info_fetcher.fetch_common_pool_state(&pool_info, &mut batch, block.into());
+
+            batch.execute_all(100).await;
+            pool_state.await
+        };
+
+        assert!(pool_state.is_err());
     }
 
     #[tokio::test]
