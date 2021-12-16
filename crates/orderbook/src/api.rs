@@ -113,12 +113,32 @@ struct ApiMetrics {
 struct Error<'a> {
     error_type: &'a str,
     description: &'a str,
+    /// Additional arbitrary data that can be attached to an API error.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    data: Option<serde_json::Value>,
 }
 
 fn error(error_type: &str, description: impl AsRef<str>) -> Json {
     json(&Error {
         error_type,
         description: description.as_ref(),
+        data: None,
+    })
+}
+
+fn rich_error(error_type: &str, description: impl AsRef<str>, data: impl Serialize) -> Json {
+    let data = match serde_json::to_value(&data) {
+        Ok(value) => Some(value),
+        Err(err) => {
+            tracing::warn!(?err, "failed to serialize error data");
+            None
+        }
+    };
+
+    json(&Error {
+        error_type,
+        description: description.as_ref(),
+        data,
     })
 }
 
@@ -127,6 +147,7 @@ fn internal_error(error: anyhowError) -> Json {
     json(&Error {
         error_type: "InternalServerError",
         description: "",
+        data: None,
     })
 }
 
@@ -190,4 +211,69 @@ fn extract_payload<T: DeserializeOwned + Send>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
     // (rejecting huge payloads)...
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::ser;
+    use serde_json::json;
+
+    #[test]
+    fn rich_errors_skip_unset_data_field() {
+        assert_eq!(
+            serde_json::to_value(&Error {
+                error_type: "foo",
+                description: "bar",
+                data: None,
+            })
+            .unwrap(),
+            json!({
+                "errorType": "foo",
+                "description": "bar",
+            }),
+        );
+        assert_eq!(
+            serde_json::to_value(&Error {
+                error_type: "foo",
+                description: "bar",
+                data: Some(json!(42)),
+            })
+            .unwrap(),
+            json!({
+                "errorType": "foo",
+                "description": "bar",
+                "data": 42,
+            }),
+        );
+    }
+
+    #[tokio::test]
+    async fn rich_errors_handle_serialization_errors() {
+        struct AlwaysErrors;
+        impl Serialize for AlwaysErrors {
+            fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
+            where
+                S: serde::Serializer,
+            {
+                Err(ser::Error::custom("error"))
+            }
+        }
+
+        let body = warp::hyper::body::to_bytes(
+            rich_error("foo", "bar", AlwaysErrors)
+                .into_response()
+                .into_body(),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&*body).unwrap(),
+            json!({
+                "errorType": "foo",
+                "description": "bar",
+            })
+        );
+    }
 }

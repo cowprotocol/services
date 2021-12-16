@@ -121,18 +121,27 @@ pub struct OrderQuoteResponse {
 
 #[derive(Debug)]
 pub enum FeeError {
-    SellAmountDoesNotCoverFee,
+    SellAmountDoesNotCoverFee(FeeInfo),
     PriceEstimate(PriceEstimationError),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeeInfo {
+    #[serde(with = "u256_decimal")]
+    pub fee_amount: U256,
+    pub expiration: DateTime<Utc>,
 }
 
 impl IntoWarpReply for FeeError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             FeeError::PriceEstimate(err) => err.into_warp_reply(),
-            FeeError::SellAmountDoesNotCoverFee => warp::reply::with_status(
-                super::error(
+            FeeError::SellAmountDoesNotCoverFee(fee) => warp::reply::with_status(
+                super::rich_error(
                     "SellAmountDoesNotCoverFee",
                     "The sell amount for the sell order is lower than the fee.".to_string(),
+                    fee,
                 ),
                 StatusCode::BAD_REQUEST,
             ),
@@ -247,7 +256,10 @@ impl OrderQuoter {
                     .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = sell_amount_before_fee
                     .checked_sub(fee)
-                    .ok_or(FeeError::SellAmountDoesNotCoverFee)?
+                    .ok_or(FeeError::SellAmountDoesNotCoverFee(FeeInfo {
+                        fee_amount: fee,
+                        expiration,
+                    }))?
                     .max(U256::one());
                 let estimate = self
                     .price_estimator
