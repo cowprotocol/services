@@ -1,7 +1,7 @@
 use super::{
     event_handler::BalancerPoolRegistry,
-    pool_fetching::{AmplificationParameter, BalancerPoolEvaluating, StablePool, WeightedPool},
-    pools::common,
+    pool_fetching::{BalancerPoolEvaluating, StablePool, WeightedPool},
+    pools::{common, FactoryIndexing},
 };
 use crate::{
     ethcontract_error::EthcontractErrorType,
@@ -10,14 +10,17 @@ use crate::{
     Web3,
 };
 use anyhow::Result;
-use contracts::BalancerV2StablePool;
+use contracts::{BalancerV2StablePoolFactory, BalancerV2WeightedPoolFactory};
 use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, H256};
-use futures::future;
-use std::{collections::HashSet, sync::Arc};
+use futures::{future, FutureExt as _};
+use std::{collections::HashSet, future::Future, sync::Arc};
+use tokio::sync::oneshot;
 
 pub struct PoolReserveFetcher {
     pool_registry: Arc<BalancerPoolRegistry>,
     common_pool_fetcher: Arc<dyn common::PoolInfoFetching>,
+    weighted_pool_factory: BalancerV2WeightedPoolFactory,
+    stable_pool_factory: BalancerV2StablePoolFactory,
     web3: Web3,
 }
 
@@ -31,9 +34,14 @@ impl PoolReserveFetcher {
         common_pool_fetcher: Arc<dyn common::PoolInfoFetching>,
         web3: Web3,
     ) -> Result<Self> {
+        let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
+        let stable_pool_factory = BalancerV2StablePoolFactory::deployed(&web3).await?;
+
         Ok(Self {
             pool_registry,
             common_pool_fetcher,
+            weighted_pool_factory,
+            stable_pool_factory,
             web3,
         })
     }
@@ -80,13 +88,28 @@ impl CacheFetching<H256, WeightedPool> for PoolReserveFetcher {
             .await
             .into_iter()
             .map(|registered_pool| {
-                let common_pool_state = self.common_pool_fetcher.fetch_common_pool_state(
-                    &registered_pool.common,
+                let (common_pool_state, common_pool_state_ok) =
+                    share_common_pool_state(self.common_pool_fetcher.fetch_common_pool_state(
+                        &registered_pool.common,
+                        &mut batch,
+                        block,
+                    ));
+                let weighted_pool_state = self.weighted_pool_factory.fetch_pool_state(
+                    &registered_pool,
+                    common_pool_state_ok.boxed(),
                     &mut batch,
                     block,
                 );
 
-                async move { Ok(WeightedPool::new(registered_pool, common_pool_state.await?)) }
+                async move {
+                    let common_pool_state = common_pool_state.await?;
+                    let weighted_pool_state = weighted_pool_state.await?;
+                    Ok(WeightedPool::new(
+                        registered_pool,
+                        common_pool_state,
+                        weighted_pool_state,
+                    ))
+                }
             })
             .collect::<Vec<_>>();
         batch.execute_all(MAX_BATCH_SIZE).await;
@@ -111,30 +134,27 @@ impl CacheFetching<H256, StablePool> for PoolReserveFetcher {
             .await
             .into_iter()
             .map(|registered_pool| {
-                let common_pool_state = self.common_pool_fetcher.fetch_common_pool_state(
-                    &registered_pool.common,
+                let (common_pool_state, common_pool_state_ok) =
+                    share_common_pool_state(self.common_pool_fetcher.fetch_common_pool_state(
+                        &registered_pool.common,
+                        &mut batch,
+                        block,
+                    ));
+                let stable_pool_state = self.stable_pool_factory.fetch_pool_state(
+                    &registered_pool,
+                    common_pool_state_ok.boxed(),
                     &mut batch,
                     block,
                 );
 
-                let pool_contract =
-                    BalancerV2StablePool::at(&self.web3, registered_pool.common.address);
-                let amplification_parameter = pool_contract
-                    .get_amplification_parameter()
-                    .block(block)
-                    .batch_call(&mut batch);
-
                 async move {
-                    let common = common_pool_state.await?;
-                    let amplification_parameter = {
-                        let (factor, _, precision) = amplification_parameter.await?;
-                        AmplificationParameter::new(factor, precision)?
-                    };
+                    let common_pool_state = common_pool_state.await?;
+                    let stable_pool_state = stable_pool_state.await?;
 
                     Ok(StablePool::new(
                         registered_pool,
-                        common,
-                        amplification_parameter,
+                        common_pool_state,
+                        stable_pool_state,
                     ))
                 }
             })
@@ -171,10 +191,49 @@ fn is_contract_error(err: &anyhow::Error) -> bool {
     )
 }
 
+/// An internal utility method for sharing the success value for an
+/// `anyhow::Result`.
+///
+/// Typically, this is pretty trivial using `FutureExt::shared`. However, since
+/// `anyhow::Error: !Clone` we need to use a different approach.
+///
+/// # Panics
+///
+/// Polling the future with the shared success value will panic if the result
+/// future has not already resolved to a `Ok` value. This method is only ever
+/// meant to be used internally, so we don't have to worry that these
+/// assumptions leak out of this module.
+fn share_common_pool_state(
+    fut: impl Future<Output = Result<common::PoolState>>,
+) -> (
+    impl Future<Output = Result<common::PoolState>>,
+    impl Future<Output = common::PoolState>,
+) {
+    let (pool_sender, pool_receiver) = oneshot::channel();
+
+    let result = fut.inspect(|pool_result| {
+        // We can't clone `anyhow::Error` so just clone the pool data and use
+        // an empty `()` error.
+        let pool_result = pool_result.as_ref().map(Clone::clone).map_err(|_| ());
+        // Ignore error if the shared future was dropped.
+        let _ = pool_sender.send(pool_result);
+    });
+    let shared = async move {
+        pool_receiver
+            .now_or_never()
+            .expect("result future is still pending")
+            .expect("result future was dropped")
+            .expect("result future resolved to an error")
+    };
+
+    (result, shared)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ethcontract_error;
+    use anyhow::bail;
 
     #[test]
     fn pool_fetcher_forwards_node_error() {
@@ -196,5 +255,37 @@ mod tests {
             .len(),
             1
         )
+    }
+
+    #[tokio::test]
+    async fn share_pool_state_future() {
+        let (pool_state, pool_state_ok) = share_common_pool_state(async { Ok(Default::default()) });
+        assert_eq!({ pool_state.await.unwrap() }, pool_state_ok.await);
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn shared_pool_state_future_panics_if_pending() {
+        let (_pool_state, pool_state_ok) = share_common_pool_state(async {
+            futures::pending!();
+            Ok(Default::default())
+        });
+        pool_state_ok.await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn share_pool_state_future_if_dropped() {
+        let (pool_state, pool_state_ok) = share_common_pool_state(async { Ok(Default::default()) });
+        drop(pool_state);
+        pool_state_ok.await;
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn share_pool_state_future_if_errored() {
+        let (pool_state, pool_state_ok) = share_common_pool_state(async { bail!("error") });
+        let _ = pool_state.await;
+        pool_state_ok.await;
     }
 }

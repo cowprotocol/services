@@ -11,22 +11,23 @@ use super::{
     },
     pool_init::SubgraphPoolInitializer,
     pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
-    pools::common::{self, PoolInfoFetcher},
+    pools::{
+        common::{self, PoolInfoFetcher},
+        stable, weighted,
+    },
     swap::fixed_point::Bfp,
 };
 use crate::{
-    conversions::U256Ext,
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig, RecentBlockCache},
     token_info::TokenInfoFetching,
     Web3,
 };
-use anyhow::{ensure, Result};
+use anyhow::Result;
 use contracts::BalancerV2Vault;
-use ethcontract::{H160, H256, U256};
+use ethcontract::{H160, H256};
 use model::TokenPair;
-use num::BigRational;
 use reqwest::Client;
 use std::{
     collections::{HashMap, HashSet},
@@ -34,12 +35,8 @@ use std::{
 };
 
 pub use common::TokenState;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WeightedTokenState {
-    pub common: TokenState,
-    pub weight: Bfp,
-}
+pub use stable::AmplificationParameter;
+pub use weighted::TokenState as WeightedTokenState;
 
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
@@ -60,14 +57,11 @@ pub struct WeightedPool {
 }
 
 impl WeightedPool {
-    pub fn new(pool_data: RegisteredWeightedPool, common_state: common::PoolState) -> Self {
-        let reserves = common_state
-            .tokens
-            .into_iter()
-            .zip(&pool_data.weights)
-            .map(|((address, common), &weight)| (address, WeightedTokenState { common, weight }))
-            .collect();
-
+    pub fn new(
+        pool_data: RegisteredWeightedPool,
+        common_state: common::PoolState,
+        weighted_state: weighted::PoolState,
+    ) -> Self {
         WeightedPool {
             common: CommonPoolState {
                 id: pool_data.common.id,
@@ -75,7 +69,7 @@ impl WeightedPool {
                 swap_fee: common_state.swap_fee,
                 paused: common_state.paused,
             },
-            reserves,
+            reserves: weighted_state.tokens.into_iter().collect(),
         }
     }
 }
@@ -83,33 +77,6 @@ impl WeightedPool {
 impl BalancerPoolEvaluating for WeightedPool {
     fn properties(&self) -> CommonPoolState {
         self.common.clone()
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct AmplificationParameter {
-    factor: U256,
-    precision: U256,
-}
-
-impl AmplificationParameter {
-    pub fn new(factor: U256, precision: U256) -> Result<Self> {
-        ensure!(!precision.is_zero(), "Zero precision not allowed");
-        Ok(Self { factor, precision })
-    }
-
-    /// This is the format used to pass into smart contracts.
-    pub fn as_u256(&self) -> U256 {
-        self.factor * self.precision
-    }
-
-    /// This is the format used to pass along to HTTP solver.
-    pub fn as_big_rational(&self) -> BigRational {
-        // We can assert that the precision is non-zero as we check when constructing
-        // new `AmplificationParameter` instances that this invariant holds, and we don't
-        // allow modifications of `self.precision` such that it could become 0.
-        debug_assert!(!self.precision.is_zero());
-        BigRational::new(self.factor.to_big_int(), self.precision.to_big_int())
     }
 }
 
@@ -124,7 +91,7 @@ impl StablePool {
     pub fn new(
         pool_data: RegisteredStablePool,
         common_state: common::PoolState,
-        amplification_parameter: AmplificationParameter,
+        stable_state: stable::PoolState,
     ) -> Self {
         StablePool {
             common: CommonPoolState {
@@ -133,8 +100,8 @@ impl StablePool {
                 swap_fee: common_state.swap_fee,
                 paused: common_state.paused,
             },
-            reserves: common_state.tokens.into_iter().collect(),
-            amplification_parameter,
+            reserves: stable_state.tokens.into_iter().collect(),
+            amplification_parameter: stable_state.amplification_parameter,
         }
     }
 }
@@ -297,28 +264,5 @@ mod tests {
         let filtered_pools = filter_paused(pools.clone());
         assert_eq!(filtered_pools.len(), 1);
         assert_eq!(filtered_pools[0].common.id, pools[1].common.id);
-    }
-
-    #[test]
-    fn amplification_parameter_conversions() {
-        assert_eq!(
-            AmplificationParameter::new(2.into(), 3.into())
-                .unwrap()
-                .as_u256(),
-            6.into()
-        );
-        assert_eq!(
-            AmplificationParameter::new(7.into(), 8.into())
-                .unwrap()
-                .as_big_rational(),
-            BigRational::new(7.into(), 8.into())
-        );
-
-        assert_eq!(
-            AmplificationParameter::new(1.into(), 0.into())
-                .unwrap_err()
-                .to_string(),
-            "Zero precision not allowed"
-        );
     }
 }

@@ -198,6 +198,16 @@ pub struct PoolState {
     pub tokens: BTreeMap<H160, TokenState>,
 }
 
+impl Default for PoolState {
+    fn default() -> Self {
+        Self {
+            paused: false,
+            swap_fee: 0.into(),
+            tokens: BTreeMap::new(),
+        }
+    }
+}
+
 /// Common pool token state information that is shared among all pool types.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenState {

@@ -17,7 +17,7 @@ impl PriorityPriceEstimator {
 fn log_errors(results: &[Result<Estimate, PriceEstimationError>], estimator_index: usize) {
     for result in results {
         if let Err(err) = result {
-            tracing::warn!(%estimator_index, ?err,"priority price estimator failed");
+            tracing::warn!(%estimator_index, ?err, "priority price estimator failed");
         }
     }
 }
