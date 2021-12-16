@@ -34,6 +34,36 @@ pub enum PoolKind {
     Stable(stable::PoolState),
 }
 
+macro_rules! impl_from_state {
+    ($from:ty, $variant:ident) => {
+        impl From<$from> for PoolKind {
+            fn from(state: $from) -> Self {
+                Self::$variant(state)
+            }
+        }
+    };
+}
+
+impl_from_state!(weighted::PoolState, Weighted);
+impl_from_state!(stable::PoolState, Stable);
+
+#[derive(Clone, Debug, PartialEq)]
+/// Balancer pool status.
+pub enum PoolStatus {
+    Active(Pool),
+    Paused,
+}
+
+impl PoolStatus {
+    /// Returns the inner pool data if it is active, `None` otherwise.
+    pub fn active(self) -> Option<Pool> {
+        match self {
+            Self::Active(pool) => Some(pool),
+            Self::Paused => None,
+        }
+    }
+}
+
 /// A Balancer factory indexing implementation.
 #[mockall::automock(
     type PoolInfo = weighted::PoolInfo;
@@ -49,7 +79,7 @@ pub trait FactoryIndexing: Send + Sync + 'static {
     type PoolInfo: PoolIndexing;
 
     /// The current pool state for this factory.
-    type PoolState;
+    type PoolState: Into<PoolKind>;
 
     /// Augments the specified common pool info for this factory.
     ///

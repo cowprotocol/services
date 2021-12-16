@@ -25,7 +25,7 @@ use crate::{
     Web3,
 };
 use anyhow::Result;
-use contracts::BalancerV2Vault;
+use contracts::{BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPoolFactory};
 use ethcontract::{H160, H256};
 use model::TokenPair;
 use reqwest::Client;
@@ -57,17 +57,16 @@ pub struct WeightedPool {
 }
 
 impl WeightedPool {
-    pub fn new(
+    pub fn new_unpaused(
         pool_data: RegisteredWeightedPool,
-        common_state: common::PoolState,
         weighted_state: weighted::PoolState,
     ) -> Self {
         WeightedPool {
             common: CommonPoolState {
                 id: pool_data.common.id,
                 address: pool_data.common.address,
-                swap_fee: common_state.swap_fee,
-                paused: common_state.paused,
+                swap_fee: weighted_state.swap_fee,
+                paused: false,
             },
             reserves: weighted_state.tokens.into_iter().collect(),
         }
@@ -88,17 +87,13 @@ pub struct StablePool {
 }
 
 impl StablePool {
-    pub fn new(
-        pool_data: RegisteredStablePool,
-        common_state: common::PoolState,
-        stable_state: stable::PoolState,
-    ) -> Self {
+    pub fn new_unpaused(pool_data: RegisteredStablePool, stable_state: stable::PoolState) -> Self {
         StablePool {
             common: CommonPoolState {
                 id: pool_data.common.id,
                 address: pool_data.common.address,
-                swap_fee: common_state.swap_fee,
-                paused: common_state.paused,
+                swap_fee: stable_state.swap_fee,
+                paused: false,
             },
             reserves: stable_state.tokens.into_iter().collect(),
             amplification_parameter: stable_state.amplification_parameter,
@@ -160,18 +155,27 @@ impl BalancerPoolFetcher {
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
     ) -> Result<Self> {
-        let pool_info = Arc::new(PoolInfoFetcher::new(
-            BalancerV2Vault::deployed(&web3).await?,
-            token_info_fetcher,
+        let vault = BalancerV2Vault::deployed(&web3).await?;
+        let weighted_pool_fetcher = Arc::new(PoolInfoFetcher::new(
+            vault.clone(),
+            BalancerV2WeightedPoolFactory::deployed(&web3).await?,
+            token_info_fetcher.clone(),
         ));
+        let stable_pool_fetcher = Arc::new(PoolInfoFetcher::new(
+            vault.clone(),
+            BalancerV2StablePoolFactory::deployed(&web3).await?,
+            token_info_fetcher.clone(),
+        ));
+
         let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
         let pool_registry = Arc::new(
-            BalancerPoolRegistry::new(web3.clone(), pool_initializer, pool_info.clone()).await?,
+            BalancerPoolRegistry::new(web3.clone(), pool_initializer, token_info_fetcher.clone())
+                .await?,
         );
-        let stable_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), pool_info.clone(), web3.clone()).await?;
         let weighted_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), pool_info, web3).await?;
+            PoolReserveFetcher::new(pool_registry.clone(), weighted_pool_fetcher, web3.clone())?;
+        let stable_pool_reserve_fetcher =
+            PoolReserveFetcher::new(pool_registry.clone(), stable_pool_fetcher, web3)?;
         let stable_pool_reserve_cache = RecentBlockCache::new(
             config,
             stable_pool_reserve_fetcher,

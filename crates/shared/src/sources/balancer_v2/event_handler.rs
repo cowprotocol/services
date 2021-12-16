@@ -16,19 +16,20 @@
 use super::{
     pool_init::PoolInitializing,
     pool_storage::{PoolStorage, RegisteredStablePool, RegisteredWeightedPool},
-    pools::{common, FactoryIndexing},
+    pools::{common::PoolInfoFetcher, FactoryIndexing},
 };
 use crate::{
     event_handling::{BlockNumber, EventHandler, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
+    token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::{anyhow, Result};
 use contracts::{
     balancer_v2_base_pool_factory::{self, Event as BasePoolFactoryEvent},
-    BalancerV2BasePoolFactory, BalancerV2StablePoolFactory, BalancerV2WeightedPool2TokensFactory,
-    BalancerV2WeightedPoolFactory,
+    BalancerV2BasePoolFactory, BalancerV2StablePoolFactory, BalancerV2Vault,
+    BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
 };
 use ethcontract::{Event as EthContractEvent, H256};
 use model::TokenPair;
@@ -56,8 +57,9 @@ impl BalancerPoolRegistry {
     pub async fn new(
         web3: Web3,
         pool_initializer: impl PoolInitializing,
-        common_pool_fetcher: Arc<dyn common::PoolInfoFetching>,
+        token_infos: Arc<dyn TokenInfoFetching>,
     ) -> Result<Self> {
+        let vault = BalancerV2Vault::deployed(&web3).await?;
         let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
         let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
         let stable_pool_factory = BalancerV2StablePoolFactory::deployed(&web3).await?;
@@ -74,7 +76,14 @@ impl BalancerPoolRegistry {
                         factory.address(),
                         factory.deployment_information(),
                     )),
-                    PoolStorage::new(factory, $initial_pools, common_pool_fetcher.clone()),
+                    PoolStorage::new(
+                        $initial_pools,
+                        Arc::new(PoolInfoFetcher::new(
+                            vault.clone(),
+                            factory,
+                            token_infos.clone(),
+                        )),
+                    ),
                     Some(initial_pools.fetched_block_number),
                 ))
             }};
@@ -218,14 +227,10 @@ impl Maintaining for BalancerPoolRegistry {
 mod tests {
     use super::*;
     use crate::{
-        sources::balancer_v2::{
-            pool_init::{EmptyPoolInitializer, SubgraphPoolInitializer},
-            pools::common::PoolInfoFetcher,
-        },
+        sources::balancer_v2::pool_init::{EmptyPoolInitializer, SubgraphPoolInitializer},
         token_info::TokenInfoFetcher,
         transport,
     };
-    use contracts::BalancerV2Vault;
     use reqwest::Client;
 
     #[tokio::test]
@@ -240,11 +245,7 @@ mod tests {
 
         let pool_init = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
-        let pool_info = PoolInfoFetcher::new(
-            BalancerV2Vault::deployed(&web3).await.unwrap(),
-            Arc::new(token_infos),
-        );
-        let registry = BalancerPoolRegistry::new(web3, pool_init, Arc::new(pool_info))
+        let registry = BalancerPoolRegistry::new(web3, pool_init, Arc::new(token_infos))
             .await
             .unwrap();
 

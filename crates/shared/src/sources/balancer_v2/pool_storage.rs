@@ -59,10 +59,8 @@ pub struct PoolStorage<Factory>
 where
     Factory: FactoryIndexing,
 {
-    factory: Factory,
-
-    /// Component used to fetch common pool information.
-    common_pool_fetcher: Arc<dyn common::PoolInfoFetching>,
+    /// Component used to fetch pool information.
+    pool_info_fetcher: Arc<dyn common::PoolInfoFetching<Factory>>,
     /// Used for O(1) access to all pool_ids for a given token
     pools_by_token: HashMap<H160, HashSet<H256>>,
     /// All indexed pool infos by ID.
@@ -77,14 +75,12 @@ where
     Factory: FactoryIndexing,
 {
     pub fn new(
-        factory: Factory,
         initial_pools: Vec<Factory::PoolInfo>,
-        common_pool_fetcher: Arc<dyn common::PoolInfoFetching>,
+        pool_info_fetcher: Arc<dyn common::PoolInfoFetching<Factory>>,
     ) -> Self {
         initial_pools.into_iter().fold(
             Self {
-                factory,
-                common_pool_fetcher,
+                pool_info_fetcher,
                 pools_by_token: Default::default(),
                 pools: Default::default(),
                 initial_fetched_block: 0,
@@ -152,12 +148,10 @@ where
         pool_creation: PoolCreated,
         block_created: u64,
     ) -> Result<()> {
-        let common_pool_info = self
-            .common_pool_fetcher
-            .fetch_common_pool_info(pool_creation.pool, block_created)
+        let pool = self
+            .pool_info_fetcher
+            .fetch_pool_info(pool_creation.pool, block_created)
             .await?;
-        let pool = self.factory.specialize_pool_info(common_pool_info).await?;
-
         self.insert_pool(pool);
 
         Ok(())
@@ -247,9 +241,7 @@ mod tests {
 
     #[test]
     fn initialize_storage() {
-        let factory = MockFactoryIndexing::new();
         let storage = PoolStorage::new(
-            factory,
             vec![
                 RegisteredWeightedPool {
                     common: CommonPoolData {
@@ -292,7 +284,7 @@ mod tests {
                     ],
                 },
             ],
-            Arc::new(MockPoolInfoFetching::new()),
+            Arc::new(MockPoolInfoFetching::<MockFactoryIndexing>::new()),
         );
 
         assert_eq!(
@@ -311,8 +303,7 @@ mod tests {
         let n = 3usize;
         let (pool_ids, pool_addresses, tokens, weights, creation_events) = pool_init_data(0, n);
 
-        let mut mock_factory = MockFactoryIndexing::new();
-        let mut mock_pool_fetcher = MockPoolInfoFetching::new();
+        let mut mock_pool_fetcher = MockPoolInfoFetching::<MockFactoryIndexing>::new();
         for i in 0..n {
             let expected_pool_data = RegisteredWeightedPool {
                 common: CommonPoolData {
@@ -325,24 +316,16 @@ mod tests {
                 weights: vec![weights[i], weights[i + 1]],
             };
 
-            mock_factory
-                .expect_specialize_pool_info()
-                .with(eq(expected_pool_data.common.clone()))
+            mock_pool_fetcher
+                .expect_fetch_pool_info()
+                .with(eq(pool_addresses[i]), eq(creation_events[i].1))
                 .returning({
                     let expected_pool_data = expected_pool_data.clone();
-                    move |_| Ok(expected_pool_data.clone())
+                    move |_, _| Ok(expected_pool_data.clone())
                 });
-            mock_pool_fetcher
-                .expect_fetch_common_pool_info()
-                .with(eq(pool_addresses[i]), eq(creation_events[i].1))
-                .returning(move |_, _| Ok(expected_pool_data.common.clone()));
         }
 
-        let mut pool_store = PoolStorage::new(
-            mock_factory,
-            Default::default(),
-            Arc::new(mock_pool_fetcher),
-        );
+        let mut pool_store = PoolStorage::new(Default::default(), Arc::new(mock_pool_fetcher));
         for (pool_created, block_created) in creation_events.into_iter().take(n) {
             pool_store
                 .index_pool_creation(pool_created, block_created)
@@ -395,8 +378,7 @@ mod tests {
             pool_init_data(start_block, end_block);
         // Setup all the variables to initialize Balancer Pool State
 
-        let mut mock_factory = MockFactoryIndexing::new();
-        let mut mock_pool_fetcher = MockPoolInfoFetching::new();
+        let mut mock_pool_fetcher = MockPoolInfoFetching::<MockFactoryIndexing>::new();
         for i in start_block..=end_block {
             let expected_pool_data = RegisteredWeightedPool {
                 common: CommonPoolData {
@@ -409,17 +391,13 @@ mod tests {
                 weights: vec![weights[i], weights[i + 1]],
             };
 
-            mock_factory
-                .expect_specialize_pool_info()
-                .with(eq(expected_pool_data.common.clone()))
+            mock_pool_fetcher
+                .expect_fetch_pool_info()
+                .with(eq(pool_addresses[i]), eq(creation_events[i].1))
                 .returning({
                     let expected_pool_data = expected_pool_data.clone();
-                    move |_| Ok(expected_pool_data.clone())
+                    move |_, _| Ok(expected_pool_data.clone())
                 });
-            mock_pool_fetcher
-                .expect_fetch_common_pool_info()
-                .with(eq(pool_addresses[i]), eq(creation_events[i].1))
-                .returning(move |_, _| Ok(expected_pool_data.common.clone()));
         }
 
         let new_pool = RegisteredWeightedPool {
@@ -436,30 +414,19 @@ mod tests {
             pool: new_pool.common.address,
         };
 
-        mock_factory
-            .expect_specialize_pool_info()
-            .with(eq(new_pool.common.clone()))
-            .returning({
-                let new_pool = new_pool.clone();
-                move |_| Ok(new_pool.clone())
-            });
         mock_pool_fetcher
-            .expect_fetch_common_pool_info()
+            .expect_fetch_pool_info()
             .with(
                 eq(new_pool.common.address),
                 eq(new_pool.common.block_created),
             )
             .returning({
                 let new_pool = new_pool.clone();
-                move |_, _| Ok(new_pool.common.clone())
+                move |_, _| Ok(new_pool.clone())
             });
 
         // Let the tests begin!
-        let mut pool_store = PoolStorage::new(
-            mock_factory,
-            Default::default(),
-            Arc::new(mock_pool_fetcher),
-        );
+        let mut pool_store = PoolStorage::new(Default::default(), Arc::new(mock_pool_fetcher));
         for (pool_creation, block_created) in creation_events {
             pool_store
                 .index_pool_creation(pool_creation, block_created)
@@ -539,9 +506,8 @@ mod tests {
             .collect();
 
         let mut registry = PoolStorage::new(
-            MockFactoryIndexing::new(),
             Default::default(),
-            Arc::new(MockPoolInfoFetching::new()),
+            Arc::new(MockPoolInfoFetching::<MockFactoryIndexing>::new()),
         );
         // Test the empty registry.
         for token_pair in &token_pairs {
