@@ -65,6 +65,6 @@ mod tests {
     #[test]
     #[should_panic]
     fn error_parse_fail() {
-        let _error = Error::from("Poop");
+        let _ = Error::from("Poop");
     }
 }

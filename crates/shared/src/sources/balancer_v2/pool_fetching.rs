@@ -3,29 +3,36 @@
 //! their `token_balances` and the `PoolFetcher` returns all up-to-date `Weighted` and `Stable`
 //! pools to be consumed by external users (e.g. Price Estimators and Solvers).
 
+mod aggregate;
+mod cache;
+mod internal;
+mod registry;
+
+pub use self::cache::BalancerPoolCacheMetrics;
+use self::{
+    aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
+};
 use super::{
-    event_handler::BalancerPoolRegistry,
-    pool_cache::{
-        BalancerPoolCacheMetrics, PoolReserveFetcher, StablePoolReserveCache,
-        WeightedPoolReserveCache,
-    },
-    pool_init::SubgraphPoolInitializer,
-    pool_storage::{RegisteredStablePool, RegisteredWeightedPool},
+    pool_init::PoolInitializing,
     pools::{
         common::{self, PoolInfoFetcher},
-        stable, weighted,
+        stable, weighted, PoolKind,
     },
     swap::fixed_point::Bfp,
 };
 use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
-    recent_block_cache::{Block, CacheConfig, RecentBlockCache},
+    recent_block_cache::{Block, CacheConfig},
+    sources::balancer_v2::pool_init::SubgraphPoolInitializer,
     token_info::TokenInfoFetching,
     Web3,
 };
 use anyhow::Result;
-use contracts::{BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPoolFactory};
+use contracts::{
+    BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPool2TokensFactory,
+    BalancerV2WeightedPoolFactory,
+};
 use ethcontract::{H160, H256};
 use model::TokenPair;
 use reqwest::Client;
@@ -57,25 +64,16 @@ pub struct WeightedPool {
 }
 
 impl WeightedPool {
-    pub fn new_unpaused(
-        pool_data: RegisteredWeightedPool,
-        weighted_state: weighted::PoolState,
-    ) -> Self {
+    pub fn new_unpaused(pool_id: H256, weighted_state: weighted::PoolState) -> Self {
         WeightedPool {
             common: CommonPoolState {
-                id: pool_data.common.id,
-                address: pool_data.common.address,
+                id: pool_id,
+                address: pool_address_from_id(pool_id),
                 swap_fee: weighted_state.swap_fee,
                 paused: false,
             },
             reserves: weighted_state.tokens.into_iter().collect(),
         }
-    }
-}
-
-impl BalancerPoolEvaluating for WeightedPool {
-    fn properties(&self) -> CommonPoolState {
-        self.common.clone()
     }
 }
 
@@ -87,11 +85,11 @@ pub struct StablePool {
 }
 
 impl StablePool {
-    pub fn new_unpaused(pool_data: RegisteredStablePool, stable_state: stable::PoolState) -> Self {
+    pub fn new_unpaused(pool_id: H256, stable_state: stable::PoolState) -> Self {
         StablePool {
             common: CommonPoolState {
-                id: pool_data.common.id,
-                address: pool_data.common.address,
+                id: pool_id,
+                address: pool_address_from_id(pool_id),
                 swap_fee: stable_state.swap_fee,
                 paused: false,
             },
@@ -101,12 +99,7 @@ impl StablePool {
     }
 }
 
-impl BalancerPoolEvaluating for StablePool {
-    fn properties(&self) -> CommonPoolState {
-        self.common.clone()
-    }
-}
-
+#[derive(Default)]
 pub struct FetchedBalancerPools {
     pub stable_pools: Vec<StablePool>,
     pub weighted_pools: Vec<WeightedPool>,
@@ -140,9 +133,7 @@ pub trait BalancerPoolFetching: Send + Sync {
 }
 
 pub struct BalancerPoolFetcher {
-    pool_registry: Arc<BalancerPoolRegistry>,
-    stable_pool_reserve_cache: StablePoolReserveCache,
-    weighted_pool_reserve_cache: WeightedPoolReserveCache,
+    fetcher: Arc<dyn InternalPoolFetching>,
 }
 
 impl BalancerPoolFetcher {
@@ -156,39 +147,43 @@ impl BalancerPoolFetcher {
         client: Client,
     ) -> Result<Self> {
         let vault = BalancerV2Vault::deployed(&web3).await?;
-        let weighted_pool_fetcher = Arc::new(PoolInfoFetcher::new(
-            vault.clone(),
-            BalancerV2WeightedPoolFactory::deployed(&web3).await?,
-            token_info_fetcher.clone(),
-        ));
-        let stable_pool_fetcher = Arc::new(PoolInfoFetcher::new(
-            vault.clone(),
-            BalancerV2StablePoolFactory::deployed(&web3).await?,
-            token_info_fetcher.clone(),
-        ));
+        let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
+        let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
+        let stable_pool_factory = BalancerV2StablePoolFactory::deployed(&web3).await?;
 
         let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
-        let pool_registry = Arc::new(
-            BalancerPoolRegistry::new(web3.clone(), pool_initializer, token_info_fetcher.clone())
-                .await?,
-        );
-        let weighted_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), weighted_pool_fetcher, web3.clone())?;
-        let stable_pool_reserve_fetcher =
-            PoolReserveFetcher::new(pool_registry.clone(), stable_pool_fetcher, web3)?;
-        let stable_pool_reserve_cache = RecentBlockCache::new(
+        let initial_pools = pool_initializer.initialize_pools().await?;
+        let start_sync_at_block = Some(initial_pools.fetched_block_number);
+
+        macro_rules! create_pool_registry {
+            ($factory:expr, $initial_pools:expr) => {{
+                let factory = $factory;
+                let initial_pools = $initial_pools;
+                Box::new(Registry::new(
+                    Arc::new(PoolInfoFetcher::new(
+                        vault.clone(),
+                        factory.clone(),
+                        token_info_fetcher.clone(),
+                    )),
+                    factory.raw_instance(),
+                    initial_pools,
+                    start_sync_at_block,
+                ))
+            }};
+        }
+
+        let fetcher = Arc::new(Cache::new(
+            Aggregate::new(vec![
+                create_pool_registry!(weighted_pool_factory, initial_pools.weighted_pools),
+                create_pool_registry!(two_token_pool_factory, initial_pools.weighted_2token_pools),
+                create_pool_registry!(stable_pool_factory, initial_pools.stable_pools),
+            ]),
             config,
-            stable_pool_reserve_fetcher,
-            block_stream.clone(),
-            metrics.clone(),
-        )?;
-        let weighted_pool_reserve_cache =
-            RecentBlockCache::new(config, weighted_pool_reserve_fetcher, block_stream, metrics)?;
-        Ok(Self {
-            pool_registry,
-            stable_pool_reserve_cache,
-            weighted_pool_reserve_cache,
-        })
+            block_stream,
+            metrics,
+        )?);
+
+        Ok(Self { fetcher })
     }
 }
 
@@ -199,74 +194,63 @@ impl BalancerPoolFetching for BalancerPoolFetcher {
         token_pairs: HashSet<TokenPair>,
         at_block: Block,
     ) -> Result<FetchedBalancerPools> {
-        let pool_ids = self
-            .pool_registry
-            .pool_ids_for_token_pairs(&token_pairs)
-            .await;
-        let fetched_stable_pools = self
-            .stable_pool_reserve_cache
-            .fetch(pool_ids.clone(), at_block)
-            .await?;
-        let fetched_weighted_pools = self
-            .weighted_pool_reserve_cache
-            .fetch(pool_ids, at_block)
-            .await?;
-        // Return only those pools which are not paused.
-        Ok(FetchedBalancerPools {
-            stable_pools: filter_paused(fetched_stable_pools),
-            weighted_pools: filter_paused(fetched_weighted_pools),
-        })
-    }
-}
+        let pool_ids = self.fetcher.pool_ids_for_token_pairs(token_pairs).await;
+        let pools = self.fetcher.pools_by_id(pool_ids, at_block).await?;
 
-fn filter_paused<T: BalancerPoolEvaluating>(pools: Vec<T>) -> Vec<T> {
-    pools
-        .into_iter()
-        .filter(|pool| !pool.properties().paused)
-        .collect()
+        // For now, split the `Vec<Pool>` into a `FetchedBalancerPools` to keep
+        // compatibility with the rest of the project. This should eventually
+        // be removed and we should use `balancer_v2::pools::Pool` everywhere
+        // instead.
+        let fetched_pools = pools.into_iter().fold(
+            FetchedBalancerPools::default(),
+            |mut fetched_pools, pool| {
+                match pool.kind {
+                    PoolKind::Weighted(state) => fetched_pools
+                        .weighted_pools
+                        .push(WeightedPool::new_unpaused(pool.id, state)),
+                    PoolKind::Stable(state) => fetched_pools
+                        .stable_pools
+                        .push(StablePool::new_unpaused(pool.id, state)),
+                }
+                fetched_pools
+            },
+        );
+
+        Ok(fetched_pools)
+    }
 }
 
 #[async_trait::async_trait]
 impl Maintaining for BalancerPoolFetcher {
     async fn run_maintenance(&self) -> Result<()> {
-        futures::try_join!(
-            self.pool_registry.run_maintenance(),
-            self.stable_pool_reserve_cache.update_cache(),
-            self.weighted_pool_reserve_cache.update_cache(),
-        )?;
-        Ok(())
+        self.fetcher.run_maintenance().await
     }
+}
+
+/// Extract the pool address from an ID.
+///
+/// This takes advantage that the first 20 bytes of the ID is the address of
+/// the pool. For example the GNO-BAL pool with ID
+/// `0x36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009`:
+/// <https://etherscan.io/address/0x36128D5436d2d70cab39C9AF9CcE146C38554ff0>
+fn pool_address_from_id(pool_id: H256) -> H160 {
+    let mut address = H160::default();
+    address.0.copy_from_slice(&pool_id.0[..20]);
+    address
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hex_literal::hex;
 
     #[test]
-    fn filters_paused_pools() {
-        let pools = vec![
-            WeightedPool {
-                common: CommonPoolState {
-                    id: H256::from_low_u64_be(0),
-                    address: Default::default(),
-                    swap_fee: Bfp::zero(),
-                    paused: true,
-                },
-                reserves: Default::default(),
-            },
-            WeightedPool {
-                common: CommonPoolState {
-                    id: H256::from_low_u64_be(1),
-                    address: Default::default(),
-                    swap_fee: Bfp::zero(),
-                    paused: false,
-                },
-                reserves: Default::default(),
-            },
-        ];
-
-        let filtered_pools = filter_paused(pools.clone());
-        assert_eq!(filtered_pools.len(), 1);
-        assert_eq!(filtered_pools[0].common.id, pools[1].common.id);
+    fn can_extract_address_from_pool_id() {
+        assert_eq!(
+            pool_address_from_id(H256(hex!(
+                "36128d5436d2d70cab39c9af9cce146c38554ff0000200000000000000000009"
+            ))),
+            addr!("36128d5436d2d70cab39c9af9cce146c38554ff0"),
+        );
     }
 }

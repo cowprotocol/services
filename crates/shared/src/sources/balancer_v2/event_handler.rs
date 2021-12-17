@@ -115,21 +115,21 @@ impl BalancerPoolRegistry {
             self.weighted_pool_updater
                 .lock()
                 .await
-                .store
+                .store()
                 .pool_ids_for_token_pairs(token_pairs),
         );
         pool_ids.extend(
             self.two_token_pool_updater
                 .lock()
                 .await
-                .store
+                .store()
                 .pool_ids_for_token_pairs(token_pairs),
         );
         pool_ids.extend(
             self.stable_pool_updater
                 .lock()
                 .await
-                .store
+                .store()
                 .pool_ids_for_token_pairs(token_pairs),
         );
         pool_ids
@@ -144,14 +144,14 @@ impl BalancerPoolRegistry {
             self.weighted_pool_updater
                 .lock()
                 .await
-                .store
+                .store()
                 .pools_by_id(pool_ids),
         );
         pools.extend(
             self.two_token_pool_updater
                 .lock()
                 .await
-                .store
+                .store()
                 .pools_by_id(pool_ids),
         );
         pools
@@ -161,7 +161,7 @@ impl BalancerPoolRegistry {
         self.stable_pool_updater
             .lock()
             .await
-            .store
+            .store()
             .pools_by_id(pool_ids)
     }
 }
@@ -261,7 +261,7 @@ mod tests {
                 let pool_updater = $pool_updater.lock().await;
                 for mut subgraph_pool in $subgraph_pools {
                     let indexed_pool = pool_updater
-                        .store
+                        .store()
                         .pool_by_id(subgraph_pool.common.id)
                         .unwrap_or_else(|| panic!("pool {:?} did not get indexed", subgraph_pool.common.id));
 

@@ -22,7 +22,7 @@ where
 {
     block_retriever: B,
     contract: C,
-    pub(crate) store: S,
+    store: S,
     last_handled_block: Option<u64>,
 }
 
@@ -77,6 +77,10 @@ where
             store,
             last_handled_block: start_sync_at_block,
         }
+    }
+
+    pub fn store(&self) -> &S {
+        &self.store
     }
 
     async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
