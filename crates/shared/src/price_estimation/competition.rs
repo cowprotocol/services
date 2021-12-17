@@ -4,7 +4,6 @@ use futures::future;
 use num::BigRational;
 use std::cmp;
 use std::time::Duration;
-use tokio::time::error::Elapsed;
 use tokio::time::timeout;
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
@@ -41,12 +40,11 @@ impl PriceEstimating for CompetitionPriceEstimator {
                         Err(PriceEstimationError::Other(anyhow!(
                             "no successful price estimates"
                         ))),
-                        |previous_result, (name, estimates): &(&String, Result<Vec<Result<Estimate, PriceEstimationError>>, Elapsed>)| {
+                        |previous_result, (name, estimates)| {
                             match estimates {
                                 Ok(estimates) => fold_price_estimation_result(
                                     query,
                                     name,
-
                                     previous_result,
                                     estimates.clone()[i].clone(),
                                 ),
