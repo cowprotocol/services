@@ -3,7 +3,9 @@ use anyhow::{anyhow, Result};
 use futures::future;
 use num::BigRational;
 use std::cmp;
-
+use std::time::Duration;
+use tokio::time::error::Elapsed;
+use tokio::time::timeout;
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price.
 pub struct CompetitionPriceEstimator {
@@ -22,7 +24,10 @@ impl PriceEstimating for CompetitionPriceEstimator {
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
         let all_estimates =
             future::join_all(self.inner.iter().map(|(name, estimator)| async move {
-                (name, estimator.estimates(queries).await)
+                (
+                    name,
+                    timeout(Duration::from_secs(3u64), estimator.estimates(queries)).await,
+                )
             }))
             .await;
 
@@ -36,13 +41,22 @@ impl PriceEstimating for CompetitionPriceEstimator {
                         Err(PriceEstimationError::Other(anyhow!(
                             "no successful price estimates"
                         ))),
-                        |previous_result, (name, estimates)| {
-                            fold_price_estimation_result(
-                                query,
-                                name,
-                                previous_result,
-                                estimates[i].clone(),
-                            )
+                        |previous_result, (name, estimates): &(&String, Result<Vec<Result<Estimate, PriceEstimationError>>, Elapsed>)| {
+                            match estimates {
+                                Ok(estimates) => fold_price_estimation_result(
+                                    query,
+                                    name,
+
+                                    previous_result,
+                                    estimates.clone()[i].clone(),
+                                ),
+                                Err(err) => {
+                                    tracing::debug!(
+                                        "Timeout for price estimation query {:?} \
+                                         from estimator {:?} with the error {:?}",query,name,err);
+                                    previous_result
+                                }
+                            }
                         },
                     )
                     .map(|winning_estimate| {
