@@ -32,7 +32,6 @@
 //! Once should think of `PoolStorage` as a type of Database for which one is not concerned
 //! with how it maintains itself.
 
-pub mod event_handler;
 mod graph_api;
 pub mod pool_fetching;
 mod pool_init;

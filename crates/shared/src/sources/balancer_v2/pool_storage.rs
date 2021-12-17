@@ -25,14 +25,19 @@
 //!
 //! Tests included here are those pertaining to the expected functionality of `PoolStorage`
 
+use crate::event_handling::{BlockNumber, EventStoring};
+
 use super::pools::{common, FactoryIndexing, PoolIndexing};
-use anyhow::Result;
-use contracts::balancer_v2_base_pool_factory::event_data::PoolCreated;
-use ethcontract::{H160, H256};
+use anyhow::{anyhow, Result};
+use contracts::balancer_v2_base_pool_factory::{
+    event_data::PoolCreated, Event as BasePoolFactoryEvent,
+};
+use ethcontract::{Event, H160, H256};
 use model::TokenPair;
 use std::{
     cmp,
     collections::{HashMap, HashSet},
+    ops::RangeInclusive,
     sync::Arc,
 };
 
@@ -194,6 +199,44 @@ where
             .map(|pool| pool.common().block_created)
             .max()
             .unwrap_or_default()
+    }
+}
+
+#[async_trait::async_trait]
+impl<Factory> EventStoring<BasePoolFactoryEvent> for PoolStorage<Factory>
+where
+    Factory: FactoryIndexing,
+{
+    async fn replace_events(
+        &mut self,
+        events: Vec<Event<BasePoolFactoryEvent>>,
+        range: RangeInclusive<BlockNumber>,
+    ) -> Result<()> {
+        tracing::debug!("replacing {} events for block {:?}", events.len(), range);
+
+        self.remove_pools_newer_than_block(range.start().to_u64());
+        self.append_events(events).await
+    }
+
+    async fn append_events(&mut self, events: Vec<Event<BasePoolFactoryEvent>>) -> Result<()> {
+        tracing::debug!("inserting {} events", events.len());
+
+        for event in events {
+            let block_created = event
+                .meta
+                .ok_or_else(|| anyhow!("event missing metadata"))?
+                .block_number;
+            let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
+
+            self.index_pool_creation(pool_created, block_created)
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    async fn last_event_block(&self) -> Result<u64> {
+        Ok(self.last_event_block())
     }
 }
 
