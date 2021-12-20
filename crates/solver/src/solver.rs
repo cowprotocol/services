@@ -356,7 +356,8 @@ impl Solver for SellVolumeFilteringSolver {
 }
 
 pub async fn get_eth_weth_balance(web3: &Web3, address: H160) -> Result<(U256, U256)> {
-    let weth = WETH9::deployed(&web3).await?;
+    let weth = WETH9::deployed(web3).await?;
+    // TODO - fetch the next two in parallel
     let weth_balance = weth.methods().balance_of(address).call().await?;
     let native_asset_balance = &web3.eth().balance(address, None).await?;
     Ok((weth_balance, native_asset_balance.into()))
