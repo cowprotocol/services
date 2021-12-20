@@ -55,6 +55,9 @@ pub struct SolverConfig {
 
     /// Controls if we should fill the `ucp_policy` parameter.
     pub has_ucp_policy_parameter: bool,
+
+    /// Controls if/how to set `use_internal_buffers`.
+    pub use_internal_buffers: Option<bool>,
 }
 
 #[async_trait::async_trait]
@@ -91,7 +94,12 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             url.query_pairs_mut()
                 .append_pair("ucp_policy", "EnforceForOrders");
         }
-
+        if let Some(use_internal_buffers) = self.config.use_internal_buffers {
+            url.query_pairs_mut().append_pair(
+                "use_internal_buffers",
+                use_internal_buffers.to_string().as_str(),
+            );
+        }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let mut request = self.client.post(url).timeout(timeout);
         if let Some(api_key) = &self.config.api_key {

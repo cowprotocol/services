@@ -157,6 +157,7 @@ pub fn create(
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
+    quasimodo_uses_internal_buffers: bool,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -204,6 +205,7 @@ pub fn create(
                         api_key: None,
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: false,
+                        use_internal_buffers: None,
                     },
                 )),
                 SolverType::CowDexAg => shared(create_http_solver(
@@ -214,6 +216,7 @@ pub fn create(
                         api_key: None,
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: false,
+                        use_internal_buffers: None,
                     },
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
@@ -224,6 +227,7 @@ pub fn create(
                         api_key: None,
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: true,
+                        use_internal_buffers: quasimodo_uses_internal_buffers.into(),
                     },
                 )),
                 SolverType::OneInch => {

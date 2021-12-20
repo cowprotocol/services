@@ -308,6 +308,7 @@ mod tests {
                     api_key: None,
                     max_nr_exec_orders: 100,
                     has_ucp_policy_parameter: false,
+                    use_internal_buffers: true.into(),
                 },
             }),
             pools,

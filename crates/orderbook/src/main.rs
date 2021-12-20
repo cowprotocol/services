@@ -443,6 +443,7 @@ async fn main() {
                                     api_key: None,
                                     max_nr_exec_orders: 100,
                                     has_ucp_policy_parameter: false,
+                                    use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
                                 },
                             }),
                             pools: pool_fetcher.clone(),
