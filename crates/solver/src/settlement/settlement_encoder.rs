@@ -251,6 +251,10 @@ impl SettlementEncoder {
             })
             .collect();
 
+        // At the time of finish (with all unwraps aggregated, can reduce this list).
+        // TODO - pass settlement contract's native asset balance here instead of zero.
+        let required_unwraps = reduce_unwraps(self.unwraps.clone(), U256::zero());
+
         EncodedSettlement {
             tokens: self.tokens,
             clearing_prices,
@@ -267,7 +271,7 @@ impl SettlementEncoder {
                             .iter()
                             .flat_map(|interaction| interaction.encode()),
                     )
-                    .chain(self.unwraps.iter().flat_map(|unwrap| unwrap.encode()))
+                    .chain(required_unwraps.iter().flat_map(|unwrap| unwrap.encode()))
                     .collect(),
                 Vec::new(),
             ],
@@ -342,6 +346,41 @@ impl SettlementEncoder {
     }
 }
 
+fn reduce_unwraps(
+    mut unwraps: Vec<UnwrapWethInteraction>,
+    native_asset_balance: U256,
+) -> Vec<UnwrapWethInteraction> {
+    // TODO - Given the context of this vector,
+    //  I don't see any reason this list will ever contain more than one entry.
+    // We sort by amounts to remove the most possible.
+    unwraps.sort_by_key(|unwrap| unwrap.amount);
+    let index = index_with_cumulative_sum_not_exceeding(
+        &unwraps.iter().map(|u| u.amount).collect::<Vec<U256>>(),
+        native_asset_balance,
+    );
+    if let Some(cut_off) = index {
+        return unwraps[cut_off + 1..].to_vec();
+    }
+    unwraps
+}
+
+fn index_with_cumulative_sum_not_exceeding(arr: &[U256], max_sum: U256) -> Option<usize> {
+    if arr.is_empty() {
+        return None;
+    }
+    let mut target_index = 0;
+    let mut cumulative_total = arr[0]; // known to exist
+    while target_index + 1 < arr.len() && cumulative_total + arr[target_index + 1] <= max_sum {
+        cumulative_total += arr[target_index + 1];
+        target_index += 1;
+    }
+    if target_index == 0 && arr[0] > max_sum {
+        None
+    } else {
+        Some(target_index)
+    }
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -351,6 +390,99 @@ pub mod tests {
     use maplit::hashmap;
     use model::order::{OrderBuilder, OrderCreation};
     use shared::dummy_contract;
+
+    #[test]
+    fn index_with_cumulative_sum_lower_than_() {
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&[], 0.into()),
+            None,
+            "failed sorted on empty array"
+        );
+
+        let sorted_list = vec![1.into(), 2.into(), 2.into()];
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 0.into()),
+            None,
+            "failed sorted on 0"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 1.into()),
+            Some(0),
+            "failed sorted on 1"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 2.into()),
+            Some(0),
+            "failed sorted on 2"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 3.into()),
+            Some(1),
+            "failed sorted on 3"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 4.into()),
+            Some(1),
+            "failed sorted on 4"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&sorted_list, 6.into()),
+            Some(2),
+            "failed sorted on 6"
+        );
+
+        let unsorted_list = vec![3.into(), 2.into(), 1.into()];
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&unsorted_list, 1.into()),
+            None,
+            "failed unsorted on 1"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&unsorted_list, 3.into()),
+            Some(0),
+            "failed unsorted on 3"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&unsorted_list, 4.into()),
+            Some(0),
+            "failed unsorted on 4"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&unsorted_list, 5.into()),
+            Some(1),
+            "failed unsorted on 3"
+        );
+        assert_eq!(
+            index_with_cumulative_sum_not_exceeding(&unsorted_list, 6.into()),
+            Some(2),
+            "failed unsorted on 3"
+        );
+    }
+
+    #[test]
+    fn unwrap_reduction() {
+        let weth = dummy_contract!(WETH9, [0x42; 20]);
+        let unwraps = vec![
+            UnwrapWethInteraction {
+                weth: weth.clone(),
+                amount: 1.into(),
+            },
+            UnwrapWethInteraction {
+                weth: weth.clone(),
+                amount: 4.into(),
+            },
+            UnwrapWethInteraction {
+                weth,
+                amount: 2.into(),
+            },
+        ];
+        let reduced = reduce_unwraps(unwraps, 3.into());
+        assert_eq!(reduced.len(), 1);
+        assert_eq!(reduced[0].amount, 4.into());
+
+        let reduced = reduce_unwraps(vec![], 3.into());
+        assert_eq!(reduced.len(), 0);
+    }
 
     #[test]
     pub fn encode_trades_finds_token_index() {

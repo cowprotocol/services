@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::Result;
 use baseline_solver::BaselineSolver;
-use contracts::GPv2Settlement;
+use contracts::{GPv2Settlement, WETH9};
 use ethcontract::{Account, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
 use naive_solver::NaiveSolver;
@@ -353,6 +353,13 @@ impl Solver for SellVolumeFilteringSolver {
     fn name(&self) -> &'static str {
         self.inner.name()
     }
+}
+
+pub async fn get_eth_weth_balance(web3: &Web3, address: H160) -> Result<(U256, U256)> {
+    let weth = WETH9::deployed(&web3).await?;
+    let weth_balance = weth.methods().balance_of(address).call().await?;
+    let native_asset_balance = &web3.eth().balance(address, None).await?;
+    Ok((weth_balance, native_asset_balance.into()))
 }
 
 #[cfg(test)]
