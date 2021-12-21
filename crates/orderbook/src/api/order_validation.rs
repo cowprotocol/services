@@ -59,6 +59,7 @@ pub enum PartialValidationError {
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
+    UnsupportedOrderType,
     Other(anyhow::Error),
 }
 
@@ -71,6 +72,13 @@ impl IntoWarpReply for PartialValidationError {
             ),
             Self::UnsupportedSellTokenSource(src) => with_status(
                 super::error("UnsupportedSellTokenSource", format!("Type {:?}", src)),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedOrderType => with_status(
+                super::error(
+                    "UnsupportedOrderType",
+                    "This order type is currently not supported",
+                ),
                 StatusCode::BAD_REQUEST,
             ),
             Self::Forbidden => with_status(
@@ -208,6 +216,7 @@ pub struct PreOrderData {
     pub buy_token: H160,
     pub receiver: H160,
     pub valid_to: u32,
+    pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
 }
@@ -220,6 +229,7 @@ impl From<Order> for PreOrderData {
             buy_token: order.order_creation.buy_token,
             receiver: order.actual_receiver(),
             valid_to: order.order_creation.valid_to,
+            partially_fillable: order.order_creation.partially_fillable,
             buy_token_balance: order.order_creation.buy_token_balance,
             sell_token_balance: order.order_creation.sell_token_balance,
         }
@@ -251,6 +261,9 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
+        if order.partially_fillable {
+            return Err(PartialValidationError::UnsupportedOrderType);
+        }
         if self.banned_users.contains(&order.owner) {
             return Err(PartialValidationError::Forbidden);
         }
@@ -508,6 +521,15 @@ mod tests {
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    partially_fillable: true,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedOrderType)
+        ));
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
