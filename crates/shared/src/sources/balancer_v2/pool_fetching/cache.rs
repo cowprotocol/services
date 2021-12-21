@@ -75,7 +75,8 @@ where
     Inner: InternalPoolFetching,
 {
     async fn run_maintenance(&self) -> Result<()> {
-        self.inner.run_maintenance().await
+        futures::try_join!(self.inner.run_maintenance(), self.cache.update_cache())?;
+        Ok(())
     }
 }
 
