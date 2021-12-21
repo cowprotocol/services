@@ -753,6 +753,7 @@ components:
               ZeroAmount,
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
+              UnsupportedOrderType,
             ]
         description:
           type: string
