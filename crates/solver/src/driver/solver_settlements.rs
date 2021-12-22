@@ -3,7 +3,10 @@ use ethcontract::U256;
 use num::BigRational;
 use primitive_types::H160;
 use shared::conversions::U256Ext;
-use std::{collections::HashMap, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     settlement
@@ -90,30 +93,148 @@ fn merge_at_most_settlements(
     }
 }
 
-pub fn filter_settlements_without_old_orders(
+/// Filters out all settlements without any orders which are mature by age or mature by association.
+/// Any order older than `min_order_age` is considered to be mature by age.
+/// Any younger order in a settlement containing an order mature by age or mature by association
+/// is considered to be mature by association.
+/// Because maturity by association is defined recursively it can "spread" across settlements,
+/// resulting in settlements being allowed where it's not immediately obvious by which association
+/// any order of a settlement has matured.
+pub fn retain_mature_settlements(
     min_order_age: Duration,
-    settlements: &mut Vec<Settlement>,
-) {
-    let settle_orders_older_than =
-        chrono::offset::Utc::now() - chrono::Duration::from_std(min_order_age).unwrap();
-    settlements.retain(|settlement| {
-        settlement
-            .trades()
-            .iter()
-            .any(|trade| trade.order.order_meta_data.creation_date <= settle_orders_older_than)
-    });
+    settlements: Vec<Settlement>,
+) -> Vec<Settlement> {
+    fn find_mature_settlements(
+        min_order_age: Duration,
+        settlements: &[Settlement],
+    ) -> HashSet<usize> {
+        let settle_orders_older_than =
+            chrono::offset::Utc::now() - chrono::Duration::from_std(min_order_age).unwrap();
+
+        let mut valid_trades = HashSet::<&model::order::OrderUid>::default();
+        let mut valid_settlement_indices = HashSet::<usize>::default();
+
+        loop {
+            let mut new_order_added = false;
+
+            for (index, settlement) in settlements.iter().enumerate() {
+                if valid_settlement_indices.contains(&index) {
+                    break;
+                }
+
+                let contains_valid_trade = settlement.trades().iter().any(|trade| {
+                    // mature by age
+                    trade.order.order_meta_data.creation_date <= settle_orders_older_than
+                    // mature by association
+                    || valid_trades.contains(&trade.order.order_meta_data.uid)
+                });
+
+                if contains_valid_trade {
+                    for trade in settlement.trades() {
+                        // make all orders within this settlement mature by association
+                        new_order_added |= valid_trades.insert(&trade.order.order_meta_data.uid);
+                    }
+                    valid_settlement_indices.insert(index);
+                }
+            }
+
+            if !new_order_added {
+                break valid_settlement_indices;
+            }
+        }
+    }
+
+    let valid_settlement_indices = find_mature_settlements(min_order_age, &settlements[..]);
+    settlements
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| valid_settlement_indices.contains(index))
+        .map(|(_, item)| item)
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::settlement::Trade;
+    use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
     use model::order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderUid};
     use num::rational::BigRational;
     use num::traits::FromPrimitive;
     use primitive_types::U256;
     use std::collections::HashSet;
+    use std::ops::Sub;
+
+    fn trade(created_at: DateTime<Utc>, uid: u8) -> Trade {
+        Trade {
+            order: Order {
+                order_meta_data: OrderMetaData {
+                    creation_date: created_at,
+                    uid: OrderUid([uid; 56]),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+    }
+
+    fn assert_same_settlements(expected: &[Settlement], actual: &[Settlement]) {
+        assert!(expected
+            .iter()
+            .map(|s| s.trades())
+            .eq(actual.iter().map(|s| s.trades())));
+    }
+
+    #[test]
+    fn no_mature_orders() {
+        let recent = Local::now().with_timezone(&Utc);
+        let min_age = std::time::Duration::from_secs(50);
+
+        let settlement = |trades| Settlement::with_trades(hashmap!(), trades);
+        let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)]);
+        let s2 = settlement(vec![trade(recent, 2), trade(recent, 3)]);
+        let s3 = settlement(vec![trade(recent, 4), trade(recent, 5)]);
+        let settlements = vec![s1, s2, s3];
+        let mature_settlements = retain_mature_settlements(min_age, settlements);
+
+        assert_same_settlements(&mature_settlements, &[]);
+    }
+
+    #[test]
+    fn mature_by_age() {
+        let recent = Local::now().with_timezone(&Utc);
+        let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
+        let min_age = std::time::Duration::from_secs(60);
+
+        let settlement = |trades| Settlement::with_trades(hashmap!(), trades);
+        let s1 = settlement(vec![trade(old, 1), trade(recent, 2)]);
+        let s2 = settlement(vec![trade(recent, 3), trade(recent, 4)]);
+        let settlements = vec![s1.clone(), s2];
+        let mature_settlements = retain_mature_settlements(min_age, settlements);
+
+        assert_same_settlements(&mature_settlements, &[s1]);
+    }
+
+    #[test]
+    fn mature_by_association() {
+        let recent = Local::now().with_timezone(&Utc);
+        let old = Local::now().with_timezone(&Utc).sub(Duration::seconds(600));
+        let min_age = std::time::Duration::from_secs(60);
+
+        let settlement = |trades| Settlement::with_trades(hashmap!(), trades);
+        let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)]);
+        let s2 = settlement(vec![trade(recent, 2), trade(recent, 3)]);
+        let s3 = settlement(vec![trade(recent, 3), trade(old, 4)]);
+        // this will not be included because it only contains recent orders which are not
+        // referenced in any other valid settlements
+        let s4 = settlement(vec![trade(recent, 5), trade(recent, 6)]);
+        let settlements = vec![s1.clone(), s2.clone(), s3.clone(), s4];
+        let mature_settlements = retain_mature_settlements(min_age, settlements);
+
+        assert_same_settlements(&mature_settlements, &[s1, s2, s3]);
+    }
 
     #[test]
     fn merges_settlements_with_highest_objective_value() {

@@ -444,13 +444,11 @@ impl Driver {
                 &mut settlements,
             );
 
-            solver_settlements::filter_settlements_without_old_orders(
-                self.min_order_age,
-                &mut settlements,
-            );
+            let mature_settlements =
+                solver_settlements::retain_mature_settlements(self.min_order_age, settlements);
 
-            solver_settlements.reserve(settlements.len());
-            for settlement in settlements {
+            solver_settlements.reserve(mature_settlements.len());
+            for settlement in mature_settlements {
                 solver_settlements.push((solver.clone(), settlement))
             }
         }
