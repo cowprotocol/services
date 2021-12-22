@@ -241,10 +241,16 @@ impl OrderQuoter {
                 if sell_amount_before_fee.is_zero() {
                     return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
                 }
-
-                let (fee, expiration) = self
-                    .fee_calculator
-                    .compute_subsidized_min_fee(
+                let query = price_estimation::Query {
+                    // It would be more correct to use sell_amount_after_fee here, however this makes the two long-running fee and price estimation queries dependent and causes very long roundtrip times
+                    // We therefore compute the exchange rate for the sell_amount_before_fee and assume that the price for selling a smaller amount (after fee) will be close to but at least as good
+                    sell_token: quote_request.sell_token,
+                    buy_token: quote_request.buy_token,
+                    in_amount: sell_amount_before_fee,
+                    kind: OrderKind::Sell,
+                };
+                let ((fee, expiration), estimate) = try_join!(
+                    self.fee_calculator.compute_subsidized_min_fee(
                         FeeData {
                             sell_token: quote_request.sell_token,
                             buy_token: quote_request.buy_token,
@@ -252,9 +258,10 @@ impl OrderQuoter {
                             kind: OrderKind::Sell,
                         },
                         quote_request.app_data,
-                    )
-                    .await
-                    .map_err(FeeError::PriceEstimate)?;
+                    ),
+                    self.price_estimator.estimate(&query)
+                )
+                .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = sell_amount_before_fee
                     .checked_sub(fee)
                     .ok_or(FeeError::SellAmountDoesNotCoverFee(FeeInfo {
@@ -262,18 +269,16 @@ impl OrderQuoter {
                         expiration,
                     }))?
                     .max(U256::one());
-                let estimate = self
-                    .price_estimator
-                    .estimate(&price_estimation::Query {
-                        sell_token: quote_request.sell_token,
-                        buy_token: quote_request.buy_token,
-                        in_amount: sell_amount_after_fee,
-                        kind: OrderKind::Sell,
-                    })
-                    .await
-                    .map_err(FeeError::PriceEstimate)?;
+                let buy_amount_after_fee =
+                    match estimate.out_amount.checked_mul(sell_amount_after_fee) {
+                        // sell_amount_before_fee is at least 1 (cf. above)
+                        Some(product) => product / sell_amount_before_fee,
+                        None => (estimate.out_amount / sell_amount_before_fee)
+                            .checked_mul(sell_amount_after_fee)
+                            .unwrap_or(U256::MAX),
+                    };
                 FeeParameters {
-                    buy_amount: estimate.out_amount,
+                    buy_amount: buy_amount_after_fee,
                     sell_amount: sell_amount_after_fee,
                     fee_amount: fee,
                     expiration,
@@ -608,10 +613,11 @@ mod tests {
             .unwrap()
             .unwrap();
         // After the deducting the fee 10 - 3 = 7 units of sell token are being sold.
+        // Selling 10 units will buy us 14. Therefore, selling 7 should buy us 9.8 => 9 whole units
         assert_eq!(
             result,
             FeeParameters {
-                buy_amount: 14.into(),
+                buy_amount: 9.into(),
                 sell_amount: 7.into(),
                 fee_amount: 3.into(),
                 expiration,
