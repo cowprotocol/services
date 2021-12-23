@@ -523,6 +523,7 @@ async fn main() {
         zeroex_api,
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
+        args.shared.mip_uses_internal_buffers,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
