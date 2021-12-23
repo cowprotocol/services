@@ -17,7 +17,10 @@
 //!
 //! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
 
-use super::single_order_solver::{SettlementError, SingleOrderSolving};
+use super::{
+    single_order_solver::{SettlementError, SingleOrderSolving},
+    Auction,
+};
 use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
 use crate::{
     encoding::EncodedInteraction,
@@ -78,6 +81,7 @@ impl SingleOrderSolving for ZeroExSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
+        _: &Auction,
     ) -> Result<Option<Settlement>, SettlementError> {
         let (buy_amount, sell_amount) = match order.kind {
             OrderKind::Buy => (Some(order.buy_amount), None),
@@ -200,6 +204,7 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
+                &Auction::default(),
             )
             .await
             .unwrap();
@@ -240,6 +245,7 @@ mod tests {
                     ..Default::default()
                 }
                 .into(),
+                &Auction::default(),
             )
             .await
             .unwrap();
@@ -323,7 +329,7 @@ mod tests {
         };
 
         let result = solver
-            .try_settle_order(sell_order_passing_limit)
+            .try_settle_order(sell_order_passing_limit, &Auction::default())
             .await
             .unwrap()
             .unwrap();
@@ -336,13 +342,13 @@ mod tests {
         );
 
         let result = solver
-            .try_settle_order(sell_order_violating_limit)
+            .try_settle_order(sell_order_violating_limit, &Auction::default())
             .await
             .unwrap();
         assert!(result.is_none());
 
         let result = solver
-            .try_settle_order(buy_order_passing_limit)
+            .try_settle_order(buy_order_passing_limit, &Auction::default())
             .await
             .unwrap()
             .unwrap();
@@ -355,7 +361,7 @@ mod tests {
         );
 
         let result = solver
-            .try_settle_order(buy_order_violating_limit)
+            .try_settle_order(buy_order_violating_limit, &Auction::default())
             .await
             .unwrap();
         assert!(result.is_none());
@@ -441,14 +447,18 @@ mod tests {
 
         // On first run we have two main interactions (approve + swap)
         let result = solver
-            .try_settle_order(order.clone())
+            .try_settle_order(order.clone(), &Auction::default())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
-        let result = solver.try_settle_order(order).await.unwrap().unwrap();
+        let result = solver
+            .try_settle_order(order, &Auction::default())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
     }
 
@@ -496,11 +506,14 @@ mod tests {
         // Sell orders are fully executed
         let handler = CapturingSettlementHandler::arc();
         solver
-            .try_settle_order(LimitOrder {
-                kind: OrderKind::Sell,
-                settlement_handling: handler.clone(),
-                ..order.clone()
-            })
+            .try_settle_order(
+                LimitOrder {
+                    kind: OrderKind::Sell,
+                    settlement_handling: handler.clone(),
+                    ..order.clone()
+                },
+                &Auction::default(),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -509,11 +522,14 @@ mod tests {
         // Buy orders are fully executed
         let handler = CapturingSettlementHandler::arc();
         solver
-            .try_settle_order(LimitOrder {
-                kind: OrderKind::Buy,
-                settlement_handling: handler.clone(),
-                ..order
-            })
+            .try_settle_order(
+                LimitOrder {
+                    kind: OrderKind::Buy,
+                    settlement_handling: handler.clone(),
+                    ..order
+                },
+                &Auction::default(),
+            )
             .await
             .unwrap()
             .unwrap();

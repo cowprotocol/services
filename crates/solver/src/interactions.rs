@@ -1,5 +1,5 @@
 pub mod allowances;
-mod balancer_v2;
+pub mod balancer_v2;
 pub mod block_coinbase;
 mod erc20;
 mod uniswap_v2;

@@ -4,8 +4,12 @@
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
 pub mod api;
+
 use self::api::{Amount, OneInchClient, Swap, SwapQuery};
-use super::single_order_solver::{SettlementError, SingleOrderSolving};
+use super::{
+    single_order_solver::{SettlementError, SingleOrderSolving},
+    Auction,
+};
 use crate::solver::oneinch_solver::api::SwapResponse;
 use crate::{
     encoding::EncodedInteraction,
@@ -170,6 +174,7 @@ impl SingleOrderSolving for OneInchSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
+        _: &Auction,
     ) -> Result<Option<Settlement>, SettlementError> {
         if order.kind != OrderKind::Sell {
             // 1Inch only supports sell orders
@@ -231,10 +236,13 @@ mod tests {
     async fn ignores_buy_orders() {
         assert!(
             dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
-                .try_settle_order(LimitOrder {
-                    kind: OrderKind::Buy,
-                    ..Default::default()
-                },)
+                .try_settle_order(
+                    LimitOrder {
+                        kind: OrderKind::Buy,
+                        ..Default::default()
+                    },
+                    &Auction::default()
+                )
                 .await
                 .unwrap()
                 .is_none()
@@ -295,7 +303,7 @@ mod tests {
         };
 
         let result = solver
-            .try_settle_order(order_passing_limit)
+            .try_settle_order(order_passing_limit, &Auction::default())
             .await
             .unwrap()
             .unwrap();
@@ -312,7 +320,7 @@ mod tests {
         );
 
         let result = solver
-            .try_settle_order(order_violating_limit)
+            .try_settle_order(order_violating_limit, &Auction::default())
             .await
             .unwrap();
         assert!(result.is_none());
@@ -353,11 +361,14 @@ mod tests {
 
         // Limit price violated. Actual assert is happening in `expect_get_swap()`
         assert!(solver
-            .try_settle_order(LimitOrder {
-                kind: OrderKind::Sell,
-                buy_amount: U256::max_value(),
-                ..Default::default()
-            })
+            .try_settle_order(
+                LimitOrder {
+                    kind: OrderKind::Sell,
+                    buy_amount: U256::max_value(),
+                    ..Default::default()
+                },
+                &Auction::default()
+            )
             .await
             .unwrap()
             .is_none());
@@ -416,14 +427,18 @@ mod tests {
 
         // On first run we have two main interactions (approve + swap)
         let result = solver
-            .try_settle_order(order.clone())
+            .try_settle_order(order.clone(), &Auction::default())
             .await
             .unwrap()
             .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 2);
 
         // On second run we have only have one main interactions (swap)
-        let result = solver.try_settle_order(order).await.unwrap().unwrap();
+        let result = solver
+            .try_settle_order(order, &Auction::default())
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
     }
 

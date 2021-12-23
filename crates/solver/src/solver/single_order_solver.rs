@@ -13,10 +13,11 @@ use std::{collections::VecDeque, time::Duration};
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 /// Implementations of this trait know how to settle a single limit order (not taking advantage of batching multiple orders together)
-pub trait SingleOrderSolving {
+pub trait SingleOrderSolving: Send + Sync + 'static {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
+        auction: &Auction,
     ) -> Result<Option<Settlement>, SettlementError>;
 
     /// Solver's account that should be used to submit settlements.
@@ -40,15 +41,10 @@ impl<I: SingleOrderSolving> SingleOrderSolver<I> {
 }
 
 #[async_trait::async_trait]
-impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver<I> {
-    async fn solve(
-        &self,
-        Auction {
-            mut orders,
-            deadline,
-            ..
-        }: Auction,
-    ) -> Result<Vec<Settlement>> {
+impl<I: SingleOrderSolving> Solver for SingleOrderSolver<I> {
+    async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
+        let mut orders = auction.orders.clone();
+
         // Randomize which orders we start with to prevent us getting stuck on bad orders.
         orders.shuffle(&mut rand::thread_rng());
 
@@ -59,7 +55,7 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
         let mut settlements = Vec::new();
         let settle = async {
             while let Some(order) = orders.pop_front() {
-                match self.inner.try_settle_order(order.clone()).await {
+                match self.inner.try_settle_order(order.clone(), &auction).await {
                     Ok(settlement) => {
                         self.metrics
                             .single_order_solver_succeeded(self.inner.name());
@@ -80,7 +76,8 @@ impl<I: SingleOrderSolving + Send + Sync + 'static> Solver for SingleOrderSolver
         };
 
         // Subtract a small amount of time to ensure that the driver doesn't reach the deadline first.
-        let _ = tokio::time::timeout_at((deadline - Duration::from_secs(1)).into(), settle).await;
+        let _ = tokio::time::timeout_at((auction.deadline - Duration::from_secs(1)).into(), settle)
+            .await;
         Ok(settlements)
     }
 
@@ -122,7 +119,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(2)
-            .returning(|_| Ok(Some(Settlement::new(Default::default()))));
+            .returning(|_, _| Ok(Some(Settlement::new(Default::default()))));
         inner.expect_name().returning(|| "Mock Solver");
 
         let solver: SingleOrderSolver<_> =
@@ -169,7 +166,7 @@ mod tests {
         inner
             .expect_try_settle_order()
             .times(2)
-            .returning(move |_| {
+            .returning(move |_, _| {
                 dbg!();
                 let result = match call_count {
                     0 => Err(SettlementError {
@@ -211,7 +208,7 @@ mod tests {
     async fn does_not_retry_unretryable() {
         let mut inner = MockSingleOrderSolving::new();
         inner.expect_name().return_const("");
-        inner.expect_try_settle_order().times(1).returning(|_| {
+        inner.expect_try_settle_order().times(1).returning(|_, _| {
             Err(SettlementError {
                 inner: anyhow!(""),
                 retryable: false,

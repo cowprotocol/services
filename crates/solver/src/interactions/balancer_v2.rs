@@ -15,13 +15,17 @@ pub struct BalancerSwapGivenOutInteraction {
     pub user_data: Bytes<Vec<u8>>,
 }
 
-const SWAP_KIND_GIVEN_OUT: u8 = 1;
+#[repr(u8)]
+pub enum SwapKind {
+    GivenIn = 0,
+    GivenOut = 1,
+}
 
 lazy_static::lazy_static! {
     /// An impossibly distant future timestamp. Note that we use `0x80000...00`
     /// as the value so that it is mostly 0's to save small amounts of gas on
     /// calldata.
-    static ref NEVER: U256 = U256::from(1) << 255;
+    pub static ref NEVER: U256 = U256::from(1) << 255;
 }
 
 impl Interaction for BalancerSwapGivenOutInteraction {
@@ -29,7 +33,7 @@ impl Interaction for BalancerSwapGivenOutInteraction {
         let method = self.vault.swap(
             (
                 Bytes(self.pool_id.0),
-                SWAP_KIND_GIVEN_OUT,
+                SwapKind::GivenOut as _,
                 self.asset_in,
                 self.asset_out,
                 self.amount_out,

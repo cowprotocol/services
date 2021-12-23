@@ -27,6 +27,7 @@ use std::{
 use structopt::clap::arg_enum;
 use zeroex_solver::ZeroExSolver;
 
+pub mod balancer_sor_solver;
 mod baseline_solver;
 mod http_solver;
 mod naive_solver;
