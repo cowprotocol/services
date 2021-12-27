@@ -141,6 +141,14 @@ struct Arguments {
     #[structopt(long, env, default_value = "0")]
     fee_discount: f64,
 
+    /// The minimum value for the discounted fee in the network's native token (i.e. Ether for
+    /// Mainnet).
+    ///
+    /// Note that this minimum is applied BEFORE any multiplicative factors from either
+    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    #[structopt(long, env, default_value = "0")]
+    min_discounted_fee: f64,
+
     /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
     /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
     #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
@@ -470,6 +478,7 @@ async fn main() {
         native_token_price_estimation_amount,
         FeeSubsidyConfiguration {
             fee_discount: args.fee_discount,
+            min_discounted_fee: args.min_discounted_fee,
             fee_factor: args.fee_factor,
             partner_additional_fee_factors: args.partner_additional_fee_factors,
         },

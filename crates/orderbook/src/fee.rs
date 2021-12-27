@@ -37,11 +37,19 @@ pub struct FeeSubsidyConfiguration {
     ///
     /// Flat fee discounts are applied **before** any multiplicative discounts.
     pub fee_discount: f64,
+
+    /// Minimum fee amount after applying the flat subsidy. This prevents flat
+    /// fee discounts putting the fee amount below 0.
+    ///
+    /// Flat fee discounts are applied **before** any multiplicative discounts.
+    pub min_discounted_fee: f64,
+
     /// A factor to multiply the estimated trading fee with in order to compute
     /// subsidized minimum fee.
     ///
     /// Fee factors are applied **after** flat fee discounts.
     pub fee_factor: f64,
+
     /// Additional factors per order app ID for computing the subsidized minimum
     /// fee.
     ///
@@ -54,6 +62,7 @@ impl Default for FeeSubsidyConfiguration {
         Self {
             fee_discount: 0.,
             fee_factor: 1.,
+            min_discounted_fee: 0.,
             partner_additional_fee_factors: HashMap::new(),
         }
     }
@@ -103,13 +112,15 @@ impl FeeParameters {
     ) -> U256 {
         let fee_in_eth = self.gas_amount * self.gas_price;
         let mut discounted_fee_in_eth = fee_in_eth - fee_configuration.fee_discount;
-        if discounted_fee_in_eth < 0. {
+        if discounted_fee_in_eth < fee_configuration.min_discounted_fee {
             tracing::warn!(
-                "Computed negative fee after applying fee discount: {}, capping at 0",
-                discounted_fee_in_eth
+                "fee after applying fee discount below minimum: {}, capping at {}",
+                discounted_fee_in_eth,
+                fee_configuration.min_discounted_fee,
             );
-            discounted_fee_in_eth = 0.;
+            discounted_fee_in_eth = fee_configuration.min_discounted_fee;
         }
+
         let factor = fee_configuration
             .partner_additional_fee_factors
             .get(&app_data)
@@ -907,37 +918,40 @@ mod tests {
     }
 
     #[test]
-    fn test_apply_fee_factor_capped_at_zero() {
+    fn test_apply_fee_factor_capped_at_minimum() {
         let unsubsidized = FeeParameters {
-            gas_amount: 100_000_f64,
-            gas_price: 1_000_000_000_f64,
+            gas_amount: 100_000.,
+            gas_price: 1_000_000_000.,
             sell_token_price: 1.,
         };
 
         let fee_configuration = FeeSubsidyConfiguration {
-            fee_discount: 500_000_000_000_000_f64,
+            fee_discount: 500_000_000_000_000.,
+            min_discounted_fee: 1_000_000.,
             fee_factor: 0.5,
             partner_additional_fee_factors: HashMap::new(),
         };
 
         assert_eq!(
             unsubsidized.apply_fee_factor(&fee_configuration, Default::default()),
-            0.into()
+            // Note that the fee factor is applied to the minimum discounted fee!
+            500_000.into(),
         );
     }
 
     #[test]
     fn test_apply_fee_factor_order() {
         let unsubsidized = FeeParameters {
-            gas_amount: 100_000_f64,
-            gas_price: 1_000_000_000_f64,
+            gas_amount: 100_000.,
+            gas_price: 1_000_000_000.,
             sell_token_price: 1.,
         };
 
         let app_id = AppId([1u8; 32]);
         let fee_configuration = FeeSubsidyConfiguration {
-            fee_discount: 50_000_000_000_000_f64,
+            fee_discount: 50_000_000_000_000.,
             fee_factor: 0.5,
+            min_discounted_fee: 0.,
             partner_additional_fee_factors: maplit::hashmap! {
                 app_id => 0.1,
             },
