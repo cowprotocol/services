@@ -18,6 +18,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
     price_estimation::baseline::BaselinePriceEstimator,
+    price_estimation::sanitized::SanitizedPriceEstimator,
     recent_block_cache::CacheConfig,
     sources::uniswap_v2::{
         self,
@@ -85,7 +86,7 @@ pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
 }
 
 pub struct OrderbookServices {
-    pub price_estimator: Arc<BaselinePriceEstimator>,
+    pub price_estimator: Arc<SanitizedPriceEstimator<BaselinePriceEstimator>>,
     pub maintenance: ServiceMaintenance,
     pub block_stream: CurrentBlockStream,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -123,13 +124,16 @@ impl OrderbookServices {
         let gas_estimator = Arc::new(web3.clone());
         let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
         let base_tokens = Arc::new(BaseTokens::new(contracts.weth.address(), &[]));
-        let price_estimator = Arc::new(BaselinePriceEstimator::new(
-            Arc::new(pool_fetcher),
-            gas_estimator.clone(),
-            base_tokens.clone(),
-            bad_token_detector.clone(),
+        let price_estimator = Arc::new(SanitizedPriceEstimator::new(
+            BaselinePriceEstimator::new(
+                Arc::new(pool_fetcher),
+                gas_estimator.clone(),
+                base_tokens.clone(),
+                contracts.weth.address(),
+                1_000_000_000_000_000_000_u128.into(),
+            ),
             contracts.weth.address(),
-            1_000_000_000_000_000_000_u128.into(),
+            bad_token_detector.clone(),
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),

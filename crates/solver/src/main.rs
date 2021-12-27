@@ -3,7 +3,6 @@ use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
 use ethcontract::{Account, PrivateKey, H160, U256};
 use reqwest::Url;
 use shared::{
-    bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     maintenance::{Maintaining, ServiceMaintenance},
@@ -451,8 +450,6 @@ async fn main() {
         pool_aggregator,
         gas_price_estimator.clone(),
         base_tokens.clone(),
-        // Order book already filters bad tokens
-        Arc::new(ListBasedDetector::deny_list(Vec::new())),
         native_token_contract.address(),
         native_token_price_estimation_amount,
     ));

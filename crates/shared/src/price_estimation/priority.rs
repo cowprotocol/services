@@ -25,6 +25,12 @@ fn log_errors(results: &[Result<Estimate, PriceEstimationError>], estimator_inde
 #[async_trait::async_trait]
 impl PriceEstimating for PriorityPriceEstimator {
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+        debug_assert!(queries.iter().all(|query| {
+            query.buy_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != query.buy_token
+        }));
+
         let mut results = self.inner[0].estimates(queries).await;
         log_errors(&results, 0);
         for (i, inner) in (&self.inner[1..]).iter().enumerate() {

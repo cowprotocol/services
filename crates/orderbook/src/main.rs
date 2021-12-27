@@ -22,6 +22,7 @@ use primitive_types::H160;
 use shared::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
 use shared::network::network_name;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
+use shared::price_estimation::sanitized::SanitizedPriceEstimator;
 use shared::price_estimation::zeroex::ZeroExPriceEstimator;
 use shared::zeroex_api::DefaultZeroExApi;
 use shared::{
@@ -408,7 +409,6 @@ async fn main() {
                             pool_fetcher.clone(),
                             gas_price_estimator.clone(),
                             base_tokens.clone(),
-                            bad_token_detector.clone(),
                             native_token.address(),
                             native_token_price_estimation_amount,
                         ),
@@ -422,7 +422,6 @@ async fn main() {
                                 partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
                             }),
                             token_info: token_info_fetcher.clone(),
-                            bad_token_detector: bad_token_detector.clone(),
                             disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
                         },
                         estimator.name(),
@@ -431,7 +430,6 @@ async fn main() {
                     PriceEstimatorType::ZeroEx => Box::new(InstrumentedPriceEstimator::new(
                         ZeroExPriceEstimator {
                             api: zeroex_api.clone(),
-                            bad_token_detector: bad_token_detector.clone(),
                         },
                         estimator.name(),
                         metrics.clone(),
@@ -455,7 +453,6 @@ async fn main() {
                                 },
                             }),
                             pools: pool_fetcher.clone(),
-                            bad_token_detector: bad_token_detector.clone(),
                             token_info: token_info_fetcher.clone(),
                             gas_info: gas_price_estimator.clone(),
                             native_token: native_token.address(),
@@ -468,7 +465,11 @@ async fn main() {
             )
         })
         .collect::<Vec<_>>();
-    let price_estimator = Arc::new(CompetitionPriceEstimator::new(price_estimators));
+    let price_estimator = Arc::new(SanitizedPriceEstimator::new(
+        CompetitionPriceEstimator::new(price_estimators),
+        native_token.address(),
+        bad_token_detector.clone(),
+    ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,

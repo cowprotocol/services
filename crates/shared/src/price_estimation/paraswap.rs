@@ -1,6 +1,5 @@
-use super::{ensure_token_supported, gas, Estimate, PriceEstimating, PriceEstimationError, Query};
+use super::{gas, Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
-    bad_token::BadTokenDetecting,
     paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, Side},
     token_info::{TokenInfo, TokenInfoFetching},
 };
@@ -15,7 +14,6 @@ use std::{
 pub struct ParaswapPriceEstimator {
     pub paraswap: Arc<dyn ParaswapApi>,
     pub token_info: Arc<dyn TokenInfoFetching>,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
     pub disabled_paraswap_dexs: Vec<String>,
 }
 
@@ -25,16 +23,6 @@ impl ParaswapPriceEstimator {
         query: &Query,
         token_infos: &HashMap<H160, TokenInfo>,
     ) -> Result<Estimate, PriceEstimationError> {
-        if query.buy_token == query.sell_token {
-            return Ok(Estimate {
-                out_amount: query.in_amount,
-                gas: 0.into(),
-            });
-        }
-
-        ensure_token_supported(query.buy_token, self.bad_token_detector.as_ref()).await?;
-        ensure_token_supported(query.sell_token, self.bad_token_detector.as_ref()).await?;
-
         let price_query = PriceQuery {
             src_token: query.sell_token,
             dest_token: query.buy_token,
@@ -82,6 +70,12 @@ fn decimals(
 #[async_trait::async_trait]
 impl PriceEstimating for ParaswapPriceEstimator {
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+        debug_assert!(queries.iter().all(|query| {
+            query.buy_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != query.buy_token
+        }));
+
         let tokens = queries
             .iter()
             .flat_map(|query| [query.sell_token, query.buy_token])
@@ -101,10 +95,7 @@ impl PriceEstimating for ParaswapPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        bad_token::list_based::ListBasedDetector, paraswap_api::DefaultParaswapApi,
-        token_info::MockTokenInfoFetching,
-    };
+    use crate::{paraswap_api::DefaultParaswapApi, token_info::MockTokenInfoFetching};
     use reqwest::Client;
 
     #[tokio::test]
@@ -129,11 +120,9 @@ mod tests {
             client: Client::new(),
             partner: "".to_string(),
         };
-        let detector = ListBasedDetector::deny_list(Vec::new());
         let estimator = ParaswapPriceEstimator {
             paraswap: Arc::new(paraswap),
             token_info: Arc::new(token_info),
-            bad_token_detector: Arc::new(detector),
             disabled_paraswap_dexs: Vec::new(),
         };
 

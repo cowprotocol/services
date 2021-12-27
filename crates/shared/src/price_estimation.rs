@@ -5,6 +5,7 @@ pub mod instrumented;
 pub mod paraswap;
 pub mod priority;
 pub mod quasimodo;
+pub mod sanitized;
 pub mod zeroex;
 
 use crate::{bad_token::BadTokenDetecting, conversions::U256Ext};

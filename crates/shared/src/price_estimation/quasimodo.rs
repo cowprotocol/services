@@ -1,4 +1,3 @@
-use crate::bad_token::BadTokenDetecting;
 use crate::baseline_solver::BaseTokens;
 use crate::http_solver_api::model::{
     AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, CostModel, FeeModel,
@@ -8,9 +7,7 @@ use crate::http_solver_api::HttpSolverApi;
 use crate::price_estimation::gas::{
     ERC20_TRANSFER, GAS_PER_ORDER, GAS_PER_UNISWAP, INITIALIZATION_COST, SETTLEMENT,
 };
-use crate::price_estimation::{
-    ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query,
-};
+use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::recent_block_cache::Block;
 use crate::sources::uniswap_v2::pool_cache::PoolCache;
 use crate::sources::uniswap_v2::pool_fetching::PoolFetching;
@@ -27,7 +24,6 @@ use std::time::Duration;
 pub struct QuasimodoPriceEstimator {
     pub api: Arc<dyn HttpSolverApi>,
     pub pools: Arc<PoolCache>,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
     pub token_info: Arc<dyn TokenInfoFetching>,
     pub gas_info: Arc<dyn GasPriceEstimating>,
     pub native_token: H160,
@@ -36,16 +32,6 @@ pub struct QuasimodoPriceEstimator {
 
 impl QuasimodoPriceEstimator {
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        if query.buy_token == query.sell_token {
-            return Ok(Estimate {
-                out_amount: query.in_amount,
-                gas: 0.into(),
-            });
-        }
-
-        ensure_token_supported(query.buy_token, self.bad_token_detector.as_ref()).await?;
-        ensure_token_supported(query.sell_token, self.bad_token_detector.as_ref()).await?;
-
         let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price());
 
         let mut tokens = self.base_tokens.tokens().clone();
@@ -200,6 +186,12 @@ impl PriceEstimating for QuasimodoPriceEstimator {
         &self,
         queries: &[Query],
     ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+        debug_assert!(queries.iter().all(|query| {
+            query.buy_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != query.buy_token
+        }));
+
         let mut results = Vec::with_capacity(queries.len());
 
         for query in queries {
@@ -213,7 +205,6 @@ impl PriceEstimating for QuasimodoPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bad_token::list_based::ListBasedDetector;
     use crate::current_block::current_block_stream;
     use crate::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
     use crate::price_estimation::Query;
@@ -293,7 +284,6 @@ mod tests {
             )
             .unwrap(),
         );
-        let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
         let token_info = Arc::new(TokenInfoFetcher { web3: web3.clone() });
         let gas_info = Arc::new(web3);
 
@@ -312,7 +302,6 @@ mod tests {
                 },
             }),
             pools,
-            bad_token_detector,
             token_info,
             gas_info,
             native_token: testlib::tokens::WETH,

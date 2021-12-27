@@ -20,6 +20,12 @@ impl CompetitionPriceEstimator {
 #[async_trait::async_trait]
 impl PriceEstimating for CompetitionPriceEstimator {
     async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+        debug_assert!(queries.iter().all(|query| {
+            query.buy_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != query.buy_token
+        }));
+
         let all_estimates =
             future::join_all(self.inner.iter().map(|(name, estimator)| async move {
                 (name, estimator.estimates(queries).await)

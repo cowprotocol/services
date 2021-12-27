@@ -1,9 +1,6 @@
 use super::gas;
 use crate::{
-    bad_token::BadTokenDetecting,
-    price_estimation::{
-        ensure_token_supported, Estimate, PriceEstimating, PriceEstimationError, Query,
-    },
+    price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query},
     zeroex_api::{SwapQuery, ZeroExApi},
 };
 use model::order::OrderKind;
@@ -12,21 +9,10 @@ use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator {
     pub api: Arc<dyn ZeroExApi>,
-    pub bad_token_detector: Arc<dyn BadTokenDetecting>,
 }
 
 impl ZeroExPriceEstimator {
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        if query.buy_token == query.sell_token {
-            return Ok(Estimate {
-                out_amount: query.in_amount,
-                gas: 0.into(),
-            });
-        }
-
-        ensure_token_supported(query.buy_token, self.bad_token_detector.as_ref()).await?;
-        ensure_token_supported(query.sell_token, self.bad_token_detector.as_ref()).await?;
-
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (None, Some(query.in_amount)),
             OrderKind::Sell => (Some(query.in_amount), None),
@@ -60,6 +46,12 @@ impl PriceEstimating for ZeroExPriceEstimator {
         &self,
         queries: &[Query],
     ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+        debug_assert!(queries.iter().all(|query| {
+            query.buy_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != model::order::BUY_ETH_ADDRESS
+                && query.sell_token != query.buy_token
+        }));
+
         let mut results = Vec::with_capacity(queries.len());
 
         for query in queries {
@@ -73,7 +65,6 @@ impl PriceEstimating for ZeroExPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::bad_token::list_based::ListBasedDetector;
     use crate::zeroex_api::{DefaultZeroExApi, PriceResponse};
     use crate::zeroex_api::{MockZeroExApi, SwapResponse};
     use reqwest::Client;
@@ -107,7 +98,6 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
-            bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
         let est = estimator
@@ -153,7 +143,6 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
-            bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
         let est = estimator
@@ -171,57 +160,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn same_token() {
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(MockZeroExApi::new()),
-            bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
-        };
-
-        let weth = testlib::tokens::WETH;
-
-        let est = estimator
-            .estimate(&Query {
-                sell_token: weth,
-                buy_token: weth,
-                in_amount: 100000000000000000u64.into(),
-                kind: OrderKind::Buy,
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(est.out_amount, 100000000000000000u64.into());
-        assert_eq!(est.gas, 0.into());
-    }
-
-    #[tokio::test]
-    async fn unsupported_token() {
-        let weth = testlib::tokens::WETH;
-        let gno = testlib::tokens::GNO;
-
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(MockZeroExApi::new()),
-            // we don't support this shady token -_-
-            bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![gno])),
-        };
-
-        let err = estimator
-            .estimate(&Query {
-                sell_token: weth,
-                buy_token: gno,
-                in_amount: 100000000000000000u64.into(),
-                kind: OrderKind::Buy,
-            })
-            .await
-            .unwrap_err();
-
-        if let PriceEstimationError::UnsupportedToken(token) = err {
-            assert_eq!(token, gno);
-        } else {
-            panic!("unexpected error: {:?}", err);
-        }
-    }
-
-    #[tokio::test]
     #[ignore]
     async fn real_estimate() {
         let weth = testlib::tokens::WETH;
@@ -229,7 +167,6 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
-            bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
         };
 
         let result = estimator
