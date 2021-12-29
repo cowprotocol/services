@@ -133,13 +133,13 @@ pub enum SwapResponse {
 #[serde(rename_all = "camelCase")]
 pub struct SwapResponseError {
     pub status_code: u32,
-    pub message: String,
+    pub description: String,
 }
 
 impl From<SwapResponseError> for SettlementError {
     fn from(error: SwapResponseError) -> Self {
         SettlementError {
-            inner: anyhow!(error.message),
+            inner: anyhow!(error.description),
             retryable: matches!(error.status_code, 500),
         }
     }
@@ -476,7 +476,7 @@ mod tests {
         let swap_error = serde_json::from_str::<SwapResponse>(
             r#"{
             "statusCode":500,
-            "message":"Internal server error"
+            "description":"Internal server error"
         }"#,
         )
         .unwrap();
@@ -485,7 +485,7 @@ mod tests {
             swap_error,
             SwapResponse::Error(Box::new(SwapResponseError {
                 status_code: 500,
-                message: "Internal server error".into()
+                description: "Internal server error".into()
             }))
         );
     }
