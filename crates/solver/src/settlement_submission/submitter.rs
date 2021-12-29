@@ -13,11 +13,18 @@
 // from outside) so it is only at that point that we need to check the hashes individually to the
 // find the one that got mined (if any).
 
+mod common;
+pub mod custom_nodes_api;
+pub mod eden_api;
+pub mod flashbots_api;
+
 use super::{SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
-use crate::settlement::Settlement;
-use anyhow::{anyhow, ensure, Context, Result};
+use crate::{settlement::Settlement, settlement_simulation::settle_method_builder};
+use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{contract::MethodBuilder, dyns::DynTransport, transaction::Transaction, Account};
+use ethcontract::{
+    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account,
+};
 use futures::FutureExt;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
@@ -29,7 +36,7 @@ use web3::types::TransactionReceipt;
 #[derive(Clone, Default)]
 pub struct SubmitterParams {
     /// Desired duration to include the transaction in a block
-    pub target_confirm_time: Duration, //todo change to blocks in the following PR
+    pub target_confirm_time: Duration, //todo ds change to blocks in the following PR
     /// Estimated gas consumption of a transaction
     pub gas_estimate: U256,
     /// Maximum duration of a single run loop
@@ -38,19 +45,40 @@ pub struct SubmitterParams {
     pub retry_interval: Duration,
 }
 
-pub struct TransactionHandle(pub H256);
+#[derive(Debug)]
+/// Enum used to handle all kind of messages received from implementers of trait TransactionSubmitting
+pub enum SubmitApiError {
+    InvalidNonce,
+    OpenEthereumTooCheapToReplace, // todo ds safe to remove after dropping OE support
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for SubmitApiError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct TransactionHandle {
+    pub handle: H256,
+    pub tx_hash: H256,
+}
 
 #[async_trait::async_trait]
 pub trait TransactionSubmitting {
-    /// Submits raw signed transation to the specific network (public mempool, eden, flashbots...).
+    /// Submits transation to the specific network (public mempool, eden, flashbots...).
     /// Returns transaction handle
-    async fn submit_raw_transaction(&self, tx: &[u8]) -> Result<TransactionHandle>;
+    async fn submit_transaction(
+        &self,
+        tx: TransactionBuilder<DynTransport>,
+    ) -> Result<TransactionHandle, SubmitApiError>;
     /// Cancels already submitted transaction using the transaction handle
     async fn cancel_transaction(&self, id: &TransactionHandle) -> Result<()>;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
-pub struct SubmitterGasEstimator<'a> {
+pub struct SubmitterGasPriceEstimator<'a> {
     pub inner: &'a dyn GasPriceEstimating,
     /// Boost estimated gas price miner tip in order to increase the chances of a transaction being mined
     pub additional_tip: Option<f64>,
@@ -59,7 +87,7 @@ pub struct SubmitterGasEstimator<'a> {
 }
 
 #[async_trait::async_trait]
-impl GasPriceEstimating for SubmitterGasEstimator<'_> {
+impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
     async fn estimate_with_limits(
         &self,
         gas_limit: f64,
@@ -84,28 +112,20 @@ impl GasPriceEstimating for SubmitterGasEstimator<'_> {
 }
 
 pub struct Submitter<'a> {
-    web3: &'a Web3,
     contract: &'a GPv2Settlement,
     account: &'a Account,
     submit_api: &'a dyn TransactionSubmitting,
-    gas_price_estimator: &'a SubmitterGasEstimator<'a>,
+    gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
 }
 
 impl<'a> Submitter<'a> {
     pub fn new(
-        web3: &'a Web3,
         contract: &'a GPv2Settlement,
         account: &'a Account,
         submit_api: &'a dyn TransactionSubmitting,
-        gas_price_estimator: &'a SubmitterGasEstimator<'a>,
+        gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     ) -> Result<Self> {
-        ensure!(
-            matches!(account, Account::Offline(..)),
-            "Submission requires offline account for signing"
-        );
-
         Ok(Self {
-            web3,
             contract,
             account,
             submit_api,
@@ -182,7 +202,10 @@ impl<'a> Submitter<'a> {
             );
 
             loop {
-                if let Some(receipt) = find_mined_transaction(self.web3, &transactions).await {
+                if let Some(receipt) =
+                    find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
+                        .await
+                {
                     tracing::info!("found mined transaction {}", receipt.transaction_hash);
                     return Ok(receipt);
                 }
@@ -200,7 +223,9 @@ impl<'a> Submitter<'a> {
     }
 
     async fn nonce(&self) -> Result<U256> {
-        self.web3
+        self.contract
+            .raw_instance()
+            .web3()
             .eth()
             .transaction_count(self.account.address(), None)
             .await
@@ -271,7 +296,7 @@ impl<'a> Submitter<'a> {
                 return SubmissionError::from(err);
             }
 
-            // If gas price has increased cancel old and submit new transaction.
+            // if gas price has increased cancel old transaction so new transaction could be submitted.
 
             if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
@@ -287,31 +312,29 @@ impl<'a> Submitter<'a> {
                 }
             }
 
-            // Unwrap because no communication with the node is needed because we specified nonce and gas.
-            let (raw_signed_transaction, hash) =
-                match method.tx.build().now_or_never().unwrap().unwrap() {
-                    Transaction::Request(_) => unreachable!("verified offline account was used"),
-                    Transaction::Raw { bytes, hash } => (bytes.0, hash),
-                };
-
             tracing::info!(
-                "creating transaction with hash {:?}, tip to miner {:.3e}, gas price {:?}, gas estimate {}",
-                hash,
-                tx_gas_cost(&gas_price, params).to_f64_lossy(),
+                "creating transaction with gas price {:?}, gas estimate {}",
                 gas_price,
                 params.gas_estimate,
             );
 
-            match self
-                .submit_api
-                .submit_raw_transaction(&raw_signed_transaction)
-                .await
-            {
-                Ok(id) => {
-                    transactions.push(hash);
-                    previous_tx = Some((gas_price, id));
+            // execute transaction
+
+            match self.submit_api.submit_transaction(method.tx).await {
+                Ok(handle) => {
+                    tracing::info!("created transaction with hash {}", handle.tx_hash);
+                    previous_tx = Some((gas_price, handle));
+                    transactions.push(handle.tx_hash)
                 }
-                Err(err) => tracing::error!("submission failed: {:?}", err),
+                Err(err) => match err {
+                    SubmitApiError::InvalidNonce => {
+                        tracing::warn!("submission failed: invalid nonce")
+                    }
+                    SubmitApiError::OpenEthereumTooCheapToReplace => {
+                        tracing::debug!("submission failed: OE has different replacement rules than our algorithm")
+                    }
+                    SubmitApiError::Other(err) => tracing::error!("submission failed: {}", err),
+                },
             }
             tokio::time::sleep(params.retry_interval).await;
         }
@@ -331,15 +354,11 @@ impl<'a> Submitter<'a> {
             gas_price.legacy.into()
         };
 
-        super::retry::settle_method_builder(self.contract, settlement.into(), self.account.clone())
+        settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
             .gas_price(gas_price)
     }
-}
-
-fn tx_gas_cost(gas_price: &EstimatedGasPrice, params: &SubmitterParams) -> U256 {
-    U256::from_f64_lossy(gas_price.effective_gas_price()) * params.gas_estimate
 }
 
 /// From a list of potential hashes find one that was mined.
@@ -370,7 +389,7 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
 #[cfg(test)]
 mod tests {
 
-    use super::super::flashbots_api::FlashbotsApi;
+    use super::super::submitter::flashbots_api::FlashbotsApi;
     use super::*;
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
@@ -405,7 +424,7 @@ mod tests {
         )
         .await
         .unwrap();
-        let gas_price_estimator = SubmitterGasEstimator {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &gas_price_estimator,
             additional_tip: Some(3.0),
             gas_price_cap: 100e9,
@@ -426,14 +445,8 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let submitter = Submitter::new(
-            &web3,
-            &contract,
-            &account,
-            &flashbots_api,
-            &gas_price_estimator,
-        )
-        .unwrap();
+        let submitter =
+            Submitter::new(&contract, &account, &flashbots_api, &gas_price_estimator).unwrap();
 
         let params = SubmitterParams {
             target_confirm_time: Duration::from_secs(0),

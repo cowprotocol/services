@@ -1,9 +1,13 @@
-use crate::settlement::Settlement;
+use crate::{encoding::EncodedSettlement, settlement::Settlement};
 use anyhow::{Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
-    batch::CallBatch, contract::MethodBuilder, dyns::DynTransport, errors::ExecutionError,
-    transaction::TransactionBuilder, Account,
+    batch::CallBatch,
+    contract::MethodBuilder,
+    dyns::{DynMethodBuilder, DynTransport},
+    errors::ExecutionError,
+    transaction::TransactionBuilder,
+    Account,
 };
 use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
@@ -129,8 +133,22 @@ fn settle_method(
     } else {
         gas_price.legacy.into()
     };
-    crate::settlement_submission::retry::settle_method_builder(contract, settlement.into(), account)
-        .gas_price(gas_price)
+    settle_method_builder(contract, settlement.into(), account).gas_price(gas_price)
+}
+
+pub fn settle_method_builder(
+    contract: &GPv2Settlement,
+    settlement: EncodedSettlement,
+    from: Account,
+) -> DynMethodBuilder<()> {
+    contract
+        .settle(
+            settlement.tokens,
+            settlement.clearing_prices,
+            settlement.trades,
+            settlement.interactions,
+        )
+        .from(from)
 }
 
 // Creates a simulation link in the gp-v2 tenderly workspace

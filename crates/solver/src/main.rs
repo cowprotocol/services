@@ -34,8 +34,10 @@ use solver::{
     metrics::Metrics,
     orderbook::OrderBookApi,
     settlement_submission::{
-        eden_api::EdenApi, flashbots_api::FlashbotsApi, SolutionSubmitter, StrategyArgs,
-        TransactionStrategy,
+        submitter::{
+            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+        },
+        SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
     solver::SolverType,
 };
@@ -192,15 +194,6 @@ struct Arguments {
     #[structopt(long, env, default_value = "PublicMempool")]
     transaction_strategy: TransactionStrategyArg,
 
-    /// The maximum time in seconds we spend trying to settle a transaction through the eden
-    /// network before going to back to solving.
-    #[structopt(
-        long,
-        default_value = "120",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    max_eden_submission_seconds: Duration,
-
     /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[structopt(
         long,
@@ -210,22 +203,14 @@ struct Arguments {
     )]
     additional_eden_tip: f64,
 
-    /// Amount of time to wait before retrying to submit the tx to the eden network
-    #[structopt(
-            long,
-            default_value = "10",
-            parse(try_from_str = shared::arguments::duration_from_seconds),
-        )]
-    eden_submission_retry_interval_seconds: Duration,
-
-    /// The maximum time in seconds we spend trying to settle a transaction through the flashbots
+    /// The maximum time in seconds we spend trying to settle a transaction through the ethereum
     /// network before going to back to solving.
     #[structopt(
         long,
         default_value = "120",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
-    max_flashbots_submission_seconds: Duration,
+    max_submission_seconds: Duration,
 
     /// Additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
     #[structopt(
@@ -236,13 +221,13 @@ struct Arguments {
     )]
     additional_flashbot_tip: f64,
 
-    /// Amount of time to wait before retrying to submit the tx to the flashbots network
+    /// Amount of time to wait before retrying to submit the tx to the ethereum network
     #[structopt(
         long,
         default_value = "5",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
-    flashbots_submission_retry_interval_seconds: Duration,
+    submission_retry_interval_seconds: Duration,
 
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
     #[structopt(long, env, use_delimiter = true)]
@@ -537,21 +522,22 @@ async fn main() {
         contract: settlement_contract.clone(),
         gas_price_estimator: gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
+        max_confirm_time: args.max_submission_seconds,
+        retry_interval: args.submission_retry_interval_seconds,
         gas_price_cap: args.gas_price_cap,
         transaction_strategy: match args.transaction_strategy {
             TransactionStrategyArg::PublicMempool => {
-                TransactionStrategy::CustomNodes(vec![web3.clone()])
+                TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    additional_tip: 0.0,
+                })
             }
             TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
                 submit_api: Box::new(EdenApi::new(client.clone())),
-                max_confirm_time: args.max_eden_submission_seconds,
-                retry_interval: args.eden_submission_retry_interval_seconds,
                 additional_tip: args.additional_eden_tip,
             }),
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
                 submit_api: Box::new(FlashbotsApi::new(client.clone())),
-                max_confirm_time: args.max_flashbots_submission_seconds,
-                retry_interval: args.flashbots_submission_retry_interval_seconds,
                 additional_tip: args.additional_flashbot_tip,
             }),
             TransactionStrategyArg::CustomNodes => {
@@ -578,7 +564,10 @@ async fn main() {
                         "network id of custom node doesn't match main node"
                     );
                 }
-                TransactionStrategy::CustomNodes(nodes)
+                TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(nodes)),
+                    additional_tip: 0.0,
+                })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         },

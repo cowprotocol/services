@@ -46,7 +46,6 @@ strum = { version = "0.23", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.14", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 tracing = "0.1"
-transaction-retry = { git = "https://github.com/gnosis/gp-transaction-retry.git", tag = "v0.2.2" }
 web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }
 
 [dev-dependencies]

@@ -1,9 +1,4 @@
 mod dry_run;
-pub mod eden_api;
-pub mod flashbots_api;
-mod gas_price_stream;
-pub mod retry;
-pub mod rpc;
 pub mod submitter;
 
 use crate::{metrics::SettlementSubmissionOutcome, settlement::Settlement};
@@ -20,11 +15,10 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use submitter::{Submitter, SubmitterGasEstimator, SubmitterParams, TransactionSubmitting};
+use submitter::{Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting};
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
-const GAS_PRICE_REFRESH_INTERVAL: Duration = Duration::from_secs(15);
 
 pub struct SolutionSubmitter {
     pub web3: Web3,
@@ -32,20 +26,20 @@ pub struct SolutionSubmitter {
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
     // for gas price estimation
     pub target_confirm_time: Duration,
+    pub max_confirm_time: Duration,
+    pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategy: TransactionStrategy,
 }
 
 pub struct StrategyArgs {
     pub submit_api: Box<dyn TransactionSubmitting>,
-    pub max_confirm_time: Duration,
-    pub retry_interval: Duration,
     pub additional_tip: f64,
 }
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
-    CustomNodes(Vec<Web3>),
+    CustomNodes(StrategyArgs),
     DryRun,
 }
 
@@ -61,60 +55,64 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         account: Account,
     ) -> Result<TransactionReceipt, SubmissionError> {
+        let params = SubmitterParams {
+            target_confirm_time: self.target_confirm_time,
+            gas_estimate,
+            deadline: Some(Instant::now() + self.max_confirm_time),
+            retry_interval: self.retry_interval,
+        };
+
         match &self.transaction_strategy {
-            TransactionStrategy::CustomNodes(nodes) => {
-                rpc::submit(
-                    nodes,
-                    account,
-                    &self.contract,
-                    self.gas_price_estimator.as_ref(),
-                    self.target_confirm_time,
-                    self.gas_price_cap,
-                    settlement,
-                    gas_estimate,
-                )
-                .await
-            }
-            TransactionStrategy::Eden(args) => {
-                let eden_gas_price_estimator = SubmitterGasEstimator {
+            TransactionStrategy::CustomNodes(args) => {
+                let gas_price_estimator = SubmitterGasPriceEstimator {
                     inner: self.gas_price_estimator.as_ref(),
                     additional_tip: Some(args.additional_tip),
                     gas_price_cap: self.gas_price_cap,
                 };
                 let submitter = Submitter::new(
-                    &self.web3,
+                    &self.contract,
+                    &account,
+                    args.submit_api.as_ref(),
+                    &gas_price_estimator,
+                )?;
+                submitter.submit(settlement, params).await
+            }
+            TransactionStrategy::Eden(args) => {
+                if !matches!(account, Account::Offline(..)) {
+                    return Err(SubmissionError::from(anyhow!(
+                        "Submission requires offline account for signing"
+                    )));
+                }
+                let eden_gas_price_estimator = SubmitterGasPriceEstimator {
+                    inner: self.gas_price_estimator.as_ref(),
+                    additional_tip: Some(args.additional_tip),
+                    gas_price_cap: self.gas_price_cap,
+                };
+                let submitter = Submitter::new(
                     &self.contract,
                     &account,
                     args.submit_api.as_ref(),
                     &eden_gas_price_estimator,
                 )?;
-                let params = SubmitterParams {
-                    target_confirm_time: self.target_confirm_time,
-                    gas_estimate,
-                    deadline: Some(Instant::now() + args.max_confirm_time),
-                    retry_interval: args.retry_interval,
-                };
                 submitter.submit(settlement, params).await
             }
             TransactionStrategy::Flashbots(args) => {
-                let flashbots_gas_price_estimator = SubmitterGasEstimator {
+                if !matches!(account, Account::Offline(..)) {
+                    return Err(SubmissionError::from(anyhow!(
+                        "Submission requires offline account for signing"
+                    )));
+                }
+                let flashbots_gas_price_estimator = SubmitterGasPriceEstimator {
                     inner: self.gas_price_estimator.as_ref(),
                     additional_tip: Some(args.additional_tip),
                     gas_price_cap: self.gas_price_cap,
                 };
                 let submitter = Submitter::new(
-                    &self.web3,
                     &self.contract,
                     &account,
                     args.submit_api.as_ref(),
                     &flashbots_gas_price_estimator,
                 )?;
-                let params = SubmitterParams {
-                    target_confirm_time: self.target_confirm_time,
-                    gas_estimate,
-                    deadline: Some(Instant::now() + args.max_confirm_time),
-                    retry_interval: args.retry_interval,
-                };
                 submitter.submit(settlement, params).await
             }
             TransactionStrategy::DryRun => {

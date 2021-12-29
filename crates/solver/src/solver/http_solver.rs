@@ -5,12 +5,11 @@ use self::settlement::SettlementContext;
 use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
-    settlement_submission::retry::is_transaction_failure,
     solver::{Auction, Solver},
 };
 use anyhow::{anyhow, Context, Result};
 use buffers::{BufferRetrievalError, BufferRetrieving};
-use ethcontract::{Account, U256};
+use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
 use model::order::OrderKind;
@@ -30,6 +29,13 @@ use std::{
     iter::FromIterator as _,
     sync::Arc,
 };
+
+/// Failure indicating the transaction reverted for some reason
+pub fn is_transaction_failure(error: &ExecutionError) -> bool {
+    matches!(error, ExecutionError::Failure(_))
+        || matches!(error, ExecutionError::Revert(_))
+        || matches!(error, ExecutionError::InvalidOpcode)
+}
 
 // TODO: exclude partially fillable orders
 // TODO: set settlement.fee_factor

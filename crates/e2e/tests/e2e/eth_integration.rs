@@ -15,8 +15,12 @@ use secp256k1::SecretKey;
 use serde_json::json;
 use shared::{maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
-    liquidity::uniswap_v2::UniswapLikeLiquidity, liquidity_collector::LiquidityCollector,
-    metrics::NoopMetrics, settlement_submission::SolutionSubmitter,
+    liquidity::uniswap_v2::UniswapLikeLiquidity,
+    liquidity_collector::LiquidityCollector,
+    metrics::NoopMetrics,
+    settlement_submission::{
+        submitter::custom_nodes_api::CustomNodesApi, SolutionSubmitter, StrategyArgs,
+    },
 };
 use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
@@ -220,8 +224,13 @@ async fn eth_integration(web3: Web3) {
             gas_price_estimator: Arc::new(web3.clone()),
             target_confirm_time: Duration::from_secs(1),
             gas_price_cap: f64::MAX,
+            max_confirm_time: Duration::from_secs(120),
+            retry_interval: Duration::from_secs(5),
             transaction_strategy: solver::settlement_submission::TransactionStrategy::CustomNodes(
-                vec![web3.clone()],
+                StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    additional_tip: 0.0,
+                },
             ),
         },
         1_000_000_000_000_000_000_u128.into(),
