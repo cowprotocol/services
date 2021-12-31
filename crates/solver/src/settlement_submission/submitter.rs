@@ -65,8 +65,9 @@ pub struct TransactionHandle {
     pub tx_hash: H256,
 }
 
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait TransactionSubmitting {
+pub trait TransactionSubmitting: Send + Sync {
     /// Submits transation to the specific network (public mempool, eden, flashbots...).
     /// Returns transaction handle
     async fn submit_transaction(
@@ -322,7 +323,6 @@ impl<'a> Submitter<'a> {
 
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
-                    tracing::info!("created transaction with hash {}", handle.tx_hash);
                     previous_tx = Some((gas_price, handle));
                     transactions.push(handle.tx_hash)
                 }

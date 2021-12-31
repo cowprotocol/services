@@ -22,6 +22,7 @@ impl TransactionSubmitting for FlashbotsApi {
         &self,
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle, SubmitApiError> {
+        tracing::info!("sending transaction to Flashbots network...");
         super::common::submit_raw_transaction(self.client.clone(), URL, tx).await
     }
 

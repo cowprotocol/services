@@ -8,6 +8,7 @@ use ethcontract::{
     errors::{ExecutionError, MethodError},
     Account,
 };
+use futures::FutureExt;
 use gas_estimation::GasPriceEstimating;
 use primitive_types::U256;
 use shared::Web3;
@@ -29,7 +30,7 @@ pub struct SolutionSubmitter {
     pub max_confirm_time: Duration,
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
-    pub transaction_strategy: TransactionStrategy,
+    pub transaction_strategy: Vec<TransactionStrategy>,
 }
 
 pub struct StrategyArgs {
@@ -41,6 +42,17 @@ pub enum TransactionStrategy {
     Flashbots(StrategyArgs),
     CustomNodes(StrategyArgs),
     DryRun,
+}
+
+impl TransactionStrategy {
+    pub fn strategy_args(&self) -> Option<&StrategyArgs> {
+        match &self {
+            TransactionStrategy::Eden(args) => Some(args),
+            TransactionStrategy::Flashbots(args) => Some(args),
+            TransactionStrategy::CustomNodes(args) => Some(args),
+            TransactionStrategy::DryRun => None,
+        }
+    }
 }
 
 impl SolutionSubmitter {
@@ -55,68 +67,66 @@ impl SolutionSubmitter {
         gas_estimate: U256,
         account: Account,
     ) -> Result<TransactionReceipt, SubmissionError> {
-        let params = SubmitterParams {
-            target_confirm_time: self.target_confirm_time,
-            gas_estimate,
-            deadline: Some(Instant::now() + self.max_confirm_time),
-            retry_interval: self.retry_interval,
-        };
+        let is_dry_run: bool = self
+            .transaction_strategy
+            .iter()
+            .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
 
-        match &self.transaction_strategy {
-            TransactionStrategy::CustomNodes(args) => {
-                let gas_price_estimator = SubmitterGasPriceEstimator {
-                    inner: self.gas_price_estimator.as_ref(),
-                    additional_tip: Some(args.additional_tip),
-                    gas_price_cap: self.gas_price_cap,
-                };
-                let submitter = Submitter::new(
-                    &self.contract,
-                    &account,
-                    args.submit_api.as_ref(),
-                    &gas_price_estimator,
-                )?;
-                submitter.submit(settlement, params).await
-            }
-            TransactionStrategy::Eden(args) => {
-                if !matches!(account, Account::Offline(..)) {
-                    return Err(SubmissionError::from(anyhow!(
-                        "Submission requires offline account for signing"
-                    )));
+        if is_dry_run {
+            Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
+        } else {
+            let mut futures = self
+                .transaction_strategy
+                .iter()
+                .map(|strategy| {
+                    async {
+                        match &*strategy {
+                            TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
+                                if !matches!(account, Account::Offline(..)) {
+                                    return Err(SubmissionError::from(anyhow!(
+                                        "Submission to private network requires offline account for signing"
+                                    )));
+                                }
+                            }
+                            TransactionStrategy::CustomNodes(_) => {}
+                            TransactionStrategy::DryRun => unreachable!(),
+                        };
+
+                        let strategy_args = strategy.strategy_args().expect("unreachable code executed");
+                        let params = SubmitterParams {
+                            target_confirm_time: self.target_confirm_time,
+                            gas_estimate,
+                            deadline: Some(Instant::now() + self.max_confirm_time),
+                            retry_interval: self.retry_interval,
+                        };
+                        let gas_price_estimator = SubmitterGasPriceEstimator {
+                            inner: self.gas_price_estimator.as_ref(),
+                            additional_tip: Some(strategy_args.additional_tip),
+                            gas_price_cap: self.gas_price_cap,
+                        };
+                        let submitter = Submitter::new(
+                            &self.contract,
+                            &account,
+                            strategy_args.submit_api.as_ref(),
+                            &gas_price_estimator,
+                        )?;
+                        submitter.submit(settlement.clone(), params).await
+                    }
+                    .boxed()
+                })
+                .collect::<Vec<_>>();
+
+            loop {
+                let (result, _index, rest) = futures::future::select_all(futures).await;
+                match result {
+                    Ok(receipt) => return Ok(receipt),
+                    Err(err) if rest.is_empty() => {
+                        return Err(err);
+                    }
+                    Err(_) => {
+                        futures = rest;
+                    }
                 }
-                let eden_gas_price_estimator = SubmitterGasPriceEstimator {
-                    inner: self.gas_price_estimator.as_ref(),
-                    additional_tip: Some(args.additional_tip),
-                    gas_price_cap: self.gas_price_cap,
-                };
-                let submitter = Submitter::new(
-                    &self.contract,
-                    &account,
-                    args.submit_api.as_ref(),
-                    &eden_gas_price_estimator,
-                )?;
-                submitter.submit(settlement, params).await
-            }
-            TransactionStrategy::Flashbots(args) => {
-                if !matches!(account, Account::Offline(..)) {
-                    return Err(SubmissionError::from(anyhow!(
-                        "Submission requires offline account for signing"
-                    )));
-                }
-                let flashbots_gas_price_estimator = SubmitterGasPriceEstimator {
-                    inner: self.gas_price_estimator.as_ref(),
-                    additional_tip: Some(args.additional_tip),
-                    gas_price_cap: self.gas_price_cap,
-                };
-                let submitter = Submitter::new(
-                    &self.contract,
-                    &account,
-                    args.submit_api.as_ref(),
-                    &flashbots_gas_price_estimator,
-                )?;
-                submitter.submit(settlement, params).await
-            }
-            TransactionStrategy::DryRun => {
-                Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
             }
         }
     }
@@ -185,12 +195,22 @@ impl From<MethodError> for SubmissionError {
 mod tests {
     use super::*;
     use ethcontract::H256;
+    use submitter::MockTransactionSubmitting;
 
     impl PartialEq for SubmissionError {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
                 (Self::Revert(left), Self::Revert(right)) => left == right,
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
+            }
+        }
+    }
+
+    impl Default for StrategyArgs {
+        fn default() -> Self {
+            Self {
+                submit_api: Box::new(MockTransactionSubmitting::new()),
+                additional_tip: Default::default(),
             }
         }
     }
@@ -223,5 +243,20 @@ mod tests {
                 to,
             )
         }
+    }
+
+    #[test]
+    fn transaction_strategy_test() {
+        let strategy = TransactionStrategy::Eden(StrategyArgs::default());
+        assert!(strategy.strategy_args().is_some());
+
+        let strategy = TransactionStrategy::Flashbots(StrategyArgs::default());
+        assert!(strategy.strategy_args().is_some());
+
+        let strategy = TransactionStrategy::CustomNodes(StrategyArgs::default());
+        assert!(strategy.strategy_args().is_some());
+
+        let strategy = TransactionStrategy::DryRun;
+        assert!(strategy.strategy_args().is_none());
     }
 }

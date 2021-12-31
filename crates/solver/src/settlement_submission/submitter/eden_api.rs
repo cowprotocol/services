@@ -24,6 +24,7 @@ impl TransactionSubmitting for EdenApi {
         &self,
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle, SubmitApiError> {
+        tracing::info!("sending transaction to Eden network...");
         super::common::submit_raw_transaction(self.client.clone(), URL, tx).await
     }
 

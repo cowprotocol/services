@@ -191,8 +191,17 @@ struct Arguments {
     zeroex_slippage_bps: u32,
 
     /// How to to submit settlement transactions.
-    #[structopt(long, env, default_value = "PublicMempool")]
-    transaction_strategy: TransactionStrategyArg,
+    /// Expected to contain either:
+    /// 1. One value equal to TransactionStrategyArg::DryRun or
+    /// 2. One or more values equal to any combination of enum variants except TransactionStrategyArg::DryRun
+    #[structopt(
+        long,
+        env,
+        default_value = "Flashbots,Eden",
+        possible_values = &TransactionStrategyArg::variants(),
+        case_insensitive = true,
+        use_delimiter = true)]
+    transaction_strategy: Vec<TransactionStrategyArg>,
 
     /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[structopt(
@@ -517,15 +526,29 @@ async fn main() {
             .await
             .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
             .ok();
-    let solution_submitter = SolutionSubmitter {
-        web3: web3.clone(),
-        contract: settlement_contract.clone(),
-        gas_price_estimator: gas_price_estimator.clone(),
-        target_confirm_time: args.target_confirm_time,
-        max_confirm_time: args.max_submission_seconds,
-        retry_interval: args.submission_retry_interval_seconds,
-        gas_price_cap: args.gas_price_cap,
-        transaction_strategy: match args.transaction_strategy {
+    let submission_nodes = args
+        .transaction_submission_nodes
+        .into_iter()
+        .enumerate()
+        .map(|(index, url)| {
+            let transport = create_instrumented_transport(
+                HttpTransport::new(client.clone(), url, index.to_string()),
+                metrics.clone(),
+            );
+            web3::Web3::new(transport)
+        })
+        .collect::<Vec<_>>();
+    for node in &submission_nodes {
+        let node_network_id = node.net().version().await.unwrap();
+        assert_eq!(
+            node_network_id, network_id,
+            "network id of custom node doesn't match main node"
+        );
+    }
+    let transaction_strategy = args
+        .transaction_strategy
+        .iter()
+        .map(|strategy| match strategy {
             TransactionStrategyArg::PublicMempool => {
                 TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
@@ -542,35 +565,26 @@ async fn main() {
             }),
             TransactionStrategyArg::CustomNodes => {
                 assert!(
-                    !args.transaction_submission_nodes.is_empty(),
+                    !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                let nodes = args
-                    .transaction_submission_nodes
-                    .into_iter()
-                    .enumerate()
-                    .map(|(index, url)| {
-                        let transport = create_instrumented_transport(
-                            HttpTransport::new(client.clone(), url, index.to_string()),
-                            metrics.clone(),
-                        );
-                        web3::Web3::new(transport)
-                    })
-                    .collect::<Vec<_>>();
-                for node in &nodes {
-                    let node_network_id = node.net().version().await.unwrap();
-                    assert_eq!(
-                        node_network_id, network_id,
-                        "network id of custom node doesn't match main node"
-                    );
-                }
                 TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(nodes)),
+                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
                     additional_tip: 0.0,
                 })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
-        },
+        })
+        .collect::<Vec<_>>();
+    let solution_submitter = SolutionSubmitter {
+        web3: web3.clone(),
+        contract: settlement_contract.clone(),
+        gas_price_estimator: gas_price_estimator.clone(),
+        target_confirm_time: args.target_confirm_time,
+        max_confirm_time: args.max_submission_seconds,
+        retry_interval: args.submission_retry_interval_seconds,
+        gas_price_cap: args.gas_price_cap,
+        transaction_strategy,
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {

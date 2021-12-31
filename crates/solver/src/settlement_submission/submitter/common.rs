@@ -43,7 +43,11 @@ pub async fn submit_raw_transaction(
         .map_err(|err| SubmitApiError::Other(err.into()))?;
 
     let handle = parse_json_rpc_response::<H256>(&body)?;
-    tracing::debug!("transaction handle: {}", handle);
+    tracing::info!(
+        "created transaction with hash: {} and handle: {}",
+        tx_hash,
+        handle
+    );
     Ok(TransactionHandle { tx_hash, handle })
 }
 

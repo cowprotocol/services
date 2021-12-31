@@ -231,12 +231,12 @@ async fn onchain_settlement(web3: Web3) {
             gas_price_cap: f64::MAX,
             max_confirm_time: Duration::from_secs(120),
             retry_interval: Duration::from_secs(5),
-            transaction_strategy: solver::settlement_submission::TransactionStrategy::CustomNodes(
-                StrategyArgs {
+            transaction_strategy: vec![
+                solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     additional_tip: 0.0,
-                },
-            ),
+                }),
+            ],
         },
         1_000_000_000_000_000_000_u128.into(),
         10,
