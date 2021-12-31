@@ -20,6 +20,7 @@ use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
 use std::fmt::Debug;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -73,7 +74,17 @@ pub fn handle_all_routes(
     .or(warp::path!("api" / "v1" / ..).and(get_orders_by_tx.with(handle_metrics("get_user_by_tx"))))
     .or(warp::path!("api" / "v1" / ..).and(post_quote.with(handle_metrics("post_quote"))));
 
-    routes_with_labels.recover(handle_rejection).with(cors)
+    // Give each request a unique tracing span. This allows us to match log statements across concurrent API requests.
+    let request_id = Arc::new(AtomicUsize::new(0));
+    let tracing_span = warp::trace(move |_| {
+        tracing::info_span!("request", id = request_id.fetch_add(1, Ordering::SeqCst))
+    });
+
+    routes_with_labels
+        .recover(handle_rejection)
+        .with(cors)
+        .with(warp::log::log("orderbook::api::request_summary"))
+        .with(tracing_span)
 }
 
 pub type ApiReply = warp::reply::WithStatus<warp::reply::Json>;
