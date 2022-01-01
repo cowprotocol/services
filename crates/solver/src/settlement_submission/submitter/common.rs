@@ -7,13 +7,13 @@ use ethcontract::{
 use futures::FutureExt;
 use jsonrpc_core::Output;
 use primitive_types::H256;
-use reqwest::{Client, IntoUrl};
+use reqwest::Client;
 use serde::de::DeserializeOwned;
 
 /// Function for sending raw signed transaction to private networks
 pub async fn submit_raw_transaction(
     client: Client,
-    url: impl IntoUrl,
+    url: &str,
     tx: TransactionBuilder<DynTransport>,
 ) -> Result<TransactionHandle, SubmitApiError> {
     let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
@@ -44,9 +44,10 @@ pub async fn submit_raw_transaction(
 
     let handle = parse_json_rpc_response::<H256>(&body)?;
     tracing::info!(
-        "created transaction with hash: {} and handle: {}",
+        "created transaction with hash: {:?} and handle: {:?}, url: {:?}",
         tx_hash,
-        handle
+        handle,
+        url
     );
     Ok(TransactionHandle { tx_hash, handle })
 }
@@ -78,9 +79,6 @@ where
                 }
             }
         },
-        Err(_) => {
-            tracing::info!("invalid rpc response: {}", body);
-            Err(anyhow!("invalid rpc response").into())
-        }
+        Err(_) => Err(anyhow!("invalid rpc response: {}", body).into()),
     }
 }

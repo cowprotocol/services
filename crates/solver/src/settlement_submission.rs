@@ -30,7 +30,7 @@ pub struct SolutionSubmitter {
     pub max_confirm_time: Duration,
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
-    pub transaction_strategy: Vec<TransactionStrategy>,
+    pub transaction_strategies: Vec<TransactionStrategy>,
 }
 
 pub struct StrategyArgs {
@@ -68,7 +68,7 @@ impl SolutionSubmitter {
         account: Account,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let is_dry_run: bool = self
-            .transaction_strategy
+            .transaction_strategies
             .iter()
             .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
 
@@ -76,7 +76,7 @@ impl SolutionSubmitter {
             Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
         } else {
             let mut futures = self
-                .transaction_strategy
+                .transaction_strategies
                 .iter()
                 .map(|strategy| {
                     async {

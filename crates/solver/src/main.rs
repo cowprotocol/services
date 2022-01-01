@@ -545,7 +545,7 @@ async fn main() {
             "network id of custom node doesn't match main node"
         );
     }
-    let transaction_strategy = args
+    let transaction_strategies = args
         .transaction_strategy
         .iter()
         .map(|strategy| match strategy {
@@ -584,7 +584,7 @@ async fn main() {
         max_confirm_time: args.max_submission_seconds,
         retry_interval: args.submission_retry_interval_seconds,
         gas_price_cap: args.gas_price_cap,
-        transaction_strategy,
+        transaction_strategies,
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {

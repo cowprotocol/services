@@ -226,7 +226,7 @@ async fn eth_integration(web3: Web3) {
             gas_price_cap: f64::MAX,
             max_confirm_time: Duration::from_secs(120),
             retry_interval: Duration::from_secs(5),
-            transaction_strategy: vec![
+            transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     additional_tip: 0.0,
