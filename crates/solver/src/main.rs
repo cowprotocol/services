@@ -207,7 +207,7 @@ struct Arguments {
     #[structopt(
         long,
         env,
-        default_value = "3",
+        default_value = "0",
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
     additional_eden_tip: f64,
