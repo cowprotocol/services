@@ -45,6 +45,8 @@ pub enum SettlementSubmissionOutcome {
     Revert,
     /// Submission timed-out while waiting for the transaction to get mined.
     Timeout,
+    /// Submission disabled
+    Disabled,
     /// A transaction failed to be submitted or, in the case of private network
     /// submission, the blockchain state changed and the transaction is no
     /// longer valid.
@@ -320,6 +322,7 @@ impl SolverMetrics for Metrics {
             SettlementSubmissionOutcome::Success => "success",
             SettlementSubmissionOutcome::Revert => "revert",
             SettlementSubmissionOutcome::Timeout => "timeout",
+            SettlementSubmissionOutcome::Disabled => "disabled",
             SettlementSubmissionOutcome::Failure => "failure",
         };
         self.settlement_submissions

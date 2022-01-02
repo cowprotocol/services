@@ -1,6 +1,10 @@
-use super::super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting};
+use super::{
+    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    SubmissionLoopStatus,
+};
 use anyhow::Result;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder};
+use gas_estimation::EstimatedGasPrice;
 use reqwest::Client;
 
 const URL: &str = "https://rpc.flashbots.net";
@@ -27,5 +31,9 @@ impl TransactionSubmitting for FlashbotsApi {
 
     async fn cancel_transaction(&self, _id: &TransactionHandle) -> Result<()> {
         Ok(())
+    }
+
+    fn submission_status(&self, _gas_price: &EstimatedGasPrice) -> SubmissionLoopStatus {
+        SubmissionLoopStatus::Enabled
     }
 }

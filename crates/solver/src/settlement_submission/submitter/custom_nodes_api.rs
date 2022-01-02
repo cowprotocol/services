@@ -1,10 +1,14 @@
-use super::super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting};
+use super::{
+    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    SubmissionLoopStatus,
+};
 use anyhow::Result;
 use ethcontract::{
     dyns::DynTransport,
     transaction::{Transaction, TransactionBuilder},
 };
 use futures::FutureExt;
+use gas_estimation::EstimatedGasPrice;
 use shared::Web3;
 
 #[derive(Clone)]
@@ -68,5 +72,9 @@ impl TransactionSubmitting for CustomNodesApi {
 
     async fn cancel_transaction(&self, _id: &TransactionHandle) -> Result<()> {
         Ok(())
+    }
+
+    fn submission_status(&self, _gas_price: &EstimatedGasPrice) -> SubmissionLoopStatus {
+        SubmissionLoopStatus::Enabled
     }
 }

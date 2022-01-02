@@ -59,6 +59,18 @@ impl From<anyhow::Error> for SubmitApiError {
     }
 }
 
+#[derive(Debug)]
+pub enum SubmissionLoopStatus {
+    Enabled,
+    Disabled(DisabledReason),
+}
+
+#[derive(Debug)]
+pub enum DisabledReason {
+    EdenDisabledNetworkCongested,
+    CustomNodesDisabledMevExtractable,
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct TransactionHandle {
     pub handle: H256,
@@ -76,6 +88,8 @@ pub trait TransactionSubmitting: Send + Sync {
     ) -> Result<TransactionHandle, SubmitApiError>;
     /// Cancels already submitted transaction using the transaction handle
     async fn cancel_transaction(&self, id: &TransactionHandle) -> Result<()>;
+    /// Checks if transaction submitting is enabled at the moment
+    fn submission_status(&self, gas_price: &EstimatedGasPrice) -> SubmissionLoopStatus;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -281,6 +295,16 @@ impl<'a> Submitter<'a> {
                     continue;
                 }
             };
+
+            // before submitting, check if the currently executing strategy is temporarily disabled
+
+            if let SubmissionLoopStatus::Disabled(reason) =
+                self.submit_api.submission_status(&gas_price)
+            {
+                tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
+                tokio::time::sleep(params.retry_interval).await;
+                continue;
+            }
 
             // create transaction
 

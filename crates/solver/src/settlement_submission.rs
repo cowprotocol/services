@@ -16,7 +16,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use submitter::{Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting};
+use submitter::{DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting};
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -88,7 +88,11 @@ impl SolutionSubmitter {
                                     )));
                                 }
                             }
-                            TransactionStrategy::CustomNodes(_) => {}
+                            TransactionStrategy::CustomNodes(_) => {
+                                if settlement.mev_extractable() {
+                                    return Err(SubmissionError::Disabled(DisabledReason::CustomNodesDisabledMevExtractable));
+                                }
+                            }
                             TransactionStrategy::DryRun => unreachable!(),
                         };
 
@@ -139,6 +143,8 @@ pub enum SubmissionError {
     Revert(Option<String>),
     /// The settlement submission timed out.
     Timeout,
+    /// The submission is disabled
+    Disabled(DisabledReason),
     /// An error occured.
     Other(anyhow::Error),
 }
@@ -148,6 +154,7 @@ impl SubmissionError {
     pub fn as_outcome(&self) -> SettlementSubmissionOutcome {
         match self {
             Self::Timeout => SettlementSubmissionOutcome::Timeout,
+            Self::Disabled(_) => SettlementSubmissionOutcome::Disabled,
             Self::Revert(_) => SettlementSubmissionOutcome::Revert,
             Self::Other(_) => SettlementSubmissionOutcome::Failure,
         }
@@ -163,6 +170,9 @@ impl SubmissionError {
             SubmissionError::Timeout => anyhow!("transaction did not get mined in time"),
             SubmissionError::Revert(Some(message)) => {
                 anyhow!("transaction reverted with message {}", message)
+            }
+            SubmissionError::Disabled(reason) => {
+                anyhow!("transaction disabled, reason: {:?}", reason)
             }
             SubmissionError::Revert(None) => anyhow!("transaction reverted"),
             SubmissionError::Other(err) => err,
