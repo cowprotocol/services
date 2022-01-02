@@ -43,7 +43,7 @@ serde_with = { version = "1.11", default-features = false }
 structopt = { version = "0.3", default-features = false }
 thiserror = "1.0"
 time = { version = "0.3", features = ["macros"] }
-tokio = { version = "1.14", features = ["macros", "time"] }
+tokio = { version = "1.15", features = ["macros", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "time"] }
