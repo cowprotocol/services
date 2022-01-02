@@ -627,6 +627,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4bb454f0228b18c7f4c3b0ebbee346ed9c52e7443b0999cd543ff3571205701d"
 
 [[package]]
+name = "downcast"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1435fa1053d8b2fbbe9be7e97eca7f33d37b28409959813daefc1446a14247f1"
+
+[[package]]
 name = "e2e"
 version = "1.0.0"
 dependencies = [
@@ -805,7 +811,7 @@ source = "git+https://github.com/gnosis/ethcontract-rs.git?branch=eip1559#7e8eac
 dependencies = [
  "ethcontract",
  "hex",
- "mockall",
+ "mockall 0.10.2",
  "predicates 2.1.0",
  "rlp",
 ]
@@ -1528,11 +1534,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ab571328afa78ae322493cacca3efac6a0f2e0a67305b4df31fd439ef129ac0"
 dependencies = [
  "cfg-if",
- "downcast",
+ "downcast 0.10.0",
  "fragile",
  "lazy_static",
- "mockall_derive",
+ "mockall_derive 0.10.2",
  "predicates 1.0.8",
+ "predicates-tree",
+]
+
+[[package]]
+name = "mockall"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d4d70639a72f972725db16350db56da68266ca368b2a1fe26724a903ad3d6b8"
+dependencies = [
+ "cfg-if",
+ "downcast 0.11.0",
+ "fragile",
+ "lazy_static",
+ "mockall_derive 0.11.0",
+ "predicates 2.1.0",
  "predicates-tree",
 ]
 
@@ -1541,6 +1562,18 @@ name = "mockall_derive"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7e25b214433f669161f414959594216d8e6ba83b6679d3db96899c0b4639033"
+dependencies = [
+ "cfg-if",
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "mockall_derive"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "79ef208208a0dea3f72221e26e904cdc6db2e481d9ade89081ddd494f1dbaa6b"
 dependencies = [
  "cfg-if",
  "proc-macro2",
@@ -1789,7 +1822,7 @@ dependencies = [
  "hex",
  "hex-literal",
  "maplit",
- "mockall",
+ "mockall 0.11.0",
  "model",
  "num",
  "primitive-types",
@@ -2529,7 +2562,7 @@ dependencies = [
  "lazy_static",
  "lru",
  "maplit",
- "mockall",
+ "mockall 0.11.0",
  "model",
  "num",
  "num-bigint 0.3.3",
@@ -2622,7 +2655,7 @@ dependencies = [
  "jsonrpc-core",
  "lazy_static",
  "maplit",
- "mockall",
+ "mockall 0.11.0",
  "model",
  "num",
  "primitive-types",
