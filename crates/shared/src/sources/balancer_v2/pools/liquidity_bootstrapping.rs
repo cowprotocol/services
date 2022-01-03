@@ -1,4 +1,4 @@
-//! Module implementing two-token weighted pool specific indexing logic.
+//! Module implementing liquidity bootstrapping pool specific indexing logic.
 
 pub use super::weighted::{PoolState, TokenState};
 use super::{common, FactoryIndexing, PoolIndexing};

@@ -31,8 +31,9 @@ use crate::{
 };
 use anyhow::Result;
 use contracts::{
-    BalancerV2LiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory, BalancerV2Vault,
-    BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+    BalancerV2LiquidityBootstrappingPoolFactory,
+    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
+    BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
 };
 use ethcontract::{Instance, H160, H256};
 use model::TokenPair;
@@ -139,12 +140,13 @@ pub struct BalancerPoolFetcher {
 
 arg_enum! {
     /// An enum containing all supported Balancer factory types.
-    #[derive(Clone, Copy, Debug)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
     pub enum BalancerFactoryKind {
         Weighted,
         Weighted2Token,
         Stable,
         LiquidityBootstrapping,
+        NoProtocolFeeLiquidityBootstrapping,
     }
 }
 
@@ -274,6 +276,9 @@ async fn create_aggregate_pool_fetcher(
             BalancerFactoryKind::Stable => registry!(BalancerV2StablePoolFactory),
             BalancerFactoryKind::LiquidityBootstrapping => {
                 registry!(BalancerV2LiquidityBootstrappingPoolFactory)
+            }
+            BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
+                registry!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory)
             }
         };
         fetchers.push(registry);
