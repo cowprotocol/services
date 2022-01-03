@@ -7,27 +7,19 @@
 //!     contains only the `pool_address` as this is the only information known about the pool
 //!     at the time of event emission from the pool's factory contract.
 //!
-//! 2. `RegisteredWeightedPool` & `RegisteredStablePool`:
+//! 2. `Factory::PoolInfo`
 //!     contains all constant/static information about the pool (that which is not block-sensitive).
-//!     That is,
-//!     `pool_id`, `address`, `tokens`, `scaling_exponents`, `block_created` (i.e. `CommonPoolData`)
-//!     and `normalized_weights` (specific to weighted pools).
-//!     When the `PoolCreated` event is received by the event handler, an instance of this type is
-//!     constructed by fetching all additional information about the pool via `PoolInfoFetching`.
-//!
-//!     It is these pools which are stored, in memory, as part of the `BalancerPoolRegistry`.
+//!     The exact information varies on the pool kind.
 //!
 //! 3. `PoolStorage`:
 //!     This should be thought of as the Pool Registry's database which stores all static pool
-//!     information in data structures that provide efficient lookup for the `PoolFetcher`.
-//!
-//!     Pool Storage implements all the CRUD methods expected of such a database.
-//!
-//! Tests included here are those pertaining to the expected functionality of `PoolStorage`
+//!     information in data structures that provide efficient lookup searching for pools based
+//!     on token pairs.
 
-use crate::event_handling::{BlockNumber, EventStoring};
-
-use super::pools::{common, FactoryIndexing, PoolIndexing};
+use crate::{
+    event_handling::{BlockNumber, EventStoring},
+    sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
+};
 use anyhow::{anyhow, Result};
 use contracts::balancer_v2_base_pool_factory::{
     event_data::PoolCreated, Event as BasePoolFactoryEvent,
@@ -40,24 +32,6 @@ use std::{
     ops::RangeInclusive,
     sync::Arc,
 };
-
-#[cfg(test)]
-pub type CommonPoolData = common::PoolInfo;
-
-#[cfg(test)]
-pub fn common_pool(seed: u8) -> CommonPoolData {
-    CommonPoolData {
-        id: H256([seed; 32]),
-        address: H160([seed; 20]),
-        tokens: vec![H160([seed; 20]), H160([seed + 1; 20])],
-        scaling_exponents: vec![0, 0],
-        block_created: seed as _,
-    }
-}
-
-pub type RegisteredWeightedPool = super::pools::weighted::PoolInfo;
-
-pub type RegisteredStablePool = super::pools::stable::PoolInfo;
 
 /// PoolStorage represents in-memory storage of all deployed Balancer Pools
 pub struct PoolStorage<Factory>
@@ -244,7 +218,7 @@ where
 mod tests {
     use super::*;
     use crate::sources::balancer_v2::{
-        pools::{common::MockPoolInfoFetching, MockFactoryIndexing},
+        pools::{common::MockPoolInfoFetching, weighted, MockFactoryIndexing},
         swap::fixed_point::Bfp,
     };
     use maplit::{hashmap, hashset};
@@ -286,8 +260,8 @@ mod tests {
     fn initialize_storage() {
         let storage = PoolStorage::new(
             vec![
-                RegisteredWeightedPool {
-                    common: CommonPoolData {
+                weighted::PoolInfo {
+                    common: common::PoolInfo {
                         id: H256([1; 32]),
                         address: H160([1; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
@@ -299,8 +273,8 @@ mod tests {
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
                     ],
                 },
-                RegisteredWeightedPool {
-                    common: CommonPoolData {
+                weighted::PoolInfo {
+                    common: common::PoolInfo {
                         id: H256([2; 32]),
                         address: H160([2; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x77; 20])],
@@ -313,8 +287,8 @@ mod tests {
                         Bfp::from_wei(250_000_000_000_000_000u128.into()),
                     ],
                 },
-                RegisteredWeightedPool {
-                    common: CommonPoolData {
+                weighted::PoolInfo {
+                    common: common::PoolInfo {
                         id: H256([3; 32]),
                         address: H160([3; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x77; 20])],
@@ -348,8 +322,8 @@ mod tests {
 
         let mut mock_pool_fetcher = MockPoolInfoFetching::<MockFactoryIndexing>::new();
         for i in 0..n {
-            let expected_pool_data = RegisteredWeightedPool {
-                common: CommonPoolData {
+            let expected_pool_data = weighted::PoolInfo {
+                common: common::PoolInfo {
                     id: pool_ids[i],
                     address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
@@ -399,8 +373,8 @@ mod tests {
         for i in 0..n {
             assert_eq!(
                 pool_store.pools.get(&pool_ids[i]).unwrap(),
-                &RegisteredWeightedPool {
-                    common: CommonPoolData {
+                &weighted::PoolInfo {
+                    common: common::PoolInfo {
                         id: pool_ids[i],
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
@@ -423,8 +397,8 @@ mod tests {
 
         let mut mock_pool_fetcher = MockPoolInfoFetching::<MockFactoryIndexing>::new();
         for i in start_block..=end_block {
-            let expected_pool_data = RegisteredWeightedPool {
-                common: CommonPoolData {
+            let expected_pool_data = weighted::PoolInfo {
+                common: common::PoolInfo {
                     id: pool_ids[i],
                     address: pool_addresses[i],
                     tokens: vec![tokens[i], tokens[i + 1]],
@@ -443,8 +417,8 @@ mod tests {
                 });
         }
 
-        let new_pool = RegisteredWeightedPool {
-            common: CommonPoolData {
+        let new_pool = weighted::PoolInfo {
+            common: common::PoolInfo {
                 id: H256::from_low_u64_be(43110),
                 address: H160::from_low_u64_be(42),
                 tokens: vec![H160::from_low_u64_be(808)],
@@ -489,8 +463,8 @@ mod tests {
         for i in 0..3 {
             assert_eq!(
                 pool_store.pools.get(&pool_ids[i]).unwrap(),
-                &RegisteredWeightedPool {
-                    common: CommonPoolData {
+                &weighted::PoolInfo {
+                    common: common::PoolInfo {
                         id: pool_ids[i],
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
@@ -560,8 +534,8 @@ mod tests {
         // Now test non-empty pool with standard form.
         let mut weighted_pools = Vec::new();
         for i in 0..n {
-            weighted_pools.push(RegisteredWeightedPool {
-                common: CommonPoolData {
+            weighted_pools.push(weighted::PoolInfo {
+                common: common::PoolInfo {
                     id: pool_ids[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],

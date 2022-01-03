@@ -1,16 +1,14 @@
 //! A pool registry for a single pool factory that is generic on its type of
 //! pool.
 
+use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
 use crate::{
     ethcontract_error::EthcontractErrorType,
     event_handling::EventHandler,
     impl_event_retrieving,
     maintenance::Maintaining,
     recent_block_cache::Block,
-    sources::balancer_v2::{
-        pool_storage::PoolStorage,
-        pools::{common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus},
-    },
+    sources::balancer_v2::pools::{common::PoolInfoFetching, FactoryIndexing, Pool, PoolStatus},
     transport::MAX_BATCH_SIZE,
     Web3, Web3CallBatch, Web3Transport,
 };
@@ -21,8 +19,6 @@ use futures::future;
 use model::TokenPair;
 use std::{collections::HashSet, sync::Arc};
 use tokio::sync::Mutex;
-
-use super::internal::InternalPoolFetching;
 
 impl_event_retrieving! {
     pub BasePoolFactoryContract for balancer_v2_base_pool_factory

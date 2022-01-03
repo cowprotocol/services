@@ -16,6 +16,7 @@ use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
+use std::collections::HashMap;
 
 /// The page size when querying pools.
 #[cfg(not(test))]
@@ -106,13 +107,33 @@ impl BalancerSubgraphClient {
 }
 
 /// Result of the registered stable pool query.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched, and for which the registered
     /// weighted pools can be considered up to date.
     pub fetched_block_number: u64,
     /// The registered Pools
     pub pools: Vec<PoolData>,
+}
+
+impl RegisteredPools {
+    /// Groups registered pools by factory addresses.
+    pub fn group_by_factory(self) -> HashMap<H160, RegisteredPools> {
+        let fetched_block_number = self.fetched_block_number;
+        self.pools
+            .into_iter()
+            .fold(HashMap::new(), |mut grouped, pool| {
+                grouped
+                    .entry(pool.factory)
+                    .or_insert(RegisteredPools {
+                        fetched_block_number,
+                        ..Default::default()
+                    })
+                    .pools
+                    .push(pool);
+                grouped
+            })
+    }
 }
 
 /// Pool data from the Balancer V2 subgraph.
@@ -208,6 +229,7 @@ mod tests {
     use super::*;
     use crate::sources::balancer_v2::swap::fixed_point::Bfp;
     use ethcontract::{H160, H256};
+    use maplit::hashmap;
     use std::collections::HashMap;
 
     #[test]
@@ -316,6 +338,45 @@ mod tests {
                 }
             }
         );
+    }
+
+    #[test]
+    fn groups_pools_by_factory() {
+        let pool = |factory: H160, id: u8| PoolData {
+            id: H256([id; 32]),
+            factory,
+            pool_type: PoolType::Weighted,
+            address: Default::default(),
+            tokens: Default::default(),
+        };
+
+        let registered_pools = RegisteredPools {
+            pools: vec![
+                pool(H160([1; 20]), 1),
+                pool(H160([1; 20]), 2),
+                pool(H160([2; 20]), 3),
+            ],
+            fetched_block_number: 42,
+        };
+
+        assert_eq!(
+            registered_pools.group_by_factory(),
+            hashmap! {
+                H160([1; 20]) => RegisteredPools {
+                    pools: vec![
+                        pool(H160([1; 20]), 1),
+                        pool(H160([1; 20]), 2),
+                    ],
+                    fetched_block_number: 42,
+                },
+                H160([2; 20]) => RegisteredPools {
+                    pools: vec![
+                        pool(H160([2; 20]), 3),
+                    ],
+                    fetched_block_number: 42,
+                },
+            }
+        )
     }
 
     #[tokio::test]

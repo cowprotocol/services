@@ -35,6 +35,5 @@
 mod graph_api;
 pub mod pool_fetching;
 mod pool_init;
-mod pool_storage;
 pub mod pools;
 pub mod swap;

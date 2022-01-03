@@ -6,6 +6,7 @@
 mod aggregate;
 mod cache;
 mod internal;
+mod pool_storage;
 mod registry;
 
 pub use self::cache::BalancerPoolCacheMetrics;
@@ -13,10 +14,11 @@ use self::{
     aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
 };
 use super::{
+    graph_api::{BalancerSubgraphClient, RegisteredPools},
     pool_init::PoolInitializing,
     pools::{
         common::{self, PoolInfoFetcher},
-        stable, weighted, Pool, PoolKind,
+        stable, weighted, FactoryIndexing, Pool, PoolIndexing, PoolKind,
     },
     swap::fixed_point::Bfp,
 };
@@ -24,16 +26,15 @@ use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     recent_block_cache::{Block, CacheConfig},
-    sources::balancer_v2::pool_init::SubgraphPoolInitializer,
     token_info::TokenInfoFetching,
-    Web3,
+    Web3, Web3Transport,
 };
 use anyhow::Result;
 use contracts::{
     BalancerV2StablePoolFactory, BalancerV2Vault, BalancerV2WeightedPool2TokensFactory,
     BalancerV2WeightedPoolFactory,
 };
-use ethcontract::{H160, H256};
+use ethcontract::{Instance, H160, H256};
 use model::TokenPair;
 use reqwest::Client;
 use std::{
@@ -44,7 +45,6 @@ use std::{
 pub use common::TokenState;
 pub use stable::AmplificationParameter;
 pub use weighted::TokenState as WeightedTokenState;
-
 pub trait BalancerPoolEvaluating {
     fn properties(&self) -> CommonPoolState;
 }
@@ -146,7 +146,7 @@ impl BalancerPoolFetcher {
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
     ) -> Result<Self> {
-        let pool_initializer = SubgraphPoolInitializer::new(chain_id, client)?;
+        let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
             create_all_pool_fetchers(web3, pool_initializer, token_infos).await?,
             config,
@@ -215,35 +215,74 @@ async fn create_all_pool_fetchers(
     token_infos: Arc<dyn TokenInfoFetching>,
 ) -> Result<Aggregate> {
     let vault = BalancerV2Vault::deployed(&web3).await?;
-    let weighted_pool_factory = BalancerV2WeightedPoolFactory::deployed(&web3).await?;
-    let two_token_pool_factory = BalancerV2WeightedPool2TokensFactory::deployed(&web3).await?;
-    let stable_pool_factory = BalancerV2StablePoolFactory::deployed(&web3).await?;
+    let mut registered_pools_by_factory = pool_initializer
+        .initialize_pools()
+        .await?
+        .group_by_factory();
 
-    let initial_pools = pool_initializer.initialize_pools().await?;
-    let start_sync_at_block = Some(initial_pools.fetched_block_number);
-
-    macro_rules! create_pool_registry {
-        ($factory:expr, $initial_pools:expr) => {{
-            let factory = $factory;
-            let initial_pools = $initial_pools;
-            Box::new(Registry::new(
-                Arc::new(PoolInfoFetcher::new(
-                    vault.clone(),
-                    factory.clone(),
-                    token_infos.clone(),
-                )),
+    macro_rules! registry {
+        ($factory:ident) => {{
+            let factory = $factory::deployed(&web3).await?;
+            create_internal_pool_fetcher(
+                vault.clone(),
+                factory.clone(),
+                token_infos.clone(),
                 factory.raw_instance(),
-                initial_pools,
-                start_sync_at_block,
-            ))
+                registered_pools_by_factory.remove(&factory.address()),
+            )?
         }};
     }
 
-    Ok(Aggregate::new(vec![
-        create_pool_registry!(weighted_pool_factory, initial_pools.weighted_pools),
-        create_pool_registry!(two_token_pool_factory, initial_pools.weighted_2token_pools),
-        create_pool_registry!(stable_pool_factory, initial_pools.stable_pools),
-    ]))
+    let fetchers = vec![
+        registry!(BalancerV2WeightedPoolFactory),
+        registry!(BalancerV2WeightedPool2TokensFactory),
+        registry!(BalancerV2StablePoolFactory),
+    ];
+
+    // Just to catch cases where new Balancer factories get added for a pool
+    // kind, but we don't index it, log a warning for unused pools.
+    if !registered_pools_by_factory.is_empty() {
+        tracing::warn!(
+            unused_pools = ?registered_pools_by_factory,
+            "found pools that don't correspond to any known Balancer pool factory",
+        );
+    }
+
+    Ok(Aggregate::new(fetchers))
+}
+
+/// Helper method for creating a boxed `InternalPoolFetching` instance for the
+/// specified factory and parameters.
+fn create_internal_pool_fetcher<Factory>(
+    vault: BalancerV2Vault,
+    factory: Factory,
+    token_infos: Arc<dyn TokenInfoFetching>,
+    factory_instance: &Instance<Web3Transport>,
+    registered_pools: Option<RegisteredPools>,
+) -> Result<Box<dyn InternalPoolFetching>>
+where
+    Factory: FactoryIndexing,
+{
+    let (initial_pools, start_sync_at_block) = match registered_pools.as_ref() {
+        Some(registered_pools) => (
+            registered_pools
+                .pools
+                .iter()
+                .map(|pool| {
+                    Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number)
+                })
+                .collect::<Result<_>>()?,
+            Some(registered_pools.fetched_block_number),
+        ),
+        None => Default::default(),
+    };
+
+    Ok(Box::new(Registry::new(
+        Arc::new(PoolInfoFetcher::new(vault, factory, token_infos)),
+        factory_instance,
+        initial_pools,
+        start_sync_at_block,
+    )))
 }
 
 /// Extract the pool address from an ID.
