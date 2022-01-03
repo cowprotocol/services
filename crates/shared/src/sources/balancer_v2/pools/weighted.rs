@@ -81,7 +81,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         _: &mut Web3CallBatch,
         _: BlockId,
-    ) -> BoxFuture<'static, Result<Self::PoolState>> {
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_info = pool_info.clone();
         async move {
             let common = common_pool_state.await;
@@ -93,7 +93,7 @@ impl FactoryIndexing for BalancerV2WeightedPoolFactory {
                 .collect();
             let swap_fee = common.swap_fee;
 
-            Ok(PoolState { tokens, swap_fee })
+            Ok(Some(PoolState { tokens, swap_fee }))
         }
         .boxed()
     }
@@ -115,6 +115,7 @@ mod tests {
             id: H256([2; 32]),
             address: H160([1; 20]),
             factory: H160([0xfa; 20]),
+            swap_enabled: true,
             tokens: vec![
                 Token {
                     address: H160([0x11; 20]),
@@ -154,6 +155,7 @@ mod tests {
             id: H256([2; 32]),
             address: H160([1; 20]),
             factory: H160([0xfa; 20]),
+            swap_enabled: true,
             tokens: vec![
                 Token {
                     address: H160([0x11; 20]),
@@ -258,10 +260,10 @@ mod tests {
             .collect();
         assert_eq!(
             pool_state,
-            PoolState {
+            Some(PoolState {
                 tokens: weighted_tokens,
                 swap_fee,
-            }
+            })
         );
     }
 }

@@ -2,6 +2,7 @@
 
 pub use super::weighted::{PoolInfo, PoolState};
 use super::{common, FactoryIndexing};
+use crate::Web3CallBatch;
 use anyhow::Result;
 use contracts::{BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory};
 use ethcontract::BlockId;
@@ -20,9 +21,9 @@ impl FactoryIndexing for BalancerV2WeightedPool2TokensFactory {
         &self,
         pool_info: &Self::PoolInfo,
         common_pool_state: BoxFuture<'static, common::PoolState>,
-        batch: &mut crate::Web3CallBatch,
+        batch: &mut Web3CallBatch,
         block: BlockId,
-    ) -> BoxFuture<'static, Result<Self::PoolState>> {
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         as_weighted_factory(self).fetch_pool_state(pool_info, common_pool_state, batch, block)
     }
 }

@@ -107,6 +107,26 @@ fn main() {
                 },
             )
     });
+    generate_contract_with_config("BalancerV2LiquidityBootstrappingPoolFactory", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_liquidity_bootstrapping_pool_factory")
+            .add_network(
+                "1",
+                Network {
+                    address: addr("0x751A0bC0e3f75b38e01Cf25bFCE7fF36DE1C87DE"),
+                    // <https://etherscan.io/tx/0x665ac1c7c5290d70154d9dfc1d91dc2562b143aaa9e8a77aa13e7053e4fe9b7c>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(12871780)),
+                },
+            )
+            .add_network(
+                "4",
+                Network {
+                    address: addr("0xdcdbf71A870cc60C6F9B621E28a7D3Ffd6Dd4965"),
+                    // <https://rinkeby.etherscan.io/tx/0x4344f7e7404c24f03c1fb1b421294ce4ced8f44092424344a49602937cf9907e>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(8976588)),
+                },
+            )
+    });
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
         builder.add_method_alias(
@@ -114,6 +134,7 @@ fn main() {
             "on_swap_with_balances"
         )
     });
+    generate_contract("BalancerV2LiquidityBootstrappingPool");
     generate_contract_with_config("BaoswapFactory", |builder| {
         builder.add_network_str("100", "0x45DE240fbE2077dd3e711299538A09854FAE9c9b")
     });

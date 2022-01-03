@@ -193,7 +193,10 @@ where
             if common_pool_state.paused {
                 return Ok(PoolStatus::Paused);
             }
-            let pool_state = pool_state.await?;
+            let pool_state = match pool_state.await? {
+                Some(state) => state,
+                None => return Ok(PoolStatus::Disabled),
+            };
 
             Ok(PoolStatus::Active(Pool {
                 id: pool_id,
@@ -591,7 +594,7 @@ mod tests {
             )
             .returning({
                 let pool_state = pool_state.clone();
-                move |_, _, _, _| future::ready(Ok(pool_state.clone())).boxed()
+                move |_, _, _, _| future::ready(Ok(Some(pool_state.clone()))).boxed()
             });
 
         let pool_info_fetcher = PoolInfoFetcher {
@@ -643,10 +646,10 @@ mod tests {
                 predicate::always(),
             )
             .returning(|_, _, _, _| {
-                future::ready(Ok(weighted::PoolState {
+                future::ready(Ok(Some(weighted::PoolState {
                     swap_fee: Bfp::zero(),
                     tokens: Default::default(),
-                }))
+                })))
                 .boxed()
             });
 
@@ -677,6 +680,62 @@ mod tests {
         };
 
         assert_eq!(pool_status, PoolStatus::Paused);
+    }
+
+    #[tokio::test]
+    async fn fetch_specialized_pool_state_for_disabled_pool() {
+        let mock = Mock::new(42);
+        let web3 = mock.web3();
+
+        let pool = mock.deploy(BalancerV2WeightedPool::raw_contract().abi.clone());
+        pool.expect_call(BalancerV2WeightedPool::signatures().get_paused_state())
+            .returns((false, 0.into(), 0.into()));
+        pool.expect_call(BalancerV2WeightedPool::signatures().get_swap_fee_percentage())
+            .returns(Default::default());
+
+        let vault = mock.deploy(BalancerV2Vault::raw_contract().abi.clone());
+        vault
+            .expect_call(BalancerV2Vault::signatures().get_pool_tokens())
+            .returns(Default::default());
+
+        let mut factory = MockFactoryIndexing::new();
+        factory
+            .expect_fetch_pool_state()
+            .with(
+                predicate::always(),
+                predicate::always(),
+                predicate::always(),
+                predicate::always(),
+            )
+            .returning(|_, _, _, _| future::ready(Ok(None)).boxed());
+
+        let pool_info_fetcher = PoolInfoFetcher {
+            vault: BalancerV2Vault::at(&web3, vault.address()),
+            factory,
+            token_infos: Arc::new(MockTokenInfoFetching::new()),
+        };
+        let pool_info = weighted::PoolInfo {
+            common: PoolInfo {
+                id: Default::default(),
+                address: pool.address(),
+                tokens: Default::default(),
+                scaling_exponents: Default::default(),
+                block_created: Default::default(),
+            },
+            weights: Default::default(),
+        };
+
+        let pool_status = {
+            let mut batch = Web3CallBatch::new(web3.transport().clone());
+            let block = web3.eth().block_number().await.unwrap();
+
+            let pool_state = pool_info_fetcher.fetch_pool(&pool_info, &mut batch, block.into());
+
+            batch.execute_all(100).await;
+            pool_state.await.unwrap()
+        };
+
+        assert_eq!(pool_status, PoolStatus::Disabled);
     }
 
     #[tokio::test]
@@ -722,6 +781,7 @@ mod tests {
             id: H256([4; 32]),
             address: H160([3; 20]),
             factory: H160([0xfb; 20]),
+            swap_enabled: true,
             tokens: vec![
                 Token {
                     address: H160([0x33; 20]),
@@ -755,6 +815,7 @@ mod tests {
             id: H256([2; 32]),
             address: H160([1; 20]),
             factory: H160([0; 20]),
+            swap_enabled: true,
             tokens: vec![Token {
                 address: H160([2; 20]),
                 decimals: 18,
@@ -771,6 +832,7 @@ mod tests {
             id: H256([2; 32]),
             address: H160([1; 20]),
             factory: H160([0; 20]),
+            swap_enabled: true,
             tokens: vec![
                 Token {
                     address: H160([2; 20]),

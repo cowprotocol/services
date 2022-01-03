@@ -82,7 +82,7 @@ impl FactoryIndexing for BalancerV2StablePoolFactory {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         batch: &mut Web3CallBatch,
         block: BlockId,
-    ) -> BoxFuture<'static, Result<Self::PoolState>> {
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
         let pool_contract =
             BalancerV2StablePool::at(&self.raw_instance().web3(), pool_info.common.address);
 
@@ -98,11 +98,11 @@ impl FactoryIndexing for BalancerV2StablePoolFactory {
                 AmplificationParameter::new(factor, precision)?
             };
 
-            Ok(PoolState {
+            Ok(Some(PoolState {
                 tokens: common.tokens,
                 swap_fee: common.swap_fee,
                 amplification_parameter,
-            })
+            }))
         }
         .boxed()
     }
@@ -184,11 +184,11 @@ mod tests {
 
         assert_eq!(
             pool_state,
-            PoolState {
+            Some(PoolState {
                 tokens: common_pool_state.tokens,
                 swap_fee,
                 amplification_parameter,
-            }
+            })
         );
     }
 
@@ -199,6 +199,7 @@ mod tests {
             id: H256([2; 32]),
             address: H160([1; 20]),
             factory: H160([0xfa; 20]),
+            swap_enabled: true,
             tokens: vec![
                 Token {
                     address: H160([0x11; 20]),

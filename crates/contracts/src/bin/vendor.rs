@@ -79,6 +79,16 @@ fn run() -> Result<()> {
     vendor
         .abi_only()
         .github(
+            "BalancerV2LiquidityBootstrappingPool",
+            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/\
+             pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPool.json",
+        )?
+        .github(
+            "BalancerV2LiquidityBootstrappingPoolFactory",
+            "balancer-labs/balancer-v2-monorepo/7a643349a5ef4511234b19a33e3f18d30770cb66/\
+             pkg/deployments/tasks/20210721-liquidity-bootstrapping-pool/abi/LiquidityBootstrappingPoolFactory.json",
+        )?
+        .github(
             "BalancerV2WeightedPool",
             "balancer-labs/balancer-v2-monorepo/a3b570a2aa655d4c4941a67e3db6a06fbd72ef09/\
              pkg/deployments/extra-abis/WeightedPool.json",

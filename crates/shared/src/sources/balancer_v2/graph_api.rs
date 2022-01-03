@@ -138,12 +138,13 @@ impl RegisteredPools {
 
 /// Pool data from the Balancer V2 subgraph.
 #[derive(Debug, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PoolData {
-    #[serde(rename = "poolType")]
     pub pool_type: PoolType,
     pub id: H256,
     pub address: H160,
     pub factory: H160,
+    pub swap_enabled: bool,
     pub tokens: Vec<Token>,
 }
 
@@ -152,6 +153,7 @@ pub struct PoolData {
 pub enum PoolType {
     Stable,
     Weighted,
+    LiquidityBootstrapping,
 }
 
 /// Token data for pools.
@@ -176,13 +178,18 @@ mod pools_query {
                 first: $pageSize
                 where: {
                     id_gt: $lastId
-                    poolType_in: ["Stable","Weighted"]
+                    poolType_in: [
+                        "Stable",
+                        "Weighted",
+                        "LiquidityBootstrapping",
+                    ]
                 }
             ) {
                 poolType
                 id
                 address
                 factory
+                swapEnabled
                 tokens {
                     address
                     decimals
@@ -244,6 +251,7 @@ mod tests {
                         "address": "0x2222222222222222222222222222222222222222",
                         "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
                         "factory": "0x5555555555555555555555555555555555555555",
+                        "swapEnabled": true,
                         "tokens": [
                             {
                                 "address": "0x3333333333333333333333333333333333333333",
@@ -262,6 +270,7 @@ mod tests {
                         "address": "0x2222222222222222222222222222222222222222",
                         "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
                         "factory": "0x5555555555555555555555555555555555555555",
+                        "swapEnabled": true,
                         "tokens": [
                             {
                                 "address": "0x3333333333333333333333333333333333333333",
@@ -270,6 +279,25 @@ mod tests {
                             {
                                 "address": "0x4444444444444444444444444444444444444444",
                                 "decimals": 4,
+                            },
+                        ],
+                    },
+                    {
+                        "poolType": "LiquidityBootstrapping",
+                        "address": "0x2222222222222222222222222222222222222222",
+                        "id": "0x1111111111111111111111111111111111111111111111111111111111111111",
+                        "factory": "0x5555555555555555555555555555555555555555",
+                        "swapEnabled": true,
+                        "tokens": [
+                            {
+                                "address": "0x3333333333333333333333333333333333333333",
+                                "decimals": 3,
+                                "weight": "0.5"
+                            },
+                            {
+                                "address": "0x4444444444444444444444444444444444444444",
+                                "decimals": 4,
+                                "weight": "0.5"
                             },
                         ],
                     },
@@ -283,6 +311,7 @@ mod tests {
                         id: H256([0x11; 32]),
                         address: H160([0x22; 20]),
                         factory: H160([0x55; 20]),
+                        swap_enabled: true,
                         tokens: vec![
                             Token {
                                 address: H160([0x33; 20]),
@@ -301,6 +330,7 @@ mod tests {
                         id: H256([0x11; 32]),
                         address: H160([0x22; 20]),
                         factory: H160([0x55; 20]),
+                        swap_enabled: true,
                         tokens: vec![
                             Token {
                                 address: H160([0x33; 20]),
@@ -313,7 +343,26 @@ mod tests {
                                 weight: None,
                             },
                         ],
-                    }
+                    },
+                    PoolData {
+                        pool_type: PoolType::LiquidityBootstrapping,
+                        id: H256([0x11; 32]),
+                        address: H160([0x22; 20]),
+                        factory: H160([0x55; 20]),
+                        swap_enabled: true,
+                        tokens: vec![
+                            Token {
+                                address: H160([0x33; 20]),
+                                decimals: 3,
+                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                            },
+                            Token {
+                                address: H160([0x44; 20]),
+                                decimals: 4,
+                                weight: Some(Bfp::from_wei(500_000_000_000_000_000u128.into())),
+                            },
+                        ],
+                    },
                 ],
             }
         );
@@ -347,6 +396,7 @@ mod tests {
             factory,
             pool_type: PoolType::Weighted,
             address: Default::default(),
+            swap_enabled: true,
             tokens: Default::default(),
         };
 

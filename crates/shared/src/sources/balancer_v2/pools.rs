@@ -8,6 +8,7 @@
 //! types by just implementing the required `BalancerFactory` trait.
 
 pub mod common;
+pub mod liquidity_bootstrapping;
 pub mod stable;
 pub mod weighted;
 pub mod weighted_2token;
@@ -52,6 +53,7 @@ impl_from_state!(stable::PoolState, Stable);
 pub enum PoolStatus {
     Active(Pool),
     Paused,
+    Disabled,
 }
 
 impl PoolStatus {
@@ -59,7 +61,7 @@ impl PoolStatus {
     pub fn active(self) -> Option<Pool> {
         match self {
             Self::Active(pool) => Some(pool),
-            Self::Paused => None,
+            _ => None,
         }
     }
 }
@@ -100,6 +102,11 @@ pub trait FactoryIndexing: Send + Sync + 'static {
     /// Additionally, a block spec and a batch call context is passed in to
     /// specify exactly the block number the state should be read for, and allow
     /// for more optimal performance when fetching a large number of pools.
+    ///
+    /// This method should return `None` if the pool is disabled. This allows
+    /// pool/factory specific details about whether or not the pool can be
+    /// used to be provided to the caller. Note that implementations are **not**
+    /// expected to check if the pool is paused.
     fn fetch_pool_state(
         &self,
         pool_info: &Self::PoolInfo,
@@ -109,7 +116,7 @@ pub trait FactoryIndexing: Send + Sync + 'static {
         common_pool_state: BoxFuture<'static, common::PoolState>,
         batch: &mut Web3CallBatch,
         block: BlockId,
-    ) -> BoxFuture<'static, Result<Self::PoolState>>;
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>>;
 }
 
 /// Required information needed for indexing pools.

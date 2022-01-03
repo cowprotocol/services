@@ -5,6 +5,14 @@ pub mod vault;
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Authorizer.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2BasePool.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2BasePoolFactory.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/BalancerV2LiquidityBootstrappingPool.rs"
+));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/BalancerV2LiquidityBootstrappingPoolFactory.rs"
+));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
