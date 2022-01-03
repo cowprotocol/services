@@ -41,6 +41,7 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
+use structopt::clap::arg_enum;
 
 pub use common::TokenState;
 pub use stable::AmplificationParameter;
@@ -136,11 +137,39 @@ pub struct BalancerPoolFetcher {
     fetcher: Arc<dyn InternalPoolFetching>,
 }
 
+arg_enum! {
+    /// An enum containing all supported Balancer factory types.
+    #[derive(Clone, Copy, Debug)]
+    pub enum BalancerFactoryKind {
+        Weighted,
+        Weighted2Token,
+        Stable,
+    }
+}
+
+impl BalancerFactoryKind {
+    /// Returns all supported Balancer factory kinds.
+    pub fn all() -> Vec<Self> {
+        // take advantage of the auto-generated `::variants()` associated
+        // function so we don't have to keep updating this method with new kinds
+        // as they get added. Slightly inefficient.
+        Self::variants()
+            .iter()
+            .map(|name| {
+                name.parse()
+                    .expect("generated variant name did not parse successfully")
+            })
+            .collect()
+    }
+}
+
 impl BalancerPoolFetcher {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         chain_id: u64,
         web3: Web3,
         token_infos: Arc<dyn TokenInfoFetching>,
+        factories: Vec<BalancerFactoryKind>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
@@ -148,7 +177,7 @@ impl BalancerPoolFetcher {
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
-            create_all_pool_fetchers(web3, pool_initializer, token_infos).await?,
+            create_aggregate_pool_fetcher(web3, pool_initializer, token_infos, factories).await?,
             config,
             block_stream,
             metrics,
@@ -209,10 +238,11 @@ impl Maintaining for BalancerPoolFetcher {
 }
 
 /// Creates an aggregate fetcher for all supported pool factories.
-async fn create_all_pool_fetchers(
+async fn create_aggregate_pool_fetcher(
     web3: Web3,
     pool_initializer: impl PoolInitializing,
     token_infos: Arc<dyn TokenInfoFetching>,
+    factories: Vec<BalancerFactoryKind>,
 ) -> Result<Aggregate> {
     let vault = BalancerV2Vault::deployed(&web3).await?;
     let mut registered_pools_by_factory = pool_initializer
@@ -233,17 +263,27 @@ async fn create_all_pool_fetchers(
         }};
     }
 
-    let fetchers = vec![
-        registry!(BalancerV2WeightedPoolFactory),
-        registry!(BalancerV2WeightedPool2TokensFactory),
-        registry!(BalancerV2StablePoolFactory),
-    ];
+    let mut fetchers = Vec::new();
+    for factory in factories {
+        let registry = match factory {
+            BalancerFactoryKind::Weighted => registry!(BalancerV2WeightedPoolFactory),
+            BalancerFactoryKind::Weighted2Token => {
+                registry!(BalancerV2WeightedPool2TokensFactory)
+            }
+            BalancerFactoryKind::Stable => registry!(BalancerV2StablePoolFactory),
+        };
+        fetchers.push(registry);
+    }
 
     // Just to catch cases where new Balancer factories get added for a pool
     // kind, but we don't index it, log a warning for unused pools.
     if !registered_pools_by_factory.is_empty() {
+        let total_count = registered_pools_by_factory
+            .values()
+            .map(|registered| registered.pools.len())
+            .sum::<usize>();
         tracing::warn!(
-            unused_pools = ?registered_pools_by_factory,
+            %total_count, unused_pools = ?registered_pools_by_factory,
             "found pools that don't correspond to any known Balancer pool factory",
         );
     }
@@ -320,6 +360,11 @@ mod tests {
         );
     }
 
+    #[test]
+    fn enumerates_all_balancer_factory_kinds() {
+        assert!(!BalancerFactoryKind::all().is_empty());
+    }
+
     #[tokio::test]
     #[ignore]
     async fn balancer_fetched_pools_match_subgraph() {
@@ -334,9 +379,14 @@ mod tests {
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
         let pool_fetcher = BalancerPoolFetcher {
             fetcher: Arc::new(
-                create_all_pool_fetchers(web3, pool_initializer, Arc::new(token_infos))
-                    .await
-                    .unwrap(),
+                create_aggregate_pool_fetcher(
+                    web3,
+                    pool_initializer,
+                    Arc::new(token_infos),
+                    BalancerFactoryKind::all(),
+                )
+                .await
+                .unwrap(),
             ),
         };
 
