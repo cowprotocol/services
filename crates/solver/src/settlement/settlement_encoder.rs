@@ -340,6 +340,24 @@ impl SettlementEncoder {
             None => U256::one().to_big_rational(),
         }
     }
+
+    /// Drops all UnwrapWethInteractions for the given token address.
+    /// This can be used in case the settlement contracts ETH buffer is big enough.
+    pub fn drop_unwrap(&mut self, token: H160) {
+        self.unwraps.retain(|unwrap| unwrap.weth.address() != token);
+    }
+
+    /// Calculates how much of a given token this settlement will unwrap during the execution.
+    pub fn amount_to_unwrap(&self, token: H160) -> U256 {
+        self.unwraps.iter().fold(U256::zero(), |sum, unwrap| {
+            if unwrap.weth.address() == token {
+                sum.checked_add(unwrap.amount)
+                    .expect("no settlement would pay out that much ETH at once")
+            } else {
+                sum
+            }
+        })
+    }
 }
 
 #[cfg(test)]

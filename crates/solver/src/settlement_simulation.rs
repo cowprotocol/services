@@ -11,7 +11,6 @@ use ethcontract::{
 };
 use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
-use itertools::Itertools;
 use primitive_types::U256;
 use shared::Web3;
 use web3::types::{BlockId, CallRequest};
@@ -40,19 +39,22 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     web3: &Web3,
     gas_price: EstimatedGasPrice,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
+    // Collect into Vec to not rely on Itertools::chunk which would make this future !Send.
+    let settlements: Vec<_> = settlements.collect();
+
     // Needed because sending an empty batch request gets an empty response which doesn't
     // deserialize correctly.
-    let mut settlements = settlements.peekable();
-    if settlements.peek().is_none() {
+    if settlements.is_empty() {
         return Ok(Vec::new());
     }
 
     let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport().clone()));
     let mut results = Vec::new();
-    for chunk in &settlements.chunks(SIMULATE_BATCH_SIZE) {
+    for chunk in settlements.chunks(SIMULATE_BATCH_SIZE) {
         let calls = chunk
+            .iter()
             .map(|(account, settlement)| {
-                let tx = settle_method(gas_price, contract, settlement, account).tx;
+                let tx = settle_method(gas_price, contract, settlement.clone(), account.clone()).tx;
                 let resolved_gas_price = tx
                     .gas_price
                     .map(|gas_price| gas_price.resolve_for_transaction())

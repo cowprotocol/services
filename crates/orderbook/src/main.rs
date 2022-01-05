@@ -153,7 +153,7 @@ struct Arguments {
 
     /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
     /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
-    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
+    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
     fee_factor: f64,
 
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.

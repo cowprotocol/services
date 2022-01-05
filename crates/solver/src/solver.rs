@@ -32,7 +32,7 @@ use zeroex_solver::ZeroExSolver;
 
 pub mod balancer_sor_solver;
 mod baseline_solver;
-mod http_solver;
+pub mod http_solver;
 mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;

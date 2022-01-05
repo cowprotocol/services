@@ -141,10 +141,16 @@ pub struct Arguments {
     pub mip_uses_internal_buffers: bool,
 }
 
-pub fn parse_fee_factor(s: &str) -> Result<f64> {
-    let fee = f64::from_str(s)?;
-    ensure!(fee.is_finite() && fee >= 0.);
-    Ok(fee)
+pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
+    let factor = f64::from_str(s)?;
+    ensure!(factor.is_finite() && factor >= 0.);
+    Ok(factor)
+}
+
+pub fn parse_percentage_factor(s: &str) -> Result<f64> {
+    let percentage_factor = f64::from_str(s)?;
+    ensure!(percentage_factor.is_finite() && percentage_factor >= 0. && percentage_factor <= 1.0);
+    Ok(percentage_factor)
 }
 
 pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {

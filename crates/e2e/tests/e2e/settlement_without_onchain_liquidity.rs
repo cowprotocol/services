@@ -231,6 +231,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         10,
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
+        0.0,
     );
     driver.single_run().await.unwrap();
 

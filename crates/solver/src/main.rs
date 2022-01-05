@@ -251,7 +251,7 @@ struct Arguments {
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
-    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_fee_factor))]
+    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
     fee_objective_scaling_factor: f64,
 
     /// The maximum number of settlements the driver considers per solver.
@@ -269,6 +269,14 @@ struct Arguments {
         use_delimiter = true
     )]
     balancer_factories: Option<Vec<BalancerFactoryKind>>,
+
+    /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is not big enough to
+    /// settle ETH buy orders.
+    /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
+    /// of unwraps per settled batch.
+    /// Only values in the range [0.0, 1.0] make sense.
+    #[structopt(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
+    weth_unwrap_factor: f64,
 }
 
 arg_enum! {
@@ -629,6 +637,7 @@ async fn main() {
         args.max_settlements_per_solver,
         api,
         order_converter,
+        args.weth_unwrap_factor,
     );
 
     let maintainer = ServiceMaintenance {
