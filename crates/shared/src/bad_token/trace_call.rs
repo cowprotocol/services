@@ -6,8 +6,7 @@ use crate::{
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::ERC20;
 use ethcontract::{
-    batch::CallBatch, dyns::DynTransport, errors::DeployError, transaction::TransactionBuilder,
-    PrivateKey,
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
 };
 use model::TokenPair;
 use primitive_types::{H160, U256};
@@ -43,28 +42,12 @@ impl TokenOwnerFinding for UniswapLikePairProviderFinder {
 }
 
 /// The balancer vault contract contains all the balances of all pools.
-pub struct BalancerVaultFinder {
-    address: H160,
-}
-
-impl BalancerVaultFinder {
-    /// Ok(None) if the vault isn't deployed on this network.
-    /// Err if communication with the node failed.
-    pub async fn new(web3: &Web3) -> Result<Option<Self>> {
-        match contracts::BalancerV2Vault::deployed(web3).await {
-            Ok(contract) => Ok(Some(Self {
-                address: contract.address(),
-            })),
-            Err(DeployError::NotFound(_)) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
-    }
-}
+pub struct BalancerVaultFinder(pub contracts::BalancerV2Vault);
 
 #[async_trait::async_trait]
 impl TokenOwnerFinding for BalancerVaultFinder {
     async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(vec![self.address])
+        Ok(vec![self.0.address()])
     }
 }
 

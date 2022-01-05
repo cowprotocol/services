@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
+use ethcontract::errors::DeployError;
 use model::{
     app_id::AppId,
     order::{OrderUid, BUY_ETH_ADDRESS},
@@ -239,20 +240,13 @@ async fn main() {
         .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network))
         .expect("No amount to estimate prices with set.");
 
-    let vault = if BalancerV2Vault::raw_contract()
-        .networks
-        .contains_key(&network)
-    {
-        Some(
-            BalancerV2Vault::deployed(&web3)
-                .await
-                .expect("couldn't load deployed vault contract"),
-        )
-    } else {
-        // The Vault is not deployed on all networks we support, so allow it
-        // to be `None` for those networks.
-        tracing::warn!("No Balancer V2 Vault support for network {}", network);
-        None
+    let vault = match BalancerV2Vault::deployed(&web3).await {
+        Ok(contract) => Some(contract),
+        Err(DeployError::NotFound(_)) => {
+            tracing::warn!("balancer contracts are not deployed on this network");
+            None
+        }
+        Err(err) => panic!("failed to get balancer vault contract: {}", err),
     };
 
     verify_deployed_contract_constants(&settlement_contract, chain_id)
@@ -282,7 +276,7 @@ async fn main() {
     );
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
-        vault,
+        vault.clone(),
         vault_relayer,
         settlement_contract.address(),
     ));
@@ -328,8 +322,8 @@ async fn main() {
             })
         })
         .collect();
-    if let Some(finder) = BalancerVaultFinder::new(&web3).await.unwrap() {
-        finders.push(Arc::new(finder));
+    if let Some(contract) = &vault {
+        finders.push(Arc::new(BalancerVaultFinder(contract.clone())));
     }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
