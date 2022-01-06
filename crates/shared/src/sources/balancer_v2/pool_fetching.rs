@@ -273,10 +273,9 @@ async fn create_aggregate_pool_fetcher(
     factories: Vec<BalancerFactoryKind>,
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
-    let mut registered_pools_by_factory = pool_initializer
-        .initialize_pools()
-        .await?
-        .group_by_factory();
+    let registered_pools = pool_initializer.initialize_pools().await?;
+    let fetched_block_number = registered_pools.fetched_block_number;
+    let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
         ($factory:expr) => {{
@@ -285,7 +284,9 @@ async fn create_aggregate_pool_fetcher(
                 $factory.clone(),
                 token_infos.clone(),
                 $factory.raw_instance(),
-                registered_pools_by_factory.remove(&$factory.address()),
+                registered_pools_by_factory
+                    .remove(&$factory.address())
+                    .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
             )?
         }};
     }
@@ -331,24 +332,17 @@ fn create_internal_pool_fetcher<Factory>(
     factory: Factory,
     token_infos: Arc<dyn TokenInfoFetching>,
     factory_instance: &Instance<Web3Transport>,
-    registered_pools: Option<RegisteredPools>,
+    registered_pools: RegisteredPools,
 ) -> Result<Box<dyn InternalPoolFetching>>
 where
     Factory: FactoryIndexing,
 {
-    let (initial_pools, start_sync_at_block) = match registered_pools.as_ref() {
-        Some(registered_pools) => (
-            registered_pools
-                .pools
-                .iter()
-                .map(|pool| {
-                    Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number)
-                })
-                .collect::<Result<_>>()?,
-            Some(registered_pools.fetched_block_number),
-        ),
-        None => Default::default(),
-    };
+    let initial_pools = registered_pools
+        .pools
+        .iter()
+        .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
+        .collect::<Result<_>>()?;
+    let start_sync_at_block = Some(registered_pools.fetched_block_number);
 
     Ok(Box::new(Registry::new(
         Arc::new(PoolInfoFetcher::new(vault, factory, token_infos)),

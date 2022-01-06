@@ -117,6 +117,15 @@ pub struct RegisteredPools {
 }
 
 impl RegisteredPools {
+    /// Creates an empty collection of registered pools for the specified block
+    /// number.
+    pub fn empty(fetched_block_number: u64) -> Self {
+        Self {
+            fetched_block_number,
+            ..Default::default()
+        }
+    }
+
     /// Groups registered pools by factory addresses.
     pub fn group_by_factory(self) -> HashMap<H160, RegisteredPools> {
         let fetched_block_number = self.fetched_block_number;
