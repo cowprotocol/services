@@ -197,7 +197,7 @@ struct Arguments {
     #[structopt(
         long,
         env,
-        default_value = "Flashbots,Eden",
+        default_value = "PublicMempool",
         possible_values = &TransactionStrategyArg::variants(),
         case_insensitive = true,
         use_delimiter = true)]
