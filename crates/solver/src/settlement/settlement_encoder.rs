@@ -239,7 +239,27 @@ impl SettlementEncoder {
             })
     }
 
-    pub fn finish(self) -> EncodedSettlement {
+    fn drop_unnecessary_tokens_and_prices(&mut self) {
+        let traded_tokens: HashSet<_> = self
+            .trades()
+            .iter()
+            .flat_map(|trade| {
+                [
+                    trade.order.order_creation.buy_token,
+                    trade.order.order_creation.sell_token,
+                ]
+            })
+            .collect();
+
+        self.tokens.retain(|token| traded_tokens.contains(token));
+        self.sort_tokens_and_update_indices();
+        self.clearing_prices
+            .retain(|token, _price| traded_tokens.contains(token));
+    }
+
+    pub fn finish(mut self) -> EncodedSettlement {
+        self.drop_unnecessary_tokens_and_prices();
+
         let clearing_prices = self
             .tokens
             .iter()
@@ -653,5 +673,49 @@ pub mod tests {
             .unwrap();
 
         assert!(encoder0.merge(encoder1).is_err());
+    }
+
+    #[test]
+    fn encoding_strips_unnecessary_tokens_and_prices() {
+        let prices = hashmap! {token(1) => 7.into(), token(2) => 2.into(),
+        token(3) => 9.into(), token(4) => 44.into()};
+
+        let mut encoder = SettlementEncoder::new(prices);
+
+        let order_1_3 = OrderBuilder::default()
+            .with_sell_token(token(1))
+            .with_sell_amount(33.into())
+            .with_buy_token(token(3))
+            .with_buy_amount(11.into())
+            .build();
+        encoder
+            .add_trade(order_1_3, 4.into(), 0.into(), false)
+            .unwrap();
+
+        let weth = dummy_contract!(WETH9, token(2));
+        encoder.add_unwrap(UnwrapWethInteraction {
+            weth,
+            amount: 12.into(),
+        });
+
+        let encoded = encoder.finish();
+
+        // only token 1 and 2 have been included in orders by traders
+        let expected_tokens: Vec<_> = [1, 3].into_iter().map(token).collect();
+        assert_eq!(expected_tokens, encoded.tokens);
+
+        // only the prices for token 1 and 2 remain and they are in the correct order
+        let expected_prices: Vec<_> = [7, 9].into_iter().map(U256::from).collect();
+        assert_eq!(expected_prices, encoded.clearing_prices);
+
+        let encoded_trade = &encoded.trades[0];
+
+        // dropping unnecessary tokens did not change the sell_token_index
+        let updated_sell_token_index = encoded_trade.0;
+        assert_eq!(updated_sell_token_index, 0.into());
+
+        // dropping unnecessary tokens decreased the buy_token_index by one
+        let updated_buy_token_index = encoded_trade.1;
+        assert_eq!(updated_buy_token_index, 1.into());
     }
 }
