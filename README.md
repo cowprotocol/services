@@ -114,6 +114,8 @@ docker build --tag gp-v2-migrations -f docker/Dockerfile.migration .
 docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql gp-v2-migrations migrate
 ```
 
+In case you run into `java.net.UnknownHostException: host.docker.internal` add `--add-host=host.docker.internal:host-gateway` right after `docker run`.
+
 If you're combining a local postgres installation with docker flyway you have to add to the above `--network host` and change `host.docker.internal` to `localhost`.
 
 - Local [flyway installation](https://flywaydb.org/documentation/usage/commandline/#download-and-installation)
@@ -124,15 +126,84 @@ flyway -user=$USER -password="" -locations="filesystem:database/sql/" -url=jdbc:
 
 ### Local Test Network
 
-With a testnet (e.g. [Ganache](https://www.trufflesuite.com/ganache)) running on `localhost:8545` deploy the contracts via:
+In order to run the `e2e` tests you have to have a testnet running locally.
+Due to the RPC calls the services issue `Ganache` is incompatible, so we will use `hardhat`.
+
+1. Install [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)  
+2. Install hardhat with `npm install --save-dev hardhat`  
+3. Create `hardhat.config.js` in the directory you installed `hardhat` in with following content:
+   ```javascript
+   module.exports = {
+       networks: { 
+           hardhat: {
+               initialBaseFeePerGas: 0,
+               accounts: {
+                   accountsBalance: "1000000000000000000000000"
+               }
+           }
+       }
+   };
+   ```
+4. Run local testnet with `npx hardhat node`
+
+## Running the Services Locally
+
+### Prerequisites
+Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
+After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
+Because Gnosis only runs their services on mainnet, rinkeby and gnosis chain you need to select one of those.
+
+Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
+
+To avoid confusion during your tests, always double check that the token and account addresses you use actually correspond to the network of the `node-url` you are running the executables with.
+
+### Orderbook
+
+To see all supported command line arguments run `cargo run --bin orderbook -- --help`.
+
+Run an `orderbook` on `localhost:8080` with:
 
 ```sh
-cd contracts; cargo run --bin deploy --features bin; cd -
+cargo run --bin orderbook -- \
+  --skip-trace-api true \
+  --skip-event-sync \
+  --node-url <YOUR_NODE_URL>
 ```
 
-## Running the services
+`--skip-event-sync` will skip some work to speed up the initialization process.
 
-- `cargo run --bin orderbook -- --help`
-- `cargo run --bin solver -- --help`
+`--skip-trace-api true` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
 
-To test the system end to end checkout the [GPv2 UI](https://github.com/gnosis/gp-swap-ui) and point it to your local instance.
+### Solvers
+
+To see all supported command line arguments run `cargo run --bin solver -- --help`.
+
+Run a solver which is connected to an `orderbook` at `localhost:8080` with:
+
+```sh
+cargo run -p solver -- \
+  --solver-account 0xa6DDBD0dE6B310819b49f680F65871beE85f517e \
+  --transaction-strategy DryRun \
+  --node-url <YOUR_NODE_URL>
+```
+
+`--transaction-strategy DryRun` will make the solver only print the solution but not submit it on-chain. This command is absolutely safe and will not use any funds.
+
+The `solver-account` is responsible for signing transactions. Solutions for settlements need to come from an address the settlement contract trusts in order to make the contract actually consider the solution. If we pass a public address, like we do here, the solver only pretends to be use it for testing purposes. To actually submit transactions on behalf of a solver account you would have to pass a private key of an account the settlement contract trusts instead. Adding your personal solver account is quite involved and requires you to get in touch with the team, so we are using this public solver address for now.
+
+To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
+
+| Orderbook URL                   | Network      | Environment |
+|---------------------------------|--------------|-------------|
+| https://barn.api.cow.fi/mainnet | Mainnet      | Staging     |
+| https://api.cow.fi/mainnet      | Mainnet      | Production  |
+| https://barn.api.cow.fi/rinkeby | Rinkeby      | Staging     |
+| https://api.cow.fi/rinkeby      | Rinkeby      | Production  |
+| https://barn.api.cow.fi/xdai    | Gnosis Chain | Staging     |
+| https://api.cow.fi/xdai         | Gnosis Chain | Production  |
+
+Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
+
+### Frontend
+
+To conveniently submit orders checkout the [CowSwap](https://github.com/gnosis/cowswap) frontend and point it to your local instance.
