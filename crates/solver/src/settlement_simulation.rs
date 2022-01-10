@@ -101,9 +101,9 @@ pub async fn simulate_and_error_with_tenderly_link(
                 .block(BlockId::Number(block.into()))
                 // Since we now supply the gas price for the simulation, make sure to also
                 // set a gas limit so we don't get failed simulations because of insufficient
-                // solver balance for the default ~15M gas limit. Limit to around the
-                // block gas limit / 2 (as settling bigger tx is unrealistic anyways).
-                .gas(15_000_000.into());
+                // solver balance. Currently, a good trade off seems to be 7m,
+                // as our biggest tx ever had only consumed 3M gas.
+                .gas(7_000_000.into());
             (view.batch_call(&mut batch), transaction_builder)
         })
         .collect::<Vec<_>>();
