@@ -1,3 +1,4 @@
+pub mod buffered;
 pub mod dummy;
 pub mod http;
 pub mod instrumented;
