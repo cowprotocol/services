@@ -1,4 +1,5 @@
 pub mod baseline;
+pub mod cached;
 pub mod competition;
 pub mod gas;
 pub mod instrumented;
@@ -59,7 +60,7 @@ impl Clone for PriceEstimationError {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Query {
     pub sell_token: H160,
     pub buy_token: H160,
