@@ -265,6 +265,12 @@ struct Arguments {
     /// Only values in the range [0.0, 1.0] make sense.
     #[structopt(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
     weth_unwrap_factor: f64,
+
+    /// Gas limit for simulations. This parameter is important to set correctly, such that
+    /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
+    /// but at the same time we don't restrict solutions sizes too much
+    #[structopt(long, env, default_value = "15_000_000")]
+    simulation_gas_limit: u128,
 }
 
 arg_enum! {
@@ -627,6 +633,7 @@ async fn main() {
         api,
         order_converter,
         args.weth_unwrap_factor,
+        args.simulation_gas_limit,
     );
 
     let maintainer = ServiceMaintenance {

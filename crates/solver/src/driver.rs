@@ -61,6 +61,7 @@ pub struct Driver {
     order_converter: OrderConverter,
     in_flight_orders: InFlightOrders,
     post_processing_pipeline: PostProcessingPipeline,
+    simulation_gas_limit: u128,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -86,6 +87,7 @@ impl Driver {
         api: OrderBookApi,
         order_converter: OrderConverter,
         weth_unwrap_factor: f64,
+        simulation_gas_limit: u128,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -118,6 +120,7 @@ impl Driver {
             order_converter,
             in_flight_orders: InFlightOrders::default(),
             post_processing_pipeline,
+            simulation_gas_limit,
         }
     }
 
@@ -244,6 +247,7 @@ impl Driver {
         let web3 = self.web3.clone();
         let network_id = self.network_id.clone();
         let metrics = self.metrics.clone();
+        let simulation_gas_limit = self.simulation_gas_limit;
         let task = async move {
             let simulations = settlement_simulation::simulate_and_error_with_tenderly_link(
                 errors
@@ -254,6 +258,7 @@ impl Driver {
                 gas_price,
                 &network_id,
                 current_block_during_liquidity_fetch,
+                simulation_gas_limit,
             )
             .await;
 

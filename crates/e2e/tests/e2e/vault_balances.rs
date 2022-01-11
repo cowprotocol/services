@@ -183,6 +183,7 @@ async fn vault_balances(web3: Web3) {
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
+        15000000u128,
     );
     driver.single_run().await.unwrap();
 

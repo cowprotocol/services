@@ -90,6 +90,7 @@ pub async fn simulate_and_error_with_tenderly_link(
     gas_price: EstimatedGasPrice,
     network_id: &str,
     block: u64,
+    simulation_gas_limit: u128,
 ) -> Vec<Result<()>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
@@ -101,9 +102,9 @@ pub async fn simulate_and_error_with_tenderly_link(
                 .block(BlockId::Number(block.into()))
                 // Since we now supply the gas price for the simulation, make sure to also
                 // set a gas limit so we don't get failed simulations because of insufficient
-                // solver balance for the default ~15M gas limit. Limit to around the
-                // block gas limit / 2 (as settling bigger tx is unrealistic anyways).
-                .gas(15_000_000.into());
+                // solver balance. The limit should be below the current block gas
+                // limit of 30M gas
+                .gas(simulation_gas_limit.into());
             (view.batch_call(&mut batch), transaction_builder)
         })
         .collect::<Vec<_>>();
@@ -208,6 +209,7 @@ mod tests {
             Default::default(),
             network_id.as_str(),
             block,
+            15000000u128,
         )
         .await;
         let _ = dbg!(result);
