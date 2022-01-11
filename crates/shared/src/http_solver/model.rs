@@ -44,30 +44,6 @@ pub struct AmmModel {
     pub mandatory: bool,
 }
 
-impl AmmModel {
-    pub fn has_sufficient_reserves(&self) -> bool {
-        let non_zero_balance_count = match &self.parameters {
-            AmmParameters::ConstantProduct(parameters) => parameters
-                .reserves
-                .values()
-                .filter(|&balance| balance.gt(&U256::zero()))
-                .count(),
-            AmmParameters::WeightedProduct(parameters) => parameters
-                .reserves
-                .values()
-                .filter(|&data| data.balance.gt(&U256::zero()))
-                .count(),
-            AmmParameters::Stable(parameters) => parameters
-                .reserves
-                .values()
-                .filter(|&balance| balance.gt(&U256::zero()))
-                .count(),
-        };
-        // HTTP solver requires at least two non-zero reserves.
-        non_zero_balance_count >= 2
-    }
-}
-
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "kind")]
 pub enum AmmParameters {

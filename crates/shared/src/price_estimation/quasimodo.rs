@@ -84,14 +84,11 @@ impl QuasimodoPriceEstimator {
             self.uniswap_pools(pairs.clone(), &gas_model),
             self.balancer_pools(pairs.clone(), &gas_model)
         )?;
-        let mut amms: BTreeMap<usize, AmmModel> = uniswap_pools
+        let amms: BTreeMap<usize, AmmModel> = uniswap_pools
             .into_iter()
             .chain(balancer_pools)
             .enumerate()
             .collect();
-
-        // Solver cannot handle 0 reserves so filter these pools out until that is fixed.
-        amms.retain(|_, v| v.has_sufficient_reserves());
 
         let mut tokens: HashSet<H160> = Default::default();
         tokens.insert(query.sell_token);
