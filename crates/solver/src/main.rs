@@ -269,7 +269,7 @@ struct Arguments {
     /// Gas limit for simulations. This parameter is important to set correctly, such that
     /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
     /// but at the same time we don't restrict solutions sizes too much
-    #[structopt(long, env, default_value = "15_000_000")]
+    #[structopt(long, env, default_value = "15000000")]
     simulation_gas_limit: u128,
 }
 
