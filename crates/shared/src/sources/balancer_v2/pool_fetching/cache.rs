@@ -21,6 +21,11 @@ pub trait BalancerPoolCacheMetrics: Send + Sync {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
 }
 
+pub struct NoopBalancerPoolCacheMetrics;
+impl BalancerPoolCacheMetrics for NoopBalancerPoolCacheMetrics {
+    fn pools_fetched(&self, _: usize, _: usize) {}
+}
+
 /// Internal type alias used for inner recent block cache.
 type PoolCache<Inner> =
     RecentBlockCache<H256, Pool, CacheFetcher<Inner>, Arc<dyn BalancerPoolCacheMetrics>>;

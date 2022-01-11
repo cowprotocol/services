@@ -4,7 +4,11 @@ use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
 use shared::{
-    metrics::get_metrics_registry, sources::uniswap_v2::pool_cache::PoolCacheMetrics,
+    metrics::get_metrics_registry,
+    sources::{
+        balancer_v2::pool_fetching::BalancerPoolCacheMetrics,
+        uniswap_v2::pool_cache::PoolCacheMetrics,
+    },
     transport::instrumented::TransportMetrics,
 };
 use std::{
@@ -141,6 +145,15 @@ impl shared::price_estimation::instrumented::Metrics for Metrics {
         self.price_estimates
             .with_label_values(&[name, result])
             .inc();
+    }
+}
+
+impl BalancerPoolCacheMetrics for Metrics {
+    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
+        // We may want to distinguish cache metrics between the different
+        // liquidity sources in the future, for now just use the same counters.
+        self.pool_cache_hits.inc_by(cache_hits as u64);
+        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 

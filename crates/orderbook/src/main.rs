@@ -20,8 +20,6 @@ use orderbook::{
     verify_deployed_contract_constants,
 };
 use primitive_types::H160;
-use shared::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
-use shared::network::network_name;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
 use shared::price_estimation::sanitized::SanitizedPriceEstimator;
 use shared::price_estimation::zeroex::ZeroExPriceEstimator;
@@ -58,6 +56,14 @@ use shared::{
     transport::create_instrumented_transport,
     transport::http::HttpTransport,
 };
+use shared::{
+    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    sources::{
+        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
+        BaselineSource,
+    },
+};
+use shared::{network::network_name, sources::balancer_v2::BalancerFactoryKind};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
@@ -361,15 +367,17 @@ async fn main() {
             })
             .collect(),
     };
+
+    let cache_config = CacheConfig {
+        number_of_blocks_to_cache: args.shared.pool_cache_blocks,
+        number_of_entries_to_auto_update: args.pool_cache_lru_size,
+        maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
+        max_retries: args.shared.pool_cache_maximum_retries,
+        delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
+    };
     let pool_fetcher = Arc::new(
         PoolCache::new(
-            CacheConfig {
-                number_of_blocks_to_cache: args.shared.pool_cache_blocks,
-                number_of_entries_to_auto_update: args.pool_cache_lru_size,
-                maximum_recent_block_age: args.shared.pool_cache_maximum_recent_block_age,
-                max_retries: args.shared.pool_cache_maximum_retries,
-                delay_between_retries: args.shared.pool_cache_delay_between_retries_seconds,
-            },
+            cache_config,
             Box::new(pool_aggregator),
             current_block_stream.clone(),
             metrics.clone(),
@@ -379,6 +387,28 @@ async fn main() {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
+    let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
+        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let balancer_pool_fetcher = Arc::new(
+            BalancerPoolFetcher::new(
+                chain_id,
+                token_info_fetcher.clone(),
+                args.shared
+                    .balancer_factories
+                    .unwrap_or_else(BalancerFactoryKind::all),
+                cache_config,
+                current_block_stream.clone(),
+                metrics.clone(),
+                client.clone(),
+                &contracts,
+            )
+            .await
+            .expect("failed to create Balancer pool fetcher"),
+        );
+        Some(balancer_pool_fetcher)
+    } else {
+        None
+    };
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
             args.shared
@@ -447,6 +477,7 @@ async fn main() {
                                 },
                             }),
                             pools: pool_fetcher.clone(),
+                            balancer_pools: balancer_pool_fetcher.clone(),
                             token_info: token_info_fetcher.clone(),
                             gas_info: gas_price_estimator.clone(),
                             native_token: native_token.address(),
@@ -510,9 +541,12 @@ async fn main() {
         args.solvable_orders_max_update_age,
         order_validator.clone(),
     ));
-    let service_maintainer = ServiceMaintenance {
+    let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![database.clone(), Arc::new(event_updater), pool_fetcher],
     };
+    if let Some(balancer) = balancer_pool_fetcher {
+        service_maintainer.maintainers.push(balancer);
+    }
     check_database_connection(orderbook.as_ref()).await;
     let quoter = Arc::new(OrderQuoter::new(
         fee_calculator,

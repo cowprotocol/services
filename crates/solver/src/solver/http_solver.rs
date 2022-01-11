@@ -16,9 +16,11 @@ use model::order::OrderKind;
 use num::ToPrimitive;
 use num::{BigInt, BigRational};
 use primitive_types::H160;
-use shared::http_solver_api::model::*;
-use shared::http_solver_api::{DefaultHttpSolverApi, HttpSolverApi};
-use shared::price_estimation::gas::{GAS_PER_BALANCER_SWAP, GAS_PER_ORDER, GAS_PER_UNISWAP};
+use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
+use shared::{
+    http_solver::{gas_model::GasModel, model::*},
+    sources::balancer_v2::pools::common::compute_scaling_rate,
+};
 use shared::{
     measure_time,
     token_info::{TokenInfo, TokenInfoFetching},
@@ -173,36 +175,10 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
     Vec::from_iter(token_set)
 }
 
-struct GasModel {
-    native_token: H160,
-    gas_price: f64,
-}
-
-impl GasModel {
-    fn cost_for_gas(&self, gas: U256) -> CostModel {
-        CostModel {
-            amount: U256::from_f64_lossy(self.gas_price) * gas,
-            token: self.native_token,
-        }
-    }
-
-    fn order_cost(&self) -> CostModel {
-        self.cost_for_gas(GAS_PER_ORDER.into())
-    }
-
-    fn uniswap_cost(&self) -> CostModel {
-        self.cost_for_gas(GAS_PER_UNISWAP.into())
-    }
-
-    fn balancer_cost(&self) -> CostModel {
-        self.cost_for_gas(GAS_PER_BALANCER_SWAP.into())
-    }
-
-    fn order_fee(&self, order: &LimitOrder) -> FeeModel {
-        FeeModel {
-            amount: order.scaled_fee_amount,
-            token: order.sell_token,
-        }
+fn order_fee(order: &LimitOrder) -> FeeModel {
+    FeeModel {
+        amount: order.scaled_fee_amount,
+        token: order.sell_token,
     }
 }
 
@@ -262,7 +238,7 @@ fn order_models(
                     buy_amount: order.buy_amount,
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
-                    fee: gas_model.order_fee(order),
+                    fee: order_fee(order),
                     cost: gas_model.order_cost(),
                     is_liquidity_order: order.is_liquidity_order,
                     mandatory: false,
@@ -383,26 +359,6 @@ fn compute_fee_connected_tokens(liquidity: &[Liquidity], native_token: H160) -> 
     fee_connected_tokens
 }
 
-/// Compute the scaling rate from a Balancer pool's scaling exponent.
-///
-/// This method returns an error on any arithmetic underflow when computing the
-/// token decimals. Note that in theory, this should be impossible to happen.
-/// However, we are extra careful and return an `Error` in case it does to avoid
-/// panicking. Additionally, wrapped math could have been used here, but that
-/// would create invalid settlements.
-fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
-    // Balancer `scaling_exponent`s are `18 - decimals`, we want the rate which
-    // is `10 ** decimals`.
-    let decimals = 18_u8.checked_sub(scaling_exponent).ok_or_else(|| {
-        anyhow!("underflow computing decimals from Balancer pool scaling exponent")
-    })?;
-
-    debug_assert!(decimals <= 18);
-    // `decimals` is guaranteed to be between 0 and 18, and 10**18 cannot
-    // cannot overflow a `U256`, so we do not need to use `checked_pow`.
-    Ok(U256::from(10).pow(decimals.into()))
-}
-
 #[async_trait::async_trait]
 impl Solver for HttpSolver {
     async fn solve(
@@ -466,7 +422,7 @@ mod tests {
     use maplit::hashmap;
     use num::rational::Ratio;
     use reqwest::Client;
-    use shared::http_solver_api::SolverConfig;
+    use shared::http_solver::SolverConfig;
     use shared::token_info::MockTokenInfoFetching;
     use shared::token_info::TokenInfo;
     use std::sync::Arc;
@@ -724,21 +680,5 @@ mod tests {
         "#;
         let parsed_response = serde_json::from_str::<SettledBatchAuctionModel>(example_response);
         assert!(parsed_response.is_ok());
-    }
-
-    #[test]
-    fn compute_scaling_rates() {
-        // Tokens with 18 decimals
-        assert_eq!(
-            compute_scaling_rate(0).unwrap(),
-            U256::from(1_000_000_000_000_000_000_u128),
-        );
-        // Tokens with 6 decimals
-        assert_eq!(compute_scaling_rate(12).unwrap(), U256::from(1_000_000));
-        // Tokens with 0 decimals
-        assert_eq!(compute_scaling_rate(18).unwrap(), U256::from(1));
-
-        // Tokens with invalid number of decimals, i.e. greater than 18
-        assert!(compute_scaling_rate(42).is_err());
     }
 }

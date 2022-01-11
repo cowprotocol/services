@@ -9,7 +9,7 @@ mod internal;
 mod pool_storage;
 mod registry;
 
-pub use self::cache::BalancerPoolCacheMetrics;
+pub use self::cache::{BalancerPoolCacheMetrics, NoopBalancerPoolCacheMetrics};
 use self::{
     aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
 };

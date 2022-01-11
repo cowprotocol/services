@@ -273,6 +273,26 @@ pub struct TokenState {
     pub scaling_exponent: u8,
 }
 
+/// Compute the scaling rate from a Balancer pool's scaling exponent.
+///
+/// This method returns an error on any arithmetic underflow when computing the
+/// token decimals. Note that in theory, this should be impossible to happen.
+/// However, we are extra careful and return an `Error` in case it does to avoid
+/// panicking. Additionally, wrapped math could have been used here, but that
+/// would create invalid settlements.
+pub fn compute_scaling_rate(scaling_exponent: u8) -> Result<U256> {
+    // Balancer `scaling_exponent`s are `18 - decimals`, we want the rate which
+    // is `10 ** decimals`.
+    let decimals = 18_u8.checked_sub(scaling_exponent).ok_or_else(|| {
+        anyhow!("underflow computing decimals from Balancer pool scaling exponent")
+    })?;
+
+    debug_assert!(decimals <= 18);
+    // `decimals` is guaranteed to be between 0 and 18, and 10**18 cannot
+    // cannot overflow a `U256`, so we do not need to use `checked_pow`.
+    Ok(U256::from(10).pow(decimals.into()))
+}
+
 /// Converts a token decimal count to its corresponding scaling exponent.
 fn scaling_exponent_from_decimals(decimals: u8) -> Result<u8> {
     // Technically this should never fail for Balancer Pools since tokens
@@ -890,5 +910,21 @@ mod tests {
         let (pool_state, pool_state_ok) = share_common_pool_state(async { bail!("error") });
         let _ = pool_state.await;
         pool_state_ok.await;
+    }
+
+    #[test]
+    fn compute_scaling_rates() {
+        // Tokens with 18 decimals
+        assert_eq!(
+            compute_scaling_rate(0).unwrap(),
+            U256::from(1_000_000_000_000_000_000_u128),
+        );
+        // Tokens with 6 decimals
+        assert_eq!(compute_scaling_rate(12).unwrap(), U256::from(1_000_000));
+        // Tokens with 0 decimals
+        assert_eq!(compute_scaling_rate(18).unwrap(), U256::from(1));
+
+        // Tokens with invalid number of decimals, i.e. greater than 18
+        assert!(compute_scaling_rate(42).is_err());
     }
 }

@@ -1,29 +1,42 @@
-use crate::baseline_solver::BaseTokens;
-use crate::http_solver_api::model::{
-    AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, CostModel, FeeModel,
-    OrderModel, TokenInfoModel,
+use crate::{
+    baseline_solver::BaseTokens,
+    http_solver::{
+        gas_model::GasModel,
+        model::{
+            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, CostModel,
+            FeeModel, OrderModel, StablePoolParameters, TokenInfoModel, WeightedPoolTokenData,
+            WeightedProductPoolParameters,
+        },
+        HttpSolverApi,
+    },
+    price_estimation::{
+        gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
+        Estimate, PriceEstimating, PriceEstimationError, Query,
+    },
+    recent_block_cache::Block,
+    sources::{
+        balancer_v2::{
+            pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
+        },
+        uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetching},
+    },
+    token_info::TokenInfoFetching,
 };
-use crate::http_solver_api::HttpSolverApi;
-use crate::price_estimation::gas::{
-    ERC20_TRANSFER, GAS_PER_ORDER, GAS_PER_UNISWAP, INITIALIZATION_COST, SETTLEMENT,
-};
-use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
-use crate::recent_block_cache::Block;
-use crate::sources::uniswap_v2::pool_cache::PoolCache;
-use crate::sources::uniswap_v2::pool_fetching::PoolFetching;
-use crate::token_info::TokenInfoFetching;
+use anyhow::{Context, Result};
 use ethcontract::{H160, U256};
 use gas_estimation::GasPriceEstimating;
-use model::order::OrderKind;
-use model::TokenPair;
+use model::{order::OrderKind, TokenPair};
 use num::{BigInt, BigRational};
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 
 pub struct QuasimodoPriceEstimator {
     pub api: Arc<dyn HttpSolverApi>,
     pub pools: Arc<PoolCache>,
+    pub balancer_pools: Option<Arc<BalancerPoolFetcher>>,
     pub token_info: Arc<dyn TokenInfoFetching>,
     pub gas_info: Arc<dyn GasPriceEstimating>,
     pub native_token: H160,
@@ -33,30 +46,6 @@ pub struct QuasimodoPriceEstimator {
 impl QuasimodoPriceEstimator {
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
         let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price());
-
-        let mut tokens = self.base_tokens.tokens().clone();
-        tokens.insert(query.sell_token);
-        tokens.insert(query.buy_token);
-        tokens.insert(self.native_token);
-        let tokens: Vec<_> = tokens.drain().collect();
-
-        let token_infos = self.token_info.get_token_infos(&tokens).await;
-
-        let tokens = tokens
-            .iter()
-            .map(|token| {
-                let info = token_infos.get(token).cloned().unwrap_or_default();
-                (
-                    *token,
-                    TokenInfoModel {
-                        decimals: info.decimals,
-                        alias: info.symbol,
-                        normalize_priority: Some(if *token == self.native_token { 1 } else { 0 }),
-                        ..Default::default()
-                    },
-                )
-            })
-            .collect();
 
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (U256::max_value(), query.in_amount),
@@ -86,41 +75,64 @@ impl QuasimodoPriceEstimator {
 
         let token_pair = TokenPair::new(query.sell_token, query.buy_token).unwrap();
         let pairs = self.base_tokens.relevant_pairs([token_pair].into_iter());
+        let gas_model = GasModel {
+            native_token: self.native_token,
+            gas_price: gas_price.to_f64_lossy(),
+        };
 
-        let amms = self
-            .pools
-            .fetch(pairs, Block::Recent)
-            .await?
-            .iter()
-            .map(|pool| AmmModel {
-                parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
-                    reserves: BTreeMap::from([
-                        (pool.tokens.get().0, pool.reserves.0.into()),
-                        (pool.tokens.get().1, pool.reserves.1.into()),
-                    ]),
-                }),
-                fee: BigRational::from((
-                    BigInt::from(*pool.fee.numer()),
-                    BigInt::from(*pool.fee.denom()),
-                )),
-                cost: CostModel {
-                    amount: U256::from(GAS_PER_UNISWAP) * gas_price,
-                    token: self.native_token,
-                },
-                mandatory: false,
-            })
+        let (uniswap_pools, balancer_pools) = futures::try_join!(
+            self.uniswap_pools(pairs.clone(), &gas_model),
+            self.balancer_pools(pairs.clone(), &gas_model)
+        )?;
+        let mut amms: BTreeMap<usize, AmmModel> = uniswap_pools
+            .into_iter()
+            .chain(balancer_pools)
             .enumerate()
             .collect();
+
+        // Solver cannot handle 0 reserves so filter these pools out until that is fixed.
+        amms.retain(|_, v| v.has_sufficient_reserves());
+
+        let mut tokens: HashSet<H160> = Default::default();
+        tokens.insert(query.sell_token);
+        tokens.insert(query.buy_token);
+        tokens.insert(self.native_token);
+        for amm in amms.values() {
+            match &amm.parameters {
+                AmmParameters::ConstantProduct(params) => tokens.extend(params.reserves.keys()),
+                AmmParameters::WeightedProduct(params) => tokens.extend(params.reserves.keys()),
+                AmmParameters::Stable(params) => tokens.extend(params.reserves.keys()),
+            }
+        }
+        let tokens: Vec<_> = tokens.drain().collect();
+        let token_infos = self.token_info.get_token_infos(&tokens).await;
+        let tokens = tokens
+            .iter()
+            .map(|token| {
+                let info = token_infos.get(token).cloned().unwrap_or_default();
+                (
+                    *token,
+                    TokenInfoModel {
+                        decimals: info.decimals,
+                        alias: info.symbol,
+                        normalize_priority: Some(if *token == self.native_token { 1 } else { 0 }),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+
+        let model = BatchAuctionModel {
+            tokens,
+            orders,
+            amms,
+            metadata: None,
+        };
 
         let settlement = self
             .api
             .solve(
-                &BatchAuctionModel {
-                    tokens,
-                    orders,
-                    amms,
-                    metadata: None,
-                },
+                &model,
                 // We need at least three seconds of timeout. Quasimodo
                 // reserves one second of timeout for shutdown, plus one
                 // more second is reserved for network interactions.
@@ -167,6 +179,103 @@ impl QuasimodoPriceEstimator {
         })
     }
 
+    async fn uniswap_pools(
+        &self,
+        pairs: HashSet<TokenPair>,
+        gas_model: &GasModel,
+    ) -> Result<Vec<AmmModel>> {
+        let pools = self
+            .pools
+            .fetch(pairs, Block::Recent)
+            .await
+            .context("pools")?;
+        Ok(pools
+            .into_iter()
+            .map(|pool| AmmModel {
+                parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
+                    reserves: BTreeMap::from([
+                        (pool.tokens.get().0, pool.reserves.0.into()),
+                        (pool.tokens.get().1, pool.reserves.1.into()),
+                    ]),
+                }),
+                fee: BigRational::from((
+                    BigInt::from(*pool.fee.numer()),
+                    BigInt::from(*pool.fee.denom()),
+                )),
+                cost: gas_model.uniswap_cost(),
+                mandatory: false,
+            })
+            .collect())
+    }
+
+    async fn balancer_pools(
+        &self,
+        pairs: HashSet<TokenPair>,
+        gas_model: &GasModel,
+    ) -> Result<Vec<AmmModel>> {
+        let pools = match &self.balancer_pools {
+            Some(balancer) => balancer
+                .fetch(pairs, Block::Recent)
+                .await
+                .context("balancer_pools")?,
+            None => return Ok(Vec::new()),
+        };
+        // There is some code duplication between here and crates/solver/src/solver/http_solver.rs  fn amm_models .
+        // To avoid that we would need to make both components work on the same input balancer
+        // types. Currently solver uses a liquidity type that is specific to the solver crate.
+        let weighted = pools.weighted_pools.into_iter().map(|pool| AmmModel {
+            parameters: AmmParameters::WeightedProduct(WeightedProductPoolParameters {
+                reserves: pool
+                    .reserves
+                    .into_iter()
+                    .map(|(token, state)| {
+                        (
+                            token,
+                            WeightedPoolTokenData {
+                                balance: state.common.balance,
+                                weight: BigRational::from(state.weight),
+                            },
+                        )
+                    })
+                    .collect(),
+            }),
+            fee: pool.common.swap_fee.into(),
+            cost: gas_model.balancer_cost(),
+            mandatory: false,
+        });
+        let stable = pools
+            .stable_pools
+            .into_iter()
+            .map(|pool| -> Result<AmmModel> {
+                Ok(AmmModel {
+                    parameters: AmmParameters::Stable(StablePoolParameters {
+                        reserves: pool
+                            .reserves
+                            .iter()
+                            .map(|(token, state)| (*token, state.balance))
+                            .collect(),
+                        scaling_rates: pool
+                            .reserves
+                            .into_iter()
+                            .map(|(token, state)| {
+                                Ok((token, compute_scaling_rate(state.scaling_exponent)?))
+                            })
+                            .collect::<Result<_>>()
+                            .with_context(|| "convert stable pool to solver model".to_string())?,
+                        amplification_parameter: pool.amplification_parameter.as_big_rational(),
+                    }),
+                    fee: pool.common.swap_fee.into(),
+                    cost: gas_model.balancer_cost(),
+                    mandatory: false,
+                })
+            });
+        let mut models = Vec::from_iter(weighted);
+        for stable in stable {
+            models.push(stable?);
+        }
+        Ok(models)
+    }
+
     fn extract_cost(&self, cost: &Option<CostModel>) -> Result<U256, PriceEstimationError> {
         if let Some(cost) = cost {
             if cost.token != self.native_token {
@@ -206,9 +315,11 @@ impl PriceEstimating for QuasimodoPriceEstimator {
 mod tests {
     use super::*;
     use crate::current_block::current_block_stream;
-    use crate::http_solver_api::{DefaultHttpSolverApi, SolverConfig};
+    use crate::http_solver::{DefaultHttpSolverApi, SolverConfig};
     use crate::price_estimation::Query;
     use crate::recent_block_cache::CacheConfig;
+    use crate::sources::balancer_v2::pool_fetching::BalancerContracts;
+    use crate::sources::balancer_v2::BalancerFactoryKind;
     use crate::sources::uniswap_v2;
     use crate::sources::uniswap_v2::pool_cache::NoopPoolCacheMetrics;
     use crate::sources::uniswap_v2::pool_fetching::PoolFetcher;
@@ -255,8 +366,9 @@ mod tests {
             std::env::var("INFURA_PROJECT_ID").expect("env variable INFURA_PROJECT_ID is required");
 
         let t1 = ("WETH", testlib::tokens::WETH);
-        let t2 = ("GNO", testlib::tokens::GNO);
-        let amount: U256 = U256::from(1) * U256::exp10(18);
+        let t2 = ("USDC", testlib::tokens::USDC);
+        let amount1: U256 = U256::from(1) * U256::exp10(18);
+        let amount2: U256 = U256::from(1) * U256::exp10(9);
 
         let client = Client::new();
 
@@ -269,6 +381,7 @@ mod tests {
             "main".into(),
         );
         let web3 = Web3::new(DynTransport::new(transport));
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
 
         let pools = Arc::new(
             PoolCache::new(
@@ -285,6 +398,24 @@ mod tests {
             .unwrap(),
         );
         let token_info = Arc::new(TokenInfoFetcher { web3: web3.clone() });
+        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(10))
+            .await
+            .unwrap();
+        let balancer_pool_fetcher = Arc::new(
+            BalancerPoolFetcher::new(
+                chain_id,
+                token_info.clone(),
+                BalancerFactoryKind::all(),
+                Default::default(),
+                current_block_stream.clone(),
+                Arc::new(crate::sources::balancer_v2::pool_fetching::NoopBalancerPoolCacheMetrics),
+                client.clone(),
+                &contracts,
+            )
+            .await
+            .expect("failed to create Balancer pool fetcher"),
+        );
         let gas_info = Arc::new(web3);
 
         let estimator = QuasimodoPriceEstimator {
@@ -302,6 +433,7 @@ mod tests {
                 },
             }),
             pools,
+            balancer_pools: Some(balancer_pool_fetcher),
             token_info,
             gas_info,
             native_token: testlib::tokens::WETH,
@@ -315,7 +447,7 @@ mod tests {
             .estimate(&Query {
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount,
+                in_amount: amount1,
                 kind: OrderKind::Sell,
             })
             .await;
@@ -324,9 +456,9 @@ mod tests {
         let estimate = result.unwrap();
         println!(
             "{} {} buys {} {}, costing {} gas",
-            amount.to_f64_lossy() / 1e18,
+            amount1.to_f64_lossy() / 1e18,
             t1.0,
-            estimate.out_amount.to_f64_lossy() / 1e18,
+            estimate.out_amount.to_f64_lossy() / 1e6,
             t2.0,
             estimate.gas,
         );
@@ -335,7 +467,7 @@ mod tests {
             .estimate(&Query {
                 sell_token: t1.1,
                 buy_token: t2.1,
-                in_amount: amount,
+                in_amount: amount2,
                 kind: OrderKind::Buy,
             })
             .await;
@@ -344,7 +476,7 @@ mod tests {
         let estimate = result.unwrap();
         println!(
             "{} {} costs {} {}, costing {} gas",
-            amount.to_f64_lossy() / 1e18,
+            amount2.to_f64_lossy() / 1e6,
             t2.0,
             estimate.out_amount.to_f64_lossy() / 1e18,
             t1.0,

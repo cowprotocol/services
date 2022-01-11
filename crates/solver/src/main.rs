@@ -258,18 +258,6 @@ struct Arguments {
     #[structopt(long, env, default_value = "20")]
     max_settlements_per_solver: usize,
 
-    /// The Balancer V2 factories to consider for indexing liquidity. Allows
-    /// specific pool kinds to be disabled via configuration. Will use all
-    /// supported Balancer V2 factory kinds if not specified.
-    #[structopt(
-        long,
-        env,
-        possible_values = &BalancerFactoryKind::variants(),
-        case_insensitive = true,
-        use_delimiter = true
-    )]
-    balancer_factories: Option<Vec<BalancerFactoryKind>>,
-
     /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is not big enough to
     /// settle ETH buy orders.
     /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
@@ -439,7 +427,8 @@ async fn main() {
                 BalancerPoolFetcher::new(
                     chain_id,
                     token_info_fetcher.clone(),
-                    args.balancer_factories
+                    args.shared
+                        .balancer_factories
                         .unwrap_or_else(BalancerFactoryKind::all),
                     cache_config,
                     current_block_stream.clone(),
