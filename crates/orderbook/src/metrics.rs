@@ -92,7 +92,7 @@ impl Metrics {
             ),
             &["estimator_type", "result"],
         )?;
-        registry.register(Box::new(price_estimates.clone()))?;
+        registry.register(Box::new(price_estimator_cache.clone()))?;
 
         Ok(Self {
             api_requests,
@@ -223,4 +223,14 @@ pub fn end_request(metrics: Arc<Metrics>, timer: Instant, reply: LabelledReply) 
         .with_label_values(&[response.status().as_str(), label])
         .observe(elapsed);
     MetricsReply { response }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn does_not_panic() {
+        Metrics::new().unwrap();
+    }
 }
