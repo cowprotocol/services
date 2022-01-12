@@ -2,19 +2,15 @@ use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use std::sync::Arc;
 
 /// An instrumented price estimator.
-pub struct InstrumentedPriceEstimator<T> {
-    inner: T,
+pub struct InstrumentedPriceEstimator {
+    inner: Box<dyn PriceEstimating>,
     name: String,
     metrics: Arc<dyn Metrics>,
 }
 
-impl<T> InstrumentedPriceEstimator<T>
-where
-    T: PriceEstimating,
-{
+impl InstrumentedPriceEstimator {
     /// Wraps an existing price estimator in an instrumented one.
-    pub fn new(inner: T, name: impl Into<String>, metrics: Arc<dyn Metrics>) -> Self {
-        let name = name.into();
+    pub fn new(inner: Box<dyn PriceEstimating>, name: String, metrics: Arc<dyn Metrics>) -> Self {
         metrics.initialize_estimator(&name);
         Self {
             inner,
@@ -25,10 +21,7 @@ where
 }
 
 #[async_trait::async_trait]
-impl<T> PriceEstimating for InstrumentedPriceEstimator<T>
-where
-    T: PriceEstimating,
-{
+impl PriceEstimating for InstrumentedPriceEstimator {
     async fn estimates(
         &self,
         queries: &[Query],
@@ -107,7 +100,11 @@ mod tests {
             .with(eq("foo"), eq(false))
             .return_const(());
 
-        let instrumented = InstrumentedPriceEstimator::new(estimator, "foo", Arc::new(metrics));
+        let instrumented = InstrumentedPriceEstimator::new(
+            Box::new(estimator),
+            "foo".to_string(),
+            Arc::new(metrics),
+        );
         let _ = instrumented.estimates(&queries).await;
     }
 }

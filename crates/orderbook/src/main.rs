@@ -58,12 +58,14 @@ use shared::{
 };
 use shared::{
     http_solver::{DefaultHttpSolverApi, SolverConfig},
+    network::network_name,
+    price_estimation::cached::CachingPriceEstimator,
+    sources::balancer_v2::BalancerFactoryKind,
     sources::{
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         BaselineSource,
     },
 };
-use shared::{network::network_name, sources::balancer_v2::BalancerFactoryKind};
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
 use structopt::StructOpt;
 use tokio::task;
@@ -181,6 +183,18 @@ struct Arguments {
     /// The API endpoint to call the mip v2 solver for price estimation
     #[structopt(long, env)]
     quasimodo_solver_url: Option<Url>,
+
+    /// The maximum time price estimates will be cached for.
+    #[structopt(
+        long,
+        default_value = "10",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    price_estimator_cache_max_age_secs: Duration,
+
+    /// The maximum number of price estimates that will be cached.
+    #[structopt(long, default_value = "1000")]
+    price_estimator_cache_size: usize,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -420,6 +434,19 @@ async fn main() {
         )
         .unwrap(),
     );
+    let instrumented = |inner: Box<dyn PriceEstimating>, name: &str| {
+        InstrumentedPriceEstimator::new(inner, name.to_string(), metrics.clone())
+    };
+    let instrumented_and_cached = |inner: Box<dyn PriceEstimating>, name: &str| {
+        // Instrument first then cache so instrumented is close to inner estimator.
+        CachingPriceEstimator::new(
+            Box::new(instrumented(inner, name)),
+            args.price_estimator_cache_max_age_secs,
+            args.price_estimator_cache_size,
+            metrics.clone(),
+            name.to_string(),
+        )
+    };
     let price_estimators = args
         .shared
         .price_estimators
@@ -428,38 +455,35 @@ async fn main() {
             (
                 estimator.name(),
                 match estimator {
-                    PriceEstimatorType::Baseline => Box::new(InstrumentedPriceEstimator::new(
-                        BaselinePriceEstimator::new(
+                    PriceEstimatorType::Baseline => Box::new(instrumented(
+                        Box::new(BaselinePriceEstimator::new(
                             pool_fetcher.clone(),
                             gas_price_estimator.clone(),
                             base_tokens.clone(),
                             native_token.address(),
                             native_token_price_estimation_amount,
-                        ),
-                        estimator.name(),
-                        metrics.clone(),
+                        )),
+                        &estimator.name(),
                     )),
-                    PriceEstimatorType::Paraswap => Box::new(InstrumentedPriceEstimator::new(
-                        ParaswapPriceEstimator {
+                    PriceEstimatorType::Paraswap => Box::new(instrumented_and_cached(
+                        Box::new(ParaswapPriceEstimator {
                             paraswap: Arc::new(DefaultParaswapApi {
                                 client: client.clone(),
                                 partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
                             }),
                             token_info: token_info_fetcher.clone(),
                             disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
-                        },
-                        estimator.name(),
-                        metrics.clone(),
+                        }),
+                        &estimator.name(),
                     )),
-                    PriceEstimatorType::ZeroEx => Box::new(InstrumentedPriceEstimator::new(
+                    PriceEstimatorType::ZeroEx => Box::new(instrumented_and_cached(Box::new(
                         ZeroExPriceEstimator {
                             api: zeroex_api.clone(),
-                        },
-                        estimator.name(),
-                        metrics.clone(),
+                        }),
+                        &estimator.name(),
                     )),
-                    PriceEstimatorType::Quasimodo => Box::new(InstrumentedPriceEstimator::new(
-                        QuasimodoPriceEstimator {
+                    PriceEstimatorType::Quasimodo => Box::new(instrumented(
+                        Box::new(QuasimodoPriceEstimator {
                             api: Arc::new(DefaultHttpSolverApi {
                                 name: "quasimodo-price-estimator",
                                 network_name: network_name.to_string(),
@@ -482,9 +506,8 @@ async fn main() {
                             gas_info: gas_price_estimator.clone(),
                             native_token: native_token.address(),
                             base_tokens: base_tokens.clone(),
-                        },
-                        estimator.name(),
-                        metrics.clone(),
+                        }),
+                        &estimator.name(),
                     )),
                 },
             )

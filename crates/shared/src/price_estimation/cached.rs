@@ -1,15 +1,36 @@
 use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use cached::{Cached, TimedSizedCache};
-use std::{sync::Mutex, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 /// Price estimator wrapper that caches Ok results for some time.
 pub struct CachingPriceEstimator {
     inner: Box<dyn PriceEstimating>,
     cache: Mutex<TimedSizedCache<Query, Estimate>>,
+    metrics: Arc<dyn Metrics>,
+    name: String,
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait Metrics: Send + Sync + 'static {
+    fn price_estimator_cache(&self, name: &str, misses: usize, hits: usize);
+}
+
+struct NoopMetrics;
+impl Metrics for NoopMetrics {
+    fn price_estimator_cache(&self, _: &str, _: usize, _: usize) {}
 }
 
 impl CachingPriceEstimator {
-    pub fn new(inner: Box<dyn PriceEstimating>, max_age: Duration, max_size: usize) -> Self {
+    pub fn new(
+        inner: Box<dyn PriceEstimating>,
+        max_age: Duration,
+        max_size: usize,
+        metrics: Arc<dyn Metrics>,
+        name: String,
+    ) -> Self {
         Self {
             inner,
             cache: Mutex::new(TimedSizedCache::with_size_and_lifespan_and_refresh(
@@ -17,6 +38,8 @@ impl CachingPriceEstimator {
                 max_age.as_secs(),
                 false,
             )),
+            metrics,
+            name,
         }
     }
 }
@@ -41,6 +64,12 @@ impl PriceEstimating for CachingPriceEstimator {
                 }
             }
         }
+
+        self.metrics.price_estimator_cache(
+            &self.name,
+            missing.len(),
+            queries.len() - missing.len(),
+        );
 
         let inner_results = self.inner.estimates(&missing).await;
         {
@@ -94,7 +123,13 @@ mod tests {
                 gas: 0.into(),
             })]
         });
-        let cache = CachingPriceEstimator::new(Box::new(inner), Duration::from_secs(1), 10);
+        let cache = CachingPriceEstimator::new(
+            Box::new(inner),
+            Duration::from_secs(1),
+            10,
+            Arc::new(NoopMetrics),
+            "".to_string(),
+        );
         let result = cache.estimates(&[query(0)]).now_or_never().unwrap();
         assert!(result[0].as_ref().unwrap().out_amount == 0.into());
         let result = cache
