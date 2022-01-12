@@ -21,7 +21,7 @@ use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::oneinch_api::{
-    Amount, OneInchClient, OneInchClientImpl, Swap, SwapQuery, SwapResponse, SwapResponseError,
+    Amount, OneInchClient, OneInchClientImpl, RestError, RestResponse, Swap, SwapQuery,
 };
 use shared::solver_utils::Slippage;
 use shared::Web3;
@@ -43,8 +43,8 @@ pub struct OneInchSolver {
     allowance_fetcher: Box<dyn AllowanceManaging>,
 }
 
-impl From<SwapResponseError> for SettlementError {
-    fn from(error: SwapResponseError) -> Self {
+impl From<RestError> for SettlementError {
+    fn from(error: RestError) -> Self {
         SettlementError {
             inner: anyhow!(error.description),
             retryable: matches!(error.status_code, 500),
@@ -143,8 +143,8 @@ impl OneInchSolver {
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = match self.client.get_swap(query).await? {
-            SwapResponse::Swap(swap) => swap,
-            SwapResponse::Error(error) => return Err((*error).into()),
+            RestResponse::Ok(swap) => swap,
+            RestResponse::Err(error) => return Err((error).into()),
         };
 
         if !satisfies_limit_price(&swap, &order) {
@@ -160,7 +160,7 @@ impl OneInchSolver {
         settlement.with_liquidity(&order, order.sell_amount)?;
 
         settlement.encoder.append_to_execution_plan(approval);
-        settlement.encoder.append_to_execution_plan(*swap);
+        settlement.encoder.append_to_execution_plan(swap);
 
         Ok(Some(settlement))
     }
@@ -278,11 +278,11 @@ mod tests {
             })
         });
         client.expect_get_swap().returning(|_| {
-            Ok(SwapResponse::Swap(Box::new(Swap {
+            Ok(RestResponse::Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 99.into(),
                 ..Default::default()
-            })))
+            }))
         });
 
         allowance_fetcher
@@ -353,11 +353,11 @@ mod tests {
         });
         client.expect_get_swap().times(1).returning(|query| {
             assert_eq!(query.protocols, Some(vec!["GoodProtocol".into()]));
-            Ok(SwapResponse::Swap(Box::new(Swap {
+            Ok(RestResponse::Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            })))
+            }))
         });
 
         let solver = OneInchSolver {
@@ -393,11 +393,11 @@ mod tests {
             .expect_get_spender()
             .returning(move || Ok(Spender { address: spender }));
         client.expect_get_swap().returning(|_| {
-            Ok(SwapResponse::Swap(Box::new(Swap {
+            Ok(RestResponse::Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            })))
+            }))
         });
 
         // On first invocation no prior allowance, then max allowance set.

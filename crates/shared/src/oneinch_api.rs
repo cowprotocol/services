@@ -119,17 +119,17 @@ impl SwapQuery {
     }
 }
 
-/// A 1Inch API swap response.
+/// A 1Inch API response.
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
-pub enum SwapResponse {
-    Swap(Box<Swap>),
-    Error(Box<SwapResponseError>),
+pub enum RestResponse<T> {
+    Ok(T),
+    Err(RestError),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
-pub struct SwapResponseError {
+pub struct RestError {
     pub status_code: u32,
     pub description: String,
 }
@@ -210,7 +210,7 @@ pub struct Protocols {
 #[async_trait::async_trait]
 pub trait OneInchClient: Send + Sync {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse>;
+    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>>;
 
     /// Retrieves the address of the spender to use for token approvals.
     async fn get_spender(&self) -> Result<Spender>;
@@ -240,7 +240,7 @@ impl OneInchClientImpl {
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse> {
+    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>> {
         logged_query(&self.client, query.into_url(&self.base_url)).await
     }
 
@@ -364,7 +364,7 @@ mod tests {
 
     #[test]
     fn deserialize_swap_response() {
-        let swap = serde_json::from_str::<SwapResponse>(
+        let swap = serde_json::from_str::<RestResponse<Swap>>(
             r#"{
               "fromToken": {
                 "symbol": "ETH",
@@ -416,7 +416,7 @@ mod tests {
 
         assert_eq!(
             swap,
-            SwapResponse::Swap(Box::new(Swap {
+            RestResponse::Ok(Swap {
                 from_token: Token {
                     address: addr!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"),
                 },
@@ -456,10 +456,10 @@ mod tests {
                     gas_price: 154_110_000_000u128.into(),
                     gas: 143297,
                 },
-            }))
+            })
         );
 
-        let swap_error = serde_json::from_str::<SwapResponse>(
+        let swap_error = serde_json::from_str::<RestResponse<Swap>>(
             r#"{
             "statusCode":500,
             "description":"Internal server error"
@@ -469,10 +469,10 @@ mod tests {
 
         assert_eq!(
             swap_error,
-            SwapResponse::Error(Box::new(SwapResponseError {
+            RestResponse::Err(RestError {
                 status_code: 500,
                 description: "Internal server error".into()
-            }))
+            })
         );
     }
 
