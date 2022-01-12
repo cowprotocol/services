@@ -3,28 +3,26 @@
 //! This simple solver will simply use the 1Inch API to get a quote for a
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
-pub mod api;
-
-use self::api::{Amount, OneInchClient, Swap, SwapQuery};
 use super::{
     single_order_solver::{SettlementError, SingleOrderSolving},
     Auction,
 };
-use crate::solver::oneinch_solver::api::SwapResponse;
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging},
     liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
-    solver::oneinch_solver::api::OneInchClientImpl,
 };
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
+use shared::oneinch_api::{
+    Amount, OneInchClient, OneInchClientImpl, Swap, SwapQuery, SwapResponse, SwapResponseError,
+};
 use shared::solver_utils::Slippage;
 use shared::Web3;
 use std::{
@@ -43,6 +41,15 @@ pub struct OneInchSolver {
     client: Box<dyn OneInchClient>,
     #[derivative(Debug = "ignore")]
     allowance_fetcher: Box<dyn AllowanceManaging>,
+}
+
+impl From<SwapResponseError> for SettlementError {
+    fn from(error: SwapResponseError) -> Self {
+        SettlementError {
+            inner: anyhow!(error.description),
+            retryable: matches!(error.status_code, 500),
+        }
+    }
 }
 
 /// Chain ID for Mainnet.
@@ -201,17 +208,16 @@ impl Display for OneInchSolver {
 
 #[cfg(test)]
 mod tests {
-    use super::{api::MockOneInchClient, *};
+    use super::*;
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use crate::liquidity::LimitOrder;
-    use crate::solver::oneinch_solver::api::Protocols;
-    use crate::solver::oneinch_solver::api::Spender;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use maplit::hashset;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderCreation, OrderKind};
+    use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
     use shared::{
         dummy_contract,
         transport::{create_env_test_transport, create_test_transport},

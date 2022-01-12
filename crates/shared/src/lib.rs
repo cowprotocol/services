@@ -14,6 +14,7 @@ pub mod http_solver;
 pub mod maintenance;
 pub mod metrics;
 pub mod network;
+pub mod oneinch_api;
 pub mod paraswap_api;
 pub mod price_estimation;
 pub mod recent_block_cache;
