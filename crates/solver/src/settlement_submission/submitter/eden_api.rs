@@ -1,7 +1,10 @@
 //! https://docs.edennetwork.io/for-traders/getting-started
 
-use super::super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting};
-use anyhow::Result;
+use super::{
+    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    CancelHandle,
+};
+use anyhow::{anyhow, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder};
 use reqwest::Client;
 
@@ -27,7 +30,20 @@ impl TransactionSubmitting for EdenApi {
         super::common::submit_raw_transaction(self.client.clone(), URL, tx).await
     }
 
-    async fn cancel_transaction(&self, _id: &TransactionHandle) -> Result<()> {
+    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<()> {
+        match super::common::submit_raw_transaction(
+            self.client.clone(),
+            URL,
+            id.noop_transaction.clone(),
+        )
+        .await
+        {
+            Ok(_) => Ok(()),
+            Err(err) => Err(anyhow!("{:?}", err)),
+        }
+    }
+
+    async fn mark_transaction_outdated(&self, _id: &TransactionHandle) -> Result<()> {
         Ok(())
     }
 }

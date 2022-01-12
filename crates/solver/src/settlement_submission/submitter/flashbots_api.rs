@@ -1,4 +1,7 @@
-use super::super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting};
+use super::{
+    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    CancelHandle,
+};
 use anyhow::Result;
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder};
 use reqwest::Client;
@@ -25,7 +28,11 @@ impl TransactionSubmitting for FlashbotsApi {
         super::common::submit_raw_transaction(self.client.clone(), URL, tx).await
     }
 
-    async fn cancel_transaction(&self, _id: &TransactionHandle) -> Result<()> {
+    async fn cancel_transaction(&self, _id: &CancelHandle) -> Result<()> {
+        Ok(())
+    }
+
+    async fn mark_transaction_outdated(&self, _id: &TransactionHandle) -> Result<()> {
         Ok(())
     }
 }
