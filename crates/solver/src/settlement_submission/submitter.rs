@@ -186,7 +186,15 @@ impl<'a> Submitter<'a> {
                 Ok(None)
             },
             _ = deadline_future.fuse() => {
-                tracing::info!("stopping submission because deadline has been reached");
+                tracing::info!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
+
+                if let Some(transaction) = transactions.last() {
+                    if let Ok(gas_price) = self.gas_price_estimator.estimate_with_limits(21000., Duration::from_secs(0)).await {
+                        if let Err(err) = self.cancel_transaction(transaction, &gas_price, nonce).await {
+                            tracing::warn!("cancellation failed: {:?}", err);
+                        }
+                    }
+                }
                 Ok(None)
             },
         };
@@ -211,6 +219,11 @@ impl<'a> Submitter<'a> {
                 "waiting up to {} seconds to see if a transaction was mined",
                 MINED_TX_PROPAGATE_TIME.as_secs()
             );
+
+            let transactions = transactions
+                .into_iter()
+                .map(|handle| handle.tx_hash)
+                .collect::<Vec<_>>();
 
             loop {
                 if let Some(receipt) =
@@ -268,11 +281,10 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         nonce: U256,
         params: &SubmitterParams,
-        transactions: &mut Vec<H256>,
+        transactions: &mut Vec<TransactionHandle>,
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        // gas price and raw signed transaction
         let mut previous_tx: Option<(EstimatedGasPrice, TransactionHandle)> = None;
 
         loop {
@@ -300,15 +312,10 @@ impl<'a> Submitter<'a> {
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_tx)) = previous_tx {
-                    let cancel_handle = CancelHandle {
-                        submitted_transaction: previous_tx,
-                        noop_transaction: self.build_noop_transaction(
-                            &gas_price.bump(3.),
-                            nonce,
-                            gas_limit,
-                        ),
-                    };
-                    if let Err(err) = self.submit_api.cancel_transaction(&cancel_handle).await {
+                    if let Err(err) = self
+                        .cancel_transaction(&previous_tx, &gas_price, nonce)
+                        .await
+                    {
                         tracing::warn!("cancellation failed: {:?}", err);
                     }
                 }
@@ -342,7 +349,7 @@ impl<'a> Submitter<'a> {
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
                     previous_tx = Some((gas_price, handle));
-                    transactions.push(handle.tx_hash)
+                    transactions.push(handle)
                 }
                 Err(err) => match err {
                     SubmitApiError::InvalidNonce => {
@@ -378,12 +385,11 @@ impl<'a> Submitter<'a> {
             .gas_price(gas_price)
     }
 
-    /// Prepare transaction for simulation
+    /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
     fn build_noop_transaction(
         &self,
         gas_price: &EstimatedGasPrice,
         nonce: U256,
-        gas_limit: f64,
     ) -> TransactionBuilder<DynTransport> {
         let gas_price = if let Some(eip1559) = gas_price.eip1559 {
             (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
@@ -396,7 +402,21 @@ impl<'a> Submitter<'a> {
             .to(self.account.address())
             .nonce(nonce)
             .gas_price(gas_price)
-            .gas(U256::from_f64_lossy(gas_limit))
+            .gas(21000.into())
+    }
+
+    /// Prepare all data needed for cancellation of previously submitted transaction and execute cancellation
+    async fn cancel_transaction(
+        &self,
+        transaction: &TransactionHandle,
+        gas_price: &EstimatedGasPrice,
+        nonce: U256,
+    ) -> Result<()> {
+        let cancel_handle = CancelHandle {
+            submitted_transaction: *transaction,
+            noop_transaction: self.build_noop_transaction(&gas_price.bump(3.), nonce),
+        };
+        self.submit_api.cancel_transaction(&cancel_handle).await
     }
 }
 
