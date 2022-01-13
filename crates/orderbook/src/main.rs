@@ -482,7 +482,7 @@ async fn main() {
                         }),
                         &estimator.name(),
                     )),
-                    PriceEstimatorType::Quasimodo => Box::new(instrumented(
+                    PriceEstimatorType::Quasimodo => Box::new(instrumented_and_cached(
                         Box::new(QuasimodoPriceEstimator {
                             api: Arc::new(DefaultHttpSolverApi {
                                 name: "quasimodo-price-estimator",
