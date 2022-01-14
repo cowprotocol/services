@@ -1,6 +1,6 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
-use futures::{future::TryFutureExt, try_join};
+use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
@@ -305,14 +305,17 @@ impl MinFeeCalculator {
             in_amount: self.native_token_price_estimation_amount,
             kind: OrderKind::Buy,
         };
-        let (gas_estimate, buy_token_estimate, native_token_estimate) = try_join!(
+        let queries = [buy_token_query, native_token_query];
+        let (gas_estimate, estimates) = futures::join!(
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::from),
-            self.price_estimator.estimate(&buy_token_query),
-            self.price_estimator.estimate(&native_token_query)
-        )?;
-        let gas_price = gas_estimate.effective_gas_price();
+            self.price_estimator.estimates(&queries),
+        );
+        let gas_price = gas_estimate?.effective_gas_price();
+        let mut estimates = estimates.into_iter();
+        let buy_token_estimate = estimates.next().unwrap()?;
+        let native_token_estimate = estimates.next().unwrap()?;
         let gas_amount = buy_token_estimate.gas.to_f64_lossy();
         let fee_in_eth = gas_price * gas_amount;
         let sell_token_price = native_token_estimate.price_in_sell_token_f64(&native_token_query);
