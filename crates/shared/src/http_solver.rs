@@ -138,18 +138,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 impl DefaultHttpSolverApi {
     fn generate_instance_name(&self) -> String {
         let now = chrono::Utc::now();
-        format!(
-            "{}_{}_{}",
-            now.to_string(),
-            self.network_name,
-            self.chain_id
-        )
-        .chars()
-        .map(|x| match x {
-            ' ' => '_',
-            '/' => '_',
-            _ => x,
-        })
-        .collect()
+        format!("{}_{}_{}", now, self.network_name, self.chain_id)
+            .chars()
+            .map(|x| match x {
+                ' ' => '_',
+                '/' => '_',
+                _ => x,
+            })
+            .collect()
     }
 }
