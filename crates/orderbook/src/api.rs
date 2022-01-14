@@ -21,6 +21,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
 use std::{convert::Infallible, sync::Arc};
 use warp::{
     hyper::StatusCode,
@@ -33,54 +34,150 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     quoter: Arc<OrderQuoter>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let create_order = create_order::create_order(orderbook.clone()).boxed();
-    let get_orders = get_orders::get_orders(orderbook.clone()).boxed();
-    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone()).boxed();
-    let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone()).boxed();
-    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone()).boxed();
-    let get_solvable_orders_v2 =
-        get_solvable_orders_v2::get_solvable_orders(orderbook.clone()).boxed();
-    let get_trades = get_trades::get_trades(database).boxed();
-    let cancel_order = cancel_order::cancel_order(orderbook.clone()).boxed();
-    let get_amount_estimate =
-        get_markets::get_amount_estimate(quoter.price_estimator.clone()).boxed();
-    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone()).boxed();
-    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone()).boxed();
-    let get_user_orders = get_user_orders::get_user_orders(orderbook.clone()).boxed();
-    let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook).boxed();
-    let post_quote = post_quote::post_quote(quoter).boxed();
+    // Routes for api v1.
+
+    // Note that we add a string with endpoint's name to all responses.
+    // This string will be used later to report metrics.
+    // It is not used to form the actual server response.
+
+    let create_order = create_order::create_order(orderbook.clone())
+        .map(|result| (result, "v1/create_order"))
+        .boxed();
+    let get_orders = get_orders::get_orders(orderbook.clone())
+        .map(|result| (result, "v1/get_orders"))
+        .boxed();
+    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone())
+        .map(|result| (result, "v1/fee_info"))
+        .boxed();
+    let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone())
+        .map(|result| (result, "v1/get_order"))
+        .boxed();
+    let get_solvable_orders = get_solvable_orders::get_solvable_orders(orderbook.clone())
+        .map(|result| (result, "v1/get_solvable_orders"))
+        .boxed();
+    let get_trades = get_trades::get_trades(database)
+        .map(|result| (result, "v1/get_trades"))
+        .boxed();
+    let cancel_order = cancel_order::cancel_order(orderbook.clone())
+        .map(|result| (result, "v1/cancel_order"))
+        .boxed();
+    let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone())
+        .map(|result| (result, "v1/get_amount_estimate"))
+        .boxed();
+    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone())
+        .map(|result| (result, "v1/get_fee_and_quote_sell"))
+        .boxed();
+    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone())
+        .map(|result| (result, "v1/get_fee_and_quote_buy"))
+        .boxed();
+    let get_user_orders = get_user_orders::get_user_orders(orderbook.clone())
+        .map(|result| (result, "v1/get_user_orders"))
+        .boxed();
+    let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook.clone())
+        .map(|result| (result, "v1/get_orders_by_tx"))
+        .boxed();
+    let post_quote = post_quote::post_quote(quoter)
+        .map(|result| (result, "v1/post_quote"))
+        .boxed();
+
+    let routes_v1 = warp::path!("api" / "v1" / ..)
+        .and(
+            create_order
+                .or(get_orders)
+                .unify()
+                .or(fee_info)
+                .unify()
+                .or(get_order)
+                .unify()
+                .or(get_solvable_orders)
+                .unify()
+                .or(get_trades)
+                .unify()
+                .or(cancel_order)
+                .unify()
+                .or(get_amount_estimate)
+                .unify()
+                .or(get_fee_and_quote_sell)
+                .unify()
+                .or(get_fee_and_quote_buy)
+                .unify()
+                .or(get_user_orders)
+                .unify()
+                .or(get_orders_by_tx)
+                .unify()
+                .or(post_quote)
+                .unify(),
+        )
+        .untuple_one();
+
+    // Routes for api v2.
+
+    let get_solvable_orders_v2 = get_solvable_orders_v2::get_solvable_orders(orderbook)
+        .map(|result| (result, "v2/get_solvable_orders"))
+        .boxed();
+
+    let routes_v2 = warp::path!("api" / "v2" / ..)
+        .and(get_solvable_orders_v2)
+        .untuple_one();
+
+    // Fallback route that handles all 404s.
+
+    // Since we `.map()` all requests to collect metrics, we need to report
+    // all 404s as `Ok(ApiReply)`, and not `Err(Rejection)`.
+
+    let routes_fallback = warp::any()
+        .and_then(|| async move {
+            Result::<(ApiReply, &str), Infallible>::Ok((
+                with_status(
+                    error("NotFound", "You've passed an invalid URL"),
+                    StatusCode::NOT_FOUND,
+                ),
+                "unknown_method",
+            ))
+        })
+        .untuple_one()
+        .boxed();
+
+    // Routes combined
+
+    let routes = routes_v1.or(routes_v2).unify().or(routes_fallback).unify();
+
+    // Metrics
+
+    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    let routes_with_metrics = warp::any()
+        .map(Instant::now) // Start a timer at the beginning of response processing
+        .and(routes) // Parse requests
+        .map(|timer: Instant, reply: ApiReply, method: &str| {
+            let response = reply.into_response();
+
+            metrics
+                .requests_complete
+                .with_label_values(&[method, response.status().as_str()])
+                .inc();
+            metrics
+                .requests_duration_seconds
+                .with_label_values(&[method])
+                .observe(timer.elapsed().as_secs_f64());
+
+            response
+        });
+
+    // Final setup
+
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-    let routes_with_labels = (warp::path!("api" / "v1" / ..)
-        .and(create_order.with(handle_metrics("create_order"))))
-    .or(warp::path!("api" / "v1" / ..).and(get_orders.with(handle_metrics("get_orders"))))
-    .or(warp::path!("api" / "v1" / ..).and(fee_info.with(handle_metrics("fee_info"))))
-    .or(warp::path!("api" / "v1" / ..).and(get_order.with(handle_metrics("get_order"))))
-    .or(warp::path!("api" / "v1" / ..)
-        .and(get_solvable_orders.with(handle_metrics("get_solvable_orders"))))
-    .or(warp::path!("api" / "v2" / ..)
-        .and(get_solvable_orders_v2.with(handle_metrics("get_solvable_orders"))))
-    .or(warp::path!("api" / "v1" / ..).and(get_trades.with(handle_metrics("get_trades"))))
-    .or(warp::path!("api" / "v1" / ..).and(cancel_order.with(handle_metrics("cancel_order"))))
-    .or(warp::path!("api" / "v1" / ..)
-        .and(get_amount_estimate.with(handle_metrics("get_amount_estimate"))))
-    .or(warp::path!("api" / "v1" / ..)
-        .and(get_fee_and_quote_sell.with(handle_metrics("get_fee_and_quote_sell"))))
-    .or(warp::path!("api" / "v1" / ..)
-        .and(get_fee_and_quote_buy.with(handle_metrics("get_fee_and_quote_buy"))))
-    .or(warp::path!("api" / "v1" / ..).and(get_user_orders.with(handle_metrics("get_user_orders"))))
-    .or(warp::path!("api" / "v1" / ..).and(get_orders_by_tx.with(handle_metrics("get_user_by_tx"))))
-    .or(warp::path!("api" / "v1" / ..).and(post_quote.with(handle_metrics("post_quote"))));
 
-    // Give each request a unique tracing span. This allows us to match log statements across concurrent API requests.
+    // Give each request a unique tracing span.
+    // This allows us to match log statements across concurrent API requests.
     let request_id = Arc::new(AtomicUsize::new(0));
     let tracing_span = warp::trace(move |_| {
         tracing::info_span!("request", id = request_id.fetch_add(1, Ordering::SeqCst))
     });
 
-    routes_with_labels
+    routes_with_metrics
         .recover(handle_rejection)
         .with(cors)
         .with(warp::log::log("orderbook::api::request_summary"))
@@ -91,32 +188,31 @@ pub type ApiReply = warp::reply::WithStatus<warp::reply::Json>;
 
 // We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
-    Ok(err.default_response())
-}
+    let response = err.default_response();
 
-fn handle_metrics(endpoint: impl Into<String>) -> warp::log::Log<impl Fn(warp::log::Info) + Clone> {
-    let metrics = ApiMetrics::instance(get_metric_storage_registry(), endpoint.into()).unwrap();
+    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    metrics
+        .requests_rejected
+        .with_label_values(&[response.status().as_str()])
+        .inc();
 
-    warp::log::custom(move |info: warp::log::Info| {
-        metrics
-            .requests_complete
-            .with_label_values(&[info.status().as_str()])
-            .inc();
-        metrics
-            .requests_duration_seconds
-            .observe(info.elapsed().as_secs_f64());
-    })
+    Ok(response)
 }
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
-#[metric(subsystem = "api", labels("endpoint"))]
+#[metric(subsystem = "api")]
 struct ApiMetrics {
     /// Number of completed API requests.
-    #[metric(labels("status_code"))]
+    #[metric(labels("method", "status_code"))]
     requests_complete: prometheus::CounterVec,
 
+    /// Number of rejected API requests.
+    #[metric(labels("status_code"))]
+    requests_rejected: prometheus::CounterVec,
+
     /// Execution time for each API request.
-    requests_duration_seconds: prometheus::Histogram,
+    #[metric(labels("method"))]
+    requests_duration_seconds: prometheus::HistogramVec,
 }
 
 #[derive(Serialize)]
