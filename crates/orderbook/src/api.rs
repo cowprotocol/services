@@ -108,7 +108,8 @@ pub fn handle_all_routes(
                 .or(post_quote)
                 .unify(),
         )
-        .untuple_one();
+        .untuple_one()
+        .boxed();
 
     // Routes for api v2.
 
@@ -140,7 +141,12 @@ pub fn handle_all_routes(
 
     // Routes combined
 
-    let routes = routes_v1.or(routes_v2).unify().or(routes_fallback).unify();
+    let routes = routes_v1
+        .or(routes_v2)
+        .unify()
+        .or(routes_fallback)
+        .unify()
+        .boxed();
 
     // Metrics
 
@@ -161,7 +167,8 @@ pub fn handle_all_routes(
                 .observe(timer.elapsed().as_secs_f64());
 
             response
-        });
+        })
+        .boxed();
 
     // Final setup
 
