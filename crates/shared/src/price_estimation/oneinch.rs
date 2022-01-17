@@ -1,17 +1,16 @@
 use super::gas;
-use crate::oneinch_api::{OneInchClient, RestResponse, SellOrderQuoteQuery};
+use crate::oneinch_api::{OneInchClient, ProtocolCache, RestResponse, SellOrderQuoteQuery};
 use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use anyhow::Result;
-use cached::{Cached, TimedSizedCache};
 use futures::future;
 use model::order::OrderKind;
 use primitive_types::U256;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 pub struct OneInchPriceEstimator {
     api: Arc<dyn OneInchClient>,
     disabled_protocols: Vec<String>,
-    allowed_protocols: Arc<Mutex<TimedSizedCache<Vec<String>, Vec<String>>>>,
+    protocol_cache: ProtocolCache,
 }
 
 impl OneInchPriceEstimator {
@@ -26,7 +25,10 @@ impl OneInchPriceEstimator {
                 from_token_address: query.sell_token,
                 to_token_address: query.buy_token,
                 amount: query.in_amount,
-                protocols: self.get_protocol_argument().await?,
+                protocols: self
+                    .protocol_cache
+                    .get_allowed_protocols(&self.disabled_protocols, self.api.as_ref())
+                    .await?,
                 fee: None,
                 gas_limit: None,
                 connector_tokens: None,
@@ -54,39 +56,8 @@ impl OneInchPriceEstimator {
         Self {
             api,
             disabled_protocols,
-            allowed_protocols: Arc::new(Mutex::new(
-                TimedSizedCache::with_size_and_lifespan_and_refresh(1, 60, false),
-            )),
+            protocol_cache: ProtocolCache::default(),
         }
-    }
-
-    async fn get_protocol_argument(&self) -> Result<Option<Vec<String>>> {
-        if self.disabled_protocols.is_empty() {
-            return Ok(None);
-        }
-
-        if let Some(allowed_protocols) = self
-            .allowed_protocols
-            .lock()
-            .unwrap()
-            .cache_get(&self.disabled_protocols)
-        {
-            return Ok(Some(allowed_protocols.clone()));
-        }
-
-        let current_protocols = self.api.get_protocols().await?.protocols;
-        let allowed_protocols: Vec<String> = current_protocols
-            .into_iter()
-            // linear search through the Vec is okay because it's very small
-            .filter(|protocol| !self.disabled_protocols.contains(protocol))
-            .collect();
-
-        self.allowed_protocols
-            .lock()
-            .unwrap()
-            .cache_set(self.disabled_protocols.clone(), allowed_protocols.clone());
-
-        Ok(Some(allowed_protocols))
     }
 }
 
@@ -120,7 +91,7 @@ impl PriceEstimating for OneInchPriceEstimator {
 mod tests {
     use super::*;
     use crate::oneinch_api::{
-        MockOneInchClient, OneInchClientImpl, Protocols, RestError, SellOrderQuote, Token,
+        MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token,
     };
     use reqwest::Client;
 
@@ -242,52 +213,6 @@ mod tests {
             est,
             Err(PriceEstimationError::Other(e)) if e.to_string() == "malformed JSON"
         ));
-    }
-
-    #[tokio::test]
-    async fn filter_out_disabled_protocols_and_cache_them() {
-        let mut one_inch = MockOneInchClient::new();
-        // We are estimating 2 orders but fetch the protocols only once
-        one_inch.expect_get_protocols().times(1).returning(|| {
-            Ok(Protocols {
-                protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
-            })
-        });
-        one_inch
-            .expect_get_sell_order_quote()
-            .times(2)
-            .withf(|query| {
-                let protocols = query.protocols.as_ref().unwrap();
-                protocols.len() == 1 && protocols[0] == "UNISWAP_V3"
-            })
-            .returning(|_| {
-                Ok(RestResponse::<_>::Ok(SellOrderQuote {
-                    from_token: Token {
-                        address: testlib::tokens::WETH,
-                    },
-                    to_token: Token {
-                        address: testlib::tokens::GNO,
-                    },
-                    to_token_amount: 808_069_760_400_778_577u128.into(),
-                    from_token_amount: 100_000_000_000_000_000u128.into(),
-                    protocols: Vec::default(),
-                    estimated_gas: 189_386,
-                }))
-            });
-
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), vec!["PMM1".to_string()]);
-
-        for _ in 0..=1 {
-            estimator
-                .estimate(&Query {
-                    sell_token: testlib::tokens::WETH,
-                    buy_token: testlib::tokens::GNO,
-                    in_amount: 1_000_000_000_000_000_000u128.into(),
-                    kind: OrderKind::Sell,
-                })
-                .await
-                .unwrap();
-        }
     }
 
     #[tokio::test]

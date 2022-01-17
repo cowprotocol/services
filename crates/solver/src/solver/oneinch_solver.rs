@@ -21,14 +21,12 @@ use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::oneinch_api::{
-    Amount, OneInchClient, OneInchClientImpl, RestError, RestResponse, Swap, SwapQuery,
+    Amount, OneInchClient, OneInchClientImpl, ProtocolCache, RestError, RestResponse, Swap,
+    SwapQuery,
 };
 use shared::solver_utils::Slippage;
 use shared::Web3;
-use std::{
-    collections::HashSet,
-    fmt::{self, Display, Formatter},
-};
+use std::fmt::{self, Display, Formatter};
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
 #[derive(Derivative)]
@@ -36,11 +34,12 @@ use std::{
 pub struct OneInchSolver {
     account: Account,
     settlement_contract: GPv2Settlement,
-    disabled_protocols: HashSet<String>,
+    disabled_protocols: Vec<String>,
     #[derivative(Debug = "ignore")]
     client: Box<dyn OneInchClient>,
     #[derivative(Debug = "ignore")]
     allowance_fetcher: Box<dyn AllowanceManaging>,
+    protocol_cache: ProtocolCache,
 }
 
 impl From<RestError> for SettlementError {
@@ -80,29 +79,12 @@ impl OneInchSolver {
                 client,
             )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
+            protocol_cache: ProtocolCache::default(),
         })
     }
 }
 
 impl OneInchSolver {
-    /// Gets the list of supported protocols for the 1Inch solver.
-    async fn supported_protocols(&self) -> Result<Option<Vec<String>>> {
-        let protocols = if self.disabled_protocols.is_empty() {
-            None
-        } else {
-            Some(
-                self.client
-                    .get_protocols()
-                    .await?
-                    .protocols
-                    .into_iter()
-                    .filter(|protocol| !self.disabled_protocols.contains(protocol))
-                    .collect(),
-            )
-        };
-        Ok(protocols)
-    }
-
     /// Settles a single sell order against a 1Inch swap using the specified protocols.
     async fn settle_order_with_protocols(
         &self,
@@ -187,7 +169,10 @@ impl SingleOrderSolving for OneInchSolver {
             // 1Inch only supports sell orders
             return Ok(None);
         }
-        let protocols = self.supported_protocols().await?;
+        let protocols = self
+            .protocol_cache
+            .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
+            .await?;
         self.settle_order_with_protocols(order, protocols).await
     }
 
@@ -214,7 +199,6 @@ mod tests {
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
-    use maplit::hashset;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderCreation, OrderKind};
     use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
@@ -232,9 +216,10 @@ mod tests {
         OneInchSolver {
             account: account(),
             settlement_contract,
-            disabled_protocols: HashSet::new(),
+            disabled_protocols: Vec::default(),
             client: Box::new(client),
             allowance_fetcher: Box::new(allowance_fetcher),
+            protocol_cache: ProtocolCache::default(),
         }
     }
 
@@ -253,15 +238,6 @@ mod tests {
                 .unwrap()
                 .is_none()
         );
-    }
-
-    #[tokio::test]
-    async fn returns_none_when_no_protocols_are_disabled() {
-        let protocols = dummy_solver(MockOneInchClient::new(), MockAllowanceManaging::new())
-            .supported_protocols()
-            .await
-            .unwrap();
-        assert!(protocols.is_none());
     }
 
     #[tokio::test]
@@ -361,7 +337,7 @@ mod tests {
         });
 
         let solver = OneInchSolver {
-            disabled_protocols: hashset!["BadProtocol".to_string(), "VeryBadProtocol".to_string()],
+            disabled_protocols: vec!["BadProtocol".to_string(), "VeryBadProtocol".to_string()],
             ..dummy_solver(client, allowance_fetcher)
         };
 

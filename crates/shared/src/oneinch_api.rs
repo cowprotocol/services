@@ -4,11 +4,14 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 use crate::solver_utils::{deserialize_prefixed_hex, Slippage};
 use anyhow::{ensure, Context, Result};
+use cached::{Cached, TimedCache};
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use std::fmt::{self, Display, Formatter};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// Parts to split a swap.
 ///
@@ -382,6 +385,57 @@ where
     let response = client.get(url).send().await?.text().await;
     tracing::debug!("Response from 1inch API: {:?}", response);
     serde_json::from_str(&response?).context("1inch result parsing failed")
+}
+
+#[derive(Debug, Clone)]
+pub struct ProtocolCache(Arc<Mutex<TimedCache<(), Vec<String>>>>);
+
+impl ProtocolCache {
+    pub fn new(cache_validity_in_seconds: Duration) -> Self {
+        Self(Arc::new(Mutex::new(TimedCache::with_lifespan_and_refresh(
+            cache_validity_in_seconds.as_secs(),
+            false,
+        ))))
+    }
+
+    pub async fn get_all_protocols(&self, api: &dyn OneInchClient) -> Result<Vec<String>> {
+        if let Some(cached) = self.0.lock().unwrap().cache_get(&()) {
+            return Ok(cached.clone());
+        }
+
+        let all_protocols = api.get_protocols().await?.protocols;
+        // In the mean time the cache could have already been populated with new protocols,
+        // which we would now overwrite. This is fine.
+        self.0.lock().unwrap().cache_set((), all_protocols.clone());
+
+        Ok(all_protocols)
+    }
+
+    pub async fn get_allowed_protocols(
+        &self,
+        disabled_protocols: &[String],
+        api: &dyn OneInchClient,
+    ) -> Result<Option<Vec<String>>> {
+        if disabled_protocols.is_empty() {
+            return Ok(None);
+        }
+
+        let allowed_protocols = self
+            .get_all_protocols(api)
+            .await?
+            .into_iter()
+            // linear search through the slice is okay because it's very small
+            .filter(|protocol| !disabled_protocols.contains(protocol))
+            .collect();
+
+        Ok(Some(allowed_protocols))
+    }
+}
+
+impl Default for ProtocolCache {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(60))
+    }
 }
 
 #[cfg(test)]
@@ -904,5 +958,39 @@ mod tests {
             .await
             .unwrap();
         println!("{:#?}", swap);
+    }
+
+    #[tokio::test]
+    async fn allowing_all_protocols_will_not_use_api() {
+        let mut api = MockOneInchClient::new();
+        api.expect_get_protocols().times(0);
+        let allowed_protocols = ProtocolCache::default()
+            .get_allowed_protocols(&Vec::default(), &api)
+            .await;
+        matches!(allowed_protocols, Ok(None));
+    }
+
+    #[tokio::test]
+    async fn allowed_protocols_get_cached() {
+        let mut api = MockOneInchClient::new();
+        // only 1 API call when calling get_allowed_protocols 2 times
+        api.expect_get_protocols().times(1).returning(|| {
+            Ok(Protocols {
+                protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
+            })
+        });
+
+        let cache = ProtocolCache::default();
+        let disabled_protocols = vec!["PMM1".to_string()];
+
+        for _ in 0..2 {
+            let allowed_protocols = cache
+                .get_allowed_protocols(&disabled_protocols, &api)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(1, allowed_protocols.len());
+            assert_eq!("UNISWAP_V3", allowed_protocols[0]);
+        }
     }
 }
