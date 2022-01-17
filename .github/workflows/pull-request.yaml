@@ -7,6 +7,7 @@ on:
     branches: [main]
 jobs:
   rust-misc:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
@@ -20,6 +21,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-features --all-targets -- -D warnings
   rust-tests:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     env:
       # Shrink artifact size by not including debug info. Makes build faster and shrinks cache.
@@ -94,12 +96,14 @@ jobs:
       # tests requiring a local ethereum node
       - run: cargo test local_node -- --ignored --test-threads 1
   openapi:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - run: npm install @apidevtools/swagger-cli
       - run: node_modules/.bin/swagger-cli validate crates/orderbook/openapi.yml
   coverage:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
