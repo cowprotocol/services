@@ -203,6 +203,14 @@ struct Arguments {
         use_delimiter = true)]
     transaction_strategy: Vec<TransactionStrategyArg>,
 
+    /// The API endpoint of the Eden network for transaction submission.
+    #[structopt(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
+    eden_api_url: Url,
+
+    /// The API endpoint of the Flashbots network for transaction submission.
+    #[structopt(long, env, default_value = "https://rpc.flashbots.net")]
+    flashbots_api_url: Url,
+
     /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[structopt(
         long,
@@ -575,11 +583,15 @@ async fn main() {
                 })
             }
             TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
-                submit_api: Box::new(EdenApi::new(client.clone())),
+                submit_api: Box::new(
+                    EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
+                ),
                 additional_tip: args.additional_eden_tip,
             }),
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
-                submit_api: Box::new(FlashbotsApi::new(client.clone())),
+                submit_api: Box::new(
+                    FlashbotsApi::new(client.clone(), args.flashbots_api_url.clone()).unwrap(),
+                ),
                 additional_tip: args.additional_flashbot_tip,
             }),
             TransactionStrategyArg::CustomNodes => {

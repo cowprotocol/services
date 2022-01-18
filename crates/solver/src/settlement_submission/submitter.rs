@@ -470,7 +470,7 @@ mod tests {
         let private_key: PrivateKey = std::env::var("PRIVATE_KEY").unwrap().parse().unwrap();
         let account = Account::Offline(private_key, Some(chain_id));
         let contract = crate::get_settlement_contract(&web3).await.unwrap();
-        let flashbots_api = FlashbotsApi::new(Client::new());
+        let flashbots_api = FlashbotsApi::new(Client::new(), "https://rpc.flashbots.net").unwrap();
         let mut header = reqwest::header::HeaderMap::new();
         header.insert(
             "AUTHORIZATION",
