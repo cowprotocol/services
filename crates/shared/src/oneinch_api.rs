@@ -77,9 +77,10 @@ pub struct SellOrderQuoteQuery {
 }
 
 impl SellOrderQuoteQuery {
-    fn into_url(self, base_url: &Url) -> Url {
+    fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
+        let endpoint = format!("v4.0/{}/quote", chain_id);
         let mut url = base_url
-            .join("v4.0/1/quote")
+            .join(&endpoint)
             .expect("unexpectedly invalid URL segment");
 
         url.query_pairs_mut()
@@ -182,9 +183,10 @@ pub struct SwapQuery {
 
 impl SwapQuery {
     /// Encodes the swap query as
-    fn into_url(self, base_url: &Url) -> Url {
+    fn into_url(self, base_url: &Url, chain_id: u64) -> Url {
+        let endpoint = format!("v3.0/{}/swap", chain_id);
         let mut url = base_url
-            .join("v3.0/1/swap")
+            .join(&endpoint)
             .expect("unexpectedly invalid URL segment");
         url.query_pairs_mut()
             .append_pair("fromTokenAddress", &addr2str(self.from_token_address))
@@ -333,16 +335,26 @@ pub trait OneInchClient: Send + Sync {
 pub struct OneInchClientImpl {
     client: Client,
     base_url: Url,
+    chain_id: u64,
 }
 
 impl OneInchClientImpl {
     pub const DEFAULT_URL: &'static str = "https://api.1inch.exchange/";
 
+    // Right now only mainnet is relevant but in the future 1Inch will also run on Gnosis Chain.
+    pub const SUPPORTED_CHAINS: &'static [u64] = &[1];
+
     /// Create a new 1Inch HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl, client: Client) -> Result<Self> {
+    pub fn new(base_url: impl IntoUrl, client: Client, chain_id: u64) -> Result<Self> {
+        ensure!(
+            Self::SUPPORTED_CHAINS.contains(&chain_id),
+            "1Inch is not supported on this chain"
+        );
+
         Ok(Self {
             client,
             base_url: base_url.into_url()?,
+            chain_id,
         })
     }
 }
@@ -350,28 +362,30 @@ impl OneInchClientImpl {
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
     async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>> {
-        logged_query(&self.client, query.into_url(&self.base_url)).await
+        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
     ) -> Result<RestResponse<SellOrderQuote>> {
-        logged_query(&self.client, query.into_url(&self.base_url)).await
+        logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
     async fn get_spender(&self) -> Result<Spender> {
+        let endpoint = format!("v3.0/{}/approve/spender", self.chain_id);
         let url = self
             .base_url
-            .join("v3.0/1/approve/spender")
+            .join(&endpoint)
             .expect("unexpectedly invalid URL");
         logged_query(&self.client, url).await
     }
 
     async fn get_protocols(&self) -> Result<Protocols> {
+        let endpoint = format!("v3.0/{}/protocols", self.chain_id);
         let url = self
             .base_url
-            .join("v3.0/1/protocols")
+            .join(&endpoint)
             .expect("unexpectedly invalid URL");
         logged_query(&self.client, url).await
     }
@@ -481,7 +495,7 @@ mod tests {
             main_route_parts: None,
             parts: None,
         }
-        .into_url(&base_url);
+        .into_url(&base_url, 1);
 
         assert_eq!(
             url.as_str(),
@@ -510,7 +524,7 @@ mod tests {
             main_route_parts: Some(Amount::new(28).unwrap()),
             parts: Some(Amount::new(42).unwrap()),
         }
-        .into_url(&base_url);
+        .into_url(&base_url, 1);
 
         assert_eq!(
             url.as_str(),
@@ -663,7 +677,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_swap() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_swap(SwapQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -686,7 +700,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_swap_fully_parameterized() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_swap(SwapQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -709,7 +723,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_protocols() {
-        let protocols = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let protocols = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_protocols()
             .await
@@ -720,7 +734,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_spender_address() {
-        let spender = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let spender = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_spender()
             .await
@@ -745,7 +759,7 @@ mod tests {
             parts: None,
             gas_price: None,
         }
-        .into_url(&base_url);
+        .into_url(&base_url, 1);
 
         assert_eq!(
             url.as_str(),
@@ -776,7 +790,7 @@ mod tests {
             parts: Some(Amount::new(43).unwrap()),
             gas_price: Some(200_000.into()),
         }
-        .into_url(&base_url);
+        .into_url(&base_url, 1);
 
         assert_eq!(
             url.as_str(),
@@ -912,7 +926,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_sell_order_quote() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_sell_order_quote(SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -936,7 +950,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn oneinch_sell_order_quote_fully_parameterized() {
-        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new())
+        let swap = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1)
             .unwrap()
             .get_sell_order_quote(SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -992,5 +1006,11 @@ mod tests {
             assert_eq!(1, allowed_protocols.len());
             assert_eq!("UNISWAP_V3", allowed_protocols[0]);
         }
+    }
+
+    #[test]
+    fn creation_fails_on_unsupported_chain() {
+        let api = OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 2);
+        assert!(api.is_err());
     }
 }

@@ -13,7 +13,7 @@ use crate::{
     liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, ensure, Result};
+use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes};
@@ -51,9 +51,6 @@ impl From<RestError> for SettlementError {
     }
 }
 
-/// Chain ID for Mainnet.
-const MAINNET_CHAIN_ID: u64 = 1;
-
 impl OneInchSolver {
     /// Creates a new 1Inch solver with a list of disabled protocols.
     pub fn with_disabled_protocols(
@@ -64,11 +61,6 @@ impl OneInchSolver {
         disabled_protocols: impl IntoIterator<Item = String>,
         client: Client,
     ) -> Result<Self> {
-        ensure!(
-            chain_id == MAINNET_CHAIN_ID,
-            "1Inch solver only supported on Mainnet",
-        );
-
         let settlement_address = settlement_contract.address();
         Ok(Self {
             account,
@@ -77,6 +69,7 @@ impl OneInchSolver {
             client: Box::new(OneInchClientImpl::new(
                 OneInchClientImpl::DEFAULT_URL,
                 client,
+                chain_id,
             )?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             protocol_cache: ProtocolCache::default(),
@@ -202,11 +195,7 @@ mod tests {
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderCreation, OrderKind};
     use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
-    use shared::{
-        dummy_contract,
-        transport::{create_env_test_transport, create_test_transport},
-    };
-    use std::iter;
+    use shared::{dummy_contract, transport::create_env_test_transport};
 
     fn dummy_solver(
         client: MockOneInchClient,
@@ -422,23 +411,6 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result.encoder.finish().interactions[1].len(), 1)
-    }
-
-    #[test]
-    fn returns_error_on_non_mainnet() {
-        let web3 = Web3::new(create_test_transport("http://never.used"));
-        let chain_id = 42;
-        let settlement = dummy_contract!(GPv2Settlement, H160::zero());
-
-        assert!(OneInchSolver::with_disabled_protocols(
-            account(),
-            web3,
-            settlement,
-            chain_id,
-            iter::empty(),
-            Client::new(),
-        )
-        .is_err())
     }
 
     #[tokio::test]

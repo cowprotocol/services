@@ -223,7 +223,7 @@ mod tests {
 
         let estimator = OneInchPriceEstimator::new(
             Arc::new(
-                OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new()).unwrap(),
+                OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap(),
             ),
             Vec::default(),
         );

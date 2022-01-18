@@ -519,7 +519,7 @@ async fn main() {
                     )),
                     PriceEstimatorType::OneInch => Box::new(instrumented_and_cached(
                         Box::new(OneInchPriceEstimator::new(
-                            Arc::new(OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, client.clone()).unwrap()),
+                            Arc::new(OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, client.clone(), chain_id).unwrap()),
                             args.disabled_one_inch_protocols.clone()
                         )),
                         &estimator.name(),
