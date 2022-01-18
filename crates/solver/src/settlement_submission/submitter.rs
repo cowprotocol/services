@@ -373,16 +373,10 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<DynTransport, ()> {
-        let gas_price = if let Some(eip1559) = gas_price.eip1559 {
-            (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
-        } else {
-            gas_price.legacy.into()
-        };
-
         settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(gas_price)
+            .gas_price(crate::into_gas_price(gas_price))
     }
 
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
@@ -391,17 +385,11 @@ impl<'a> Submitter<'a> {
         gas_price: &EstimatedGasPrice,
         nonce: U256,
     ) -> TransactionBuilder<DynTransport> {
-        let gas_price = if let Some(eip1559) = gas_price.eip1559 {
-            (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
-        } else {
-            gas_price.legacy.into()
-        };
-
         TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())
             .nonce(nonce)
-            .gas_price(gas_price)
+            .gas_price(crate::into_gas_price(gas_price))
             .gas(21000.into())
     }
 
