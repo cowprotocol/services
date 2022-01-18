@@ -66,7 +66,9 @@ where
                 .into()
             }),
             Output::Failure(body) => {
-                if body.error.message.contains("invalid nonce") {
+                if body.error.message.contains("invalid nonce")
+                    || body.error.message.contains("nonce too low")
+                {
                     Err(SubmitApiError::InvalidNonce)
                 } else if body
                     .error
