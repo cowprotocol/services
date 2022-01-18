@@ -105,6 +105,8 @@ jobs:
   coverage:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    # Runs on nightly so sometimes fails.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v2
       - name: Install Rust
