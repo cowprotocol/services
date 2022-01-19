@@ -19,25 +19,19 @@ impl OneInchPriceEstimator {
             return Err(PriceEstimationError::UnsupportedOrderType);
         }
 
+        let allowed_protocols = self
+            .protocol_cache
+            .get_allowed_protocols(&self.disabled_protocols, self.api.as_ref())
+            .await?;
+
         let quote = self
             .api
-            .get_sell_order_quote(SellOrderQuoteQuery {
-                from_token_address: query.sell_token,
-                to_token_address: query.buy_token,
-                amount: query.in_amount,
-                protocols: self
-                    .protocol_cache
-                    .get_allowed_protocols(&self.disabled_protocols, self.api.as_ref())
-                    .await?,
-                fee: None,
-                gas_limit: None,
-                connector_tokens: None,
-                complexity_level: None,
-                main_route_parts: None,
-                virtual_parts: None,
-                parts: None,
-                gas_price: None,
-            })
+            .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
+                query.sell_token,
+                query.buy_token,
+                query.in_amount,
+                allowed_protocols,
+            ))
             .await
             .map_err(PriceEstimationError::Other)?;
 

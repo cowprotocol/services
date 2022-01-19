@@ -21,8 +21,7 @@ use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
 use shared::oneinch_api::{
-    Amount, OneInchClient, OneInchClientImpl, ProtocolCache, RestError, RestResponse, Swap,
-    SwapQuery,
+    OneInchClient, OneInchClientImpl, ProtocolCache, RestError, RestResponse, Swap, SwapQuery,
 };
 use shared::solver_utils::Slippage;
 use shared::Web3;
@@ -97,24 +96,14 @@ impl OneInchSolver {
             .get_approval(order.sell_token, spender.address, order.sell_amount)
             .await?;
 
-        let query = SwapQuery {
-            from_token_address: order.sell_token,
-            to_token_address: order.buy_token,
-            amount: order.sell_amount,
-            from_address: self.settlement_contract.address(),
-            slippage: Slippage::percentage_from_basis_points(MAX_SLIPPAGE_BPS).unwrap(),
+        let query = SwapQuery::with_default_options(
+            order.sell_token,
+            order.buy_token,
+            order.sell_amount,
+            self.settlement_contract.address(),
             protocols,
-            // Disable balance/allowance checks, as the settlement contract
-            // does not hold balances to traded tokens.
-            disable_estimate: Some(true),
-            // Use at most 2 connector tokens
-            complexity_level: Some(Amount::new(2).unwrap()),
-            // Cap swap gas to 750K.
-            gas_limit: Some(750_000),
-            // Use only 3 main route for cheaper trades.
-            main_route_parts: Some(Amount::new(3).unwrap()),
-            parts: Some(Amount::new(3).unwrap()),
-        };
+            Slippage::percentage_from_basis_points(MAX_SLIPPAGE_BPS).unwrap(),
+        );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = match self.client.get_swap(query).await? {
@@ -317,7 +306,7 @@ mod tests {
             })
         });
         client.expect_get_swap().times(1).returning(|query| {
-            assert_eq!(query.protocols, Some(vec!["GoodProtocol".into()]));
+            assert_eq!(query.common.protocols, Some(vec!["GoodProtocol".into()]));
             Ok(RestResponse::Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
