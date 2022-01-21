@@ -188,11 +188,10 @@ impl<'a> Submitter<'a> {
             _ = deadline_future.fuse() => {
                 tracing::info!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
 
-                if let Some(transaction) = transactions.last() {
-                    if let Ok(gas_price) = self.gas_price_estimator.estimate_with_limits(21000., Duration::from_secs(0)).await {
-                        if let Err(err) = self.cancel_transaction(transaction, &gas_price, nonce).await {
-                            tracing::warn!("cancellation failed: {:?}", err);
-                        }
+                if let Some((transaction, gas_price)) = transactions.last() {
+                    let gas_price = gas_price.bump(1.125).ceil();
+                    if let Err(err) = self.cancel_transaction(transaction, &gas_price, nonce).await {
+                        tracing::warn!("cancellation failed: {:?}", err);
                     }
                 }
                 Ok(None)
@@ -222,7 +221,7 @@ impl<'a> Submitter<'a> {
 
             let transactions = transactions
                 .into_iter()
-                .map(|handle| handle.tx_hash)
+                .map(|(handle, _)| handle.tx_hash)
                 .collect::<Vec<_>>();
 
             loop {
@@ -281,11 +280,9 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         nonce: U256,
         params: &SubmitterParams,
-        transactions: &mut Vec<TransactionHandle>,
+        transactions: &mut Vec<(TransactionHandle, EstimatedGasPrice)>,
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
-
-        let mut previous_tx: Option<(EstimatedGasPrice, TransactionHandle)> = None;
 
         loop {
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
@@ -311,9 +308,9 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
-                if let Some((_, previous_tx)) = previous_tx {
+                if let Some((previous_tx, _)) = transactions.last() {
                     if let Err(err) = self
-                        .cancel_transaction(&previous_tx, &gas_price, nonce)
+                        .cancel_transaction(previous_tx, &gas_price, nonce)
                         .await
                     {
                         tracing::warn!("cancellation failed: {:?}", err);
@@ -324,7 +321,7 @@ impl<'a> Submitter<'a> {
 
             // if gas price has increased cancel old transaction so new transaction could be submitted.
 
-            if let Some((previous_gas_price, previous_tx)) = previous_tx.as_ref() {
+            if let Some((previous_tx, previous_gas_price)) = transactions.last() {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
                 if gas_price.cap() > previous_gas_price.cap()
                     && gas_price.tip() > previous_gas_price.tip()
@@ -347,10 +344,7 @@ impl<'a> Submitter<'a> {
             // execute transaction
 
             match self.submit_api.submit_transaction(method.tx).await {
-                Ok(handle) => {
-                    previous_tx = Some((gas_price, handle));
-                    transactions.push(handle)
-                }
+                Ok(handle) => transactions.push((handle, gas_price)),
                 Err(err) => match err {
                     SubmitApiError::InvalidNonce => {
                         tracing::warn!("submission failed: invalid nonce")
