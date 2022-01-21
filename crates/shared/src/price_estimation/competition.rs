@@ -1,6 +1,8 @@
 use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
+use crate::metrics;
 use anyhow::{anyhow, Result};
 use futures::future;
+use model::order::OrderKind;
 use num::BigRational;
 use std::cmp;
 
@@ -55,8 +57,14 @@ impl PriceEstimating for CompetitionPriceEstimator {
                         // The `EstimateData::estimator_name` field is getting
                         // flagged as dead code despited being used in the log
                         // below. Just convince the linter that we use it.
-                        let _ = winning_estimate.estimator_name;
                         tracing::debug!(?query, ?winning_estimate, "winning price estimate");
+                        metrics()
+                            .queries_won
+                            .with_label_values(&[
+                                winning_estimate.estimator_name,
+                                winning_estimate.kind.label(),
+                            ])
+                            .inc();
                         winning_estimate.estimate
                     })
             })
@@ -66,6 +74,7 @@ impl PriceEstimating for CompetitionPriceEstimator {
 
 #[derive(Debug)]
 struct EstimateData<'a> {
+    kind: OrderKind,
     estimator_name: &'a str,
     estimate: Estimate,
     sell_over_buy: BigRational,
@@ -93,6 +102,7 @@ fn fold_price_estimation_result<'a>(
             .price_in_sell_token_rational(query)
             .ok_or(PriceEstimationError::ZeroAmount)?;
         Ok(EstimateData {
+            kind: query.kind,
             estimator_name,
             estimate,
             sell_over_buy,
@@ -132,6 +142,24 @@ fn join_error(a: PriceEstimationError, b: PriceEstimationError) -> PriceEstimati
         }
         (err @ PriceEstimationError::UnsupportedOrderType, _) => err,
     }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "competition_price_estimator")]
+struct Metrics {
+    /// Number of wins for a particular price estimator and order kind.
+    ///
+    /// Note that the order kind is included in the metric. This is because some
+    /// estimators only support sell orders (e.g. 1Inch) which would skew the
+    /// total metrics. Additionally, this allows us to see how different
+    /// estimators behave for buy vs sell orders.
+    #[metric(labels("estimator_type", "order_kind"))]
+    queries_won: prometheus::CounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
 }
 
 #[cfg(test)]

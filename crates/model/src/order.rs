@@ -523,6 +523,16 @@ pub enum OrderKind {
     Sell,
 }
 
+impl OrderKind {
+    /// Returns a the order kind as a string label that can be used in metrics.
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Buy => "buy",
+            Self::Sell => "sell",
+        }
+    }
+}
+
 impl Default for OrderKind {
     fn default() -> Self {
         Self::Buy
