@@ -9,6 +9,7 @@ use model::{
     order::{
         BuyTokenDestination, Order, OrderCreation, OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
     },
+    signature::SigningScheme,
     DomainSeparator,
 };
 use shared::{bad_token::BadTokenDetecting, web3_traits::CodeFetching};
@@ -376,6 +377,19 @@ impl OrderValidating for OrderValidator {
             .await
         {
             Ok(_) => Ok((order, unsubsidized_fee)),
+            Err(
+                TransferSimulationError::InsufficientAllowance
+                | TransferSimulationError::InsufficientBalance,
+            ) if order.order_creation.signature.scheme() == SigningScheme::PreSign => {
+                // We have an exception for pre-sign orders where they do not
+                // require sufficient balance or allowance. The idea, is that
+                // this allows smart contracts to place orders bundled with
+                // other transactions that either produce the required balance
+                // or set the allowance. This would, for example, allow a Gnosis
+                // Safe to bundle the pre-signature transaction with a WETH wrap
+                // and WETH approval to the vault relayer contract.
+                Ok((order, unsubsidized_fee))
+            }
             Err(err) => match err {
                 TransferSimulationError::InsufficientAllowance => {
                     Err(ValidationError::InsufficientAllowance)
@@ -420,7 +434,9 @@ mod tests {
     use super::*;
     use crate::{account_balances::MockBalanceFetching, fee::MockMinFeeCalculating};
     use anyhow::anyhow;
-    use model::order::OrderCreation;
+    use ethcontract::web3::signing::SecretKeyRef;
+    use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
+    use secp256k1::key::ONE_KEY;
     use shared::{
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,
@@ -814,5 +830,81 @@ mod tests {
             order.order_meta_data.full_fee_amount,
             order.order_creation.fee_amount
         );
+    }
+
+    #[tokio::test]
+    async fn allows_insufficient_allowance_and_balance_for_presign_orders() {
+        macro_rules! assert_allows_failed_transfer {
+            ($err:ident) => {
+                let mut fee_calculator = MockMinFeeCalculating::new();
+                let mut bad_token_detector = MockBadTokenDetecting::new();
+                let mut balance_fetcher = MockBalanceFetching::new();
+                fee_calculator
+                    .expect_get_unsubsidized_min_fee()
+                    .returning(|_, _, _| Ok(Default::default()));
+                bad_token_detector
+                    .expect_detect()
+                    .returning(|_| Ok(TokenQuality::Good));
+                balance_fetcher
+                    .expect_can_transfer()
+                    .returning(|_, _, _, _| Err(TransferSimulationError::$err));
+                let validator = OrderValidator::new(
+                    Box::new(MockCodeFetching::new()),
+                    dummy_contract!(WETH9, [0xef; 20]),
+                    vec![],
+                    Duration::from_secs(1),
+                    Arc::new(fee_calculator),
+                    Arc::new(bad_token_detector),
+                    Arc::new(balance_fetcher),
+                );
+
+                let order = OrderBuilder::default()
+                    .with_valid_to(u32::MAX)
+                    .with_sell_token(H160::from_low_u64_be(1))
+                    .with_sell_amount(1.into())
+                    .with_buy_token(H160::from_low_u64_be(2))
+                    .with_buy_amount(1.into());
+
+                for signing_scheme in [EcdsaSigningScheme::Eip712, EcdsaSigningScheme::EthSign] {
+                    assert!(matches!(
+                        validator
+                            .validate_and_construct_order(
+                                order
+                                    .clone()
+                                    .sign_with(
+                                        signing_scheme,
+                                        &Default::default(),
+                                        SecretKeyRef::new(&ONE_KEY)
+                                    )
+                                    .build()
+                                    .order_creation,
+                                None,
+                                &Default::default(),
+                                Default::default()
+                            )
+                            .await,
+                        Err(ValidationError::$err)
+                    ));
+                }
+
+                assert!(matches!(
+                    validator
+                        .validate_and_construct_order(
+                            order
+                                .with_presign(Default::default())
+                                .build()
+                                .order_creation,
+                            None,
+                            &Default::default(),
+                            Default::default()
+                        )
+                        .await,
+                    Ok(_)
+                ));
+            };
+        }
+
+        assert_allows_failed_transfer!(InsufficientAllowance);
+        assert_allows_failed_transfer!(InsufficientBalance);
     }
 }

@@ -96,7 +96,7 @@ impl Order {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Clone, Default, Debug)]
 pub struct OrderBuilder(Order);
 
 impl OrderBuilder {
