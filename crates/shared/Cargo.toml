@@ -20,7 +20,7 @@ derivative = "2.2"
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559", default-features = false }
 ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.1", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.2", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 http = "0.2.6"

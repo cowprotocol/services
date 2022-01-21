@@ -24,7 +24,7 @@ const_format = "0.2"
 contracts = { path = "../contracts" }
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559", default-features = false }
 futures = "0.3.19"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.1", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.2", features = ["web3_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 maplit = "1.0"
