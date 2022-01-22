@@ -66,16 +66,22 @@ where
                 .into()
             }),
             Output::Failure(body) => {
-                if body.error.message.contains("invalid nonce")
-                    || body.error.message.contains("nonce too low")
+                if body.error.message.starts_with("invalid nonce")
+                    || body.error.message.starts_with("nonce too low")
                 {
                     Err(SubmitApiError::InvalidNonce)
                 } else if body
                     .error
                     .message
-                    .contains("Transaction gas price supplied is too low")
+                    .starts_with("Transaction gas price supplied is too low")
                 {
                     Err(SubmitApiError::OpenEthereumTooCheapToReplace)
+                } else if body
+                    .error
+                    .message
+                    .starts_with("replacement transaction underpriced")
+                {
+                    Err(SubmitApiError::ReplacementTransactionUnderpriced)
                 } else {
                     Err(anyhow!("rpc error: {}", body.error).into())
                 }

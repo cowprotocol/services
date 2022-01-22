@@ -3,8 +3,10 @@ use super::{
     CancelHandle,
 };
 use anyhow::{Context, Result};
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder};
+use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, U256};
+use gas_estimation::EstimatedGasPrice;
 use reqwest::{Client, IntoUrl, Url};
+use shared::Web3;
 
 #[derive(Clone)]
 pub struct FlashbotsApi {
@@ -34,7 +36,12 @@ impl TransactionSubmitting for FlashbotsApi {
         Ok(())
     }
 
-    async fn mark_transaction_outdated(&self, _id: &TransactionHandle) -> Result<()> {
-        Ok(())
+    async fn recover_pending_transaction(
+        &self,
+        _web3: &Web3,
+        _address: &H160,
+        _nonce: U256,
+    ) -> Result<Option<EstimatedGasPrice>> {
+        Ok(None)
     }
 }
