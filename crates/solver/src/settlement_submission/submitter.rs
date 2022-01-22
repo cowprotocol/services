@@ -23,7 +23,7 @@ use crate::{settlement::Settlement, settlement_simulation::settle_method_builder
 use anyhow::{anyhow, Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
-    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account,
+    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account, H160,
 };
 use futures::FutureExt;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
@@ -49,6 +49,7 @@ pub struct SubmitterParams {
 /// Enum used to handle all kind of messages received from implementers of trait TransactionSubmitting
 pub enum SubmitApiError {
     InvalidNonce,
+    ReplacementTransactionUnderpriced,
     OpenEthereumTooCheapToReplace, // todo ds safe to remove after dropping OE support
     Other(anyhow::Error),
 }
@@ -84,8 +85,13 @@ pub trait TransactionSubmitting: Send + Sync {
     ) -> Result<TransactionHandle, SubmitApiError>;
     /// Cancels already submitted transaction using the cancel handle
     async fn cancel_transaction(&self, id: &CancelHandle) -> Result<()>;
-    /// Marks previously submitted transaction as outdated and prevents from being mined
-    async fn mark_transaction_outdated(&self, id: &TransactionHandle) -> Result<()>;
+    /// Try to find submitted transaction from previous submission loop (in this case we don't have a TransactionHandle)
+    async fn recover_pending_transaction(
+        &self,
+        web3: &Web3,
+        address: &H160,
+        nonce: U256,
+    ) -> Result<Option<EstimatedGasPrice>>;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -284,6 +290,17 @@ impl<'a> Submitter<'a> {
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
+        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
+        let pending_gas_price = self
+            .submit_api
+            .recover_pending_transaction(
+                &self.contract.raw_instance().web3(),
+                &self.account.address(),
+                nonce,
+            )
+            .await
+            .unwrap_or(None);
+
         loop {
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
@@ -319,17 +336,16 @@ impl<'a> Submitter<'a> {
                 return SubmissionError::from(err);
             }
 
-            // if gas price has increased cancel old transaction so new transaction could be submitted.
-
-            if let Some((previous_tx, previous_gas_price)) = transactions.last() {
+            // if gas price has not increased enough, skip submitting the transaction.
+            if let Some(previous_gas_price) = transactions
+                .last()
+                .map(|(_, previous_gas_price)| previous_gas_price)
+                .or_else(|| pending_gas_price.as_ref())
+            {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
-                if gas_price.cap() > previous_gas_price.cap()
-                    && gas_price.tip() > previous_gas_price.tip()
+                if gas_price.tip() < previous_gas_price.tip()
+                    || gas_price.cap() < previous_gas_price.cap()
                 {
-                    if let Err(err) = self.submit_api.mark_transaction_outdated(previous_tx).await {
-                        tracing::warn!("cancellation failed: {:?}", err);
-                    }
-                } else {
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
                 }
@@ -348,6 +364,9 @@ impl<'a> Submitter<'a> {
                 Err(err) => match err {
                     SubmitApiError::InvalidNonce => {
                         tracing::warn!("submission failed: invalid nonce")
+                    }
+                    SubmitApiError::ReplacementTransactionUnderpriced => {
+                        tracing::warn!("submission failed: replacement transaction underpriced")
                     }
                     SubmitApiError::OpenEthereumTooCheapToReplace => {
                         tracing::debug!("submission failed: OE has different replacement rules than our algorithm")

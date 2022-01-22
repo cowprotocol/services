@@ -1,13 +1,17 @@
+use crate::pending_transactions::Fee;
+
 use super::{
     super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
     CancelHandle,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use ethcontract::{
     dyns::DynTransport,
     transaction::{Transaction, TransactionBuilder},
+    H160, U256,
 };
 use futures::FutureExt;
+use gas_estimation::{EstimatedGasPrice, GasPrice1559};
 use shared::Web3;
 
 #[derive(Clone)]
@@ -76,7 +80,42 @@ impl TransactionSubmitting for CustomNodesApi {
         }
     }
 
-    async fn mark_transaction_outdated(&self, _id: &TransactionHandle) -> Result<()> {
-        Ok(())
+    async fn recover_pending_transaction(
+        &self,
+        web3: &Web3,
+        address: &H160,
+        nonce: U256,
+    ) -> Result<Option<EstimatedGasPrice>> {
+        let transactions = crate::pending_transactions::pending_transactions(web3.transport())
+            .await
+            .context("pending_transactions failed")?;
+        let transaction = match transactions
+            .iter()
+            .find(|transaction| transaction.from == *address && transaction.nonce == nonce)
+        {
+            Some(transaction) => transaction,
+            None => return Ok(None),
+        };
+        match transaction.fee {
+            Fee::Legacy { gas_price } => Ok(Some(EstimatedGasPrice {
+                legacy: gas_price.to_f64_lossy(),
+                ..Default::default()
+            })),
+            Fee::Eip1559 {
+                max_priority_fee_per_gas,
+                max_fee_per_gas,
+            } => Ok(Some(EstimatedGasPrice {
+                eip1559: Some(GasPrice1559 {
+                    max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
+                    max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
+                    base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(
+                        web3.transport(),
+                    )
+                    .await?
+                    .to_f64_lossy(),
+                }),
+                ..Default::default()
+            })),
+        }
     }
 }
