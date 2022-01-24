@@ -135,10 +135,14 @@ impl SolutionSubmitter {
 /// An error during settlement submission.
 #[derive(Debug)]
 pub enum SubmissionError {
-    /// The transaction reverted.
-    Revert(Option<String>),
+    /// The transaction reverted in the simulation stage.
+    SimulationRevert(Option<String>),
+    /// Transaction successfully mined but reverted
+    Revert,
     /// The settlement submission timed out.
     Timeout,
+    /// Canceled after revert or timeout
+    Canceled,
     /// An error occured.
     Other(anyhow::Error),
 }
@@ -147,9 +151,11 @@ impl SubmissionError {
     /// Returns the outcome for use with metrics.
     pub fn as_outcome(&self) -> SettlementSubmissionOutcome {
         match self {
+            Self::SimulationRevert(_) => SettlementSubmissionOutcome::SimulationRevert,
             Self::Timeout => SettlementSubmissionOutcome::Timeout,
-            Self::Revert(_) => SettlementSubmissionOutcome::Revert,
-            Self::Other(_) => SettlementSubmissionOutcome::Failure,
+            Self::Revert => SettlementSubmissionOutcome::Revert,
+            Self::Canceled => SettlementSubmissionOutcome::Cancel,
+            Self::Other(_) => SettlementSubmissionOutcome::SimulationRevert,
         }
     }
 
@@ -160,11 +166,15 @@ impl SubmissionError {
     /// `impl<T: Display> From<T> for anyhow::Error`.
     pub fn into_anyhow(self) -> anyhow::Error {
         match self {
+            SubmissionError::Revert => anyhow!("transaction reverted"),
             SubmissionError::Timeout => anyhow!("transaction did not get mined in time"),
-            SubmissionError::Revert(Some(message)) => {
-                anyhow!("transaction reverted with message {}", message)
+            SubmissionError::SimulationRevert(Some(message)) => {
+                anyhow!("transaction simulation reverted with message {}", message)
             }
-            SubmissionError::Revert(None) => anyhow!("transaction reverted"),
+            SubmissionError::Canceled => {
+                anyhow!("transaction cancelled after revert or timeout")
+            }
+            SubmissionError::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
             SubmissionError::Other(err) => err,
         }
     }
@@ -181,9 +191,9 @@ impl From<MethodError> for SubmissionError {
         match err.inner {
             ExecutionError::ConfirmTimeout(_) => SubmissionError::Timeout,
             ExecutionError::Failure(_) | ExecutionError::InvalidOpcode => {
-                SubmissionError::Revert(None)
+                SubmissionError::SimulationRevert(None)
             }
-            ExecutionError::Revert(message) => SubmissionError::Revert(message),
+            ExecutionError::Revert(message) => SubmissionError::SimulationRevert(message),
             _ => SubmissionError::Other(
                 anyhow::Error::from(err).context("settlement transaction failed"),
             ),
@@ -200,7 +210,7 @@ mod tests {
     impl PartialEq for SubmissionError {
         fn eq(&self, other: &Self) -> bool {
             match (self, other) {
-                (Self::Revert(left), Self::Revert(right)) => left == right,
+                (Self::SimulationRevert(left), Self::SimulationRevert(right)) => left == right,
                 _ => std::mem::discriminant(self) == std::mem::discriminant(other),
             }
         }
@@ -220,12 +230,15 @@ mod tests {
         for (from, to) in [
             (
                 ExecutionError::Failure(Default::default()),
-                SubmissionError::Revert(None),
+                SubmissionError::SimulationRevert(None),
             ),
-            (ExecutionError::InvalidOpcode, SubmissionError::Revert(None)),
+            (
+                ExecutionError::InvalidOpcode,
+                SubmissionError::SimulationRevert(None),
+            ),
             (
                 ExecutionError::Revert(Some("foo".to_owned())),
-                SubmissionError::Revert(Some("foo".to_owned())),
+                SubmissionError::SimulationRevert(Some("foo".to_owned())),
             ),
             (
                 ExecutionError::ConfirmTimeout(Box::new(

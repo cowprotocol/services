@@ -32,8 +32,11 @@ impl TransactionSubmitting for FlashbotsApi {
         super::common::submit_raw_transaction(self.client.clone(), self.url.clone(), tx).await
     }
 
-    async fn cancel_transaction(&self, _id: &CancelHandle) -> Result<()> {
-        Ok(())
+    async fn cancel_transaction(
+        &self,
+        id: &CancelHandle,
+    ) -> Result<TransactionHandle, SubmitApiError> {
+        Ok(id.submitted_transaction)
     }
 
     async fn recover_pending_transaction(

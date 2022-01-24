@@ -4,7 +4,7 @@ use super::{
     super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
     CancelHandle,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use ethcontract::{
     dyns::DynTransport,
     transaction::{Transaction, TransactionBuilder},
@@ -73,11 +73,11 @@ impl TransactionSubmitting for CustomNodesApi {
         }
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<()> {
-        match self.submit_transaction(id.noop_transaction.clone()).await {
-            Ok(_) => Ok(()),
-            Err(err) => Err(anyhow!("{:?}", err)),
-        }
+    async fn cancel_transaction(
+        &self,
+        id: &CancelHandle,
+    ) -> Result<TransactionHandle, SubmitApiError> {
+        self.submit_transaction(id.noop_transaction.clone()).await
     }
 
     async fn recover_pending_transaction(

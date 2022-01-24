@@ -4,7 +4,7 @@ use super::{
     super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
     CancelHandle,
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, U256};
 use gas_estimation::EstimatedGasPrice;
 use reqwest::{Client, IntoUrl, Url};
@@ -34,17 +34,16 @@ impl TransactionSubmitting for EdenApi {
         super::common::submit_raw_transaction(self.client.clone(), self.url.clone(), tx).await
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<()> {
-        match super::common::submit_raw_transaction(
+    async fn cancel_transaction(
+        &self,
+        id: &CancelHandle,
+    ) -> Result<TransactionHandle, SubmitApiError> {
+        super::common::submit_raw_transaction(
             self.client.clone(),
             self.url.clone(),
             id.noop_transaction.clone(),
         )
         .await
-        {
-            Ok(_) => Ok(()),
-            Err(err) => Err(anyhow!("{:?}", err)),
-        }
     }
 
     async fn recover_pending_transaction(

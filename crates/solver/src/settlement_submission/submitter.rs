@@ -30,7 +30,7 @@ use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::time::{Duration, Instant};
-use web3::types::TransactionReceipt;
+use web3::types::{TransactionReceipt, U64};
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -84,7 +84,10 @@ pub trait TransactionSubmitting: Send + Sync {
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle, SubmitApiError>;
     /// Cancels already submitted transaction using the cancel handle
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<()>;
+    async fn cancel_transaction(
+        &self,
+        id: &CancelHandle,
+    ) -> Result<TransactionHandle, SubmitApiError>;
     /// Try to find submitted transaction from previous submission loop (in this case we don't have a TransactionHandle)
     async fn recover_pending_transaction(
         &self,
@@ -196,8 +199,12 @@ impl<'a> Submitter<'a> {
 
                 if let Some((transaction, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(1.125).ceil();
-                    if let Err(err) = self.cancel_transaction(transaction, &gas_price, nonce).await {
-                        tracing::warn!("cancellation failed: {:?}", err);
+                    match self
+                        .cancel_transaction(transaction, &gas_price, nonce)
+                        .await
+                    {
+                        Ok(handle) => transactions.push((handle, gas_price)),
+                        Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
                 Ok(None)
@@ -235,8 +242,8 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::info!("found mined transaction {}", receipt.transaction_hash);
-                    return Ok(receipt);
+                    tracing::info!("found mined transaction {:?}", receipt);
+                    return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
                     break;
@@ -326,11 +333,12 @@ impl<'a> Submitter<'a> {
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some((previous_tx, _)) = transactions.last() {
-                    if let Err(err) = self
+                    match self
                         .cancel_transaction(previous_tx, &gas_price, nonce)
                         .await
                     {
-                        tracing::warn!("cancellation failed: {:?}", err);
+                        Ok(handle) => transactions.push((handle, gas_price)),
+                        Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
                 }
                 return SubmissionError::from(err);
@@ -412,13 +420,27 @@ impl<'a> Submitter<'a> {
         transaction: &TransactionHandle,
         gas_price: &EstimatedGasPrice,
         nonce: U256,
-    ) -> Result<()> {
+    ) -> Result<TransactionHandle, SubmitApiError> {
         let cancel_handle = CancelHandle {
             submitted_transaction: *transaction,
             noop_transaction: self.build_noop_transaction(&gas_price.bump(3.), nonce),
         };
         self.submit_api.cancel_transaction(&cancel_handle).await
     }
+}
+
+fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionError> {
+    if let Some(status) = receipt.status {
+        if status == U64::zero() {
+            // failing transaction
+            return Err(SubmissionError::Revert);
+        } else if status == U64::one() && receipt.from == receipt.to.unwrap_or_default() {
+            // noop transaction
+            return Err(SubmissionError::Canceled);
+        }
+    }
+    // successfull transaction
+    Ok(receipt)
 }
 
 /// From a list of potential hashes find one that was mined.
