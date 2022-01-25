@@ -29,8 +29,8 @@ impl OneInchPriceEstimator {
             .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
                 query.sell_token,
                 query.buy_token,
-                query.in_amount,
                 allowed_protocols,
+                query.in_amount,
             ))
             .await
             .map_err(PriceEstimationError::Other)?;
