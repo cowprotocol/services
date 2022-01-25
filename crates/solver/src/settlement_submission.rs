@@ -120,7 +120,7 @@ impl SolutionSubmitter {
                 let (result, _index, rest) = futures::future::select_all(futures).await;
                 match result {
                     Ok(receipt) => return Ok(receipt),
-                    Err(err) if rest.is_empty() => {
+                    Err(err) if rest.is_empty() || err.is_transaction_mined() => {
                         return Err(err);
                     }
                     Err(_) => {
@@ -176,6 +176,16 @@ impl SubmissionError {
             }
             SubmissionError::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
             SubmissionError::Other(err) => err,
+        }
+    }
+
+    pub fn is_transaction_mined(&self) -> bool {
+        match self {
+            SubmissionError::SimulationRevert(_) => false,
+            SubmissionError::Revert => true,
+            SubmissionError::Timeout => false,
+            SubmissionError::Canceled => true,
+            SubmissionError::Other(_) => false,
         }
     }
 }
