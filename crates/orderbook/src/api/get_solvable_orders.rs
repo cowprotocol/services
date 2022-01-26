@@ -15,8 +15,7 @@ pub fn get_solvable_orders(
         async move {
             let result = orderbook.get_solvable_orders().await;
             Result::<_, Infallible>::Ok(convert_json_response(
-                result
-                    .map(|cached_solvable_orders| cached_solvable_orders.into_orders()),
+                result.map(|cached_solvable_orders| cached_solvable_orders.into_orders()),
             ))
         }
     })
