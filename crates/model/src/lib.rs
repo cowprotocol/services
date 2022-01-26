@@ -10,8 +10,12 @@ pub mod u256_decimal;
 use ethabi::{encode, Token};
 use hex::{FromHex, FromHexError};
 use lazy_static::lazy_static;
+use order::Order;
 use primitive_types::H160;
-use std::fmt;
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 use web3::signing;
 
 /// Erc20 token pair specified by two contract addresses.
@@ -136,6 +140,38 @@ impl DomainSeparator {
 pub struct SolvableOrders {
     pub orders: Vec<order::Order>,
     pub latest_settlement_block: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct CachedSolvableOrders {
+    inner: SolvableOrders,
+    update_time: Instant,
+}
+
+impl CachedSolvableOrders {
+    pub fn new(inner: SolvableOrders, update_time: Instant) -> Self {
+        Self { inner, update_time }
+    }
+
+    pub fn solvable_orders(&self) -> &SolvableOrders {
+        &self.inner
+    }
+
+    pub fn into_solvable_orders(self) -> SolvableOrders {
+        self.inner
+    }
+
+    pub fn orders(&self) -> &Vec<Order> {
+        &self.inner.orders
+    }
+
+    pub fn into_orders(self) -> Vec<Order> {
+        self.inner.orders
+    }
+
+    pub fn valid(&self, max_update_time: Duration) -> bool {
+        self.update_time.elapsed() <= max_update_time
+    }
 }
 
 #[cfg(test)]

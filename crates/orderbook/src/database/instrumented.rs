@@ -1,7 +1,7 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
 use crate::fee::{FeeParameters, MinFeeStoring};
 use ethcontract::H256;
-use model::order::Order;
+use model::{order::Order, SolvableOrders};
 use prometheus::Histogram;
 use shared::{event_handling::EventStoring, maintenance::Maintaining};
 use std::sync::Arc;
@@ -159,10 +159,7 @@ impl OrderStoring for Instrumented {
         self.inner.single_order(uid).await
     }
 
-    async fn solvable_orders(
-        &self,
-        min_valid_to: u32,
-    ) -> anyhow::Result<super::orders::SolvableOrders> {
+    async fn solvable_orders(&self, min_valid_to: u32) -> anyhow::Result<SolvableOrders> {
         let _timer = self
             .metrics
             .database_query_histogram("solvable_orders")

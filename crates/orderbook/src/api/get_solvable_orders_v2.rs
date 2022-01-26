@@ -14,12 +14,10 @@ pub fn get_solvable_orders(
         let orderbook = orderbook.clone();
         async move {
             let result = orderbook.get_solvable_orders().await;
-            Result::<_, Infallible>::Ok(convert_json_response(result.map(|orders| {
-                model::SolvableOrders {
-                    orders: orders.orders,
-                    latest_settlement_block: orders.latest_settlement_block,
-                }
-            })))
+            Result::<_, Infallible>::Ok(convert_json_response(
+                result
+                    .map(|cached_solvable_orders| cached_solvable_orders.into_solvable_orders()),
+            ))
         }
     })
 }

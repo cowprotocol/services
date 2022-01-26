@@ -12,6 +12,7 @@ use model::{
         SellTokenSource,
     },
     signature::{Signature, SigningScheme},
+    SolvableOrders,
 };
 use num::Zero;
 use primitive_types::H160;
@@ -36,11 +37,6 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
-}
-
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub latest_settlement_block: u64,
 }
 
 /// Any default value means that this field is unfiltered.

@@ -4,7 +4,7 @@ use crate::{
     orderbook::filter_unsupported_tokens,
 };
 use anyhow::Result;
-use model::order::Order;
+use model::{order::Order, CachedSolvableOrders, SolvableOrders};
 use primitive_types::U256;
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, time::now_in_epoch_seconds,
@@ -35,16 +35,9 @@ pub struct SolvableOrdersCache {
 type Balances = HashMap<Query, U256>;
 
 struct Inner {
-    orders: SolvableOrders,
+    orders: CachedSolvableOrders,
     balances: Balances,
     block: u64,
-}
-
-#[derive(Clone, Debug)]
-pub struct SolvableOrders {
-    pub orders: Vec<Order>,
-    pub update_time: Instant,
-    pub latest_settlement_block: u64,
 }
 
 impl SolvableOrdersCache {
@@ -62,11 +55,13 @@ impl SolvableOrdersCache {
             bad_token_detector,
             notify: Default::default(),
             cache: Mutex::new(Inner {
-                orders: SolvableOrders {
-                    orders: Vec::new(),
-                    update_time: Instant::now(),
-                    latest_settlement_block: 0,
-                },
+                orders: CachedSolvableOrders::new(
+                    SolvableOrders {
+                        orders: Vec::new(),
+                        latest_settlement_block: 0,
+                    },
+                    Instant::now(),
+                ),
                 balances: Default::default(),
                 block: 0,
             }),
@@ -81,7 +76,7 @@ impl SolvableOrdersCache {
     }
 
     /// Orders and timestamp at which last update happened.
-    pub fn cached_solvable_orders(&self) -> SolvableOrders {
+    pub fn cached_solvable_orders(&self) -> CachedSolvableOrders {
         self.cache.lock().unwrap().orders.clone()
     }
 
@@ -134,11 +129,13 @@ impl SolvableOrdersCache {
         }
 
         *self.cache.lock().unwrap() = Inner {
-            orders: SolvableOrders {
-                orders,
-                update_time: Instant::now(),
-                latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            },
+            orders: CachedSolvableOrders::new(
+                SolvableOrders {
+                    orders,
+                    latest_settlement_block: db_solvable_orders.latest_settlement_block,
+                },
+                Instant::now(),
+            ),
             balances: new_balances,
             block,
         };
@@ -247,13 +244,11 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
-        database::orders::SolvableOrders as DbOrders,
-    };
+    use crate::{account_balances::MockBalanceFetching, database::orders::MockOrderStoring};
     use chrono::{DateTime, NaiveDateTime, Utc};
     use maplit::hashmap;
     use model::order::{OrderCreation, OrderMetaData, SellTokenSource};
+    use model::SolvableOrders as DbOrders;
     use primitive_types::H160;
 
     #[tokio::test]
@@ -391,7 +386,7 @@ mod tests {
             Some(1.into())
         );
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None);
-        let orders_ = cache.cached_solvable_orders().orders;
+        let orders_ = cache.cached_solvable_orders().into_orders();
         assert_eq!(orders_.len(), 1);
         assert_eq!(orders_[0].order_meta_data.available_balance, Some(1.into()));
 
@@ -404,13 +399,13 @@ mod tests {
             cache.cached_balance(&Query::from_order(&orders[1])),
             Some(2.into())
         );
-        let orders_ = cache.cached_solvable_orders().orders;
+        let orders_ = &cache.cached_solvable_orders().into_orders();
         assert_eq!(orders_.len(), 2);
 
         cache.update(0).await.unwrap();
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[0])), None,);
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None,);
-        let orders_ = cache.cached_solvable_orders().orders;
+        let orders_ = cache.cached_solvable_orders().into_orders();
         assert_eq!(orders_.len(), 0);
     }
 }

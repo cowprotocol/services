@@ -1,7 +1,7 @@
 use crate::{
     api::order_validation::{OrderValidating, OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
-    solvable_orders::{SolvableOrders, SolvableOrdersCache},
+    solvable_orders::SolvableOrdersCache,
 };
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
@@ -9,7 +9,7 @@ use ethcontract::H256;
 use model::{
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
     signature::SigningScheme,
-    DomainSeparator,
+    CachedSolvableOrders, DomainSeparator,
 };
 use primitive_types::H160;
 use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
@@ -157,7 +157,7 @@ impl Orderbook {
             let solvable_orders = self
                 .solvable_orders
                 .cached_solvable_orders()
-                .orders
+                .orders()
                 .iter()
                 .map(Query::from_order)
                 .collect::<HashSet<_>>();
@@ -185,10 +185,10 @@ impl Orderbook {
         Ok(orders)
     }
 
-    pub async fn get_solvable_orders(&self) -> Result<SolvableOrders> {
+    pub async fn get_solvable_orders(&self) -> Result<CachedSolvableOrders> {
         let solvable_orders = self.solvable_orders.cached_solvable_orders();
         ensure!(
-            solvable_orders.update_time.elapsed() <= self.solvable_orders_max_update_age,
+            solvable_orders.valid(self.solvable_orders_max_update_age),
             "solvable orders are out of date"
         );
         Ok(solvable_orders)
