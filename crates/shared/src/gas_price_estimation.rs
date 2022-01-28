@@ -7,18 +7,16 @@ use gas_estimation::{
 };
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
-use structopt::clap::arg_enum;
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum GasEstimatorType {
-        EthGasStation,
-        GasNow,
-        GnosisSafe,
-        Web3,
-        BlockNative,
-        Native,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum GasEstimatorType {
+    EthGasStation,
+    GasNow,
+    GnosisSafe,
+    Web3,
+    BlockNative,
+    Native,
 }
 
 #[derive(Clone)]

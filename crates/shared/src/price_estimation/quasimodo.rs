@@ -323,6 +323,7 @@ mod tests {
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
+    use clap::ArgEnum;
     use ethcontract::dyns::DynTransport;
     use model::order::OrderKind;
     use reqwest::Client;
@@ -403,7 +404,7 @@ mod tests {
             BalancerPoolFetcher::new(
                 chain_id,
                 token_info.clone(),
-                BalancerFactoryKind::all(),
+                BalancerFactoryKind::value_variants(),
                 Default::default(),
                 current_block_stream.clone(),
                 Arc::new(crate::sources::balancer_v2::pool_fetching::NoopBalancerPoolCacheMetrics),

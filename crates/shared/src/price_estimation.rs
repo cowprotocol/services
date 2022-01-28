@@ -15,18 +15,16 @@ use anyhow::Result;
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::BigRational;
-use structopt::clap::arg_enum;
 use thiserror::Error;
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum PriceEstimatorType {
-        Baseline,
-        Paraswap,
-        ZeroEx,
-        Quasimodo,
-        OneInch,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum PriceEstimatorType {
+    Baseline,
+    Paraswap,
+    ZeroEx,
+    Quasimodo,
+    OneInch,
 }
 
 impl PriceEstimatorType {

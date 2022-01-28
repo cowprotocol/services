@@ -27,7 +27,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use structopt::clap::arg_enum;
 use zeroex_solver::ZeroExSolver;
 
 pub mod balancer_sor_solver;
@@ -125,19 +124,18 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement);
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum SolverType {
-        Naive,
-        Baseline,
-        Mip,
-        CowDexAg,
-        OneInch,
-        Paraswap,
-        ZeroEx,
-        Quasimodo,
-        BalancerSor,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum SolverType {
+    Naive,
+    Baseline,
+    Mip,
+    CowDexAg,
+    OneInch,
+    Paraswap,
+    ZeroEx,
+    Quasimodo,
+    BalancerSor,
 }
 
 #[allow(clippy::too_many_arguments)]

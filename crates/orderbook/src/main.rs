@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Context, Result};
+use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
 use ethcontract::errors::DeployError;
 use model::{
@@ -69,28 +70,27 @@ use shared::{
     },
 };
 use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
-use structopt::StructOpt;
 use tokio::task;
 use url::Url;
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Arguments {
-    #[structopt(flatten)]
+    #[clap(flatten)]
     shared: shared::arguments::Arguments,
 
-    #[structopt(long, env, default_value = "0.0.0.0:8080")]
+    #[clap(long, env, default_value = "0.0.0.0:8080")]
     bind_address: SocketAddr,
 
     /// Url of the Postgres database. By default connects to locally running postgres.
-    #[structopt(long, env, default_value = "postgresql://")]
+    #[clap(long, env, default_value = "postgresql://")]
     db_url: Url,
 
     /// Skip syncing past events (useful for local deployments)
-    #[structopt(long)]
+    #[clap(long)]
     skip_event_sync: bool,
 
     /// The minimum amount of time in seconds an order has to be valid for.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "60",
@@ -101,11 +101,11 @@ struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[structopt(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env, parse(try_from_str), default_value = "false")]
     skip_trace_api: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "600",
@@ -114,32 +114,32 @@ struct Arguments {
     token_quality_cache_expiry: Duration,
 
     /// List of token addresses to be ignored throughout service
-    #[structopt(long, env, use_delimiter = true)]
+    #[clap(long, env, use_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
     /// List of account addresses to be denied from order creation
-    #[structopt(long, env, use_delimiter = true)]
+    #[clap(long, env, use_delimiter = true)]
     pub banned_users: Vec<H160>,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
-    #[structopt(long, env, use_delimiter = true)]
+    #[clap(long, env, use_delimiter = true)]
     pub allowed_tokens: Vec<H160>,
 
     /// The number of pairs that are automatically updated in the pool cache.
-    #[structopt(long, env, default_value = "200")]
+    #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: usize,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
     /// This flag can be removed once DDoS protection is implemented.
-    #[structopt(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env, parse(try_from_str), default_value = "false")]
     pub enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully update in this time in seconds attempting
     /// to get them errors and our liveness check fails.
-    #[structopt(
+    #[clap(
         long,
         default_value = "300",
         parse(try_from_str = shared::arguments::duration_from_seconds),
@@ -150,7 +150,7 @@ struct Arguments {
     ///
     /// Note that flat fee discounts are applied BEFORE any multiplicative factors from either
     /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
-    #[structopt(long, env, default_value = "0")]
+    #[clap(long, env, default_value = "0")]
     fee_discount: f64,
 
     /// The minimum value for the discounted fee in the network's native token (i.e. Ether for
@@ -158,12 +158,12 @@ struct Arguments {
     ///
     /// Note that this minimum is applied BEFORE any multiplicative factors from either
     /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
-    #[structopt(long, env, default_value = "0")]
+    #[clap(long, env, default_value = "0")]
     min_discounted_fee: f64,
 
     /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
     /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
-    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
     fee_factor: f64,
 
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
@@ -174,7 +174,7 @@ struct Arguments {
     /// Furthermore, a value of
     /// - 1 means no subsidy and is the default for all app_data not contained in this list.
     /// - 0.5 means that this project pays only 50% of the estimated fees.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "",
@@ -183,11 +183,11 @@ struct Arguments {
     partner_additional_fee_factors: HashMap<AppId, f64>,
 
     /// The API endpoint to call the mip v2 solver for price estimation
-    #[structopt(long, env)]
+    #[clap(long, env)]
     quasimodo_solver_url: Option<Url>,
 
     /// The maximum time price estimates will be cached for.
-    #[structopt(
+    #[clap(
         long,
         default_value = "10",
         parse(try_from_str = shared::arguments::duration_from_seconds),
@@ -195,13 +195,13 @@ struct Arguments {
     price_estimator_cache_max_age_secs: Duration,
 
     /// The maximum number of price estimates that will be cached.
-    #[structopt(long, default_value = "1000")]
+    #[clap(long, default_value = "1000")]
     price_estimator_cache_size: usize,
 
     /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
     /// (representing a private market maker) is disabled as it seems to
     /// produce invalid swaps.
-    #[structopt(long, env, default_value = "PMM1", use_delimiter = true)]
+    #[clap(long, env, default_value = "PMM1", use_delimiter = true)]
     disabled_one_inch_protocols: Vec<String>,
 }
 
@@ -221,7 +221,7 @@ pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
 
 #[tokio::main]
 async fn main() {
-    let args = Arguments::from_args();
+    let args = Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
@@ -417,7 +417,8 @@ async fn main() {
                 token_info_fetcher.clone(),
                 args.shared
                     .balancer_factories
-                    .unwrap_or_else(BalancerFactoryKind::all),
+                    .as_deref()
+                    .unwrap_or_else(BalancerFactoryKind::value_variants),
                 cache_config,
                 current_block_stream.clone(),
                 metrics.clone(),
