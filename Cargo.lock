@@ -1031,7 +1031,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.4.2#49f227d48f4d44857a28864a06d94344b6a5a652"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.4.3#c79db13c8481774554c3538ae0662b658eb40278"
 dependencies = [
  "anyhow",
  "async-trait",
