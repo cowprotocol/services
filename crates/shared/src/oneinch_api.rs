@@ -439,8 +439,8 @@ pub struct OneInchClientImpl {
 impl OneInchClientImpl {
     pub const DEFAULT_URL: &'static str = "https://api.1inch.exchange/";
 
-    // Right now only mainnet is relevant but in the future 1Inch will also run on Gnosis Chain.
-    pub const SUPPORTED_CHAINS: &'static [u64] = &[1];
+    // 1: mainnet, 100: gnosis chain
+    pub const SUPPORTED_CHAINS: &'static [u64] = &[1, 100];
 
     /// Create a new 1Inch HTTP API client with the specified base URL.
     pub fn new(base_url: impl IntoUrl, client: Client, chain_id: u64) -> Result<Self> {
