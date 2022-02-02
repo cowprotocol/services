@@ -164,6 +164,7 @@ pub fn create(
     zeroex_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
+    one_inch_url: Url,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -245,6 +246,7 @@ pub fn create(
                             chain_id,
                             disabled_one_inch_protocols.clone(),
                             client.clone(),
+                            one_inch_url.clone(),
                         )?,
                         solver_metrics.clone(),
                     );

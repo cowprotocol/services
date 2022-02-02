@@ -203,6 +203,10 @@ struct Arguments {
     /// produce invalid swaps.
     #[clap(long, env, default_value = "PMM1", use_delimiter = true)]
     disabled_one_inch_protocols: Vec<String>,
+
+    /// The 1Inch REST API URL to use.
+    #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
+    one_inch_url: Url,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -520,7 +524,11 @@ async fn main() {
                     )),
                     PriceEstimatorType::OneInch => Box::new(instrumented_and_cached(
                         Box::new(OneInchPriceEstimator::new(
-                            Arc::new(OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, client.clone(), chain_id).unwrap()),
+                            Arc::new(OneInchClientImpl::new(
+                                args.one_inch_url.clone(),
+                                client.clone(),
+                                chain_id,
+                            ).unwrap()),
                             args.disabled_one_inch_protocols.clone()
                         )),
                         &estimator.name(),

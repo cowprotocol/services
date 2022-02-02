@@ -280,6 +280,10 @@ struct Arguments {
     /// but at the same time we don't restrict solutions sizes too much
     #[clap(long, env, default_value = "15000000")]
     simulation_gas_limit: u128,
+
+    /// The 1Inch REST API URL to use.
+    #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
+    one_inch_url: Url,
 }
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
@@ -543,6 +547,7 @@ async fn main() {
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
+        args.one_inch_url,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
