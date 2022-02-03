@@ -173,4 +173,83 @@ mod tests {
         assert!(result[0].as_ref().unwrap().out_amount == 1.into());
         assert!(result[1].as_ref().unwrap().out_amount == 0.into());
     }
+
+    #[tokio::test]
+    async fn maintenance_updates_recent_and_evicts_old_queries() {
+        const UPDATE_INTERVAL: Duration = Duration::from_millis(100);
+        let query = |u: u64| Query {
+            sell_token: H160::from_low_u64_be(u),
+            ..Default::default()
+        };
+        let mut inner = MockPriceEstimating::new();
+        // first request from user
+        inner.expect_estimates().times(1).returning(|queries| {
+            assert!(queries.len() == 1);
+            assert!(queries[0].sell_token.to_low_u64_be() == 0);
+            vec![Ok(Estimate {
+                out_amount: 0.into(),
+                gas: 0.into(),
+            })]
+        });
+        // second request from user
+        inner.expect_estimates().times(1).returning(|queries| {
+            assert!(queries.len() == 1);
+            assert!(queries[0].sell_token.to_low_u64_be() == 1);
+            vec![Ok(Estimate {
+                out_amount: 1.into(),
+                gas: 0.into(),
+            })]
+        });
+        // maintenance task refetches most recently used queries (n=1)
+        inner.expect_estimates().times(1).returning(|queries| {
+            assert!(queries.len() == 1);
+            assert!(queries[0].sell_token.to_low_u64_be() == 1);
+            vec![Ok(Estimate {
+                out_amount: 2.into(),
+                gas: 0.into(),
+            })]
+        });
+        // user request something which has been evicted by the maintenance task
+        inner.expect_estimates().times(1).returning(|queries| {
+            assert!(queries.len() == 1);
+            assert!(queries[0].sell_token.to_low_u64_be() == 0);
+            vec![Ok(Estimate {
+                out_amount: 3.into(),
+                gas: 0.into(),
+            })]
+        });
+
+        let cache = Arc::new(CachingPriceEstimator::new(
+            Box::new(inner),
+            Duration::from_secs(1),
+            10,
+            Arc::new(NoopMetrics),
+            "".to_string(),
+        ));
+
+        tokio::spawn(periodically_update_estimator_cache(
+            Arc::downgrade(&cache),
+            UPDATE_INTERVAL,
+            1,
+        ));
+
+        // fill cache with 2 different queries
+        let results = cache.estimates(&[query(0)]).now_or_never().unwrap();
+        assert!(results[0].as_ref().unwrap().out_amount == 0.into());
+        let results = cache.estimates(&[query(1)]).now_or_never().unwrap();
+        assert!(results[0].as_ref().unwrap().out_amount == 1.into());
+
+        // wait for maintenance cycle
+        tokio::time::sleep(UPDATE_INTERVAL).await;
+
+        let results = cache
+            .estimates(&[query(0), query(1)])
+            .now_or_never()
+            .unwrap();
+        // this result has been updated in the background and therefore come from the cache
+        assert!(results[0].as_ref().unwrap().out_amount == 3.into());
+        // this result has been evicted from the cache and therefore needs to be estimated by the
+        // wrapped price estimator
+        assert!(results[1].as_ref().unwrap().out_amount == 2.into());
+    }
 }
