@@ -242,7 +242,7 @@ struct Arguments {
     /// Amount of time to wait before retrying to submit the tx to the ethereum network
     #[clap(
         long,
-        default_value = "5",
+        default_value = "2",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     submission_retry_interval_seconds: Duration,
