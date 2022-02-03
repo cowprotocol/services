@@ -1,8 +1,8 @@
 use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use cached::{Cached, TimedSizedCache};
 use std::{
-    sync::{Arc, Mutex},
-    time::Duration,
+    sync::{Arc, Mutex, Weak},
+    time::{Duration, Instant},
 };
 
 /// Price estimator wrapper that caches Ok results for some time.
@@ -90,6 +90,40 @@ impl PriceEstimating for CachingPriceEstimator {
                 None => inner_results.next().unwrap(),
             })
             .collect()
+    }
+}
+
+pub async fn periodically_update_estimator_cache(
+    estimator: Weak<CachingPriceEstimator>,
+    interval: Duration,
+    recent_tokens_to_update: usize,
+) {
+    while let Some(estimator) = estimator.upgrade() {
+        let started_at = Instant::now();
+        let queries: Vec<_> = estimator
+            .cache
+            .lock()
+            .unwrap()
+            .key_order()
+            .take(recent_tokens_to_update)
+            .cloned()
+            .collect();
+
+        // bypass cache by using inner to estimate queries
+        let estimates = estimator.inner.estimates(&queries).await;
+        let queries_and_estimates = queries.iter().zip(estimates.into_iter());
+        {
+            let mut cache = estimator.cache.lock().unwrap();
+            // prices which are not recently used shall not be kept in the cache
+            cache.cache_clear();
+            for (query, estimate) in queries_and_estimates {
+                if let Ok(estimate) = estimate {
+                    cache.cache_set(*query, estimate);
+                }
+            }
+        }
+        tracing::debug!("updated native price cache");
+        tokio::time::sleep(interval - started_at.elapsed()).await
     }
 }
 
