@@ -18,6 +18,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
     price_estimation::baseline::BaselinePriceEstimator,
+    price_estimation::native::NativePriceEstimator,
     price_estimation::sanitized::SanitizedPriceEstimator,
     recent_block_cache::CacheConfig,
     sources::uniswap_v2::{
@@ -135,17 +136,22 @@ impl OrderbookServices {
             contracts.weth.address(),
             bad_token_detector.clone(),
         ));
+        let native_price_estimator = Arc::new(NativePriceEstimator::new(
+            price_estimator.clone(),
+            contracts.weth.address(),
+            1_000_000_000_000_000_000_u128.into(),
+        ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
             gas_estimator,
             contracts.weth.address(),
             db.clone(),
             bad_token_detector.clone(),
-            1_000_000_000_000_000_000_u128.into(),
             FeeSubsidyConfiguration {
                 fee_factor: 0.,
                 ..Default::default()
             },
+            native_price_estimator,
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),
