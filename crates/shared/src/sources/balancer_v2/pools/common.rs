@@ -320,7 +320,7 @@ fn share_common_pool_state(
     impl Future<Output = Result<PoolState>>,
     impl Future<Output = PoolState>,
 ) {
-    let (pool_sender, pool_receiver) = oneshot::channel();
+    let (pool_sender, mut pool_receiver) = oneshot::channel();
 
     let result = fut.inspect(|pool_result| {
         // We can't clone `anyhow::Error` so just clone the pool data and use
@@ -331,9 +331,8 @@ fn share_common_pool_state(
     });
     let shared = async move {
         pool_receiver
-            .now_or_never()
-            .expect("result future is still pending")
-            .expect("result future was dropped")
+            .try_recv()
+            .expect("result future is still pending or has been dropped")
             .expect("result future resolved to an error")
     };
 
