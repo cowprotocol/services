@@ -22,6 +22,7 @@ use orderbook::{
 };
 use primitive_types::H160;
 use shared::oneinch_api::OneInchClientImpl;
+use shared::price_estimation::native::NativePriceEstimator;
 use shared::price_estimation::oneinch::OneInchPriceEstimator;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
 use shared::price_estimation::sanitized::SanitizedPriceEstimator;
@@ -542,19 +543,24 @@ async fn main() {
         native_token.address(),
         bad_token_detector.clone(),
     ));
+    let native_price_estimator = Arc::new(NativePriceEstimator::new(
+        price_estimator.clone(),
+        native_token.address(),
+        native_token_price_estimation_amount,
+    ));
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,
         native_token.address(),
         database.clone(),
         bad_token_detector.clone(),
-        native_token_price_estimation_amount,
         FeeSubsidyConfiguration {
             fee_discount: args.fee_discount,
             min_discounted_fee: args.min_discounted_fee,
             fee_factor: args.fee_factor,
             partner_additional_fee_factors: args.partner_additional_fee_factors,
         },
+        native_price_estimator,
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(

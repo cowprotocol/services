@@ -3,6 +3,7 @@ pub mod cached;
 pub mod competition;
 pub mod gas;
 pub mod instrumented;
+pub mod native;
 pub mod oneinch;
 pub mod paraswap;
 pub mod priority;
@@ -96,6 +97,8 @@ impl Estimate {
         amounts_to_price(sell_amount, buy_amount)
     }
 
+    /// The resulting price is how many units of sell_token needs to be sold for one unit of
+    /// buy_token (sell_amount / buy_amount).
     pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
         let (sell_amount, buy_amount) = self.amounts(query);
         sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()

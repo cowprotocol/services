@@ -9,6 +9,7 @@ use model::{
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting,
+    price_estimation::native::NativePriceEstimating,
     price_estimation::{self, ensure_token_supported, PriceEstimating, PriceEstimationError},
 };
 use std::{
@@ -71,12 +72,11 @@ impl Default for FeeSubsidyConfiguration {
 pub struct MinFeeCalculator {
     price_estimator: Arc<dyn PriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
-    native_token: H160,
     measurements: Arc<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    native_token_price_estimation_amount: U256,
     fee_subsidy: FeeSubsidyConfiguration,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -218,18 +218,17 @@ impl EthAwareMinFeeCalculator {
         native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        native_token_price_estimation_amount: U256,
         fee_subsidy: FeeSubsidyConfiguration,
+        native_price_estimator: Arc<dyn NativePriceEstimating>,
     ) -> Self {
         Self {
             calculator: MinFeeCalculator::new(
                 price_estimator,
                 gas_estimator,
-                native_token,
                 measurements,
                 bad_token_detector,
-                native_token_price_estimation_amount,
                 fee_subsidy,
+                native_price_estimator,
             ),
             weth: native_token,
         }
@@ -270,21 +269,19 @@ impl MinFeeCalculator {
     fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
-        native_token: H160,
         measurements: Arc<dyn MinFeeStoring>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        native_token_price_estimation_amount: U256,
         fee_subsidy: FeeSubsidyConfiguration,
+        native_price_estimator: Arc<dyn NativePriceEstimating>,
     ) -> Self {
         Self {
             price_estimator,
             gas_estimator,
-            native_token,
             measurements,
             now: Box::new(Utc::now),
             bad_token_detector,
-            native_token_price_estimation_amount,
             fee_subsidy,
+            native_price_estimator,
         }
     }
 
@@ -299,26 +296,17 @@ impl MinFeeCalculator {
             in_amount: fee_data.amount,
             kind: fee_data.kind,
         };
-        let native_token_query = price_estimation::Query {
-            sell_token: fee_data.sell_token,
-            buy_token: self.native_token,
-            in_amount: self.native_token_price_estimation_amount,
-            kind: OrderKind::Buy,
-        };
-        let queries = [buy_token_query, native_token_query];
-        let (gas_estimate, estimates) = futures::join!(
+        let (gas_estimate, buy_token_estimate, sell_token_price) = futures::try_join!(
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::from),
-            self.price_estimator.estimates(&queries),
-        );
-        let gas_price = gas_estimate?.effective_gas_price();
-        let mut estimates = estimates.into_iter();
-        let buy_token_estimate = estimates.next().unwrap()?;
-        let native_token_estimate = estimates.next().unwrap()?;
+            self.price_estimator.estimate(&buy_token_query),
+            self.native_price_estimator
+                .estimate_native_price(&fee_data.sell_token)
+        )?;
+        let gas_price = gas_estimate.effective_gas_price();
         let gas_amount = buy_token_estimate.gas.to_f64_lossy();
         let fee_in_eth = gas_price * gas_amount;
-        let sell_token_price = native_token_estimate.price_in_sell_token_f64(&native_token_query);
         let fee = fee_in_eth * sell_token_price;
 
         tracing::debug!(
@@ -503,10 +491,21 @@ mod tests {
     use shared::{
         bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::mocks::FakePriceEstimator,
+        price_estimation::native::NativePriceEstimator,
     };
     use std::sync::Arc;
 
     use super::*;
+
+    fn create_default_native_token_estimator(
+        price_estimator: Arc<dyn PriceEstimating>,
+    ) -> Arc<dyn NativePriceEstimating> {
+        Arc::new(NativePriceEstimator::new(
+            price_estimator,
+            Default::default(),
+            1.into(),
+        ))
+    }
 
     #[tokio::test]
     async fn eth_aware_min_fees() {
@@ -583,13 +582,12 @@ mod tests {
         ) -> Self {
             Self {
                 gas_estimator,
-                price_estimator,
-                native_token: Default::default(),
+                price_estimator: price_estimator.clone(),
                 measurements: Arc::new(InMemoryFeeStore::default()),
                 now,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
-                native_token_price_estimation_amount: 1.into(),
                 fee_subsidy: Default::default(),
+                native_price_estimator: create_default_native_token_estimator(price_estimator),
             }
         }
     }
@@ -611,6 +609,7 @@ mod tests {
             out_amount: 1.into(),
             gas: 1.into(),
         });
+
         let time_copy = time.clone();
         let now = move || *time_copy.lock().unwrap();
 
@@ -667,14 +666,14 @@ mod tests {
         }));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
+        let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1.into(),
-        });
+        }));
 
         let fee_estimator = MinFeeCalculator::new_for_test(
             gas_price_estimator,
-            Arc::new(price_estimator),
+            price_estimator,
             Box::new(Utc::now),
         );
 
@@ -724,16 +723,16 @@ mod tests {
             out_amount: 1.into(),
             gas: 1000.into(),
         }));
+        let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
 
         let fee_estimator = MinFeeCalculator {
             price_estimator,
             gas_estimator: gas_price_estimator,
-            native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
-            native_token_price_estimation_amount: 1.into(),
             fee_subsidy: Default::default(),
+            native_price_estimator,
         };
 
         // Selling unsupported token
@@ -793,19 +792,19 @@ mod tests {
             out_amount: 1.into(),
             gas: 1000.into(),
         }));
+        let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
         let app_data = AppId([1u8; 32]);
         let fee_estimator = MinFeeCalculator {
             price_estimator,
             gas_estimator: gas_price_estimator,
-            native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            native_token_price_estimation_amount: 1.into(),
             fee_subsidy: FeeSubsidyConfiguration {
                 partner_additional_fee_factors: hashmap! { app_data => 0.5 },
                 ..Default::default()
             },
+            native_price_estimator,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data)
@@ -859,6 +858,11 @@ mod tests {
             ),
             gas: 1337.into(),
         }));
+        let native_price_estimator = Arc::new(NativePriceEstimator::new(
+            price_estimator.clone(),
+            Default::default(),
+            U256::from_f64_lossy(native_token_price_estimation_amount),
+        ));
 
         let mut measurements = MockMinFeeStoring::new();
         let mut seq = Sequence::new();
@@ -885,18 +889,15 @@ mod tests {
         let fee_estimator = MinFeeCalculator {
             price_estimator,
             gas_estimator,
-            native_token: Default::default(),
             measurements: Arc::new(measurements),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            native_token_price_estimation_amount: U256::from_f64_lossy(
-                native_token_price_estimation_amount,
-            ),
             fee_subsidy: FeeSubsidyConfiguration {
                 fee_factor: 0.8,
                 partner_additional_fee_factors: hashmap! { app_data => 0.5 },
                 ..Default::default()
             },
+            native_price_estimator,
         };
 
         let (fee, _) = fee_estimator
@@ -989,18 +990,18 @@ mod tests {
             out_amount: 1.into(),
             gas: 9.into(),
         }));
+        let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
         let fee_estimator = MinFeeCalculator {
             price_estimator,
             gas_estimator: gas_price_estimator,
-            native_token: Default::default(),
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            native_token_price_estimation_amount: 1.into(),
             fee_subsidy: FeeSubsidyConfiguration {
                 fee_factor: 0.5,
                 ..Default::default()
             },
+            native_price_estimator,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default())
