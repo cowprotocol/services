@@ -22,6 +22,9 @@ use orderbook::{
 };
 use primitive_types::H160;
 use shared::oneinch_api::OneInchClientImpl;
+use shared::price_estimation::cached::{
+    periodically_update_estimator_cache, CachingPriceEstimator,
+};
 use shared::price_estimation::native::NativePriceEstimator;
 use shared::price_estimation::oneinch::OneInchPriceEstimator;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
@@ -63,7 +66,6 @@ use shared::{
 use shared::{
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     network::network_name,
-    price_estimation::cached::CachingPriceEstimator,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
@@ -208,6 +210,25 @@ struct Arguments {
     /// The 1Inch REST API URL to use.
     #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
     one_inch_url: Url,
+
+    /// The interval how often the native price cache shall be updated.
+    #[clap(
+        long,
+        default_value = "30",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    native_price_cache_update_interval_secs: Duration,
+
+    /// The maximum number of native price estimates which will be updated and kept after each
+    /// native price cache update interval.
+    /// If the cache grows bigger than the configured size between updates, it will be shrunk
+    /// back down to the configured size during the next update.
+    #[clap(long, default_value = "10")]
+    native_price_cache_update_size: usize,
+
+    /// Which estimators to use to estimate token prices in terms of the chain's native token.
+    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    pub native_price_estimators: Vec<PriceEstimatorType>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -515,38 +536,73 @@ async fn main() {
         }
     };
 
-    let price_estimators = args
-        .shared
-        .price_estimators
-        .iter()
-        .map(|estimator| -> (String, Box<dyn PriceEstimating>) {
-            let base_estimator = create_base_estimator(estimator);
-            (
-                estimator.name(),
-                if let PriceEstimatorType::Baseline = estimator {
-                    Box::new(instrumented(base_estimator, &estimator.name()))
-                } else {
-                    Box::new(instrumented_and_cached(
-                        base_estimator,
-                        &estimator.name(),
-                        args.price_estimator_cache_max_age_secs,
-                        args.price_estimator_cache_size,
-                    ))
-                },
-            )
-        })
-        .collect();
+    let sanitized = |estimator| {
+        SanitizedPriceEstimator::new(
+            estimator,
+            native_token.address(),
+            bad_token_detector.clone(),
+        )
+    };
 
-    let price_estimator = Arc::new(SanitizedPriceEstimator::new(
-        CompetitionPriceEstimator::new(price_estimators),
-        native_token.address(),
-        bad_token_detector.clone(),
+    let price_estimator = Arc::new(sanitized(Arc::new(CompetitionPriceEstimator::new(
+        args.shared
+            .price_estimators
+            .iter()
+            .map(|estimator| -> (String, Box<dyn PriceEstimating>) {
+                let base_estimator = create_base_estimator(estimator);
+                (
+                    estimator.name(),
+                    if let PriceEstimatorType::Baseline = estimator {
+                        Box::new(instrumented(base_estimator, &estimator.name()))
+                    } else {
+                        Box::new(instrumented_and_cached(
+                            base_estimator,
+                            &estimator.name(),
+                            args.price_estimator_cache_max_age_secs,
+                            args.price_estimator_cache_size,
+                        ))
+                    },
+                )
+            })
+            .collect(),
+    ))));
+
+    let native_price_cache = Arc::new(instrumented_and_cached(
+        Box::new(CompetitionPriceEstimator::new(
+            args.native_price_estimators
+                .iter()
+                .filter(|estimator| !matches!(estimator, PriceEstimatorType::OneInch))
+                .map(|estimator| -> (String, Box<dyn PriceEstimating>) {
+                    (
+                        estimator.name(),
+                        Box::new(instrumented(
+                            create_base_estimator(estimator),
+                            &estimator.name(),
+                        )),
+                    )
+                })
+                .collect(),
+        )),
+        "native_price_estimator",
+        // The CLI arguments configure how a background task is supposed to update the cache. For
+        // those arguments to apply the underlying cache needs to be bigger and longer lasting than
+        // the arguments suggest.
+        2 * args.native_price_cache_update_interval_secs,
+        2 * args.native_price_cache_update_size,
     ));
+
+    tokio::spawn(periodically_update_estimator_cache(
+        Arc::downgrade(&native_price_cache),
+        args.native_price_cache_update_interval_secs,
+        args.native_price_cache_update_size,
+    ));
+
     let native_price_estimator = Arc::new(NativePriceEstimator::new(
-        price_estimator.clone(),
+        Arc::new(sanitized(native_price_cache)),
         native_token.address(),
         native_token_price_estimation_amount,
     ));
+
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,
