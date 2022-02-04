@@ -24,7 +24,7 @@ derive_more = "0.99"
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559", default-features = false }
 ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.3", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.4", features = ["web3_"] }
 hex = "0.4"
 hex-literal = "0.3"
 itertools = "0.10"
