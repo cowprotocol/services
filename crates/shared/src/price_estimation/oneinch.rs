@@ -2,7 +2,6 @@ use super::gas;
 use crate::oneinch_api::{OneInchClient, ProtocolCache, RestResponse, SellOrderQuoteQuery};
 use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use anyhow::Result;
-use futures::future;
 use model::order::OrderKind;
 use primitive_types::U256;
 use std::sync::Arc;
@@ -72,12 +71,11 @@ impl PriceEstimating for OneInchPriceEstimator {
             a SanitizedPriceEstimator"
         );
 
-        future::join_all(
-            queries
-                .iter()
-                .map(|query| async move { self.estimate(query).await }),
-        )
-        .await
+        let mut results = Vec::with_capacity(queries.len());
+        for query in queries {
+            results.push(self.estimate(query).await);
+        }
+        results
     }
 }
 

@@ -83,8 +83,7 @@ impl PriceEstimating for ParaswapPriceEstimator {
             .into_iter()
             .collect::<Vec<_>>();
         let token_infos = self.token_info.get_token_infos(&tokens).await;
-        // TODO: concurrency?
-        let mut results = Vec::new();
+        let mut results = Vec::with_capacity(queries.len());
         for query in queries {
             results.push(self.estimate_(query, &token_infos).await);
         }

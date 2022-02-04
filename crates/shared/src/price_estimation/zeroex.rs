@@ -53,7 +53,6 @@ impl PriceEstimating for ZeroExPriceEstimator {
         }));
 
         let mut results = Vec::with_capacity(queries.len());
-
         for query in queries {
             results.push(self.estimate(query).await);
         }
