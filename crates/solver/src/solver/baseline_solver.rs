@@ -322,11 +322,9 @@ mod tests {
                 sell_token,
                 buy_token,
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
                 settlement_handling: order_handler[0].clone(),
                 id: "0".into(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -335,11 +333,9 @@ mod tests {
                 buy_token,
                 sell_token,
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
                 settlement_handling: order_handler[1].clone(),
                 id: "1".into(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -428,11 +424,9 @@ mod tests {
                 sell_token,
                 buy_token,
                 kind: OrderKind::Buy,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
                 settlement_handling: order_handler[0].clone(),
                 id: "0".into(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             // Second order has a more lax limit
             LimitOrder {
@@ -441,11 +435,9 @@ mod tests {
                 buy_token,
                 sell_token,
                 kind: OrderKind::Buy,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
                 settlement_handling: order_handler[1].clone(),
                 id: "1".into(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -529,11 +521,8 @@ mod tests {
             sell_token,
             buy_token,
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
             id: "0".into(),
-            is_liquidity_order: false,
+            ..Default::default()
         }];
 
         let amms = vec![
@@ -567,11 +556,8 @@ mod tests {
             sell_amount: 1_741_103_528_769_588_955_u128.into(),
             buy_amount: 500_000_000_000_000_000_000_u128.into(),
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
             id: "Crash Bandicoot".to_string(),
-            is_liquidity_order: false,
+            ..Default::default()
         };
         let liquidity = vec![
             Liquidity::ConstantProduct(ConstantProductOrder {
@@ -624,10 +610,7 @@ mod tests {
             sell_amount: 7999613.into(),
             buy_amount: 1.into(),
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: 0.into(),
-            is_liquidity_order: false,
-            settlement_handling: CapturingSettlementHandler::arc(),
+            ..Default::default()
         };
         let pool_0 = ConstantProductOrder {
             tokens: TokenPair::new(tokens[1], tokens[2]).unwrap(),

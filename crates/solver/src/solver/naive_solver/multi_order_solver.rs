@@ -328,11 +328,8 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             LimitOrder {
                 sell_token: token_b,
@@ -340,11 +337,8 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -390,11 +384,8 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             LimitOrder {
                 sell_token: token_a,
@@ -402,11 +393,8 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -448,11 +436,8 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             LimitOrder {
                 sell_token: token_b,
@@ -460,11 +445,8 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Buy,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -510,11 +492,8 @@ mod tests {
                 sell_amount: to_wei(40),
                 buy_amount: to_wei(30),
                 kind: OrderKind::Buy,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             LimitOrder {
                 sell_token: token_b,
@@ -522,11 +501,8 @@ mod tests {
                 sell_amount: to_wei(100),
                 buy_amount: to_wei(90),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 
@@ -576,11 +552,8 @@ mod tests {
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "0".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
             LimitOrder {
                 sell_token: token_b,
@@ -588,11 +561,8 @@ mod tests {
                 sell_amount: to_wei(1001),
                 buy_amount: to_wei(1000),
                 kind: OrderKind::Sell,
-                partially_fillable: false,
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
                 id: "1".to_string(),
-                is_liquidity_order: false,
+                ..Default::default()
             },
         ];
 

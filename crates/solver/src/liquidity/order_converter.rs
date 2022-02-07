@@ -52,6 +52,7 @@ impl OrderConverter {
             buy_amount: order.order_creation.buy_amount,
             kind: order.order_creation.kind,
             partially_fillable: order.order_creation.partially_fillable,
+            fee_amount: order.order_meta_data.full_fee_amount,
             scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {

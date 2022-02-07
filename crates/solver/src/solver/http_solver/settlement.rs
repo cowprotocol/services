@@ -245,11 +245,9 @@ mod tests {
             sell_amount: 1.into(),
             buy_amount: 2.into(),
             kind: OrderKind::Sell,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
             settlement_handling: limit_handler.clone(),
-            is_liquidity_order: false,
             id: "0".to_string(),
+            ..Default::default()
         }];
 
         let cp_amm_handler = CapturingSettlementHandler::arc();

@@ -72,6 +72,7 @@ pub struct LimitOrder {
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
+    pub fee_amount: U256,
     /// The scaled fee amount that the protocol pretends it is receiving.
     ///
     /// This is different than the actual order `fee_amount` value in that it
@@ -125,6 +126,7 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
+            fee_amount: Default::default(),
             scaled_fee_amount: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
@@ -344,16 +346,10 @@ pub mod tests {
             buy_amount: impl Into<U256>,
         ) -> LimitOrder {
             LimitOrder {
-                id: Default::default(),
-                sell_token: Default::default(),
-                buy_token: Default::default(),
                 sell_amount: sell_amount.into(),
                 buy_amount: buy_amount.into(),
                 kind,
-                partially_fillable: Default::default(),
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                is_liquidity_order: false,
+                ..Default::default()
             }
         }
 

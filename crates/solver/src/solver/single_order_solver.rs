@@ -126,16 +126,8 @@ mod tests {
             SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
-            id: Default::default(),
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: Default::default(),
-            scaled_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
-            is_liquidity_order: false,
+            ..Default::default()
         };
         let orders = vec![
             LimitOrder {
@@ -184,16 +176,8 @@ mod tests {
             SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
-            id: Default::default(),
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: Default::default(),
-            scaled_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
-            is_liquidity_order: false,
+            ..Default::default()
         };
         solver
             .solve(Auction {
@@ -219,16 +203,8 @@ mod tests {
             SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
-            id: Default::default(),
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: Default::default(),
-            scaled_fee_amount: Default::default(),
             settlement_handling: handler.clone(),
-            is_liquidity_order: false,
+            ..Default::default()
         };
         solver
             .solve(Auction {

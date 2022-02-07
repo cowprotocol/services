@@ -160,8 +160,6 @@ mod tests {
     use num::traits::One as _;
     use shared::price_estimation::mocks::{FailingPriceEstimator, FakePriceEstimator};
 
-    use crate::liquidity::tests::CapturingSettlementHandler;
-
     use super::*;
 
     #[tokio::test]
@@ -181,11 +179,7 @@ mod tests {
             sell_token,
             buy_token,
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
+            ..Default::default()
         }];
         let prices =
             collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
@@ -208,11 +202,7 @@ mod tests {
             sell_token,
             buy_token,
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
+            ..Default::default()
         }];
         let prices =
             collect_estimated_prices(&price_estimator, 1.into(), native_token, &orders).await;
@@ -235,11 +225,7 @@ mod tests {
             sell_token,
             buy_token: native_token,
             kind: OrderKind::Buy,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            id: "0".into(),
-            is_liquidity_order: false,
+            ..Default::default()
         }];
         let prices =
             collect_estimated_prices(&price_estimator, 1.into(), native_token, &liquidity).await;
