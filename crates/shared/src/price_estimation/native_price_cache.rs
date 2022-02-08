@@ -83,7 +83,7 @@ impl CachingNativePriceEstimator {
     /// Only outdated prices get updated and older prices have a higher priority.
     /// If `update_size` is `Some(n)` at most `n` prices get updated per interval.
     /// If `update_size` is `None` no limit gets applied.
-    pub fn spwan_maintenance_task(&self, update_interval: Duration, update_size: Option<usize>) {
+    pub fn spawn_maintenance_task(&self, update_interval: Duration, update_size: Option<usize>) {
         tokio::spawn(update_most_outdated_prices(
             Arc::downgrade(&self.0),
             update_interval,
@@ -254,7 +254,7 @@ mod tests {
 
         let estimator =
             CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
-        estimator.spwan_maintenance_task(Duration::from_millis(50), Some(1));
+        estimator.spawn_maintenance_task(Duration::from_millis(50), Some(1));
 
         // fill cache with 2 different queries
         let results = estimator.estimate_native_prices(&[token(0)]).await;
@@ -297,7 +297,7 @@ mod tests {
 
         let estimator =
             CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
-        estimator.spwan_maintenance_task(Duration::from_millis(50), None);
+        estimator.spawn_maintenance_task(Duration::from_millis(50), None);
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();
         let results = estimator.estimate_native_prices(&tokens).await;
