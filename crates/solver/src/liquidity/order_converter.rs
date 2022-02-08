@@ -52,13 +52,13 @@ impl OrderConverter {
             buy_amount: order.order_creation.buy_amount,
             kind: order.order_creation.kind,
             partially_fillable: order.order_creation.partially_fillable,
-            fee_amount: order.order_meta_data.full_fee_amount,
-            scaled_fee_amount,
+            unscaled_subsidized_fee: order.order_creation.fee_amount,
+            scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order,
                 native_token,
-                scaled_fee_amount,
+                scaled_unsubsidized_fee_amount: scaled_fee_amount,
                 is_liquidity_order,
             }),
         }
@@ -68,7 +68,7 @@ impl OrderConverter {
 struct OrderSettlementHandler {
     order: Order,
     native_token: WETH9,
-    scaled_fee_amount: U256,
+    scaled_unsubsidized_fee_amount: U256,
     is_liquidity_order: bool,
 }
 
@@ -83,7 +83,8 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         let trade = encoder.add_trade(
             self.order.clone(),
             executed_amount,
-            self.scaled_fee_amount,
+            self.order.order_creation.fee_amount,
+            self.scaled_unsubsidized_fee_amount,
             self.is_liquidity_order,
         )?;
 
@@ -159,7 +160,7 @@ pub mod tests {
                         ..Default::default()
                     }
                 })
-                .scaled_fee_amount,
+                .scaled_unsubsidized_fee,
             30.into(),
         );
 
@@ -175,7 +176,7 @@ pub mod tests {
                         ..Default::default()
                     },
                 },)
-                .scaled_fee_amount,
+                .scaled_unsubsidized_fee,
             75.into(),
         );
     }
@@ -209,7 +210,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token: native_token.clone(),
-            scaled_fee_amount,
+            scaled_unsubsidized_fee_amount: scaled_fee_amount,
             is_liquidity_order: false,
         };
 
@@ -226,7 +227,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, executed_amount, scaled_fee_amount, false)
+                    .add_trade(order, executed_amount, scaled_fee_amount, 0.into(), false)
                     .is_ok());
             },
         );
@@ -257,7 +258,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token: native_token.clone(),
-            scaled_fee_amount: 0.into(),
+            scaled_unsubsidized_fee_amount: 0.into(),
             is_liquidity_order: false,
         };
 
@@ -270,7 +271,7 @@ pub mod tests {
                     .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
                     .unwrap();
                 assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), false)
+                    .add_trade(order, executed_amount, 0.into(), 0.into(), false)
                     .is_ok());
                 encoder.add_unwrap(UnwrapWethInteraction {
                     weth: native_token,
@@ -307,7 +308,7 @@ pub mod tests {
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
             native_token,
-            scaled_fee_amount: 0.into(),
+            scaled_unsubsidized_fee_amount: 0.into(),
             is_liquidity_order: false,
         };
 
@@ -317,7 +318,7 @@ pub mod tests {
             executed_amount,
             |encoder| {
                 assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), false)
+                    .add_trade(order, executed_amount, 0.into(), 0.into(), false)
                     .is_ok());
             },
         );

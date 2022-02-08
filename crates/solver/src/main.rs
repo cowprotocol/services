@@ -665,6 +665,7 @@ async fn main() {
         order_converter,
         args.weth_unwrap_factor,
         args.simulation_gas_limit,
+        args.fee_objective_scaling_factor,
     );
 
     let maintainer = ServiceMaintenance {

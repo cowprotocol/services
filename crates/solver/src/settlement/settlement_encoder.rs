@@ -92,7 +92,8 @@ impl SettlementEncoder {
         &mut self,
         order: Order,
         executed_amount: U256,
-        scaled_fee_amount: U256,
+        unscaled_subsidized_fee: U256,
+        scaled_unsubsidized_fee: U256,
         is_liquidity_order: bool,
     ) -> Result<TradeExecution> {
         let sell_price = self
@@ -116,7 +117,8 @@ impl SettlementEncoder {
             sell_token_index,
             buy_token_index,
             executed_amount,
-            scaled_fee_amount,
+            unscaled_subsidized_fee,
+            scaled_unsubsidized_fee,
             is_liquidity_order,
         };
         let execution = trade
@@ -421,10 +423,10 @@ pub mod tests {
         });
 
         assert!(settlement
-            .add_trade(order0, 1.into(), 1.into(), false)
+            .add_trade(order0, 1.into(), 1.into(), 0.into(), false)
             .is_ok());
         assert!(settlement
-            .add_trade(order1, 1.into(), 0.into(), false)
+            .add_trade(order1, 1.into(), 0.into(), 0.into(), false)
             .is_ok());
     }
 
@@ -514,6 +516,7 @@ pub mod tests {
                 },
                 0.into(),
                 0.into(),
+                0.into(),
                 false,
             )
             .unwrap();
@@ -571,7 +574,7 @@ pub mod tests {
             .build();
         order13.order_meta_data.uid.0[0] = 0;
         encoder0
-            .add_trade(order13, 13.into(), 0.into(), false)
+            .add_trade(order13, 13.into(), 0.into(), 0.into(), false)
             .unwrap();
         encoder0.append_to_execution_plan(NoopInteraction {});
         encoder0.add_unwrap(UnwrapWethInteraction {
@@ -589,7 +592,7 @@ pub mod tests {
             .build();
         order24.order_meta_data.uid.0[0] = 1;
         encoder1
-            .add_trade(order24, 24.into(), 0.into(), false)
+            .add_trade(order24, 24.into(), 0.into(), 0.into(), false)
             .unwrap();
         encoder1.append_to_execution_plan(NoopInteraction {});
         encoder1.add_unwrap(UnwrapWethInteraction {
@@ -664,12 +667,12 @@ pub mod tests {
 
         let mut encoder0 = SettlementEncoder::new(prices.clone());
         encoder0
-            .add_trade(order13.clone(), 13.into(), 0.into(), false)
+            .add_trade(order13.clone(), 13.into(), 0.into(), 0.into(), false)
             .unwrap();
 
         let mut encoder1 = SettlementEncoder::new(prices);
         encoder1
-            .add_trade(order13, 24.into(), 0.into(), false)
+            .add_trade(order13, 24.into(), 0.into(), 0.into(), false)
             .unwrap();
 
         assert!(encoder0.merge(encoder1).is_err());
@@ -689,7 +692,7 @@ pub mod tests {
             .with_buy_amount(11.into())
             .build();
         encoder
-            .add_trade(order_1_3, 4.into(), 0.into(), false)
+            .add_trade(order_1_3, 4.into(), 0.into(), 0.into(), false)
             .unwrap();
 
         let weth = dummy_contract!(WETH9, token(2));

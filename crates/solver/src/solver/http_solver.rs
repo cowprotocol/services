@@ -177,7 +177,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
 
 fn order_fee(order: &LimitOrder) -> FeeModel {
     FeeModel {
-        amount: order.scaled_fee_amount,
+        amount: order.scaled_unsubsidized_fee,
         token: order.sell_token,
     }
 }
