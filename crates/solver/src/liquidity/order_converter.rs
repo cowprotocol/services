@@ -83,7 +83,6 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         let trade = encoder.add_trade(
             self.order.clone(),
             executed_amount,
-            self.order.order_creation.fee_amount,
             self.scaled_unsubsidized_fee_amount,
             self.is_liquidity_order,
         )?;
@@ -227,7 +226,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, executed_amount, scaled_fee_amount, 0.into(), false)
+                    .add_trade(order, executed_amount, scaled_fee_amount, false)
                     .is_ok());
             },
         );
@@ -271,7 +270,7 @@ pub mod tests {
                     .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
                     .unwrap();
                 assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), 0.into(), false)
+                    .add_trade(order, executed_amount, 0.into(), false)
                     .is_ok());
                 encoder.add_unwrap(UnwrapWethInteraction {
                     weth: native_token,
@@ -318,7 +317,7 @@ pub mod tests {
             executed_amount,
             |encoder| {
                 assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), 0.into(), false)
+                    .add_trade(order, executed_amount, 0.into(), false)
                     .is_ok());
             },
         );

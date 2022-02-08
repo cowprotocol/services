@@ -18,7 +18,6 @@ pub struct Trade {
     pub sell_token_index: usize,
     pub buy_token_index: usize,
     pub executed_amount: U256,
-    pub unscaled_subsidized_fee: U256,
     pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
 }
@@ -83,7 +82,7 @@ impl Trade {
     }
 
     pub fn executed_unscaled_subsidized_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.unscaled_subsidized_fee)
+        self.compute_fee_execution(self.order.order_creation.fee_amount)
     }
 
     fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
