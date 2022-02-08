@@ -4,6 +4,7 @@ pub mod competition;
 pub mod gas;
 pub mod instrumented;
 pub mod native;
+pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
 pub mod priority;
