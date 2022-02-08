@@ -146,13 +146,12 @@ impl SellOrderQuoteQuery {
             to_token_address: buy_token,
             amount,
             protocols,
-            // Use at most 2 connector tokens
-            complexity_level: Some(Amount::new(2).unwrap()),
-            // Cap swap gas to 750K.
-            gas_limit: Some(Amount::new(750_000).unwrap()),
-            // Use only 3 main route for cheaper trades.
-            main_route_parts: Some(Amount::new(3).unwrap()),
-            parts: Some(Amount::new(3).unwrap()),
+            // Use max value instead of default
+            complexity_level: Some(Amount::new(3).unwrap()),
+            gas_limit: None,
+            // use max value instead of default
+            main_route_parts: Some(Amount::new(50).unwrap()),
+            parts: None,
             fee: None,
             gas_price: None,
             virtual_parts: None,
