@@ -100,8 +100,10 @@ pub trait TransactionSubmitting: Send + Sync {
 /// Gas price estimator specialized for sending transactions to the network
 pub struct SubmitterGasPriceEstimator<'a> {
     pub inner: &'a dyn GasPriceEstimating,
-    /// Boost estimated gas price miner tip in order to increase the chances of a transaction being mined
-    pub additional_tip: Option<f64>,
+    /// Additionally increase max_priority_fee_per_gas by percentage of max_fee_per_gas, in order to increase the chances of a transaction being mined
+    pub additional_tip_percentage_of_max_fee: Option<f64>,
+    /// Maximum max_priority_fee_per_gas additional increase
+    pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
 }
@@ -117,7 +119,13 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             Ok(mut gas_price) if gas_price.cap() <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
                 if let Some(ref mut eip1559) = gas_price.eip1559 {
-                    eip1559.max_priority_fee_per_gas += self.additional_tip.unwrap_or_default();
+                    eip1559.max_priority_fee_per_gas +=
+                        self.max_additional_tip.unwrap_or_default().min(
+                            eip1559.max_fee_per_gas
+                                * self
+                                    .additional_tip_percentage_of_max_fee
+                                    .unwrap_or_default(),
+                        );
                 }
                 Ok(gas_price)
             }
@@ -508,8 +516,9 @@ mod tests {
         .unwrap();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &gas_price_estimator,
-            additional_tip: Some(3.0),
+            max_additional_tip: Some(3.0),
             gas_price_cap: 100e9,
+            additional_tip_percentage_of_max_fee: Some(0.05),
         };
 
         let settlement = Settlement::new(Default::default());

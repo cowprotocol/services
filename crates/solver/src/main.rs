@@ -212,14 +212,14 @@ struct Arguments {
     #[clap(long, env, default_value = "https://rpc.flashbots.net")]
     flashbots_api_url: Url,
 
-    /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[clap(
         long,
         env,
         default_value = "3",
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
-    additional_eden_tip: f64,
+    max_additional_eden_tip: f64,
 
     /// The maximum time in seconds we spend trying to settle a transaction through the ethereum
     /// network before going to back to solving.
@@ -230,14 +230,14 @@ struct Arguments {
     )]
     max_submission_seconds: Duration,
 
-    /// Additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
+    /// Maximum additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
     #[clap(
         long,
         env,
         default_value = "3",
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
-    additional_flashbot_tip: f64,
+    max_additional_flashbot_tip: f64,
 
     /// Amount of time to wait before retrying to submit the tx to the ethereum network
     #[clap(
@@ -246,6 +246,15 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     submission_retry_interval_seconds: Duration,
+
+    /// Additional tip in percentage of max_fee_per_gas we are willing to give to miners above regular gas price estimation
+    #[clap(
+        long,
+        env,
+        default_value = "0.05",
+        parse(try_from_str = shared::arguments::parse_percentage_factor)
+    )]
+    additional_tip_percentage: f64,
 
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
     #[clap(long, env, use_delimiter = true)]
@@ -585,20 +594,23 @@ async fn main() {
             TransactionStrategyArg::PublicMempool => {
                 TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 })
             }
             TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
                 submit_api: Box::new(
                     EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
                 ),
-                additional_tip: args.additional_eden_tip,
+                max_additional_tip: args.max_additional_eden_tip,
+                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
             }),
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
                 submit_api: Box::new(
                     FlashbotsApi::new(client.clone(), args.flashbots_api_url.clone()).unwrap(),
                 ),
-                additional_tip: args.additional_flashbot_tip,
+                max_additional_tip: args.max_additional_flashbot_tip,
+                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
             }),
             TransactionStrategyArg::CustomNodes => {
                 assert!(
@@ -607,7 +619,8 @@ async fn main() {
                 );
                 TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,

@@ -229,7 +229,8 @@ async fn eth_integration(web3: Web3) {
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 }),
             ],
         },

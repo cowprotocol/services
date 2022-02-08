@@ -35,7 +35,8 @@ pub struct SolutionSubmitter {
 
 pub struct StrategyArgs {
     pub submit_api: Box<dyn TransactionSubmitting>,
-    pub additional_tip: f64,
+    pub max_additional_tip: f64,
+    pub additional_tip_percentage_of_max_fee: f64,
 }
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
@@ -101,8 +102,9 @@ impl SolutionSubmitter {
                         };
                         let gas_price_estimator = SubmitterGasPriceEstimator {
                             inner: self.gas_price_estimator.as_ref(),
-                            additional_tip: Some(strategy_args.additional_tip),
                             gas_price_cap: self.gas_price_cap,
+                            additional_tip_percentage_of_max_fee: Some(strategy_args.additional_tip_percentage_of_max_fee),
+                            max_additional_tip: Some(strategy_args.max_additional_tip),
                         };
                         let submitter = Submitter::new(
                             &self.contract,
@@ -230,7 +232,8 @@ mod tests {
         fn default() -> Self {
             Self {
                 submit_api: Box::new(MockTransactionSubmitting::new()),
-                additional_tip: Default::default(),
+                max_additional_tip: Default::default(),
+                additional_tip_percentage_of_max_fee: Default::default(),
             }
         }
     }
