@@ -16,7 +16,9 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use submitter::{Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting};
+use submitter::{
+    DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting,
+};
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -73,6 +75,8 @@ impl SolutionSubmitter {
             .iter()
             .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
 
+        let network_id = self.web3.net().version().await?;
+
         if is_dry_run {
             Ok(dry_run::log_settlement(account, &self.contract, settlement).await?)
         } else {
@@ -99,6 +103,7 @@ impl SolutionSubmitter {
                             gas_estimate,
                             deadline: Some(Instant::now() + self.max_confirm_time),
                             retry_interval: self.retry_interval,
+                            network_id: network_id.clone(),
                         };
                         let gas_price_estimator = SubmitterGasPriceEstimator {
                             inner: self.gas_price_estimator.as_ref(),
@@ -145,6 +150,8 @@ pub enum SubmissionError {
     Timeout,
     /// Canceled after revert or timeout
     Canceled,
+    /// The submission is disabled
+    Disabled(DisabledReason),
     /// An error occured.
     Other(anyhow::Error),
 }
@@ -157,7 +164,8 @@ impl SubmissionError {
             Self::Timeout => SettlementSubmissionOutcome::Timeout,
             Self::Revert => SettlementSubmissionOutcome::Revert,
             Self::Canceled => SettlementSubmissionOutcome::Cancel,
-            Self::Other(_) => SettlementSubmissionOutcome::SimulationRevert,
+            Self::Disabled(_) => SettlementSubmissionOutcome::Disabled,
+            Self::Other(_) => SettlementSubmissionOutcome::Failed,
         }
     }
 
@@ -177,6 +185,9 @@ impl SubmissionError {
                 anyhow!("transaction cancelled after revert or timeout")
             }
             SubmissionError::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
+            SubmissionError::Disabled(reason) => {
+                anyhow!("transaction disabled, reason: {:?}", reason)
+            }
             SubmissionError::Other(err) => err,
         }
     }
@@ -188,7 +199,14 @@ impl SubmissionError {
             SubmissionError::Timeout => false,
             SubmissionError::Canceled => true,
             SubmissionError::Other(_) => false,
+            SubmissionError::Disabled(_) => false,
         }
+    }
+}
+
+impl From<web3::Error> for SubmissionError {
+    fn from(err: web3::Error) -> Self {
+        Self::Other(err.into())
     }
 }
 

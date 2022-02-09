@@ -43,6 +43,8 @@ pub struct SubmitterParams {
     pub deadline: Option<Instant>,
     /// Resimulate and resend transaction on every retry_interval seconds
     pub retry_interval: Duration,
+    /// Network id (mainnet, rinkeby, gnosis chain)
+    pub network_id: String,
 }
 
 #[derive(Debug)]
@@ -58,6 +60,17 @@ impl From<anyhow::Error> for SubmitApiError {
     fn from(err: anyhow::Error) -> Self {
         Self::Other(err)
     }
+}
+
+#[derive(Debug)]
+pub enum SubmissionLoopStatus {
+    Enabled,
+    Disabled(DisabledReason),
+}
+
+#[derive(Debug)]
+pub enum DisabledReason {
+    MevExtractable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -95,6 +108,8 @@ pub trait TransactionSubmitting: Send + Sync {
         address: &H160,
         nonce: U256,
     ) -> Result<Option<EstimatedGasPrice>>;
+    /// Checks if transaction submitting is enabled at the moment
+    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -333,6 +348,17 @@ impl<'a> Submitter<'a> {
                 }
             };
 
+            // before submitting, check if the currently executing strategy is temporarily disabled
+
+            if let SubmissionLoopStatus::Disabled(reason) = self
+                .submit_api
+                .submission_status(&settlement, &params.network_id)
+            {
+                tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
+                tokio::time::sleep(params.retry_interval).await;
+                continue;
+            }
+
             // create transaction
 
             let method = self.build_method(settlement.clone(), &gas_price, nonce, gas_limit);
@@ -544,6 +570,7 @@ mod tests {
             gas_estimate,
             deadline: Some(Instant::now() + Duration::from_secs(90)),
             retry_interval: Duration::from_secs(5),
+            network_id: "1".to_string(),
         };
         let result = submitter.submit(settlement, params).await;
         tracing::info!("finished with result {:?}", result);

@@ -277,6 +277,11 @@ impl Settlement {
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self { encoder: merged })
     }
+
+    // Checks if the settlement is safe from MEV extraction
+    pub fn mev_safe(&self) -> bool {
+        true
+    }
 }
 
 impl From<Settlement> for EncodedSettlement {

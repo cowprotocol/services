@@ -102,7 +102,7 @@ pub async fn create_priority_estimator(
     Ok(PriorityGasPriceEstimating::new(estimators))
 }
 
-fn is_mainnet(network_id: &str) -> bool {
+pub fn is_mainnet(network_id: &str) -> bool {
     network_id == "1"
 }
 
