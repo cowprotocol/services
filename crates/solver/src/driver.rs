@@ -182,8 +182,8 @@ impl Driver {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
-                    "Successfully submitted {} settlement: {:?}",
-                    name,
+                    "Successfully submitted settlement id {} as tx hash {:?}",
+                    rated_settlement.id,
                     receipt.transaction_hash
                 );
                 trades
@@ -198,7 +198,11 @@ impl Driver {
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
-                tracing::warn!("Failed to submit {} settlement: {:?}", solver.name(), err);
+                tracing::warn!(
+                    "Failed to submit settlement id {} settlement: {:?}",
+                    rated_settlement.id,
+                    err
+                );
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
                 Err(err.into_anyhow())
@@ -509,7 +513,8 @@ impl Driver {
             }
 
             tracing::info!(
-                "winning settlement by {}: {:?}",
+                "winning settlement id {} by solver {}: {:?}",
+                winning_settlement.id,
                 winning_solver.name(),
                 winning_settlement
             );
@@ -574,24 +579,32 @@ fn print_settlements(
     rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)],
     fee_objective_scaling_factor: &BigRational,
 ) {
-    tracing::info!(
-        "Rated Settlements: {:?}",
-        rated_settlements
-            .iter()
-            .rev()
-            .map(|(solver, settlement)| format!(
-                "id={} solver={} objective={:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}, unscaled_unsubsidized_fee={:.2e}, unscaled_subsidized_fee={:.2e}",
-                settlement.id,
-                solver.name(),
-                settlement.objective_value().to_f64().unwrap_or(f64::NAN),
-                settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                settlement.gas_estimate.to_f64_lossy(),
-                settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor).to_f64().unwrap_or(f64::NAN),
-                settlement.unscaled_subsidized_fee.to_f64().unwrap_or(f64::NAN),
-            ))
-            .collect::<Vec<_>>()
-    );
+    let mut text = String::new();
+    for (solver, settlement) in rated_settlements {
+        use std::fmt::Write;
+        write!(
+            text,
+            "\nid={} solver={} \
+             objective={:.2e} surplus={:.2e} \
+             gas_estimate={:.2e} gas_price={:.2e} \
+             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e}",
+            settlement.id,
+            solver.name(),
+            settlement.objective_value().to_f64().unwrap_or(f64::NAN),
+            settlement.surplus.to_f64().unwrap_or(f64::NAN),
+            settlement.gas_estimate.to_f64_lossy(),
+            settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+            (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
+                .to_f64()
+                .unwrap_or(f64::NAN),
+            settlement
+                .unscaled_subsidized_fee
+                .to_f64()
+                .unwrap_or(f64::NAN),
+        )
+        .unwrap();
+    }
+    tracing::info!("Rated Settlements: {}", text);
 }
 
 #[derive(Debug)]
@@ -655,5 +668,53 @@ mod tests {
             ],
         );
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
+    }
+
+    #[test]
+    #[ignore]
+    fn print_settlements() {
+        struct S;
+        #[async_trait::async_trait]
+        impl Solver for S {
+            async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
+                todo!()
+            }
+            fn account(&self) -> &ethcontract::Account {
+                todo!()
+            }
+            fn name(&self) -> &'static str {
+                "solvername"
+            }
+        }
+
+        let a = [
+            (
+                Arc::new(S) as Arc<dyn Solver>,
+                RatedSettlement {
+                    id: 0,
+                    settlement: Default::default(),
+                    surplus: BigRational::new(1u8.into(), 1u8.into()),
+                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
+                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
+                    gas_estimate: 4.into(),
+                    gas_price: BigRational::new(5u8.into(), 1u8.into()),
+                },
+            ),
+            (
+                Arc::new(S) as Arc<dyn Solver>,
+                RatedSettlement {
+                    id: 6,
+                    settlement: Default::default(),
+                    surplus: BigRational::new(7u8.into(), 1u8.into()),
+                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
+                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
+                    gas_estimate: 10.into(),
+                    gas_price: BigRational::new(11u8.into(), 1u8.into()),
+                },
+            ),
+        ];
+
+        shared::tracing::initialize_for_tests("INFO");
+        super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
     }
 }

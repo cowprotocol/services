@@ -35,6 +35,12 @@ pub struct SettlementEncoder {
     unwraps: Vec<UnwrapWethInteraction>,
 }
 
+impl Default for SettlementEncoder {
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
+}
+
 impl SettlementEncoder {
     /// Creates a new settlement encoder with the specified prices.
     ///

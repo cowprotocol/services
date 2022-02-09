@@ -162,7 +162,7 @@ impl Interaction for NoopInteraction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
 }
