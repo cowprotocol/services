@@ -158,12 +158,6 @@ struct Arguments {
     )]
     min_order_size_one_inch: U256,
 
-    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
-    /// (representing a private market maker) is disabled as it seems to
-    /// produce invalid swaps.
-    #[clap(long, env, default_value = "PMM1", use_delimiter = true)]
-    disabled_one_inch_protocols: Vec<String>,
-
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
     #[clap(
@@ -289,10 +283,6 @@ struct Arguments {
     /// but at the same time we don't restrict solutions sizes too much
     #[clap(long, env, default_value = "15000000")]
     simulation_gas_limit: u128,
-
-    /// The 1Inch REST API URL to use.
-    #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
-    one_inch_url: Url,
 }
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
@@ -546,7 +536,7 @@ async fn main() {
         network_name.to_string(),
         chain_id,
         args.min_order_size_one_inch,
-        args.disabled_one_inch_protocols,
+        args.shared.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
@@ -556,7 +546,7 @@ async fn main() {
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
-        args.one_inch_url,
+        args.shared.one_inch_url,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {

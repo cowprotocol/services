@@ -199,15 +199,8 @@ struct Arguments {
     #[clap(long, default_value = "1000")]
     price_estimator_cache_size: usize,
 
-    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
-    /// (representing a private market maker) is disabled as it seems to
-    /// produce invalid swaps.
-    #[clap(long, env, default_value = "PMM1", use_delimiter = true)]
-    disabled_one_inch_protocols: Vec<String>,
-
-    /// The 1Inch REST API URL to use.
-    #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
-    one_inch_url: Url,
+    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    price_estimators: Vec<PriceEstimatorType>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -462,7 +455,6 @@ async fn main() {
         )
     };
     let price_estimators = args
-        .shared
         .price_estimators
         .iter()
         .map(|estimator| -> (String, Box<dyn PriceEstimating>) {
@@ -526,11 +518,11 @@ async fn main() {
                     PriceEstimatorType::OneInch => Box::new(instrumented_and_cached(
                         Box::new(OneInchPriceEstimator::new(
                             Arc::new(OneInchClientImpl::new(
-                                args.one_inch_url.clone(),
+                                args.shared.one_inch_url.clone(),
                                 client.clone(),
                                 chain_id,
                             ).unwrap()),
-                            args.disabled_one_inch_protocols.clone()
+                            args.shared.disabled_one_inch_protocols.clone()
                         )),
                         &estimator.name(),
                     ))
