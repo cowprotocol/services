@@ -87,7 +87,7 @@ pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
 }
 
 pub struct OrderbookServices {
-    pub price_estimator: Arc<SanitizedPriceEstimator<BaselinePriceEstimator>>,
+    pub price_estimator: Arc<SanitizedPriceEstimator>,
     pub maintenance: ServiceMaintenance,
     pub block_stream: CurrentBlockStream,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -126,13 +126,13 @@ impl OrderbookServices {
         let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
         let base_tokens = Arc::new(BaseTokens::new(contracts.weth.address(), &[]));
         let price_estimator = Arc::new(SanitizedPriceEstimator::new(
-            BaselinePriceEstimator::new(
+            Box::new(BaselinePriceEstimator::new(
                 Arc::new(pool_fetcher),
                 gas_estimator.clone(),
                 base_tokens.clone(),
                 contracts.weth.address(),
                 1_000_000_000_000_000_000_u128.into(),
-            ),
+            )),
             contracts.weth.address(),
             bad_token_detector.clone(),
         ));

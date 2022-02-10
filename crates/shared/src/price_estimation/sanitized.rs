@@ -9,8 +9,8 @@ use std::sync::Arc;
 
 /// Verifies that buy and sell tokens are supported and handles
 /// ETH as buy token appropriately.
-pub struct SanitizedPriceEstimator<T: PriceEstimating> {
-    inner: T,
+pub struct SanitizedPriceEstimator {
+    inner: Box<dyn PriceEstimating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     native_token: H160,
 }
@@ -23,9 +23,9 @@ enum EstimationProgress<'a> {
     AwaitingErc20Estimation,
 }
 
-impl<T: PriceEstimating> SanitizedPriceEstimator<T> {
+impl SanitizedPriceEstimator {
     pub fn new(
-        inner: T,
+        inner: Box<dyn PriceEstimating>,
         native_token: H160,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
     ) -> Self {
@@ -70,7 +70,7 @@ impl<T: PriceEstimating> SanitizedPriceEstimator<T> {
 }
 
 #[async_trait::async_trait]
-impl<T: PriceEstimating> PriceEstimating for SanitizedPriceEstimator<T> {
+impl PriceEstimating for SanitizedPriceEstimator {
     // This function will estimate easy queries on its own and forward "difficult" queries to the
     // inner estimator. When the inner estimator did its job, solutions get merged back together
     // while preserving the correct order.
@@ -280,7 +280,7 @@ mod tests {
             },
         ];
 
-        let mut wrapped_estimator = MockPriceEstimating::new();
+        let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
         wrapped_estimator
             .expect_estimates()
             .times(1)

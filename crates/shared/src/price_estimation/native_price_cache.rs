@@ -5,6 +5,16 @@ use std::collections::HashMap;
 use std::sync::{Arc, RwLock, Weak};
 use std::time::{Duration, Instant};
 
+#[cfg_attr(test, mockall::automock)]
+pub trait Metrics: Send + Sync + 'static {
+    fn native_price_cache(&self, misses: usize, hits: usize);
+}
+
+struct NoopMetrics;
+impl Metrics for NoopMetrics {
+    fn native_price_cache(&self, _: usize, _: usize) {}
+}
+
 #[derive(Debug, Clone)]
 struct CachedPrice {
     price: f64,
@@ -15,6 +25,7 @@ struct Inner {
     cache: RwLock<HashMap<H160, CachedPrice>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
+    metrics: Arc<dyn Metrics>,
 }
 
 impl Inner {
@@ -71,11 +82,16 @@ pub struct CachingNativePriceEstimator(Arc<Inner>);
 impl CachingNativePriceEstimator {
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate native prices which
     /// get cached a duration of `max_age`.
-    pub fn new(estimator: Box<dyn NativePriceEstimating>, max_age: Duration) -> Self {
+    pub fn new(
+        estimator: Box<dyn NativePriceEstimating>,
+        max_age: Duration,
+        metrics: Arc<dyn Metrics>,
+    ) -> Self {
         Self(Arc::new(Inner {
             estimator,
             cache: RwLock::new(Default::default()),
             max_age,
+            metrics,
         }))
     }
 
@@ -108,6 +124,11 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
                 None => Some(*token),
             })
             .collect();
+
+        self.0.metrics.native_price_cache(
+            missing_tokens.len(),
+            cached_prices.len() - missing_tokens.len(),
+        );
 
         let mut results = self
             .0
@@ -177,8 +198,11 @@ mod tests {
                 vec![Ok(1.0)]
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Arc::new(NoopMetrics),
+        );
 
         for _ in 0..10 {
             let results = estimator.estimate_native_prices(&[token(0)]).await;
@@ -197,8 +221,11 @@ mod tests {
                 vec![Err(PriceEstimationError::NoLiquidity)]
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Arc::new(NoopMetrics),
+        );
 
         for _ in 0..10 {
             let results = estimator
@@ -252,8 +279,11 @@ mod tests {
                 vec![Ok(4.0)]
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Arc::new(NoopMetrics),
+        );
         estimator.spawn_maintenance_task(Duration::from_millis(50), Some(1));
 
         // fill cache with 2 different queries
@@ -295,8 +325,11 @@ mod tests {
                 vec![Ok(2.0); 10]
             });
 
-        let estimator =
-            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
+        let estimator = CachingNativePriceEstimator::new(
+            Box::new(inner),
+            Duration::from_millis(30),
+            Arc::new(NoopMetrics),
+        );
         estimator.spawn_maintenance_task(Duration::from_millis(50), None);
 
         let tokens: Vec<_> = (0..10).map(H160::from_low_u64_be).collect();

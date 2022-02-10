@@ -23,6 +23,7 @@ use orderbook::{
 use primitive_types::H160;
 use shared::oneinch_api::OneInchClientImpl;
 use shared::price_estimation::native::NativePriceEstimator;
+use shared::price_estimation::native_price_cache::CachingNativePriceEstimator;
 use shared::price_estimation::oneinch::OneInchPriceEstimator;
 use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
 use shared::price_estimation::sanitized::SanitizedPriceEstimator;
@@ -63,7 +64,6 @@ use shared::{
 use shared::{
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     network::network_name,
-    price_estimation::cached::CachingPriceEstimator,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
@@ -187,17 +187,21 @@ struct Arguments {
     #[clap(long, env)]
     quasimodo_solver_url: Option<Url>,
 
-    /// The maximum time price estimates will be cached for.
+    /// How long cached native prices stay valid.
     #[clap(
         long,
-        default_value = "10",
+        default_value = "30",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
-    price_estimator_cache_max_age_secs: Duration,
+    native_price_cache_max_age_secs: Duration,
 
-    /// The maximum number of price estimates that will be cached.
-    #[clap(long, default_value = "1000")]
-    price_estimator_cache_size: usize,
+    /// How many cached native token prices can be updated at most in one maintenance cycle.
+    #[clap(long, default_value = "3")]
+    native_price_cache_max_update_size: usize,
+
+    /// Which estimators to use to estimate token prices in terms of the chain's native token.
+    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    native_price_estimators: Vec<PriceEstimatorType>,
 
     #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
     price_estimators: Vec<PriceEstimatorType>,
@@ -441,105 +445,101 @@ async fn main() {
         )
         .unwrap(),
     );
-    let instrumented = |inner: Box<dyn PriceEstimating>, name: &str| {
-        InstrumentedPriceEstimator::new(inner, name.to_string(), metrics.clone())
+    let one_inch_api = Arc::new(
+        OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id).unwrap(),
+    );
+    let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
+        InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
-    let instrumented_and_cached = |inner: Box<dyn PriceEstimating>, name: &str| {
-        // Instrument first then cache so instrumented is close to inner estimator.
-        CachingPriceEstimator::new(
-            Box::new(instrumented(inner, name)),
-            args.price_estimator_cache_max_age_secs,
-            args.price_estimator_cache_size,
-            metrics.clone(),
-            name.to_string(),
+    let create_base_estimator = |&estimator| -> (String, Box<dyn PriceEstimating>) {
+        let instance: Box<dyn PriceEstimating> = match estimator {
+            PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
+                pool_fetcher.clone(),
+                gas_price_estimator.clone(),
+                base_tokens.clone(),
+                native_token.address(),
+                native_token_price_estimation_amount,
+            )),
+            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator {
+                paraswap: Arc::new(DefaultParaswapApi {
+                    client: client.clone(),
+                    partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                }),
+                token_info: token_info_fetcher.clone(),
+                disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
+            }),
+            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator {
+                api: zeroex_api.clone(),
+            }),
+            PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator {
+                api: Arc::new(DefaultHttpSolverApi {
+                    name: "quasimodo-price-estimator",
+                    network_name: network_name.to_string(),
+                    chain_id,
+                    base: args.quasimodo_solver_url.clone().expect(
+                        "quasimodo solver url is required when using quasimodo price estimation",
+                    ),
+                    client: client.clone(),
+                    config: SolverConfig {
+                        api_key: None,
+                        max_nr_exec_orders: 100,
+                        has_ucp_policy_parameter: false,
+                        use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
+                    },
+                }),
+                pools: pool_fetcher.clone(),
+                balancer_pools: balancer_pool_fetcher.clone(),
+                token_info: token_info_fetcher.clone(),
+                gas_info: gas_price_estimator.clone(),
+                native_token: native_token.address(),
+                base_tokens: base_tokens.clone(),
+            }),
+            PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
+                one_inch_api.clone(),
+                args.shared.disabled_one_inch_protocols.clone(),
+            )),
+        };
+
+        (
+            estimator.name(),
+            Box::new(instrumented(instance, estimator.name())),
         )
     };
-    let price_estimators = args
-        .price_estimators
-        .iter()
-        .map(|estimator| -> (String, Box<dyn PriceEstimating>) {
-            (
-                estimator.name(),
-                match estimator {
-                    PriceEstimatorType::Baseline => Box::new(instrumented(
-                        Box::new(BaselinePriceEstimator::new(
-                            pool_fetcher.clone(),
-                            gas_price_estimator.clone(),
-                            base_tokens.clone(),
-                            native_token.address(),
-                            native_token_price_estimation_amount,
-                        )),
-                        &estimator.name(),
-                    )),
-                    PriceEstimatorType::Paraswap => Box::new(instrumented_and_cached(
-                        Box::new(ParaswapPriceEstimator {
-                            paraswap: Arc::new(DefaultParaswapApi {
-                                client: client.clone(),
-                                partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                            }),
-                            token_info: token_info_fetcher.clone(),
-                            disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
-                        }),
-                        &estimator.name(),
-                    )),
-                    PriceEstimatorType::ZeroEx => Box::new(instrumented_and_cached(Box::new(
-                        ZeroExPriceEstimator {
-                            api: zeroex_api.clone(),
-                        }),
-                        &estimator.name(),
-                    )),
-                    PriceEstimatorType::Quasimodo => Box::new(instrumented_and_cached(
-                        Box::new(QuasimodoPriceEstimator {
-                            api: Arc::new(DefaultHttpSolverApi {
-                                name: "quasimodo-price-estimator",
-                                network_name: network_name.to_string(),
-                                chain_id,
-                                base: args
-                                    .quasimodo_solver_url
-                                    .clone()
-                                    .expect("quasimodo solver url is required when using quasimodo price estimation"),
-                                client: client.clone(),
-                                config: SolverConfig {
-                                    api_key: None,
-                                    max_nr_exec_orders: 100,
-                                    has_ucp_policy_parameter: false,
-                                    use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
-                                },
-                            }),
-                            pools: pool_fetcher.clone(),
-                            balancer_pools: balancer_pool_fetcher.clone(),
-                            token_info: token_info_fetcher.clone(),
-                            gas_info: gas_price_estimator.clone(),
-                            native_token: native_token.address(),
-                            base_tokens: base_tokens.clone(),
-                        }),
-                        &estimator.name(),
-                    )),
-                    PriceEstimatorType::OneInch => Box::new(instrumented_and_cached(
-                        Box::new(OneInchPriceEstimator::new(
-                            Arc::new(OneInchClientImpl::new(
-                                args.shared.one_inch_url.clone(),
-                                client.clone(),
-                                chain_id,
-                            ).unwrap()),
-                            args.shared.disabled_one_inch_protocols.clone()
-                        )),
-                        &estimator.name(),
-                    ))
-                },
-            )
-        })
-        .collect::<Vec<_>>();
-    let price_estimator = Arc::new(SanitizedPriceEstimator::new(
-        CompetitionPriceEstimator::new(price_estimators),
-        native_token.address(),
-        bad_token_detector.clone(),
+
+    let sanitized = |estimator| {
+        SanitizedPriceEstimator::new(
+            estimator,
+            native_token.address(),
+            bad_token_detector.clone(),
+        )
+    };
+
+    let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
+        args.price_estimators
+            .iter()
+            .map(create_base_estimator)
+            .collect(),
+    ))));
+
+    let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
+        Box::new(NativePriceEstimator::new(
+            Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
+                args.native_price_estimators
+                    .iter()
+                    .map(create_base_estimator)
+                    .collect(),
+            )))),
+            native_token.address(),
+            native_token_price_estimation_amount,
+        )),
+        args.native_price_cache_max_age_secs,
+        metrics.clone(),
     ));
-    let native_price_estimator = Arc::new(NativePriceEstimator::new(
-        price_estimator.clone(),
-        native_token.address(),
-        native_token_price_estimation_amount,
-    ));
+    native_price_estimator.spawn_maintenance_task(
+        Duration::from_secs(1),
+        Some(args.native_price_cache_max_update_size),
+    );
+
     let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,
