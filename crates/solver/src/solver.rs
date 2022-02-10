@@ -153,7 +153,6 @@ pub fn create(
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     network_id: String,
     chain_id: u64,
-    min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
     paraswap_slippage_bps: u32,
     disabled_paraswap_dexs: Vec<String>,
@@ -237,25 +236,18 @@ pub fn create(
                         use_internal_buffers: quasimodo_uses_internal_buffers.into(),
                     },
                 )),
-                SolverType::OneInch => {
-                    let one_inch_solver: SingleOrderSolver<_> = SingleOrderSolver::new(
-                        OneInchSolver::with_disabled_protocols(
-                            account,
-                            web3.clone(),
-                            settlement_contract.clone(),
-                            chain_id,
-                            disabled_one_inch_protocols.clone(),
-                            client.clone(),
-                            one_inch_url.clone(),
-                        )?,
-                        solver_metrics.clone(),
-                    );
-                    // We only want to use 1Inch for high value orders
-                    shared(SellVolumeFilteringSolver::new(
-                        Box::new(one_inch_solver),
-                        min_order_size_one_inch,
-                    ))
-                }
+                SolverType::OneInch => shared(SingleOrderSolver::new(
+                    OneInchSolver::with_disabled_protocols(
+                        account,
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        chain_id,
+                        disabled_one_inch_protocols.clone(),
+                        client.clone(),
+                        one_inch_url.clone(),
+                    )?,
+                    solver_metrics.clone(),
+                )),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,

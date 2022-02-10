@@ -1,7 +1,7 @@
 use anyhow::anyhow;
 use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
-use ethcontract::{Account, PrivateKey, H160, U256};
+use ethcontract::{Account, PrivateKey, H160};
 use reqwest::Url;
 use shared::{
     baseline_solver::BaseTokens,
@@ -147,16 +147,6 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     solver_time_limit: Duration,
-
-    /// The minimum amount of sell volume (in ETH) that needs to be
-    /// traded in order to use the 1Inch solver.
-    #[clap(
-        long,
-        env,
-        default_value = "5",
-        parse(try_from_str = shared::arguments::wei_from_base_unit)
-    )]
-    min_order_size_one_inch: U256,
 
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
@@ -535,7 +525,6 @@ async fn main() {
         token_info_fetcher,
         network_name.to_string(),
         chain_id,
-        args.min_order_size_one_inch,
         args.shared.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
         args.shared.disabled_paraswap_dexs,
