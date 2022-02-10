@@ -175,7 +175,7 @@ async fn update_most_outdated_prices(
             .estimate_prices_and_update_cache(&tokens_to_update)
             .await;
 
-        tokio::time::sleep(update_interval - now.elapsed()).await;
+        tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
     }
 }
 
