@@ -445,9 +445,9 @@ async fn main() {
         )
         .unwrap(),
     );
-    let one_inch_api = Arc::new(
-        OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id).unwrap(),
-    );
+    let one_inch_api =
+        OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id)
+            .map(Arc::new);
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
@@ -495,7 +495,7 @@ async fn main() {
                 base_tokens: base_tokens.clone(),
             }),
             PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
-                one_inch_api.clone(),
+                one_inch_api.as_ref().unwrap().clone(),
                 args.shared.disabled_one_inch_protocols.clone(),
             )),
         };
