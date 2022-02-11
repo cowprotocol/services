@@ -147,11 +147,36 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+struct AverageDuration {
+    total_time_msecs: u128,
+    measurements: u128,
+}
+
+impl AverageDuration {
+    pub fn add_measurement(&mut self, measurement: Duration) {
+        self.total_time_msecs += measurement.as_millis();
+        self.measurements += 1;
+    }
+}
+
+impl From<&AverageDuration> for Duration {
+    fn from(avg: &AverageDuration) -> Self {
+        if avg.measurements == 0 {
+            Self::ZERO
+        } else {
+            Self::from_millis((avg.total_time_msecs / avg.measurements) as u64)
+        }
+    }
+}
+
 async fn update_most_outdated_prices(
     inner: Weak<Inner>,
     update_interval: Duration,
     update_size: Option<usize>,
 ) {
+    let mut average_update_time = AverageDuration::default();
+
     while let Some(inner) = inner.upgrade() {
         let now = Instant::now();
 
@@ -160,7 +185,10 @@ async fn update_most_outdated_prices(
             .read()
             .unwrap()
             .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > inner.max_age)
+            .filter(|(_, cached)| {
+                now.saturating_duration_since(cached.updated_at)
+                    > inner.max_age.saturating_sub((&average_update_time).into())
+            })
             .map(|(token, cached)| (*token, cached.updated_at))
             .collect();
         outdated_entries.sort_by_key(|entry| entry.1);
@@ -175,7 +203,11 @@ async fn update_most_outdated_prices(
             .estimate_prices_and_update_cache(&tokens_to_update)
             .await;
 
-        tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
+        let time_spent = now.elapsed();
+        if !tokens_to_update.is_empty() {
+            average_update_time.add_measurement(time_spent);
+        }
+        tokio::time::sleep(update_interval.saturating_sub(time_spent)).await;
     }
 }
 
