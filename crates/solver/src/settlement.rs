@@ -167,6 +167,11 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
 }
 
+pub enum Revertable {
+    NoRisk,
+    HighRisk,
+}
+
 impl Settlement {
     /// Creates a new settlement builder for the specified clearing prices.
     pub fn new(clearing_prices: HashMap<H160, U256>) -> Self {
@@ -278,9 +283,12 @@ impl Settlement {
         Ok(Self { encoder: merged })
     }
 
-    // Checks if the settlement is safe from MEV extraction
-    pub fn mev_safe(&self) -> bool {
-        true
+    // Calculates the risk level for settlement to be reverted
+    pub fn revertable(&self) -> Revertable {
+        if self.encoder.execution_plan().is_empty() {
+            return Revertable::NoRisk;
+        }
+        Revertable::HighRisk
     }
 }
 

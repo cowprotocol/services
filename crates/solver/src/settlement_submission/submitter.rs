@@ -64,8 +64,14 @@ impl From<anyhow::Error> for SubmitApiError {
 
 #[derive(Debug)]
 pub enum SubmissionLoopStatus {
-    Enabled,
+    Enabled(AdditionalTip),
     Disabled(DisabledReason),
+}
+
+#[derive(Debug)]
+pub enum AdditionalTip {
+    Off,
+    On,
 }
 
 #[derive(Debug)]
@@ -113,6 +119,7 @@ pub trait TransactionSubmitting: Send + Sync {
 }
 
 /// Gas price estimator specialized for sending transactions to the network
+#[derive(Clone)]
 pub struct SubmitterGasPriceEstimator<'a> {
     pub inner: &'a dyn GasPriceEstimating,
     /// Additionally increase max_priority_fee_per_gas by percentage of max_fee_per_gas, in order to increase the chances of a transaction being mined
@@ -121,6 +128,15 @@ pub struct SubmitterGasPriceEstimator<'a> {
     pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
+}
+
+impl SubmitterGasPriceEstimator<'_> {
+    pub fn with_no_additional_tip(&self) -> Self {
+        Self {
+            max_additional_tip: None,
+            ..*self
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -332,14 +348,26 @@ impl<'a> Submitter<'a> {
             .unwrap_or(None);
 
         loop {
+            let submission_status = self
+                .submit_api
+                .submission_status(&settlement, &params.network_id);
+            let estimator = match submission_status {
+                SubmissionLoopStatus::Disabled(reason) => {
+                    tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
+                    tokio::time::sleep(params.retry_interval).await;
+                    continue;
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
+                    self.gas_price_estimator.with_no_additional_tip()
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
+                    self.gas_price_estimator.clone()
+                }
+            };
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
-            let gas_price = match self
-                .gas_price_estimator
-                .estimate_with_limits(gas_limit, time_limit)
-                .await
-            {
+            let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
                 Ok(gas_price) => gas_price,
                 Err(err) => {
                     tracing::error!("gas estimation failed: {:?}", err);
@@ -347,17 +375,6 @@ impl<'a> Submitter<'a> {
                     continue;
                 }
             };
-
-            // before submitting, check if the currently executing strategy is temporarily disabled
-
-            if let SubmissionLoopStatus::Disabled(reason) = self
-                .submit_api
-                .submission_status(&settlement, &params.network_id)
-            {
-                tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
-                tokio::time::sleep(params.retry_interval).await;
-                continue;
-            }
 
             // create transaction
 
@@ -510,6 +527,7 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
+    use shared::gas_price_estimation::FakeGasPriceEstimator;
     use shared::transport::create_env_test_transport;
     use tracing::level_filters::LevelFilter;
 
@@ -574,5 +592,18 @@ mod tests {
         };
         let result = submitter.submit(settlement, params).await;
         tracing::info!("finished with result {:?}", result);
+    }
+
+    #[test]
+    fn gas_price_estimator_no_tip_test() {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::default(),
+            additional_tip_percentage_of_max_fee: Some(5.),
+            max_additional_tip: Some(10.),
+            gas_price_cap: 0.,
+        };
+
+        let gas_price_estimator = gas_price_estimator.with_no_additional_tip();
+        assert_eq!(gas_price_estimator.max_additional_tip, None);
     }
 }

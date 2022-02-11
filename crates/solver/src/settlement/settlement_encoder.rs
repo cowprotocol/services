@@ -93,6 +93,10 @@ impl SettlementEncoder {
         &self.trades
     }
 
+    pub fn execution_plan(&self) -> &Vec<Arc<dyn Interaction>> {
+        &self.execution_plan
+    }
+
     // Fails if any used token doesn't have a price.
     pub fn add_trade(
         &mut self,

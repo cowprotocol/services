@@ -1,8 +1,8 @@
-use crate::settlement::Settlement;
+use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
-    CancelHandle, SubmissionLoopStatus,
+    AdditionalTip, CancelHandle, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, U256};
@@ -50,11 +50,13 @@ impl TransactionSubmitting for FlashbotsApi {
         Ok(None)
     }
 
-    fn submission_status(
-        &self,
-        _settlement: &Settlement,
-        _network_id: &str,
-    ) -> SubmissionLoopStatus {
-        SubmissionLoopStatus::Enabled
+    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
+        if shared::gas_price_estimation::is_mainnet(network_id) {
+            if let Revertable::NoRisk = settlement.revertable() {
+                return SubmissionLoopStatus::Enabled(AdditionalTip::Off);
+            }
+        }
+
+        SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
 }
