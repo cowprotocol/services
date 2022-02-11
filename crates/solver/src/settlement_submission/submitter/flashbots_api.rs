@@ -59,4 +59,8 @@ impl TransactionSubmitting for FlashbotsApi {
 
         SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
+
+    fn name(&self) -> &'static str {
+        "Flashbots"
+    }
 }

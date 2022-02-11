@@ -170,6 +170,10 @@ impl Driver {
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
         let trades = settlement.trades().to_vec();
+
+        self.metrics
+            .settlement_revertable_status(settlement.revertable(), solver.name());
+
         match self
             .solution_submitter
             .settle(

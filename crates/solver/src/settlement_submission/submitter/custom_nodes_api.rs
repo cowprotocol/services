@@ -132,4 +132,8 @@ impl TransactionSubmitting for CustomNodesApi {
 
         SubmissionLoopStatus::Enabled(AdditionalTip::Off)
     }
+
+    fn name(&self) -> &'static str {
+        "CustomNodes"
+    }
 }

@@ -27,10 +27,6 @@ pub async fn submit_raw_transaction(
       "method": "eth_sendRawTransaction",
       "params": [tx],
     });
-    tracing::debug!(
-        "submit_transaction body: {}",
-        serde_json::to_string(&body).unwrap_or_else(|err| format!("error: {:?}", err)),
-    );
     let response = client
         .post(url.clone())
         .json(&body)
