@@ -1,5 +1,6 @@
 mod cancel_order;
 mod create_order;
+mod get_auction;
 mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
@@ -79,6 +80,9 @@ pub fn handle_all_routes(
     let post_quote = post_quote::post_quote(quoter)
         .map(|result| (result, "v1/post_quote"))
         .boxed();
+    let get_auction = get_auction::get_auction()
+        .map(|result| (result, "v1/auction"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -106,6 +110,8 @@ pub fn handle_all_routes(
                 .or(get_orders_by_tx)
                 .unify()
                 .or(post_quote)
+                .unify()
+                .or(get_auction)
                 .unify(),
         )
         .untuple_one()
