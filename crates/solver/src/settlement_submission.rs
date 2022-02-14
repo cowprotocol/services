@@ -6,7 +6,7 @@ use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     errors::{ExecutionError, MethodError},
-    Account,
+    Account, TransactionHash,
 };
 use futures::FutureExt;
 use gas_estimation::GasPriceEstimating;
@@ -145,11 +145,11 @@ pub enum SubmissionError {
     /// The transaction reverted in the simulation stage.
     SimulationRevert(Option<String>),
     /// Transaction successfully mined but reverted
-    Revert,
+    Revert(TransactionHash),
     /// The settlement submission timed out.
     Timeout,
     /// Canceled after revert or timeout
-    Canceled,
+    Canceled(TransactionHash),
     /// The submission is disabled
     Disabled(DisabledReason),
     /// An error occured.
@@ -162,8 +162,8 @@ impl SubmissionError {
         match self {
             Self::SimulationRevert(_) => SettlementSubmissionOutcome::SimulationRevert,
             Self::Timeout => SettlementSubmissionOutcome::Timeout,
-            Self::Revert => SettlementSubmissionOutcome::Revert,
-            Self::Canceled => SettlementSubmissionOutcome::Cancel,
+            Self::Revert(_) => SettlementSubmissionOutcome::Revert,
+            Self::Canceled(_) => SettlementSubmissionOutcome::Cancel,
             Self::Disabled(_) => SettlementSubmissionOutcome::Disabled,
             Self::Other(_) => SettlementSubmissionOutcome::Failed,
         }
@@ -176,13 +176,16 @@ impl SubmissionError {
     /// `impl<T: Display> From<T> for anyhow::Error`.
     pub fn into_anyhow(self) -> anyhow::Error {
         match self {
-            SubmissionError::Revert => anyhow!("transaction reverted"),
+            SubmissionError::Revert(hash) => anyhow!("transaction reverted, hash: {:?}", hash),
             SubmissionError::Timeout => anyhow!("transaction did not get mined in time"),
             SubmissionError::SimulationRevert(Some(message)) => {
                 anyhow!("transaction simulation reverted with message {}", message)
             }
-            SubmissionError::Canceled => {
-                anyhow!("transaction cancelled after revert or timeout")
+            SubmissionError::Canceled(hash) => {
+                anyhow!(
+                    "transaction cancelled after revert or timeout, hash: {:?}",
+                    hash
+                )
             }
             SubmissionError::SimulationRevert(None) => anyhow!("transaction simulation reverted"),
             SubmissionError::Disabled(reason) => {
@@ -195,9 +198,9 @@ impl SubmissionError {
     pub fn is_transaction_mined(&self) -> bool {
         match self {
             SubmissionError::SimulationRevert(_) => false,
-            SubmissionError::Revert => true,
+            SubmissionError::Revert(_) => true,
             SubmissionError::Timeout => false,
-            SubmissionError::Canceled => true,
+            SubmissionError::Canceled(_) => true,
             SubmissionError::Other(_) => false,
             SubmissionError::Disabled(_) => false,
         }
