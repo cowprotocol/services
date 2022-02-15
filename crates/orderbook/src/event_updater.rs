@@ -11,6 +11,14 @@ use shared::{
 };
 use tokio::sync::Mutex;
 
+/// A trait for abstracting event updater methods.
+#[async_trait::async_trait]
+pub trait EventUpdating: Send + Sync + 'static {
+    /// Returns the last handled block number. Events are guaranteed to be
+    /// processed up until this block.
+    async fn last_handled_block(&self) -> Option<u64>;
+}
+
 pub struct EventUpdater<Database: EventStoring<ContractEvent>>(
     Mutex<EventHandler<DynWeb3, GPv2SettlementContract, Database>>,
 );
@@ -30,6 +38,16 @@ where
             db,
             start_sync_at_block,
         )))
+    }
+}
+
+#[async_trait::async_trait]
+impl<Database> EventUpdating for EventUpdater<Database>
+where
+    Database: EventStoring<ContractEvent> + Send + Sync + 'static,
+{
+    async fn last_handled_block(&self) -> Option<u64> {
+        self.0.lock().await.last_handled_block()
     }
 }
 

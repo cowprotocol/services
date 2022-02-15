@@ -151,7 +151,7 @@ impl OrderbookServices {
                 fee_factor: 0.,
                 ..Default::default()
             },
-            native_price_estimator,
+            native_price_estimator.clone(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),
@@ -180,10 +180,12 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             db.clone(),
             bad_token_detector,
+            native_price_estimator,
             true,
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
             order_validator.clone(),
+            event_updater.clone(),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],

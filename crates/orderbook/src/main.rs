@@ -299,11 +299,11 @@ async fn main() {
         None
     };
 
-    let event_updater = EventUpdater::new(
+    let event_updater = Arc::new(EventUpdater::new(
         settlement_contract.clone(),
         database.as_ref().clone(),
         sync_start,
-    );
+    ));
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
         vault.clone(),
@@ -552,7 +552,7 @@ async fn main() {
             fee_factor: args.fee_factor,
             partner_additional_fee_factors: args.partner_additional_fee_factors,
         },
-        native_price_estimator,
+        native_price_estimator.clone(),
     ));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
@@ -581,13 +581,15 @@ async fn main() {
         settlement_contract.address(),
         database.clone(),
         bad_token_detector,
+        native_price_estimator,
         args.enable_presign_orders,
         solvable_orders_cache,
         args.solvable_orders_max_update_age,
         order_validator.clone(),
+        event_updater.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![database.clone(), Arc::new(event_updater), pool_fetcher],
+        maintainers: vec![database.clone(), event_updater, pool_fetcher],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);

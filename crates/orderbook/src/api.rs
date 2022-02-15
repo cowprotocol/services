@@ -80,7 +80,7 @@ pub fn handle_all_routes(
     let post_quote = post_quote::post_quote(quoter)
         .map(|result| (result, "v1/post_quote"))
         .boxed();
-    let get_auction = get_auction::get_auction()
+    let get_auction = get_auction::get_auction(orderbook.clone())
         .map(|result| (result, "v1/auction"))
         .boxed();
 
