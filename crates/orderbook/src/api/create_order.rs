@@ -48,15 +48,7 @@ pub fn create_order(
     create_order_request().and_then(move |order_payload: OrderCreationPayload| {
         let orderbook = orderbook.clone();
         async move {
-            let order_payload_clone = order_payload.clone();
             let result = orderbook.add_order(order_payload).await;
-            // TODO - This is one place where the error log is more rich than the
-            //  generic error inside internal_error (i.e. doesn't include order_payload).
-            //  Perhaps this should be a warning and the real alert comes from the internal error.
-            //  Otherwise we should just resort to using this error logging style everywhere.
-            if let Err(err) = &result {
-                tracing::error!(?err, ?order_payload_clone, "add_order error");
-            }
             Result::<_, Infallible>::Ok(create_order_response(result))
         }
     })
