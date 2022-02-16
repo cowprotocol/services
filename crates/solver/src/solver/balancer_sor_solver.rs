@@ -1,7 +1,7 @@
 //! Solver using the Balancer SOR.
 
 use super::{
-    single_order_solver::{SettlementError, SingleOrderSolving},
+    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
 use crate::{
@@ -76,15 +76,16 @@ impl SingleOrderSolving for BalancerSorSolver {
             }
         };
 
-        if !quote_respects_limit_price(&quote, &order) {
-            tracing::debug!("Order limit price not respected");
-            return Ok(None);
-        }
-
         let (quoted_sell_amount, quoted_buy_amount) = match order.kind {
             OrderKind::Sell => (quote.swap_amount, quote.return_amount),
             OrderKind::Buy => (quote.return_amount, quote.swap_amount),
         };
+
+        if !execution_respects_order(&order, quoted_sell_amount, quoted_buy_amount) {
+            tracing::debug!("execution does not respect order");
+            return Ok(None);
+        }
+
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
                 quoted_sell_amount,
@@ -135,17 +136,6 @@ impl SingleOrderSolving for BalancerSorSolver {
 
     fn name(&self) -> &'static str {
         "BalancerSOR"
-    }
-}
-
-fn quote_respects_limit_price(quote: &Quote, order: &LimitOrder) -> bool {
-    match order.kind {
-        OrderKind::Sell => {
-            quote.swap_amount == order.sell_amount && quote.return_amount >= order.buy_amount
-        }
-        OrderKind::Buy => {
-            quote.return_amount <= order.sell_amount && quote.swap_amount == order.buy_amount
-        }
     }
 }
 
@@ -245,76 +235,6 @@ mod tests {
         Web3,
     };
     use std::env;
-
-    #[test]
-    fn check_limit_prices_for_sell_order() {
-        let sell_order = LimitOrder {
-            kind: OrderKind::Sell,
-            sell_amount: 10.into(),
-            buy_amount: 10.into(),
-            ..Default::default()
-        };
-
-        assert!(quote_respects_limit_price(
-            &Quote {
-                swap_amount: 10.into(),
-                return_amount: 11.into(),
-                ..Default::default()
-            },
-            &sell_order,
-        ));
-        assert!(!quote_respects_limit_price(
-            &Quote {
-                swap_amount: 10.into(),
-                return_amount: 9.into(),
-                ..Default::default()
-            },
-            &sell_order,
-        ));
-        assert!(!quote_respects_limit_price(
-            &Quote {
-                swap_amount: 9.into(), // not fill or kill!
-                return_amount: 10.into(),
-                ..Default::default()
-            },
-            &sell_order,
-        ));
-    }
-
-    #[test]
-    fn check_limit_prices_for_buy_order() {
-        let buy_order = LimitOrder {
-            kind: OrderKind::Buy,
-            buy_amount: 10.into(),
-            sell_amount: 10.into(),
-            ..Default::default()
-        };
-
-        assert!(quote_respects_limit_price(
-            &Quote {
-                swap_amount: 10.into(),
-                return_amount: 9.into(),
-                ..Default::default()
-            },
-            &buy_order,
-        ));
-        assert!(!quote_respects_limit_price(
-            &Quote {
-                swap_amount: 10.into(),
-                return_amount: 11.into(),
-                ..Default::default()
-            },
-            &buy_order,
-        ));
-        assert!(!quote_respects_limit_price(
-            &Quote {
-                swap_amount: 11.into(), // not fill or kill!
-                return_amount: 10.into(),
-                ..Default::default()
-            },
-            &buy_order,
-        ));
-    }
 
     #[test]
     fn computed_swap_sets_sign() {

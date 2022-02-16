@@ -4,7 +4,7 @@
 //! single GPv2 order and produce a settlement directly against 1Inch.
 
 use super::{
-    single_order_solver::{SettlementError, SingleOrderSolving},
+    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
 use crate::{
@@ -109,8 +109,8 @@ impl OneInchSolver {
             RestResponse::Err(error) => return Err((error).into()),
         };
 
-        if !satisfies_limit_price(&swap, &order) {
-            tracing::debug!("Order limit price not respected");
+        if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
+            tracing::debug!("execution does not respect order");
             return Ok(None);
         }
 
@@ -126,10 +126,6 @@ impl OneInchSolver {
 
         Ok(Some(settlement))
     }
-}
-
-fn satisfies_limit_price(swap: &Swap, order: &LimitOrder) -> bool {
-    swap.to_token_amount >= order.buy_amount
 }
 
 impl Interaction for Swap {

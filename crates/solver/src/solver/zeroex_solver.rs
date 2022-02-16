@@ -18,7 +18,7 @@
 //! Sell orders are unproblematic, especially, since the positive slippage is handed back from 0x
 
 use super::{
-    single_order_solver::{SettlementError, SingleOrderSolving},
+    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
 use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
@@ -97,8 +97,8 @@ impl SingleOrderSolving for ZeroExSolver {
         };
         let swap = self.api.get_swap(query).await?;
 
-        if !swap_respects_limit_price(&swap, &order) {
-            tracing::debug!("Order limit price not respected");
+        if !execution_respects_order(&order, swap.price.sell_amount, swap.price.buy_amount) {
+            tracing::debug!("execution does not respect order");
             return Ok(None);
         }
 
@@ -134,13 +134,6 @@ impl From<ZeroExResponseError> for SettlementError {
             inner: anyhow!("0x Response Error {:?}", err),
             retryable: matches!(err, ZeroExResponseError::ServerError(_)),
         }
-    }
-}
-
-fn swap_respects_limit_price(swap: &SwapResponse, order: &LimitOrder) -> bool {
-    match order.kind {
-        OrderKind::Buy => swap.price.sell_amount <= order.sell_amount,
-        OrderKind::Sell => swap.price.buy_amount >= order.buy_amount,
     }
 }
 
