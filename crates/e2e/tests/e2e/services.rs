@@ -7,7 +7,7 @@ use orderbook::{
     api::post_quote::OrderQuoter,
     database::Postgres,
     event_updater::EventUpdater,
-    fee::{EthAwareMinFeeCalculator, FeeSubsidyConfiguration},
+    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     orderbook::Orderbook,
     solvable_orders::SolvableOrdersCache,
 };
@@ -141,10 +141,9 @@ impl OrderbookServices {
             contracts.weth.address(),
             1_000_000_000_000_000_000_u128.into(),
         ));
-        let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
+        let fee_calculator = Arc::new(MinFeeCalculator::new(
             price_estimator.clone(),
             gas_estimator,
-            contracts.weth.address(),
             db.clone(),
             bad_token_detector.clone(),
             FeeSubsidyConfiguration {

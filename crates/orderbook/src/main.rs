@@ -12,7 +12,7 @@ use orderbook::{
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::{EthAwareMinFeeCalculator, FeeSubsidyConfiguration},
+    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     orderbook::Orderbook,
@@ -540,10 +540,9 @@ async fn main() {
         Some(args.native_price_cache_max_update_size),
     );
 
-    let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
+    let fee_calculator = Arc::new(MinFeeCalculator::new(
         price_estimator.clone(),
         gas_price_estimator,
-        native_token.address(),
         database.clone(),
         bad_token_detector.clone(),
         FeeSubsidyConfiguration {

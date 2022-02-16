@@ -2,10 +2,7 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
-use model::{
-    app_id::AppId,
-    order::{OrderKind, BUY_ETH_ADDRESS},
-};
+use model::{app_id::AppId, order::OrderKind};
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting,
@@ -18,13 +15,6 @@ use std::{
 };
 
 pub type Measurement = (U256, DateTime<Utc>);
-
-pub type EthAwareMinFeeCalculator = EthAdapter<MinFeeCalculator>;
-
-pub struct EthAdapter<T> {
-    calculator: T,
-    weth: H160,
-}
 
 /// Fee subsidy configuration.
 ///
@@ -202,71 +192,9 @@ pub trait MinFeeStoring: Send + Sync {
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 60;
 const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
 
-fn normalize_buy_token(buy_token: H160, weth: H160) -> H160 {
-    if buy_token == BUY_ETH_ADDRESS {
-        weth
-    } else {
-        buy_token
-    }
-}
-
-impl EthAwareMinFeeCalculator {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        price_estimator: Arc<dyn PriceEstimating>,
-        gas_estimator: Arc<dyn GasPriceEstimating>,
-        native_token: H160,
-        measurements: Arc<dyn MinFeeStoring>,
-        bad_token_detector: Arc<dyn BadTokenDetecting>,
-        fee_subsidy: FeeSubsidyConfiguration,
-        native_price_estimator: Arc<dyn NativePriceEstimating>,
-    ) -> Self {
-        Self {
-            calculator: MinFeeCalculator::new(
-                price_estimator,
-                gas_estimator,
-                measurements,
-                bad_token_detector,
-                fee_subsidy,
-                native_price_estimator,
-            ),
-            weth: native_token,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl<T> MinFeeCalculating for EthAdapter<T>
-where
-    T: MinFeeCalculating + Send + Sync,
-{
-    async fn compute_subsidized_min_fee(
-        &self,
-        mut fee_data: FeeData,
-        app_data: AppId,
-    ) -> Result<Measurement, PriceEstimationError> {
-        fee_data.buy_token = normalize_buy_token(fee_data.buy_token, self.weth);
-        self.calculator
-            .compute_subsidized_min_fee(fee_data, app_data)
-            .await
-    }
-
-    async fn get_unsubsidized_min_fee(
-        &self,
-        mut fee_data: FeeData,
-        app_data: AppId,
-        subsidized_fee: U256,
-    ) -> Result<FeeParameters, ()> {
-        fee_data.buy_token = normalize_buy_token(fee_data.buy_token, self.weth);
-        self.calculator
-            .get_unsubsidized_min_fee(fee_data, app_data, subsidized_fee)
-            .await
-    }
-}
-
 impl MinFeeCalculator {
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         measurements: Arc<dyn MinFeeStoring>,
@@ -485,7 +413,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
-    use chrono::{Duration, NaiveDateTime};
+    use chrono::Duration;
     use futures::FutureExt;
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
     use maplit::hashmap;
@@ -507,73 +435,6 @@ mod tests {
             Default::default(),
             1.into(),
         ))
-    }
-
-    #[tokio::test]
-    async fn eth_aware_min_fees() {
-        let weth = H160([0x42; 20]);
-        let token = H160([0x21; 20]);
-        let mut calculator = MockMinFeeCalculating::default();
-        calculator
-            .expect_compute_subsidized_min_fee()
-            .withf(move |&fee_data, &app_data| {
-                fee_data.sell_token == token
-                    && fee_data.buy_token == weth
-                    && fee_data.amount == 1337.into()
-                    && fee_data.kind == OrderKind::Sell
-                    && app_data == Default::default()
-            })
-            .times(1)
-            .returning(|_, _| {
-                Ok((
-                    0.into(),
-                    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-                ))
-            });
-
-        let eth_aware = EthAdapter { calculator, weth };
-        assert!(eth_aware
-            .compute_subsidized_min_fee(
-                FeeData {
-                    sell_token: token,
-                    buy_token: BUY_ETH_ADDRESS,
-                    amount: 1337.into(),
-                    kind: OrderKind::Sell,
-                },
-                Default::default(),
-            )
-            .await
-            .is_ok());
-    }
-
-    #[tokio::test]
-    async fn eth_aware_is_valid_fee() {
-        let weth = H160([0x42; 20]);
-        let token = H160([0x21; 20]);
-        let mut calculator = MockMinFeeCalculating::default();
-        calculator
-            .expect_get_unsubsidized_min_fee()
-            .withf(move |&fee_data, &app_data, &subsidized_fee| {
-                fee_data.sell_token == token
-                    && subsidized_fee == 42.into()
-                    && app_data == Default::default()
-            })
-            .times(1)
-            .returning(|_, _, fee| Ok((fee.as_u32()).into()));
-
-        let eth_aware = EthAdapter { calculator, weth };
-        let result = eth_aware
-            .get_unsubsidized_min_fee(
-                FeeData {
-                    sell_token: token,
-                    ..Default::default()
-                },
-                Default::default(),
-                42.into(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result, 42.into());
     }
 
     impl MinFeeCalculator {
