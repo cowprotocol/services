@@ -116,8 +116,8 @@ impl Estimate {
     }
 }
 
-#[mockall::automock]
 #[async_trait::async_trait]
+#[mockall::automock]
 pub trait PriceEstimating: Send + Sync {
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
         self.estimates(std::slice::from_ref(query))

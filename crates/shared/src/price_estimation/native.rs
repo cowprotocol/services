@@ -92,10 +92,10 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 3);
-            vec![Ok(Estimate {
+            Box::pin(futures::future::ready(vec![Ok(Estimate {
                 out_amount: 123_456_789_000_000_000u128.into(),
                 gas: 0.into(),
-            })]
+            })]))
         });
 
         let native_price_estimator = NativePriceEstimator {
@@ -119,7 +119,9 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 2);
-            vec![Err(PriceEstimationError::NoLiquidity)]
+            Box::pin(futures::future::ready(vec![Err(
+                PriceEstimationError::NoLiquidity,
+            )]))
         });
 
         let native_price_estimator = NativePriceEstimator {

@@ -91,23 +91,23 @@ mod tests {
         let mut first = MockPriceEstimating::new();
         first.expect_estimates().times(1).returning(|queries| {
             assert_eq!(queries.len(), 3);
-            vec![
+            Box::pin(futures::future::ready(vec![
                 Err(PriceEstimationError::Other(anyhow!(""))),
                 Err(PriceEstimationError::UnsupportedToken(
                     H160::from_low_u64_le(2),
                 )),
                 Err(PriceEstimationError::Other(anyhow!(""))),
-            ]
+            ]))
         });
         let mut second = MockPriceEstimating::new();
         second.expect_estimates().times(1).returning(|queries| {
             assert_eq!(queries.len(), 2);
             assert_eq!(queries[0].sell_token, H160::from_low_u64_le(0));
             assert_eq!(queries[1].sell_token, H160::from_low_u64_le(3));
-            vec![
+            Box::pin(futures::future::ready(vec![
                 Err(PriceEstimationError::NoLiquidity),
                 Ok(Estimate::default()),
-            ]
+            ]))
         });
         let third = MockPriceEstimating::new();
 
