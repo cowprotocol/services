@@ -23,25 +23,56 @@ use std::{
     sync::Arc,
     time::Duration,
 };
+use thiserror::Error;
 
-#[derive(Debug)]
-pub enum AddOrderResult {
-    Added(OrderUid),
+#[derive(Debug, Error)]
+pub enum AddOrderError {
+    #[error("duplicated order")]
     DuplicatedOrder,
+    #[error("{0:?}")]
     OrderValidation(ValidationError),
+    #[error("unsupported signature kind")]
     UnsupportedSignature,
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
 }
 
-#[derive(Debug)]
-pub enum OrderCancellationResult {
-    Cancelled,
+impl From<InsertionError> for AddOrderError {
+    fn from(err: InsertionError) -> Self {
+        match err {
+            InsertionError::DuplicatedRecord => AddOrderError::DuplicatedOrder,
+            InsertionError::DbError(err) => AddOrderError::Database(err),
+        }
+    }
+}
+
+// This requires a manual implementation because the `#[from]` attribute from
+// `thiserror` implies `#[source]` which requires `ValidationError: Error`,
+// which it currently does not!
+impl From<ValidationError> for AddOrderError {
+    fn from(err: ValidationError) -> Self {
+        Self::OrderValidation(err)
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum OrderCancellationError {
+    #[error("invalid signature")]
     InvalidSignature,
+    #[error("signer does not match order owner")]
     WrongOwner,
+    #[error("order not found")]
     OrderNotFound,
+    #[error("order already cancelled")]
     AlreadyCancelled,
+    #[error("order fully executed")]
     OrderFullyExecuted,
+    #[error("order expired")]
     OrderExpired,
+    #[error("on-chain orders cannot be cancelled with off-chain signature")]
     OnChainOrder,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 pub struct Orderbook {
@@ -85,7 +116,10 @@ impl Orderbook {
         }
     }
 
-    pub async fn add_order(&self, payload: OrderCreationPayload) -> Result<AddOrderResult> {
+    pub async fn add_order(
+        &self,
+        payload: OrderCreationPayload,
+    ) -> Result<OrderUid, AddOrderError> {
         let order_creation = payload.order_creation;
         // Eventually we will support all Signature types and can remove this.
         if !matches!(
@@ -95,10 +129,10 @@ impl Orderbook {
             ),
             (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
         ) {
-            return Ok(AddOrderResult::UnsupportedSignature);
+            return Err(AddOrderError::UnsupportedSignature);
         }
 
-        let (order, fee) = match self
+        let (order, fee) = self
             .order_validator
             .validate_and_construct_order(
                 order_creation,
@@ -106,25 +140,18 @@ impl Orderbook {
                 &self.domain_separator,
                 self.settlement_contract,
             )
-            .await
-        {
-            Ok(order) => order,
-            Err(validation_err) => return Ok(AddOrderResult::OrderValidation(validation_err)),
-        };
+            .await?;
 
-        match self.database.insert_order(&order, fee).await {
-            Err(InsertionError::DuplicatedRecord) => return Ok(AddOrderResult::DuplicatedOrder),
-            Err(InsertionError::DbError(err)) => return Err(err.into()),
-            _ => (),
-        }
+        self.database.insert_order(&order, fee).await?;
         self.solvable_orders.request_update();
-        Ok(AddOrderResult::Added(order.order_meta_data.uid))
+
+        Ok(order.order_meta_data.uid)
     }
 
     pub async fn cancel_order(
         &self,
         cancellation: OrderCancellation,
-    ) -> Result<OrderCancellationResult> {
+    ) -> Result<(), OrderCancellationError> {
         // TODO - Would like to use get_order_by_uid, but not implemented on self
         let orders = self
             .get_orders(&OrderFilter {
@@ -133,26 +160,26 @@ impl Orderbook {
             })
             .await?;
         // Could be that order doesn't exist and is not fetched.
-        let order = match orders.first() {
-            Some(order) => order,
-            None => return Ok(OrderCancellationResult::OrderNotFound),
-        };
+        let order = orders
+            .first()
+            .ok_or(OrderCancellationError::OrderNotFound)?;
 
         match order.order_meta_data.status {
-            OrderStatus::PresignaturePending => return Ok(OrderCancellationResult::OnChainOrder),
+            OrderStatus::PresignaturePending => return Err(OrderCancellationError::OnChainOrder),
             OrderStatus::Open if !order.order_creation.signature.scheme().is_ecdsa_scheme() => {
-                return Ok(OrderCancellationResult::OnChainOrder);
+                return Err(OrderCancellationError::OnChainOrder);
             }
-            OrderStatus::Fulfilled => return Ok(OrderCancellationResult::OrderFullyExecuted),
-            OrderStatus::Cancelled => return Ok(OrderCancellationResult::AlreadyCancelled),
-            OrderStatus::Expired => return Ok(OrderCancellationResult::OrderExpired),
+            OrderStatus::Fulfilled => return Err(OrderCancellationError::OrderFullyExecuted),
+            OrderStatus::Cancelled => return Err(OrderCancellationError::AlreadyCancelled),
+            OrderStatus::Expired => return Err(OrderCancellationError::OrderExpired),
             _ => {}
         }
 
-        match cancellation.validate(&self.domain_separator) {
-            Some(signer) if signer == order.order_meta_data.owner => {}
-            Some(_) => return Ok(OrderCancellationResult::WrongOwner),
-            None => return Ok(OrderCancellationResult::InvalidSignature),
+        let signer = cancellation
+            .validate(&self.domain_separator)
+            .ok_or(OrderCancellationError::InvalidSignature)?;
+        if signer != order.order_meta_data.owner {
+            return Err(OrderCancellationError::WrongOwner);
         };
 
         // order is already known to exist in DB at this point, and signer is
@@ -160,7 +187,7 @@ impl Orderbook {
         self.database
             .cancel_order(&order.order_meta_data.uid, Utc::now())
             .await?;
-        Ok(OrderCancellationResult::Cancelled)
+        Ok(())
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
