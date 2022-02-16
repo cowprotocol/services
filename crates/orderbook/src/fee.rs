@@ -102,7 +102,7 @@ pub struct FeeParameters {
 // 2. When validating fees this consistently picks the same amount.
 impl FeeParameters {
     pub fn amount_in_sell_token(&self) -> U256 {
-        U256::from_f64_lossy((self.gas_amount * self.gas_price * self.sell_token_price).ceil())
+        U256::from_f64_lossy((self.gas_amount * self.gas_price / self.sell_token_price).ceil())
     }
 
     fn apply_fee_factor(
@@ -127,7 +127,7 @@ impl FeeParameters {
             .copied()
             .unwrap_or(1.0)
             * fee_configuration.fee_factor;
-        U256::from_f64_lossy((discounted_fee_in_eth * self.sell_token_price * factor).ceil())
+        U256::from_f64_lossy((discounted_fee_in_eth * factor / self.sell_token_price).ceil())
     }
 }
 
@@ -306,19 +306,21 @@ impl MinFeeCalculator {
         )?;
         let gas_price = gas_estimate.effective_gas_price();
         let gas_amount = buy_token_estimate.gas.to_f64_lossy();
-        let fee_in_eth = gas_price * gas_amount;
-        let fee = fee_in_eth * sell_token_price;
-
-        tracing::debug!(
-            ?fee_data, %gas_price, %gas_amount, %fee_in_eth, %sell_token_price, %fee,
-            "unsubsidized fee amount"
-        );
-
-        Ok(FeeParameters {
+        let fee_parameters = FeeParameters {
             gas_amount,
             gas_price,
             sell_token_price,
-        })
+        };
+
+        let fee_in_eth = gas_price * gas_amount;
+        let fee_in_sell_token = fee_parameters.amount_in_sell_token();
+        tracing::debug!(
+            ?fee_data, %gas_price, %gas_amount, %sell_token_price,
+            %fee_in_eth, %fee_in_sell_token,
+            "unsubsidized fee amount"
+        );
+
+        Ok(fee_parameters)
     }
 }
 
@@ -837,7 +839,7 @@ mod tests {
             ..Default::default()
         };
         let native_token_price_estimation_amount = 100.;
-        let sell_token_price = 1.25;
+        let sell_token_price = 0.1;
         let gas_estimate = 42.;
 
         let unsubsidized_min_fee = FeeParameters {
@@ -854,7 +856,7 @@ mod tests {
         ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: U256::from_f64_lossy(
-                native_token_price_estimation_amount * sell_token_price,
+                native_token_price_estimation_amount / sell_token_price,
             ),
             gas: 1337.into(),
         }));

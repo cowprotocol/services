@@ -97,11 +97,22 @@ impl Estimate {
         amounts_to_price(sell_amount, buy_amount)
     }
 
+    /// The price for the estimate denominated in sell token.
+    ///
     /// The resulting price is how many units of sell_token needs to be sold for one unit of
     /// buy_token (sell_amount / buy_amount).
     pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
         let (sell_amount, buy_amount) = self.amounts(query);
         sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()
+    }
+
+    /// The price of the estimate denominated in buy token.
+    ///
+    /// The resulting price is how many units of buy_token are bought for one unit of
+    /// sell_token (buy_amount / sell_amount).
+    pub fn price_in_buy_token_f64(&self, query: &Query) -> f64 {
+        let (sell_amount, buy_amount) = self.amounts(query);
+        buy_amount.to_f64_lossy() / sell_amount.to_f64_lossy()
     }
 }
 
