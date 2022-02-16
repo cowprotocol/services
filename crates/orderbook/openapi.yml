@@ -532,6 +532,10 @@ components:
       description: Where should the buy token be transfered to?
       type: string
       enum: [ erc20, internal ]
+    PriceQuality:
+      description: How good should the price estimate be?
+      type: string
+      enum: [ fast, optimal ]
     OrderStatus:
       description: The current order status
       type: string
@@ -928,6 +932,9 @@ components:
               default: "erc20"
             from:
               $ref: "#/components/schemas/Address"
+            priceQuality:
+              $ref: "#/components/schemas/PriceQuality"
+              default: "optimal"
           required:
             - sellToken
             - buyToken
