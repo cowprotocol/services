@@ -201,9 +201,13 @@ fn match_settled_prices(
     solver_prices: HashMap<H160, U256>,
 ) -> Result<HashMap<H160, U256>> {
     let mut prices = HashMap::new();
-    let executed_tokens = executed_limit_orders
-        .iter()
-        .flat_map(|order| vec![order.order.buy_token, order.order.sell_token]);
+    let executed_tokens = executed_limit_orders.iter().flat_map(|order| {
+        if order.order.is_liquidity_order {
+            vec![order.order.sell_token]
+        } else {
+            vec![order.order.buy_token, order.order.sell_token]
+        }
+    });
     for token in executed_tokens {
         if let Entry::Vacant(entry) = prices.entry(token) {
             let price = solver_prices

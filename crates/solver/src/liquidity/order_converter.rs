@@ -76,16 +76,25 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
         let is_native_token_buy_order = self.order.order_creation.buy_token == BUY_ETH_ADDRESS;
 
-        if is_native_token_buy_order {
+        if !self.is_liquidity_order && is_native_token_buy_order {
+            // liquidity orders don't need an additional token equivalency, as the buy tokens
+            // clearing prices are not stored in the clearing prices vector, but in the
+            // LiquidityOrderTrade
             encoder.add_token_equivalency(self.native_token.address(), BUY_ETH_ADDRESS)?;
         }
 
-        let trade = encoder.add_trade(
-            self.order.clone(),
-            executed_amount,
-            self.scaled_unsubsidized_fee_amount,
-            self.is_liquidity_order,
-        )?;
+        let trade = match self.is_liquidity_order {
+            true => encoder.add_liquidity_order_trade(
+                self.order.clone(),
+                executed_amount,
+                self.scaled_unsubsidized_fee_amount,
+            )?,
+            false => encoder.add_trade(
+                self.order.clone(),
+                executed_amount,
+                self.scaled_unsubsidized_fee_amount,
+            )?,
+        };
 
         if is_native_token_buy_order {
             encoder.add_unwrap(UnwrapWethInteraction {
@@ -226,7 +235,7 @@ pub mod tests {
                     amount: executed_buy_amount,
                 });
                 assert!(encoder
-                    .add_trade(order, executed_amount, scaled_fee_amount, false)
+                    .add_trade(order, executed_amount, scaled_fee_amount)
                     .is_ok());
             },
         );
@@ -269,9 +278,7 @@ pub mod tests {
                 encoder
                     .add_token_equivalency(native_token.address(), BUY_ETH_ADDRESS)
                     .unwrap();
-                assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), false)
-                    .is_ok());
+                assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
                 encoder.add_unwrap(UnwrapWethInteraction {
                     weth: native_token,
                     amount: executed_amount,
@@ -316,9 +323,7 @@ pub mod tests {
             order_settlement_handler,
             executed_amount,
             |encoder| {
-                assert!(encoder
-                    .add_trade(order, executed_amount, 0.into(), false)
-                    .is_ok());
+                assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
             },
         );
     }

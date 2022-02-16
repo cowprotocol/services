@@ -1,5 +1,5 @@
 pub mod buffers;
-mod settlement;
+pub mod settlement;
 
 use self::settlement::SettlementContext;
 use crate::{

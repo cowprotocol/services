@@ -190,9 +190,9 @@ impl Driver {
                     rated_settlement.id,
                     receipt.transaction_hash
                 );
-                trades
-                    .iter()
-                    .for_each(|trade| self.metrics.order_settled(&trade.order, name));
+                trades.iter().for_each(|order_trade| {
+                    self.metrics.order_settled(&order_trade.trade.order, name)
+                });
                 self.metrics.settlement_submitted(
                     crate::metrics::SettlementSubmissionOutcome::Success,
                     name,
@@ -543,7 +543,7 @@ impl Driver {
                     .settlement
                     .trades()
                     .iter()
-                    .map(|t| t.order.order_meta_data.uid);
+                    .map(|t| t.trade.order.order_meta_data.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -572,9 +572,9 @@ impl Driver {
 }
 
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
-    !settlement.encoder.trades().iter().any(|trade| {
+    !settlement.encoder.trades().iter().any(|order_trade| {
         token_list
-            .get(&trade.order.order_creation.sell_token)
+            .get(&order_trade.trade.order.order_creation.sell_token)
             .is_none()
     })
 }
@@ -620,7 +620,7 @@ enum SolverRunError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::Trade;
+    use crate::settlement::{OrderTrade, Trade};
     use maplit::hashmap;
     use model::order::{Order, OrderCreation};
     use shared::token_list::Token;
@@ -646,10 +646,13 @@ mod tests {
             }
         });
 
-        let trade = |token| Trade {
-            order: Order {
-                order_creation: OrderCreation {
-                    sell_token: token,
+        let trade = |token| OrderTrade {
+            trade: Trade {
+                order: Order {
+                    order_creation: OrderCreation {
+                        sell_token: token,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 ..Default::default()
@@ -660,6 +663,7 @@ mod tests {
         let settlement = Settlement::with_trades(
             HashMap::new(),
             vec![trade(good_token), trade(another_good_token)],
+            vec![],
         );
         assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
 
@@ -670,6 +674,7 @@ mod tests {
                 trade(another_good_token),
                 trade(bad_token),
             ],
+            vec![],
         );
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
     }
