@@ -122,7 +122,17 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     return TrivialSolution(Ok(estimation));
                 }
 
-                if query.buy_token == BUY_ETH_ADDRESS {
+                if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
+                    let estimation = Estimate {
+                        out_amount: query.in_amount,
+                        gas: GAS_PER_WETH_UNWRAP.into(),
+                    };
+
+                    tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
+                    return TrivialSolution(Ok(estimation));
+                }
+
+                if query.sell_token != self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                     let sanitized_query = Query {
                         buy_token: self.native_token,
                         ..*query
@@ -208,7 +218,7 @@ mod tests {
             }
         });
 
-        let native_token = H160::from_low_u64_le(1);
+        let native_token = H160::from_low_u64_le(42);
 
         let queries = [
             // This is the common case (Tokens are supported, distinct and not ETH).
@@ -239,6 +249,13 @@ mod tests {
             Query {
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
+                in_amount: 1.into(),
+                kind: OrderKind::Sell,
+            },
+            // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
+            Query {
+                sell_token: native_token,
+                buy_token: BUY_ETH_ADDRESS,
                 in_amount: 1.into(),
                 kind: OrderKind::Sell,
             },
@@ -309,7 +326,7 @@ mod tests {
         };
 
         let result = sanitized_estimator.estimates(&queries).await;
-        assert_eq!(result.len(), 7);
+        assert_eq!(result.len(), 8);
         assert_eq!(
             result[0].as_ref().unwrap(),
             &Estimate {
@@ -340,16 +357,23 @@ mod tests {
                 gas: 0.into()
             }
         );
-        assert!(matches!(
-            result[4].as_ref().unwrap_err(),
-            PriceEstimationError::UnsupportedToken(_)
-        ));
+        assert_eq!(
+            result[4].as_ref().unwrap(),
+            &Estimate {
+                out_amount: 1.into(),
+                gas: GAS_PER_WETH_UNWRAP.into()
+            }
+        );
         assert!(matches!(
             result[5].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken(_)
         ));
         assert!(matches!(
             result[6].as_ref().unwrap_err(),
+            PriceEstimationError::UnsupportedToken(_)
+        ));
+        assert!(matches!(
+            result[7].as_ref().unwrap_err(),
             PriceEstimationError::NoLiquidity
         ));
     }
