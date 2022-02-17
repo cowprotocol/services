@@ -539,8 +539,14 @@ impl Driver {
                     }
                 };
                 self.in_flight_orders.mark_settled_orders(block, orders);
-                self.metrics
-                    .transaction_gas_price(receipt.effective_gas_price);
+                match receipt.effective_gas_price {
+                    Some(price) => {
+                        self.metrics.transaction_gas_price(price);
+                    }
+                    None => {
+                        tracing::error!("node did not return effective gas price in tx receipt");
+                    }
+                }
             }
             self.metrics.transaction_submission(start.elapsed());
 

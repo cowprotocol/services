@@ -11,6 +11,7 @@ use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
 use maplit::hashset;
 use shared::{dummy_contract, Web3};
 use std::collections::{HashMap, HashSet};
+use web3::error::TransportError;
 
 const MAX_BATCH_SIZE: usize = 100;
 #[cfg_attr(test, mockall::automock)]
@@ -189,7 +190,7 @@ where
 
 fn is_batch_error(err: &ExecutionError) -> bool {
     match &err {
-        ExecutionError::Web3(web3::Error::Transport(message)) => {
+        ExecutionError::Web3(web3::Error::Transport(TransportError::Message(message))) => {
             // Currently, there is no sure-fire way to determine if a Web3 error
             // is caused because of a failing batch request, or some a call
             // specific error, so we test that the method starts with "Batch"

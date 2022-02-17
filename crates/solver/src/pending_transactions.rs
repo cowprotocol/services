@@ -97,9 +97,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn real_node() {
-        let transport = DynTransport::new(
-            web3::transports::Http::new(&std::env::var("NODE_URL").unwrap()).unwrap(),
-        );
+        let transport = shared::transport::create_env_test_transport();
         let transactions = pending_transactions(&transport).await.unwrap();
         dbg!(transactions.as_slice());
         assert!(!transactions.is_empty());

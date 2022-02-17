@@ -111,16 +111,16 @@ struct Arguments {
     token_quality_cache_expiry: Duration,
 
     /// List of token addresses to be ignored throughout service
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     unsupported_tokens: Vec<H160>,
 
     /// List of account addresses to be denied from order creation
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     banned_users: Vec<H160>,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     allowed_tokens: Vec<H160>,
 
     /// The number of pairs that are automatically updated in the pool cache.
@@ -197,7 +197,13 @@ struct Arguments {
     native_price_cache_max_update_size: usize,
 
     /// Which estimators to use to estimate token prices in terms of the chain's native token.
-    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    #[clap(
+        long,
+        env,
+        default_value = "Baseline",
+        arg_enum,
+        use_value_delimiter = true
+    )]
     native_price_estimators: Vec<PriceEstimatorType>,
 
     /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
@@ -210,7 +216,13 @@ struct Arguments {
     )]
     amount_to_estimate_prices_with: Option<U256>,
 
-    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    #[clap(
+        long,
+        env,
+        default_value = "Baseline",
+        arg_enum,
+        use_value_delimiter = true
+    )]
     price_estimators: Vec<PriceEstimatorType>,
 
     /// How many successful price estimates for each order will cause a fast price estimation to

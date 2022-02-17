@@ -147,7 +147,9 @@ mod tests {
                 Ok(vec![
                     Ok(json!("hello")),
                     Ok(json!("world")),
-                    Err(web3::Error::Transport("bad".to_string())),
+                    Err(web3::Error::Transport(
+                        web3::error::TransportError::Message("bad".to_string()),
+                    )),
                 ])
             });
 

@@ -49,7 +49,7 @@ pub struct Arguments {
         default_value = "Web3",
         arg_enum,
         ignore_case = true,
-        use_delimiter = true
+        use_value_delimiter = true
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
 
@@ -59,11 +59,11 @@ pub struct Arguments {
 
     /// Base tokens used for finding multi-hop paths between multiple AMMs
     /// Should be the most liquid tokens of the given network.
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     pub base_tokens: Vec<H160>,
 
     /// Which Liquidity sources to be used by Price Estimator.
-    #[clap(long, env, arg_enum, ignore_case = true, use_delimiter = true)]
+    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub baseline_sources: Option<Vec<BaselineSource>>,
 
     /// The number of blocks kept in the pool cache.
@@ -98,7 +98,7 @@ pub struct Arguments {
     /// The list of disabled ParaSwap DEXs. By default, the `ParaSwapPool4`
     /// DEX (representing a private market maker) is disabled as it increases
     /// price by 1% if built transactions don't actually get executed.
-    #[clap(long, env, default_value = "ParaSwapPool4", use_delimiter = true)]
+    #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
     pub disabled_paraswap_dexs: Vec<String>,
 
     #[clap(long, env)]
@@ -118,13 +118,13 @@ pub struct Arguments {
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
-    #[clap(long, env, arg_enum, ignore_case = true, use_delimiter = true)]
+    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
 
     /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
     /// (representing a private market maker) is disabled as it seems to
     /// produce invalid swaps.
-    #[clap(long, env, default_value = "PMM1", use_delimiter = true)]
+    #[clap(long, env, default_value = "PMM1", use_value_delimiter = true)]
     pub disabled_one_inch_protocols: Vec<String>,
 
     /// The 1Inch REST API URL to use.

@@ -12,6 +12,7 @@ use std::{
         Arc,
     },
 };
+use web3::error::TransportError;
 use web3::{error::Error as Web3Error, helpers, BatchTransport, RequestId, Transport};
 
 #[derive(Clone)]
@@ -79,13 +80,13 @@ async fn execute_rpc<T: DeserializeOwned>(
         .map_err(|err| {
             let message = format!("failed to send request: {}", err);
             tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
-            Web3Error::Transport(message)
+            Web3Error::Transport(TransportError::Message(message))
         })?;
     let status = response.status();
     let text = response.text().await.map_err(|err| {
         let message = format!("failed to get response body: {}", err);
         tracing::debug!("[{}][id:{}] {}", inner.name, id, message);
-        Web3Error::Transport(message)
+        Web3Error::Transport(TransportError::Message(message))
     })?;
     // Log the raw text before decoding to get more information on responses that aren't valid
     // json. Debug encoding so we don't get control characters like newlines in the output.
@@ -96,10 +97,10 @@ async fn execute_rpc<T: DeserializeOwned>(
         text.trim()
     );
     if !status.is_success() {
-        return Err(Web3Error::Transport(format!(
+        return Err(Web3Error::Transport(TransportError::Message(format!(
             "response status code is not success: {}",
             status
-        )));
+        ))));
     }
     jsonrpc_core::serde_from_str(&text).map_err(Into::into)
 }
