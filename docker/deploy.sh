@@ -17,6 +17,7 @@ if [ "$1" == "main" ]; then
   --output /dev/null \
   --write-out "%{http_code}" \
   -H "Content-Type: application/json" \
+  -u "$AUTODEPLOY_TOKEN" \
   -d '{"push_data": {"tag": "'$AUTODEPLOY_TAG'" }}' \
   -X POST \
   $AUTODEPLOY_URL
