@@ -27,6 +27,7 @@ pub trait OrderValidating: Send + Sync {
     ///
     /// Specifically, but *does* verify:
     ///     - if buy token is native asset, receiver is not a smart contract,
+    ///     - the sell token is not the native asset,
     ///     - the sender is not a banned user,
     ///     - the order validity is appropriate,
     ///     - buy_token is not the same as sell_token,
@@ -57,6 +58,7 @@ pub enum PartialValidationError {
     Forbidden,
     InsufficientValidTo,
     TransferEthToContract,
+    InvalidNativeSellToken,
     SameBuyAndSellToken,
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
@@ -97,6 +99,13 @@ impl IntoWarpReply for PartialValidationError {
                 super::error(
                     "TransferEthToContract",
                     "Sending Ether to smart contract wallets is currently not supported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidNativeSellToken => with_status(
+                super::error(
+                    "InvalidNativeSellToken",
+                    "The chain's native token (Ether/xDai) cannot be used as the sell token",
                 ),
                 StatusCode::BAD_REQUEST,
             ),
@@ -288,6 +297,9 @@ impl OrderValidating for OrderValidator {
         }
         if has_same_buy_and_sell_token(&order, &self.native_token) {
             return Err(PartialValidationError::SameBuyAndSellToken);
+        }
+        if order.sell_token == BUY_ETH_ADDRESS {
+            return Err(PartialValidationError::InvalidNativeSellToken);
         }
         if order.buy_token == BUY_ETH_ADDRESS {
             let code_size = self
@@ -606,6 +618,16 @@ mod tests {
                 })
                 .await,
             Err(PartialValidationError::TransferEthToContract)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    sell_token: BUY_ETH_ADDRESS,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::InvalidNativeSellToken)
         ));
 
         let mut code_fetcher = Box::new(MockCodeFetching::new());
