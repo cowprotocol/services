@@ -17,10 +17,10 @@ cached = { version = "0.30", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559", default-features = false }
-ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "eip1559" }
+ethcontract = { version = "0.16.0", default-features = false }
+ethcontract-mock = { version = "0.16.0", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.4.4", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.5.0", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 http = "0.2.6"
@@ -50,7 +50,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "time"] }
 url = "2.2"
 warp = { version = "0.3", default-features = false }
-web3 = { git = "https://github.com/tomusdrw/rust-web3.git", rev="a425fa747bca69c7aede4d2c2828f7267d79227e", default-features = false }
+web3 = { version = "0.18", default-features = false }
 
 [dev-dependencies]
 regex = "1.5.4"

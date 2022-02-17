@@ -448,7 +448,7 @@ mod tests {
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
     use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
-    use secp256k1::key::ONE_KEY;
+    use secp256k1::ONE_KEY;
     use shared::{
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,

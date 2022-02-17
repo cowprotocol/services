@@ -101,7 +101,7 @@ struct Arguments {
         default_value = "Naive,Baseline",
         arg_enum,
         ignore_case = true,
-        use_delimiter = true
+        use_value_delimiter = true
     )]
     solvers: Vec<SolverType>,
 
@@ -111,7 +111,7 @@ struct Arguments {
         long,
         env,
         ignore_case = true,
-        use_delimiter = true,
+        use_value_delimiter = true,
         hide_env_values = true
     )]
     solver_accounts: Option<Vec<SolverAccountArg>>,
@@ -180,7 +180,7 @@ struct Arguments {
         default_value = "PublicMempool",
         arg_enum,
         ignore_case = true,
-        use_delimiter = true
+        use_value_delimiter = true
     )]
     transaction_strategy: Vec<TransactionStrategyArg>,
 
@@ -237,12 +237,12 @@ struct Arguments {
     additional_tip_percentage: f64,
 
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     transaction_submission_nodes: Vec<Url>,
 
     /// The configured addresses whose orders should be considered liquidity
     /// and not to be included in the objective function by the HTTP solver.
-    #[clap(long, env, use_delimiter = true)]
+    #[clap(long, env, use_value_delimiter = true)]
     liquidity_order_owners: Vec<H160>,
 
     /// Fee scaling factor for objective value. This controls the constant
