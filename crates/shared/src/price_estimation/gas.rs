@@ -52,4 +52,8 @@ pub static GAS_PER_UNISWAP: u64 = 94_696;
 /// https://etherscan.io/tx/0x1c345a6da1edb2bba953685a4cf85f6a0d967ac751f8c5b518578c5fd20a7c96
 pub static GAS_PER_BALANCER_SWAP: u64 = 120_000;
 
+/// Median gas used for unwrapping portion of WETH.
 pub static GAS_PER_WETH_UNWRAP: u64 = 14_192;
+
+/// Median gas used for wrapping WETH for the first time.
+pub static GAS_PER_WETH_WRAP: u64 = 24_038;

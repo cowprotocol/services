@@ -135,7 +135,7 @@ async fn eth_integration(web3: Web3) {
     assert_eq!(fee_buy_eth.status(), 200);
     // Eth is only supported as the buy token
     let fee_invalid_token = estimate_fee(BUY_ETH_ADDRESS, token.address()).await;
-    assert_eq!(fee_invalid_token.status(), 404);
+    assert_eq!(fee_invalid_token.status(), 400);
 
     // Place Orders
     assert_ne!(weth.address(), BUY_ETH_ADDRESS);

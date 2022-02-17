@@ -1,12 +1,17 @@
-use crate::fee::MinFeeCalculating;
-use crate::{api::convert_json_response, fee::FeeData};
+use crate::{
+    api::{convert_json_response, order_validation::PartialValidationError, IntoWarpReply},
+    fee::FeeData,
+    fee::MinFeeCalculating,
+};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use model::{order::OrderKind, u256_decimal};
+use model::{
+    order::{OrderKind, BUY_ETH_ADDRESS},
+    u256_decimal,
+};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
-use std::sync::Arc;
+use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,6 +44,12 @@ pub fn get_fee_info(
     get_fee_info_request().and_then(move |query: Query| {
         let fee_calculator = fee_calculator.clone();
         async move {
+            if query.sell_token == BUY_ETH_ADDRESS {
+                return Result::<_, Infallible>::Ok(
+                    PartialValidationError::InvalidNativeSellToken.into_warp_reply(),
+                );
+            }
+
             let result = fee_calculator
                 .compute_subsidized_min_fee(
                     FeeData {
