@@ -25,6 +25,7 @@ pub struct Metrics {
     price_estimates: IntCounterVec,
     native_price_cache: IntCounterVec,
     price_estimation_times: HistogramVec,
+    filtered_solvable_orders: IntCounter,
 }
 
 impl Metrics {
@@ -85,6 +86,12 @@ impl Metrics {
         .unwrap();
         registry.register(Box::new(price_estimation_times.clone()))?;
 
+        let filtered_solvable_orders = IntCounter::new(
+            "filtered_solvable_orders",
+            "Solvable orders that aren't considered because of missing native token prices",
+        )?;
+        registry.register(Box::new(filtered_solvable_orders.clone()))?;
+
         Ok(Self {
             db_table_row_count,
             rpc_requests,
@@ -95,6 +102,7 @@ impl Metrics {
             price_estimates,
             native_price_cache,
             price_estimation_times,
+            filtered_solvable_orders,
         })
     }
 
@@ -117,6 +125,12 @@ impl PoolCacheMetrics for Metrics {
     fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
         self.pool_cache_hits.inc_by(cache_hits as u64);
         self.pool_cache_misses.inc_by(cache_misses as u64);
+    }
+}
+
+impl crate::orderbook::OrderbookMetrics for Metrics {
+    fn filtered_solvable_orders(&self, count: usize) {
+        self.filtered_solvable_orders.inc_by(count as _);
     }
 }
 
@@ -173,4 +187,10 @@ impl shared::price_estimation::native_price_cache::Metrics for Metrics {
             .with_label_values(&["hits"])
             .inc_by(hits as u64);
     }
+}
+
+pub struct NoopMetrics;
+
+impl crate::orderbook::OrderbookMetrics for NoopMetrics {
+    fn filtered_solvable_orders(&self, _: usize) {}
 }

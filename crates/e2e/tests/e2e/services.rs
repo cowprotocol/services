@@ -8,6 +8,7 @@ use orderbook::{
     database::Postgres,
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
+    metrics::NoopMetrics,
     orderbook::Orderbook,
     solvable_orders::SolvableOrdersCache,
 };
@@ -185,6 +186,7 @@ impl OrderbookServices {
             Duration::from_secs(600),
             order_validator.clone(),
             event_updater.clone(),
+            Arc::new(NoopMetrics),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],

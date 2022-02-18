@@ -86,6 +86,11 @@ pub struct Orderbook {
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<OrderValidator>,
     event_updater: Arc<dyn EventUpdating>,
+    metrics: Arc<dyn OrderbookMetrics>,
+}
+
+pub trait OrderbookMetrics: Send + Sync + 'static {
+    fn filtered_solvable_orders(&self, count: usize);
 }
 
 impl Orderbook {
@@ -101,6 +106,7 @@ impl Orderbook {
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<OrderValidator>,
         event_updater: Arc<dyn EventUpdating>,
+        metrics: Arc<dyn OrderbookMetrics>,
     ) -> Self {
         Self {
             domain_separator,
@@ -113,6 +119,7 @@ impl Orderbook {
             solvable_orders_max_update_age,
             order_validator,
             event_updater,
+            metrics,
         }
     }
 
@@ -240,10 +247,15 @@ impl Orderbook {
         let last_handled_block = self.event_updater.last_handled_block().await;
         let solvable_orders = self.get_solvable_orders().await?;
 
+        let order_count = solvable_orders.orders.len();
+
         let block = last_handled_block.unwrap_or(solvable_orders.latest_settlement_block);
         let (orders, prices) =
             get_orders_with_native_prices(solvable_orders.orders, &*self.native_price_estimator)
                 .await;
+
+        let filtered_orders = order_count - orders.len();
+        self.metrics.filtered_solvable_orders(filtered_orders);
 
         Ok(Auction {
             block,
@@ -331,8 +343,17 @@ async fn get_orders_with_native_prices(
         .collect::<BTreeMap<_, _>>();
 
     orders.retain(|order| {
-        prices.contains_key(&order.order_creation.sell_token)
-            && prices.contains_key(&order.order_creation.buy_token)
+        let has_native_prices = prices.contains_key(&order.order_creation.sell_token)
+            && prices.contains_key(&order.order_creation.buy_token);
+
+        if !has_native_prices {
+            tracing::warn!(
+                order_uid = ?order.order_meta_data.uid,
+                "filtered order because of missing native token price",
+            );
+        }
+
+        has_native_prices
     });
 
     (orders, prices)

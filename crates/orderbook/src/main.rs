@@ -609,6 +609,7 @@ async fn main() {
         args.solvable_orders_max_update_age,
         order_validator.clone(),
         event_updater.clone(),
+        metrics.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![database.clone(), event_updater, pool_fetcher],
