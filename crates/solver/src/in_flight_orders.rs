@@ -14,7 +14,9 @@ impl InFlightOrders {
     /// Takes note of the new set of solvable orders and returns the ones that aren't in flight.
     pub fn update_and_filter(&mut self, auction: &mut Auction) {
         // If api has seen block X then trades starting at X + 1 are still in flight.
-        self.in_flight = self.in_flight.split_off(&(auction.block + 1));
+        self.in_flight = self
+            .in_flight
+            .split_off(&(auction.latest_settlement_block + 1));
 
         // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
         // https://github.com/gnosis/gp-v2-services/issues/673
@@ -71,6 +73,10 @@ mod tests {
         assert_eq!(filtered.len(), 1);
 
         auction.block = 1;
+        let filtered = update_and_get_filtered_orders(&auction);
+        assert_eq!(filtered.len(), 1);
+
+        auction.latest_settlement_block = 1;
         let filtered = update_and_get_filtered_orders(&auction);
         assert_eq!(filtered.len(), 2);
     }

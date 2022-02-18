@@ -9,11 +9,18 @@ use std::collections::BTreeMap;
 /// A batch auction.
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Auction {
     /// The block that this auction is valid for.
     /// The block number for the auction. Orders and prices are guaranteed to be
     /// valid on this block.
     pub block: u64,
+
+    /// The latest block on which a settlement has been processed.
+    ///
+    /// Note that under certain conditions it is possible for a settlement to
+    /// have been mined as part of [`block`] but not have yet been processed.
+    pub latest_settlement_block: u64,
 
     /// The solvable orders included in the auction.
     pub orders: Vec<Order>,
@@ -41,6 +48,7 @@ mod tests {
         };
         let auction = Auction {
             block: 42,
+            latest_settlement_block: 40,
             orders: vec![order(1), order(2)],
             prices: btreemap! {
                 H160([2; 20]) => U256::from(2),
@@ -52,6 +60,7 @@ mod tests {
             serde_json::to_value(&auction).unwrap(),
             json!({
                 "block": 42,
+                "latestSettlementBlock": 40,
                 "orders": [
                     order(1),
                     order(2),

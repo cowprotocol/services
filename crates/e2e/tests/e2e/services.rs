@@ -185,7 +185,6 @@ impl OrderbookServices {
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
             order_validator.clone(),
-            event_updater.clone(),
             Arc::new(NoopMetrics),
         ));
         let maintenance = ServiceMaintenance {

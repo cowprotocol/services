@@ -618,14 +618,18 @@ async fn main() {
         bad_token_detector,
         native_price_estimator,
         args.enable_presign_orders,
-        solvable_orders_cache,
+        solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
-        event_updater.clone(),
         metrics.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![database.clone(), event_updater, pool_fetcher],
+        maintainers: vec![
+            database.clone(),
+            event_updater,
+            pool_fetcher,
+            solvable_orders_cache,
+        ],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);

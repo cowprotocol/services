@@ -7,7 +7,8 @@ use anyhow::Result;
 use model::order::Order;
 use primitive_types::U256;
 use shared::{
-    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, time::now_in_epoch_seconds,
+    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
+    time::now_in_epoch_seconds,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -37,7 +38,6 @@ type Balances = HashMap<Query, U256>;
 struct Inner {
     orders: SolvableOrders,
     balances: Balances,
-    block: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -45,6 +45,7 @@ pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub update_time: Instant,
     pub latest_settlement_block: u64,
+    pub block: u64,
 }
 
 impl SolvableOrdersCache {
@@ -66,9 +67,9 @@ impl SolvableOrdersCache {
                     orders: Vec::new(),
                     update_time: Instant::now(),
                     latest_settlement_block: 0,
+                    block: 0,
                 },
                 balances: Default::default(),
-                block: 0,
             }),
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
@@ -102,7 +103,7 @@ impl SolvableOrdersCache {
         // cannot have changed.
         let old_balances = {
             let inner = self.cache.lock().unwrap();
-            if inner.block == block {
+            if inner.orders.block == block {
                 inner.balances.clone()
             } else {
                 HashMap::new()
@@ -138,9 +139,9 @@ impl SolvableOrdersCache {
                 orders,
                 update_time: Instant::now(),
                 latest_settlement_block: db_solvable_orders.latest_settlement_block,
+                block,
             },
             balances: new_balances,
-            block,
         };
 
         Ok(())
@@ -241,6 +242,14 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
             Ok(()) => tracing::debug!("updated solvable orders"),
             Err(err) => tracing::error!(?err, "failed to update solvable orders"),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Maintaining for SolvableOrdersCache {
+    async fn run_maintenance(&self) -> Result<()> {
+        self.request_update();
+        Ok(())
     }
 }
 

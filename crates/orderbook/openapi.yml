@@ -679,6 +679,13 @@ components:
           description: |
             The block number for the auction. Orders and prices are guaranteed to be valid on this
             block. Proposed settlements should be valid for this block as well.
+        latestSettlementBlock:
+          type: integer
+          description: |
+            The latest block on which a settlement has been processed.
+
+            Note that under certain conditions it is possible for a settlement to have been mined as
+            part of `block` but not have yet been processed.
         orders:
           type: array
           items:

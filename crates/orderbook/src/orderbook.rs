@@ -1,7 +1,6 @@
 use crate::{
     api::order_validation::{OrderValidating, OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
-    event_updater::EventUpdating,
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
 use anyhow::{ensure, Context, Result};
@@ -85,7 +84,6 @@ pub struct Orderbook {
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<OrderValidator>,
-    event_updater: Arc<dyn EventUpdating>,
     metrics: Arc<dyn OrderbookMetrics>,
 }
 
@@ -105,7 +103,6 @@ impl Orderbook {
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<OrderValidator>,
-        event_updater: Arc<dyn EventUpdating>,
         metrics: Arc<dyn OrderbookMetrics>,
     ) -> Self {
         Self {
@@ -118,7 +115,6 @@ impl Orderbook {
             solvable_orders,
             solvable_orders_max_update_age,
             order_validator,
-            event_updater,
             metrics,
         }
     }
@@ -244,21 +240,18 @@ impl Orderbook {
     }
 
     pub async fn get_auction(&self) -> Result<Auction> {
-        let last_handled_block = self.event_updater.last_handled_block().await;
         let solvable_orders = self.get_solvable_orders().await?;
 
         let order_count = solvable_orders.orders.len();
-
-        let block = last_handled_block.unwrap_or(solvable_orders.latest_settlement_block);
         let (orders, prices) =
             get_orders_with_native_prices(solvable_orders.orders, &*self.native_price_estimator)
                 .await;
-
         let filtered_orders = order_count - orders.len();
         self.metrics.filtered_solvable_orders(filtered_orders);
 
         Ok(Auction {
-            block,
+            block: solvable_orders.block,
+            latest_settlement_block: solvable_orders.latest_settlement_block,
             orders,
             prices,
         })
