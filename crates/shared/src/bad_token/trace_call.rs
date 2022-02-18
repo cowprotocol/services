@@ -1,10 +1,11 @@
 use super::{BadTokenDetecting, TokenQuality};
 use crate::{
-    ethcontract_error::EthcontractErrorType, sources::uniswap_v2::pair_provider::PairProvider,
+    ethcontract_error::EthcontractErrorType,
+    sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
     trace_many, Web3,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use contracts::ERC20;
+use contracts::{IUniswapV3Factory, ERC20};
 use ethcontract::{
     batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
 };
@@ -51,6 +52,33 @@ impl TokenOwnerFinding for BalancerVaultFinder {
     }
 }
 
+pub struct UniswapV3Finder {
+    pub factory: IUniswapV3Factory,
+    pub base_tokens: Vec<H160>,
+}
+
+impl UniswapV3Finder {
+    // Possible fee values as given by
+    // https://github.com/Uniswap/v3-core/blob/9161f9ae4aaa109f7efdff84f1df8d4bc8bfd042/contracts/UniswapV3Factory.sol#L26
+    // Could theoretically change in the future in which case hard coded values would become wrong.
+    const FEE: [u32; 3] = [500, 3000, 10000];
+}
+
+#[async_trait::async_trait]
+impl TokenOwnerFinding for UniswapV3Finder {
+    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
+        Ok(self
+            .base_tokens
+            .iter()
+            .filter_map(|base_token| TokenPair::new(*base_token, token))
+            .flat_map(|pair| Self::FEE.iter().map(move |fee| (pair, *fee)))
+            .map(|(pair, fee)| {
+                uniswap_v3_pair_provider::pair_address(&self.factory.address(), &pair, fee)
+            })
+            .collect())
+    }
+}
+
 /// Detects whether a token is "bad" (works in unexpected ways that are problematic for solving) by
 /// simulating several transfers of a token. To find an initial address to transfer from we use
 /// the amm pair providers.
@@ -61,7 +89,6 @@ impl TokenOwnerFinding for BalancerVaultFinder {
 pub struct TraceCallDetector {
     pub web3: Web3,
     pub finders: Vec<Arc<dyn TokenOwnerFinding>>,
-    pub base_tokens: HashSet<H160>,
     pub settlement_contract: H160,
 }
 
@@ -588,7 +615,6 @@ mod tests {
             web3,
             settlement_contract: settlement.address(),
             finders: vec![uniswap, sushiswap],
-            base_tokens: base_tokens.iter().copied().collect(),
         };
 
         println!("testing good tokens");
@@ -602,5 +628,33 @@ mod tests {
             let result = token_cache.detect(token).await;
             println!("token {:?} is {:?}", token, result);
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn mainnet_univ3() {
+        let http = create_env_test_transport();
+        let web3 = Web3::new(http);
+        let base_tokens = vec![testlib::tokens::WETH];
+        let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
+        let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
+        let univ3 = UniswapV3Finder {
+            factory,
+            base_tokens,
+        };
+        let token_cache = TraceCallDetector {
+            web3,
+            settlement_contract: settlement.address(),
+            finders: vec![Arc::new(univ3)],
+        };
+
+        let result = token_cache.detect(testlib::tokens::USDC).await;
+        dbg!(&result);
+        assert!(result.unwrap().is_good());
+
+        let only_v3_token = H160(hex!("f1b99e3e573a1a9c5e6b2ce818b617f0e664e86b"));
+        let result = token_cache.detect(only_v3_token).await;
+        dbg!(&result);
+        assert!(result.unwrap().is_good());
     }
 }

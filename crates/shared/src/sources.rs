@@ -6,6 +6,7 @@ pub mod honeyswap;
 pub mod sushiswap;
 pub mod swapr;
 pub mod uniswap_v2;
+pub mod uniswap_v3_pair_provider;
 
 use self::uniswap_v2::{
     pair_provider::PairProvider,

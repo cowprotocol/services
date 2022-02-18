@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{ArgEnum, Parser};
-use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
+use contracts::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9};
 use ethcontract::errors::DeployError;
 use model::{
     app_id::AppId,
@@ -21,56 +21,50 @@ use orderbook::{
     verify_deployed_contract_constants,
 };
 use primitive_types::{H160, U256};
-use shared::oneinch_api::OneInchClientImpl;
-use shared::price_estimation::native::NativePriceEstimator;
-use shared::price_estimation::native_price_cache::CachingNativePriceEstimator;
-use shared::price_estimation::oneinch::OneInchPriceEstimator;
-use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
-use shared::price_estimation::sanitized::SanitizedPriceEstimator;
-use shared::price_estimation::zeroex::ZeroExPriceEstimator;
-use shared::zeroex_api::DefaultZeroExApi;
 use shared::{
     bad_token::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         trace_call::{
             BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
-            UniswapLikePairProviderFinder,
+            UniswapLikePairProviderFinder, UniswapV3Finder,
         },
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
+    network::network_name,
+    oneinch_api::OneInchClientImpl,
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         baseline::BaselinePriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
         instrumented::InstrumentedPriceEstimator,
+        native::NativePriceEstimator,
+        native_price_cache::CachingNativePriceEstimator,
+        oneinch::OneInchPriceEstimator,
         paraswap::ParaswapPriceEstimator,
+        quasimodo::QuasimodoPriceEstimator,
+        sanitized::SanitizedPriceEstimator,
+        zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
     },
     recent_block_cache::CacheConfig,
+    sources::balancer_v2::BalancerFactoryKind,
     sources::{
         self,
+        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
         },
-        PoolAggregator,
+        BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::create_instrumented_transport,
-    transport::http::HttpTransport,
-};
-use shared::{
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
-    network::network_name,
-    sources::balancer_v2::BalancerFactoryKind,
-    sources::{
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
-        BaselineSource,
-    },
+    transport::{create_instrumented_transport, http::HttpTransport},
+    zeroex_api::DefaultZeroExApi,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::task;
@@ -376,10 +370,19 @@ async fn main() {
     if let Some(contract) = &vault {
         finders.push(Arc::new(BalancerVaultFinder(contract.clone())));
     }
+    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    if let Some(contract) = uniswapv3_factory {
+        finders.push(Arc::new(UniswapV3Finder {
+            factory: contract,
+            base_tokens: base_tokens.tokens().iter().copied().collect(),
+        }));
+    }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
         finders,
-        base_tokens: base_tokens.tokens().clone(),
         settlement_contract: settlement_contract.address(),
     };
     let caching_detector = CachingDetector::new(
