@@ -1,12 +1,8 @@
-use crate::settlement::Settlement;
+use crate::settlement::{external_prices::ExternalPrices, Settlement};
 use ethcontract::U256;
 use num::BigRational;
-use primitive_types::H160;
-use shared::conversions::U256Ext;
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use shared::conversions::U256Ext as _;
+use std::{collections::HashSet, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     !settlement.trades().is_empty()
@@ -52,7 +48,7 @@ impl RatedSettlement {
 // Takes the settlements of a single solver and adds a merged settlement.
 pub fn merge_settlements(
     max_merged_settlements: usize,
-    prices: &HashMap<H160, BigRational>,
+    prices: &ExternalPrices,
     settlements: &mut Vec<Settlement>,
 ) {
     settlements.sort_by_cached_key(|a| -a.total_surplus(prices));
@@ -157,13 +153,13 @@ pub fn retain_mature_settlements(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::settlement::external_prices::externalprices;
     use crate::settlement::{LiquidityOrderTrade, OrderTrade, Trade};
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
     use model::order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderUid};
-    use num::rational::BigRational;
-    use num::traits::FromPrimitive;
-    use primitive_types::U256;
+    use num::{BigRational, One as _};
+    use primitive_types::{H160, U256};
     use std::collections::HashSet;
     use std::ops::Sub;
 
@@ -245,9 +241,9 @@ mod tests {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
         let prices = hashmap! { token0 => 1u32.into(), token1 => 1u32.into()};
-        let prices_rational = hashmap! {
-            token0 => BigRational::from_u8(1).unwrap(),
-            token1 => BigRational::from_u8(1).unwrap()
+        let external_prices = externalprices! {
+            native_token: token0,
+            token1 => BigRational::one(),
         };
         fn uid(number: u8) -> OrderUid {
             OrderUid([number; 56])
@@ -288,7 +284,7 @@ mod tests {
             settlement(2.into(), 2),
             settlement(3.into(), 3),
         ];
-        merge_settlements(2, &prices_rational, &mut settlements);
+        merge_settlements(2, &external_prices, &mut settlements);
 
         assert_eq!(settlements.len(), 4);
         assert!(settlements.iter().any(|settlement| {

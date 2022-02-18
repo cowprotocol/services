@@ -8,7 +8,7 @@ use crate::{
     liquidity_collector::LiquidityCollector,
     metrics::{SolverMetrics, SolverRunOutcome},
     orderbook::OrderBookApi,
-    settlement::Settlement,
+    settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessingPipeline,
     settlement_simulation,
     settlement_submission::SolutionSubmitter,
@@ -30,7 +30,6 @@ use shared::{
     Web3,
 };
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -310,7 +309,7 @@ impl Driver {
     async fn rate_settlements(
         &self,
         settlements: Vec<SettlementWithSolver>,
-        prices: &HashMap<H160, BigRational>,
+        prices: &ExternalPrices,
         gas_price: EstimatedGasPrice,
     ) -> Result<(
         Vec<(Arc<dyn Solver>, RatedSettlement)>,
@@ -327,12 +326,8 @@ impl Driver {
         .await
         .context("failed to simulate settlements")?;
 
-        // Normalize gas_price_wei to the native token price in the prices vector.
-        let gas_price_normalized = BigRational::from_float(gas_price.effective_gas_price())
-            .expect("Invalid gas price.")
-            * prices
-                .get(&self.native_token)
-                .expect("Price of native token must be known.");
+        let gas_price =
+            BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
         let rate_settlement = |id, settlement: Settlement, gas_estimate| {
             let surplus = settlement.total_surplus(prices);
@@ -345,7 +340,7 @@ impl Driver {
                 unscaled_subsidized_fee,
                 scaled_unsubsidized_fee: scaled_solver_fees,
                 gas_estimate,
-                gas_price: gas_price_normalized.clone(),
+                gas_price: gas_price.clone(),
             }
         };
         Ok(
@@ -386,9 +381,10 @@ impl Driver {
             .collect::<Vec<_>>();
         tracing::info!("got {} orders: {:?}", orders.len(), orders);
 
-        let estimated_prices =
-            auction_preprocessing::to_external_prices(auction.prices, self.native_token)?;
-        tracing::debug!("estimated prices: {:?}", estimated_prices);
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
+                .context("malformed acution prices")?;
+        tracing::debug!("estimated prices: {:?}", external_prices);
 
         let liquidity = self
             .liquidity_collector
@@ -417,7 +413,7 @@ impl Driver {
             liquidity,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
-            price_estimates: estimated_prices.clone(),
+            external_prices: external_prices.clone(),
         };
         tracing::debug!("solving auction ID {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
@@ -464,7 +460,7 @@ impl Driver {
 
             solver_settlements::merge_settlements(
                 self.max_merged_settlements,
-                &estimated_prices,
+                &external_prices,
                 &mut settlements,
             );
 
@@ -478,7 +474,7 @@ impl Driver {
         }
 
         let (mut rated_settlements, errors) = self
-            .rate_settlements(solver_settlements, &estimated_prices, gas_price)
+            .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
         tracing::info!(
             "{} settlements passed simulation and {} failed",
@@ -615,6 +611,7 @@ mod tests {
     use maplit::hashmap;
     use model::order::{Order, OrderCreation};
     use shared::token_list::Token;
+    use std::collections::HashMap;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {

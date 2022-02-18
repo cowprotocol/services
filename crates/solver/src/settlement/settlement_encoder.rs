@@ -1,4 +1,4 @@
-use super::{Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
+use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
 use crate::{
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
@@ -302,10 +302,9 @@ impl SettlementEncoder {
         self.tokens.binary_search(&token).ok()
     }
 
-    pub fn total_surplus(
-        &self,
-        normalizing_prices: &HashMap<H160, BigRational>,
-    ) -> Option<BigRational> {
+    /// Returns the total surplus denominated in the native asset for this
+    /// solution.
+    pub fn total_surplus(&self, external_prices: &ExternalPrices) -> Option<BigRational> {
         self.order_trades
             .iter()
             .fold(Some(num::zero()), |acc, order_trade| {
@@ -321,13 +320,6 @@ impl SettlementEncoder {
                     .expect("Solution with trade but without price for buy token")
                     .to_big_rational();
 
-                let sell_token_external_price = normalizing_prices
-                    .get(&order.order_creation.sell_token)
-                    .expect("Solution with trade but without price for sell token");
-                let buy_token_external_price = normalizing_prices
-                    .get(&order.order_creation.buy_token)
-                    .expect("Solution with trade but without price for buy token");
-
                 if match order.order_creation.kind {
                     OrderKind::Sell => &buy_token_clearing_price,
                     OrderKind::Buy => &sell_token_clearing_price,
@@ -341,12 +333,14 @@ impl SettlementEncoder {
                     .trade
                     .surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
                 let normalized_surplus = match order.order_creation.kind {
-                    OrderKind::Sell => {
-                        surplus * buy_token_external_price / buy_token_clearing_price
-                    }
-                    OrderKind::Buy => {
-                        surplus * sell_token_external_price / sell_token_clearing_price
-                    }
+                    OrderKind::Sell => external_prices.get_native_amount(
+                        order.order_creation.buy_token,
+                        surplus / buy_token_clearing_price,
+                    ),
+                    OrderKind::Buy => external_prices.get_native_amount(
+                        order.order_creation.sell_token,
+                        surplus / sell_token_clearing_price,
+                    ),
                 };
                 Some(acc? + normalized_surplus)
             })

@@ -1,5 +1,7 @@
+pub mod external_prices;
 mod settlement_encoder;
 
+use self::external_prices::ExternalPrices;
 pub use self::settlement_encoder::SettlementEncoder;
 use crate::{
     encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
@@ -265,7 +267,7 @@ impl Settlement {
     }
 
     // Computes the total surplus of all protocol trades (in wei ETH).
-    pub fn total_surplus(&self, external_prices: &HashMap<H160, BigRational>) -> BigRational {
+    pub fn total_surplus(&self, external_prices: &ExternalPrices) -> BigRational {
         match self.encoder.total_surplus(external_prices) {
             Some(value) => value,
             None => {
@@ -276,44 +278,34 @@ impl Settlement {
     }
 
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
-    pub fn total_scaled_unsubsidized_fees(
-        &self,
-        external_prices: &HashMap<H160, BigRational>,
-    ) -> BigRational {
+    pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.encoder
             .trades()
             .iter()
             .filter_map(|order_trade| {
-                let fee_token_price =
-                    external_prices.get(&order_trade.trade.order.order_creation.sell_token)?;
-                Some(
+                external_prices.try_get_native_amount(
+                    order_trade.trade.order.order_creation.sell_token,
                     order_trade
                         .trade
                         .executed_scaled_unsubsidized_fee()?
-                        .to_big_rational()
-                        * fee_token_price,
+                        .to_big_rational(),
                 )
             })
             .sum()
     }
 
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
-    pub fn total_unscaled_subsidized_fees(
-        &self,
-        external_prices: &HashMap<H160, BigRational>,
-    ) -> BigRational {
+    pub fn total_unscaled_subsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.encoder
             .trades()
             .iter()
             .filter_map(|order_trade| {
-                let fee_token_price =
-                    external_prices.get(&order_trade.trade.order.order_creation.sell_token)?;
-                Some(
+                external_prices.try_get_native_amount(
+                    order_trade.trade.order.order_creation.sell_token,
                     order_trade
                         .trade
                         .executed_unscaled_subsidized_fee()?
-                        .to_big_rational()
-                        * fee_token_price,
+                        .to_big_rational(),
                 )
             })
             .sum()
@@ -409,7 +401,7 @@ fn surplus_ratio(
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use crate::liquidity::SettlementHandling;
+    use crate::{liquidity::SettlementHandling, settlement::external_prices::externalprices};
     use maplit::hashmap;
     use model::order::{OrderCreation, OrderKind};
     use num::FromPrimitive;
@@ -581,8 +573,8 @@ pub mod tests {
 
         // Case where external price vector doesn't influence ranking:
 
-        let clearing_prices0 = maplit::hashmap! {token0 => 1.into(), token1 => 1.into()};
-        let clearing_prices1 = maplit::hashmap! {token0 => 2.into(), token1 => 2.into()};
+        let clearing_prices0 = hashmap! {token0 => 1.into(), token1 => 1.into()};
+        let clearing_prices1 = hashmap! {token0 => 2.into(), token1 => 2.into()};
 
         let settlement0 = test_settlement(
             clearing_prices0,
@@ -592,13 +584,13 @@ pub mod tests {
 
         let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1], vec![]);
 
-        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(1) };
         assert_eq!(
             settlement0.total_surplus(&external_prices),
             settlement1.total_surplus(&external_prices)
         );
 
-        let external_prices = maplit::hashmap! {token0 => r(2), token1 => r(1)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(1)/r(2) };
         assert_eq!(
             settlement0.total_surplus(&external_prices),
             settlement1.total_surplus(&external_prices)
@@ -623,7 +615,7 @@ pub mod tests {
             ..Default::default()
         };
 
-        let clearing_prices0 = maplit::hashmap! {token0 => 9.into(), token1 => 10.into()};
+        let clearing_prices0 = hashmap! {token0 => 9.into(), token1 => 10.into()};
 
         // Settlement0 gets the following surpluses:
         // trade0: 81 - 81 = 0
@@ -647,7 +639,7 @@ pub mod tests {
             ..Default::default()
         };
 
-        let clearing_prices1 = maplit::hashmap! {token0 => 10.into(), token1 => 9.into()};
+        let clearing_prices1 = hashmap! {token0 => 10.into(), token1 => 9.into()};
 
         // Settlement1 gets the following surpluses:
         // trade0: 90 - 72.9 = 17.1
@@ -655,14 +647,14 @@ pub mod tests {
         let settlement1 = test_settlement(clearing_prices1, vec![trade0, trade1], vec![]);
 
         // If the external prices of the two tokens is the same, then both settlements are symmetric.
-        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(1) };
         assert_eq!(
             settlement0.total_surplus(&external_prices),
             settlement1.total_surplus(&external_prices)
         );
 
         // If the external price of the first token is higher, then the first settlement is preferred.
-        let external_prices = maplit::hashmap! {token0 => r(2), token1 => r(1)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(1)/r(2) };
 
         // Settlement0 gets the following normalized surpluses:
         // trade0: 0
@@ -679,7 +671,7 @@ pub mod tests {
 
         // If the external price of the second token is higher, then the second settlement is preferred.
         // (swaps above normalized surpluses of settlement0 and settlement1)
-        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(2)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(2) };
         assert!(
             settlement0.total_surplus(&external_prices)
                 < settlement1.total_surplus(&external_prices)
@@ -715,11 +707,11 @@ pub mod tests {
             ..Default::default()
         };
 
-        let clearing_prices = maplit::hashmap! {token0 => 1.into(), token1 => 0.into()};
+        let clearing_prices = hashmap! {token0 => 1.into(), token1 => 0.into()};
 
         let settlement = test_settlement(clearing_prices, vec![trade], vec![]);
 
-        let external_prices = maplit::hashmap! {token0 => r(1), token1 => r(1)};
+        let external_prices = externalprices! { native_token: token0, token1 => r(1) };
         settlement.total_surplus(&external_prices);
     }
 
@@ -1001,8 +993,12 @@ pub mod tests {
             ..Default::default()
         };
 
-        let clearing_prices = maplit::hashmap! {token0 => 5.into(), token1 => 10.into()};
-        let external_prices = maplit::hashmap! {token0 => BigRational::from_integer(5.into()), token1 => BigRational::from_integer(10.into())};
+        let clearing_prices = hashmap! {token0 => 5.into(), token1 => 10.into()};
+        let external_prices = externalprices! {
+            native_token: H160([0xff; 20]),
+            token0 => BigRational::from_integer(5.into()),
+            token1 => BigRational::from_integer(10.into()),
+        };
 
         // Fee in sell tokens
         assert_eq!(trade0.trade.executed_fee().unwrap(), 1.into());
@@ -1074,7 +1070,7 @@ pub mod tests {
         );
 
         assert_eq!(
-            settlement.total_scaled_unsubsidized_fees(&hashmap! { token0 => r(1) }),
+            settlement.total_scaled_unsubsidized_fees(&externalprices! { native_token: token0 }),
             r(42),
         );
     }
@@ -1157,7 +1153,8 @@ pub mod tests {
             }],
         );
 
-        let external_prices = hashmap! {
+        let external_prices = externalprices! {
+            native_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
             addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b") =>
                 BigRational::new(250000000000000000_u128.into(), 40551883611992959283_u128.into()),
             addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48") =>
