@@ -192,13 +192,14 @@ struct Arguments {
     /// How long cached native prices stay valid.
     #[clap(
         long,
+        env,
         default_value = "30",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     native_price_cache_max_age_secs: Duration,
 
     /// How many cached native token prices can be updated at most in one maintenance cycle.
-    #[clap(long, default_value = "3")]
+    #[clap(long, env, default_value = "3")]
     native_price_cache_max_update_size: usize,
 
     /// Which estimators to use to estimate token prices in terms of the chain's native token.
@@ -224,7 +225,7 @@ struct Arguments {
     /// estimation.
     /// It's possible to pass values greater than the total number of enabled estimators but that
     /// will not have any further effect.
-    #[clap(long, default_value = "2")]
+    #[clap(long, env, default_value = "2")]
     fast_price_estimation_results_required: NonZeroUsize,
 }
 
