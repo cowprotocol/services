@@ -9,16 +9,12 @@ use shared::{
     maintenance::{Maintaining, ServiceMaintenance},
     metrics::{serve_metrics, setup_metrics_registry},
     network::network_name,
-    price_estimation::baseline::BaselinePriceEstimator,
     recent_block_cache::CacheConfig,
     sources::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::{
-            pool_cache::PoolCache,
-            pool_fetching::{PoolFetcher, PoolFetching},
-        },
-        BaselineSource, PoolAggregator,
+        uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
+        BaselineSource,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
@@ -361,12 +357,6 @@ async fn main() {
         &args.shared.base_tokens,
     ));
 
-    let native_token_price_estimation_amount = args
-        .shared
-        .amount_to_estimate_prices_with
-        .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network_id))
-        .expect("No amount to estimate prices with set.");
-
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: web3.clone(),
     })));
@@ -420,13 +410,6 @@ async fn main() {
             })
             .collect();
 
-    let pool_aggregator = Arc::new(PoolAggregator {
-        pool_fetchers: pool_caches
-            .values()
-            .map(|cache| cache.clone() as Arc<dyn PoolFetching>)
-            .collect(),
-    });
-
     let (balancer_pool_maintainer, balancer_v2_liquidity) =
         if baseline_sources.contains(&BaselineSource::BalancerV2) {
             let contracts = BalancerContracts::new(&web3).await.unwrap();
@@ -461,13 +444,6 @@ async fn main() {
             (None, None)
         };
 
-    let price_estimator = Arc::new(BaselinePriceEstimator::new(
-        pool_aggregator,
-        gas_price_estimator.clone(),
-        base_tokens.clone(),
-        native_token_contract.address(),
-        native_token_price_estimation_amount,
-    ));
     let uniswap_like_liquidity = build_amm_artifacts(
         &pool_caches,
         settlement_contract.clone(),
@@ -624,7 +600,6 @@ async fn main() {
     let mut driver = Driver::new(
         settlement_contract,
         liquidity_collector,
-        price_estimator,
         solver,
         gas_price_estimator,
         args.settle_interval,
@@ -638,7 +613,6 @@ async fn main() {
         market_makable_token_list,
         current_block_stream.clone(),
         solution_submitter,
-        native_token_price_estimation_amount,
         args.max_settlements_per_solver,
         api,
         order_converter,

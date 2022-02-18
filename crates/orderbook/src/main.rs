@@ -20,7 +20,7 @@ use orderbook::{
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
-use primitive_types::H160;
+use primitive_types::{H160, U256};
 use shared::oneinch_api::OneInchClientImpl;
 use shared::price_estimation::native::NativePriceEstimator;
 use shared::price_estimation::native_price_cache::CachingNativePriceEstimator;
@@ -118,27 +118,27 @@ struct Arguments {
 
     /// List of token addresses to be ignored throughout service
     #[clap(long, env, use_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    unsupported_tokens: Vec<H160>,
 
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    banned_users: Vec<H160>,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
     #[clap(long, env, use_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    allowed_tokens: Vec<H160>,
 
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: usize,
+    pool_cache_lru_size: usize,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
     /// This flag can be removed once DDoS protection is implemented.
     #[clap(long, env, parse(try_from_str), default_value = "false")]
-    pub enable_presign_orders: bool,
+    enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully update in this time in seconds attempting
     /// to get them errors and our liveness check fails.
@@ -204,6 +204,16 @@ struct Arguments {
     /// Which estimators to use to estimate token prices in terms of the chain's native token.
     #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
     native_price_estimators: Vec<PriceEstimatorType>,
+
+    /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
+    /// that small pools do not influence the prices. If not set a reasonable default is used based
+    /// on network id.
+    #[clap(
+        long,
+        env,
+        parse(try_from_str = U256::from_dec_str)
+    )]
+    amount_to_estimate_prices_with: Option<U256>,
 
     #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
     price_estimators: Vec<PriceEstimatorType>,
@@ -276,9 +286,8 @@ async fn main() {
     let network_name = network_name(&network, chain_id);
 
     let native_token_price_estimation_amount = args
-        .shared
         .amount_to_estimate_prices_with
-        .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network))
+        .or_else(|| default_amount_to_estimate_prices_with(&network))
         .expect("No amount to estimate prices with set.");
 
     let vault = match BalancerV2Vault::deployed(&web3).await {
@@ -721,6 +730,16 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
         res.insert(key, value);
     }
     Ok(res)
+}
+
+fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
+    match network_id {
+        // Mainnet, Rinkeby
+        "1" | "4" => Some(10u128.pow(18).into()),
+        // Xdai
+        "100" => Some(10u128.pow(21).into()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

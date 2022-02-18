@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 /// A batch auction.
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Auction {
     /// The block that this auction is valid for.
     /// The block number for the auction. Orders and prices are guaranteed to be

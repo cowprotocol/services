@@ -85,11 +85,11 @@ async fn smart_contract_orders(web3: Web3) {
     tx!(trader, token.approve(contracts.allowance, to_wei(10)));
 
     let OrderbookServices {
-        price_estimator,
         block_stream,
         maintenance,
         solvable_orders_cache,
         base_tokens,
+        ..
     } = OrderbookServices::new(&web3, &contracts).await;
 
     let client = reqwest::Client::new();
@@ -168,7 +168,6 @@ async fn smart_contract_orders(web3: Web3) {
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
         liquidity_collector,
-        price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
@@ -197,7 +196,6 @@ async fn smart_contract_orders(web3: Web3) {
                 }),
             ],
         },
-        1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),

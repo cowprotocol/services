@@ -94,7 +94,6 @@ async fn vault_balances(web3: Web3) {
     );
 
     let OrderbookServices {
-        price_estimator,
         block_stream,
         solvable_orders_cache,
         base_tokens,
@@ -150,7 +149,6 @@ async fn vault_balances(web3: Web3) {
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
         liquidity_collector,
-        price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
@@ -179,7 +177,6 @@ async fn vault_balances(web3: Web3) {
                 }),
             ],
         },
-        1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),

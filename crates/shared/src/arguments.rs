@@ -91,16 +91,6 @@ pub struct Arguments {
     )]
     pub block_stream_poll_interval_seconds: Duration,
 
-    /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
-    // that small pools do not influence the prices. If not set a reasonable default is used based
-    // on network id.
-    #[clap(
-        long,
-        env,
-        parse(try_from_str = U256::from_dec_str)
-    )]
-    pub amount_to_estimate_prices_with: Option<U256>,
-
     /// Special partner authentication for Paraswap API (allowing higher rater limits)
     #[clap(long, env)]
     pub paraswap_partner: Option<String>,
@@ -165,14 +155,4 @@ pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     let in_gwei: f64 = s.parse()?;
     Ok(in_gwei * 1e9)
-}
-
-pub fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
-    match network_id {
-        // Mainnet, Rinkeby
-        "1" | "4" => Some(10u128.pow(18).into()),
-        // Xdai
-        "100" => Some(10u128.pow(21).into()),
-        _ => None,
-    }
 }
