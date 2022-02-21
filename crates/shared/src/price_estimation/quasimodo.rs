@@ -137,23 +137,6 @@ impl QuasimodoPriceEstimator {
             )
             .await?;
 
-        if let Some(metadata) = settlement.metadata {
-            if !metadata.has_solution.unwrap_or(true) {
-                return match metadata.result.as_deref() {
-                    Some("Infeasible" | "InfeasibleOrUnbounded" | "Unbounded") => {
-                        Err(PriceEstimationError::NoLiquidity)
-                    }
-                    Some(error) => Err(PriceEstimationError::Other(anyhow::anyhow!(
-                        "quasimodo didn't return a solution: {}",
-                        error
-                    ))),
-                    None => Err(PriceEstimationError::Other(anyhow::anyhow!(
-                        "quasimodo didn't return a solution"
-                    ))),
-                };
-            }
-        }
-
         if !settlement.orders.contains_key(&0) {
             return Err(PriceEstimationError::NoLiquidity);
         }
