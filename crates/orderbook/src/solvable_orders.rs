@@ -4,7 +4,7 @@ use crate::{
     orderbook::filter_unsupported_tokens,
 };
 use anyhow::Result;
-use model::{order::Order, CachedSolvableOrders, SolvableOrders};
+use model::{order::Order, SolvableOrders};
 use primitive_types::U256;
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, time::now_in_epoch_seconds,
@@ -33,6 +33,38 @@ pub struct SolvableOrdersCache {
 }
 
 type Balances = HashMap<Query, U256>;
+
+#[derive(Clone, Debug)]
+pub struct CachedSolvableOrders {
+    inner: SolvableOrders,
+    update_time: Instant,
+}
+
+impl CachedSolvableOrders {
+    pub fn new(inner: SolvableOrders, update_time: Instant) -> Self {
+        Self { inner, update_time }
+    }
+
+    pub fn solvable_orders(&self) -> &SolvableOrders {
+        &self.inner
+    }
+
+    pub fn into_solvable_orders(self) -> SolvableOrders {
+        self.inner
+    }
+
+    pub fn orders(&self) -> &Vec<Order> {
+        &self.inner.orders
+    }
+
+    pub fn into_orders(self) -> Vec<Order> {
+        self.inner.orders
+    }
+
+    pub fn valid(&self, max_update_time: Duration) -> bool {
+        self.update_time.elapsed() <= max_update_time
+    }
+}
 
 struct Inner {
     orders: CachedSolvableOrders,

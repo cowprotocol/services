@@ -1,7 +1,7 @@
 use crate::{
     api::order_validation::{OrderValidating, OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
-    solvable_orders::SolvableOrdersCache,
+    solvable_orders::{CachedSolvableOrders, SolvableOrdersCache},
 };
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
@@ -9,7 +9,7 @@ use ethcontract::H256;
 use model::{
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
     signature::SigningScheme,
-    CachedSolvableOrders, DomainSeparator,
+    DomainSeparator,
 };
 use primitive_types::H160;
 use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
