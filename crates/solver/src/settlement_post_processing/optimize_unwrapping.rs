@@ -86,7 +86,7 @@ mod tests {
     }
 
     fn settlement_with_unwrap(weth: &WETH9, amount: U256) -> Settlement {
-        let mut settlement = Settlement::with_trades(HashMap::default(), Vec::default());
+        let mut settlement = Settlement::with_trades(HashMap::default(), Vec::default(), vec![]);
         if !amount.is_zero() {
             settlement.encoder.add_unwrap(UnwrapWethInteraction {
                 weth: weth.clone(),

@@ -1,5 +1,5 @@
 use super::{
-    single_order_solver::{SettlementError, SingleOrderSolving},
+    single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
 use crate::{
@@ -20,7 +20,7 @@ use shared::paraswap_api::{
     TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
 };
 use shared::token_info::TokenInfo;
-use shared::{conversions::U256Ext, token_info::TokenInfoFetching, Web3};
+use shared::{token_info::TokenInfoFetching, Web3};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -93,8 +93,12 @@ impl SingleOrderSolving for ParaswapSolver {
             .get_token_infos(&[order.sell_token, order.buy_token])
             .await;
         let (price_response, amount) = self.get_price_for_order(&order, &token_info).await?;
-        if !satisfies_limit_price(&order, &price_response) {
-            tracing::debug!("Order limit price not respected");
+        if !execution_respects_order(
+            &order,
+            price_response.src_amount,
+            price_response.dest_amount,
+        ) {
+            tracing::debug!("execution does not respect order");
             return Ok(None);
         }
         let transaction_query =
@@ -193,12 +197,6 @@ impl Interaction for TransactionBuilderResponse {
     }
 }
 
-fn satisfies_limit_price(order: &LimitOrder, response: &PriceResponse) -> bool {
-    // We check if order.sell / order.buy >= response.sell / response.buy
-    order.sell_amount.to_big_rational() * response.dest_amount.to_big_rational()
-        >= response.src_amount.to_big_rational() * order.buy_amount.to_big_rational()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -218,48 +216,6 @@ mod tests {
         transport::create_env_test_transport,
     };
     use std::collections::HashMap;
-
-    #[test]
-    fn test_satisfies_limit_price() {
-        assert!(!satisfies_limit_price(
-            &LimitOrder {
-                sell_amount: 100.into(),
-                buy_amount: 95.into(),
-                ..Default::default()
-            },
-            &PriceResponse {
-                src_amount: 100.into(),
-                dest_amount: 90.into(),
-                ..Default::default()
-            }
-        ));
-
-        assert!(satisfies_limit_price(
-            &LimitOrder {
-                sell_amount: 100.into(),
-                buy_amount: 95.into(),
-                ..Default::default()
-            },
-            &PriceResponse {
-                src_amount: 100.into(),
-                dest_amount: 100.into(),
-                ..Default::default()
-            }
-        ));
-
-        assert!(satisfies_limit_price(
-            &LimitOrder {
-                sell_amount: 100.into(),
-                buy_amount: 95.into(),
-                ..Default::default()
-            },
-            &PriceResponse {
-                src_amount: 100.into(),
-                dest_amount: 95.into(),
-                ..Default::default()
-            }
-        ));
-    }
 
     #[tokio::test]
     async fn test_skips_order_if_unable_to_fetch_decimals() {

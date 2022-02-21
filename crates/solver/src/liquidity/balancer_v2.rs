@@ -103,11 +103,28 @@ impl BalancerV2Liquidity {
     }
 }
 
-struct SettlementHandler {
+pub struct SettlementHandler {
     pool_id: H256,
     settlement: GPv2Settlement,
     vault: BalancerV2Vault,
     allowances: Arc<Allowances>,
+}
+
+#[cfg(test)]
+impl SettlementHandler {
+    pub fn new(
+        pool_id: H256,
+        settlement: GPv2Settlement,
+        vault: BalancerV2Vault,
+        allowances: Arc<Allowances>,
+    ) -> Self {
+        SettlementHandler {
+            pool_id,
+            settlement,
+            vault,
+            allowances,
+        }
+    }
 }
 
 impl SettlementHandling<WeightedProductOrder> for SettlementHandler {

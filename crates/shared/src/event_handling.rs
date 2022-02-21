@@ -83,6 +83,10 @@ where
         &self.store
     }
 
+    pub fn last_handled_block(&self) -> Option<u64> {
+        self.last_handled_block
+    }
+
     async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
         // Instead of using only the most recent event block from the db we also store the last
         // handled block in self so that during long times of no events we do not query needlessly

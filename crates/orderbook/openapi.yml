@@ -240,6 +240,20 @@ paths:
                   latestSettlementBlock:
                     type: integer
                     description: The block number in which the most recent settlement was observed.
+  /api/v1/auction:
+    get:
+      summary: Gets the current batch auction.
+      description: |
+        The current batch auction that solvers should be solving right now. Includes the list of
+        solvable orders, the block on which the batch was created, as well as prices for all tokens
+        being traded (used for objective value computation).
+      responses:
+        200:
+          description: the auction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Auction"
   /api/v1/fee:
     get:
       description: |
@@ -518,6 +532,10 @@ components:
       description: Where should the buy token be transfered to?
       type: string
       enum: [ erc20, internal ]
+    PriceQuality:
+      description: How good should the price estimate be?
+      type: string
+      enum: [ fast, optimal ]
     OrderStatus:
       description: The current order status
       type: string
@@ -651,6 +669,38 @@ components:
       allOf:
         - $ref: "#/components/schemas/OrderCreation"
         - $ref: "#/components/schemas/OrderMetaData"
+    Auction:
+      description: |
+        A batch auction for solving.
+      type: object
+      properties:
+        block:
+          type: integer
+          description: |
+            The block number for the auction. Orders and prices are guaranteed to be valid on this
+            block. Proposed settlements should be valid for this block as well.
+        latestSettlementBlock:
+          type: integer
+          description: |
+            The latest block on which a settlement has been processed.
+
+            Note that under certain conditions it is possible for a settlement to have been mined as
+            part of `block` but not have yet been processed.
+        orders:
+          type: array
+          items:
+            $ref: "#/components/schemas/Order"
+          description: |
+            The solvable orders included in the auction.
+        prices:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigUint"
+          description: |
+            The reference prices for all traded tokens in the auction as a mapping from token
+            addresses to a price denominated in native token (i.e. 1e18 represents a token that
+            trades one to one with the native token). These prices are used for solution competition
+            for computing surplus and converting fees to native token.
     OrderCancellation:
       description: |
         EIP712 signature of struct OrderCancellation { orderUid: bytes } from the order's owner
@@ -889,6 +939,9 @@ components:
               default: "erc20"
             from:
               $ref: "#/components/schemas/Address"
+            priceQuality:
+              $ref: "#/components/schemas/PriceQuality"
+              default: "optimal"
           required:
             - sellToken
             - buyToken

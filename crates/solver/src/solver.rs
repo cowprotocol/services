@@ -1,5 +1,6 @@
 use crate::interactions::allowances::AllowanceManager;
 use crate::metrics::SolverMetrics;
+use crate::settlement::external_prices::ExternalPrices;
 use crate::solver::balancer_sor_solver::BalancerSorSolver;
 use crate::{
     liquidity::{LimitOrder, Liquidity},
@@ -23,7 +24,6 @@ use shared::{
 };
 use single_order_solver::SingleOrderSolver;
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -90,15 +90,14 @@ pub struct Auction {
     /// will be dropped.
     pub deadline: Instant,
 
-    /// The price of tokens appearing in the limit orders represented in the native token.
+    /// The set of external prices for this auction.
     ///
-    /// The objective value is calculated with these prices so they can be relevant for solvers.
+    /// The objective value is calculated with these prices so they can be
+    /// relevant for solvers.
     ///
-    /// The price of the native token and the BUY_ETH_ADDRESS is included and set to 1.
-    ///
-    /// If a price cannot be determined the limit order would not have been included in the auction
-    /// so this is guaranteed to have a price for all tokens.
-    pub price_estimates: HashMap<H160, BigRational>,
+    /// External prices are garanteed to exist for all orders included in the
+    /// current auction.
+    pub external_prices: ExternalPrices,
 }
 
 impl Default for Auction {
@@ -113,7 +112,7 @@ impl Default for Auction {
             liquidity: Default::default(),
             gas_price: Default::default(),
             deadline: never,
-            price_estimates: Default::default(),
+            external_prices: Default::default(),
         }
     }
 }
@@ -335,14 +334,10 @@ impl SellVolumeFilteringSolver {
     async fn filter_orders(
         &self,
         mut orders: Vec<LimitOrder>,
-        price_estimates: &HashMap<H160, BigRational>,
+        external_prices: &ExternalPrices,
     ) -> Vec<LimitOrder> {
         let is_minimum_volume = |token: &H160, amount: &U256| {
-            let price = match price_estimates.get(token) {
-                Some(price) => price,
-                None => return false,
-            };
-            let native_amount = amount.to_big_rational() * price;
+            let native_amount = external_prices.get_native_amount(*token, amount.to_big_rational());
             native_amount >= self.min_value
         };
         orders.retain(|order| {
@@ -358,7 +353,7 @@ impl Solver for SellVolumeFilteringSolver {
     async fn solve(&self, mut auction: Auction) -> Result<Vec<Settlement>> {
         let original_length = auction.orders.len();
         auction.orders = self
-            .filter_orders(auction.orders, &auction.price_estimates)
+            .filter_orders(auction.orders, &auction.external_prices)
             .await;
         tracing::debug!(
             "Filtered {} orders because on insufficient volume",
@@ -379,8 +374,9 @@ impl Solver for SellVolumeFilteringSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::LimitOrder;
+    use crate::{liquidity::LimitOrder, settlement::external_prices::externalprices};
     use model::order::OrderKind;
+    use num::One as _;
 
     /// Dummy solver returning no settlements
     pub struct NoopSolver();
@@ -402,17 +398,20 @@ mod tests {
     #[tokio::test]
     async fn test_filtering_solver_removes_limit_orders_with_too_little_volume() {
         let sell_token = H160::from_low_u64_be(1);
+        let buy_token = H160::from_low_u64_be(2);
         let orders = vec![
             // Orders with high enough amount
             LimitOrder {
                 sell_amount: 100_000.into(),
                 sell_token,
+                buy_token,
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
             LimitOrder {
                 sell_amount: 500_000.into(),
                 sell_token,
+                buy_token,
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
@@ -420,20 +419,20 @@ mod tests {
             LimitOrder {
                 sell_amount: 100.into(),
                 sell_token,
+                buy_token,
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
         ];
 
         let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 50_000.into());
-        let prices =
-            std::array::IntoIter::new([(sell_token, BigRational::new(1.into(), 1.into()))])
-                .collect();
+        let prices = externalprices! { native_token: sell_token, buy_token => BigRational::one() };
         assert_eq!(solver.filter_orders(orders, &prices).await.len(), 2);
     }
 
     #[tokio::test]
-    async fn test_filtering_solver_removes_orders_without_price_estimate() {
+    #[should_panic]
+    async fn test_filtering_solver_panics_orders_without_price_estimate() {
         let sell_token = H160::from_low_u64_be(1);
         let orders = vec![LimitOrder {
             sell_amount: 100_000.into(),

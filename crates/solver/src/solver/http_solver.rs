@@ -1,10 +1,10 @@
 pub mod buffers;
-mod settlement;
+pub mod settlement;
 
 use self::settlement::SettlementContext;
 use crate::{
     liquidity::{LimitOrder, Liquidity},
-    settlement::Settlement,
+    settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
 use anyhow::{anyhow, Context, Result};
@@ -13,7 +13,6 @@ use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
 use model::order::OrderKind;
-use num::ToPrimitive;
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
@@ -88,7 +87,7 @@ impl HttpSolver {
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
-        price_estimates: HashMap<H160, BigRational>,
+        external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
         let tokens = map_tokens_for_solver(&orders, &liquidity);
         let (token_infos, buffers_result) = join!(
@@ -129,10 +128,7 @@ impl HttpSolver {
         // objective value by the driver. It is possible that we have AMM pools that contain tokens
         // that are not any order's tokens. We used to fetch these extra prices but it would often
         // slow down the solver and the solver can estimate them on its own.
-        let price_estimates = price_estimates
-            .into_iter()
-            .filter_map(|(token, price)| Some((token, price.to_f64()?)))
-            .collect();
+        let price_estimates = external_prices.into_http_solver_prices();
 
         // For the solver to run correctly we need to be sure that there are no
         // isolated islands of tokens without connection between them.
@@ -365,7 +361,7 @@ impl Solver for HttpSolver {
             liquidity,
             gas_price,
             deadline,
-            price_estimates,
+            external_prices,
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         if orders.is_empty() {
@@ -377,7 +373,7 @@ impl Solver for HttpSolver {
                 Some(data) if data.solve_id == id => (data.model.clone(), data.context.clone()),
                 _ => {
                     let (model, context) = self
-                        .prepare_model(orders, liquidity, gas_price, price_estimates)
+                        .prepare_model(orders, liquidity, gas_price, external_prices)
                         .await?;
                     *guard = Some(InstanceData {
                         solve_id: id,

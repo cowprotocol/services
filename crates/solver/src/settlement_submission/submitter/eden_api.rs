@@ -67,4 +67,8 @@ impl TransactionSubmitting for EdenApi {
 
         SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
+
+    fn name(&self) -> &'static str {
+        "Eden"
+    }
 }

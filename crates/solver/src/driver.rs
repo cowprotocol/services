@@ -8,7 +8,7 @@ use crate::{
     liquidity_collector::LiquidityCollector,
     metrics::{SolverMetrics, SolverRunOutcome},
     orderbook::OrderBookApi,
-    settlement::Settlement,
+    settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessingPipeline,
     settlement_simulation,
     settlement_submission::SolutionSubmitter,
@@ -21,17 +21,15 @@ use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use num::{BigRational, ToPrimitive};
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use rand::prelude::SliceRandom;
 use shared::{
     current_block::{self, CurrentBlockStream},
-    price_estimation::PriceEstimating,
     recent_block_cache::Block,
     token_list::TokenList,
     Web3,
 };
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -40,7 +38,6 @@ use web3::types::TransactionReceipt;
 pub struct Driver {
     settlement_contract: GPv2Settlement,
     liquidity_collector: LiquidityCollector,
-    price_estimator: Arc<dyn PriceEstimating>,
     solvers: Solvers,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     settle_interval: Duration,
@@ -55,7 +52,6 @@ pub struct Driver {
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     solve_id: u64,
-    native_token_amount_to_estimate_prices_with: U256,
     max_settlements_per_solver: usize,
     api: OrderBookApi,
     order_converter: OrderConverter,
@@ -69,7 +65,6 @@ impl Driver {
     pub fn new(
         settlement_contract: GPv2Settlement,
         liquidity_collector: LiquidityCollector,
-        price_estimator: Arc<dyn PriceEstimating>,
         solvers: Solvers,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         settle_interval: Duration,
@@ -83,7 +78,6 @@ impl Driver {
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
-        native_token_amount_to_estimate_prices_with: U256,
         max_settlements_per_solver: usize,
         api: OrderBookApi,
         order_converter: OrderConverter,
@@ -101,7 +95,6 @@ impl Driver {
         Self {
             settlement_contract,
             liquidity_collector,
-            price_estimator,
             solvers,
             gas_price_estimator,
             settle_interval,
@@ -116,7 +109,6 @@ impl Driver {
             block_stream,
             solution_submitter,
             solve_id: 0,
-            native_token_amount_to_estimate_prices_with,
             max_settlements_per_solver,
             api,
             order_converter,
@@ -170,6 +162,10 @@ impl Driver {
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
         let trades = settlement.trades().to_vec();
+
+        self.metrics
+            .settlement_revertable_status(settlement.revertable(), solver.name());
+
         match self
             .solution_submitter
             .settle(
@@ -186,9 +182,9 @@ impl Driver {
                     rated_settlement.id,
                     receipt.transaction_hash
                 );
-                trades
-                    .iter()
-                    .for_each(|trade| self.metrics.order_settled(&trade.order, name));
+                trades.iter().for_each(|order_trade| {
+                    self.metrics.order_settled(&order_trade.trade.order, name)
+                });
                 self.metrics.settlement_submitted(
                     crate::metrics::SettlementSubmissionOutcome::Success,
                     name,
@@ -313,7 +309,7 @@ impl Driver {
     async fn rate_settlements(
         &self,
         settlements: Vec<SettlementWithSolver>,
-        prices: &HashMap<H160, BigRational>,
+        prices: &ExternalPrices,
         gas_price: EstimatedGasPrice,
     ) -> Result<(
         Vec<(Arc<dyn Solver>, RatedSettlement)>,
@@ -330,12 +326,8 @@ impl Driver {
         .await
         .context("failed to simulate settlements")?;
 
-        // Normalize gas_price_wei to the native token price in the prices vector.
-        let gas_price_normalized = BigRational::from_float(gas_price.effective_gas_price())
-            .expect("Invalid gas price.")
-            * prices
-                .get(&self.native_token)
-                .expect("Price of native token must be known.");
+        let gas_price =
+            BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
 
         let rate_settlement = |id, settlement: Settlement, gas_estimate| {
             let surplus = settlement.total_surplus(prices);
@@ -348,7 +340,7 @@ impl Driver {
                 unscaled_subsidized_fee,
                 scaled_unsubsidized_fee: scaled_solver_fees,
                 gas_estimate,
-                gas_price: gas_price_normalized.clone(),
+                gas_price: gas_price.clone(),
             }
         };
         Ok(
@@ -370,35 +362,34 @@ impl Driver {
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
-        let orders = self.api.get_orders().await.context("get_orders")?;
-        let (before_count, block) = (orders.orders.len(), orders.latest_settlement_block);
-        let orders = self.in_flight_orders.update_and_filter(orders);
-        if before_count != orders.len() {
+        let mut auction = self.api.get_auction().await.context("get_auction")?;
+        let before_count = auction.orders.len();
+        self.in_flight_orders.update_and_filter(&mut auction);
+        if before_count != auction.orders.len() {
             tracing::debug!(
                 "reduced {} orders to {} because in flight at last seen block {}",
                 before_count,
-                orders.len(),
-                block
+                auction.orders.len(),
+                auction.block
             );
         }
-        let orders = orders
+
+        let orders = auction
+            .orders
             .into_iter()
             .map(|order| self.order_converter.normalize_limit_order(order))
             .collect::<Vec<_>>();
         tracing::info!("got {} orders: {:?}", orders.len(), orders);
+
+        let external_prices =
+            ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
+                .context("malformed acution prices")?;
+        tracing::debug!("estimated prices: {:?}", external_prices);
+
         let liquidity = self
             .liquidity_collector
             .get_liquidity_for_orders(&orders, Block::Number(current_block_during_liquidity_fetch))
             .await?;
-        let estimated_prices = auction_preprocessing::collect_estimated_prices(
-            self.price_estimator.as_ref(),
-            self.native_token_amount_to_estimate_prices_with,
-            self.native_token,
-            &orders,
-        )
-        .await;
-        tracing::debug!("estimated prices: {:?}", estimated_prices);
-        let orders = auction_preprocessing::orders_with_price_estimates(orders, &estimated_prices);
 
         self.metrics.orders_fetched(&orders);
         self.metrics.liquidity_fetched(&liquidity);
@@ -422,7 +413,7 @@ impl Driver {
             liquidity,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
-            price_estimates: estimated_prices.clone(),
+            external_prices: external_prices.clone(),
         };
         tracing::debug!("solving auction ID {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
@@ -469,7 +460,7 @@ impl Driver {
 
             solver_settlements::merge_settlements(
                 self.max_merged_settlements,
-                &estimated_prices,
+                &external_prices,
                 &mut settlements,
             );
 
@@ -483,7 +474,7 @@ impl Driver {
         }
 
         let (mut rated_settlements, errors) = self
-            .rate_settlements(solver_settlements, &estimated_prices, gas_price)
+            .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
         tracing::info!(
             "{} settlements passed simulation and {} failed",
@@ -539,7 +530,7 @@ impl Driver {
                     .settlement
                     .trades()
                     .iter()
-                    .map(|t| t.order.order_meta_data.uid);
+                    .map(|t| t.trade.order.order_meta_data.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -548,8 +539,14 @@ impl Driver {
                     }
                 };
                 self.in_flight_orders.mark_settled_orders(block, orders);
-                self.metrics
-                    .transaction_gas_price(receipt.effective_gas_price);
+                match receipt.effective_gas_price {
+                    Some(price) => {
+                        self.metrics.transaction_gas_price(price);
+                    }
+                    None => {
+                        tracing::error!("node did not return effective gas price in tx receipt");
+                    }
+                }
             }
             self.metrics.transaction_submission(start.elapsed());
 
@@ -568,9 +565,9 @@ impl Driver {
 }
 
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
-    !settlement.encoder.trades().iter().any(|trade| {
+    !settlement.encoder.trades().iter().any(|order_trade| {
         token_list
-            .get(&trade.order.order_creation.sell_token)
+            .get(&order_trade.trade.order.order_creation.sell_token)
             .is_none()
     })
 }
@@ -616,10 +613,11 @@ enum SolverRunError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::Trade;
+    use crate::settlement::{OrderTrade, Trade};
     use maplit::hashmap;
     use model::order::{Order, OrderCreation};
     use shared::token_list::Token;
+    use std::collections::HashMap;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {
@@ -642,10 +640,13 @@ mod tests {
             }
         });
 
-        let trade = |token| Trade {
-            order: Order {
-                order_creation: OrderCreation {
-                    sell_token: token,
+        let trade = |token| OrderTrade {
+            trade: Trade {
+                order: Order {
+                    order_creation: OrderCreation {
+                        sell_token: token,
+                        ..Default::default()
+                    },
                     ..Default::default()
                 },
                 ..Default::default()
@@ -656,6 +657,7 @@ mod tests {
         let settlement = Settlement::with_trades(
             HashMap::new(),
             vec![trade(good_token), trade(another_good_token)],
+            vec![],
         );
         assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
 
@@ -666,6 +668,7 @@ mod tests {
                 trade(another_good_token),
                 trade(bad_token),
             ],
+            vec![],
         );
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
     }

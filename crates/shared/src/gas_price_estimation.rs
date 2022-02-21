@@ -99,6 +99,10 @@ pub async fn create_priority_estimator(
             }
         }
     }
+    anyhow::ensure!(
+        !estimators.is_empty(),
+        "all gas estimators failed to initialize"
+    );
     Ok(PriorityGasPriceEstimating::new(estimators))
 }
 

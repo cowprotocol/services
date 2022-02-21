@@ -13,6 +13,7 @@ jobs:
       DOCKERHUB_PROJECT: gp-v2-services
       DOCKER_NAME: ${{ secrets.DOCKER_NAME }}
       DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+      AUTODEPLOY_TOKEN: ${{ secrets.AUTODEPLOY_TOKEN }}
     steps:
       - uses: actions/checkout@v2
       - run: docker/deploy.sh ${GITHUB_REF#refs/*/}

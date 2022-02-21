@@ -2,11 +2,9 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
-use model::{
-    app_id::AppId,
-    order::{OrderKind, BUY_ETH_ADDRESS},
-};
+use model::{app_id::AppId, order::OrderKind};
 use primitive_types::{H160, U256};
+use serde::{Deserialize, Serialize};
 use shared::{
     bad_token::BadTokenDetecting,
     price_estimation::native::NativePriceEstimating,
@@ -19,11 +17,17 @@ use std::{
 
 pub type Measurement = (U256, DateTime<Utc>);
 
-pub type EthAwareMinFeeCalculator = EthAdapter<MinFeeCalculator>;
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "snake_case")]
+pub enum PriceQuality {
+    Fast,
+    Optimal,
+}
 
-pub struct EthAdapter<T> {
-    calculator: T,
-    weth: H160,
+impl Default for PriceQuality {
+    fn default() -> Self {
+        Self::Optimal
+    }
 }
 
 /// Fee subsidy configuration.
@@ -102,7 +106,7 @@ pub struct FeeParameters {
 // 2. When validating fees this consistently picks the same amount.
 impl FeeParameters {
     pub fn amount_in_sell_token(&self) -> U256 {
-        U256::from_f64_lossy((self.gas_amount * self.gas_price * self.sell_token_price).ceil())
+        U256::from_f64_lossy((self.gas_amount * self.gas_price / self.sell_token_price).ceil())
     }
 
     fn apply_fee_factor(
@@ -127,7 +131,7 @@ impl FeeParameters {
             .copied()
             .unwrap_or(1.0)
             * fee_configuration.fee_factor;
-        U256::from_f64_lossy((discounted_fee_in_eth * self.sell_token_price * factor).ceil())
+        U256::from_f64_lossy((discounted_fee_in_eth * factor / self.sell_token_price).ceil())
     }
 }
 
@@ -202,71 +206,9 @@ pub trait MinFeeStoring: Send + Sync {
 const STANDARD_VALIDITY_FOR_FEE_IN_SEC: i64 = 60;
 const PERSISTED_VALIDITY_FOR_FEE_IN_SEC: i64 = 120;
 
-fn normalize_buy_token(buy_token: H160, weth: H160) -> H160 {
-    if buy_token == BUY_ETH_ADDRESS {
-        weth
-    } else {
-        buy_token
-    }
-}
-
-impl EthAwareMinFeeCalculator {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        price_estimator: Arc<dyn PriceEstimating>,
-        gas_estimator: Arc<dyn GasPriceEstimating>,
-        native_token: H160,
-        measurements: Arc<dyn MinFeeStoring>,
-        bad_token_detector: Arc<dyn BadTokenDetecting>,
-        fee_subsidy: FeeSubsidyConfiguration,
-        native_price_estimator: Arc<dyn NativePriceEstimating>,
-    ) -> Self {
-        Self {
-            calculator: MinFeeCalculator::new(
-                price_estimator,
-                gas_estimator,
-                measurements,
-                bad_token_detector,
-                fee_subsidy,
-                native_price_estimator,
-            ),
-            weth: native_token,
-        }
-    }
-}
-
-#[async_trait::async_trait]
-impl<T> MinFeeCalculating for EthAdapter<T>
-where
-    T: MinFeeCalculating + Send + Sync,
-{
-    async fn compute_subsidized_min_fee(
-        &self,
-        mut fee_data: FeeData,
-        app_data: AppId,
-    ) -> Result<Measurement, PriceEstimationError> {
-        fee_data.buy_token = normalize_buy_token(fee_data.buy_token, self.weth);
-        self.calculator
-            .compute_subsidized_min_fee(fee_data, app_data)
-            .await
-    }
-
-    async fn get_unsubsidized_min_fee(
-        &self,
-        mut fee_data: FeeData,
-        app_data: AppId,
-        subsidized_fee: U256,
-    ) -> Result<FeeParameters, ()> {
-        fee_data.buy_token = normalize_buy_token(fee_data.buy_token, self.weth);
-        self.calculator
-            .get_unsubsidized_min_fee(fee_data, app_data, subsidized_fee)
-            .await
-    }
-}
-
 impl MinFeeCalculator {
     #[allow(clippy::too_many_arguments)]
-    fn new(
+    pub fn new(
         price_estimator: Arc<dyn PriceEstimating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
         measurements: Arc<dyn MinFeeStoring>,
@@ -306,19 +248,21 @@ impl MinFeeCalculator {
         )?;
         let gas_price = gas_estimate.effective_gas_price();
         let gas_amount = buy_token_estimate.gas.to_f64_lossy();
-        let fee_in_eth = gas_price * gas_amount;
-        let fee = fee_in_eth * sell_token_price;
-
-        tracing::debug!(
-            ?fee_data, %gas_price, %gas_amount, %fee_in_eth, %sell_token_price, %fee,
-            "unsubsidized fee amount"
-        );
-
-        Ok(FeeParameters {
+        let fee_parameters = FeeParameters {
             gas_amount,
             gas_price,
             sell_token_price,
-        })
+        };
+
+        let fee_in_eth = gas_price * gas_amount;
+        let fee_in_sell_token = fee_parameters.amount_in_sell_token();
+        tracing::debug!(
+            ?fee_data, %gas_price, %gas_amount, %sell_token_price,
+            %fee_in_eth, %fee_in_sell_token,
+            "unsubsidized fee amount"
+        );
+
+        Ok(fee_parameters)
     }
 }
 
@@ -483,7 +427,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
-    use chrono::{Duration, NaiveDateTime};
+    use chrono::Duration;
     use futures::FutureExt;
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
     use maplit::hashmap;
@@ -505,73 +449,6 @@ mod tests {
             Default::default(),
             1.into(),
         ))
-    }
-
-    #[tokio::test]
-    async fn eth_aware_min_fees() {
-        let weth = H160([0x42; 20]);
-        let token = H160([0x21; 20]);
-        let mut calculator = MockMinFeeCalculating::default();
-        calculator
-            .expect_compute_subsidized_min_fee()
-            .withf(move |&fee_data, &app_data| {
-                fee_data.sell_token == token
-                    && fee_data.buy_token == weth
-                    && fee_data.amount == 1337.into()
-                    && fee_data.kind == OrderKind::Sell
-                    && app_data == Default::default()
-            })
-            .times(1)
-            .returning(|_, _| {
-                Ok((
-                    0.into(),
-                    DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-                ))
-            });
-
-        let eth_aware = EthAdapter { calculator, weth };
-        assert!(eth_aware
-            .compute_subsidized_min_fee(
-                FeeData {
-                    sell_token: token,
-                    buy_token: BUY_ETH_ADDRESS,
-                    amount: 1337.into(),
-                    kind: OrderKind::Sell,
-                },
-                Default::default(),
-            )
-            .await
-            .is_ok());
-    }
-
-    #[tokio::test]
-    async fn eth_aware_is_valid_fee() {
-        let weth = H160([0x42; 20]);
-        let token = H160([0x21; 20]);
-        let mut calculator = MockMinFeeCalculating::default();
-        calculator
-            .expect_get_unsubsidized_min_fee()
-            .withf(move |&fee_data, &app_data, &subsidized_fee| {
-                fee_data.sell_token == token
-                    && subsidized_fee == 42.into()
-                    && app_data == Default::default()
-            })
-            .times(1)
-            .returning(|_, _, fee| Ok((fee.as_u32()).into()));
-
-        let eth_aware = EthAdapter { calculator, weth };
-        let result = eth_aware
-            .get_unsubsidized_min_fee(
-                FeeData {
-                    sell_token: token,
-                    ..Default::default()
-                },
-                Default::default(),
-                42.into(),
-            )
-            .await
-            .unwrap();
-        assert_eq!(result, 42.into());
     }
 
     impl MinFeeCalculator {
@@ -837,7 +714,7 @@ mod tests {
             ..Default::default()
         };
         let native_token_price_estimation_amount = 100.;
-        let sell_token_price = 1.25;
+        let sell_token_price = 0.1;
         let gas_estimate = 42.;
 
         let unsubsidized_min_fee = FeeParameters {
@@ -854,7 +731,7 @@ mod tests {
         ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: U256::from_f64_lossy(
-                native_token_price_estimation_amount * sell_token_price,
+                native_token_price_estimation_amount / sell_token_price,
             ),
             gas: 1337.into(),
         }));

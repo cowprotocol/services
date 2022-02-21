@@ -121,7 +121,11 @@ fn run() -> Result<()> {
         .manual(
             "BalancerV2BasePoolFactory",
             "Balancer does not publish ABIs for base contracts",
-        );
+        )
+        .npm(
+            "IUniswapV3Factory",
+            "@uniswap/v3-core@1.0.0/artifacts/contracts/interfaces/IUniswapV3Factory.sol/IUniswapV3Factory.json",
+        )?;
 
     Ok(())
 }

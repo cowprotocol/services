@@ -138,11 +138,11 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
 
     // Place Orders
     let OrderbookServices {
-        price_estimator,
         maintenance,
         block_stream,
         solvable_orders_cache,
         base_tokens,
+        ..
     } = OrderbookServices::new(&web3, &contracts).await;
 
     let client = reqwest::Client::new();
@@ -199,7 +199,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
         liquidity_collector,
-        price_estimator,
         vec![solver],
         Arc::new(web3.clone()),
         Duration::from_secs(30),
@@ -228,7 +227,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 }),
             ],
         },
-        1_000_000_000_000_000_000_u128.into(),
         10,
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
@@ -265,8 +263,8 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
     maintenance.run_maintenance().await.unwrap();
     solvable_orders_cache.update(0).await.unwrap();
 
-    let orders = create_orderbook_api().get_orders().await.unwrap();
-    assert!(orders.orders.is_empty());
+    let auction = create_orderbook_api().get_auction().await.unwrap();
+    assert!(auction.orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();

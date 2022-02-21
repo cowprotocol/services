@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{ArgEnum, Parser};
-use contracts::{BalancerV2Vault, GPv2Settlement, WETH9};
+use contracts::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9};
 use ethcontract::errors::DeployError;
 use model::{
     app_id::AppId,
@@ -12,7 +12,7 @@ use orderbook::{
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::{EthAwareMinFeeCalculator, FeeSubsidyConfiguration},
+    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     orderbook::Orderbook,
@@ -20,57 +20,53 @@ use orderbook::{
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
-use primitive_types::H160;
-use shared::oneinch_api::OneInchClientImpl;
-use shared::price_estimation::native::NativePriceEstimator;
-use shared::price_estimation::native_price_cache::CachingNativePriceEstimator;
-use shared::price_estimation::oneinch::OneInchPriceEstimator;
-use shared::price_estimation::quasimodo::QuasimodoPriceEstimator;
-use shared::price_estimation::sanitized::SanitizedPriceEstimator;
-use shared::price_estimation::zeroex::ZeroExPriceEstimator;
-use shared::zeroex_api::DefaultZeroExApi;
+use primitive_types::{H160, U256};
 use shared::{
     bad_token::{
         cache::CachingDetector,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         trace_call::{
             BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
-            UniswapLikePairProviderFinder,
+            UniswapLikePairProviderFinder, UniswapV3Finder,
         },
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
+    network::network_name,
+    oneinch_api::OneInchClientImpl,
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
-        baseline::BaselinePriceEstimator, competition::CompetitionPriceEstimator,
-        instrumented::InstrumentedPriceEstimator, paraswap::ParaswapPriceEstimator,
+        baseline::BaselinePriceEstimator,
+        competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        instrumented::InstrumentedPriceEstimator,
+        native::NativePriceEstimator,
+        native_price_cache::CachingNativePriceEstimator,
+        oneinch::OneInchPriceEstimator,
+        paraswap::ParaswapPriceEstimator,
+        quasimodo::QuasimodoPriceEstimator,
+        sanitized::SanitizedPriceEstimator,
+        zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
     },
     recent_block_cache::CacheConfig,
+    sources::balancer_v2::BalancerFactoryKind,
     sources::{
         self,
+        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::{
             pool_cache::PoolCache,
             pool_fetching::{PoolFetcher, PoolFetching},
         },
-        PoolAggregator,
+        BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::create_instrumented_transport,
-    transport::http::HttpTransport,
+    transport::{create_instrumented_transport, http::HttpTransport},
+    zeroex_api::DefaultZeroExApi,
 };
-use shared::{
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
-    network::network_name,
-    sources::balancer_v2::BalancerFactoryKind,
-    sources::{
-        balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
-        BaselineSource,
-    },
-};
-use std::{collections::HashMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 use tokio::task;
 use url::Url;
 
@@ -115,28 +111,28 @@ struct Arguments {
     token_quality_cache_expiry: Duration,
 
     /// List of token addresses to be ignored throughout service
-    #[clap(long, env, use_delimiter = true)]
-    pub unsupported_tokens: Vec<H160>,
+    #[clap(long, env, use_value_delimiter = true)]
+    unsupported_tokens: Vec<H160>,
 
     /// List of account addresses to be denied from order creation
-    #[clap(long, env, use_delimiter = true)]
-    pub banned_users: Vec<H160>,
+    #[clap(long, env, use_value_delimiter = true)]
+    banned_users: Vec<H160>,
 
     /// List of token addresses that should be allowed regardless of whether the bad token detector
     /// thinks they are bad. Base tokens are automatically allowed.
-    #[clap(long, env, use_delimiter = true)]
-    pub allowed_tokens: Vec<H160>,
+    #[clap(long, env, use_value_delimiter = true)]
+    allowed_tokens: Vec<H160>,
 
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
-    pub pool_cache_lru_size: usize,
+    pool_cache_lru_size: usize,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
     /// This flag can be removed once DDoS protection is implemented.
     #[clap(long, env, parse(try_from_str), default_value = "false")]
-    pub enable_presign_orders: bool,
+    enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully update in this time in seconds attempting
     /// to get them errors and our liveness check fails.
@@ -190,21 +186,53 @@ struct Arguments {
     /// How long cached native prices stay valid.
     #[clap(
         long,
+        env,
         default_value = "30",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     native_price_cache_max_age_secs: Duration,
 
     /// How many cached native token prices can be updated at most in one maintenance cycle.
-    #[clap(long, default_value = "3")]
+    #[clap(long, env, default_value = "3")]
     native_price_cache_max_update_size: usize,
 
     /// Which estimators to use to estimate token prices in terms of the chain's native token.
-    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    #[clap(
+        long,
+        env,
+        default_value = "Baseline",
+        arg_enum,
+        use_value_delimiter = true
+    )]
     native_price_estimators: Vec<PriceEstimatorType>,
 
-    #[clap(long, env, default_value = "Baseline", arg_enum, use_delimiter = true)]
+    /// The amount in native tokens atoms to use for price estimation. Should be reasonably large so
+    /// that small pools do not influence the prices. If not set a reasonable default is used based
+    /// on network id.
+    #[clap(
+        long,
+        env,
+        parse(try_from_str = U256::from_dec_str)
+    )]
+    amount_to_estimate_prices_with: Option<U256>,
+
+    #[clap(
+        long,
+        env,
+        default_value = "Baseline",
+        arg_enum,
+        use_value_delimiter = true
+    )]
     price_estimators: Vec<PriceEstimatorType>,
+
+    /// How many successful price estimates for each order will cause a fast price estimation to
+    /// return its result early.
+    /// The bigger the value the more the fast price estimation performs like the optimal price
+    /// estimation.
+    /// It's possible to pass values greater than the total number of enabled estimators but that
+    /// will not have any further effect.
+    #[clap(long, env, default_value = "2")]
+    fast_price_estimation_results_required: NonZeroUsize,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -265,9 +293,8 @@ async fn main() {
     let network_name = network_name(&network, chain_id);
 
     let native_token_price_estimation_amount = args
-        .shared
         .amount_to_estimate_prices_with
-        .or_else(|| shared::arguments::default_amount_to_estimate_prices_with(&network))
+        .or_else(|| default_amount_to_estimate_prices_with(&network))
         .expect("No amount to estimate prices with set.");
 
     let vault = match BalancerV2Vault::deployed(&web3).await {
@@ -299,11 +326,11 @@ async fn main() {
         None
     };
 
-    let event_updater = EventUpdater::new(
+    let event_updater = Arc::new(EventUpdater::new(
         settlement_contract.clone(),
         database.as_ref().clone(),
         sync_start,
-    );
+    ));
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
         vault.clone(),
@@ -355,10 +382,19 @@ async fn main() {
     if let Some(contract) = &vault {
         finders.push(Arc::new(BalancerVaultFinder(contract.clone())));
     }
+    let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    if let Some(contract) = uniswapv3_factory {
+        finders.push(Arc::new(UniswapV3Finder {
+            factory: contract,
+            base_tokens: base_tokens.tokens().iter().copied().collect(),
+        }));
+    }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
         finders,
-        base_tokens: base_tokens.tokens().clone(),
         settlement_contract: settlement_contract.address(),
     };
     let caching_detector = CachingDetector::new(
@@ -521,6 +557,14 @@ async fn main() {
             .collect(),
     ))));
 
+    let fast_price_estimator = Arc::new(sanitized(Box::new(RacingCompetitionPriceEstimator::new(
+        args.price_estimators
+            .iter()
+            .map(create_base_estimator)
+            .collect(),
+        args.fast_price_estimation_results_required,
+    ))));
+
     let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
         Box::new(NativePriceEstimator::new(
             Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
@@ -540,20 +584,23 @@ async fn main() {
         Some(args.native_price_cache_max_update_size),
     );
 
-    let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
-        price_estimator.clone(),
-        gas_price_estimator,
-        native_token.address(),
-        database.clone(),
-        bad_token_detector.clone(),
-        FeeSubsidyConfiguration {
-            fee_discount: args.fee_discount,
-            min_discounted_fee: args.min_discounted_fee,
-            fee_factor: args.fee_factor,
-            partner_additional_fee_factors: args.partner_additional_fee_factors,
-        },
-        native_price_estimator,
-    ));
+    let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>| {
+        Arc::new(MinFeeCalculator::new(
+            price_estimator.clone(),
+            gas_price_estimator.clone(),
+            database.clone(),
+            bad_token_detector.clone(),
+            FeeSubsidyConfiguration {
+                fee_discount: args.fee_discount,
+                min_discounted_fee: args.min_discounted_fee,
+                fee_factor: args.fee_factor,
+                partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
+            },
+            native_price_estimator.clone(),
+        ))
+    };
+    let fee_calculator = create_fee_calculator(price_estimator.clone());
+    let fast_fee_calculator = create_fee_calculator(fast_price_estimator.clone());
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -581,23 +628,29 @@ async fn main() {
         settlement_contract.address(),
         database.clone(),
         bad_token_detector,
+        native_price_estimator,
         args.enable_presign_orders,
-        solvable_orders_cache,
+        solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
+        metrics.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![database.clone(), Arc::new(event_updater), pool_fetcher],
+        maintainers: vec![
+            database.clone(),
+            event_updater,
+            pool_fetcher,
+            solvable_orders_cache,
+        ],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
     }
     check_database_connection(orderbook.as_ref()).await;
-    let quoter = Arc::new(OrderQuoter::new(
-        fee_calculator,
-        price_estimator,
-        order_validator,
-    ));
+    let quoter = Arc::new(
+        OrderQuoter::new(fee_calculator, price_estimator, order_validator)
+            .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
+    );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
         database.clone(),
@@ -697,6 +750,16 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
         res.insert(key, value);
     }
     Ok(res)
+}
+
+fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
+    match network_id {
+        // Mainnet, Rinkeby
+        "1" | "4" => Some(10u128.pow(18).into()),
+        // Xdai
+        "100" => Some(10u128.pow(21).into()),
+        _ => None,
+    }
 }
 
 #[cfg(test)]

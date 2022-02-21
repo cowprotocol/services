@@ -7,7 +7,8 @@ use anyhow::Result;
 use model::{order::Order, SolvableOrders};
 use primitive_types::U256;
 use shared::{
-    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, time::now_in_epoch_seconds,
+    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
+    time::now_in_epoch_seconds,
 };
 use std::{
     collections::{HashMap, HashSet},
@@ -38,14 +39,23 @@ type Balances = HashMap<Query, U256>;
 pub struct CachedSolvableOrders {
     inner: SolvableOrders,
     update_time: Instant,
+    block: u64,
 }
 
 impl CachedSolvableOrders {
-    pub fn new(inner: SolvableOrders, update_time: Instant) -> Self {
-        Self { inner, update_time }
+    pub fn new(inner: SolvableOrders, update_time: Instant, block: u64) -> Self {
+        Self {
+            inner,
+            update_time,
+            block,
+        }
     }
 
     pub fn solvable_orders(&self) -> &SolvableOrders {
+        &self.inner
+    }
+
+    pub fn solvable_orders_mut(&mut self) -> &SolvableOrders {
         &self.inner
     }
 
@@ -64,12 +74,15 @@ impl CachedSolvableOrders {
     pub fn valid(&self, max_update_time: Duration) -> bool {
         self.update_time.elapsed() <= max_update_time
     }
+
+    pub fn block(&self) -> u64 {
+        self.block
+    }
 }
 
 struct Inner {
     orders: CachedSolvableOrders,
     balances: Balances,
-    block: u64,
 }
 
 impl SolvableOrdersCache {
@@ -93,9 +106,9 @@ impl SolvableOrdersCache {
                         latest_settlement_block: 0,
                     },
                     Instant::now(),
+                    0,
                 ),
                 balances: Default::default(),
-                block: 0,
             }),
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
@@ -129,7 +142,7 @@ impl SolvableOrdersCache {
         // cannot have changed.
         let old_balances = {
             let inner = self.cache.lock().unwrap();
-            if inner.block == block {
+            if inner.orders.block == block {
                 inner.balances.clone()
             } else {
                 HashMap::new()
@@ -167,9 +180,9 @@ impl SolvableOrdersCache {
                     latest_settlement_block: db_solvable_orders.latest_settlement_block,
                 },
                 Instant::now(),
+                block,
             ),
             balances: new_balances,
-            block,
         };
 
         Ok(())
@@ -270,6 +283,14 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
             Ok(()) => tracing::debug!("updated solvable orders"),
             Err(err) => tracing::error!(?err, "failed to update solvable orders"),
         }
+    }
+}
+
+#[async_trait::async_trait]
+impl Maintaining for SolvableOrdersCache {
+    async fn run_maintenance(&self) -> Result<()> {
+        self.request_update();
+        Ok(())
     }
 }
 

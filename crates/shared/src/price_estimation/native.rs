@@ -6,8 +6,10 @@ use std::sync::Arc;
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait NativePriceEstimating: Send + Sync {
-    /// The resulting price is how many units of token needs to be sold for one unit of
-    /// the chain's native token (sell_amount / buy_amount).
+    /// Returns a price estimate for the specified token query.
+    ///
+    /// Prices are denominated in native token (i.e. the amount of native token
+    /// that is needed to buy 1 unit of the specified token).
     async fn estimate_native_price(&self, token: &H160) -> Result<f64, PriceEstimationError> {
         self.estimate_native_prices(std::slice::from_ref(token))
             .await
@@ -16,9 +18,10 @@ pub trait NativePriceEstimating: Send + Sync {
             .unwrap()
     }
 
-    /// The resulting price is how many units of token needs to be sold for one unit of
-    /// the chain's native token (sell_amount / buy_amount).
-    /// Returns one result for each query.
+    /// Returns a price estimate for each query.
+    ///
+    /// Prices are denominated in native token (i.e. the amount of native token
+    /// that is needed to buy 1 unit of the specified token).
     async fn estimate_native_prices(
         &self,
         tokens: &[H160],
@@ -69,7 +72,7 @@ impl NativePriceEstimating for NativePriceEstimator {
             .into_iter()
             .zip(native_token_queries.iter())
             .map(|(estimate, query)| {
-                estimate.map(|estimate| estimate.price_in_sell_token_f64(query))
+                estimate.map(|estimate| estimate.price_in_buy_token_f64(query))
             })
             .collect()
     }
@@ -89,10 +92,10 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 3);
-            vec![Ok(Estimate {
+            Box::pin(futures::future::ready(vec![Ok(Estimate {
                 out_amount: 123_456_789_000_000_000u128.into(),
                 gas: 0.into(),
-            })]
+            })]))
         });
 
         let native_price_estimator = NativePriceEstimator {
@@ -106,7 +109,7 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
-        assert_eq!(price, 0.123456789);
+        assert_eq!(price, 1. / 0.123456789);
     }
 
     #[test]
@@ -116,7 +119,9 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 2);
-            vec![Err(PriceEstimationError::NoLiquidity)]
+            Box::pin(futures::future::ready(vec![Err(
+                PriceEstimationError::NoLiquidity,
+            )]))
         });
 
         let native_price_estimator = NativePriceEstimator {

@@ -24,11 +24,26 @@ pub struct UniswapLikeLiquidity {
     base_tokens: Arc<BaseTokens>,
 }
 
-struct Inner {
+pub struct Inner {
     router: IUniswapLikeRouter,
     gpv2_settlement: GPv2Settlement,
     // Mapping of how much allowance the router has per token to spend on behalf of the settlement contract
     allowances: Mutex<Allowances>,
+}
+
+#[cfg(test)]
+impl Inner {
+    pub fn new(
+        router: IUniswapLikeRouter,
+        gpv2_settlement: GPv2Settlement,
+        allowances: Mutex<Allowances>,
+    ) -> Self {
+        Inner {
+            router,
+            gpv2_settlement,
+            allowances,
+        }
+    }
 }
 
 impl UniswapLikeLiquidity {
@@ -145,7 +160,7 @@ mod tests {
     use std::collections::HashMap;
 
     impl Inner {
-        fn new(allowances: HashMap<H160, U256>) -> Self {
+        fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
             Self {
                 router: dummy_contract!(IUniswapLikeRouter, H160::zero()),
                 gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
@@ -163,7 +178,7 @@ mod tests {
             token_b => 200.into(),
         };
 
-        let inner = Inner::new(allowances);
+        let inner = Inner::new_dummy(allowances);
 
         // Token A below, equal, above
         let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()));

@@ -1,6 +1,6 @@
 use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::bad_token::{BadTokenDetecting, TokenQuality};
-use crate::price_estimation::gas::GAS_PER_WETH_UNWRAP;
+use crate::price_estimation::gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP};
 use anyhow::Result;
 use model::order::BUY_ETH_ADDRESS;
 use primitive_types::H160;
@@ -19,7 +19,7 @@ type EstimationResult = Result<Estimate, PriceEstimationError>;
 
 enum EstimationProgress<'a> {
     TrivialSolution(EstimationResult),
-    AwaitingEthEstimation(&'a Query),
+    AwaitingEthEstimation(&'a Query, u64),
     AwaitingErc20Estimation,
 }
 
@@ -102,9 +102,6 @@ impl PriceEstimating for SanitizedPriceEstimator {
         let all_estimates = queries
             .iter()
             .map(|query| {
-                if query.sell_token == BUY_ETH_ADDRESS {
-                    return TrivialSolution(Err(PriceEstimationError::NoLiquidity));
-                }
                 if let Some(err) = token_quality_errors.get(&query.buy_token) {
                     return TrivialSolution(Err(err.clone()));
                 }
@@ -122,7 +119,26 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     return TrivialSolution(Ok(estimation));
                 }
 
-                if query.buy_token == BUY_ETH_ADDRESS {
+                if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
+                    let estimation = Estimate {
+                        out_amount: query.in_amount,
+                        gas: GAS_PER_WETH_UNWRAP.into(),
+                    };
+
+                    tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
+                    return TrivialSolution(Ok(estimation));
+                }
+                if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
+                    let estimation = Estimate {
+                        out_amount: query.in_amount,
+                        gas: GAS_PER_WETH_WRAP.into(),
+                    };
+
+                    tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
+                    return TrivialSolution(Ok(estimation));
+                }
+
+                if query.sell_token != self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                     let sanitized_query = Query {
                         buy_token: self.native_token,
                         ..*query
@@ -131,11 +147,26 @@ impl PriceEstimating for SanitizedPriceEstimator {
                     tracing::debug!(
                         ?query,
                         ?sanitized_query,
-                        "estimate price for wrapped native asset"
+                        "estimate price for buying native asset"
                     );
 
                     difficult_queries.push(sanitized_query);
-                    return AwaitingEthEstimation(query);
+                    return AwaitingEthEstimation(query, GAS_PER_WETH_UNWRAP);
+                }
+                if query.sell_token == BUY_ETH_ADDRESS && query.buy_token != self.native_token {
+                    let sanitized_query = Query {
+                        sell_token: self.native_token,
+                        ..*query
+                    };
+
+                    tracing::debug!(
+                        ?query,
+                        ?sanitized_query,
+                        "estimate price for selling native asset"
+                    );
+
+                    difficult_queries.push(sanitized_query);
+                    return AwaitingEthEstimation(query, GAS_PER_WETH_WRAP);
                 }
 
                 difficult_queries.push(*query);
@@ -158,20 +189,20 @@ impl PriceEstimating for SanitizedPriceEstimator {
                 AwaitingErc20Estimation => difficult_estimates
                     .next()
                     .expect("there is a result for every forwarded query"),
-                AwaitingEthEstimation(query) => {
+                AwaitingEthEstimation(query, weth_op_gas) => {
                     let mut final_estimation = difficult_estimates
                         .next()
                         .expect("there is a result for every forwarded query")?;
                     final_estimation.gas = final_estimation
                         .gas
-                        .checked_add(GAS_PER_WETH_UNWRAP.into())
+                        .checked_add(weth_op_gas.into())
                         .ok_or(anyhow::anyhow!(
-                            "cost of unwrapping ETH would overflow gas price"
+                            "cost of converting native asset would overflow gas price"
                         ))?;
                     tracing::debug!(
                         ?query,
                         ?final_estimation,
-                        "added cost of unwrapping WETH to price estimation"
+                        "added cost of converting native asset to price estimation"
                     );
                     Ok(final_estimation)
                 }
@@ -208,7 +239,7 @@ mod tests {
             }
         });
 
-        let native_token = H160::from_low_u64_le(1);
+        let native_token = H160::from_low_u64_le(42);
 
         let queries = [
             // This is the common case (Tokens are supported, distinct and not ETH).
@@ -235,10 +266,40 @@ mod tests {
                 in_amount: U256::MAX,
                 kind: OrderKind::Buy,
             },
+            // `sanitized_estimator` will replace `sell_token` with `native_token` before querying
+            // `wrapped_estimator`.
+            // `sanitized_estimator` will add cost of wrapping ETH to Estimate.
+            Query {
+                sell_token: BUY_ETH_ADDRESS,
+                buy_token: H160::from_low_u64_le(1),
+                in_amount: 1.into(),
+                kind: OrderKind::Buy,
+            },
             // Can be estimated by `sanitized_estimator` because `buy_token` and `sell_token` are identical.
             Query {
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: H160::from_low_u64_le(1),
+                in_amount: 1.into(),
+                kind: OrderKind::Sell,
+            },
+            // Can be estimated by `sanitized_estimator` because both tokens are the native token.
+            Query {
+                sell_token: BUY_ETH_ADDRESS,
+                buy_token: BUY_ETH_ADDRESS,
+                in_amount: 1.into(),
+                kind: OrderKind::Sell,
+            },
+            // Can be estimated by `sanitized_estimator` because it is a native token unwrap.
+            Query {
+                sell_token: native_token,
+                buy_token: BUY_ETH_ADDRESS,
+                in_amount: 1.into(),
+                kind: OrderKind::Sell,
+            },
+            // Can be estimated by `sanitized_estimator` because it is a native token wrap.
+            Query {
+                sell_token: BUY_ETH_ADDRESS,
+                buy_token: native_token,
                 in_amount: 1.into(),
                 kind: OrderKind::Sell,
             },
@@ -253,13 +314,6 @@ mod tests {
             Query {
                 sell_token: H160::from_low_u64_le(1),
                 buy_token: BAD_TOKEN,
-                in_amount: 1.into(),
-                kind: OrderKind::Buy,
-            },
-            // Will throw `NoLiquidity` error in `sanitized_estimator`.
-            Query {
-                sell_token: BUY_ETH_ADDRESS,
-                buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
@@ -278,6 +332,11 @@ mod tests {
                 buy_token: native_token,
                 ..queries[2]
             },
+            Query {
+                // SanitizedPriceEstimator replaces ETH sell token with native token
+                sell_token: native_token,
+                ..queries[3]
+            },
         ];
 
         let mut wrapped_estimator = Box::new(MockPriceEstimating::new());
@@ -286,7 +345,7 @@ mod tests {
             .times(1)
             .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
             .returning(|_| {
-                vec![
+                Box::pin(futures::future::ready(vec![
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100.into(),
@@ -299,7 +358,11 @@ mod tests {
                         out_amount: 1.into(),
                         gas: U256::MAX,
                     }),
-                ]
+                    Ok(Estimate {
+                        out_amount: 1.into(),
+                        gas: 100.into(),
+                    }),
+                ]))
             });
 
         let sanitized_estimator = SanitizedPriceEstimator {
@@ -309,7 +372,7 @@ mod tests {
         };
 
         let result = sanitized_estimator.estimates(&queries).await;
-        assert_eq!(result.len(), 7);
+        assert_eq!(result.len(), 10);
         assert_eq!(
             result[0].as_ref().unwrap(),
             &Estimate {
@@ -323,34 +386,60 @@ mod tests {
                 out_amount: 1.into(),
                 //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
                 //Query with ETH as the buy_token.
-                gas: U256::from(GAS_PER_WETH_UNWRAP)
-                    .checked_add(100.into())
-                    .unwrap()
+                gas: U256::from(GAS_PER_WETH_UNWRAP + 100),
             }
         );
         assert!(matches!(
             result[2].as_ref().unwrap_err(),
             PriceEstimationError::Other(err)
-                if err.to_string() == "cost of unwrapping ETH would overflow gas price",
+                if err.to_string() == "cost of converting native asset would overflow gas price",
         ));
         assert_eq!(
             result[3].as_ref().unwrap(),
             &Estimate {
                 out_amount: 1.into(),
+                //sanitized_estimator will add ETH_WRAP_COST to the gas of any
+                //Query with ETH as the sell_token.
+                gas: U256::from(GAS_PER_WETH_WRAP + 100),
+            }
+        );
+        assert_eq!(
+            result[4].as_ref().unwrap(),
+            &Estimate {
+                out_amount: 1.into(),
                 gas: 0.into()
             }
         );
+        assert_eq!(
+            result[5].as_ref().unwrap(),
+            &Estimate {
+                out_amount: 1.into(),
+                gas: 0.into()
+            }
+        );
+        assert_eq!(
+            result[6].as_ref().unwrap(),
+            &Estimate {
+                out_amount: 1.into(),
+                // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
+                gas: GAS_PER_WETH_UNWRAP.into()
+            }
+        );
+        assert_eq!(
+            result[7].as_ref().unwrap(),
+            &Estimate {
+                out_amount: 1.into(),
+                // Sanitized estimator will report a 1:1 estimate when wrapping native token.
+                gas: GAS_PER_WETH_WRAP.into()
+            }
+        );
         assert!(matches!(
-            result[4].as_ref().unwrap_err(),
+            result[8].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken(_)
         ));
         assert!(matches!(
-            result[5].as_ref().unwrap_err(),
+            result[9].as_ref().unwrap_err(),
             PriceEstimationError::UnsupportedToken(_)
-        ));
-        assert!(matches!(
-            result[6].as_ref().unwrap_err(),
-            PriceEstimationError::NoLiquidity
         ));
     }
 }

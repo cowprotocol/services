@@ -79,10 +79,10 @@ mod tests {
             .times(1)
             .withf(move |q| q == queries)
             .returning(|_| {
-                vec![
+                Box::pin(futures::future::ready(vec![
                     Ok(Estimate::default()),
                     Err(PriceEstimationError::Other(anyhow!(""))),
-                ]
+                ]))
             });
 
         let mut metrics = MockMetrics::new();

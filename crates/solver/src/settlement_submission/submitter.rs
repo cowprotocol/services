@@ -116,6 +116,8 @@ pub trait TransactionSubmitting: Send + Sync {
     ) -> Result<Option<EstimatedGasPrice>>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
+    /// Returns displayable name of the submitter. Used for logging and metrics collection.
+    fn name(&self) -> &'static str;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -203,8 +205,13 @@ impl<'a> Submitter<'a> {
         params: SubmitterParams,
     ) -> Result<TransactionReceipt, SubmissionError> {
         let nonce = self.nonce().await?;
+        let name = self.submit_api.name();
 
-        tracing::info!("starting solution submission at nonce {}", nonce);
+        tracing::info!(
+            "starting solution submission at nonce {} with submitter {}",
+            nonce,
+            name
+        );
 
         // Continually simulate and submit transactions
         let mut transactions = Vec::new();
@@ -226,15 +233,15 @@ impl<'a> Submitter<'a> {
 
         let fallback_result = tokio::select! {
             method_error = submit_future.fuse() => {
-                tracing::info!("stopping submission because simulation failed: {:?}", method_error);
+                tracing::info!("stopping submission for {} because simulation failed: {:?}", name, method_error);
                 Err(method_error)
             },
             new_nonce = nonce_future.fuse() => {
-                tracing::info!("stopping submission because account nonce changed to {}", new_nonce);
+                tracing::info!("stopping submission for {} because account nonce changed to {}", name, new_nonce);
                 Ok(None)
             },
             _ = deadline_future.fuse() => {
-                tracing::info!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
+                tracing::info!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
 
                 if let Some((transaction, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(1.125).ceil();
@@ -267,8 +274,9 @@ impl<'a> Submitter<'a> {
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
 
             tracing::info!(
-                "waiting up to {} seconds to see if a transaction was mined",
-                MINED_TX_PROPAGATE_TIME.as_secs()
+                "waiting up to {} seconds for {} to see if a transaction was mined",
+                MINED_TX_PROPAGATE_TIME.as_secs(),
+                name
             );
 
             let transactions = transactions
@@ -281,7 +289,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::info!("found mined transaction {:?}", receipt);
+                    tracing::info!("{} found mined transaction {:?}", name, receipt);
                     return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
@@ -291,7 +299,7 @@ impl<'a> Submitter<'a> {
             }
         }
 
-        tracing::info!("did not find any mined transaction");
+        tracing::info!("{} did not find any mined transaction", name);
         fallback_result
             .transpose()
             .unwrap_or(Err(SubmissionError::Timeout))
@@ -334,6 +342,7 @@ impl<'a> Submitter<'a> {
         params: &SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, EstimatedGasPrice)>,
     ) -> SubmissionError {
+        let name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
@@ -353,9 +362,12 @@ impl<'a> Submitter<'a> {
                 .submission_status(&settlement, &params.network_id);
             let estimator = match submission_status {
                 SubmissionLoopStatus::Disabled(reason) => {
-                    tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
-                    tokio::time::sleep(params.retry_interval).await;
-                    continue;
+                    tracing::debug!(
+                        "strategy {} temporarily disabled, reason: {:?}",
+                        name,
+                        reason
+                    );
+                    return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
                 SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
                     self.gas_price_estimator.with_no_additional_tip()
@@ -411,9 +423,12 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::info!(
-                "creating transaction with gas price {:?}, gas estimate {}",
-                gas_price,
+                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
+                gas_price.base_fee(),
+                gas_price.cap(),
+                gas_price.tip(),
                 params.gas_estimate,
+                name,
             );
 
             // execute transaction
@@ -484,10 +499,10 @@ fn status(receipt: TransactionReceipt) -> Result<TransactionReceipt, SubmissionE
     if let Some(status) = receipt.status {
         if status == U64::zero() {
             // failing transaction
-            return Err(SubmissionError::Revert);
+            return Err(SubmissionError::Revert(receipt.transaction_hash));
         } else if status == U64::one() && receipt.from == receipt.to.unwrap_or_default() {
             // noop transaction
-            return Err(SubmissionError::Canceled);
+            return Err(SubmissionError::Canceled(receipt.transaction_hash));
         }
     }
     // successfull transaction

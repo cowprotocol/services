@@ -21,12 +21,12 @@ pub fn report_matched_but_not_settled(
         .settlement
         .trades()
         .iter()
-        .map(|trade| trade.order.order_meta_data.uid)
+        .map(|order_trade| order_trade.trade.order.order_meta_data.uid)
         .collect();
     let other_matched_orders: HashSet<_> = alternative_settlements
         .iter()
         .flat_map(|(_, solution)| solution.settlement.trades().to_vec())
-        .map(|trade| trade.order.order_meta_data.uid)
+        .map(|order_trade| order_trade.trade.order.order_meta_data.uid)
         .collect();
     let matched_but_not_settled: HashSet<_> = other_matched_orders
         .difference(&submitted_orders)
@@ -87,14 +87,17 @@ pub fn report_alternative_settlement_surplus(
         .settlement
         .trades()
         .iter()
-        .map(|trade| {
-            let sell_token_price = &submitted_prices[&trade.order.order_creation.sell_token];
-            let buy_token_price = &submitted_prices[&trade.order.order_creation.buy_token];
+        .map(|order_trade| {
+            let sell_token_price =
+                &submitted_prices[&order_trade.trade.order.order_creation.sell_token];
+            let buy_token_price =
+                &submitted_prices[&order_trade.trade.order.order_creation.buy_token];
             (
-                trade.order.order_meta_data.uid,
+                order_trade.trade.order.order_meta_data.uid,
                 SurplusInfo {
                     solver_name: winning_solver.name(),
-                    ratio: trade
+                    ratio: order_trade
+                        .trade
                         .surplus_ratio(sell_token_price, buy_token_price)
                         .unwrap_or_else(BigRational::zero),
                 },
@@ -127,13 +130,16 @@ fn best_surplus_by_order(
     for (solver, solution) in settlements.iter() {
         let trades = solution.settlement.trades();
         let clearing_prices = get_prices(&solution.settlement);
-        for trade in trades {
-            let order_id = trade.order.order_meta_data.uid;
-            let sell_token_price = &clearing_prices[&trade.order.order_creation.sell_token];
-            let buy_token_price = &clearing_prices[&trade.order.order_creation.buy_token];
+        for order_trade in trades {
+            let order_id = order_trade.trade.order.order_meta_data.uid;
+            let sell_token_price =
+                &clearing_prices[&order_trade.trade.order.order_creation.sell_token];
+            let buy_token_price =
+                &clearing_prices[&order_trade.trade.order.order_creation.buy_token];
             let surplus = SurplusInfo {
                 solver_name: solver.name(),
-                ratio: trade
+                ratio: order_trade
+                    .trade
                     .surplus_ratio(sell_token_price, buy_token_price)
                     .unwrap_or_else(BigRational::zero),
             };

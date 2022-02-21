@@ -1,14 +1,14 @@
-use crate::metrics::SolverMetrics;
 use crate::{
     liquidity::LimitOrder,
+    metrics::SolverMetrics,
     settlement::Settlement,
     solver::{Auction, Solver},
 };
 use anyhow::{Error, Result};
 use ethcontract::Account;
+use primitive_types::U256;
 use rand::prelude::SliceRandom;
-use std::sync::Arc;
-use std::{collections::VecDeque, time::Duration};
+use std::{collections::VecDeque, sync::Arc, time::Duration};
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -105,12 +105,27 @@ impl From<anyhow::Error> for SettlementError {
     }
 }
 
+// Used by the single order solvers to verify that the response respects the order price.
+// We have also observed that a 0x buy order did not respect the queried buy amount so verifying
+// just the price or verifying just one component of the price (sell amount for buy orders, buy
+// amount for sell orders) is not enough.
+pub fn execution_respects_order(
+    order: &LimitOrder,
+    executed_sell_amount: U256,
+    executed_buy_amount: U256,
+) -> bool {
+    // note: This would be different for partially fillable orders but LimitOrder does currently not
+    // contain the remaining fill amount.
+    executed_sell_amount <= order.sell_amount && executed_buy_amount >= order.buy_amount
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::liquidity::tests::CapturingSettlementHandler;
     use crate::metrics::NoopMetrics;
     use anyhow::anyhow;
+    use model::order::OrderKind;
     use std::sync::Arc;
 
     #[tokio::test]
@@ -213,5 +228,33 @@ mod tests {
             })
             .await
             .unwrap();
+    }
+
+    #[test]
+    fn execution_respects_order_() {
+        let order = LimitOrder {
+            kind: OrderKind::Sell,
+            sell_amount: 10.into(),
+            buy_amount: 10.into(),
+            ..Default::default()
+        };
+        assert!(execution_respects_order(&order, 10.into(), 11.into(),));
+        assert!(!execution_respects_order(&order, 10.into(), 9.into(),));
+        // Unexpectedly the executed sell amount is less than the real sell order for a fill kill
+        // order but we still get enough buy token.
+        assert!(execution_respects_order(&order, 9.into(), 10.into(),));
+        // Price is respected but order is partially filled.
+        assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
+
+        let order = LimitOrder {
+            kind: OrderKind::Buy,
+            ..order
+        };
+        assert!(execution_respects_order(&order, 9.into(), 10.into(),));
+        assert!(!execution_respects_order(&order, 11.into(), 10.into(),));
+        // Unexpectedly get more buy amount but sell amount is still respected.
+        assert!(execution_respects_order(&order, 10.into(), 11.into(),));
+        // Price is respected but order is partially filled.
+        assert!(!execution_respects_order(&order, 9.into(), 9.into(),));
     }
 }
