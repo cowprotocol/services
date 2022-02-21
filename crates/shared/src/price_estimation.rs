@@ -1,8 +1,9 @@
 pub mod baseline;
-pub mod cached;
 pub mod competition;
 pub mod gas;
 pub mod instrumented;
+pub mod native;
+pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
 pub mod priority;
@@ -15,18 +16,16 @@ use anyhow::Result;
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::BigRational;
-use structopt::clap::arg_enum;
 use thiserror::Error;
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum PriceEstimatorType {
-        Baseline,
-        Paraswap,
-        ZeroEx,
-        Quasimodo,
-        OneInch,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum PriceEstimatorType {
+    Baseline,
+    Paraswap,
+    ZeroEx,
+    Quasimodo,
+    OneInch,
 }
 
 impl PriceEstimatorType {
@@ -98,6 +97,8 @@ impl Estimate {
         amounts_to_price(sell_amount, buy_amount)
     }
 
+    /// The resulting price is how many units of sell_token needs to be sold for one unit of
+    /// buy_token (sell_amount / buy_amount).
     pub fn price_in_sell_token_f64(&self, query: &Query) -> f64 {
         let (sell_amount, buy_amount) = self.amounts(query);
         sell_amount.to_f64_lossy() / buy_amount.to_f64_lossy()

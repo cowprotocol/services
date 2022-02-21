@@ -177,7 +177,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
 
 fn order_fee(order: &LimitOrder) -> FeeModel {
     FeeModel {
-        amount: order.scaled_fee_amount,
+        amount: order.scaled_unsubsidized_fee,
         token: order.sell_token,
     }
 }
@@ -489,11 +489,8 @@ mod tests {
             buy_amount: base(1).into(),
             sell_amount: base(2).into(),
             kind: OrderKind::Sell,
-            partially_fillable: false,
-            scaled_fee_amount: Default::default(),
-            settlement_handling: CapturingSettlementHandler::arc(),
-            is_liquidity_order: false,
             id: "0".to_string(),
+            ..Default::default()
         }];
         let liquidity = vec![Liquidity::ConstantProduct(ConstantProductOrder {
             tokens: TokenPair::new(buy_token, sell_token).unwrap(),
@@ -571,14 +568,9 @@ mod tests {
         .map(|tokens| LimitOrder {
             sell_token: tokens.0,
             buy_token: tokens.1,
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
             kind: OrderKind::Sell,
-            partially_fillable: Default::default(),
-            scaled_fee_amount: Default::default(),
             settlement_handling: limit_handling.clone(),
-            is_liquidity_order: false,
-            id: "0".to_string(),
+            ..Default::default()
         })
         .collect::<Vec<_>>();
 

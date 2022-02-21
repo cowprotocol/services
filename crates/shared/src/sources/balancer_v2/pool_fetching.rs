@@ -30,6 +30,7 @@ use crate::{
     Web3, Web3Transport,
 };
 use anyhow::Result;
+use clap::ArgEnum;
 use contracts::{
     BalancerV2LiquidityBootstrappingPoolFactory,
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
@@ -42,7 +43,6 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-use structopt::clap::arg_enum;
 
 pub use common::TokenState;
 pub use stable::AmplificationParameter;
@@ -138,16 +138,15 @@ pub struct BalancerPoolFetcher {
     fetcher: Arc<dyn InternalPoolFetching>,
 }
 
-arg_enum! {
-    /// An enum containing all supported Balancer factory types.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub enum BalancerFactoryKind {
-        Weighted,
-        Weighted2Token,
-        Stable,
-        LiquidityBootstrapping,
-        NoProtocolFeeLiquidityBootstrapping,
-    }
+/// An enum containing all supported Balancer factory types.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum BalancerFactoryKind {
+    Weighted,
+    Weighted2Token,
+    Stable,
+    LiquidityBootstrapping,
+    NoProtocolFeeLiquidityBootstrapping,
 }
 
 /// All balancer related contracts that we expect to exist.
@@ -175,28 +174,12 @@ impl BalancerContracts {
     }
 }
 
-impl BalancerFactoryKind {
-    /// Returns all supported Balancer factory kinds.
-    pub fn all() -> Vec<Self> {
-        // take advantage of the auto-generated `::variants()` associated
-        // function so we don't have to keep updating this method with new kinds
-        // as they get added. Slightly inefficient.
-        Self::variants()
-            .iter()
-            .map(|name| {
-                name.parse()
-                    .expect("generated variant name did not parse successfully")
-            })
-            .collect()
-    }
-}
-
 impl BalancerPoolFetcher {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         chain_id: u64,
         token_infos: Arc<dyn TokenInfoFetching>,
-        factories: Vec<BalancerFactoryKind>,
+        factories: &[BalancerFactoryKind],
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
@@ -270,7 +253,7 @@ impl Maintaining for BalancerPoolFetcher {
 async fn create_aggregate_pool_fetcher(
     pool_initializer: impl PoolInitializing,
     token_infos: Arc<dyn TokenInfoFetching>,
-    factories: Vec<BalancerFactoryKind>,
+    factories: &[BalancerFactoryKind],
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
     let registered_pools = pool_initializer.initialize_pools().await?;
@@ -387,11 +370,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn enumerates_all_balancer_factory_kinds() {
-        assert!(!BalancerFactoryKind::all().is_empty());
-    }
-
     #[tokio::test]
     #[ignore]
     async fn balancer_fetched_pools_match_subgraph() {
@@ -410,7 +388,7 @@ mod tests {
                 create_aggregate_pool_fetcher(
                     pool_initializer,
                     Arc::new(token_infos),
-                    BalancerFactoryKind::all(),
+                    BalancerFactoryKind::value_variants(),
                     &contracts,
                 )
                 .await

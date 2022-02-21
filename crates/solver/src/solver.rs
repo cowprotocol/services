@@ -27,7 +27,6 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use structopt::clap::arg_enum;
 use zeroex_solver::ZeroExSolver;
 
 pub mod balancer_sor_solver;
@@ -125,19 +124,18 @@ pub type Solvers = Vec<Arc<dyn Solver>>;
 /// A single settlement and a solver that produced it.
 pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement);
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum SolverType {
-        Naive,
-        Baseline,
-        Mip,
-        CowDexAg,
-        OneInch,
-        Paraswap,
-        ZeroEx,
-        Quasimodo,
-        BalancerSor,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum SolverType {
+    Naive,
+    Baseline,
+    Mip,
+    CowDexAg,
+    OneInch,
+    Paraswap,
+    ZeroEx,
+    Quasimodo,
+    BalancerSor,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -155,7 +153,6 @@ pub fn create(
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     network_id: String,
     chain_id: u64,
-    min_order_size_one_inch: U256,
     disabled_one_inch_protocols: Vec<String>,
     paraswap_slippage_bps: u32,
     disabled_paraswap_dexs: Vec<String>,
@@ -166,6 +163,7 @@ pub fn create(
     zeroex_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
+    one_inch_url: Url,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -238,24 +236,18 @@ pub fn create(
                         use_internal_buffers: quasimodo_uses_internal_buffers.into(),
                     },
                 )),
-                SolverType::OneInch => {
-                    let one_inch_solver: SingleOrderSolver<_> = SingleOrderSolver::new(
-                        OneInchSolver::with_disabled_protocols(
-                            account,
-                            web3.clone(),
-                            settlement_contract.clone(),
-                            chain_id,
-                            disabled_one_inch_protocols.clone(),
-                            client.clone(),
-                        )?,
-                        solver_metrics.clone(),
-                    );
-                    // We only want to use 1Inch for high value orders
-                    shared(SellVolumeFilteringSolver::new(
-                        Box::new(one_inch_solver),
-                        min_order_size_one_inch,
-                    ))
-                }
+                SolverType::OneInch => shared(SingleOrderSolver::new(
+                    OneInchSolver::with_disabled_protocols(
+                        account,
+                        web3.clone(),
+                        settlement_contract.clone(),
+                        chain_id,
+                        disabled_one_inch_protocols.clone(),
+                        client.clone(),
+                        one_inch_url.clone(),
+                    )?,
+                    solver_metrics.clone(),
+                )),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,

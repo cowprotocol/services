@@ -62,6 +62,7 @@ pub struct Driver {
     in_flight_orders: InFlightOrders,
     post_processing_pipeline: PostProcessingPipeline,
     simulation_gas_limit: u128,
+    fee_objective_scaling_factor: BigRational,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -88,6 +89,7 @@ impl Driver {
         order_converter: OrderConverter,
         weth_unwrap_factor: f64,
         simulation_gas_limit: u128,
+        fee_objective_scaling_factor: f64,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -121,6 +123,8 @@ impl Driver {
             in_flight_orders: InFlightOrders::default(),
             post_processing_pipeline,
             simulation_gas_limit,
+            fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
+                .unwrap(),
         }
     }
 
@@ -178,8 +182,8 @@ impl Driver {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
-                    "Successfully submitted {} settlement: {:?}",
-                    name,
+                    "Successfully submitted settlement id {} as tx hash {:?}",
+                    rated_settlement.id,
                     receipt.transaction_hash
                 );
                 trades
@@ -194,7 +198,11 @@ impl Driver {
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
-                tracing::warn!("Failed to submit {} settlement: {:?}", solver.name(), err);
+                tracing::warn!(
+                    "Failed to submit settlement id {} settlement: {:?}",
+                    rated_settlement.id,
+                    err
+                );
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
                 Err(err.into_anyhow())
@@ -329,25 +337,30 @@ impl Driver {
                 .get(&self.native_token)
                 .expect("Price of native token must be known.");
 
-        let rate_settlement = |settlement: Settlement, gas_estimate| {
+        let rate_settlement = |id, settlement: Settlement, gas_estimate| {
             let surplus = settlement.total_surplus(prices);
             let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
+            let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
             RatedSettlement {
+                id,
                 settlement,
                 surplus,
-                solver_fees: scaled_solver_fees,
+                unscaled_subsidized_fee,
+                scaled_unsubsidized_fee: scaled_solver_fees,
                 gas_estimate,
                 gas_price: gas_price_normalized.clone(),
             }
         };
-        Ok(settlements.into_iter().zip(simulations).partition_map(
-            |((solver, settlement), result)| match result {
-                Ok(gas_estimate) => {
-                    Either::Left((solver.clone(), rate_settlement(settlement, gas_estimate)))
-                }
-                Err(err) => Either::Right((solver, settlement, err)),
-            },
-        ))
+        Ok(
+            (settlements.into_iter().zip(simulations).enumerate()).partition_map(
+                |(i, ((solver, settlement), result))| match result {
+                    Ok(gas_estimate) => {
+                        Either::Left((solver.clone(), rate_settlement(i, settlement, gas_estimate)))
+                    }
+                    Err(err) => Either::Right((solver, settlement, err)),
+                },
+            ),
+        )
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
@@ -482,7 +495,7 @@ impl Driver {
         }
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
-        print_settlements(&rated_settlements);
+        print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
         if let Some((winning_solver, mut winning_settlement)) = rated_settlements.pop() {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
@@ -500,7 +513,8 @@ impl Driver {
             }
 
             tracing::info!(
-                "winning settlement by {}: {:?}",
+                "winning settlement id {} by solver {}: {:?}",
+                winning_settlement.id,
                 winning_solver.name(),
                 winning_settlement
             );
@@ -561,22 +575,36 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
     })
 }
 
-fn print_settlements(rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)]) {
-    tracing::info!(
-        "Rated Settlements: {:?}",
-        rated_settlements
-            .iter()
-            .rev()
-            .map(|(solver, settlement)| format!(
-                "{}: objective={:.2e}: surplus={:.2e}, gas_estimate={:.2e}, gas_price={:.2e}",
-                solver.name(),
-                settlement.objective_value().to_f64().unwrap_or(f64::NAN),
-                settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                settlement.gas_estimate.to_f64_lossy(),
-                settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-            ))
-            .collect::<Vec<_>>()
-    );
+fn print_settlements(
+    rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)],
+    fee_objective_scaling_factor: &BigRational,
+) {
+    let mut text = String::new();
+    for (solver, settlement) in rated_settlements {
+        use std::fmt::Write;
+        write!(
+            text,
+            "\nid={} solver={} \
+             objective={:.2e} surplus={:.2e} \
+             gas_estimate={:.2e} gas_price={:.2e} \
+             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e}",
+            settlement.id,
+            solver.name(),
+            settlement.objective_value().to_f64().unwrap_or(f64::NAN),
+            settlement.surplus.to_f64().unwrap_or(f64::NAN),
+            settlement.gas_estimate.to_f64_lossy(),
+            settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+            (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
+                .to_f64()
+                .unwrap_or(f64::NAN),
+            settlement
+                .unscaled_subsidized_fee
+                .to_f64()
+                .unwrap_or(f64::NAN),
+        )
+        .unwrap();
+    }
+    tracing::info!("Rated Settlements: {}", text);
 }
 
 #[derive(Debug)]
@@ -640,5 +668,53 @@ mod tests {
             ],
         );
         assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
+    }
+
+    #[test]
+    #[ignore]
+    fn print_settlements() {
+        struct S;
+        #[async_trait::async_trait]
+        impl Solver for S {
+            async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
+                todo!()
+            }
+            fn account(&self) -> &ethcontract::Account {
+                todo!()
+            }
+            fn name(&self) -> &'static str {
+                "solvername"
+            }
+        }
+
+        let a = [
+            (
+                Arc::new(S) as Arc<dyn Solver>,
+                RatedSettlement {
+                    id: 0,
+                    settlement: Default::default(),
+                    surplus: BigRational::new(1u8.into(), 1u8.into()),
+                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
+                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
+                    gas_estimate: 4.into(),
+                    gas_price: BigRational::new(5u8.into(), 1u8.into()),
+                },
+            ),
+            (
+                Arc::new(S) as Arc<dyn Solver>,
+                RatedSettlement {
+                    id: 6,
+                    settlement: Default::default(),
+                    surplus: BigRational::new(7u8.into(), 1u8.into()),
+                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
+                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
+                    gas_estimate: 10.into(),
+                    gas_price: BigRational::new(11u8.into(), 1u8.into()),
+                },
+            ),
+        ];
+
+        shared::tracing::initialize_for_tests("INFO");
+        super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
     }
 }

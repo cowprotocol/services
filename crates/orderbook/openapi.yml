@@ -635,6 +635,9 @@ components:
         status:
           description: Order status
           $ref: "#/components/schemas/OrderStatus"
+        fullFeeAmount:
+          description: "Amount that the signed fee would be without subsidies"
+          $ref: "#/components/schemas/TokenAmount"
       required:
         - creationTime
         - owner

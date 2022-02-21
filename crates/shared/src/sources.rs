@@ -18,18 +18,16 @@ use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
 };
-use structopt::clap::arg_enum;
 
-arg_enum! {
-    #[derive(Debug, Clone, Copy, Eq, Hash, PartialEq)]
-    pub enum BaselineSource {
-        UniswapV2,
-        Honeyswap,
-        SushiSwap,
-        BalancerV2,
-        Baoswap,
-        Swapr,
-    }
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum BaselineSource {
+    UniswapV2,
+    Honeyswap,
+    SushiSwap,
+    BalancerV2,
+    Baoswap,
+    Swapr,
 }
 
 pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {

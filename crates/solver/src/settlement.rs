@@ -18,7 +18,7 @@ pub struct Trade {
     pub sell_token_index: usize,
     pub buy_token_index: usize,
     pub executed_amount: U256,
-    pub scaled_fee_amount: U256,
+    pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
 }
 
@@ -78,7 +78,11 @@ impl Trade {
     /// Returns the scaled unsubsidized fee amount that should be used for
     /// objective value computation.
     pub fn executed_scaled_unsubsidized_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.scaled_fee_amount)
+        self.compute_fee_execution(self.scaled_unsubsidized_fee)
+    }
+
+    pub fn executed_unscaled_subsidized_fee(&self) -> Option<U256> {
+        self.compute_fee_execution(self.order.order_creation.fee_amount)
     }
 
     fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
@@ -158,9 +162,14 @@ impl Interaction for NoopInteraction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Settlement {
     pub encoder: SettlementEncoder,
+}
+
+pub enum Revertable {
+    NoRisk,
+    HighRisk,
 }
 
 impl Settlement {
@@ -251,10 +260,35 @@ impl Settlement {
             .sum()
     }
 
+    // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
+    pub fn total_unscaled_subsidized_fees(
+        &self,
+        external_prices: &HashMap<H160, BigRational>,
+    ) -> BigRational {
+        self.encoder
+            .trades()
+            .iter()
+            .filter(|trade| !trade.is_liquidity_order)
+            .filter_map(|trade| {
+                let fee_token_price =
+                    external_prices.get(&trade.order.order_creation.sell_token)?;
+                Some(trade.executed_unscaled_subsidized_fee()?.to_big_rational() * fee_token_price)
+            })
+            .sum()
+    }
+
     /// See SettlementEncoder::merge
     pub fn merge(self, other: Self) -> Result<Self> {
         let merged = self.encoder.merge(other.encoder)?;
         Ok(Self { encoder: merged })
+    }
+
+    // Calculates the risk level for settlement to be reverted
+    pub fn revertable(&self) -> Revertable {
+        if self.encoder.execution_plan().is_empty() {
+            return Revertable::NoRisk;
+        }
+        Revertable::HighRisk
     }
 }
 
@@ -871,7 +905,7 @@ pub mod tests {
             // Note that the scaled fee amount is different than the order's
             // signed fee amount. This happens for subsidized orders, and when
             // a fee objective scaling factor is configured.
-            scaled_fee_amount: 5.into(),
+            scaled_unsubsidized_fee: 5.into(),
             ..Default::default()
         };
         let trade1 = Trade {
@@ -886,7 +920,7 @@ pub mod tests {
                 ..Default::default()
             },
             executed_amount: 10.into(),
-            scaled_fee_amount: 2.into(),
+            scaled_unsubsidized_fee: 2.into(),
             ..Default::default()
         };
 
@@ -998,7 +1032,7 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // This is what matters for the objective value
-                    scaled_fee_amount: 42.into(),
+                    scaled_unsubsidized_fee: 42.into(),
                     is_liquidity_order: false,
                     ..Default::default()
                 },
@@ -1016,7 +1050,7 @@ pub mod tests {
                     },
                     executed_amount: 1.into(),
                     // Doesn't count because it is a "liquidity order"
-                    scaled_fee_amount: 1337.into(),
+                    scaled_unsubsidized_fee: 1337.into(),
                     is_liquidity_order: true,
                     ..Default::default()
                 },
@@ -1050,7 +1084,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 executed_amount: 99760667014_u128.into(),
-                scaled_fee_amount: 239332986_u128.into(),
+                scaled_unsubsidized_fee: 239332986_u128.into(),
                 is_liquidity_order: false,
                 ..Default::default()
             }],
@@ -1077,7 +1111,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    scaled_fee_amount: 239332986_u128.into(),
+                    scaled_unsubsidized_fee: 239332986_u128.into(),
                     is_liquidity_order: false,
                     ..Default::default()
                 },
@@ -1095,7 +1129,7 @@ pub mod tests {
                         ..Default::default()
                     },
                     executed_amount: 99760667014_u128.into(),
-                    scaled_fee_amount: 77577144_u128.into(),
+                    scaled_unsubsidized_fee: 77577144_u128.into(),
                     is_liquidity_order: true,
                     ..Default::default()
                 },

@@ -43,6 +43,8 @@ pub struct SubmitterParams {
     pub deadline: Option<Instant>,
     /// Resimulate and resend transaction on every retry_interval seconds
     pub retry_interval: Duration,
+    /// Network id (mainnet, rinkeby, gnosis chain)
+    pub network_id: String,
 }
 
 #[derive(Debug)]
@@ -58,6 +60,23 @@ impl From<anyhow::Error> for SubmitApiError {
     fn from(err: anyhow::Error) -> Self {
         Self::Other(err)
     }
+}
+
+#[derive(Debug)]
+pub enum SubmissionLoopStatus {
+    Enabled(AdditionalTip),
+    Disabled(DisabledReason),
+}
+
+#[derive(Debug)]
+pub enum AdditionalTip {
+    Off,
+    On,
+}
+
+#[derive(Debug)]
+pub enum DisabledReason {
+    MevExtractable,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -95,15 +114,29 @@ pub trait TransactionSubmitting: Send + Sync {
         address: &H160,
         nonce: U256,
     ) -> Result<Option<EstimatedGasPrice>>;
+    /// Checks if transaction submitting is enabled at the moment
+    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
+#[derive(Clone)]
 pub struct SubmitterGasPriceEstimator<'a> {
     pub inner: &'a dyn GasPriceEstimating,
-    /// Boost estimated gas price miner tip in order to increase the chances of a transaction being mined
-    pub additional_tip: Option<f64>,
+    /// Additionally increase max_priority_fee_per_gas by percentage of max_fee_per_gas, in order to increase the chances of a transaction being mined
+    pub additional_tip_percentage_of_max_fee: Option<f64>,
+    /// Maximum max_priority_fee_per_gas additional increase
+    pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
+}
+
+impl SubmitterGasPriceEstimator<'_> {
+    pub fn with_no_additional_tip(&self) -> Self {
+        Self {
+            max_additional_tip: None,
+            ..*self
+        }
+    }
 }
 
 #[async_trait::async_trait]
@@ -117,7 +150,13 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             Ok(mut gas_price) if gas_price.cap() <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
                 if let Some(ref mut eip1559) = gas_price.eip1559 {
-                    eip1559.max_priority_fee_per_gas += self.additional_tip.unwrap_or_default();
+                    eip1559.max_priority_fee_per_gas +=
+                        self.max_additional_tip.unwrap_or_default().min(
+                            eip1559.max_fee_per_gas
+                                * self
+                                    .additional_tip_percentage_of_max_fee
+                                    .unwrap_or_default(),
+                        );
                 }
                 Ok(gas_price)
             }
@@ -309,14 +348,26 @@ impl<'a> Submitter<'a> {
             .unwrap_or(None);
 
         loop {
+            let submission_status = self
+                .submit_api
+                .submission_status(&settlement, &params.network_id);
+            let estimator = match submission_status {
+                SubmissionLoopStatus::Disabled(reason) => {
+                    tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
+                    tokio::time::sleep(params.retry_interval).await;
+                    continue;
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
+                    self.gas_price_estimator.with_no_additional_tip()
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
+                    self.gas_price_estimator.clone()
+                }
+            };
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
-            let gas_price = match self
-                .gas_price_estimator
-                .estimate_with_limits(gas_limit, time_limit)
-                .await
-            {
+            let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
                 Ok(gas_price) => gas_price,
                 Err(err) => {
                     tracing::error!("gas estimation failed: {:?}", err);
@@ -476,6 +527,7 @@ mod tests {
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
+    use shared::gas_price_estimation::FakeGasPriceEstimator;
     use shared::transport::create_env_test_transport;
     use tracing::level_filters::LevelFilter;
 
@@ -508,8 +560,9 @@ mod tests {
         .unwrap();
         let gas_price_estimator = SubmitterGasPriceEstimator {
             inner: &gas_price_estimator,
-            additional_tip: Some(3.0),
+            max_additional_tip: Some(3.0),
             gas_price_cap: 100e9,
+            additional_tip_percentage_of_max_fee: Some(0.05),
         };
 
         let settlement = Settlement::new(Default::default());
@@ -535,8 +588,22 @@ mod tests {
             gas_estimate,
             deadline: Some(Instant::now() + Duration::from_secs(90)),
             retry_interval: Duration::from_secs(5),
+            network_id: "1".to_string(),
         };
         let result = submitter.submit(settlement, params).await;
         tracing::info!("finished with result {:?}", result);
+    }
+
+    #[test]
+    fn gas_price_estimator_no_tip_test() {
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: &FakeGasPriceEstimator::default(),
+            additional_tip_percentage_of_max_fee: Some(5.),
+            max_additional_tip: Some(10.),
+            gas_price_cap: 0.,
+        };
+
+        let gas_price_estimator = gas_price_estimator.with_no_additional_tip();
+        assert_eq!(gas_price_estimator.max_additional_tip, None);
     }
 }

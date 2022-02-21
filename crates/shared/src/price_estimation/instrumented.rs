@@ -1,5 +1,6 @@
 use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// An instrumented price estimator.
 pub struct InstrumentedPriceEstimator {
@@ -26,11 +27,14 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         &self,
         queries: &[Query],
     ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+        let start = Instant::now();
         let results = self.inner.estimates(queries).await;
         for result in &results {
             let success = !matches!(result, Err(PriceEstimationError::Other(_)));
             self.metrics.price_estimated(&self.name, success);
         }
+        self.metrics
+            .price_estimation_timed(&self.name, start.elapsed());
         results
     }
 }
@@ -40,6 +44,7 @@ impl PriceEstimating for InstrumentedPriceEstimator {
 pub trait Metrics: Send + Sync + 'static {
     fn initialize_estimator(&self, name: &str);
     fn price_estimated(&self, name: &str, success: bool);
+    fn price_estimation_timed(&self, name: &str, time: Duration);
 }
 
 #[cfg(test)]
@@ -98,6 +103,12 @@ mod tests {
             .times(1)
             .in_sequence(&mut seq)
             .with(eq("foo"), eq(false))
+            .return_const(());
+        metrics
+            .expect_price_estimation_timed()
+            .times(1)
+            .in_sequence(&mut seq)
+            .with(eq("foo"), always())
             .return_const(());
 
         let instrumented = InstrumentedPriceEstimator::new(

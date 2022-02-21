@@ -18,6 +18,7 @@ use shared::{
     current_block::{current_block_stream, CurrentBlockStream},
     maintenance::ServiceMaintenance,
     price_estimation::baseline::BaselinePriceEstimator,
+    price_estimation::native::NativePriceEstimator,
     price_estimation::sanitized::SanitizedPriceEstimator,
     recent_block_cache::CacheConfig,
     sources::uniswap_v2::{
@@ -86,7 +87,7 @@ pub fn uniswap_pair_provider(contracts: &Contracts) -> PairProvider {
 }
 
 pub struct OrderbookServices {
-    pub price_estimator: Arc<SanitizedPriceEstimator<BaselinePriceEstimator>>,
+    pub price_estimator: Arc<SanitizedPriceEstimator>,
     pub maintenance: ServiceMaintenance,
     pub block_stream: CurrentBlockStream,
     pub solvable_orders_cache: Arc<SolvableOrdersCache>,
@@ -125,15 +126,20 @@ impl OrderbookServices {
         let bad_token_detector = Arc::new(ListBasedDetector::deny_list(Vec::new()));
         let base_tokens = Arc::new(BaseTokens::new(contracts.weth.address(), &[]));
         let price_estimator = Arc::new(SanitizedPriceEstimator::new(
-            BaselinePriceEstimator::new(
+            Box::new(BaselinePriceEstimator::new(
                 Arc::new(pool_fetcher),
                 gas_estimator.clone(),
                 base_tokens.clone(),
                 contracts.weth.address(),
                 1_000_000_000_000_000_000_u128.into(),
-            ),
+            )),
             contracts.weth.address(),
             bad_token_detector.clone(),
+        ));
+        let native_price_estimator = Arc::new(NativePriceEstimator::new(
+            price_estimator.clone(),
+            contracts.weth.address(),
+            1_000_000_000_000_000_000_u128.into(),
         ));
         let fee_calculator = Arc::new(EthAwareMinFeeCalculator::new(
             price_estimator.clone(),
@@ -141,11 +147,11 @@ impl OrderbookServices {
             contracts.weth.address(),
             db.clone(),
             bad_token_detector.clone(),
-            1_000_000_000_000_000_000_u128.into(),
             FeeSubsidyConfiguration {
                 fee_factor: 0.,
                 ..Default::default()
             },
+            native_price_estimator,
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

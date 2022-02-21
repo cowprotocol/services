@@ -72,13 +72,14 @@ pub struct LimitOrder {
     pub buy_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
+    pub unscaled_subsidized_fee: U256,
     /// The scaled fee amount that the protocol pretends it is receiving.
     ///
-    /// This is different than the actual order `fee_amount` value in that it
+    /// This is different than the actual signed fee in that it
     /// does not have any subsidies applied and may be scaled by a constant
     /// factor to make matching orders more valuable from an objective value
     /// perspective.
-    pub scaled_fee_amount: U256,
+    pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
@@ -125,7 +126,8 @@ impl Default for LimitOrder {
             buy_amount: Default::default(),
             kind: Default::default(),
             partially_fillable: Default::default(),
-            scaled_fee_amount: Default::default(),
+            unscaled_subsidized_fee: Default::default(),
+            scaled_unsubsidized_fee: Default::default(),
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: Default::default(),
@@ -344,16 +346,10 @@ pub mod tests {
             buy_amount: impl Into<U256>,
         ) -> LimitOrder {
             LimitOrder {
-                id: Default::default(),
-                sell_token: Default::default(),
-                buy_token: Default::default(),
                 sell_amount: sell_amount.into(),
                 buy_amount: buy_amount.into(),
                 kind,
-                partially_fillable: Default::default(),
-                scaled_fee_amount: Default::default(),
-                settlement_handling: CapturingSettlementHandler::arc(),
-                is_liquidity_order: false,
+                ..Default::default()
             }
         }
 

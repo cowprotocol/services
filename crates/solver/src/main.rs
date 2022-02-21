@@ -1,6 +1,7 @@
 use anyhow::anyhow;
+use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
-use ethcontract::{Account, PrivateKey, H160, U256};
+use ethcontract::{Account, PrivateKey, H160};
 use reqwest::Url;
 use shared::{
     baseline_solver::BaseTokens,
@@ -42,41 +43,40 @@ use solver::{
     solver::SolverType,
 };
 use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
-use structopt::{clap::arg_enum, StructOpt};
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Arguments {
-    #[structopt(flatten)]
+    #[clap(flatten)]
     shared: shared::arguments::Arguments,
 
     /// The API endpoint to fetch the orderbook
-    #[structopt(long, env, default_value = "http://localhost:8080")]
+    #[clap(long, env, default_value = "http://localhost:8080")]
     orderbook_url: Url,
 
     /// The API endpoint to call the mip solver
-    #[structopt(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://localhost:8000")]
     mip_solver_url: Url,
 
     /// The API endpoint to call the mip v2 solver
-    #[structopt(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://localhost:8000")]
     quasimodo_solver_url: Url,
 
     /// The API endpoint to call the cow-dex-ag-solver solver
-    #[structopt(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://localhost:8000")]
     cow_dex_ag_solver_url: Url,
 
     /// The API endpoint for the Balancer SOR API for solving.
-    #[structopt(long, env, default_value = "http://localhost:8000")]
+    #[clap(long, env, default_value = "http://localhost:8000")]
     balancer_sor_url: Url,
 
     /// The account used by the driver to sign transactions. This can be either
     /// a 32-byte private key for offline signing, or a 20-byte Ethereum address
     /// for signing with a local node account.
-    #[structopt(long, env, hide_env_values = true)]
+    #[clap(long, env, hide_env_values = true)]
     solver_account: Option<SolverAccountArg>,
 
     /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "30",
@@ -90,7 +90,7 @@ struct Arguments {
     /// internal driver error, but can be set to a larger value for running
     /// drivers in dry-run mode to prevent repeatedly settling the same
     /// orders.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "1",
@@ -99,22 +99,22 @@ struct Arguments {
     settle_interval: Duration,
 
     /// Which type of solver to use
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "Naive,Baseline",
-        possible_values = &SolverType::variants(),
-        case_insensitive = true,
-        use_delimiter = true,
+        arg_enum,
+        ignore_case = true,
+        use_delimiter = true
     )]
     solvers: Vec<SolverType>,
 
     /// Individual accounts for each solver. See `--solver-account` for more
     /// information about configuring accounts.
-    #[structopt(
+    #[clap(
         long,
         env,
-        case_insensitive = true,
+        ignore_case = true,
         use_delimiter = true,
         hide_env_values = true
     )]
@@ -123,7 +123,7 @@ struct Arguments {
     /// A settlement must contain at least one order older than this duration in seconds for it
     /// to be applied.  Larger values delay individual settlements more but have a higher
     /// coincidence of wants chance.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "30",
@@ -132,15 +132,15 @@ struct Arguments {
     min_order_age: Duration,
 
     /// The port at which we serve our metrics
-    #[structopt(long, env, default_value = "9587", case_insensitive = true)]
+    #[clap(long, env, default_value = "9587")]
     metrics_port: u16,
 
     /// The port at which we serve our metrics
-    #[structopt(long, env, default_value = "5")]
+    #[clap(long, env, default_value = "5")]
     max_merged_settlements: usize,
 
     /// The maximum amount of time in seconds a solver is allowed to take.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "30",
@@ -148,25 +148,9 @@ struct Arguments {
     )]
     solver_time_limit: Duration,
 
-    /// The minimum amount of sell volume (in ETH) that needs to be
-    /// traded in order to use the 1Inch solver.
-    #[structopt(
-        long,
-        env,
-        default_value = "5",
-        parse(try_from_str = shared::arguments::wei_from_base_unit)
-    )]
-    min_order_size_one_inch: U256,
-
-    /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
-    /// (representing a private market maker) is disabled as it seems to
-    /// produce invalid swaps.
-    #[structopt(long, env, default_value = "PMM1", use_delimiter = true)]
-    disabled_one_inch_protocols: Vec<String>,
-
     /// The list of tokens our settlement contract is willing to buy when settling trades
     /// without external liquidity
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "https://tokens.coingecko.com/uniswap/all.json"
@@ -174,7 +158,7 @@ struct Arguments {
     market_makable_token_list: String,
 
     /// The maximum gas price in Gwei the solver is willing to pay in a settlement.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "1500",
@@ -183,87 +167,97 @@ struct Arguments {
     gas_price_cap: f64,
 
     /// The slippage tolerance we apply to the price quoted by Paraswap
-    #[structopt(long, env, default_value = "10")]
+    #[clap(long, env, default_value = "10")]
     paraswap_slippage_bps: u32,
 
     /// The slippage tolerance we apply to the price quoted by zeroEx
-    #[structopt(long, env, default_value = "10")]
+    #[clap(long, env, default_value = "10")]
     zeroex_slippage_bps: u32,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
     /// 2. One or more values equal to any combination of enum variants except TransactionStrategyArg::DryRun
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "PublicMempool",
-        possible_values = &TransactionStrategyArg::variants(),
-        case_insensitive = true,
-        use_delimiter = true)]
+        arg_enum,
+        ignore_case = true,
+        use_delimiter = true
+    )]
     transaction_strategy: Vec<TransactionStrategyArg>,
 
     /// The API endpoint of the Eden network for transaction submission.
-    #[structopt(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
+    #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
     eden_api_url: Url,
 
     /// The API endpoint of the Flashbots network for transaction submission.
-    #[structopt(long, env, default_value = "https://rpc.flashbots.net")]
+    #[clap(long, env, default_value = "https://rpc.flashbots.net")]
     flashbots_api_url: Url,
 
-    /// Additional tip in gwei that we are willing to give to eden above regular gas price estimation
-    #[structopt(
+    /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
+    #[clap(
         long,
         env,
         default_value = "3",
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
-    additional_eden_tip: f64,
+    max_additional_eden_tip: f64,
 
     /// The maximum time in seconds we spend trying to settle a transaction through the ethereum
     /// network before going to back to solving.
-    #[structopt(
+    #[clap(
         long,
         default_value = "120",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     max_submission_seconds: Duration,
 
-    /// Additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
-    #[structopt(
+    /// Maximum additional tip in gwei that we are willing to give to flashbots above regular gas price estimation
+    #[clap(
         long,
         env,
         default_value = "3",
         parse(try_from_str = shared::arguments::wei_from_gwei)
     )]
-    additional_flashbot_tip: f64,
+    max_additional_flashbot_tip: f64,
 
     /// Amount of time to wait before retrying to submit the tx to the ethereum network
-    #[structopt(
+    #[clap(
         long,
-        default_value = "5",
+        default_value = "2",
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     submission_retry_interval_seconds: Duration,
 
+    /// Additional tip in percentage of max_fee_per_gas we are willing to give to miners above regular gas price estimation
+    #[clap(
+        long,
+        env,
+        default_value = "0.05",
+        parse(try_from_str = shared::arguments::parse_percentage_factor)
+    )]
+    additional_tip_percentage: f64,
+
     /// The RPC endpoints to use for submitting transaction to a custom set of nodes.
-    #[structopt(long, env, use_delimiter = true)]
+    #[clap(long, env, use_delimiter = true)]
     transaction_submission_nodes: Vec<Url>,
 
     /// The configured addresses whose orders should be considered liquidity
     /// and not to be included in the objective function by the HTTP solver.
-    #[structopt(long, env, use_delimiter = true)]
+    #[clap(long, env, use_delimiter = true)]
     liquidity_order_owners: Vec<H160>,
 
     /// Fee scaling factor for objective value. This controls the constant
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
-    #[structopt(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
     fee_objective_scaling_factor: f64,
 
     /// The maximum number of settlements the driver considers per solver.
-    #[structopt(long, env, default_value = "20")]
+    #[clap(long, env, default_value = "20")]
     max_settlements_per_solver: usize,
 
     /// Factor how much of the WETH buffer should be unwrapped if ETH buffer is not big enough to
@@ -271,25 +265,24 @@ struct Arguments {
     /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
     /// of unwraps per settled batch.
     /// Only values in the range [0.0, 1.0] make sense.
-    #[structopt(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
+    #[clap(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
     weth_unwrap_factor: f64,
 
     /// Gas limit for simulations. This parameter is important to set correctly, such that
     /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
     /// but at the same time we don't restrict solutions sizes too much
-    #[structopt(long, env, default_value = "15000000")]
+    #[clap(long, env, default_value = "15000000")]
     simulation_gas_limit: u128,
 }
 
-arg_enum! {
-    #[derive(Debug)]
-    enum TransactionStrategyArg {
-        PublicMempool,
-        Eden,
-        Flashbots,
-        CustomNodes,
-        DryRun,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+enum TransactionStrategyArg {
+    PublicMempool,
+    Eden,
+    Flashbots,
+    CustomNodes,
+    DryRun,
 }
 
 #[derive(Debug)]
@@ -327,7 +320,7 @@ impl FromStr for SolverAccountArg {
 
 #[tokio::main]
 async fn main() {
-    let args = Arguments::from_args();
+    let args = Arguments::parse();
     shared::tracing::initialize(
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
@@ -443,7 +436,8 @@ async fn main() {
                     token_info_fetcher.clone(),
                     args.shared
                         .balancer_factories
-                        .unwrap_or_else(BalancerFactoryKind::all),
+                        .as_deref()
+                        .unwrap_or_else(BalancerFactoryKind::value_variants),
                     cache_config,
                     current_block_stream.clone(),
                     metrics.clone(),
@@ -531,8 +525,7 @@ async fn main() {
         token_info_fetcher,
         network_name.to_string(),
         chain_id,
-        args.min_order_size_one_inch,
-        args.disabled_one_inch_protocols,
+        args.shared.disabled_one_inch_protocols,
         args.paraswap_slippage_bps,
         args.shared.disabled_paraswap_dexs,
         args.shared.paraswap_partner,
@@ -542,6 +535,7 @@ async fn main() {
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
+        args.shared.one_inch_url,
     )
     .expect("failure creating solvers");
     let liquidity_collector = LiquidityCollector {
@@ -579,20 +573,23 @@ async fn main() {
             TransactionStrategyArg::PublicMempool => {
                 TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 })
             }
             TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
                 submit_api: Box::new(
                     EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
                 ),
-                additional_tip: args.additional_eden_tip,
+                max_additional_tip: args.max_additional_eden_tip,
+                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
             }),
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
                 submit_api: Box::new(
                     FlashbotsApi::new(client.clone(), args.flashbots_api_url.clone()).unwrap(),
                 ),
-                additional_tip: args.additional_flashbot_tip,
+                max_additional_tip: args.max_additional_flashbot_tip,
+                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
             }),
             TransactionStrategyArg::CustomNodes => {
                 assert!(
@@ -601,7 +598,8 @@ async fn main() {
                 );
                 TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
@@ -646,6 +644,7 @@ async fn main() {
         order_converter,
         args.weth_unwrap_factor,
         args.simulation_gas_limit,
+        args.fee_objective_scaling_factor,
     );
 
     let maintainer = ServiceMaintenance {

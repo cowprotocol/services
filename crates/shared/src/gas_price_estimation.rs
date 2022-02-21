@@ -7,18 +7,16 @@ use gas_estimation::{
 };
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
-use structopt::clap::arg_enum;
 
-arg_enum! {
-    #[derive(Debug)]
-    pub enum GasEstimatorType {
-        EthGasStation,
-        GasNow,
-        GnosisSafe,
-        Web3,
-        BlockNative,
-        Native,
-    }
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum GasEstimatorType {
+    EthGasStation,
+    GasNow,
+    GnosisSafe,
+    Web3,
+    BlockNative,
+    Native,
 }
 
 #[derive(Clone)]
@@ -104,7 +102,7 @@ pub async fn create_priority_estimator(
     Ok(PriorityGasPriceEstimating::new(estimators))
 }
 
-fn is_mainnet(network_id: &str) -> bool {
+pub fn is_mainnet(network_id: &str) -> bool {
     network_id == "1"
 }
 

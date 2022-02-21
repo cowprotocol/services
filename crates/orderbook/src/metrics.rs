@@ -23,7 +23,8 @@ pub struct Metrics {
     /// Gas estimate metrics
     gas_price: Gauge,
     price_estimates: IntCounterVec,
-    price_estimator_cache: IntCounterVec,
+    native_price_cache: IntCounterVec,
+    price_estimation_times: HistogramVec,
 }
 
 impl Metrics {
@@ -71,14 +72,18 @@ impl Metrics {
         )?;
         registry.register(Box::new(price_estimates.clone()))?;
 
-        let price_estimator_cache = IntCounterVec::new(
-            Opts::new(
-                "price_estimator_cache",
-                "Price estimator cache hit/miss counter.",
-            ),
-            &["estimator_type", "result"],
+        let native_price_cache = IntCounterVec::new(
+            Opts::new("native_price_cache", "Native price cache hit/miss counter."),
+            &["result"],
         )?;
-        registry.register(Box::new(price_estimator_cache.clone()))?;
+        registry.register(Box::new(native_price_cache.clone()))?;
+
+        let price_estimation_times = HistogramVec::new(
+            HistogramOpts::new("price_estimation_times", "Times for price estimations"),
+            &["estimator_type", "time_spent_estimating"],
+        )
+        .unwrap();
+        registry.register(Box::new(price_estimation_times.clone()))?;
 
         Ok(Self {
             db_table_row_count,
@@ -88,7 +93,8 @@ impl Metrics {
             database_queries,
             gas_price,
             price_estimates,
-            price_estimator_cache,
+            native_price_cache,
+            price_estimation_times,
         })
     }
 
@@ -141,6 +147,12 @@ impl shared::price_estimation::instrumented::Metrics for Metrics {
             .with_label_values(&[name, result])
             .inc();
     }
+
+    fn price_estimation_timed(&self, name: &str, time: Duration) {
+        self.price_estimation_times
+            .with_label_values(&[name, "time_spent_estimating"])
+            .observe(time.as_secs_f64());
+    }
 }
 
 impl BalancerPoolCacheMetrics for Metrics {
@@ -152,13 +164,13 @@ impl BalancerPoolCacheMetrics for Metrics {
     }
 }
 
-impl shared::price_estimation::cached::Metrics for Metrics {
-    fn price_estimator_cache(&self, name: &str, misses: usize, hits: usize) {
-        self.price_estimator_cache
-            .with_label_values(&[name, "misses"])
+impl shared::price_estimation::native_price_cache::Metrics for Metrics {
+    fn native_price_cache(&self, misses: usize, hits: usize) {
+        self.native_price_cache
+            .with_label_values(&["misses"])
             .inc_by(misses as u64);
-        self.price_estimator_cache
-            .with_label_values(&[name, "hits"])
+        self.native_price_cache
+            .with_label_values(&["hits"])
             .inc_by(hits as u64);
     }
 }

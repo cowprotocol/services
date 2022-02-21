@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use clap::Parser;
 use model::{
     order::{OrderKind, OrderStatus, OrderUid, BUY_ETH_ADDRESS},
     u256_decimal,
@@ -11,7 +12,6 @@ use model::{
 use primitive_types::{H160, U256};
 use reqwest::Client;
 use std::time::{Duration, Instant};
-use structopt::StructOpt;
 use url::Url;
 
 #[derive(Debug, serde::Deserialize, Eq, PartialEq)]
@@ -240,10 +240,10 @@ impl Alerter {
     }
 }
 
-#[derive(Debug, StructOpt)]
+#[derive(Debug, Parser)]
 struct Arguments {
     /// Minimum time without a trade before alerting.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "600",
@@ -252,7 +252,7 @@ struct Arguments {
     time_without_trade: Duration,
 
     /// Minimum time an order must have been matchable for before alerting.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "180",
@@ -261,7 +261,7 @@ struct Arguments {
     min_order_age: Duration,
 
     /// Do not repeat the alert more often than this.
-    #[structopt(
+    #[clap(
         long,
         env,
         default_value = "1800",
@@ -271,16 +271,16 @@ struct Arguments {
 
     /// How many errors in the update loop (fetching solvable orders or querying 0x) in a row
     /// must happen before we alert about them.
-    #[structopt(long, env, default_value = "5")]
+    #[clap(long, env, default_value = "5")]
     errors_in_a_row_before_alert: u32,
 
-    #[structopt(long, env, default_value = "https://protocol-mainnet.gnosis.io")]
+    #[clap(long, env, default_value = "https://protocol-mainnet.gnosis.io")]
     orderbook_api: String,
 }
 
 #[tokio::main]
 async fn main() {
-    let args = Arguments::from_args();
+    let args = Arguments::parse();
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     tracing::info!("running alerter with {:#?}", args);
 

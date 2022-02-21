@@ -49,6 +49,10 @@ pub enum SettlementSubmissionOutcome {
     Timeout,
     /// Transaction sucessfully cancelled after simulation revert or timeout
     Cancel,
+    /// Submission disabled
+    Disabled,
+    /// General message for failures (for example, failing to connect to client node)
+    Failed,
 }
 
 pub trait SolverMetrics: Send + Sync {
@@ -322,6 +326,8 @@ impl SolverMetrics for Metrics {
             SettlementSubmissionOutcome::Timeout => "timeout",
             SettlementSubmissionOutcome::Cancel => "cancel",
             SettlementSubmissionOutcome::SimulationRevert => "simulationrevert",
+            SettlementSubmissionOutcome::Disabled => "disabled",
+            SettlementSubmissionOutcome::Failed => "failed",
         };
         self.settlement_submissions
             .with_label_values(&[result, solver])

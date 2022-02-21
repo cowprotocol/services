@@ -234,7 +234,8 @@ async fn onchain_settlement(web3: Web3) {
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
-                    additional_tip: 0.0,
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
                 }),
             ],
         },
@@ -244,6 +245,7 @@ async fn onchain_settlement(web3: Web3) {
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
         15000000u128,
+        1.0,
     );
     driver.single_run().await.unwrap();
 

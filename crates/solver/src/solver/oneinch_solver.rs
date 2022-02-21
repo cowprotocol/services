@@ -20,6 +20,7 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
+use reqwest::Url;
 use shared::oneinch_api::{
     OneInchClient, OneInchClientImpl, ProtocolCache, RestError, RestResponse, Swap, SwapQuery,
 };
@@ -59,17 +60,14 @@ impl OneInchSolver {
         chain_id: u64,
         disabled_protocols: impl IntoIterator<Item = String>,
         client: Client,
+        one_inch_url: Url,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
             account,
             settlement_contract,
             disabled_protocols: disabled_protocols.into_iter().collect(),
-            client: Box::new(OneInchClientImpl::new(
-                OneInchClientImpl::DEFAULT_URL,
-                client,
-                chain_id,
-            )?),
+            client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             protocol_cache: ProtocolCache::default(),
         })
@@ -419,6 +417,7 @@ mod tests {
             chain_id,
             vec!["PMM1".to_string()],
             Client::new(),
+            OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
         )
         .unwrap();
         let settlement = solver

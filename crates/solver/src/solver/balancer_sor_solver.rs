@@ -81,20 +81,24 @@ impl SingleOrderSolving for BalancerSorSolver {
             return Ok(None);
         }
 
+        let (quoted_sell_amount, quoted_buy_amount) = match order.kind {
+            OrderKind::Sell => (quote.swap_amount, quote.return_amount),
+            OrderKind::Buy => (quote.return_amount, quote.swap_amount),
+        };
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
-                quote.swap_amount,
-                slippage::amount_minus_max_slippage(quote.return_amount),
+                quoted_sell_amount,
+                slippage::amount_minus_max_slippage(quoted_buy_amount),
             ),
             OrderKind::Buy => (
-                slippage::amount_plus_max_slippage(quote.return_amount),
-                quote.swap_amount,
+                slippage::amount_plus_max_slippage(quoted_sell_amount),
+                quoted_buy_amount,
             ),
         };
 
         let prices = hashmap! {
-            order.sell_token => quote.return_amount,
-            order.buy_token => quote.swap_amount,
+            order.sell_token => quoted_buy_amount,
+            order.buy_token => quoted_sell_amount,
         };
         let approval = self
             .allowance_fetcher
@@ -391,14 +395,18 @@ mod tests {
 
         let result = solver
             .try_settle_order(
-                LimitOrder {
-                    sell_token,
-                    buy_token,
-                    sell_amount,
-                    buy_amount,
-                    kind: OrderKind::Sell,
+                Order {
+                    order_creation: OrderCreation {
+                        sell_token,
+                        buy_token,
+                        sell_amount,
+                        buy_amount,
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
+                }
+                .into(),
                 &Auction {
                     gas_price: 100e9,
                     ..Auction::default()
@@ -409,6 +417,9 @@ mod tests {
             .unwrap()
             .encoder
             .finish();
+
+        assert_eq!(result.tokens, [buy_token, sell_token]);
+        assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
 
         let Bytes(calldata) = &result.interactions[1][0].2;
         assert_eq!(
@@ -506,14 +517,18 @@ mod tests {
 
         let result = solver
             .try_settle_order(
-                LimitOrder {
-                    sell_token,
-                    buy_token,
-                    sell_amount,
-                    buy_amount,
-                    kind: OrderKind::Buy,
+                Order {
+                    order_creation: OrderCreation {
+                        sell_token,
+                        buy_token,
+                        sell_amount,
+                        buy_amount,
+                        kind: OrderKind::Buy,
+                        ..Default::default()
+                    },
                     ..Default::default()
-                },
+                }
+                .into(),
                 &Auction {
                     gas_price: 100e9,
                     ..Auction::default()
@@ -524,6 +539,9 @@ mod tests {
             .unwrap()
             .encoder
             .finish();
+
+        assert_eq!(result.tokens, [buy_token, sell_token]);
+        assert_eq!(result.clearing_prices, [sell_amount, buy_amount]);
 
         let Bytes(calldata) = &result.interactions[1][0].2;
         assert_eq!(
