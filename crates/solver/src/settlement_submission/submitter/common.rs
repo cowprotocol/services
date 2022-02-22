@@ -1,88 +1,62 @@
 use super::super::submitter::{SubmitApiError, TransactionHandle};
-use anyhow::{anyhow, Result};
 use ethcontract::{
-    dyns::DynTransport,
+    jsonrpc::types::error::Error as RpcError,
     transaction::{Transaction, TransactionBuilder},
 };
 use futures::FutureExt;
-use jsonrpc_core::Output;
-use primitive_types::H256;
-use reqwest::{Client, Url};
-use serde::de::DeserializeOwned;
+use shared::{Web3, Web3Transport};
+use web3::{api::Namespace, types::Bytes};
 
-/// Function for sending raw signed transaction to private networks
-pub async fn submit_raw_transaction(
-    client: Client,
-    url: Url,
-    tx: TransactionBuilder<DynTransport>,
-) -> Result<TransactionHandle, SubmitApiError> {
-    let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
-        Transaction::Request(_) => unreachable!("verified offline account was used"),
-        Transaction::Raw { bytes, hash } => (bytes.0, hash),
-    };
-    let tx = format!("0x{}", hex::encode(raw_signed_transaction));
-    let body = serde_json::json!({
-      "jsonrpc": "2.0",
-      "id": 1,
-      "method": "eth_sendRawTransaction",
-      "params": [tx],
-    });
-    let response = client
-        .post(url.clone())
-        .json(&body)
-        .send()
-        .await
-        .map_err(|err| SubmitApiError::Other(err.into()))?;
-    let body = response
-        .text()
-        .await
-        .map_err(|err| SubmitApiError::Other(err.into()))?;
+/// An additonal specialized submitter API for private network transactions.
+#[derive(Clone)]
+pub struct PrivateNetwork(Web3);
 
-    let handle = parse_json_rpc_response::<H256>(&body)?;
-    tracing::info!(
-        "created transaction with hash: {:?} and handle: {:?}, url: {}",
-        tx_hash,
-        handle,
-        url.as_str()
-    );
-    Ok(TransactionHandle { tx_hash, handle })
+impl Namespace<Web3Transport> for PrivateNetwork {
+    fn new(transport: Web3Transport) -> Self {
+        Self(Web3::new(transport))
+    }
+
+    fn transport(&self) -> &Web3Transport {
+        self.0.transport()
+    }
 }
 
-fn parse_json_rpc_response<T>(body: &str) -> Result<T, SubmitApiError>
-where
-    T: DeserializeOwned,
-{
-    match serde_json::from_str::<Output>(body) {
-        Ok(output) => match output {
-            Output::Success(body) => serde_json::from_value::<T>(body.result).map_err(|_| {
-                anyhow!(
-                    "failed conversion to expected type {}",
-                    std::any::type_name::<T>()
-                )
-                .into()
-            }),
-            Output::Failure(body) => {
-                if body.error.message.starts_with("invalid nonce")
-                    || body.error.message.starts_with("nonce too low")
-                {
-                    Err(SubmitApiError::InvalidNonce)
-                } else if body
-                    .error
-                    .message
-                    .starts_with("Transaction gas price supplied is too low")
-                {
-                    Err(SubmitApiError::OpenEthereumTooCheapToReplace)
-                } else if body
-                    .error
-                    .message
-                    .starts_with("replacement transaction underpriced")
-                {
-                    Err(SubmitApiError::ReplacementTransactionUnderpriced)
-                } else {
-                    Err(anyhow!("rpc error: {}", body.error).into())
-                }
-            }
-        },
-        Err(_) => Err(anyhow!("invalid rpc response: {}", body).into()),
+impl PrivateNetwork {
+    /// Function for sending raw signed transaction to private networks
+    pub async fn submit_raw_transaction(
+        &self,
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle, SubmitApiError> {
+        let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
+            Transaction::Request(_) => unreachable!("verified offline account was used"),
+            Transaction::Raw { bytes, hash } => (bytes.0, hash),
+        };
+
+        let handle = self
+            .0
+            .eth()
+            .send_raw_transaction(Bytes(raw_signed_transaction))
+            .await
+            .map_err(convert_web3_to_submission_error)?;
+
+        Ok(TransactionHandle { tx_hash, handle })
     }
+}
+
+fn convert_web3_to_submission_error(err: web3::Error) -> SubmitApiError {
+    if let web3::Error::Rpc(RpcError { message, .. }) = &err {
+        if message.starts_with("invalid nonce") || message.starts_with("nonce too low") {
+            return SubmitApiError::InvalidNonce;
+        } else if message.starts_with("Transaction gas price supplied is too low") {
+            return SubmitApiError::OpenEthereumTooCheapToReplace;
+        } else if message.starts_with("replacement transaction underpriced") {
+            return SubmitApiError::ReplacementTransactionUnderpriced;
+        } else if message.contains("tx fee") && message.contains("exceeds the configured cap") {
+            return SubmitApiError::EdenTransactionTooExpensive;
+        }
+    }
+
+    anyhow::Error::new(err)
+        .context("transaction submission error")
+        .into()
 }

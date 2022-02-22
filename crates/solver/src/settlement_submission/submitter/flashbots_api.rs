@@ -2,26 +2,30 @@ use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    common::PrivateNetwork,
     AdditionalTip, CancelHandle, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, U256};
+use ethcontract::{transaction::TransactionBuilder, H160, U256};
 use gas_estimation::EstimatedGasPrice;
-use reqwest::{Client, IntoUrl, Url};
-use shared::Web3;
+use reqwest::{Client, IntoUrl};
+use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 
 #[derive(Clone)]
 pub struct FlashbotsApi {
-    client: Client,
-    url: Url,
+    rpc: Web3,
 }
 
 impl FlashbotsApi {
     pub fn new(client: Client, url: impl IntoUrl) -> Result<Self> {
-        Ok(Self {
+        let transport = Web3Transport::new(HttpTransport::new(
             client,
-            url: url.into_url().context("bad flashbots url")?,
-        })
+            url.into_url().context("bad flashbots url")?,
+            "flashbots".to_owned(),
+        ));
+        let rpc = Web3::new(transport);
+
+        Ok(Self { rpc })
     }
 }
 
@@ -29,9 +33,12 @@ impl FlashbotsApi {
 impl TransactionSubmitting for FlashbotsApi {
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle, SubmitApiError> {
-        super::common::submit_raw_transaction(self.client.clone(), self.url.clone(), tx).await
+        self.rpc
+            .api::<PrivateNetwork>()
+            .submit_raw_transaction(tx)
+            .await
     }
 
     async fn cancel_transaction(
