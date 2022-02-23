@@ -53,7 +53,7 @@ pub static GAS_PER_UNISWAP: u64 = 94_696;
 pub static GAS_PER_BALANCER_SWAP: u64 = 120_000;
 
 /// Median gas used for unwrapping portion of WETH.
-pub static GAS_PER_WETH_UNWRAP: u64 = 14_192;
+pub static GAS_PER_WETH_UNWRAP: u64 = 0;
 
 /// Median gas used for wrapping WETH for the first time.
-pub static GAS_PER_WETH_WRAP: u64 = 24_038;
+pub static GAS_PER_WETH_WRAP: u64 = 0;

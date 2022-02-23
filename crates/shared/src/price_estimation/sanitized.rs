@@ -389,11 +389,12 @@ mod tests {
                 gas: U256::from(GAS_PER_WETH_UNWRAP + 100),
             }
         );
-        assert!(matches!(
-            result[2].as_ref().unwrap_err(),
-            PriceEstimationError::Other(err)
-                if err.to_string() == "cost of converting native asset would overflow gas price",
-        ));
+        // Doesn't overflow because the gas constants were reduced to 0 for now.
+        //assert!(matches!(
+        //    result[2].as_ref().unwrap_err(),
+        //    PriceEstimationError::Other(err)
+        //        if err.to_string() == "cost of converting native asset would overflow gas price",
+        //));
         assert_eq!(
             result[3].as_ref().unwrap(),
             &Estimate {
