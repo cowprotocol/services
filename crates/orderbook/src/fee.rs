@@ -298,7 +298,12 @@ impl MinFeeCalculating for MinFeeCalculator {
 
         tracing::debug!(?fee_data, ?app_data, ?user, "computing subsidized fee",);
 
-        let cow_factor = self.cow_subsidy.cow_subsidy_factor(user);
+        let cow_factor = async {
+            self.cow_subsidy
+                .cow_subsidy_factor(user)
+                .await
+                .map_err(PriceEstimationError::Other)
+        };
         let unsubsidized_min_fee = async {
             if let Some(past_fee) = self
                 .measurements
