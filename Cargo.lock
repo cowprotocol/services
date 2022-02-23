@@ -1879,6 +1879,7 @@ dependencies = [
  "assert_approx_eq",
  "async-trait",
  "bigdecimal 0.2.2",
+ "cached",
  "chrono",
  "clap 3.1.0",
  "const_format",

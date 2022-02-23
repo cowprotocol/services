@@ -1,6 +1,7 @@
 pub mod account_balances;
 pub mod api;
 pub mod conversions;
+pub mod cow_subsidy;
 pub mod database;
 pub mod event_updater;
 pub mod fee;

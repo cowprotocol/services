@@ -321,6 +321,10 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
+        let owner = order_creation
+            .signature
+            .validate(domain_separator, &order_creation.hash_struct())
+            .ok_or(ValidationError::InvalidSignature)?;
         let unsubsidized_fee = self
             .fee_validator
             .get_unsubsidized_min_fee(
@@ -335,19 +339,18 @@ impl OrderValidating for OrderValidator {
                 },
                 order_creation.app_data,
                 order_creation.fee_amount,
+                owner,
             )
             .await
             .map_err(|()| ValidationError::InsufficientFee)?;
 
-        let order = match Order::from_order_creation(
+        let order = Order::from_order_creation(
             order_creation,
             domain_separator,
             settlement_contract,
             unsubsidized_fee.amount_in_sell_token(),
-        ) {
-            Some(order) => order,
-            None => return Err(ValidationError::InvalidSignature),
-        };
+            owner,
+        );
 
         self.partial_validate(PreOrderData::from(order.clone()))
             .await
@@ -356,7 +359,6 @@ impl OrderValidating for OrderValidator {
         if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        let owner = order.order_meta_data.owner;
         if matches!(sender, Some(from) if from != owner) {
             return Err(ValidationError::WrongOwner(owner));
         }
@@ -691,17 +693,17 @@ mod tests {
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(2)
-            .returning(|_, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _| Ok(Default::default()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
             .times(1)
-            .returning(|_, _, _| Err(()));
+            .returning(|_, _, _, _| Err(()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _| Ok(Default::default()));
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .times(1)
@@ -820,7 +822,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -863,7 +865,7 @@ mod tests {
                 let mut balance_fetcher = MockBalanceFetching::new();
                 fee_calculator
                     .expect_get_unsubsidized_min_fee()
-                    .returning(|_, _, _| Ok(Default::default()));
+                    .returning(|_, _, _, _| Ok(Default::default()));
                 bad_token_detector
                     .expect_detect()
                     .returning(|_| Ok(TokenQuality::Good));

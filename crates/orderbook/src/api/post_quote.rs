@@ -279,6 +279,7 @@ impl OrderQuoter {
                             kind: OrderKind::Sell,
                         },
                         quote_request.app_data,
+                        quote_request.from,
                     ),
                     price_estimator.estimate(&query)
                 )
@@ -333,6 +334,7 @@ impl OrderQuoter {
                             kind: OrderKind::Sell,
                         },
                         quote_request.app_data,
+                        quote_request.from,
                     ),
                     price_estimator.estimate(&price_estimation_query)
                 )
@@ -369,6 +371,7 @@ impl OrderQuoter {
                             kind: OrderKind::Buy,
                         },
                         quote_request.app_data,
+                        quote_request.from,
                     ),
                     price_estimator.estimate(&price_estimation_query)
                 )
@@ -614,7 +617,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -658,7 +661,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -701,7 +704,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -761,7 +764,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _| Ok((3.into(), Utc::now())));
+            .returning(move |_, _, _| Ok((3.into(), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
             gas: 1000.into(),

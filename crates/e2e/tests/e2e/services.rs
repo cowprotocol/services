@@ -1,10 +1,11 @@
 use crate::deploy::Contracts;
-use contracts::{ERC20Mintable, WETH9};
+use contracts::{ERC20Mintable, ERC20, WETH9};
 use ethcontract::{prelude::U256, H160};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     api::order_validation::OrderValidator,
     api::post_quote::OrderQuoter,
+    cow_subsidy::CowSubsidyImpl,
     database::Postgres,
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
@@ -152,6 +153,11 @@ impl OrderbookServices {
                 ..Default::default()
             },
             native_price_estimator.clone(),
+            Arc::new(CowSubsidyImpl::new(
+                ERC20::at(web3, contracts.weth.address()),
+                0.into(),
+                1.0,
+            )),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

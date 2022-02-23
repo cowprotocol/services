@@ -1,6 +1,6 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{ArgEnum, Parser};
-use contracts::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, WETH9};
+use contracts::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, ERC20, WETH9};
 use ethcontract::errors::DeployError;
 use model::{
     app_id::AppId,
@@ -10,6 +10,7 @@ use model::{
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
+    cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
@@ -178,6 +179,18 @@ struct Arguments {
         parse(try_from_str = parse_partner_fee_factor),
     )]
     partner_additional_fee_factors: HashMap<AppId, f64>,
+
+    /// Fee factor as extra subsidy for cow token owners.
+    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    cow_fee_factor: f64,
+
+    /// Address of the cow token used for extra subsidy.
+    #[clap(long, env)]
+    cow_token_address: Option<H160>,
+
+    /// Minimum cow token threshold to get the extra subsidy.
+    #[clap(long, env, default_value = "0")]
+    cow_threshold: f64,
 
     /// The API endpoint to call the mip v2 solver for price estimation
     #[clap(long, env)]
@@ -584,6 +597,15 @@ async fn main() {
         Some(args.native_price_cache_max_update_size),
     );
 
+    let cow_subsidy = match args.cow_token_address {
+        Some(address) => Arc::new(CowSubsidyImpl::new(
+            ERC20::at(&web3, address),
+            U256::from_f64_lossy(args.cow_threshold),
+            args.cow_fee_factor,
+        )) as Arc<dyn CowSubsidy>,
+        None => Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>,
+    };
+
     let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>| {
         Arc::new(MinFeeCalculator::new(
             price_estimator.clone(),
@@ -597,6 +619,7 @@ async fn main() {
                 partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
             },
             native_price_estimator.clone(),
+            cow_subsidy.clone(),
         ))
     };
     let fee_calculator = create_fee_calculator(price_estimator.clone());
