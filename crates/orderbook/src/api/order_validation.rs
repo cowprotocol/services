@@ -1,7 +1,7 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
     api::IntoWarpReply,
-    fee::{FeeData, FeeParameters, MinFeeCalculating},
+    fee::{FeeData, FeeParameters, GetUnsubsidizedMinFeeError, MinFeeCalculating},
 };
 use contracts::WETH9;
 use ethcontract::{H160, U256};
@@ -12,7 +12,9 @@ use model::{
     signature::SigningScheme,
     DomainSeparator,
 };
-use shared::{bad_token::BadTokenDetecting, web3_traits::CodeFetching};
+use shared::{
+    bad_token::BadTokenDetecting, price_estimation::PriceEstimationError, web3_traits::CodeFetching,
+};
 use std::{sync::Arc, time::Duration};
 use warp::{http::StatusCode, reply::with_status};
 
@@ -231,17 +233,26 @@ pub struct PreOrderData {
     pub sell_token_balance: SellTokenSource,
 }
 
-impl From<Order> for PreOrderData {
-    fn from(order: Order) -> Self {
+fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
+    let receiver = order.receiver.unwrap_or_default();
+    if receiver == H160::zero() {
+        owner
+    } else {
+        receiver
+    }
+}
+
+impl PreOrderData {
+    pub fn from_order_creation(owner: H160, order: &OrderCreation) -> Self {
         Self {
-            owner: order.order_meta_data.owner,
-            sell_token: order.order_creation.sell_token,
-            buy_token: order.order_creation.buy_token,
-            receiver: order.actual_receiver(),
-            valid_to: order.order_creation.valid_to,
-            partially_fillable: order.order_creation.partially_fillable,
-            buy_token_balance: order.order_creation.buy_token_balance,
-            sell_token_balance: order.order_creation.sell_token_balance,
+            owner,
+            sell_token: order.sell_token,
+            buy_token: order.buy_token,
+            receiver: actual_receiver(owner, order),
+            valid_to: order.valid_to,
+            partially_fillable: order.partially_fillable,
+            buy_token_balance: order.buy_token_balance,
+            sell_token_balance: order.sell_token_balance,
         }
     }
 }
@@ -325,37 +336,7 @@ impl OrderValidating for OrderValidator {
             .signature
             .validate(domain_separator, &order_creation.hash_struct())
             .ok_or(ValidationError::InvalidSignature)?;
-        let unsubsidized_fee = self
-            .fee_validator
-            .get_unsubsidized_min_fee(
-                FeeData {
-                    sell_token: order_creation.sell_token,
-                    buy_token: order_creation.buy_token,
-                    amount: match order_creation.kind {
-                        OrderKind::Buy => order_creation.buy_amount,
-                        OrderKind::Sell => order_creation.sell_amount,
-                    },
-                    kind: order_creation.kind,
-                },
-                order_creation.app_data,
-                order_creation.fee_amount,
-                owner,
-            )
-            .await
-            .map_err(|()| ValidationError::InsufficientFee)?;
 
-        let order = Order::from_order_creation(
-            order_creation,
-            domain_separator,
-            settlement_contract,
-            unsubsidized_fee.amount_in_sell_token(),
-            owner,
-        );
-
-        self.partial_validate(PreOrderData::from(order.clone()))
-            .await
-            .map_err(ValidationError::Partial)?;
-        let order_creation = &order.order_creation;
         if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
@@ -373,7 +354,44 @@ impl OrderValidating for OrderValidator {
                 return Err(ValidationError::UnsupportedToken(token));
             }
         }
-        let min_balance = match minimum_balance(&order) {
+
+        self.partial_validate(PreOrderData::from_order_creation(owner, &order_creation))
+            .await
+            .map_err(ValidationError::Partial)?;
+
+        let unsubsidized_fee = self
+            .fee_validator
+            .get_unsubsidized_min_fee(
+                FeeData {
+                    sell_token: order_creation.sell_token,
+                    buy_token: order_creation.buy_token,
+                    amount: match order_creation.kind {
+                        OrderKind::Buy => order_creation.buy_amount,
+                        OrderKind::Sell => order_creation.sell_amount,
+                    },
+                    kind: order_creation.kind,
+                },
+                order_creation.app_data,
+                order_creation.fee_amount,
+                owner,
+            )
+            .await
+            .map_err(|err| match err {
+                GetUnsubsidizedMinFeeError::Other(err) => ValidationError::Other(err),
+                GetUnsubsidizedMinFeeError::PriceEstimationError(PriceEstimationError::Other(
+                    err,
+                )) => ValidationError::Other(err),
+                GetUnsubsidizedMinFeeError::InsufficientFee => ValidationError::InsufficientFee,
+                // Some of the possible errors here have been already checked in this function or
+                // should have been checked when the order was pre-validated. There is no good way
+                // and not much need to bubble them up and we don't want to error log for them so
+                // treat them as insufficient fee.
+                GetUnsubsidizedMinFeeError::PriceEstimationError(_) => {
+                    ValidationError::InsufficientFee
+                }
+            })?;
+
+        let min_balance = match minimum_balance(&order_creation) {
             Some(amount) => amount,
             None => return Err(ValidationError::SellAmountOverflow),
         };
@@ -390,11 +408,11 @@ impl OrderValidating for OrderValidator {
             )
             .await
         {
-            Ok(_) => Ok((order, unsubsidized_fee)),
+            Ok(_) => (),
             Err(
                 TransferSimulationError::InsufficientAllowance
                 | TransferSimulationError::InsufficientBalance,
-            ) if order.order_creation.signature.scheme() == SigningScheme::PreSign => {
+            ) if order_creation.signature.scheme() == SigningScheme::PreSign => {
                 // We have an exception for pre-sign orders where they do not
                 // require sufficient balance or allowance. The idea, is that
                 // this allows smart contracts to place orders bundled with
@@ -402,24 +420,32 @@ impl OrderValidating for OrderValidator {
                 // or set the allowance. This would, for example, allow a Gnosis
                 // Safe to bundle the pre-signature transaction with a WETH wrap
                 // and WETH approval to the vault relayer contract.
-                Ok((order, unsubsidized_fee))
             }
             Err(err) => match err {
                 TransferSimulationError::InsufficientAllowance => {
-                    Err(ValidationError::InsufficientAllowance)
+                    return Err(ValidationError::InsufficientAllowance);
                 }
                 TransferSimulationError::InsufficientBalance => {
-                    Err(ValidationError::InsufficientBalance)
+                    return Err(ValidationError::InsufficientBalance);
                 }
                 TransferSimulationError::TransferFailed => {
-                    Err(ValidationError::TransferSimulationFailed)
+                    return Err(ValidationError::TransferSimulationFailed);
                 }
                 TransferSimulationError::Other(err) => {
                     tracing::warn!("TransferSimulation failed: {:?}", err);
-                    Err(ValidationError::TransferSimulationFailed)
+                    return Err(ValidationError::TransferSimulationFailed);
                 }
             },
         }
+
+        let order = Order::from_order_creation(
+            &order_creation,
+            domain_separator,
+            settlement_contract,
+            unsubsidized_fee.amount_in_sell_token(),
+            owner,
+        );
+        Ok((order, unsubsidized_fee))
     }
 }
 
@@ -432,21 +458,21 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 }
 
 /// Min balance user must have in sell token for order to be accepted. None when addition overflows.
-fn minimum_balance(order: &Order) -> Option<U256> {
-    if order.order_creation.partially_fillable {
+fn minimum_balance(order: &OrderCreation) -> Option<U256> {
+    if order.partially_fillable {
         Some(U256::from(1))
     } else {
-        order
-            .order_creation
-            .sell_amount
-            .checked_add(order.order_creation.fee_amount)
+        order.sell_amount.checked_add(order.fee_amount)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{account_balances::MockBalanceFetching, fee::MockMinFeeCalculating};
+    use crate::{
+        account_balances::MockBalanceFetching,
+        fee::{GetUnsubsidizedMinFeeError, MockMinFeeCalculating},
+    };
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
     use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
@@ -459,32 +485,23 @@ mod tests {
 
     #[test]
     fn minimum_balance_() {
-        let partially_fillable_order = Order {
-            order_creation: OrderCreation {
-                partially_fillable: true,
-                ..Default::default()
-            },
+        let partially_fillable_order = OrderCreation {
+            partially_fillable: true,
             ..Default::default()
         };
         assert_eq!(
             minimum_balance(&partially_fillable_order),
             Some(U256::from(1))
         );
-        let order = Order {
-            order_creation: OrderCreation {
-                sell_amount: U256::MAX,
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+        let order = OrderCreation {
+            sell_amount: U256::MAX,
+            fee_amount: U256::from(1),
             ..Default::default()
         };
         assert_eq!(minimum_balance(&order), None);
-        let order = Order {
-            order_creation: OrderCreation {
-                sell_amount: U256::from(1),
-                fee_amount: U256::from(1),
-                ..Default::default()
-            },
+        let order = OrderCreation {
+            sell_amount: U256::from(1),
+            fee_amount: U256::from(1),
             ..Default::default()
         };
         assert_eq!(minimum_balance(&order), Some(U256::from(2)));
@@ -686,136 +703,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_validate_err() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
-        let mut bad_token_detector = MockBadTokenDetecting::new();
-        let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .times(2)
-            .returning(|_, _, _, _| Ok(Default::default()));
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .times(1)
-            .returning(|_, _, _, _| Err(()));
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
-        bad_token_detector
-            .expect_detect()
-            .times(1)
-            .returning(|_| Err(anyhow!("failed to detect token")));
-        bad_token_detector.expect_detect().times(1).returning(|_| {
-            Ok(TokenQuality::Bad {
-                reason: "iz Sh%tCoin".to_string(),
-            })
-        });
-        bad_token_detector
-            .expect_detect()
-            .returning(|_| Ok(TokenQuality::Good));
-        balance_fetcher
-            .expect_can_transfer()
-            .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
-        let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
-            dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
-            Duration::from_secs(1),
-            Arc::new(fee_calculator),
-            Arc::new(bad_token_detector),
-            Arc::new(balance_fetcher),
-        );
-        let mut order = OrderCreation {
-            valid_to: u32::MAX,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            ..Default::default()
-        };
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    None,
-                    &Default::default(),
-                    Default::default()
-                )
-                .await,
-            Err(ValidationError::ZeroAmount)
-        ));
-        order.buy_amount = U256::from(1);
-        order.sell_amount = U256::from(1);
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    Some(H160::from_low_u64_be(1),),
-                    &Default::default(),
-                    Default::default(),
-                )
-                .await,
-            Err(ValidationError::WrongOwner(_))
-        ));
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    None,
-                    &Default::default(),
-                    Default::default()
-                )
-                .await,
-            Err(ValidationError::InsufficientFee)
-        ));
-        let _err = anyhow!("failed to detect token");
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    None,
-                    &Default::default(),
-                    Default::default()
-                )
-                .await,
-            Err(ValidationError::Other(_err))
-        ));
-        let _token = order.sell_token;
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    None,
-                    &Default::default(),
-                    Default::default()
-                )
-                .await,
-            Err(ValidationError::UnsupportedToken(_token))
-        ));
-        order.sell_amount = U256::MAX;
-        order.fee_amount = U256::from(1);
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(
-                    order.clone(),
-                    None,
-                    &Default::default(),
-                    Default::default()
-                )
-                .await,
-            Err(ValidationError::SellAmountOverflow)
-        ));
-        order.sell_amount = U256::from(1);
-        assert!(matches!(
-            validator
-                .validate_and_construct_order(order, None, &Default::default(), Default::default())
-                .await,
-            Err(ValidationError::InsufficientBalance)
-        ));
-    }
-
-    #[tokio::test]
     async fn post_validate_ok() {
         let mut fee_calculator = MockMinFeeCalculating::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
@@ -854,6 +741,241 @@ mod tests {
             order.order_meta_data.full_fee_amount,
             order.order_creation.fee_amount
         );
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_zero_amount() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(0),
+            sell_amount: U256::from(0),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(matches!(result, Err(ValidationError::ZeroAmount)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_wrong_owner() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(
+                order,
+                Some(Default::default()),
+                &Default::default(),
+                Default::default(),
+            )
+            .await;
+        assert!(matches!(result, Err(ValidationError::WrongOwner(_))));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_insufficient_fee() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Err(GetUnsubsidizedMinFeeError::InsufficientFee));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(matches!(result, Err(ValidationError::InsufficientFee)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_unsupported_token() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Ok(Default::default()));
+        bad_token_detector.expect_detect().returning(|_| {
+            Ok(TokenQuality::Bad {
+                reason: Default::default(),
+            })
+        });
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(matches!(result, Err(ValidationError::UnsupportedToken(_))));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_sell_amount_overflow() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::MAX,
+            fee_amount: U256::from(1),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_insufficient_balance() {
+        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        fee_calculator
+            .expect_get_unsubsidized_min_fee()
+            .returning(|_, _, _, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Err(TransferSimulationError::InsufficientBalance));
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            vec![],
+            Duration::from_secs(1),
+            Arc::new(fee_calculator),
+            Arc::new(bad_token_detector),
+            Arc::new(balance_fetcher),
+        );
+        let order = OrderCreation {
+            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            buy_amount: U256::from(1),
+            sell_amount: U256::from(1),
+            ..Default::default()
+        };
+        let result = validator
+            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .await;
+        dbg!(&result);
+        assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
     }
 
     #[tokio::test]

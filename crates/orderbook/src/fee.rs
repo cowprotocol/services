@@ -152,6 +152,19 @@ impl From<u32> for FeeParameters {
     }
 }
 
+#[derive(Debug)]
+pub enum GetUnsubsidizedMinFeeError {
+    InsufficientFee,
+    PriceEstimationError(PriceEstimationError),
+    Other(anyhow::Error),
+}
+
+impl From<anyhow::Error> for GetUnsubsidizedMinFeeError {
+    fn from(err: anyhow::Error) -> Self {
+        Self::Other(err)
+    }
+}
+
 // The user address is mandatory. If some code does not know the user it can pass the 0 address
 // which is guaranteed to not have any balance for the cow token.
 #[cfg_attr(test, mockall::automock)]
@@ -179,7 +192,7 @@ pub trait MinFeeCalculating: Send + Sync {
         app_data: AppId,
         subsidized_fee: U256,
         user: H160,
-    ) -> Result<FeeParameters, ()>;
+    ) -> Result<FeeParameters, GetUnsubsidizedMinFeeError>;
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -347,15 +360,12 @@ impl MinFeeCalculating for MinFeeCalculator {
         app_data: AppId,
         subsidized_fee: U256,
         user: H160,
-    ) -> Result<FeeParameters, ()> {
+    ) -> Result<FeeParameters, GetUnsubsidizedMinFeeError> {
         let cow_factor = self.cow_subsidy.cow_subsidy_factor(user);
         let past_fee = self
             .measurements
             .find_measurement_including_larger_amount(fee_data, (self.now)());
-        // TODO: make this function return a proper error distinguishing errors from fee too low;
-        let (cow_factor, past_fee) = futures::future::try_join(cow_factor, past_fee)
-            .await
-            .map_err(|_| ())?;
+        let (cow_factor, past_fee) = futures::future::try_join(cow_factor, past_fee).await?;
         // When validating we allow fees taken for larger amounts because as the amount increases
         // the fee increases too because it is worth to trade off more gas use for a slightly better
         // price. Thus it is acceptable if the new order has an amount <= an existing fee
@@ -377,19 +387,18 @@ impl MinFeeCalculating for MinFeeCalculator {
             }
         }
 
-        if let Ok(current_fee) = self.compute_unsubsidized_min_fee(fee_data).await {
-            tracing::debug!("estimated new fee {:?}", current_fee);
-            if subsidized_fee
-                >= current_fee.apply_fee_factor(&self.fee_subsidy, app_data, cow_factor)
-            {
-                tracing::debug!("given fee matches new fee");
-                return Ok(current_fee);
-            } else {
-                tracing::debug!("given fee does not match new fee");
-            }
+        let current_fee = self
+            .compute_unsubsidized_min_fee(fee_data)
+            .await
+            .map_err(GetUnsubsidizedMinFeeError::PriceEstimationError)?;
+        tracing::debug!("estimated new fee {:?}", current_fee);
+        if subsidized_fee >= current_fee.apply_fee_factor(&self.fee_subsidy, app_data, cow_factor) {
+            tracing::debug!("given fee matches new fee");
+            Ok(current_fee)
+        } else {
+            tracing::debug!("given fee does not match new fee");
+            Err(GetUnsubsidizedMinFeeError::InsufficientFee)
         }
-
-        Err(())
     }
 }
 

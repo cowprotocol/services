@@ -45,7 +45,7 @@ impl Default for Order {
             .signature
             .validate(domain, &order.hash_struct())
             .unwrap();
-        Self::from_order_creation(order, domain, H160::default(), Default::default(), owner)
+        Self::from_order_creation(&order, domain, H160::default(), Default::default(), owner)
     }
 }
 
@@ -61,7 +61,7 @@ pub enum OrderStatus {
 
 impl Order {
     pub fn from_order_creation(
-        order_creation: OrderCreation,
+        order_creation: &OrderCreation,
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
@@ -76,22 +76,13 @@ impl Order {
                 full_fee_amount,
                 ..Default::default()
             },
-            order_creation,
+            order_creation: *order_creation,
         }
     }
 
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
         token_list.contains(&self.order_creation.buy_token)
             || token_list.contains(&self.order_creation.sell_token)
-    }
-
-    pub fn actual_receiver(&self) -> H160 {
-        let receiver = self.order_creation.receiver.unwrap_or_default();
-        if receiver == H160::zero() {
-            self.order_meta_data.owner
-        } else {
-            receiver
-        }
     }
 }
 
@@ -196,7 +187,7 @@ impl OrderBuilder {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Deserialize, Debug, Serialize, Hash)]
+#[derive(Eq, PartialEq, Copy, Clone, Deserialize, Debug, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     pub sell_token: H160,
@@ -733,29 +724,6 @@ mod tests {
                 .unwrap();
             assert_eq!(owner, expected_owner);
         }
-    }
-
-    #[test]
-    fn order_actual_receiver() {
-        // Isn't it a bit weird that the default order struct has such an arbitrary receiver?
-        assert_eq!(
-            Order::default().actual_receiver(),
-            H160(hex!("7e5f4552091a69125d5dfcb7b8c2659029395bdf"))
-        );
-
-        let mut order = Order::default();
-        let receiver = H160::from_low_u64_be(1);
-        order.order_creation.receiver = Some(receiver);
-        assert_eq!(order.actual_receiver(), receiver);
-    }
-
-    #[test]
-    fn order_with_app_data() {
-        let mut order = Order::default();
-
-        let receiver = H160::from_low_u64_be(1);
-        order.order_creation.receiver = Some(receiver);
-        assert_eq!(order.actual_receiver(), receiver);
     }
 
     // from the test `should compute order unique identifier` in
