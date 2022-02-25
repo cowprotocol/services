@@ -7,19 +7,20 @@ use model::order::OrderKind;
 use num::BigRational;
 use std::cmp;
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 
 /// Price estimator that pulls estimates from various sources
 /// and competes on the best price. Returns a price estimation
 /// early if there is a configurable number of successful estimates
 /// for every query or if all price sources returned an estimate.
 pub struct RacingCompetitionPriceEstimator {
-    inner: Vec<(String, Box<dyn PriceEstimating>)>,
+    inner: Vec<(String, Arc<dyn PriceEstimating>)>,
     successful_results_for_early_return: NonZeroUsize,
 }
 
 impl RacingCompetitionPriceEstimator {
     pub fn new(
-        inner: Vec<(String, Box<dyn PriceEstimating>)>,
+        inner: Vec<(String, Arc<dyn PriceEstimating>)>,
         successful_results_for_early_return: NonZeroUsize,
     ) -> Self {
         assert!(!inner.is_empty());
@@ -85,7 +86,7 @@ pub struct CompetitionPriceEstimator {
 }
 
 impl CompetitionPriceEstimator {
-    pub fn new(inner: Vec<(String, Box<dyn PriceEstimating>)>) -> Self {
+    pub fn new(inner: Vec<(String, Arc<dyn PriceEstimating>)>) -> Self {
         let number_of_estimators =
             NonZeroUsize::new(inner.len()).expect("Vec of estimators should not be empty.");
         Self {
@@ -311,8 +312,8 @@ mod tests {
             });
 
         let priority = CompetitionPriceEstimator::new(vec![
-            ("first".to_owned(), Box::new(first)),
-            ("second".to_owned(), Box::new(second)),
+            ("first".to_owned(), Arc::new(first)),
+            ("second".to_owned(), Arc::new(second)),
         ]);
 
         let result = priority.estimates(&queries).await;
@@ -394,9 +395,9 @@ mod tests {
 
         let racing = RacingCompetitionPriceEstimator::new(
             vec![
-                ("first".to_owned(), Box::new(first)),
-                ("second".to_owned(), Box::new(second)),
-                ("third".to_owned(), Box::new(third)),
+                ("first".to_owned(), Arc::new(first)),
+                ("second".to_owned(), Arc::new(second)),
+                ("third".to_owned(), Arc::new(third)),
             ],
             NonZeroUsize::new(1).unwrap(),
         );

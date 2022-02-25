@@ -119,7 +119,7 @@ impl PriceEstimating for BufferingPriceEstimator {
             in_flight_requests.extend(
                 new_requests
                     .iter()
-                    .map(|(query, fut)| (*query, fut.downgrade().unwrap())),
+                    .map(|(query, fut)| (*query, fut.downgrade().expect("future completed"))),
             );
 
             (active_requests, new_requests)

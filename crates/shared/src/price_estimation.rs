@@ -17,9 +17,13 @@ use anyhow::Result;
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::BigRational;
+use std::{
+    cmp::{Eq, PartialEq},
+    hash::Hash,
+};
 use thiserror::Error;
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ArgEnum, Hash, Eq, PartialEq)]
 #[clap(rename_all = "verbatim")]
 pub enum PriceEstimatorType {
     Baseline,
