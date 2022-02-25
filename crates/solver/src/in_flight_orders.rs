@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn test() {
         let mut inflight = InFlightOrders::default();
-        inflight.mark_settled_orders(1, std::array::IntoIter::new([OrderUid::from_integer(0)]));
+        inflight.mark_settled_orders(1, [OrderUid::from_integer(0)].into_iter());
         let mut order0 = Order::default();
         order0.order_meta_data.uid = OrderUid::from_integer(0);
         order0.order_creation.partially_fillable = true;

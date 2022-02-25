@@ -175,8 +175,7 @@ impl Alerter {
                     .open_orders
                     .iter()
                     .find(|(order_, _)| order_.uid == order.uid)
-                    .map(|o| o.1)
-                    .flatten();
+                    .and_then(|o| o.1);
                 (order, existing_time)
             })
             .collect::<Vec<_>>();

@@ -411,10 +411,15 @@ impl<'a> Submitter<'a> {
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
+
+            // Doing `.or(pending_gas_price.as_ref())` is a warning on Rust 1.58 but doing or_else
+            // is a warning on 1.59. So silence the warning on the older compiler until everyone has
+            // upgraded.
+            #[allow(clippy::or_fun_call)]
             if let Some(previous_gas_price) = transactions
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
-                .or_else(|| pending_gas_price.as_ref())
+                .or(pending_gas_price.as_ref())
             {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
                 if gas_price.tip() < previous_gas_price.tip()

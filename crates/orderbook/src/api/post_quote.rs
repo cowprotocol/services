@@ -143,7 +143,7 @@ impl IntoWarpReply for FeeError {
             FeeError::SellAmountDoesNotCoverFee(fee) => warp::reply::with_status(
                 super::rich_error(
                     "SellAmountDoesNotCoverFee",
-                    "The sell amount for the sell order is lower than the fee.".to_string(),
+                    "The sell amount for the sell order is lower than the fee.",
                     fee,
                 ),
                 StatusCode::BAD_REQUEST,

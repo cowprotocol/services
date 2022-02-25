@@ -139,9 +139,7 @@ fn exp(mut x: I256) -> Result<I256, Error> {
     }
 
     let mut series_sum = *ONE_20;
-    let mut term;
-
-    term = x;
+    let mut term = x;
     series_sum += term;
 
     for i in 2..=12 {
