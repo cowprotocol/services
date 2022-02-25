@@ -41,6 +41,7 @@ use shared::{
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         baseline::BaselinePriceEstimator,
+        buffered::BufferingPriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
         instrumented::InstrumentedPriceEstimator,
         native::NativePriceEstimator,
@@ -500,7 +501,7 @@ async fn main() {
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
-    let create_base_estimator = |&estimator| -> (String, Box<dyn PriceEstimating>) {
+    let create_base_estimator = |estimator| -> (String, Arc<dyn PriceEstimating>) {
         let instance: Box<dyn PriceEstimating> = match estimator {
             PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
                 pool_fetcher.clone(),
@@ -551,8 +552,19 @@ async fn main() {
 
         (
             estimator.name(),
-            Box::new(instrumented(instance, estimator.name())),
+            Arc::new(BufferingPriceEstimator::new(Box::new(instrumented(
+                instance,
+                estimator.name(),
+            )))),
         )
+    };
+
+    let mut base_estimators_instances: HashMap<_, _> = Default::default();
+    let mut get_or_create_base_estimator = move |estimator| {
+        base_estimators_instances
+            .entry(estimator)
+            .or_insert_with(|| create_base_estimator(estimator))
+            .clone()
     };
 
     let sanitized = |estimator| {
@@ -566,14 +578,14 @@ async fn main() {
     let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
         args.price_estimators
             .iter()
-            .map(create_base_estimator)
+            .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
     ))));
 
     let fast_price_estimator = Arc::new(sanitized(Box::new(RacingCompetitionPriceEstimator::new(
         args.price_estimators
             .iter()
-            .map(create_base_estimator)
+            .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
         args.fast_price_estimation_results_required,
     ))));
@@ -583,7 +595,7 @@ async fn main() {
             Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
                 args.native_price_estimators
                     .iter()
-                    .map(create_base_estimator)
+                    .map(|estimator| create_base_estimator(*estimator))
                     .collect(),
             )))),
             native_token.address(),
