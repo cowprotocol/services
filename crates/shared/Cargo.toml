@@ -41,7 +41,7 @@ scopeguard = "1.1.0"
 serde = "1.0"
 serde_json = "1.0"
 serde_with = { version = "1.11", default-features = false }
-clap = { version = "3.0", features = ["derive", "env"] }
+clap = { version = "3.1", features = ["derive", "env"] }
 thiserror = "1.0"
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.15", features = ["macros", "time"] }
