@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
-use ethcontract::{H256, U256};
+use ethcontract::H256;
 use model::{
     auction::Auction,
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
@@ -13,15 +13,8 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::H160;
-use shared::{
-    bad_token::BadTokenDetecting, metrics::LivenessChecking,
-    price_estimation::native::NativePriceEstimating,
-};
-use std::{
-    collections::{BTreeMap, HashSet},
-    sync::Arc,
-    time::Duration,
-};
+use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -79,16 +72,10 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: Arc<dyn OrderStoring>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    native_price_estimator: Arc<dyn NativePriceEstimating>,
     enable_presign_orders: bool,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<OrderValidator>,
-    metrics: Arc<dyn OrderbookMetrics>,
-}
-
-pub trait OrderbookMetrics: Send + Sync + 'static {
-    fn filtered_solvable_orders(&self, count: usize);
 }
 
 impl Orderbook {
@@ -98,24 +85,20 @@ impl Orderbook {
         settlement_contract: H160,
         database: Arc<dyn OrderStoring>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        native_price_estimator: Arc<dyn NativePriceEstimating>,
         enable_presign_orders: bool,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<OrderValidator>,
-        metrics: Arc<dyn OrderbookMetrics>,
     ) -> Self {
         Self {
             domain_separator,
             settlement_contract,
             database,
             bad_token_detector,
-            native_price_estimator,
             enable_presign_orders,
             solvable_orders,
             solvable_orders_max_update_age,
             order_validator,
-            metrics,
         }
     }
 
@@ -230,7 +213,7 @@ impl Orderbook {
         Ok(orders)
     }
 
-    pub async fn get_solvable_orders(&self) -> Result<SolvableOrders> {
+    pub fn get_solvable_orders(&self) -> Result<SolvableOrders> {
         let solvable_orders = self.solvable_orders.cached_solvable_orders();
         ensure!(
             solvable_orders.update_time.elapsed() <= self.solvable_orders_max_update_age,
@@ -239,22 +222,13 @@ impl Orderbook {
         Ok(solvable_orders)
     }
 
-    pub async fn get_auction(&self) -> Result<Auction> {
-        let solvable_orders = self.get_solvable_orders().await?;
-
-        let order_count = solvable_orders.orders.len();
-        let (orders, prices) =
-            get_orders_with_native_prices(solvable_orders.orders, &*self.native_price_estimator)
-                .await;
-        let filtered_orders = order_count - orders.len();
-        self.metrics.filtered_solvable_orders(filtered_orders);
-
-        Ok(Auction {
-            block: solvable_orders.block,
-            latest_settlement_block: solvable_orders.latest_settlement_block,
-            orders,
-            prices,
-        })
+    pub fn get_auction(&self) -> Result<Auction> {
+        let (auction, update_time) = self.solvable_orders.cached_auction();
+        ensure!(
+            update_time.elapsed() <= self.solvable_orders_max_update_age,
+            "auction is out of date"
+        );
+        Ok(auction)
     }
 
     pub async fn get_user_orders(
@@ -276,7 +250,7 @@ impl Orderbook {
 #[async_trait::async_trait]
 impl LivenessChecking for Orderbook {
     async fn is_alive(&self) -> bool {
-        self.get_solvable_orders().await.is_ok()
+        self.get_solvable_orders().is_ok()
     }
 }
 
@@ -306,74 +280,13 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     }
 }
 
-async fn get_orders_with_native_prices(
-    mut orders: Vec<Order>,
-    native_price_estimator: &dyn NativePriceEstimating,
-) -> (Vec<Order>, BTreeMap<H160, U256>) {
-    let traded_tokens = orders
-        .iter()
-        .flat_map(|order| {
-            [
-                order.order_creation.sell_token,
-                order.order_creation.buy_token,
-            ]
-        })
-        .collect::<HashSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
-    let prices = native_price_estimator
-        .estimate_native_prices(&traded_tokens)
-        .await
-        .into_iter()
-        .zip(traded_tokens)
-        .filter_map(|(price, token)| match price {
-            Ok(price) => Some((token, to_normalized_price(price)?)),
-            Err(err) => {
-                tracing::warn!(?token, ?err, "error estimating native token price");
-                None
-            }
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    orders.retain(|order| {
-        let has_native_prices = prices.contains_key(&order.order_creation.sell_token)
-            && prices.contains_key(&order.order_creation.buy_token);
-
-        if !has_native_prices {
-            tracing::warn!(
-                order_uid = ?order.order_meta_data.uid,
-                "filtered order because of missing native token price",
-            );
-        }
-
-        has_native_prices
-    });
-
-    (orders, prices)
-}
-
-fn to_normalized_price(price: f64) -> Option<U256> {
-    let uint_max = 2.0_f64.powi(256);
-
-    let price_in_eth = 1e18 * price;
-    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
-        Some(U256::from_f64_lossy(price_in_eth))
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use ethcontract::H160;
     use futures::FutureExt;
-    use maplit::{btreemap, hashset};
     use model::order::OrderBuilder;
-    use shared::{
-        bad_token::list_based::ListBasedDetector,
-        price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
-    };
+    use shared::bad_token::list_based::ListBasedDetector;
 
     #[test]
     fn filter_unsupported_tokens_() {
@@ -400,96 +313,5 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
-    }
-
-    #[test]
-    fn computes_u256_prices_normalized_to_1e18() {
-        assert_eq!(
-            to_normalized_price(0.5).unwrap(),
-            U256::from(500_000_000_000_000_000_u128),
-        );
-    }
-
-    #[test]
-    fn normalize_prices_fail_when_outside_valid_input_range() {
-        assert!(to_normalized_price(0.).is_none());
-        assert!(to_normalized_price(-1.).is_none());
-        assert!(to_normalized_price(f64::INFINITY).is_none());
-
-        let min_price = 1. / 1e18;
-        assert!(to_normalized_price(min_price).is_some());
-        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
-
-        let uint_max = 2.0_f64.powi(256);
-        let max_price = uint_max / 1e18;
-        assert!(to_normalized_price(max_price).is_none());
-        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
-    }
-
-    #[tokio::test]
-    async fn filters_tokens_without_native_prices() {
-        let token1 = H160([1; 20]);
-        let token2 = H160([2; 20]);
-        let token3 = H160([3; 20]);
-        let token4 = H160([4; 20]);
-
-        let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token2)
-                .with_buy_token(token3)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token3)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token2)
-                .with_buy_token(token4)
-                .build(),
-        ];
-        let prices = btreemap! {
-            token1 => 2.,
-            token3 => 0.25,
-            token4 => 0., // invalid price!
-        };
-
-        let mut native_price_estimator = MockNativePriceEstimating::new();
-        native_price_estimator
-            .expect_estimate_native_prices()
-            // deal with undeterministic ordering of `HashSet`.
-            .withf(move |tokens| {
-                tokens.iter().cloned().collect::<HashSet<_>>()
-                    == hashset!(token1, token2, token3, token4)
-            })
-            .returning({
-                let prices = prices.clone();
-                move |tokens| {
-                    tokens
-                        .iter()
-                        .map(|token| {
-                            prices
-                                .get(token)
-                                .copied()
-                                .ok_or(PriceEstimationError::NoLiquidity)
-                        })
-                        .collect()
-                }
-            });
-
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
-
-        assert_eq!(filtered_orders, [orders[2].clone()]);
-        assert_eq!(
-            prices,
-            btreemap! {
-                token1 => U256::from(2_000_000_000_000_000_000_u128),
-                token3 => U256::from(250_000_000_000_000_000_u128),
-            }
-        );
     }
 }

@@ -4,19 +4,23 @@ use crate::{
     orderbook::filter_unsupported_tokens,
 };
 use anyhow::Result;
-use model::order::Order;
-use primitive_types::U256;
+use model::{auction::Auction, order::Order};
+use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
-    time::now_in_epoch_seconds,
+    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator,
     sync::{Arc, Mutex, Weak},
     time::{Duration, Instant},
 };
 use tokio::sync::Notify;
+
+pub trait AuctionMetrics: Send + Sync + 'static {
+    fn filtered_solvable_orders(&self, count: usize);
+}
 
 /// Keeps track and updates the set of currently solvable orders.
 /// For this we also need to keep track of user sell token balances for open orders so this is
@@ -31,6 +35,8 @@ pub struct SolvableOrdersCache {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     notify: Notify,
     cache: Mutex<Inner>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
+    auction_metrics: Arc<dyn AuctionMetrics>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -38,6 +44,7 @@ type Balances = HashMap<Query, U256>;
 struct Inner {
     orders: SolvableOrders,
     balances: Balances,
+    auction: Auction,
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +62,8 @@ impl SolvableOrdersCache {
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
+        native_price_estimator: Arc<dyn NativePriceEstimating>,
+        auction_metrics: Arc<dyn AuctionMetrics>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -64,13 +73,21 @@ impl SolvableOrdersCache {
             notify: Default::default(),
             cache: Mutex::new(Inner {
                 orders: SolvableOrders {
-                    orders: Vec::new(),
+                    orders: Default::default(),
                     update_time: Instant::now(),
                     latest_settlement_block: 0,
                     block: 0,
                 },
                 balances: Default::default(),
+                auction: Auction {
+                    block: 0,
+                    latest_settlement_block: 0,
+                    orders: Default::default(),
+                    prices: Default::default(),
+                },
             }),
+            native_price_estimator,
+            auction_metrics,
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
         self_
@@ -84,6 +101,12 @@ impl SolvableOrdersCache {
     /// Orders and timestamp at which last update happened.
     pub fn cached_solvable_orders(&self) -> SolvableOrders {
         self.cache.lock().unwrap().orders.clone()
+    }
+
+    // Returns auction and update time.
+    pub fn cached_auction(&self) -> (Auction, Instant) {
+        let cache = self.cache.lock().unwrap();
+        (cache.auction.clone(), cache.orders.update_time)
     }
 
     /// The cache will update the solvable orders and missing balances as soon as possible.
@@ -134,6 +157,20 @@ impl SolvableOrdersCache {
             order.order_meta_data.available_balance = new_balances.get(&query).copied();
         }
 
+        // create auction
+        let order_count = orders.len();
+        let (orders, prices) =
+            get_orders_with_native_prices(orders.clone(), &*self.native_price_estimator).await;
+        let filtered_orders = order_count - orders.len();
+        self.auction_metrics
+            .filtered_solvable_orders(filtered_orders);
+        let auction = Auction {
+            block,
+            latest_settlement_block: db_solvable_orders.latest_settlement_block,
+            orders: orders.clone(),
+            prices,
+        };
+
         *self.cache.lock().unwrap() = Inner {
             orders: SolvableOrders {
                 orders,
@@ -142,6 +179,7 @@ impl SolvableOrdersCache {
                 block,
             },
             balances: new_balances,
+            auction,
         };
 
         Ok(())
@@ -238,9 +276,17 @@ async fn update_task(cache: Weak<SolvableOrdersCache>, current_block: CurrentBlo
                 continue;
             }
         };
+        let start = Instant::now();
         match cache.update(block).await {
-            Ok(()) => tracing::debug!("updated solvable orders"),
-            Err(err) => tracing::error!(?err, "failed to update solvable orders"),
+            Ok(()) => tracing::debug!(
+                "updated solvable orders in {}s",
+                start.elapsed().as_secs_f32()
+            ),
+            Err(err) => tracing::error!(
+                ?err,
+                "failed to update solvable orders in {}s",
+                start.elapsed().as_secs_f32()
+            ),
         }
     }
 }
@@ -253,17 +299,75 @@ impl Maintaining for SolvableOrdersCache {
     }
 }
 
+async fn get_orders_with_native_prices(
+    mut orders: Vec<Order>,
+    native_price_estimator: &dyn NativePriceEstimating,
+) -> (Vec<Order>, BTreeMap<H160, U256>) {
+    let traded_tokens = orders
+        .iter()
+        .flat_map(|order| {
+            [
+                order.order_creation.sell_token,
+                order.order_creation.buy_token,
+            ]
+        })
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let prices = native_price_estimator
+        .estimate_native_prices(&traded_tokens)
+        .await
+        .into_iter()
+        .zip(traded_tokens)
+        .filter_map(|(price, token)| match price {
+            Ok(price) => Some((token, to_normalized_price(price)?)),
+            Err(err) => {
+                tracing::warn!(?token, ?err, "error estimating native token price");
+                None
+            }
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    orders.retain(|order| {
+        let has_native_prices = prices.contains_key(&order.order_creation.sell_token)
+            && prices.contains_key(&order.order_creation.buy_token);
+
+        if !has_native_prices {
+            tracing::warn!(
+                order_uid = ?order.order_meta_data.uid,
+                "filtered order because of missing native token price",
+            );
+        }
+
+        has_native_prices
+    });
+
+    (orders, prices)
+}
+
+fn to_normalized_price(price: f64) -> Option<U256> {
+    let uint_max = 2.0_f64.powi(256);
+
+    let price_in_eth = 1e18 * price;
+    if price_in_eth.is_normal() && price_in_eth >= 1. && price_in_eth < uint_max {
+        Some(U256::from_f64_lossy(price_in_eth))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
         account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
-        database::orders::SolvableOrders as DbOrders,
+        database::orders::SolvableOrders as DbOrders, metrics::NoopMetrics,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
-    use maplit::hashmap;
-    use model::order::{OrderCreation, OrderMetaData, SellTokenSource};
+    use maplit::{btreemap, hashmap, hashset};
+    use model::order::{OrderBuilder, OrderCreation, OrderMetaData, SellTokenSource};
     use primitive_types::H160;
+    use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
@@ -386,12 +490,19 @@ mod tests {
             .times(1)
             .return_once(|_| Vec::new());
 
+        let mut native = MockNativePriceEstimating::new();
+        native
+            .expect_estimate_native_prices()
+            .returning(|a| vec![Ok(1.0); a.len()]);
+
         let cache = SolvableOrdersCache::new(
             Duration::from_secs(0),
             Arc::new(order_storing),
             Arc::new(balance_fetcher),
             Arc::new(bad_token_detector),
             receiver,
+            Arc::new(native),
+            Arc::new(NoopMetrics),
         );
 
         cache.update(0).await.unwrap();
@@ -403,6 +514,8 @@ mod tests {
         let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 1);
         assert_eq!(orders_[0].order_meta_data.available_balance, Some(1.into()));
+        let auction = cache.cached_auction().0;
+        assert_eq!(auction.orders.len(), 1);
 
         cache.update(0).await.unwrap();
         assert_eq!(
@@ -415,11 +528,106 @@ mod tests {
         );
         let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 2);
+        let auction = cache.cached_auction().0;
+        assert_eq!(auction.orders.len(), 2);
 
         cache.update(0).await.unwrap();
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[0])), None,);
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None,);
         let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 0);
+        let auction = cache.cached_auction().0;
+        assert_eq!(auction.orders.len(), 0);
+    }
+
+    #[test]
+    fn computes_u256_prices_normalized_to_1e18() {
+        assert_eq!(
+            to_normalized_price(0.5).unwrap(),
+            U256::from(500_000_000_000_000_000_u128),
+        );
+    }
+
+    #[test]
+    fn normalize_prices_fail_when_outside_valid_input_range() {
+        assert!(to_normalized_price(0.).is_none());
+        assert!(to_normalized_price(-1.).is_none());
+        assert!(to_normalized_price(f64::INFINITY).is_none());
+
+        let min_price = 1. / 1e18;
+        assert!(to_normalized_price(min_price).is_some());
+        assert!(to_normalized_price(min_price * (1. - f64::EPSILON)).is_none());
+
+        let uint_max = 2.0_f64.powi(256);
+        let max_price = uint_max / 1e18;
+        assert!(to_normalized_price(max_price).is_none());
+        assert!(to_normalized_price(max_price * (1. - f64::EPSILON)).is_some());
+    }
+
+    #[tokio::test]
+    async fn filters_tokens_without_native_prices() {
+        let token1 = H160([1; 20]);
+        let token2 = H160([2; 20]);
+        let token3 = H160([3; 20]);
+        let token4 = H160([4; 20]);
+
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token2)
+                .with_buy_token(token3)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token3)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token2)
+                .with_buy_token(token4)
+                .build(),
+        ];
+        let prices = btreemap! {
+            token1 => 2.,
+            token3 => 0.25,
+            token4 => 0., // invalid price!
+        };
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            // deal with undeterministic ordering of `HashSet`.
+            .withf(move |tokens| {
+                tokens.iter().cloned().collect::<HashSet<_>>()
+                    == hashset!(token1, token2, token3, token4)
+            })
+            .returning({
+                let prices = prices.clone();
+                move |tokens| {
+                    tokens
+                        .iter()
+                        .map(|token| {
+                            prices
+                                .get(token)
+                                .copied()
+                                .ok_or(PriceEstimationError::NoLiquidity)
+                        })
+                        .collect()
+                }
+            });
+
+        let (filtered_orders, prices) =
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
+
+        assert_eq!(filtered_orders, [orders[2].clone()]);
+        assert_eq!(
+            prices,
+            btreemap! {
+                token1 => U256::from(2_000_000_000_000_000_000_u128),
+                token3 => U256::from(250_000_000_000_000_000_u128),
+            }
+        );
     }
 }

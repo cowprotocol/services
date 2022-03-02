@@ -128,7 +128,7 @@ impl PoolCacheMetrics for Metrics {
     }
 }
 
-impl crate::orderbook::OrderbookMetrics for Metrics {
+impl crate::solvable_orders::AuctionMetrics for Metrics {
     fn filtered_solvable_orders(&self, count: usize) {
         self.filtered_solvable_orders.inc_by(count as _);
     }
@@ -191,6 +191,6 @@ impl shared::price_estimation::native_price_cache::Metrics for Metrics {
 
 pub struct NoopMetrics;
 
-impl crate::orderbook::OrderbookMetrics for NoopMetrics {
+impl crate::solvable_orders::AuctionMetrics for NoopMetrics {
     fn filtered_solvable_orders(&self, _: usize) {}
 }

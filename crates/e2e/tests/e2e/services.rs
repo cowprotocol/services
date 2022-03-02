@@ -171,6 +171,8 @@ impl OrderbookServices {
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
+            native_price_estimator,
+            Arc::new(NoopMetrics),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -186,12 +188,10 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             db.clone(),
             bad_token_detector,
-            native_price_estimator,
             true,
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
             order_validator.clone(),
-            Arc::new(NoopMetrics),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],

@@ -13,7 +13,7 @@ pub fn get_auction(
     get_auction_request().and_then(move || {
         let orderbook = orderbook.clone();
         async move {
-            let auction = orderbook.get_auction().await;
+            let auction = orderbook.get_auction();
             Result::<_, Infallible>::Ok(convert_json_response(auction))
         }
     })

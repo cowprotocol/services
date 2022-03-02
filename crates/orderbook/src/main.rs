@@ -643,6 +643,8 @@ async fn main() {
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         current_block_stream.clone(),
+        native_price_estimator,
+        metrics.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -663,12 +665,10 @@ async fn main() {
         settlement_contract.address(),
         database.clone(),
         bad_token_detector,
-        native_price_estimator,
         args.enable_presign_orders,
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
-        metrics.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![
