@@ -1,6 +1,6 @@
 use super::*;
 use crate::{conversions::*, fee::FeeParameters};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
 use ethcontract::H256;
@@ -556,13 +556,6 @@ impl OrdersQueryRow {
 
     fn into_order(self) -> Result<Order> {
         let status = self.calculate_status();
-
-        let executed_sell_amount = big_decimal_to_big_uint(&self.sum_sell)
-            .ok_or_else(|| anyhow!("sum_sell is not an unsigned integer"))?;
-        let executed_fee_amount = big_decimal_to_big_uint(&self.sum_fee)
-            .ok_or_else(|| anyhow!("sum_fee is not an unsigned integer"))?;
-        let executed_sell_amount_before_fees = &executed_sell_amount - &executed_fee_amount;
-
         let order_metadata = OrderMetadata {
             creation_date: self.creation_timestamp,
             owner: h160_from_vec(self.owner)?,
@@ -573,10 +566,16 @@ impl OrdersQueryRow {
             ),
             available_balance: Default::default(),
             executed_buy_amount: big_decimal_to_big_uint(&self.sum_buy)
-                .ok_or_else(|| anyhow!("sum_buy is not an unsigned integer"))?,
-            executed_sell_amount,
-            executed_sell_amount_before_fees,
-            executed_fee_amount,
+                .context("executed buy amount is not an unsigned integer")?,
+            executed_sell_amount: big_decimal_to_big_uint(&self.sum_sell)
+                .context("executed sell amount is not an unsigned integer")?,
+            // Executed fee amounts and sell amounts before fees are capped by
+            // order's fee and sell amounts, and thus can always fit in a `U256`
+            // - as it is limited by the order format.
+            executed_sell_amount_before_fees: big_decimal_to_u256(&(self.sum_sell - &self.sum_fee))
+                .context("executed sell amount before fees does not fit in a u256")?,
+            executed_fee_amount: big_decimal_to_u256(&self.sum_fee)
+                .context("executed fee amount is not a valid u256")?,
             invalidated: self.invalidated,
             status,
             settlement_contract: h160_from_vec(self.settlement_contract)?,
@@ -1216,7 +1215,9 @@ mod tests {
     // number. Summing over multiple events could overflow this because the smart contract only
     // guarantees that the filled amount (which amount that is depends on order type) does not
     // overflow a U256. This test shows that postgres does not error if this happens because
-    // inside the SUM the number can have more digits.
+    // inside the SUM the number can have more digits. In particular:
+    // - `executed_buy_amount` may overflow after repeated buys (since there is no upper bound)
+    // - `executed_sell_amount` (with fees) may overflow since the total fits into a `U512`.
     #[tokio::test]
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
@@ -1232,7 +1233,9 @@ mod tests {
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
-        for i in 0..10 {
+        let sell_amount_before_fees = U256::MAX / 16;
+        let fee_amount = U256::MAX / 16;
+        for i in 0..16 {
             db.append_events_(vec![(
                 EventIndex {
                     block_number: i,
@@ -1240,8 +1243,9 @@ mod tests {
                 },
                 Event::Trade(Trade {
                     order_uid: order.metadata.uid,
-                    sell_amount_including_fee: U256::MAX,
-                    ..Default::default()
+                    sell_amount_including_fee: sell_amount_before_fees + fee_amount,
+                    buy_amount: U256::MAX,
+                    fee_amount,
                 }),
             )])
             .await
@@ -1256,9 +1260,24 @@ mod tests {
             .next()
             .unwrap();
 
-        let expected = u256_to_big_uint(&U256::MAX) * BigUint::from(10u8);
-        assert!(expected.to_string().len() > 78);
-        assert_eq!(order.metadata.executed_sell_amount, expected);
+        let expected_sell_amount_including_fees =
+            u256_to_big_uint(&(sell_amount_before_fees + fee_amount)) * BigUint::from(16_u8);
+        let expected_sell_amount_before_fees = sell_amount_before_fees * 16;
+        let expected_buy_amount = u256_to_big_uint(&U256::MAX) * BigUint::from(16_u8);
+        let expected_fee_amount = fee_amount * 16;
+
+        assert!(order.metadata.executed_sell_amount > u256_to_big_uint(&U256::MAX));
+        assert_eq!(
+            order.metadata.executed_sell_amount,
+            expected_sell_amount_including_fees
+        );
+        assert_eq!(
+            order.metadata.executed_sell_amount_before_fees,
+            expected_sell_amount_before_fees
+        );
+        assert!(expected_buy_amount.to_string().len() > 78);
+        assert_eq!(order.metadata.executed_buy_amount, expected_buy_amount);
+        assert_eq!(order.metadata.executed_fee_amount, expected_fee_amount);
     }
 
     #[tokio::test]

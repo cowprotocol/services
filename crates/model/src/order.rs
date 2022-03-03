@@ -378,12 +378,10 @@ pub struct OrderMetadata {
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub executed_sell_amount: BigUint,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
-    pub executed_sell_amount_before_fees: BigUint,
-    #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
-    pub executed_fee_amount: BigUint,
+    #[serde(default, with = "u256_decimal")]
+    pub executed_sell_amount_before_fees: U256,
+    #[serde(default, with = "u256_decimal")]
+    pub executed_fee_amount: U256,
     pub invalidated: bool,
     pub status: OrderStatus,
     pub settlement_contract: H160,
@@ -627,8 +625,8 @@ mod tests {
                 available_balance: Some(100.into()),
                 executed_buy_amount: BigUint::from_bytes_be(&[3]),
                 executed_sell_amount: BigUint::from_bytes_be(&[5]),
-                executed_sell_amount_before_fees: BigUint::from_bytes_be(&[4]),
-                executed_fee_amount: BigUint::from_bytes_be(&[1]),
+                executed_sell_amount_before_fees: 4.into(),
+                executed_fee_amount: 1.into(),
                 invalidated: true,
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
