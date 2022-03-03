@@ -233,6 +233,39 @@ fn main() {
             .add_network_str("1", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str("4", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
     });
+    generate_contract_with_config("UniswapSwapRouter02", |builder| {
+        builder
+            .add_network_str("1", "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
+            .add_network_str("4", "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45")
+            .add_method_alias(
+                "checkOracleSlippage(bytes[],uint128[],uint24,uint32)",
+                "check_oracle_slippage_with_amounts",
+            )
+            .add_method_alias(
+                "multicall(bytes32,bytes[])",
+                "multicall_with_previous_blockhash",
+            )
+            .add_method_alias(
+                "multicall(uint256,bytes[])",
+                "multicall_with_deadline",
+            )
+            .add_method_alias(
+                "sweepToken(address,uint256,address)",
+                "sweep_token_with_recipient",
+            )
+            .add_method_alias(
+                "sweepTokenWithFee(address,uint256,address,uint256,address)",
+                "sweep_token_with_fee_and_recipient",
+            )
+            .add_method_alias(
+                "unwrapWETH9(uint256,address)",
+                "unwrap_weth9_with_recipient",
+            )
+            .add_method_alias(
+                "unwrapWETH9WithFee(uint256,address,uint256,address)",
+                "unwrap_weth9_with_fee_and_recipient",
+            )
+    });
     generate_contract_with_config("WETH9", |builder| {
         builder
             .add_network_str("1", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")

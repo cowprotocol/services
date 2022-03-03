@@ -200,6 +200,8 @@ pub struct Hop {
     pub address: H160,
     pub token_in: Token,
     pub token_out: Token,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub fee: u32,
     #[serde(with = "u256_decimal")]
     pub amount_in: U256,
     #[serde(with = "u256_decimal")]
@@ -317,6 +319,7 @@ mod tests {
                         chain_id: 1,
                         address: addr!("A0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
                     },
+                    fee: 500,
                     amount_in: 90_197_095_236_522_892_794_u128.into(),
                     amount_out: 260_200_056_940_u128.into(),
                 }]],
