@@ -284,7 +284,7 @@ impl SolverMetrics for Metrics {
 
     fn order_settled(&self, order: &Order, solver: &'static str) {
         let time_to_settlement =
-            chrono::offset::Utc::now().signed_duration_since(order.order_meta_data.creation_date);
+            chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
         self.trade_counter.with_label_values(&[solver]).inc();
         self.order_settlement_time.inc_by(
             time_to_settlement

@@ -122,7 +122,7 @@ mod tests {
     };
     use ethcontract::H256;
     use model::{
-        order::{Order, OrderCreation, OrderMetaData},
+        order::{Order, OrderCreation, OrderMetadata},
         trade::Trade,
     };
     use shared::event_handling::EventIndex;
@@ -173,12 +173,12 @@ mod tests {
         tx_hash: Option<H256>,
     ) -> Trade {
         let order = Order {
-            order_meta_data: OrderMetaData {
+            metadata: OrderMetadata {
                 owner,
                 uid: order_uid,
                 ..Default::default()
             },
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 ..Default::default()
             },
         };

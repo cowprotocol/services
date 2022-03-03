@@ -530,7 +530,7 @@ impl Driver {
                     .settlement
                     .trades()
                     .iter()
-                    .map(|t| t.trade.order.order_meta_data.uid);
+                    .map(|t| t.trade.order.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -567,7 +567,7 @@ impl Driver {
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
     !settlement.encoder.trades().iter().any(|order_trade| {
         token_list
-            .get(&order_trade.trade.order.order_creation.sell_token)
+            .get(&order_trade.trade.order.creation.sell_token)
             .is_none()
     })
 }
@@ -643,7 +643,7 @@ mod tests {
         let trade = |token| OrderTrade {
             trade: Trade {
                 order: Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: token,
                         ..Default::default()
                     },

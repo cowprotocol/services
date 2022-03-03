@@ -419,7 +419,7 @@ mod tests {
         let settlement = solver
             .settle_order_with_protocols(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),

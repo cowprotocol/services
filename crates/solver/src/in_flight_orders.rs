@@ -29,8 +29,7 @@ impl InFlightOrders {
             .copied()
             .collect::<HashSet<_>>();
         auction.orders.retain(|order| {
-            order.order_creation.partially_fillable
-                || !in_flight.contains(&order.order_meta_data.uid)
+            order.creation.partially_fillable || !in_flight.contains(&order.metadata.uid)
         });
     }
 
@@ -49,10 +48,10 @@ mod tests {
         let mut inflight = InFlightOrders::default();
         inflight.mark_settled_orders(1, [OrderUid::from_integer(0)].into_iter());
         let mut order0 = Order::default();
-        order0.order_meta_data.uid = OrderUid::from_integer(0);
-        order0.order_creation.partially_fillable = true;
+        order0.metadata.uid = OrderUid::from_integer(0);
+        order0.creation.partially_fillable = true;
         let mut order1 = Order::default();
-        order1.order_meta_data.uid = OrderUid::from_integer(1);
+        order1.metadata.uid = OrderUid::from_integer(1);
         let mut auction = Auction {
             block: 0,
             orders: vec![order0, order1],
@@ -68,7 +67,7 @@ mod tests {
         let filtered = update_and_get_filtered_orders(&auction);
         assert_eq!(filtered.len(), 2);
 
-        auction.orders[0].order_creation.partially_fillable = false;
+        auction.orders[0].creation.partially_fillable = false;
         let filtered = update_and_get_filtered_orders(&auction);
         assert_eq!(filtered.len(), 1);
 

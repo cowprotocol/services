@@ -154,7 +154,7 @@ impl SolvableOrdersCache {
         let mut orders = solvable_orders(orders, &new_balances);
         for order in &mut orders {
             let query = Query::from_order(order);
-            order.order_meta_data.available_balance = new_balances.get(&query).copied();
+            order.metadata.available_balance = new_balances.get(&query).copied();
         }
 
         // create auction
@@ -210,7 +210,7 @@ fn new_balances(old_balances: &Balances, orders: &[Order]) -> (HashMap<Query, U2
 // Assumes balance fetcher is already tracking all balances.
 fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
     let mut orders_map = HashMap::<Query, Vec<Order>>::new();
-    orders.sort_by_key(|order| std::cmp::Reverse(order.order_meta_data.creation_date));
+    orders.sort_by_key(|order| std::cmp::Reverse(order.metadata.creation_date));
     for order in orders {
         let key = Query::from_order(&order);
         orders_map.entry(key).or_default().push(order);
@@ -229,9 +229,9 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             // that we first need a way to communicate this to the solver. We could repurpose
             // availableBalance for this.
             let needed_balance = match order
-                .order_creation
+                .creation
                 .sell_amount
-                .checked_add(order.order_creation.fee_amount)
+                .checked_add(order.creation.fee_amount)
             {
                 Some(balance) => balance,
                 None => continue,
@@ -305,12 +305,7 @@ async fn get_orders_with_native_prices(
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
-        .flat_map(|order| {
-            [
-                order.order_creation.sell_token,
-                order.order_creation.buy_token,
-            ]
-        })
+        .flat_map(|order| [order.creation.sell_token, order.creation.buy_token])
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -329,12 +324,12 @@ async fn get_orders_with_native_prices(
         .collect::<BTreeMap<_, _>>();
 
     orders.retain(|order| {
-        let has_native_prices = prices.contains_key(&order.order_creation.sell_token)
-            && prices.contains_key(&order.order_creation.buy_token);
+        let has_native_prices = prices.contains_key(&order.creation.sell_token)
+            && prices.contains_key(&order.creation.buy_token);
 
         if !has_native_prices {
             tracing::warn!(
-                order_uid = ?order.order_meta_data.uid,
+                order_uid = ?order.metadata.uid,
                 "filtered order because of missing native token price",
             );
         }
@@ -365,7 +360,7 @@ mod tests {
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use maplit::{btreemap, hashmap, hashset};
-    use model::order::{OrderBuilder, OrderCreation, OrderMetaData, SellTokenSource};
+    use model::order::{OrderBuilder, OrderCreation, OrderMetadata, SellTokenSource};
     use primitive_types::H160;
     use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
 
@@ -373,23 +368,23 @@ mod tests {
     async fn filters_insufficient_balances() {
         let mut orders = vec![
             Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: 3.into(),
                     fee_amount: 3.into(),
                     ..Default::default()
                 },
-                order_meta_data: OrderMetaData {
+                metadata: OrderMetadata {
                     creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
                     ..Default::default()
                 },
             },
             Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: 2.into(),
                     fee_amount: 2.into(),
                     ..Default::default()
                 },
-                order_meta_data: OrderMetaData {
+                metadata: OrderMetadata {
                     creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
                     ..Default::default()
                 },
@@ -400,7 +395,7 @@ mod tests {
         let orders_ = solvable_orders(orders.clone(), &balances);
         // Second order has lower timestamp so it isn't picked.
         assert_eq!(orders_, orders[..1]);
-        orders[1].order_meta_data.creation_date =
+        orders[1].metadata.creation_date =
             DateTime::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc);
         let orders_ = solvable_orders(orders.clone(), &balances);
         assert_eq!(orders_, orders[1..]);
@@ -420,23 +415,23 @@ mod tests {
 
         let orders = [
             Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_token: sell_token_0,
                     sell_token_balance: SellTokenSource::Erc20,
                     ..Default::default()
                 },
-                order_meta_data: OrderMetaData {
+                metadata: OrderMetadata {
                     owner,
                     ..Default::default()
                 },
             },
             Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_token: sell_token_1,
                     sell_token_balance: SellTokenSource::Erc20,
                     ..Default::default()
                 },
-                order_meta_data: OrderMetaData {
+                metadata: OrderMetadata {
                     owner,
                     ..Default::default()
                 },
@@ -513,7 +508,7 @@ mod tests {
         assert_eq!(cache.cached_balance(&Query::from_order(&orders[1])), None);
         let orders_ = cache.cached_solvable_orders().orders;
         assert_eq!(orders_.len(), 1);
-        assert_eq!(orders_[0].order_meta_data.available_balance, Some(1.into()));
+        assert_eq!(orders_[0].metadata.available_balance, Some(1.into()));
         let auction = cache.cached_auction().0;
         assert_eq!(auction.orders.len(), 1);
 

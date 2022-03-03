@@ -135,7 +135,7 @@ impl Default for OrdersQuery {
 #[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderMetaData {
+pub struct OrderMetadata {
     #[derivative(Default(value = "chrono::MIN_DATETIME"))]
     pub created_at: DateTime<Utc>,
     pub order_hash: Bytes,
@@ -209,7 +209,7 @@ pub struct Order {
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderRecord {
-    pub meta_data: OrderMetaData,
+    pub metadata: OrderMetadata,
     pub order: Order,
 }
 
@@ -401,7 +401,7 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
         // only keep orders which are still valid and unique
-        order.order.expiry > now && included_orders.insert(order.meta_data.order_hash.clone())
+        order.order.expiry > now && included_orders.insert(order.metadata.order_hash.clone())
     });
 }
 
@@ -545,7 +545,7 @@ mod tests {
                     expiry: chrono::MIN_DATETIME,
                     ..Default::default()
                 },
-                meta_data: OrderMetaData {
+                metadata: OrderMetadata {
                     // unique order_hash
                     order_hash: [2].into(),
                     ..Default::default()

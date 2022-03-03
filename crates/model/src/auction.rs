@@ -33,14 +33,14 @@ pub struct Auction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::order::{OrderMetaData, OrderUid};
+    use crate::order::{OrderMetadata, OrderUid};
     use maplit::btreemap;
     use serde_json::json;
 
     #[test]
     fn roundtrips_auction() {
         let order = |uid_byte: u8| Order {
-            order_meta_data: OrderMetaData {
+            metadata: OrderMetadata {
                 uid: OrderUid([uid_byte; 56]),
                 ..Default::default()
             },

@@ -737,10 +737,7 @@ mod tests {
             .validate_and_construct_order(order, None, &Default::default(), Default::default())
             .await
             .unwrap();
-        assert_eq!(
-            order.order_meta_data.full_fee_amount,
-            order.order_creation.fee_amount
-        );
+        assert_eq!(order.metadata.full_fee_amount, order.creation.fee_amount);
     }
 
     #[tokio::test]
@@ -1023,7 +1020,7 @@ mod tests {
                                         SecretKeyRef::new(&ONE_KEY)
                                     )
                                     .build()
-                                    .order_creation,
+                                    .creation,
                                 None,
                                 &Default::default(),
                                 Default::default()
@@ -1036,10 +1033,7 @@ mod tests {
                 assert!(matches!(
                     validator
                         .validate_and_construct_order(
-                            order
-                                .with_presign(Default::default())
-                                .build()
-                                .order_creation,
+                            order.with_presign(Default::default()).build().creation,
                             None,
                             &Default::default(),
                             Default::default()

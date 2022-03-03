@@ -27,32 +27,29 @@ impl OrderConverter {
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
     pub fn normalize_limit_order(&self, order: Order) -> LimitOrder {
         let native_token = self.native_token.clone();
-        let buy_token = if order.order_creation.buy_token == BUY_ETH_ADDRESS {
+        let buy_token = if order.creation.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
         } else {
-            order.order_creation.buy_token
+            order.creation.buy_token
         };
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
         let scaled_fee_amount = U256::from_f64_lossy(
-            order.order_meta_data.full_fee_amount.to_f64_lossy()
-                * self.fee_objective_scaling_factor,
+            order.metadata.full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
         );
-        let is_liquidity_order = self
-            .liquidity_order_owners
-            .contains(&order.order_meta_data.owner);
+        let is_liquidity_order = self.liquidity_order_owners.contains(&order.metadata.owner);
         LimitOrder {
-            id: order.order_meta_data.uid.to_string(),
-            sell_token: order.order_creation.sell_token,
+            id: order.metadata.uid.to_string(),
+            sell_token: order.creation.sell_token,
             buy_token,
             // TODO discount previously executed sell amount
             // https://github.com/gnosis/gp-v2-services/issues/673
-            sell_amount: order.order_creation.sell_amount,
-            buy_amount: order.order_creation.buy_amount,
-            kind: order.order_creation.kind,
-            partially_fillable: order.order_creation.partially_fillable,
-            unscaled_subsidized_fee: order.order_creation.fee_amount,
+            sell_amount: order.creation.sell_amount,
+            buy_amount: order.creation.buy_amount,
+            kind: order.creation.kind,
+            partially_fillable: order.creation.partially_fillable,
+            unscaled_subsidized_fee: order.creation.fee_amount,
             scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
@@ -74,7 +71,7 @@ struct OrderSettlementHandler {
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
-        let is_native_token_buy_order = self.order.order_creation.buy_token == BUY_ETH_ADDRESS;
+        let is_native_token_buy_order = self.order.creation.buy_token == BUY_ETH_ADDRESS;
 
         if !self.is_liquidity_order && is_native_token_buy_order {
             // liquidity orders don't need an additional token equivalency, as the buy tokens
@@ -113,7 +110,7 @@ pub mod tests {
     use crate::settlement::tests::assert_settlement_encoded_with;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{OrderCreation, OrderKind, OrderMetaData};
+    use model::order::{OrderCreation, OrderKind, OrderMetadata};
     use shared::dummy_contract;
 
     #[test]
@@ -121,7 +118,7 @@ pub mod tests {
         let native_token = H160([0x42; 20]);
         let converter = OrderConverter::test(native_token);
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 buy_token: BUY_ETH_ADDRESS,
                 ..Default::default()
             },
@@ -139,7 +136,7 @@ pub mod tests {
         let buy_token = H160([0x21; 20]);
         let converter = OrderConverter::test(H160([0x42; 20]));
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 buy_token,
                 ..Default::default()
             },
@@ -159,11 +156,11 @@ pub mod tests {
         assert_eq!(
             converter
                 .normalize_limit_order(Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         fee_amount: 10.into(),
                         ..Default::default()
                     },
-                    order_meta_data: OrderMetaData {
+                    metadata: OrderMetadata {
                         full_fee_amount: 20.into(),
                         ..Default::default()
                     }
@@ -175,11 +172,11 @@ pub mod tests {
         assert_eq!(
             converter
                 .normalize_limit_order(Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         fee_amount: 10.into(),
                         ..Default::default()
                     },
-                    order_meta_data: OrderMetaData {
+                    metadata: OrderMetadata {
                         full_fee_amount: 50.into(),
                         ..Default::default()
                     },
@@ -204,7 +201,7 @@ pub mod tests {
             sell_token => U256::from(200),
         };
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 buy_token: BUY_ETH_ADDRESS,
                 sell_token,
                 sell_amount: 1337.into(),
@@ -213,7 +210,7 @@ pub mod tests {
             },
             ..Default::default()
         };
-        println!("{}", order.order_creation.buy_token);
+        println!("{}", order.creation.buy_token);
 
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
@@ -252,7 +249,7 @@ pub mod tests {
             sell_token => U256::from(2),
         };
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 buy_token: BUY_ETH_ADDRESS,
                 buy_amount: 1337.into(),
                 sell_token,
@@ -261,7 +258,7 @@ pub mod tests {
             },
             ..Default::default()
         };
-        println!("{}", order.order_creation.buy_token);
+        println!("{}", order.creation.buy_token);
 
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
@@ -301,7 +298,7 @@ pub mod tests {
             sell_token => U256::from(200),
         };
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 buy_token: not_buy_eth_address,
                 buy_amount: 1337.into(),
                 sell_token,

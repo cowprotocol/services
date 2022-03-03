@@ -32,9 +32,9 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
-    pub order_meta_data: OrderMetaData,
+    pub metadata: OrderMetadata,
     #[serde(flatten)]
-    pub order_creation: OrderCreation,
+    pub creation: OrderCreation,
 }
 
 impl Default for Order {
@@ -68,7 +68,7 @@ impl Order {
         owner: H160,
     ) -> Self {
         Self {
-            order_meta_data: OrderMetaData {
+            metadata: OrderMetadata {
                 creation_date: chrono::offset::Utc::now(),
                 owner,
                 uid: order_creation.uid(domain, &owner),
@@ -76,13 +76,13 @@ impl Order {
                 full_fee_amount,
                 ..Default::default()
             },
-            order_creation: *order_creation,
+            creation: *order_creation,
         }
     }
 
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
-        token_list.contains(&self.order_creation.buy_token)
-            || token_list.contains(&self.order_creation.sell_token)
+        token_list.contains(&self.creation.buy_token)
+            || token_list.contains(&self.creation.sell_token)
     }
 }
 
@@ -91,67 +91,67 @@ pub struct OrderBuilder(Order);
 
 impl OrderBuilder {
     pub fn with_sell_token(mut self, sell_token: H160) -> Self {
-        self.0.order_creation.sell_token = sell_token;
+        self.0.creation.sell_token = sell_token;
         self
     }
 
     pub fn with_buy_token(mut self, buy_token: H160) -> Self {
-        self.0.order_creation.buy_token = buy_token;
+        self.0.creation.buy_token = buy_token;
         self
     }
 
     pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
-        self.0.order_creation.sell_amount = sell_amount;
+        self.0.creation.sell_amount = sell_amount;
         self
     }
 
     pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
-        self.0.order_creation.buy_amount = buy_amount;
+        self.0.creation.buy_amount = buy_amount;
         self
     }
 
     pub fn with_valid_to(mut self, valid_to: u32) -> Self {
-        self.0.order_creation.valid_to = valid_to;
+        self.0.creation.valid_to = valid_to;
         self
     }
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
-        self.0.order_creation.app_data = AppId(app_data);
+        self.0.creation.app_data = AppId(app_data);
         self
     }
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
-        self.0.order_creation.fee_amount = fee_amount;
+        self.0.creation.fee_amount = fee_amount;
         self
     }
 
     pub fn with_full_fee_amount(mut self, full_fee_amount: U256) -> Self {
-        self.0.order_meta_data.full_fee_amount = full_fee_amount;
+        self.0.metadata.full_fee_amount = full_fee_amount;
         self
     }
 
     pub fn with_kind(mut self, kind: OrderKind) -> Self {
-        self.0.order_creation.kind = kind;
+        self.0.creation.kind = kind;
         self
     }
 
     pub fn with_partially_fillable(mut self, partially_fillable: bool) -> Self {
-        self.0.order_creation.partially_fillable = partially_fillable;
+        self.0.creation.partially_fillable = partially_fillable;
         self
     }
 
     pub fn with_sell_token_balance(mut self, balance: SellTokenSource) -> Self {
-        self.0.order_creation.sell_token_balance = balance;
+        self.0.creation.sell_token_balance = balance;
         self
     }
 
     pub fn with_buy_token_balance(mut self, balance: BuyTokenDestination) -> Self {
-        self.0.order_creation.buy_token_balance = balance;
+        self.0.creation.buy_token_balance = balance;
         self
     }
 
     pub fn with_creation_date(mut self, creation_date: DateTime<Utc>) -> Self {
-        self.0.order_meta_data.creation_date = creation_date;
+        self.0.metadata.creation_date = creation_date;
         self
     }
 
@@ -162,21 +162,17 @@ impl OrderBuilder {
         domain: &DomainSeparator,
         key: SecretKeyRef,
     ) -> Self {
-        self.0.order_meta_data.owner = key.address();
-        self.0.order_meta_data.uid = self.0.order_creation.uid(domain, &key.address());
-        self.0.order_creation.signature = EcdsaSignature::sign(
-            signing_scheme,
-            domain,
-            &self.0.order_creation.hash_struct(),
-            key,
-        )
-        .to_signature(signing_scheme);
+        self.0.metadata.owner = key.address();
+        self.0.metadata.uid = self.0.creation.uid(domain, &key.address());
+        self.0.creation.signature =
+            EcdsaSignature::sign(signing_scheme, domain, &self.0.creation.hash_struct(), key)
+                .to_signature(signing_scheme);
         self
     }
 
     pub fn with_presign(mut self, owner: H160) -> Self {
-        self.0.order_meta_data.owner = owner;
-        self.0.order_creation.signature = Signature::PreSign(owner);
+        self.0.metadata.owner = owner;
+        self.0.creation.signature = Signature::PreSign(owner);
         self
     }
 
@@ -370,7 +366,7 @@ impl OrderCancellation {
 #[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize, Hash)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderMetaData {
+pub struct OrderMetadata {
     pub creation_date: DateTime<Utc>,
     pub owner: H160,
     pub uid: OrderUid,
@@ -395,7 +391,7 @@ pub struct OrderMetaData {
     pub full_fee_amount: U256,
 }
 
-impl Default for OrderMetaData {
+impl Default for OrderMetadata {
     fn default() -> Self {
         Self {
             creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
@@ -624,7 +620,7 @@ mod tests {
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
-            order_meta_data: OrderMetaData {
+            metadata: OrderMetadata {
                 creation_date: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(3, 0), Utc),
                 owner: H160::from_low_u64_be(1),
                 uid: OrderUid([17u8; 56]),
@@ -638,7 +634,7 @@ mod tests {
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
             },
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),
                 buy_token: H160::from_low_u64_be(9),
                 receiver: Some(H160::from_low_u64_be(11)),
@@ -806,12 +802,12 @@ mod tests {
     #[test]
     fn order_contains_token_from() {
         let order = Order::default();
-        assert!(order.contains_token_from(&hashset!(order.order_creation.sell_token)),);
-        assert!(order.contains_token_from(&hashset!(order.order_creation.buy_token)),);
+        assert!(order.contains_token_from(&hashset!(order.creation.sell_token)),);
+        assert!(order.contains_token_from(&hashset!(order.creation.buy_token)),);
         assert!(!order.contains_token_from(&HashSet::new()));
         let other_token = H160::from_low_u64_be(1);
-        assert_ne!(other_token, order.order_creation.sell_token);
-        assert_ne!(other_token, order.order_creation.buy_token);
+        assert_ne!(other_token, order.creation.sell_token);
+        assert_ne!(other_token, order.creation.buy_token);
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
@@ -851,12 +847,9 @@ mod tests {
             .build();
 
         let owner = order
-            .order_creation
+            .creation
             .signature
-            .validate(
-                &DomainSeparator::default(),
-                &order.order_creation.hash_struct(),
-            )
+            .validate(&DomainSeparator::default(), &order.creation.hash_struct())
             .unwrap();
 
         assert_eq!(owner, h160_from_public_key(public_key));

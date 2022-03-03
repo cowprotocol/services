@@ -18,9 +18,9 @@ pub struct Query {
 impl Query {
     pub fn from_order(o: &Order) -> Self {
         Self {
-            owner: o.order_meta_data.owner,
-            token: o.order_creation.sell_token,
-            source: o.order_creation.sell_token_balance,
+            owner: o.metadata.owner,
+            token: o.creation.sell_token,
+            source: o.creation.sell_token_balance,
         }
     }
 }

@@ -118,7 +118,7 @@ async fn vault_balances(web3: Web3) {
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
         )
         .build()
-        .order_creation;
+        .creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .body(json!(order).to_string())

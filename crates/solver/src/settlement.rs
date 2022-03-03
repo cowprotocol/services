@@ -51,19 +51,19 @@ impl Trade {
         sell_token_price: &BigRational,
         buy_token_price: &BigRational,
     ) -> Option<BigRational> {
-        match self.order.order_creation.kind {
+        match self.order.creation.kind {
             model::order::OrderKind::Buy => buy_order_surplus(
                 sell_token_price,
                 buy_token_price,
-                &self.order.order_creation.sell_amount.to_big_rational(),
-                &self.order.order_creation.buy_amount.to_big_rational(),
+                &self.order.creation.sell_amount.to_big_rational(),
+                &self.order.creation.buy_amount.to_big_rational(),
                 &self.executed_amount.to_big_rational(),
             ),
             model::order::OrderKind::Sell => sell_order_surplus(
                 sell_token_price,
                 buy_token_price,
-                &self.order.order_creation.sell_amount.to_big_rational(),
-                &self.order.order_creation.buy_amount.to_big_rational(),
+                &self.order.creation.sell_amount.to_big_rational(),
+                &self.order.creation.buy_amount.to_big_rational(),
                 &self.executed_amount.to_big_rational(),
             ),
         }
@@ -77,15 +77,15 @@ impl Trade {
         surplus_ratio(
             sell_token_price,
             buy_token_price,
-            &self.order.order_creation.sell_amount.to_big_rational(),
-            &self.order.order_creation.buy_amount.to_big_rational(),
+            &self.order.creation.sell_amount.to_big_rational(),
+            &self.order.creation.buy_amount.to_big_rational(),
         )
     }
 
     // Returns the executed fee amount (prorated of executed amount)
     // cf. https://github.com/gnosis/gp-v2-contracts/blob/964f1eb76f366f652db7f4c2cb5ff9bfa26eb2cd/src/contracts/GPv2Settlement.sol#L370-L371
     pub fn executed_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.order.order_creation.fee_amount)
+        self.compute_fee_execution(self.order.creation.fee_amount)
     }
 
     /// Returns the scaled unsubsidized fee amount that should be used for
@@ -95,23 +95,23 @@ impl Trade {
     }
 
     pub fn executed_unscaled_subsidized_fee(&self) -> Option<U256> {
-        self.compute_fee_execution(self.order.order_creation.fee_amount)
+        self.compute_fee_execution(self.order.creation.fee_amount)
     }
 
     fn compute_fee_execution(&self, fee_amount: U256) -> Option<U256> {
-        match self.order.order_creation.kind {
+        match self.order.creation.kind {
             model::order::OrderKind::Buy => fee_amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.order_creation.buy_amount),
+                .checked_div(self.order.creation.buy_amount),
             model::order::OrderKind::Sell => fee_amount
                 .checked_mul(self.executed_amount)?
-                .checked_div(self.order.order_creation.sell_amount),
+                .checked_div(self.order.creation.sell_amount),
         }
     }
 
     /// Computes and returns the executed trade amounts given sell and buy prices.
     pub fn executed_amounts(&self, sell_price: U256, buy_price: U256) -> Option<TradeExecution> {
-        let order = &self.order.order_creation;
+        let order = &self.order.creation;
         let (sell_amount, buy_amount) = match order.kind {
             OrderKind::Sell => {
                 let sell_amount = self.executed_amount;
@@ -143,7 +143,7 @@ impl OrderTrade {
     /// contract.
     pub fn encode(&self) -> EncodedTrade {
         encoding::encode_trade(
-            &self.trade.order.order_creation,
+            &self.trade.order.creation,
             self.trade.sell_token_index,
             self.buy_token_index,
             &self.trade.executed_amount,
@@ -157,7 +157,7 @@ impl LiquidityOrderTrade {
     pub fn encode(&self, clearing_price_vec_length: usize) -> EncodedTrade {
         let buy_token_index = clearing_price_vec_length + self.buy_token_offset_index;
         encoding::encode_trade(
-            &self.trade.order.order_creation,
+            &self.trade.order.creation,
             self.trade.sell_token_index,
             buy_token_index,
             &self.trade.executed_amount,
@@ -257,7 +257,7 @@ impl Settlement {
         self.trades()
             .iter()
             .map(move |order_trade| {
-                let order = &order_trade.trade.order.order_creation;
+                let order = &order_trade.trade.order.creation;
                 order_trade.trade.executed_amounts(
                     self.clearing_price(order.sell_token)?,
                     self.clearing_price(order.buy_token)?,
@@ -284,7 +284,7 @@ impl Settlement {
             .iter()
             .filter_map(|order_trade| {
                 external_prices.try_get_native_amount(
-                    order_trade.trade.order.order_creation.sell_token,
+                    order_trade.trade.order.creation.sell_token,
                     order_trade
                         .trade
                         .executed_scaled_unsubsidized_fee()?
@@ -301,7 +301,7 @@ impl Settlement {
             .iter()
             .filter_map(|order_trade| {
                 external_prices.try_get_native_amount(
-                    order_trade.trade.order.order_creation.sell_token,
+                    order_trade.trade.order.creation.sell_token,
                     order_trade
                         .trade
                         .executed_unscaled_subsidized_fee()?
@@ -451,7 +451,7 @@ pub mod tests {
     fn sell_order_executed_amounts() {
         let trade = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     kind: OrderKind::Sell,
                     sell_amount: 10.into(),
                     buy_amount: 6.into(),
@@ -474,7 +474,7 @@ pub mod tests {
     fn buy_order_executed_amounts() {
         let trade = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     kind: OrderKind::Buy,
                     sell_amount: 10.into(),
                     buy_amount: 6.into(),
@@ -497,7 +497,7 @@ pub mod tests {
     fn trade_order_executed_amounts_overflow() {
         for kind in [OrderKind::Sell, OrderKind::Buy] {
             let order = Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     kind,
                     ..Default::default()
                 },
@@ -532,7 +532,7 @@ pub mod tests {
         let token1 = H160::from_low_u64_be(1);
 
         let order0 = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: token0,
                 buy_token: token1,
                 sell_amount: 10.into(),
@@ -543,7 +543,7 @@ pub mod tests {
             ..Default::default()
         };
         let order1 = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: token1,
                 buy_token: token0,
                 sell_amount: 10.into(),
@@ -687,7 +687,7 @@ pub mod tests {
         let token1 = H160::from_low_u64_be(1);
 
         let order = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: token0,
                 buy_token: token1,
                 sell_amount: 10.into(),
@@ -856,7 +856,7 @@ pub mod tests {
     fn test_trade_fee() {
         let fully_filled_sell = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: 100.into(),
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
@@ -871,7 +871,7 @@ pub mod tests {
 
         let partially_filled_sell = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: 100.into(),
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
@@ -886,7 +886,7 @@ pub mod tests {
 
         let fully_filled_buy = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     buy_amount: 100.into(),
                     fee_amount: 5.into(),
                     kind: OrderKind::Buy,
@@ -901,7 +901,7 @@ pub mod tests {
 
         let partially_filled_buy = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     buy_amount: 100.into(),
                     fee_amount: 5.into(),
                     kind: OrderKind::Buy,
@@ -919,7 +919,7 @@ pub mod tests {
     fn test_trade_fee_overflow() {
         let large_amounts = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: U256::max_value(),
                     fee_amount: U256::max_value(),
                     kind: OrderKind::Sell,
@@ -934,7 +934,7 @@ pub mod tests {
 
         let zero_amounts = Trade {
             order: Order {
-                order_creation: OrderCreation {
+                creation: OrderCreation {
                     sell_amount: U256::zero(),
                     fee_amount: U256::zero(),
                     kind: OrderKind::Sell,
@@ -956,7 +956,7 @@ pub mod tests {
         let trade0 = OrderTrade {
             trade: Trade {
                 order: Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: token0,
                         sell_amount: 10.into(),
                         fee_amount: 1.into(),
@@ -977,7 +977,7 @@ pub mod tests {
         let trade1 = OrderTrade {
             trade: Trade {
                 order: Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: token1,
                         sell_amount: 10.into(),
                         fee_amount: 2.into(),
@@ -1029,7 +1029,7 @@ pub mod tests {
             vec![OrderTrade {
                 trade: Trade {
                     order: Order {
-                        order_creation: OrderCreation {
+                        creation: OrderCreation {
                             sell_token: token0,
                             buy_token: token1,
                             sell_amount: 1.into(),
@@ -1050,7 +1050,7 @@ pub mod tests {
             vec![LiquidityOrderTrade {
                 trade: Trade {
                     order: Order {
-                        order_creation: OrderCreation {
+                        creation: OrderCreation {
                             sell_token: token1,
                             buy_token: token0,
                             buy_amount: 1.into(),
@@ -1085,7 +1085,7 @@ pub mod tests {
             vec![OrderTrade {
                 trade: Trade {
                     order: Order {
-                        order_creation: OrderCreation {
+                        creation: OrderCreation {
                             sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                             buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
                             sell_amount: 99760667014_u128.into(),
@@ -1114,7 +1114,7 @@ pub mod tests {
             vec![OrderTrade {
                 trade: Trade {
                     order: Order {
-                        order_creation: OrderCreation {
+                        creation: OrderCreation {
                             sell_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                             buy_token: addr!("4e3fbd56cd56c3e72c1403e103b45db9da5b9d2b"),
                             sell_amount: 99760667014_u128.into(),
@@ -1134,7 +1134,7 @@ pub mod tests {
             vec![LiquidityOrderTrade {
                 trade: Trade {
                     order: Order {
-                        order_creation: OrderCreation {
+                        creation: OrderCreation {
                             sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                             buy_token: addr!("dac17f958d2ee523a2206206994597c13d831ec7"),
                             sell_amount: 99730064753_u128.into(),

@@ -131,7 +131,7 @@ impl Orderbook {
         self.database.insert_order(&order, fee).await?;
         self.solvable_orders.request_update();
 
-        Ok(order.order_meta_data.uid)
+        Ok(order.metadata.uid)
     }
 
     pub async fn cancel_order(
@@ -150,9 +150,9 @@ impl Orderbook {
             .first()
             .ok_or(OrderCancellationError::OrderNotFound)?;
 
-        match order.order_meta_data.status {
+        match order.metadata.status {
             OrderStatus::PresignaturePending => return Err(OrderCancellationError::OnChainOrder),
-            OrderStatus::Open if !order.order_creation.signature.scheme().is_ecdsa_scheme() => {
+            OrderStatus::Open if !order.creation.signature.scheme().is_ecdsa_scheme() => {
                 return Err(OrderCancellationError::OnChainOrder);
             }
             OrderStatus::Fulfilled => return Err(OrderCancellationError::OrderFullyExecuted),
@@ -164,14 +164,14 @@ impl Orderbook {
         let signer = cancellation
             .validate(&self.domain_separator)
             .ok_or(OrderCancellationError::InvalidSignature)?;
-        if signer != order.order_meta_data.owner {
+        if signer != order.metadata.owner {
             return Err(OrderCancellationError::WrongOwner);
         };
 
         // order is already known to exist in DB at this point, and signer is
         // known to be correct!
         self.database
-            .cancel_order(&order.order_meta_data.uid, Utc::now())
+            .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
         Ok(())
     }
@@ -262,7 +262,7 @@ pub async fn filter_unsupported_tokens(
     // this manual iteration or conversion to stream.
     let mut index = 0;
     'outer: while index < orders.len() {
-        for token in orders[index].order_creation.token_pair().unwrap() {
+        for token in orders[index].creation.token_pair().unwrap() {
             if !bad_token.detect(token).await?.is_good() {
                 orders.swap_remove(index);
                 continue 'outer;
@@ -275,7 +275,7 @@ pub async fn filter_unsupported_tokens(
 
 fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     for order in orders.iter_mut() {
-        order.order_meta_data.available_balance =
+        order.metadata.available_balance =
             cache.cached_balance(&crate::account_balances::Query::from_order(order));
     }
 }

@@ -316,7 +316,7 @@ mod tests {
         let result = solver
             .try_settle_order(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token,
                         buy_token,
                         sell_amount,
@@ -438,7 +438,7 @@ mod tests {
         let result = solver
             .try_settle_order(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token,
                         buy_token,
                         sell_amount,
@@ -543,7 +543,7 @@ mod tests {
         let sell_settlement = solver
             .try_settle_order(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                         buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                         sell_amount: 1_000_000_000_000_000_000_u128.into(),
@@ -567,7 +567,7 @@ mod tests {
         let buy_settlement = solver
             .try_settle_order(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: addr!("ba100000625a3754423978a60c9317c58a424e3d"),
                         buy_token: addr!("6b175474e89094c44da98b954eedeac495271d0f"),
                         sell_amount: u128::MAX.into(),

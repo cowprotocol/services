@@ -123,18 +123,18 @@ impl SettlementEncoder {
     ) -> Result<TradeExecution> {
         let sell_price = self
             .clearing_prices
-            .get(&order.order_creation.sell_token)
+            .get(&order.creation.sell_token)
             .context("settlement missing sell token")?;
         let sell_token_index = self
-            .token_index(order.order_creation.sell_token)
+            .token_index(order.creation.sell_token)
             .expect("missing sell token with price");
 
         let buy_price = self
             .clearing_prices
-            .get(&order.order_creation.buy_token)
+            .get(&order.creation.buy_token)
             .context("settlement missing buy token")?;
         let buy_token_index = self
-            .token_index(order.order_creation.buy_token)
+            .token_index(order.creation.buy_token)
             .expect("missing buy token with price");
 
         let order_trade = OrderTrade {
@@ -166,19 +166,19 @@ impl SettlementEncoder {
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
         // if the sell token price is not yet available
-        if self.token_index(order.order_creation.sell_token) == None {
-            let sell_token = order.order_creation.sell_token;
-            let sell_price = order.order_creation.buy_amount;
+        if self.token_index(order.creation.sell_token) == None {
+            let sell_token = order.creation.sell_token;
+            let sell_price = order.creation.buy_amount;
             self.tokens.push(sell_token);
             self.clearing_prices.insert(sell_token, sell_price);
             self.sort_tokens_and_update_indices();
         };
         let sell_price = self
             .clearing_prices
-            .get(&order.order_creation.sell_token)
+            .get(&order.creation.sell_token)
             .context("settlement missing sell token")?;
         let sell_token_index = self
-            .token_index(order.order_creation.sell_token)
+            .token_index(order.creation.sell_token)
             .context("settlement missing sell token")?;
 
         // Liquidity orders are settled at their limit price. We set:
@@ -197,11 +197,11 @@ impl SettlementEncoder {
 
         let buy_price = self
             .clearing_prices
-            .get(&order.order_creation.sell_token)
+            .get(&order.creation.sell_token)
             .context("settlement missing sell token")?
-            .checked_mul(order.order_creation.sell_amount)
+            .checked_mul(order.creation.sell_amount)
             .context("buy_price calculation failed")?
-            .checked_div(order.order_creation.buy_amount)
+            .checked_div(order.creation.buy_amount)
             .context("buy_price calculation failed")?;
         let trade = Trade {
             order,
@@ -273,11 +273,11 @@ impl SettlementEncoder {
         self.tokens.sort();
         for i in 0..self.order_trades.len() {
             self.order_trades[i].trade.sell_token_index = self
-                .token_index(self.order_trades[i].trade.order.order_creation.sell_token)
+                .token_index(self.order_trades[i].trade.order.creation.sell_token)
                 .expect("missing sell token for existing trade");
 
             self.order_trades[i].buy_token_index = self
-                .token_index(self.order_trades[i].trade.order.order_creation.buy_token)
+                .token_index(self.order_trades[i].trade.order.creation.buy_token)
                 .expect("missing buy token for existing trade");
         }
         for i in 0..self.liquidity_order_trades.len() {
@@ -286,7 +286,7 @@ impl SettlementEncoder {
                     self.liquidity_order_trades[i]
                         .trade
                         .order
-                        .order_creation
+                        .creation
                         .sell_token,
                 )
                 .expect("missing sell token for existing trade");
@@ -311,16 +311,16 @@ impl SettlementEncoder {
                 let order = order_trade.trade.order.clone();
                 let sell_token_clearing_price = self
                     .clearing_prices
-                    .get(&order.order_creation.sell_token)
+                    .get(&order.creation.sell_token)
                     .expect("Solution with trade but without price for sell token")
                     .to_big_rational();
                 let buy_token_clearing_price = self
                     .clearing_prices
-                    .get(&order.order_creation.buy_token)
+                    .get(&order.creation.buy_token)
                     .expect("Solution with trade but without price for buy token")
                     .to_big_rational();
 
-                if match order.order_creation.kind {
+                if match order.creation.kind {
                     OrderKind::Sell => &buy_token_clearing_price,
                     OrderKind::Buy => &sell_token_clearing_price,
                 }
@@ -332,13 +332,13 @@ impl SettlementEncoder {
                 let surplus = &order_trade
                     .trade
                     .surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
-                let normalized_surplus = match order.order_creation.kind {
+                let normalized_surplus = match order.creation.kind {
                     OrderKind::Sell => external_prices.get_native_amount(
-                        order.order_creation.buy_token,
+                        order.creation.buy_token,
                         surplus / buy_token_clearing_price,
                     ),
                     OrderKind::Buy => external_prices.get_native_amount(
-                        order.order_creation.sell_token,
+                        order.creation.sell_token,
                         surplus / sell_token_clearing_price,
                     ),
                 };
@@ -352,8 +352,8 @@ impl SettlementEncoder {
             .iter()
             .flat_map(|order_trade| {
                 [
-                    order_trade.trade.order.order_creation.buy_token,
-                    order_trade.trade.order.order_creation.sell_token,
+                    order_trade.trade.order.creation.buy_token,
+                    order_trade.trade.order.creation.sell_token,
                 ]
             })
             .collect();
@@ -361,9 +361,7 @@ impl SettlementEncoder {
         let liquidity_traded_sell_tokens: HashSet<_> = self
             .liquidity_order_trades
             .iter()
-            .map(|liquidity_order_trade| {
-                liquidity_order_trade.trade.order.order_creation.sell_token
-            })
+            .map(|liquidity_order_trade| liquidity_order_trade.trade.order.creation.sell_token)
             .collect();
 
         self.tokens.retain(|token| {
@@ -383,7 +381,7 @@ impl SettlementEncoder {
                 .iter()
                 .map(|liquidity_order_trade| {
                     (
-                        liquidity_order_trade.trade.order.order_creation.buy_token,
+                        liquidity_order_trade.trade.order.creation.buy_token,
                         liquidity_order_trade.buy_token_price,
                     )
                 })
@@ -475,10 +473,8 @@ impl SettlementEncoder {
             ensure!(
                 self.order_trades
                     .iter()
-                    .all(
-                        |self_order_trade| self_order_trade.trade.order.order_meta_data.uid
-                            != other_order_trade.trade.order.order_meta_data.uid
-                    ),
+                    .all(|self_order_trade| self_order_trade.trade.order.metadata.uid
+                        != other_order_trade.trade.order.metadata.uid),
                 "duplicate normal trade"
             );
         }
@@ -490,9 +486,9 @@ impl SettlementEncoder {
                     .all(|self_liquidity_order_trade| self_liquidity_order_trade
                         .trade
                         .order
-                        .order_meta_data
+                        .metadata
                         .uid
-                        != other_liquidity_order_trade.trade.order.order_meta_data.uid),
+                        != other_liquidity_order_trade.trade.order.metadata.uid),
                 "duplicate liquidity trade"
             );
         }
@@ -570,7 +566,7 @@ pub mod tests {
         let token0 = H160::from_low_u64_be(0);
         let token1 = H160::from_low_u64_be(1);
         let order0 = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: token0,
                 sell_amount: 1.into(),
                 buy_token: token1,
@@ -580,7 +576,7 @@ pub mod tests {
             ..Default::default()
         };
         let order1 = Order {
-            order_creation: OrderCreation {
+            creation: OrderCreation {
                 sell_token: token1,
                 sell_amount: 1.into(),
                 buy_token: token0,
@@ -695,10 +691,7 @@ pub mod tests {
         assert_eq!(finished_settlement.tokens, vec![token(0), token(1)]);
         assert_eq!(
             finished_settlement.clearing_prices,
-            vec![
-                order01.order_creation.buy_amount,
-                order01.order_creation.sell_amount
-            ]
+            vec![order01.creation.buy_amount, order01.creation.sell_amount]
         );
         assert_eq!(
             finished_settlement.trades[0].0, // <-- is the sell token index of liquidity order
@@ -761,7 +754,7 @@ pub mod tests {
         encoder
             .add_trade(
                 Order {
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: token_a,
                         sell_amount: 6.into(),
                         buy_token: token_b,
@@ -831,8 +824,8 @@ pub mod tests {
             .with_buy_token(token(2))
             .with_buy_amount(11.into())
             .build();
-        order13.order_meta_data.uid.0[0] = 0;
-        order12.order_meta_data.uid.0[0] = 2;
+        order13.metadata.uid.0[0] = 0;
+        order12.metadata.uid.0[0] = 2;
         encoder0.add_trade(order13, 13.into(), 0.into()).unwrap();
         encoder0
             .add_liquidity_order_trade(order12.clone(), 13.into(), 0.into())
@@ -857,8 +850,8 @@ pub mod tests {
             .with_buy_token(token(3))
             .with_buy_amount(11.into())
             .build();
-        order24.order_meta_data.uid.0[0] = 1;
-        order23.order_meta_data.uid.0[0] = 4;
+        order24.metadata.uid.0[0] = 1;
+        order23.metadata.uid.0[0] = 4;
         encoder1.add_trade(order24, 24.into(), 0.into()).unwrap();
         encoder1
             .add_liquidity_order_trade(order23.clone(), 19.into(), 0.into())
@@ -924,8 +917,8 @@ pub mod tests {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder1 = SettlementEncoder::new(prices);
         let mut order = Order::default();
-        order.order_creation.buy_token = token(1);
-        order.order_creation.sell_token = token(3);
+        order.creation.buy_token = token(1);
+        order.creation.sell_token = token(3);
 
         encoder1.liquidity_order_trades = vec![LiquidityOrderTrade {
             trade: Trade {

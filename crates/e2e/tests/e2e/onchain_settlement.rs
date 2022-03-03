@@ -158,7 +158,7 @@ async fn onchain_settlement(web3: Web3) {
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_A_PK).unwrap()),
         )
         .build()
-        .order_creation;
+        .creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .body(json!(order_a).to_string())
@@ -180,7 +180,7 @@ async fn onchain_settlement(web3: Web3) {
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER_B_PK).unwrap()),
         )
         .build()
-        .order_creation;
+        .creation;
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .body(json!(order_b).to_string())

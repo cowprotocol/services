@@ -120,16 +120,16 @@ pub fn retain_mature_settlements(
 
                 let contains_valid_trade = settlement.trades().iter().any(|order_trade| {
                     // mature by age
-                    order_trade.trade.order.order_meta_data.creation_date <= settle_orders_older_than
+                    order_trade.trade.order.metadata.creation_date <= settle_orders_older_than
                     // mature by association
-                    || valid_trades.contains(&order_trade.trade.order.order_meta_data.uid)
+                    || valid_trades.contains(&order_trade.trade.order.metadata.uid)
                 });
 
                 if contains_valid_trade {
                     for order_trade in settlement.trades() {
                         // make all orders within this settlement mature by association
                         new_order_added |=
-                            valid_trades.insert(&order_trade.trade.order.order_meta_data.uid);
+                            valid_trades.insert(&order_trade.trade.order.metadata.uid);
                     }
                     valid_settlement_indices.insert(index);
                 }
@@ -157,7 +157,7 @@ mod tests {
     use crate::settlement::{LiquidityOrderTrade, OrderTrade, Trade};
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation, OrderKind, OrderMetaData, OrderUid};
+    use model::order::{Order, OrderCreation, OrderKind, OrderMetadata, OrderUid};
     use num::{BigRational, One as _};
     use primitive_types::{H160, U256};
     use std::collections::HashSet;
@@ -167,7 +167,7 @@ mod tests {
         OrderTrade {
             trade: Trade {
                 order: Order {
-                    order_meta_data: OrderMetaData {
+                    metadata: OrderMetadata {
                         creation_date: created_at,
                         uid: OrderUid([uid; 56]),
                         ..Default::default()
@@ -254,11 +254,11 @@ mod tests {
                 sell_token_index: 0,
                 executed_amount,
                 order: Order {
-                    order_meta_data: OrderMetaData {
+                    metadata: OrderMetadata {
                         uid: uid(uid_),
                         ..Default::default()
                     },
-                    order_creation: OrderCreation {
+                    creation: OrderCreation {
                         sell_token: token0,
                         buy_token: token1,
                         sell_amount: executed_amount,
@@ -291,7 +291,7 @@ mod tests {
             let trades = settlement.trades();
             let uids: HashSet<OrderUid> = trades
                 .iter()
-                .map(|order_trade| order_trade.trade.order.order_meta_data.uid)
+                .map(|order_trade| order_trade.trade.order.metadata.uid)
                 .collect();
             uids.len() == 2 && uids.contains(&uid(2)) && uids.contains(&uid(3))
         }));
