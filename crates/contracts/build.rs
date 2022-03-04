@@ -245,10 +245,7 @@ fn main() {
                 "multicall(bytes32,bytes[])",
                 "multicall_with_previous_blockhash",
             )
-            .add_method_alias(
-                "multicall(uint256,bytes[])",
-                "multicall_with_deadline",
-            )
+            .add_method_alias("multicall(uint256,bytes[])", "multicall_with_deadline")
             .add_method_alias(
                 "sweepToken(address,uint256,address)",
                 "sweep_token_with_recipient",
