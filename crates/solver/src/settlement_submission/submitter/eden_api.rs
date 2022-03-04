@@ -10,14 +10,14 @@ use super::{
 use anyhow::{Context, Result};
 use ethcontract::{
     transaction::{Transaction, TransactionBuilder},
-    Bytes, H160, H256, U256,
+    H160, H256, U256,
 };
 use futures::{FutureExt, TryFutureExt};
 use gas_estimation::EstimatedGasPrice;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
-use web3::helpers;
+use web3::{helpers, types::Bytes};
 
 #[derive(Clone)]
 pub struct EdenApi {
@@ -70,7 +70,8 @@ impl EdenApi {
             .await
             .context("failed converting to text")?;
         tracing::debug!(%response, "response from eden");
-        let response = serde_json::from_str::<EdenSuccess>(&response).unwrap();
+        let response =
+            serde_json::from_str::<EdenSuccess>(&response).context("failed to deserialize")?;
 
         Ok(TransactionHandle {
             tx_hash,
