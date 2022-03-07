@@ -33,6 +33,7 @@ model = { path = "../model" }
 num = "0.4"
 num-bigint = "0.3"
 once_cell = "1.9.0"
+pin-project = "1.0"
 primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = "0.4"
