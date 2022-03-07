@@ -1,7 +1,10 @@
-use super::gas;
-use crate::oneinch_api::{OneInchClient, ProtocolCache, RestResponse, SellOrderQuoteQuery};
-use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
-use anyhow::Result;
+use crate::{
+    oneinch_api::{OneInchClient, ProtocolCache, RestResponse, SellOrderQuoteQuery},
+    price_estimation::{
+        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+    },
+};
+use futures::StreamExt;
 use model::order::OrderKind;
 use primitive_types::U256;
 use std::sync::Arc;
@@ -13,7 +16,7 @@ pub struct OneInchPriceEstimator {
 }
 
 impl OneInchPriceEstimator {
-    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
+    async fn estimate(&self, query: &Query) -> PriceEstimateResult {
         if query.kind == OrderKind::Buy {
             return Err(PriceEstimationError::UnsupportedOrderType);
         }
@@ -54,12 +57,11 @@ impl OneInchPriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for OneInchPriceEstimator {
-    async fn estimates(
-        &self,
-        queries: &[Query],
-    ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
         debug_assert!(
             queries.iter().all(|query| {
                 query.buy_token != model::order::BUY_ETH_ADDRESS
@@ -71,11 +73,10 @@ impl PriceEstimating for OneInchPriceEstimator {
             a SanitizedPriceEstimator"
         );
 
-        let mut results = Vec::with_capacity(queries.len());
-        for query in queries {
-            results.push(self.estimate(query).await);
-        }
-        results
+        futures::stream::iter(queries)
+            .then(|query| self.estimate(query))
+            .enumerate()
+            .boxed()
     }
 }
 

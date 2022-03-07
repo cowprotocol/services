@@ -3,7 +3,7 @@ use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use serde::{Deserialize, Serialize};
-use shared::price_estimation::{self, PriceEstimating};
+use shared::price_estimation::{self, single_estimate, PriceEstimating};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -78,14 +78,16 @@ pub fn get_amount_estimate(
                 // Sell in WETH/DAI means selling ETH (buying DAI)
                 OrderKind::Sell => (market.quote_token, market.base_token),
             };
-            let result = price_estimator
-                .estimate(&price_estimation::Query {
+            let result = single_estimate(
+                price_estimator.as_ref(),
+                &price_estimation::Query {
                     sell_token,
                     buy_token,
                     in_amount: query.amount,
                     kind: query.kind,
-                })
-                .await;
+                },
+            )
+            .await;
             Result::<_, Infallible>::Ok(convert_json_response(result.map(|estimate| {
                 AmountEstimateResult {
                     amount: estimate.out_amount,

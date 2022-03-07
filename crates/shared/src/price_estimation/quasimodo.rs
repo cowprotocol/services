@@ -11,7 +11,7 @@ use crate::{
     },
     price_estimation::{
         gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
-        Estimate, PriceEstimating, PriceEstimationError, Query,
+        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     recent_block_cache::Block,
     sources::{
@@ -24,6 +24,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use ethcontract::{H160, U256};
+use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
 use num::{BigInt, BigRational};
@@ -269,25 +270,21 @@ impl QuasimodoPriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for QuasimodoPriceEstimator {
-    async fn estimates(
-        &self,
-        queries: &[Query],
-    ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
         debug_assert!(queries.iter().all(|query| {
             query.buy_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != query.buy_token
         }));
 
-        let mut results = Vec::with_capacity(queries.len());
-
-        for query in queries {
-            results.push(self.estimate(query).await);
-        }
-
-        results
+        futures::stream::iter(queries)
+            .then(|query| self.estimate(query))
+            .enumerate()
+            .boxed()
     }
 }
 

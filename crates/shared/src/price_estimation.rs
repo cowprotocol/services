@@ -15,10 +15,12 @@ pub mod zeroex;
 use crate::{bad_token::BadTokenDetecting, conversions::U256Ext};
 use anyhow::Result;
 use ethcontract::{H160, U256};
+use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
 use num::BigRational;
 use std::{
     cmp::{Eq, PartialEq},
+    future::Future,
     hash::Hash,
 };
 use thiserror::Error;
@@ -121,19 +123,58 @@ impl Estimate {
     }
 }
 
-#[async_trait::async_trait]
-#[mockall::automock]
-pub trait PriceEstimating: Send + Sync {
-    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        self.estimates(std::slice::from_ref(query))
-            .await
-            .into_iter()
-            .next()
-            .unwrap()
-    }
+pub type PriceEstimateResult = Result<Estimate, PriceEstimationError>;
 
-    /// Returns one result for each query.
-    async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>>;
+#[mockall::automock]
+pub trait PriceEstimating: Send + Sync + 'static {
+    // The '_ lifetime in the return value is the same as 'a but we need to write it as underscore
+    // because of a mockall limitation.
+
+    /// Returns one result for each query in arbitrary order. The usize is the index into the queries slice.
+    fn estimates<'a>(&'a self, queries: &'a [Query])
+        -> BoxStream<'_, (usize, PriceEstimateResult)>;
+}
+
+/// Use a PriceEstimating with a single query.
+pub async fn single_estimate(
+    estimator: &dyn PriceEstimating,
+    query: &Query,
+) -> PriceEstimateResult {
+    estimator
+        .estimates(std::slice::from_ref(query))
+        .next()
+        .await
+        .unwrap()
+        .1
+}
+
+/// Use a streaming PriceEstimating with the old Vec based interface.
+pub async fn vec_estimates(
+    estimator: &dyn PriceEstimating,
+    queries: &[Query],
+) -> Vec<PriceEstimateResult> {
+    let mut results = vec![None; queries.len()];
+    let mut stream = estimator.estimates(queries);
+    while let Some((index, result)) = stream.next().await {
+        results[index] = Some(result);
+    }
+    let results = results.into_iter().flatten().collect::<Vec<_>>();
+    // Check that every query has a result.
+    debug_assert_eq!(results.len(), queries.len());
+    results
+}
+
+/// Convert an old Vec based PriceEstimating implementation to a stream.
+pub fn old_estimator_to_stream<'a, IntoIter>(
+    estimator: impl Future<Output = IntoIter> + Send + 'a,
+) -> BoxStream<'a, (usize, PriceEstimateResult)>
+where
+    IntoIter: IntoIterator<Item = PriceEstimateResult> + Send + 'a,
+    IntoIter::IntoIter: Send + 'a,
+{
+    futures::stream::once(estimator)
+        .flat_map(|iter| futures::stream::iter(iter.into_iter().enumerate()))
+        .boxed()
 }
 
 pub async fn ensure_token_supported(
@@ -167,24 +208,22 @@ pub mod mocks {
     use anyhow::anyhow;
 
     pub struct FakePriceEstimator(pub Estimate);
-    #[async_trait::async_trait]
     impl PriceEstimating for FakePriceEstimator {
-        async fn estimates(
-            &self,
-            queries: &[Query],
-        ) -> Vec<Result<Estimate, PriceEstimationError>> {
-            queries.iter().map(|_| Ok(self.0)).collect()
+        fn estimates<'a>(
+            &'a self,
+            queries: &'a [Query],
+        ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
+            futures::stream::iter((0..queries.len()).map(|i| (i, Ok(self.0)))).boxed()
         }
     }
 
-    pub struct FailingPriceEstimator();
-    #[async_trait::async_trait]
+    pub struct FailingPriceEstimator;
     impl PriceEstimating for FailingPriceEstimator {
-        async fn estimates(
-            &self,
-            queries: &[Query],
-        ) -> Vec<Result<Estimate, PriceEstimationError>> {
-            queries.iter().map(|_| Err(anyhow!("").into())).collect()
+        fn estimates<'a>(
+            &'a self,
+            queries: &'a [Query],
+        ) -> BoxStream<'_, (usize, PriceEstimateResult)> {
+            futures::stream::iter((0..queries.len()).map(|i| (i, Err(anyhow!("").into())))).boxed()
         }
     }
 }

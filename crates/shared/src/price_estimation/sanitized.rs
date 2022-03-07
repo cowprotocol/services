@@ -1,11 +1,17 @@
-use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
-use crate::bad_token::{BadTokenDetecting, TokenQuality};
-use crate::price_estimation::gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP};
-use anyhow::Result;
+use crate::{
+    bad_token::{BadTokenDetecting, TokenQuality},
+    price_estimation::{
+        gas::{GAS_PER_WETH_UNWRAP, GAS_PER_WETH_WRAP},
+        old_estimator_to_stream, vec_estimates, Estimate, PriceEstimateResult, PriceEstimating,
+        PriceEstimationError, Query,
+    },
+};
 use model::order::BUY_ETH_ADDRESS;
 use primitive_types::H160;
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 /// Verifies that buy and sell tokens are supported and handles
 /// ETH as buy token appropriately.
@@ -15,10 +21,8 @@ pub struct SanitizedPriceEstimator {
     native_token: H160,
 }
 
-type EstimationResult = Result<Estimate, PriceEstimationError>;
-
 enum EstimationProgress<'a> {
-    TrivialSolution(EstimationResult),
+    TrivialSolution(PriceEstimateResult),
     AwaitingEthEstimation(&'a Query, u64),
     AwaitingErc20Estimation,
 }
@@ -67,10 +71,7 @@ impl SanitizedPriceEstimator {
         }
         token_quality_errors
     }
-}
 
-#[async_trait::async_trait]
-impl PriceEstimating for SanitizedPriceEstimator {
     // This function will estimate easy queries on its own and forward "difficult" queries to the
     // inner estimator. When the inner estimator did its job, solutions get merged back together
     // while preserving the correct order.
@@ -89,7 +90,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
     // 3) Fill placeholders by merging difficult estimations back into all estimates.
     // [TE0, P,   P,   TE3, P  ] + [DE1, DE2, DE4] =>
     // [TE0, DE1, DE2, TE3, DE4]
-    async fn estimates(&self, queries: &[Query]) -> Vec<EstimationResult> {
+    async fn estimates_(&self, queries: &[Query]) -> Vec<PriceEstimateResult> {
         use EstimationProgress::*;
 
         let token_quality_errors = self.get_token_quality_errors(queries).await;
@@ -175,9 +176,7 @@ impl PriceEstimating for SanitizedPriceEstimator {
             .collect::<Vec<_>>();
 
         // 2) Let inner estimator estimate difficult queries.
-        let mut difficult_estimates = self
-            .inner
-            .estimates(&difficult_queries[..])
+        let mut difficult_estimates = vec_estimates(self.inner.as_ref(), &difficult_queries[..])
             .await
             .into_iter();
 
@@ -216,11 +215,21 @@ impl PriceEstimating for SanitizedPriceEstimator {
     }
 }
 
+impl PriceEstimating for SanitizedPriceEstimator {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
+        old_estimator_to_stream(self.estimates_(queries))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::bad_token::{MockBadTokenDetecting, TokenQuality};
-    use crate::price_estimation::MockPriceEstimating;
+    use crate::price_estimation::{vec_estimates, MockPriceEstimating};
+    use futures::StreamExt;
     use model::order::OrderKind;
     use primitive_types::{H160, U256};
 
@@ -345,7 +354,7 @@ mod tests {
             .times(1)
             .withf(move |arg: &[Query]| arg.iter().eq(expected_forwarded_queries.iter()))
             .returning(|_| {
-                Box::pin(futures::future::ready(vec![
+                futures::stream::iter([
                     Ok(Estimate {
                         out_amount: 1.into(),
                         gas: 100.into(),
@@ -362,7 +371,9 @@ mod tests {
                         out_amount: 1.into(),
                         gas: 100.into(),
                     }),
-                ]))
+                ])
+                .enumerate()
+                .boxed()
             });
 
         let sanitized_estimator = SanitizedPriceEstimator {
@@ -371,7 +382,7 @@ mod tests {
             native_token,
         };
 
-        let result = sanitized_estimator.estimates(&queries).await;
+        let result = vec_estimates(&sanitized_estimator, &queries).await;
         assert_eq!(result.len(), 10);
         assert_eq!(
             result[0].as_ref().unwrap(),

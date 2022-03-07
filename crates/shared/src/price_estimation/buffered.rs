@@ -1,5 +1,6 @@
-use crate::price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query};
-use anyhow::Result;
+use crate::price_estimation::{
+    old_estimator_to_stream, vec_estimates, PriceEstimateResult, PriceEstimating, Query,
+};
 use futures::future::WeakShared;
 use futures::FutureExt;
 use std::collections::HashMap;
@@ -7,8 +8,8 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-type EstimationResult = Result<Estimate, PriceEstimationError>;
-type SharedEstimationRequest = WeakShared<Pin<Box<dyn Future<Output = EstimationResult> + Send>>>;
+type SharedEstimationRequest =
+    WeakShared<Pin<Box<dyn Future<Output = PriceEstimateResult> + Send>>>;
 
 struct Inner {
     estimator: Box<dyn PriceEstimating>,
@@ -59,11 +60,8 @@ impl BufferingPriceEstimator {
             }),
         }
     }
-}
 
-#[async_trait::async_trait]
-impl PriceEstimating for BufferingPriceEstimator {
-    async fn estimates(&self, queries: &[Query]) -> Vec<EstimationResult> {
+    async fn estimates_(&self, queries: &[Query]) -> impl Iterator<Item = PriceEstimateResult> {
         let (active_requests, new_requests) = {
             let mut in_flight_requests = self.inner.in_flight_requests.lock().unwrap();
 
@@ -92,7 +90,7 @@ impl PriceEstimating for BufferingPriceEstimator {
                 let remaining_queries: Vec<_> =
                     remaining_queries.iter().flatten().cloned().collect();
                 let inner = self.inner.clone();
-                async move { inner.estimator.estimates(&remaining_queries).await }
+                async move { vec_estimates(inner.estimator.as_ref(), &remaining_queries).await }
                     .boxed()
                     .shared()
             };
@@ -135,19 +133,27 @@ impl PriceEstimating for BufferingPriceEstimator {
 
         // Return the results of new and in-flight requests merged into one.
         active_requests
-            .iter()
-            .map(|request| match request {
+            .into_iter()
+            .map(move |request| match request {
                 Some(_) => in_flight_results.next().unwrap(),
                 None => new_results.next().unwrap(),
             })
-            .collect()
+    }
+}
+
+impl PriceEstimating for BufferingPriceEstimator {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
+        old_estimator_to_stream(self.estimates_(queries))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::price_estimation::MockPriceEstimating;
+    use crate::price_estimation::{old_estimator_to_stream, Estimate, MockPriceEstimating};
     use futures::poll;
     use maplit::hashset;
     use primitive_types::H160;
@@ -169,10 +175,12 @@ mod tests {
 
     #[tokio::test]
     async fn request_can_be_completed_by_request_depending_on_it() {
-        let estimate = |amount: u64| Estimate {
-            out_amount: amount.into(),
-            ..Default::default()
-        };
+        fn estimate(amount: u64) -> Estimate {
+            Estimate {
+                out_amount: amount.into(),
+                ..Default::default()
+            }
+        }
         let query = |address| Query {
             sell_token: H160::from_low_u64_be(address),
             ..Default::default()
@@ -187,12 +195,10 @@ mod tests {
             .times(1)
             .returning(move |queries| {
                 assert_eq!(queries, first_batch);
-                let result = vec![Ok(estimate(1)), Ok(estimate(2))];
-                async move {
+                old_estimator_to_stream(async {
                     sleep(Duration::from_millis(10)).await;
-                    result
-                }
-                .boxed()
+                    [Ok(estimate(1)), Ok(estimate(2))]
+                })
             });
 
         estimator
@@ -201,17 +207,15 @@ mod tests {
             .returning(move |queries| {
                 // only the missing query actually needs to be estimated
                 assert_eq!(queries, &vec![query(3)]);
-                let result = vec![Ok(estimate(3))];
-                async move {
+                old_estimator_to_stream(async {
                     sleep(Duration::from_millis(10)).await;
-                    result
-                }
-                .boxed()
+                    [Ok(estimate(3))]
+                })
             });
 
         let buffered = BufferingPriceEstimator::new(estimator);
-        let first_batch_request = buffered.estimates(&first_batch).shared();
-        let second_batch_request = buffered.estimates(&second_batch).shared();
+        let first_batch_request = vec_estimates(&buffered, &first_batch).shared();
+        let second_batch_request = vec_estimates(&buffered, &second_batch).shared();
 
         assert!(buffered.inner.in_flight_requests.lock().unwrap().is_empty());
 

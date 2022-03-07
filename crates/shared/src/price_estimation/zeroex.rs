@@ -1,8 +1,10 @@
-use super::gas;
 use crate::{
-    price_estimation::{Estimate, PriceEstimating, PriceEstimationError, Query},
+    price_estimation::{
+        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+    },
     zeroex_api::{SwapQuery, ZeroExApi},
 };
+use futures::StreamExt;
 use model::order::OrderKind;
 use primitive_types::U256;
 use std::sync::Arc;
@@ -40,24 +42,21 @@ impl ZeroExPriceEstimator {
     }
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for ZeroExPriceEstimator {
-    async fn estimates(
-        &self,
-        queries: &[Query],
-    ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
         debug_assert!(queries.iter().all(|query| {
             query.buy_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != query.buy_token
         }));
 
-        let mut results = Vec::with_capacity(queries.len());
-        for query in queries {
-            results.push(self.estimate(query).await);
-        }
-
-        results
+        futures::stream::iter(queries)
+            .then(|query| self.estimate(query))
+            .enumerate()
+            .boxed()
     }
 }
 

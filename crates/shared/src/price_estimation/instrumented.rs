@@ -1,4 +1,7 @@
-use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
+use crate::price_estimation::{
+    old_estimator_to_stream, vec_estimates, PriceEstimateResult, PriceEstimating,
+    PriceEstimationError, Query,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -19,16 +22,10 @@ impl InstrumentedPriceEstimator {
             metrics,
         }
     }
-}
 
-#[async_trait::async_trait]
-impl PriceEstimating for InstrumentedPriceEstimator {
-    async fn estimates(
-        &self,
-        queries: &[Query],
-    ) -> Vec<anyhow::Result<Estimate, PriceEstimationError>> {
+    async fn estimates_(&self, queries: &[Query]) -> Vec<PriceEstimateResult> {
         let start = Instant::now();
-        let results = self.inner.estimates(queries).await;
+        let results = vec_estimates(self.inner.as_ref(), queries).await;
         for result in &results {
             let success = !matches!(result, Err(PriceEstimationError::Other(_)));
             self.metrics.price_estimated(&self.name, success);
@@ -36,6 +33,16 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         self.metrics
             .price_estimation_timed(&self.name, start.elapsed());
         results
+    }
+}
+
+#[async_trait::async_trait]
+impl PriceEstimating for InstrumentedPriceEstimator {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
+        old_estimator_to_stream(self.estimates_(queries))
     }
 }
 
@@ -50,9 +57,10 @@ pub trait Metrics: Send + Sync + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::price_estimation::MockPriceEstimating;
+    use crate::price_estimation::{Estimate, MockPriceEstimating};
     use anyhow::anyhow;
     use ethcontract::H160;
+    use futures::StreamExt;
     use mockall::{predicate::*, Sequence};
     use model::order::OrderKind;
 
@@ -79,10 +87,12 @@ mod tests {
             .times(1)
             .withf(move |q| q == queries)
             .returning(|_| {
-                Box::pin(futures::future::ready(vec![
+                futures::stream::iter([
                     Ok(Estimate::default()),
                     Err(PriceEstimationError::Other(anyhow!(""))),
-                ]))
+                ])
+                .enumerate()
+                .boxed()
             });
 
         let mut metrics = MockMetrics::new();
@@ -116,6 +126,6 @@ mod tests {
             "foo".to_string(),
             Arc::new(metrics),
         );
-        let _ = instrumented.estimates(&queries).await;
+        let _ = vec_estimates(&instrumented, &queries).await;
     }
 }

@@ -16,7 +16,7 @@ use model::{
     u256_decimal,
 };
 use serde::{Deserialize, Serialize};
-use shared::price_estimation::{self, PriceEstimating, PriceEstimationError};
+use shared::price_estimation::{self, single_estimate, PriceEstimating, PriceEstimationError};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection};
 
@@ -281,7 +281,7 @@ impl OrderQuoter {
                         quote_request.app_data,
                         quote_request.from,
                     ),
-                    price_estimator.estimate(&query)
+                    single_estimate(price_estimator.as_ref(), &query)
                 )
                 .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = sell_amount_before_fee
@@ -336,7 +336,7 @@ impl OrderQuoter {
                         quote_request.app_data,
                         quote_request.from,
                     ),
-                    price_estimator.estimate(&price_estimation_query)
+                    single_estimate(price_estimator.as_ref(), &price_estimation_query)
                 )
                 .map_err(FeeError::PriceEstimate)?;
                 FeeParameters {
@@ -373,7 +373,7 @@ impl OrderQuoter {
                         quote_request.app_data,
                         quote_request.from,
                     ),
-                    price_estimator.estimate(&price_estimation_query)
+                    single_estimate(price_estimator.as_ref(), &price_estimation_query)
                 )
                 .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = estimate.out_amount;

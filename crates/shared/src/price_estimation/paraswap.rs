@@ -1,9 +1,12 @@
-use super::{gas, Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, Side},
+    price_estimation::{
+        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+    },
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use anyhow::{anyhow, Context, Result};
+use futures::StreamExt;
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use std::{
@@ -21,13 +24,14 @@ impl ParaswapPriceEstimator {
     async fn estimate_(
         &self,
         query: &Query,
-        token_infos: &HashMap<H160, TokenInfo>,
-    ) -> Result<Estimate, PriceEstimationError> {
+        sell_decimals: u8,
+        buy_decimals: u8,
+    ) -> PriceEstimateResult {
         let price_query = PriceQuery {
             src_token: query.sell_token,
             dest_token: query.buy_token,
-            src_decimals: decimals(&query.sell_token, token_infos)? as usize,
-            dest_decimals: decimals(&query.buy_token, token_infos)? as usize,
+            src_decimals: sell_decimals as usize,
+            dest_decimals: buy_decimals as usize,
             amount: query.in_amount,
             side: match query.kind {
                 OrderKind::Buy => Side::Buy,
@@ -67,9 +71,11 @@ fn decimals(
         .ok_or_else(|| PriceEstimationError::Other(anyhow!("failed to get decimals")))
 }
 
-#[async_trait::async_trait]
 impl PriceEstimating for ParaswapPriceEstimator {
-    async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
         debug_assert!(queries.iter().all(|query| {
             query.buy_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
@@ -82,19 +88,34 @@ impl PriceEstimating for ParaswapPriceEstimator {
             .collect::<HashSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let token_infos = self.token_info.get_token_infos(&tokens).await;
-        let mut results = Vec::with_capacity(queries.len());
-        for query in queries {
-            results.push(self.estimate_(query, &token_infos).await);
-        }
-        results
+        let token_infos = async move { self.token_info.get_token_infos(&tokens).await };
+        futures::stream::once(token_infos)
+            .flat_map(move |token_infos: HashMap<H160, TokenInfo>| {
+                // This looks weird because for lifetime reasons we need to get the decimals here instead of in the
+                // `then` closure below.
+                let queries = queries.iter().map(move |query| {
+                    (
+                        query,
+                        decimals(&query.sell_token, &token_infos),
+                        decimals(&query.buy_token, &token_infos),
+                    )
+                });
+                futures::stream::iter(queries).then(|(query, sell_decimals, buy_decimals)| async {
+                    self.estimate_(query, sell_decimals?, buy_decimals?).await
+                })
+            })
+            .enumerate()
+            .boxed()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{paraswap_api::DefaultParaswapApi, token_info::MockTokenInfoFetching};
+    use crate::{
+        paraswap_api::DefaultParaswapApi, price_estimation::single_estimate,
+        token_info::MockTokenInfoFetching,
+    };
     use reqwest::Client;
 
     #[tokio::test]
@@ -134,7 +155,7 @@ mod tests {
             kind: OrderKind::Sell,
         };
 
-        let result = estimator.estimate(&query).await;
+        let result = single_estimate(&estimator, &query).await;
         dbg!(&result);
         let estimate = result.unwrap();
         println!(

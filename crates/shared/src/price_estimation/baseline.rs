@@ -1,8 +1,10 @@
-use super::{Estimate, PriceEstimating, PriceEstimationError, Query};
 use crate::{
     baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
     conversions::U256Ext,
-    price_estimation::gas,
+    price_estimation::{
+        gas, old_estimator_to_stream, Estimate, PriceEstimateResult, PriceEstimating,
+        PriceEstimationError, Query,
+    },
     recent_block_cache::Block,
     sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
@@ -41,9 +43,17 @@ impl BaselinePriceEstimator {
 
 type Pools = HashMap<TokenPair, Vec<Pool>>;
 
-#[async_trait::async_trait]
 impl PriceEstimating for BaselinePriceEstimator {
-    async fn estimates(&self, queries: &[Query]) -> Vec<Result<Estimate, PriceEstimationError>> {
+    fn estimates<'a>(
+        &'a self,
+        queries: &'a [Query],
+    ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
+        old_estimator_to_stream(self.estimates_(queries))
+    }
+}
+
+impl BaselinePriceEstimator {
+    async fn estimates_(&self, queries: &[Query]) -> Vec<PriceEstimateResult> {
         debug_assert!(queries.iter().all(|query| {
             query.buy_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
@@ -61,7 +71,7 @@ impl PriceEstimating for BaselinePriceEstimator {
             Ok(pools) => pools,
             Err(err) => return repeat_same_error(err),
         };
-        let estimate_single = |query: &Query| -> Result<Estimate, PriceEstimationError> {
+        let estimate_single = |query: &Query| -> PriceEstimateResult {
             let (path, out_amount) = self.estimate_price_helper(query, true, &pools, gas_price)?;
             Ok(Estimate {
                 out_amount,
@@ -70,9 +80,7 @@ impl PriceEstimating for BaselinePriceEstimator {
         };
         queries.iter().map(estimate_single).collect()
     }
-}
 
-impl BaselinePriceEstimator {
     async fn pools_for_queries(&self, queries: &[Query]) -> Result<Pools> {
         let pairs = self.base_tokens.relevant_pairs(
             &mut queries
@@ -304,6 +312,7 @@ mod tests {
     use crate::{
         baseline_solver::BaselineSolvable,
         gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::single_estimate,
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     };
     use gas_estimation::gas_price::EstimatedGasPrice;
@@ -340,15 +349,17 @@ mod tests {
             1.into(),
         );
 
-        assert!(estimator
-            .estimate(&Query {
+        assert!(single_estimate(
+            &estimator,
+            &Query {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 1.into(),
                 kind: OrderKind::Buy
-            })
-            .await
-            .is_err());
+            }
+        )
+        .await
+        .is_err());
     }
 
     #[tokio::test]
@@ -370,15 +381,17 @@ mod tests {
             1.into(),
         );
 
-        assert!(estimator
-            .estimate(&Query {
+        assert!(single_estimate(
+            &estimator,
+            &Query {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 1.into(),
                 kind: OrderKind::Buy
-            })
-            .await
-            .is_err());
+            }
+        )
+        .await
+        .is_err());
     }
 
     #[tokio::test]
@@ -407,24 +420,28 @@ mod tests {
             1.into(),
         );
 
-        assert!(estimator
-            .estimate(&Query {
+        assert!(single_estimate(
+            &estimator,
+            &Query {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 100.into(),
                 kind: OrderKind::Sell
-            })
-            .await
-            .is_ok());
-        assert!(estimator
-            .estimate(&Query {
+            }
+        )
+        .await
+        .is_ok());
+        assert!(single_estimate(
+            &estimator,
+            &Query {
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 100.into(),
                 kind: OrderKind::Buy
-            })
-            .await
-            .is_ok());
+            }
+        )
+        .await
+        .is_ok());
     }
 
     fn pool_price(
@@ -475,7 +492,7 @@ mod tests {
             in_amount: 100.into(),
             kind: OrderKind::Sell,
         };
-        let estimate = estimator.estimate(&query).await.unwrap();
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
         // Pool 0 is more favourable for buying token B.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -488,7 +505,7 @@ mod tests {
             in_amount: 100.into(),
             kind: OrderKind::Sell,
         };
-        let estimate = estimator.estimate(&query).await.unwrap();
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
         // Pool 1 is more favourable for buying token A.
         assert_eq!(
             estimate.price_in_sell_token_rational(&query).unwrap(),
@@ -523,29 +540,33 @@ mod tests {
         );
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
-            let intermediate = estimator
-                .estimate(&Query {
+            let intermediate = single_estimate(
+                &estimator,
+                &Query {
                     sell_token: token_a,
                     buy_token: token_b,
                     in_amount: 1.into(),
                     kind: *kind,
-                })
-                .await
-                .unwrap()
-                .gas
-                .as_u64();
+                },
+            )
+            .await
+            .unwrap()
+            .gas
+            .as_u64();
             assert_eq!(intermediate, estimate_gas(3));
-            let direct = estimator
-                .estimate(&Query {
+            let direct = single_estimate(
+                &estimator,
+                &Query {
                     sell_token: token_b,
                     buy_token: token_a,
                     in_amount: 10.into(),
                     kind: *kind,
-                })
-                .await
-                .unwrap()
-                .gas
-                .as_u64();
+                },
+            )
+            .await
+            .unwrap()
+            .gas
+            .as_u64();
             assert_eq!(direct, estimate_gas(2));
             assert!(direct < intermediate);
         }
@@ -596,16 +617,18 @@ mod tests {
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                estimator
-                    .estimate(&Query {
+                single_estimate(
+                    &estimator,
+                    &Query {
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: 10.into(),
                         kind: *order_kind
-                    })
-                    .await
-                    .unwrap()
-                    .gas,
+                    }
+                )
+                .await
+                .unwrap()
+                .gas,
                 estimate_gas(2).into(),
             );
         }
@@ -619,16 +642,18 @@ mod tests {
         // Lower gas price does make the intermediate hop worth it.
         for order_kind in [OrderKind::Sell, OrderKind::Buy].iter() {
             assert_eq!(
-                estimator
-                    .estimate(&Query {
+                single_estimate(
+                    &estimator,
+                    &Query {
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: 10.into(),
                         kind: *order_kind
-                    })
-                    .await
-                    .unwrap()
-                    .gas,
+                    }
+                )
+                .await
+                .unwrap()
+                .gas,
                 estimate_gas(3).into()
             );
         }

@@ -1,4 +1,4 @@
-use super::{PriceEstimating, PriceEstimationError, Query};
+use crate::price_estimation::{vec_estimates, PriceEstimating, PriceEstimationError, Query};
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use std::sync::Arc;
@@ -66,7 +66,7 @@ impl NativePriceEstimating for NativePriceEstimator {
             })
             .collect();
 
-        let estimates = self.inner.estimates(&native_token_queries).await;
+        let estimates = vec_estimates(self.inner.as_ref(), &native_token_queries).await;
 
         estimates
             .into_iter()
@@ -82,7 +82,7 @@ impl NativePriceEstimating for NativePriceEstimator {
 mod tests {
     use super::*;
     use crate::price_estimation::{Estimate, MockPriceEstimating};
-    use futures::FutureExt;
+    use futures::{FutureExt, StreamExt};
     use primitive_types::H160;
 
     #[test]
@@ -92,10 +92,12 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 3);
-            Box::pin(futures::future::ready(vec![Ok(Estimate {
+            futures::stream::iter([Ok(Estimate {
                 out_amount: 123_456_789_000_000_000u128.into(),
                 gas: 0.into(),
-            })]))
+            })])
+            .enumerate()
+            .boxed()
         });
 
         let native_price_estimator = NativePriceEstimator {
@@ -119,9 +121,9 @@ mod tests {
             assert!(queries.len() == 1);
             assert!(queries[0].buy_token.to_low_u64_be() == 7);
             assert!(queries[0].sell_token.to_low_u64_be() == 2);
-            Box::pin(futures::future::ready(vec![Err(
-                PriceEstimationError::NoLiquidity,
-            )]))
+            futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
+                .enumerate()
+                .boxed()
         });
 
         let native_price_estimator = NativePriceEstimator {
