@@ -247,22 +247,44 @@ impl Settlement {
         self.clearing_prices().get(&token).copied()
     }
 
-    /// Returns the currently encoded trades.
-    pub fn trades(&self) -> &[OrderTrade] {
-        self.encoder.trades()
+    /// Returns all orders included in the settlement.
+    pub fn traded_orders(&self) -> impl Iterator<Item = &Order> + '_ {
+        let user_orders = self
+            .encoder
+            .order_trades()
+            .iter()
+            .map(|trade| &trade.trade.order);
+        let liquidity_orders = self
+            .encoder
+            .liquidity_order_trades()
+            .iter()
+            .map(|trade| &trade.trade.order);
+        user_orders.chain(liquidity_orders)
     }
 
     /// Returns an iterator of all executed trades.
     pub fn executed_trades(&self) -> impl Iterator<Item = TradeExecution> + '_ {
-        self.trades()
-            .iter()
-            .map(move |order_trade| {
-                let order = &order_trade.trade.order.creation;
-                order_trade.trade.executed_amounts(
-                    self.clearing_price(order.sell_token)?,
-                    self.clearing_price(order.buy_token)?,
-                )
-            })
+        let order_trades = self.encoder.order_trades().iter().map(move |order_trade| {
+            let order = &order_trade.trade.order.creation;
+            order_trade.trade.executed_amounts(
+                self.clearing_price(order.sell_token)?,
+                self.clearing_price(order.buy_token)?,
+            )
+        });
+        let liquidity_order_trades =
+            self.encoder
+                .liquidity_order_trades()
+                .iter()
+                .map(move |liquidity_order_trade| {
+                    let order = &liquidity_order_trade.trade.order.creation;
+                    liquidity_order_trade.trade.executed_amounts(
+                        self.clearing_price(order.sell_token)?,
+                        liquidity_order_trade.buy_token_price,
+                    )
+                });
+
+        order_trades
+            .chain(liquidity_order_trades)
             .map(|execution| execution.expect("invalid trade was added to encoder"))
     }
 
@@ -280,7 +302,7 @@ impl Settlement {
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
     pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.encoder
-            .trades()
+            .order_trades()
             .iter()
             .filter_map(|order_trade| {
                 external_prices.try_get_native_amount(
@@ -297,7 +319,7 @@ impl Settlement {
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
     pub fn total_unscaled_subsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
         self.encoder
-            .trades()
+            .order_trades()
             .iter()
             .filter_map(|order_trade| {
                 external_prices.try_get_native_amount(

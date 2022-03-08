@@ -19,13 +19,14 @@ pub fn report_matched_but_not_settled(
 ) {
     let submitted_orders: HashSet<_> = winning_solution
         .settlement
-        .trades()
+        .encoder
+        .order_trades()
         .iter()
         .map(|order_trade| order_trade.trade.order.metadata.uid)
         .collect();
     let other_matched_orders: HashSet<_> = alternative_settlements
         .iter()
-        .flat_map(|(_, solution)| solution.settlement.trades().to_vec())
+        .flat_map(|(_, solution)| solution.settlement.encoder.order_trades().to_vec())
         .map(|order_trade| order_trade.trade.order.metadata.uid)
         .collect();
     let matched_but_not_settled: HashSet<_> = other_matched_orders
@@ -85,7 +86,8 @@ pub fn report_alternative_settlement_surplus(
     let submitted_prices = get_prices(&submitted.settlement);
     let submitted_surplus: HashMap<_, _> = submitted
         .settlement
-        .trades()
+        .encoder
+        .order_trades()
         .iter()
         .map(|order_trade| {
             let sell_token_price = &submitted_prices[&order_trade.trade.order.creation.sell_token];
@@ -126,7 +128,7 @@ fn best_surplus_by_order(
 ) -> HashMap<OrderUid, SurplusInfo> {
     let mut best_surplus: HashMap<OrderUid, SurplusInfo> = HashMap::new();
     for (solver, solution) in settlements.iter() {
-        let trades = solution.settlement.trades();
+        let trades = solution.settlement.encoder.order_trades();
         let clearing_prices = get_prices(&solution.settlement);
         for order_trade in trades {
             let order_id = order_trade.trade.order.metadata.uid;

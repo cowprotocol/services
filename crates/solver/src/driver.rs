@@ -161,7 +161,7 @@ impl Driver {
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
-        let trades = settlement.trades().to_vec();
+        let traded_orders = settlement.traded_orders().cloned().collect::<Vec<_>>();
 
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver.name());
@@ -182,9 +182,9 @@ impl Driver {
                     rated_settlement.id,
                     receipt.transaction_hash
                 );
-                trades.iter().for_each(|order_trade| {
-                    self.metrics.order_settled(&order_trade.trade.order, name)
-                });
+                traded_orders
+                    .iter()
+                    .for_each(|order| self.metrics.order_settled(order, name));
                 self.metrics.settlement_submitted(
                     crate::metrics::SettlementSubmissionOutcome::Success,
                     name,
@@ -528,9 +528,8 @@ impl Driver {
             {
                 let orders = winning_settlement
                     .settlement
-                    .trades()
-                    .iter()
-                    .map(|t| t.trade.order.metadata.uid);
+                    .traded_orders()
+                    .map(|o| o.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -565,11 +564,9 @@ impl Driver {
 }
 
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
-    !settlement.encoder.trades().iter().any(|order_trade| {
-        token_list
-            .get(&order_trade.trade.order.creation.sell_token)
-            .is_none()
-    })
+    !settlement
+        .traded_orders()
+        .any(|order| token_list.get(&order.creation.sell_token).is_none())
 }
 
 fn print_settlements(

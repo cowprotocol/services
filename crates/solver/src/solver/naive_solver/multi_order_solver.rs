@@ -279,8 +279,8 @@ fn compute_uniswap_in(
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
-    for order_trade in solution.trades().iter() {
-        let order = &order_trade.trade.order.creation;
+    for order in solution.traded_orders() {
+        let order = &order.creation;
         let buy_token_price = solution
             .clearing_price(order.buy_token)
             .expect("Solution should contain clearing price for buy token");
@@ -656,7 +656,7 @@ mod tests {
         };
         let result = solve(orders, &pool).unwrap();
 
-        assert_eq!(result.trades().len(), 2);
+        assert_eq!(result.traded_orders().count(), 2);
         assert!(is_valid_solution(&result));
     }
 
@@ -875,7 +875,7 @@ mod tests {
 
         // Only the second order should match
         let result = solve(orders, &pool).unwrap();
-        assert_eq!(result.trades().len(), 1);
+        assert_eq!(result.traded_orders().count(), 1);
     }
 
     #[test]

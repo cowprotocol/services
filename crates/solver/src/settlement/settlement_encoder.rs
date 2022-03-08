@@ -106,8 +106,12 @@ impl SettlementEncoder {
         &self.clearing_prices
     }
 
-    pub fn trades(&self) -> &[OrderTrade] {
+    pub fn order_trades(&self) -> &[OrderTrade] {
         &self.order_trades
+    }
+
+    pub fn liquidity_order_trades(&self) -> &[LiquidityOrderTrade] {
+        &self.liquidity_order_trades
     }
 
     pub fn execution_plan(&self) -> &Vec<Arc<dyn Interaction>> {
@@ -348,7 +352,7 @@ impl SettlementEncoder {
 
     fn drop_unnecessary_tokens_and_prices(&mut self) {
         let traded_tokens: HashSet<_> = self
-            .trades()
+            .order_trades
             .iter()
             .flat_map(|order_trade| {
                 [
