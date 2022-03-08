@@ -125,6 +125,11 @@ fn run() -> Result<()> {
         .npm(
             "IUniswapV3Factory",
             "@uniswap/v3-core@1.0.0/artifacts/contracts/interfaces/IUniswapV3Factory.sol/IUniswapV3Factory.json",
+        )?
+        .github(
+            "IZeroEx",
+            "0xProject/protocol/c1177416f50c2465ee030dacc14ff996eebd4e74/\
+            packages/contract-artifacts/artifacts/IZeroEx.json",
         )?;
 
     Ok(())
@@ -147,7 +152,12 @@ impl Vendor {
     fn full(&self) -> VendorContext {
         VendorContext {
             artifacts: &self.artifacts,
-            properties: &["abi", "bytecode", "devdoc", "userdoc"],
+            properties: &[
+                ("abi", "abi,compilerOutput.abi"),
+                ("devdoc", "devdoc,compilerOutput.devdoc"),
+                ("userdoc", "userdoc"),
+                ("bytecode", "bytecode"),
+            ],
         }
     }
 
@@ -159,14 +169,18 @@ impl Vendor {
     fn abi_only(&self) -> VendorContext {
         VendorContext {
             artifacts: &self.artifacts,
-            properties: &["abi", "devdoc", "userdoc"],
+            properties: &[
+                ("abi", "abi,compilerOutput.abi"),
+                ("devdoc", "devdoc,compilerOutput.devdoc"),
+                ("userdoc", "userdoc"),
+            ],
         }
     }
 }
 
 struct VendorContext<'a> {
     artifacts: &'a Path,
-    properties: &'a [&'a str],
+    properties: &'a [(&'a str, &'a str)],
 }
 
 impl VendorContext<'_> {
@@ -188,17 +202,29 @@ impl VendorContext<'_> {
         self
     }
 
+    fn retrieve_value_from_path<'a>(source: &'a Value, path: &'a str) -> Value {
+        let mut current_value: &Value = source;
+        for property in path.split('.') {
+            current_value = &current_value[property];
+        }
+        current_value.clone()
+    }
+
     fn vendor_source(&self, name: &str, source: Source) -> Result<&Self> {
         log::info!("retrieving {:?}", source);
         let artifact_json = source.artifact_json()?;
 
         log::debug!("pruning artifact JSON");
         let pruned_artifact_json = {
-            let mut json = serde_json::from_str::<Value>(&artifact_json)?;
+            let json = serde_json::from_str::<Value>(&artifact_json)?;
             let mut pruned = Map::new();
-            for property in self.properties {
-                if let Some(value) = json.get_mut(property) {
-                    pruned.insert(property.to_string(), value.take());
+            for (property, paths) in self.properties {
+                if let Some(value) = paths
+                    .split(',')
+                    .map(|path| Self::retrieve_value_from_path(&json, path))
+                    .find(|value| !value.is_null())
+                {
+                    pruned.insert(property.to_string(), value);
                 }
             }
             serde_json::to_string(&pruned)?

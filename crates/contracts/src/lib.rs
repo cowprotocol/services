@@ -47,6 +47,7 @@ include!(concat!(env!("OUT_DIR"), "/UniswapV2Factory.rs"));
 include!(concat!(env!("OUT_DIR"), "/UniswapV2Router02.rs"));
 include!(concat!(env!("OUT_DIR"), "/WETH9.rs"));
 include!(concat!(env!("OUT_DIR"), "/IUniswapV3Factory.rs"));
+include!(concat!(env!("OUT_DIR"), "/IZeroEx.rs"));
 
 #[cfg(test)]
 mod tests {

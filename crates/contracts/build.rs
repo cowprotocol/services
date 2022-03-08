@@ -244,6 +244,28 @@ fn main() {
             .add_network_str("1", "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str("4", "0x1F98431c8aD98523631AE4a59f267346ea31F984")
     });
+    generate_contract_with_config("IZeroEx", |builder| {
+        builder
+            .add_network_str("1", "0xdef1c0ded9bec7f1a1670819833240f027b25eff")
+            .add_method_alias(
+                "_transformERC20((address,address,address,uint256,uint256,(uint32,bytes)[],bool,address))",
+                "_transform_erc_20",
+            )
+            .add_method_alias(
+                "_fillRfqOrder((address,address,uint128,uint128,address,address,address,bytes32,uint64,uint256),\
+                    (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
+                "_fill_rfq_order"
+            )
+            .add_method_alias(
+                "_fillLimitOrder((address,address,uint128,uint128,uint128,address,address,address,address,bytes32,\
+                    uint64,uint256),(uint8,uint8,bytes32,bytes32),uint128,address,address)",
+                "_fill_limit_order"
+            )
+            .add_method_alias("_fillOtcOrder((address,address,uint128,uint128,address,address,address,uint256),\
+                    (uint8,uint8,bytes32,bytes32),uint128,address,bool,address)",
+                "_fill_otc_order"
+            )
+    });
 }
 
 fn generate_contract(name: &str) {
