@@ -5,7 +5,7 @@ use shared::conversions::U256Ext as _;
 use std::{collections::HashSet, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
-    !settlement.trades().is_empty()
+    !settlement.encoder.order_trades().is_empty()
 }
 
 // Each individual settlement has an objective value.
@@ -118,18 +118,17 @@ pub fn retain_mature_settlements(
                     break;
                 }
 
-                let contains_valid_trade = settlement.trades().iter().any(|order_trade| {
+                let contains_valid_trade = settlement.traded_orders().any(|order| {
                     // mature by age
-                    order_trade.trade.order.metadata.creation_date <= settle_orders_older_than
+                    order.metadata.creation_date <= settle_orders_older_than
                     // mature by association
-                    || valid_trades.contains(&order_trade.trade.order.metadata.uid)
+                    || valid_trades.contains(&order.metadata.uid)
                 });
 
                 if contains_valid_trade {
-                    for order_trade in settlement.trades() {
+                    for order in settlement.traded_orders() {
                         // make all orders within this settlement mature by association
-                        new_order_added |=
-                            valid_trades.insert(&order_trade.trade.order.metadata.uid);
+                        new_order_added |= valid_trades.insert(&order.metadata.uid);
                     }
                     valid_settlement_indices.insert(index);
                 }
@@ -183,8 +182,8 @@ mod tests {
     fn assert_same_settlements(expected: &[Settlement], actual: &[Settlement]) {
         assert!(expected
             .iter()
-            .map(|s| s.trades())
-            .eq(actual.iter().map(|s| s.trades())));
+            .map(|s| s.encoder.order_trades())
+            .eq(actual.iter().map(|s| s.encoder.order_trades())));
     }
 
     #[test]
@@ -288,10 +287,9 @@ mod tests {
 
         assert_eq!(settlements.len(), 4);
         assert!(settlements.iter().any(|settlement| {
-            let trades = settlement.trades();
-            let uids: HashSet<OrderUid> = trades
-                .iter()
-                .map(|order_trade| order_trade.trade.order.metadata.uid)
+            let uids: HashSet<OrderUid> = settlement
+                .traded_orders()
+                .map(|order| order.metadata.uid)
                 .collect();
             uids.len() == 2 && uids.contains(&uid(2)) && uids.contains(&uid(3))
         }));

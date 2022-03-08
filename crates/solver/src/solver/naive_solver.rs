@@ -29,7 +29,7 @@ impl Solver for NaiveSolver {
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
-        Ok(settle(orders, uniswaps).await)
+        Ok(settle(orders, uniswaps))
     }
 
     fn account(&self) -> &Account {
@@ -41,7 +41,7 @@ impl Solver for NaiveSolver {
     }
 }
 
-async fn settle(
+fn settle(
     orders: Vec<LimitOrder>,
     uniswaps: HashMap<TokenPair, ConstantProductOrder>,
 ) -> Vec<Settlement> {
@@ -103,12 +103,13 @@ fn extract_deepest_amm_liquidity(
 
 #[cfg(test)]
 mod tests {
-    use ethcontract::H160;
-    use num::rational::Ratio;
-
-    use crate::liquidity::tests::CapturingSettlementHandler;
-
     use super::*;
+    use crate::liquidity::tests::CapturingSettlementHandler;
+    use ethcontract::H160;
+    use maplit::hashmap;
+    use model::order::{Order, OrderCreation, OrderKind};
+    use num::rational::Ratio;
+    use shared::addr;
 
     #[test]
     fn test_extract_deepest_amm_liquidity() {
@@ -152,5 +153,60 @@ mod tests {
             result[&unrelated_token_pair].reserves,
             liquidity[2].reserves
         );
+    }
+
+    #[test]
+    fn respects_liquidity_order_limit_price() {
+        // We have a "perfect CoW" where the spot price of the Uniswap pool does
+        // not satisfy the liquidity order's limit price. Hence, there should be
+        // NO solutions for this auction.
+        // Test case recovered from the following settlement where a user order
+        // was settled directly with a liquidity order, and we paid out WAY more
+        // than the market maker order provided:
+        // <https://etherscan.io/tx/0x02e858f10c5b3ab41031421f6634dc0c7799c9aec65160f516af53673dafa92c>
+
+        let orders = vec![
+            LimitOrder::from(Order {
+                creation: OrderCreation {
+                    sell_token: addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
+                    buy_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                    sell_amount: 995952859647034749952_u128.into(),
+                    buy_amount: 2461209365_u128.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            LimitOrder {
+                is_liquidity_order: true,
+                ..LimitOrder::from(Order {
+                    creation: OrderCreation {
+                        sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                        buy_token: addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
+                        sell_amount: 2469904889_u128.into(),
+                        buy_amount: 995952859647034749952_u128.into(),
+                        kind: OrderKind::Buy,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            },
+        ];
+
+        let tokens = TokenPair::new(
+            addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+            addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
+        )
+        .unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                tokens,
+                reserves: (58360914, 17856367410307570970),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+        };
+
+        assert!(settle(orders, liquidity).is_empty());
     }
 }
