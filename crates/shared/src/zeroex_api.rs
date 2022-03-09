@@ -9,11 +9,10 @@ use crate::solver_utils::{deserialize_decimal_f64, Slippage};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
-use ethcontract::{H160, U256};
+use ethcontract::{H160, H256, U256};
 use model::u256_decimal;
-use primitive_types::H256;
 use reqwest::{Client, IntoUrl, Url};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 use std::collections::HashSet;
 use thiserror::Error;
 use web3::types::Bytes;
@@ -139,25 +138,17 @@ pub struct OrderMetadata {
     #[derivative(Default(value = "chrono::MIN_DATETIME"))]
     pub created_at: DateTime<Utc>,
     pub order_hash: Bytes,
-    pub remaining_fillable_taker_amount: U256,
-}
-
-fn deserialize_epoch_timestamp<'de, D>(deserializer: D) -> Result<DateTime<Utc>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let epoch: &str = Deserialize::deserialize(deserializer)?;
-    let naive = NaiveDateTime::from_timestamp(epoch.parse().map_err(serde::de::Error::custom)?, 0);
-    Ok(DateTime::from_utc(naive, Utc))
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub remaining_fillable_taker_amount: u128,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZeroExSignature {
-    r: H256,
-    s: H256,
-    v: u8,
-    signature_type: u8,
+    pub r: H256,
+    pub s: H256,
+    pub v: u8,
+    pub signature_type: u8,
 }
 
 #[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
@@ -167,9 +158,9 @@ pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
-    #[serde(deserialize_with = "deserialize_epoch_timestamp")]
-    #[derivative(Default(value = "chrono::MAX_DATETIME"))]
-    pub expiry: DateTime<Utc>,
+    #[derivative(Default(value = "chrono::naive::MAX_DATETIME.timestamp() as u64"))]
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the order.
     /// This is typically used to incentivize off-chain order relay.
     pub fee_recipient: H160,
@@ -177,15 +168,17 @@ pub struct Order {
     /// two parties that will be involved in the trade if the order gets filled.
     pub maker: H160,
     /// The amount of `maker_token` being sold by the maker.
-    pub maker_amount: U256,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
     pub maker_token: H160,
     /// The staking pool to attribute the 0x protocol fee from this order. Set to zero
     /// to attribute to the default pool, not owned by anyone.
-    pub pool: Bytes,
+    pub pool: H256,
     /// A value that can be used to guarantee order uniqueness. Typically it is set
     /// to a random number.
-    pub salt: String,
+    #[serde(with = "u256_decimal")]
+    pub salt: U256,
     /// It allows the maker to enforce that the order flow through some additional
     /// logic before it can be filled (e.g., a KYC whitelist).
     pub sender: H160,
@@ -196,21 +189,41 @@ pub struct Order {
     /// anyone can fill the order.
     pub taker: H160,
     /// The amount of `taker_token` being sold by the taker.
-    pub taker_amount: U256,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub taker_amount: u128,
     /// The address of the ERC20 token the taker is selling to the maker.
     pub taker_token: H160,
     /// Amount of takerToken paid by the taker to the feeRecipient.
-    pub taker_token_fee_amount: U256,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub taker_token_fee_amount: u128,
     /// Address of the contract where the transaction should be sent, usually this is
     /// the 0x exchange proxy contract.
     pub verifying_contract: H160,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
 pub struct OrderRecord {
+    #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
     pub order: Order,
+}
+
+impl OrderRecord {
+    /// Scales the `maker_amount` according to how much of the partially fillable
+    /// amount was already used.
+    pub fn remaining_maker_amount(&self) -> Result<u128> {
+        if self.metadata.remaining_fillable_taker_amount > self.order.taker_amount {
+            anyhow::bail!("remaining taker amount bigger than total taker amount");
+        }
+
+        // all numbers are at most u128::MAX so none of these operations can overflow
+        let scaled_maker_amount = U256::from(self.order.maker_amount)
+            * U256::from(self.metadata.remaining_fillable_taker_amount)
+            / U256::from(self.order.taker_amount);
+
+        // `scaled_maker_amount` is at most as big as `maker_amount` which already fits in an u128
+        Ok(scaled_maker_amount.as_u128())
+    }
 }
 
 /// A Ox API `orders` response.
@@ -400,8 +413,11 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     let mut included_orders = HashSet::new();
     let now = chrono::offset::Utc::now();
     orders.retain(|order| {
+        let expiry = NaiveDateTime::from_timestamp(order.order.expiry as i64, 0);
+        let expiry: DateTime<Utc> = DateTime::from_utc(expiry, Utc);
+
         // only keep orders which are still valid and unique
-        order.order.expiry > now && included_orders.insert(order.metadata.order_hash.clone())
+        expiry > now && included_orders.insert(order.metadata.order_hash.clone())
     });
 }
 
@@ -442,6 +458,8 @@ impl DefaultZeroExApi {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::addr;
+    use chrono::TimeZone;
 
     #[tokio::test]
     #[ignore]
@@ -542,7 +560,7 @@ mod tests {
             OrderRecord {
                 order: Order {
                     // already expired
-                    expiry: chrono::MIN_DATETIME,
+                    expiry: 0,
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -554,6 +572,60 @@ mod tests {
         ];
         retain_valid_orders(&mut orders);
         assert_eq!(vec![valid_order], orders);
+    }
+
+    #[test]
+    fn deserialize_orders_response() {
+        let orders = serde_json::from_str::<OrdersResponse>(
+            r#"{"total":1015,"page":1,"perPage":1000,"records":[{"order":{"signature":{"signatureType":3,"r":"0xdb60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237","s":"0x4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd","v":28},"sender":"0x0000000000000000000000000000000000000000","maker":"0x683b2388d719e98874d1f9c16b42a7bb498efbeb","taker":"0x0000000000000000000000000000000000000000","takerTokenFeeAmount":"0","makerAmount":"500000000","takerAmount":"262467000000000000","makerToken":"0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48","takerToken":"0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2","salt":"1645858724","verifyingContract":"0xdef1c0ded9bec7f1a1670819833240f027b25eff","feeRecipient":"0x86003b044f70dac0abc80ac8957305b6370893ed","expiry":"1646463524","chainId":1,"pool":"0x0000000000000000000000000000000000000000000000000000000000000000"},"metaData":{"orderHash":"0x003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127","remainingFillableTakerAmount":"262467000000000000","createdAt":"2022-02-26T06:59:00.440Z"}}]}"#,
+        ).unwrap();
+        assert_eq!(
+            orders,
+            OrdersResponse {
+                total: 1015,
+                page: 1,
+                per_page: 1000,
+                records: vec![OrderRecord {
+                    metadata: OrderMetadata {
+                        order_hash: Bytes(
+                            hex::decode(
+                                "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
+                            ).unwrap()
+                        ),
+                        remaining_fillable_taker_amount: 262467000000000000u128,
+                        created_at: Utc.ymd(2022, 2, 26).and_hms_milli(6, 59, 0, 440)
+                    },
+                    order: Order {
+                        chain_id: 1u64,
+                        expiry: 1646463524u64,
+                        fee_recipient: addr!("86003b044f70dac0abc80ac8957305b6370893ed"),
+                        maker: addr!("683b2388d719e98874d1f9c16b42a7bb498efbeb"),
+                        maker_amount: 500000000u128,
+                        maker_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
+                        pool: H256::zero(),
+                        salt: 1645858724.into(),
+                        sender: H160::zero(),
+                        signature: ZeroExSignature {
+                            signature_type: 3,
+                            r: H256::from_slice(
+                                &hex::decode("db60e4fa2b4f2ee073d88eed3502149ba2231d699bc5d92d5627dcd21f915237")
+                                    .unwrap()
+                            ),
+                            s: H256::from_slice(
+                                &hex::decode("4cb1e9c15788b86d5187b99c0d929ad61d2654c242095c26f9ace17e64aca0fd")
+                                    .unwrap()
+                            ),
+                            v: 28u8,
+                        },
+                        taker: H160::zero(),
+                        taker_amount: 262467000000000000u128,
+                        taker_token: addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
+                        taker_token_fee_amount: 0u128,
+                        verifying_contract: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    }
+                }],
+            }
+        );
     }
 
     #[test]
@@ -580,5 +652,57 @@ mod tests {
                     value: U256::from_dec_str("0").unwrap(),
                 }
             );
+    }
+
+    #[test]
+    fn compute_remaining_maker_amount() {
+        let bogous_order = OrderRecord {
+            order: Order {
+                taker_amount: u128::MAX - 1,
+                maker_amount: u128::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                // remaining amount bigger than total amount
+                remaining_fillable_taker_amount: u128::MAX,
+                ..Default::default()
+            },
+        };
+        assert!(bogous_order.remaining_maker_amount().is_err());
+
+        let biggest_unfilled_order = OrderRecord {
+            order: Order {
+                taker_amount: u128::MAX,
+                maker_amount: u128::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                remaining_fillable_taker_amount: u128::MAX,
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            u128::MAX,
+            // none of the operations overflow with u128::MAX for all values
+            biggest_unfilled_order.remaining_maker_amount().unwrap()
+        );
+
+        let biggest_partially_filled_order = OrderRecord {
+            order: Order {
+                taker_amount: u128::MAX,
+                maker_amount: u128::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                remaining_fillable_taker_amount: u128::MAX / 2,
+                ..Default::default()
+            },
+        };
+        assert_eq!(
+            u128::MAX / 2,
+            biggest_partially_filled_order
+                .remaining_maker_amount()
+                .unwrap()
+        );
     }
 }
