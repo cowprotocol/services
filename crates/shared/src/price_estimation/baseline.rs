@@ -2,14 +2,14 @@ use crate::{
     baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
     conversions::U256Ext,
     price_estimation::{
-        gas, old_estimator_to_stream, Estimate, PriceEstimateResult, PriceEstimating,
-        PriceEstimationError, Query,
+        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     recent_block_cache::Block,
     sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::Result;
 use ethcontract::{H160, U256};
+use futures::stream::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
 use num::BigRational;
@@ -48,39 +48,46 @@ impl PriceEstimating for BaselinePriceEstimator {
         &'a self,
         queries: &'a [Query],
     ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        old_estimator_to_stream(self.estimates_(queries))
-    }
-}
-
-impl BaselinePriceEstimator {
-    async fn estimates_(&self, queries: &[Query]) -> Vec<PriceEstimateResult> {
         debug_assert!(queries.iter().all(|query| {
             query.buy_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != model::order::BUY_ETH_ADDRESS
                 && query.sell_token != query.buy_token
         }));
 
-        let repeat_same_error = |err: anyhow::Error| {
-            vec![Err(PriceEstimationError::Other(crate::clone_anyhow_error(&err))); queries.len()]
+        let gas_price = async {
+            let gas_price = self
+                .gas_estimator
+                .estimate()
+                .await
+                .map_err(PriceEstimationError::Other)?;
+            Ok(gas_price.effective_gas_price())
         };
-        let gas_price = match self.gas_estimator.estimate().await {
-            Ok(gas_price) => gas_price.effective_gas_price(),
-            Err(err) => return repeat_same_error(err),
+        let pools = async {
+            self.pools_for_queries(queries)
+                .await
+                .map_err(PriceEstimationError::Other)
         };
-        let pools = match self.pools_for_queries(queries).await {
-            Ok(pools) => pools,
-            Err(err) => return repeat_same_error(err),
-        };
-        let estimate_single = |query: &Query| -> PriceEstimateResult {
-            let (path, out_amount) = self.estimate_price_helper(query, true, &pools, gas_price)?;
-            Ok(Estimate {
-                out_amount,
-                gas: estimate_gas(path.len()).into(),
-            })
-        };
-        queries.iter().map(estimate_single).collect()
-    }
+        type Init = Result<(f64, Pools), PriceEstimationError>;
+        let init = futures::future::try_join(gas_price, pools);
 
+        let estimate_single = |init: &Init, query: &Query| -> PriceEstimateResult {
+            let (gas_price, pools) = init.as_ref().map_err(Clone::clone)?;
+            let (path, out_amount) = self.estimate_price_helper(query, true, pools, *gas_price)?;
+            let gas = estimate_gas(path.len()).into();
+            Ok(Estimate { out_amount, gas })
+        };
+        let estimate_all = move |init: Init| {
+            let iter = queries
+                .iter()
+                .map(move |query| estimate_single(&init, query))
+                .enumerate();
+            futures::stream::iter(iter)
+        };
+        futures::stream::once(init).flat_map(estimate_all).boxed()
+    }
+}
+
+impl BaselinePriceEstimator {
     async fn pools_for_queries(&self, queries: &[Query]) -> Result<Pools> {
         let pairs = self.base_tokens.relevant_pairs(
             &mut queries
