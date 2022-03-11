@@ -271,7 +271,7 @@ impl MinFeeCalculator {
                 .estimate_native_price(&fee_data.sell_token)
         )?;
         let gas_price = gas_estimate.effective_gas_price();
-        let gas_amount = buy_token_estimate.gas.to_f64_lossy();
+        let gas_amount = buy_token_estimate.gas as f64;
         let fee_parameters = FeeParameters {
             gas_amount,
             gas_price,
@@ -528,7 +528,7 @@ mod tests {
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
-            gas: 1.into(),
+            gas: 1,
         });
 
         let time_copy = time.clone();
@@ -590,7 +590,7 @@ mod tests {
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
-            gas: 1.into(),
+            gas: 1,
         }));
 
         let fee_estimator = MinFeeCalculator::new_for_test(
@@ -643,7 +643,7 @@ mod tests {
         ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
-            gas: 1000.into(),
+            gas: 1000,
         }));
         let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
 
@@ -716,7 +716,7 @@ mod tests {
         ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
-            gas: 1000.into(),
+            gas: 1000,
         }));
         let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
         let app_data = AppId([1u8; 32]);
@@ -792,7 +792,7 @@ mod tests {
             out_amount: U256::from_f64_lossy(
                 native_token_price_estimation_amount / sell_token_price,
             ),
-            gas: 1337.into(),
+            gas: 1337,
         }));
         let native_price_estimator = Arc::new(NativePriceEstimator::new(
             price_estimator.clone(),
@@ -925,7 +925,7 @@ mod tests {
         ))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
-            gas: 9.into(),
+            gas: 9,
         }));
         let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
         let fee_estimator = MinFeeCalculator {

@@ -6,7 +6,6 @@ use crate::{
 };
 use futures::StreamExt;
 use model::order::OrderKind;
-use primitive_types::U256;
 use std::sync::Arc;
 
 pub struct OneInchPriceEstimator {
@@ -40,7 +39,7 @@ impl OneInchPriceEstimator {
         match quote {
             RestResponse::Ok(quote) => Ok(Estimate {
                 out_amount: quote.to_token_amount,
-                gas: U256::from(gas::SETTLEMENT_OVERHEAD) + quote.estimated_gas,
+                gas: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
             }),
             RestResponse::Err(e) => {
                 Err(PriceEstimationError::Other(anyhow::anyhow!(e.description)))
@@ -127,7 +126,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(est.out_amount, 808_069_760_400_778_577u128.into());
-        assert!(est.gas > 189_386.into());
+        assert!(est.gas > 189_386);
     }
 
     #[tokio::test]

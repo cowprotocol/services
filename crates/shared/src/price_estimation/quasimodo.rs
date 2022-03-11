@@ -146,7 +146,7 @@ impl QuasimodoPriceEstimator {
         for amm in settlement.amms.values() {
             cost += self.extract_cost(&amm.cost)? * amm.execution.len();
         }
-        let gas = (cost / gas_price)
+        let gas = (cost / gas_price).as_u64()
             + INITIALIZATION_COST // Call into contract
             + SETTLEMENT // overhead for entering the `settle()` function
             + ERC20_TRANSFER * 2; // transfer in and transfer out

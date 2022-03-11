@@ -8,7 +8,7 @@ use crate::{
 use anyhow::{anyhow, Context, Result};
 use futures::StreamExt;
 use model::order::OrderKind;
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use std::{
     collections::{HashMap, HashSet},
     sync::Arc,
@@ -56,7 +56,7 @@ impl ParaswapPriceEstimator {
                 OrderKind::Buy => response.src_amount,
                 OrderKind::Sell => response.dest_amount,
             },
-            gas: U256::from(gas::SETTLEMENT_OVERHEAD) + response.gas_cost,
+            gas: gas::SETTLEMENT_OVERHEAD + response.gas_cost,
         })
     }
 }

@@ -248,8 +248,8 @@ pub struct PriceResponse {
     pub allowance_target: H160,
     #[serde(deserialize_with = "deserialize_decimal_f64")]
     pub price: f64,
-    #[serde(with = "u256_decimal")]
-    pub estimated_gas: U256,
+    #[serde(with = "serde_with::rust::display_fromstr")]
+    pub estimated_gas: u64,
 }
 
 /// A Ox API `swap` response.
@@ -643,7 +643,7 @@ mod tests {
                         buy_amount: U256::from_dec_str("1312100257517027783").unwrap(),
                         allowance_target: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                         price: 13.121_002_575_170_278_f64,
-                        estimated_gas: 111000.into(),
+                        estimated_gas: 111000,
                     },
                     to: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
                     data: Bytes(hex::decode(

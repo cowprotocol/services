@@ -622,7 +622,7 @@ mod tests {
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
-            gas: 1000.into(),
+            gas: 1000,
         });
         let sell_query = OrderQuoteRequest::new(
             H160::from_low_u64_ne(0),
@@ -666,7 +666,7 @@ mod tests {
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
-            gas: 1000.into(),
+            gas: 1000,
         });
         let sell_query = OrderQuoteRequest::new(
             H160::from_low_u64_ne(0),
@@ -709,7 +709,7 @@ mod tests {
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 20.into(),
-            gas: 1000.into(),
+            gas: 1000,
         });
         let buy_query = OrderQuoteRequest::new(
             H160::from_low_u64_ne(0),
@@ -767,7 +767,7 @@ mod tests {
             .returning(move |_, _, _| Ok((3.into(), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
-            gas: 1000.into(),
+            gas: 1000,
         });
         let mut order_validator = MockOrderValidating::new();
         order_validator

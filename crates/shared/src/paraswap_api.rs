@@ -189,7 +189,7 @@ pub struct PriceResponse {
     pub dest_amount: U256,
     /// The token transfer proxy address to set an allowance for.
     pub token_transfer_proxy: H160,
-    pub gas_cost: U256,
+    pub gas_cost: u64,
 }
 
 impl<'de> Deserialize<'de> for PriceResponse {
@@ -211,8 +211,8 @@ impl<'de> Deserialize<'de> for PriceResponse {
             #[serde(with = "u256_decimal")]
             dest_amount: U256,
             token_transfer_proxy: H160,
-            #[serde(with = "u256_decimal")]
-            gas_cost: U256,
+            #[serde(with = "serde_with::rust::display_fromstr")]
+            gas_cost: u64,
         }
 
         let parsed = ParsedRaw::deserialize(deserializer)?;

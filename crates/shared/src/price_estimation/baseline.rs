@@ -73,7 +73,7 @@ impl PriceEstimating for BaselinePriceEstimator {
         let estimate_single = |init: &Init, query: &Query| -> PriceEstimateResult {
             let (gas_price, pools) = init.as_ref().map_err(Clone::clone)?;
             let (path, out_amount) = self.estimate_price_helper(query, true, pools, *gas_price)?;
-            let gas = estimate_gas(path.len()).into();
+            let gas = estimate_gas(path.len());
             Ok(Estimate { out_amount, gas })
         };
         let estimate_all = move |init: Init| {
@@ -558,8 +558,7 @@ mod tests {
             )
             .await
             .unwrap()
-            .gas
-            .as_u64();
+            .gas;
             assert_eq!(intermediate, estimate_gas(3));
             let direct = single_estimate(
                 &estimator,
@@ -572,8 +571,7 @@ mod tests {
             )
             .await
             .unwrap()
-            .gas
-            .as_u64();
+            .gas;
             assert_eq!(direct, estimate_gas(2));
             assert!(direct < intermediate);
         }
@@ -636,7 +634,7 @@ mod tests {
                 .await
                 .unwrap()
                 .gas,
-                estimate_gas(2).into(),
+                estimate_gas(2),
             );
         }
 
@@ -661,7 +659,7 @@ mod tests {
                 .await
                 .unwrap()
                 .gas,
-                estimate_gas(3).into()
+                estimate_gas(3)
             );
         }
     }

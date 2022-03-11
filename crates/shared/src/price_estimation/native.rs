@@ -94,7 +94,7 @@ mod tests {
             assert!(queries[0].sell_token.to_low_u64_be() == 3);
             futures::stream::iter([Ok(Estimate {
                 out_amount: 123_456_789_000_000_000u128.into(),
-                gas: 0.into(),
+                gas: 0,
             })])
             .enumerate()
             .boxed()

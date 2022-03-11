@@ -113,7 +113,7 @@ impl SanitizedPriceEstimator {
                 if query.buy_token == query.sell_token {
                     let estimation = Estimate {
                         out_amount: query.in_amount,
-                        gas: 0.into(),
+                        gas: 0,
                     };
 
                     tracing::debug!(?query, ?estimation, "generate trivial price estimation");
@@ -123,7 +123,7 @@ impl SanitizedPriceEstimator {
                 if query.sell_token == self.native_token && query.buy_token == BUY_ETH_ADDRESS {
                     let estimation = Estimate {
                         out_amount: query.in_amount,
-                        gas: GAS_PER_WETH_UNWRAP.into(),
+                        gas: GAS_PER_WETH_UNWRAP,
                     };
 
                     tracing::debug!(?query, ?estimation, "generate trivial unwrap estimation");
@@ -132,7 +132,7 @@ impl SanitizedPriceEstimator {
                 if query.sell_token == BUY_ETH_ADDRESS && query.buy_token == self.native_token {
                     let estimation = Estimate {
                         out_amount: query.in_amount,
-                        gas: GAS_PER_WETH_WRAP.into(),
+                        gas: GAS_PER_WETH_WRAP,
                     };
 
                     tracing::debug!(?query, ?estimation, "generate trivial wrap estimation");
@@ -192,12 +192,13 @@ impl SanitizedPriceEstimator {
                     let mut final_estimation = difficult_estimates
                         .next()
                         .expect("there is a result for every forwarded query")?;
-                    final_estimation.gas = final_estimation
-                        .gas
-                        .checked_add(weth_op_gas.into())
-                        .ok_or(anyhow::anyhow!(
-                            "cost of converting native asset would overflow gas price"
-                        ))?;
+                    final_estimation.gas =
+                        final_estimation
+                            .gas
+                            .checked_add(weth_op_gas)
+                            .ok_or(anyhow::anyhow!(
+                                "cost of converting native asset would overflow gas price"
+                            ))?;
                     tracing::debug!(
                         ?query,
                         ?final_estimation,
@@ -357,19 +358,19 @@ mod tests {
                 futures::stream::iter([
                     Ok(Estimate {
                         out_amount: 1.into(),
-                        gas: 100.into(),
+                        gas: 100,
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
-                        gas: 100.into(),
+                        gas: 100,
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
-                        gas: U256::MAX,
+                        gas: u64::MAX,
                     }),
                     Ok(Estimate {
                         out_amount: 1.into(),
-                        gas: 100.into(),
+                        gas: 100,
                     }),
                 ])
                 .enumerate()
@@ -388,7 +389,7 @@ mod tests {
             result[0].as_ref().unwrap(),
             &Estimate {
                 out_amount: 1.into(),
-                gas: 100.into()
+                gas: 100,
             }
         );
         assert_eq!(
@@ -397,7 +398,7 @@ mod tests {
                 out_amount: 1.into(),
                 //sanitized_estimator will add ETH_UNWRAP_COST to the gas of any
                 //Query with ETH as the buy_token.
-                gas: U256::from(GAS_PER_WETH_UNWRAP + 100),
+                gas: GAS_PER_WETH_UNWRAP + 100,
             }
         );
         assert!(matches!(
@@ -411,21 +412,21 @@ mod tests {
                 out_amount: 1.into(),
                 //sanitized_estimator will add ETH_WRAP_COST to the gas of any
                 //Query with ETH as the sell_token.
-                gas: U256::from(GAS_PER_WETH_WRAP + 100),
+                gas: GAS_PER_WETH_WRAP + 100,
             }
         );
         assert_eq!(
             result[4].as_ref().unwrap(),
             &Estimate {
                 out_amount: 1.into(),
-                gas: 0.into()
+                gas: 0,
             }
         );
         assert_eq!(
             result[5].as_ref().unwrap(),
             &Estimate {
                 out_amount: 1.into(),
-                gas: 0.into()
+                gas: 0,
             }
         );
         assert_eq!(
@@ -433,7 +434,7 @@ mod tests {
             &Estimate {
                 out_amount: 1.into(),
                 // Sanitized estimator will report a 1:1 estimate when unwrapping native token.
-                gas: GAS_PER_WETH_UNWRAP.into()
+                gas: GAS_PER_WETH_UNWRAP,
             }
         );
         assert_eq!(
@@ -441,7 +442,7 @@ mod tests {
             &Estimate {
                 out_amount: 1.into(),
                 // Sanitized estimator will report a 1:1 estimate when wrapping native token.
-                gas: GAS_PER_WETH_WRAP.into()
+                gas: GAS_PER_WETH_WRAP,
             }
         );
         assert!(matches!(

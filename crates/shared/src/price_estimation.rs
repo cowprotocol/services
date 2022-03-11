@@ -85,7 +85,7 @@ pub struct Query {
 pub struct Estimate {
     pub out_amount: U256,
     /// full gas cost when settling this order alone on gp
-    pub gas: U256,
+    pub gas: u64,
 }
 
 impl Estimate {
