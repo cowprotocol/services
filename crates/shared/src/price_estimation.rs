@@ -7,7 +7,6 @@ pub mod native;
 pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
-pub mod priority;
 pub mod quasimodo;
 pub mod sanitized;
 pub mod zeroex;
