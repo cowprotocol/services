@@ -20,17 +20,18 @@ impl InFlightOrders {
 
         // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
         // https://github.com/gnosis/gp-v2-services/issues/673
-        // Note that this will result in simulation error "GPv2: order filled" if the
-        // next solver run loop tries to match the order again beyond its remaining amount.
+        // Note that this is pessimistaic as it will result in not using the
+        // remaining available amount of a partially fillable order while it is
+        // in-flight. This is done to avoid `order filled` reverts.
         let in_flight = self
             .in_flight
             .values()
             .flatten()
             .copied()
             .collect::<HashSet<_>>();
-        auction.orders.retain(|order| {
-            order.creation.partially_fillable || !in_flight.contains(&order.metadata.uid)
-        });
+        auction
+            .orders
+            .retain(|order| !in_flight.contains(&order.metadata.uid));
     }
 
     pub fn mark_settled_orders(&mut self, block: u64, orders: impl Iterator<Item = OrderUid>) {
@@ -49,7 +50,6 @@ mod tests {
         inflight.mark_settled_orders(1, [OrderUid::from_integer(0)].into_iter());
         let mut order0 = Order::default();
         order0.metadata.uid = OrderUid::from_integer(0);
-        order0.creation.partially_fillable = true;
         let mut order1 = Order::default();
         order1.metadata.uid = OrderUid::from_integer(1);
         let mut auction = Auction {
@@ -64,10 +64,6 @@ mod tests {
             auction.orders
         };
 
-        let filtered = update_and_get_filtered_orders(&auction);
-        assert_eq!(filtered.len(), 2);
-
-        auction.orders[0].creation.partially_fillable = false;
         let filtered = update_and_get_filtered_orders(&auction);
         assert_eq!(filtered.len(), 1);
 
