@@ -177,10 +177,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         contracts.gp_settlement.clone(),
         base_tokens,
         web3.clone(),
-        Arc::new(PoolFetcher {
-            pair_provider: uniswap_pair_provider,
-            web3: web3.clone(),
-        }),
+        Arc::new(PoolFetcher::uniswap(uniswap_pair_provider, web3.clone())),
     );
     let solver = solver::solver::naive_solver(solver_account);
     let liquidity_collector = LiquidityCollector {

@@ -1,11 +1,15 @@
 use super::pair_provider::PairProvider;
 use crate::{
     baseline_solver::BaselineSolvable, ethcontract_error::EthcontractErrorType,
-    recent_block_cache::Block, transport::MAX_BATCH_SIZE, Web3,
+    recent_block_cache::Block, transport::MAX_BATCH_SIZE, Web3, Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::{IUniswapLikePair, ERC20};
-use ethcontract::{batch::CallBatch, errors::MethodError, BlockId, H160, U256};
+use ethcontract::{errors::MethodError, BlockId, H160, U256};
+use futures::{
+    future::{self, BoxFuture},
+    FutureExt as _,
+};
 use model::TokenPair;
 use num::rational::Ratio;
 use std::collections::HashSet;
@@ -23,6 +27,25 @@ type RelativeReserves = (U256, U256, H160);
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
     async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>>;
+}
+
+/// Trait for abstracting the on-chain reading logic for pool state.
+pub trait PoolReading: Send + Sync {
+    /// Read the pool state for the specified token pair.
+    ///
+    /// The caller specifies a Web3 call back to queue RPC requests into as well
+    /// as a block number to fetch the data on.
+    ///
+    /// This method intentionally **does not** use `async_trait` because
+    /// implementations are expected to queue up Ethereum RPC calls into the
+    /// specified batch when the method is called and not when the resulting
+    /// future is first polled.
+    fn read_state(
+        &self,
+        pair: TokenPair,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'_, Result<Option<Pool>>>;
 }
 
 #[derive(Clone, Copy, Eq, Hash, PartialEq, Debug)]
@@ -158,59 +181,88 @@ impl BaselineSolvable for Pool {
     }
 }
 
-pub struct PoolFetcher {
+pub struct PoolFetcher<Reader> {
+    pub pool_reader: Reader,
+    pub web3: Web3,
+}
+
+impl PoolFetcher<DefaultPoolReader> {
+    /// Creates a pool fetcher instance for Uniswap V2 (or an exact clone).
+    pub fn uniswap(pair_provider: PairProvider, web3: Web3) -> Self {
+        Self {
+            pool_reader: DefaultPoolReader {
+                pair_provider,
+                web3: web3.clone(),
+            },
+            web3,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl<Reader> PoolFetching for PoolFetcher<Reader>
+where
+    Reader: PoolReading,
+{
+    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
+        let mut batch = Web3CallBatch::new(self.web3.transport().clone());
+        let block = BlockId::Number(at_block.into());
+        let futures = token_pairs
+            .into_iter()
+            .map(|pair| self.pool_reader.read_state(pair, &mut batch, block))
+            .collect::<Vec<_>>();
+        batch.execute_all(MAX_BATCH_SIZE).await;
+
+        future::join_all(futures)
+            .await
+            .into_iter()
+            .filter_map(|pool| pool.transpose())
+            .collect()
+    }
+}
+
+/// The default pool reader implementation.
+///
+/// This fetches on-chain pool state for Uniswap-like pools assuming a constant
+/// fee of 0.3%.
+pub struct DefaultPoolReader {
     pub pair_provider: PairProvider,
     pub web3: Web3,
 }
 
-#[async_trait::async_trait]
-impl PoolFetching for PoolFetcher {
-    async fn fetch(&self, token_pairs: HashSet<TokenPair>, at_block: Block) -> Result<Vec<Pool>> {
-        let mut batch = CallBatch::new(self.web3.transport());
-        let futures = token_pairs
-            .into_iter()
-            .map(|pair| {
-                let pair_address = self.pair_provider.pair_address(&pair);
-                let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
+impl PoolReading for DefaultPoolReader {
+    fn read_state(
+        &self,
+        pair: TokenPair,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'_, Result<Option<Pool>>> {
+        let pair_address = self.pair_provider.pair_address(&pair);
+        let pair_contract = IUniswapLikePair::at(&self.web3, pair_address);
 
-                // Fetch ERC20 token balances of the pools to sanity check with reserves
-                let token0 = ERC20::at(&self.web3, pair.get().0);
-                let token1 = ERC20::at(&self.web3, pair.get().1);
+        // Fetch ERC20 token balances of the pools to sanity check with reserves
+        let token0 = ERC20::at(&self.web3, pair.get().0);
+        let token1 = ERC20::at(&self.web3, pair.get().1);
 
-                let block = BlockId::Number(at_block.into());
-                let reserves = pair_contract
-                    .get_reserves()
-                    .block(block)
-                    .batch_call(&mut batch);
-                let token0_balance = token0
-                    .balance_of(pair_address)
-                    .block(block)
-                    .batch_call(&mut batch);
-                let token1_balance = token1
-                    .balance_of(pair_address)
-                    .block(block)
-                    .batch_call(&mut batch);
+        let reserves = pair_contract.get_reserves().block(block).batch_call(batch);
+        let token0_balance = token0
+            .balance_of(pair_address)
+            .block(block)
+            .batch_call(batch);
+        let token1_balance = token1
+            .balance_of(pair_address)
+            .block(block)
+            .batch_call(batch);
 
-                async move {
-                    // Clippy is wrong about this being eval order dependent.
-                    #[allow(clippy::eval_order_dependence)]
-                    FetchedPool {
-                        pair,
-                        reserves: reserves.await,
-                        token0_balance: token0_balance.await,
-                        token1_balance: token1_balance.await,
-                    }
-                }
+        async move {
+            handle_results(FetchedPool {
+                pair,
+                reserves: reserves.await,
+                token0_balance: token0_balance.await,
+                token1_balance: token1_balance.await,
             })
-            .collect::<Vec<_>>();
-        batch.execute_all(MAX_BATCH_SIZE).await;
-
-        let mut results = Vec::new();
-        for future in futures {
-            // Batch has already been executed, so these awaits resolve immediately.
-            results.push(future.await);
         }
-        handle_results(results)
+        .boxed()
     }
 }
 
@@ -232,20 +284,12 @@ pub fn handle_contract_error<T>(result: Result<T, MethodError>) -> Result<Option
     }
 }
 
-fn handle_results(results: Vec<FetchedPool>) -> Result<Vec<Pool>> {
-    results.into_iter().try_fold(Vec::new(), |mut acc, pool| {
-        let reserves = match handle_contract_error(pool.reserves)? {
-            Some(reserves) => reserves,
-            None => return Ok(acc),
-        };
-        let token0_balance = match handle_contract_error(pool.token0_balance)? {
-            Some(balance) => balance,
-            None => return Ok(acc),
-        };
-        let token1_balance = match handle_contract_error(pool.token1_balance)? {
-            Some(balance) => balance,
-            None => return Ok(acc),
-        };
+fn handle_results(fetched_pool: FetchedPool) -> Result<Option<Pool>> {
+    let reserves = handle_contract_error(fetched_pool.reserves)?;
+    let token0_balance = handle_contract_error(fetched_pool.token0_balance)?;
+    let token1_balance = handle_contract_error(fetched_pool.token1_balance)?;
+
+    let pool = reserves.and_then(|reserves| {
         // Some ERC20s (e.g. AMPL) have an elastic supply and can thus reduce the balance of their owners without any transfer or other interaction ("rebase").
         // Such behavior can implicitly change the *k* in the pool's constant product formula. E.g. a pool with 10 USDC and 10 AMPL has k = 100. After a negative
         // rebase the pool's AMPL balance may reduce to 9, thus k should be implicitly updated to 90 (figuratively speaking the pool is undercollateralized).
@@ -253,11 +297,13 @@ fn handle_results(results: Vec<FetchedPool>) -> Result<Vec<Pool>> {
         // Note, that a positive rebase is not problematic as k would increase in this case giving the pool excess in the elastic token (an arbitrageur could
         // benefit by withdrawing the excess from the pool without selling anything).
         // We therefore exclude all pools where the pool's token balance of either token in the pair is less than the cached reserve.
-        if U256::from(reserves.0) <= token0_balance && U256::from(reserves.1) <= token1_balance {
-            acc.push(Pool::uniswap(pool.pair, (reserves.0, reserves.1)));
+        if U256::from(reserves.0) > token0_balance? || U256::from(reserves.1) > token1_balance? {
+            return None;
         }
-        Ok(acc)
-    })
+        Some(Pool::uniswap(fetched_pool.pair, (reserves.0, reserves.1)))
+    });
+
+    Ok(pool)
 }
 
 #[cfg(test)]
@@ -377,31 +423,23 @@ mod tests {
 
     #[test]
     fn pool_fetcher_forwards_node_error() {
-        let results = vec![FetchedPool {
+        let fetched_pool = FetchedPool {
             reserves: Err(ethcontract_error::testing_node_error()),
             pair: Default::default(),
             token0_balance: Ok(1.into()),
             token1_balance: Ok(1.into()),
-        }];
-        assert!(handle_results(results).is_err());
+        };
+        assert!(handle_results(fetched_pool).is_err());
     }
 
     #[test]
     fn pool_fetcher_skips_contract_error() {
-        let results = vec![
-            FetchedPool {
-                reserves: Err(ethcontract_error::testing_contract_error()),
-                pair: Default::default(),
-                token0_balance: Ok(1.into()),
-                token1_balance: Ok(1.into()),
-            },
-            FetchedPool {
-                reserves: Ok((1, 1, 0)),
-                pair: Default::default(),
-                token0_balance: Ok(1.into()),
-                token1_balance: Ok(1.into()),
-            },
-        ];
-        assert_eq!(handle_results(results).unwrap().len(), 1);
+        let fetched_pool = FetchedPool {
+            reserves: Err(ethcontract_error::testing_contract_error()),
+            pair: Default::default(),
+            token0_balance: Ok(1.into()),
+            token1_balance: Ok(1.into()),
+        };
+        assert!(handle_results(fetched_pool).unwrap().is_none())
     }
 }

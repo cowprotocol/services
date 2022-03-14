@@ -395,10 +395,7 @@ async fn main() {
             .expect("failed to load baseline source pair providers")
             .into_iter()
             .map(|(source, pair_provider)| {
-                let fetcher = Box::new(PoolFetcher {
-                    pair_provider,
-                    web3: web3.clone(),
-                });
+                let fetcher = Box::new(PoolFetcher::uniswap(pair_provider, web3.clone()));
                 let pool_cache = PoolCache::new(
                     cache_config,
                     fetcher,

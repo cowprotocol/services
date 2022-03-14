@@ -116,10 +116,7 @@ impl OrderbookServices {
                 maximum_recent_block_age: 4,
                 ..Default::default()
             },
-            Box::new(PoolFetcher {
-                pair_provider,
-                web3: web3.clone(),
-            }),
+            Box::new(PoolFetcher::uniswap(pair_provider, web3.clone())),
             current_block_stream.clone(),
             Arc::new(NoopPoolCacheMetrics),
         )

@@ -364,10 +364,10 @@ mod tests {
         let pools = Arc::new(
             PoolCache::new(
                 CacheConfig::default(),
-                Box::new(PoolFetcher {
-                    pair_provider: uniswap_v2::get_pair_provider(&web3).await.unwrap(),
-                    web3: web3.clone(),
-                }),
+                Box::new(PoolFetcher::uniswap(
+                    uniswap_v2::get_pair_provider(&web3).await.unwrap(),
+                    web3.clone(),
+                )),
                 current_block_stream(web3.clone(), Duration::from_secs(1))
                     .await
                     .unwrap(),

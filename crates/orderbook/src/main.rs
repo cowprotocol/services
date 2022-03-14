@@ -434,10 +434,7 @@ async fn main() {
         pool_fetchers: pair_providers
             .into_iter()
             .map(|pair_provider| {
-                Arc::new(PoolFetcher {
-                    pair_provider,
-                    web3: web3.clone(),
-                }) as Arc<dyn PoolFetching>
+                Arc::new(PoolFetcher::uniswap(pair_provider, web3.clone())) as Arc<dyn PoolFetching>
             })
             .collect(),
     };
