@@ -43,6 +43,7 @@ include!(concat!(env!("OUT_DIR"), "/SushiSwapFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/SushiSwapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/SwaprFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/SwaprRouter.rs"));
+include!(concat!(env!("OUT_DIR"), "/ISwaprPair.rs"));
 include!(concat!(env!("OUT_DIR"), "/UniswapV2Factory.rs"));
 include!(concat!(env!("OUT_DIR"), "/UniswapV2Router02.rs"));
 include!(concat!(env!("OUT_DIR"), "/WETH9.rs"));

@@ -48,7 +48,7 @@ fn run() -> Result<()> {
         )?
         .github(
             "BalancerV2StablePoolFactory",
-            "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
+            "balancer-labs/balancer-v2-monorepo/ad1442113b26ec22081c2047e2ec95355a7f12ba/\
              pkg/deployments/tasks/20210624-stable-pool/abi/StablePoolFactory.json",
         )?
         .npm(
@@ -96,7 +96,7 @@ fn run() -> Result<()> {
         .github(
             "BalancerV2StablePool",
             "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
-             pkg/deployments/tasks/20210624-stable-pool/abi/StablePool.json",
+             abis/StablePool.json",
         )?
         .npm(
             "ERC20",
@@ -129,7 +129,12 @@ fn run() -> Result<()> {
         .github(
             "IZeroEx",
             "0xProject/protocol/c1177416f50c2465ee030dacc14ff996eebd4e74/\
-            packages/contract-artifacts/artifacts/IZeroEx.json",
+             packages/contract-artifacts/artifacts/IZeroEx.json",
+        )?
+        .github(
+            "ISwaprPair",
+            "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/\
+             build/IDXswapPair.json",
         )?;
 
     Ok(())

@@ -1,5 +1,7 @@
 //! Swapr baseline liquidity source implementation.
 
+pub mod reader;
+
 use super::uniswap_v2::macros::impl_uniswap_like_liquidity;
 
 impl_uniswap_like_liquidity! {
