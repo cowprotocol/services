@@ -299,7 +299,6 @@ mod tests {
     use crate::sources::balancer_v2::BalancerFactoryKind;
     use crate::sources::uniswap_v2;
     use crate::sources::uniswap_v2::pool_cache::NoopPoolCacheMetrics;
-    use crate::sources::uniswap_v2::pool_fetching::PoolFetcher;
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
@@ -364,10 +363,7 @@ mod tests {
         let pools = Arc::new(
             PoolCache::new(
                 CacheConfig::default(),
-                Box::new(PoolFetcher::uniswap(
-                    uniswap_v2::get_pair_provider(&web3).await.unwrap(),
-                    web3.clone(),
-                )),
+                uniswap_v2::get_liquidity_source(&web3).await.unwrap().1,
                 current_block_stream(web3.clone(), Duration::from_secs(1))
                     .await
                     .unwrap(),

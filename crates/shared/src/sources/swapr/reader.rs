@@ -1,8 +1,11 @@
 //! A pool state reading implementation specific to Swapr.
 
 use crate::{
-    sources::uniswap_v2::pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
-    Web3CallBatch,
+    sources::uniswap_v2::{
+        pair_provider::PairProvider,
+        pool_fetching::{self, DefaultPoolReader, Pool, PoolReading},
+    },
+    Web3, Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::ISwaprPair;
@@ -21,6 +24,10 @@ pub struct SwaprPoolReader(DefaultPoolReader);
 const FEE_BASE: u32 = 10_000;
 
 impl PoolReading for SwaprPoolReader {
+    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self {
+        Self(DefaultPoolReader::for_pair_provider(pair_provider, web3))
+    }
+
     fn read_state(
         &self,
         pair: TokenPair,
@@ -54,14 +61,8 @@ fn handle_results(
 mod tests {
     use super::*;
     use crate::{
-        ethcontract_error,
-        recent_block_cache::Block,
-        sources::{
-            swapr,
-            uniswap_v2::pool_fetching::{PoolFetcher, PoolFetching as _},
-        },
-        transport::create_env_test_transport,
-        Web3,
+        ethcontract_error, recent_block_cache::Block, sources::swapr,
+        transport::create_env_test_transport, Web3,
     };
     use ethcontract::H160;
     use maplit::hashset;
@@ -105,14 +106,8 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
 
-        let pair_provider = swapr::get_pair_provider(&web3).await.unwrap();
-        let pool_reader = SwaprPoolReader(DefaultPoolReader {
-            pair_provider,
-            web3: web3.clone(),
-        });
-        let fetcher = PoolFetcher { pool_reader, web3 };
-
-        let pool = fetcher
+        let (_, pool_fetcher) = swapr::get_liquidity_source(&web3).await.unwrap();
+        let pool = pool_fetcher
             .fetch(
                 hashset! {
                     TokenPair::new(

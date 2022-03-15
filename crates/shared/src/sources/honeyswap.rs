@@ -16,7 +16,7 @@ mod tests {
     #[tokio::test]
     async fn test_create2_xdai() {
         // https://info.honeyswap.org/pair/0x4505b262dc053998c10685dc5f9098af8ae5c8ad
-        let xdai_pair_provider = get_pair_provider(&Mock::new(100).web3()).await.unwrap();
+        let (xdai_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
         let xdai_pair = TokenPair::new(
             addr!("71850b7e9ee3f13ab46d67167341e4bdc905eef9"),
             addr!("e91d153e0b41518a2ce8dd3d7944fa863463a97d"),

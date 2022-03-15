@@ -16,7 +16,7 @@ mod tests {
     #[tokio::test]
     async fn test_create2_sushiswap() {
         // xDai
-        let xdai_pair_provider = get_pair_provider(&Mock::new(100).web3()).await.unwrap();
+        let (xdai_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
         let xdai_pair = TokenPair::new(
             addr!("7f7440c5098462f833e123b44b8a03e1d9785bab"),
             addr!("e91D153E0b41518A2Ce8Dd3D7944Fa863463a97d"),

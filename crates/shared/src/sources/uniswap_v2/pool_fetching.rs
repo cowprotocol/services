@@ -30,7 +30,9 @@ pub trait PoolFetching: Send + Sync {
 }
 
 /// Trait for abstracting the on-chain reading logic for pool state.
-pub trait PoolReading: Send + Sync {
+pub trait PoolReading: Sized + Send + Sync {
+    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self;
+
     /// Read the pool state for the specified token pair.
     ///
     /// The caller specifies a Web3 call back to queue RPC requests into as well
@@ -231,6 +233,13 @@ pub struct DefaultPoolReader {
 }
 
 impl PoolReading for DefaultPoolReader {
+    fn for_pair_provider(pair_provider: PairProvider, web3: Web3) -> Self {
+        Self {
+            pair_provider,
+            web3,
+        }
+    }
+
     fn read_state(
         &self,
         pair: TokenPair,

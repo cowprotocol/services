@@ -58,10 +58,7 @@ use shared::{
     sources::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
-        uniswap_v2::{
-            pool_cache::PoolCache,
-            pool_fetching::{PoolFetcher, PoolFetching},
-        },
+        uniswap_v2::pool_cache::PoolCache,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -368,12 +365,13 @@ async fn main() {
         sources::defaults_for_chain(chain_id).expect("failed to get default baseline sources")
     });
     tracing::info!(?baseline_sources, "using baseline sources");
-    let pair_providers = sources::pair_providers(&web3, &baseline_sources)
-        .await
-        .expect("failed to load baseline source pair providers")
-        .values()
-        .cloned()
-        .collect::<Vec<_>>();
+    let (pair_providers, pool_fetchers): (Vec<_>, Vec<_>) =
+        sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
+            .await
+            .expect("failed to load baseline source pair providers")
+            .values()
+            .cloned()
+            .unzip();
 
     let base_tokens = Arc::new(BaseTokens::new(
         native_token.address(),
@@ -385,10 +383,10 @@ async fn main() {
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
-        .iter()
+        .into_iter()
         .map(|provider| -> Arc<dyn TokenOwnerFinding> {
             Arc::new(UniswapLikePairProviderFinder {
-                inner: provider.clone(),
+                inner: provider,
                 base_tokens: base_tokens.tokens().iter().copied().collect(),
             })
         })
@@ -430,14 +428,7 @@ async fn main() {
             .await
             .unwrap();
 
-    let pool_aggregator = PoolAggregator {
-        pool_fetchers: pair_providers
-            .into_iter()
-            .map(|pair_provider| {
-                Arc::new(PoolFetcher::uniswap(pair_provider, web3.clone())) as Arc<dyn PoolFetching>
-            })
-            .collect(),
-    };
+    let pool_aggregator = PoolAggregator { pool_fetchers };
 
     let cache_config = CacheConfig {
         number_of_blocks_to_cache: args.shared.pool_cache_blocks,
@@ -449,7 +440,7 @@ async fn main() {
     let pool_fetcher = Arc::new(
         PoolCache::new(
             cache_config,
-            Box::new(pool_aggregator),
+            Arc::new(pool_aggregator),
             current_block_stream.clone(),
             metrics.clone(),
         )

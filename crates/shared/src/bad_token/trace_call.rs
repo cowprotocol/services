@@ -604,11 +604,11 @@ mod tests {
 
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let uniswap = Arc::new(UniswapLikePairProviderFinder {
-            inner: uniswap_v2::get_pair_provider(&web3).await.unwrap(),
+            inner: uniswap_v2::get_liquidity_source(&web3).await.unwrap().0,
             base_tokens: base_tokens.to_vec(),
         });
         let sushiswap = Arc::new(UniswapLikePairProviderFinder {
-            inner: sushiswap::get_pair_provider(&web3).await.unwrap(),
+            inner: sushiswap::get_liquidity_source(&web3).await.unwrap().0,
             base_tokens: base_tokens.to_vec(),
         });
         let token_cache = TraceCallDetector {

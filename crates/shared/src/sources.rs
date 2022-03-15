@@ -48,25 +48,26 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
     })
 }
 
-/// Returns a mapping of baseline sources to their respective pair providers.
-pub async fn pair_providers(
+/// Returns a mapping of UniswapV2-like baseline sources to their respective
+/// pair providers and pool fetchers.
+pub async fn uniswap_like_liquidity_sources(
     web3: &Web3,
     sources: &[BaselineSource],
-) -> Result<HashMap<BaselineSource, PairProvider>> {
-    let mut providers = HashMap::new();
+) -> Result<HashMap<BaselineSource, (PairProvider, Arc<dyn PoolFetching>)>> {
+    let mut liquidity_sources = HashMap::new();
     for source in sources {
-        let provider = match source {
-            BaselineSource::UniswapV2 => uniswap_v2::get_pair_provider(web3).await?,
-            BaselineSource::SushiSwap => sushiswap::get_pair_provider(web3).await?,
-            BaselineSource::Honeyswap => honeyswap::get_pair_provider(web3).await?,
-            BaselineSource::Baoswap => baoswap::get_pair_provider(web3).await?,
-            BaselineSource::Swapr => swapr::get_pair_provider(web3).await?,
+        let liquidity_source = match source {
+            BaselineSource::UniswapV2 => uniswap_v2::get_liquidity_source(web3).await?,
+            BaselineSource::SushiSwap => sushiswap::get_liquidity_source(web3).await?,
+            BaselineSource::Honeyswap => honeyswap::get_liquidity_source(web3).await?,
+            BaselineSource::Baoswap => baoswap::get_liquidity_source(web3).await?,
+            BaselineSource::Swapr => swapr::get_liquidity_source(web3).await?,
             BaselineSource::BalancerV2 => continue,
         };
 
-        providers.insert(*source, provider);
+        liquidity_sources.insert(*source, liquidity_source);
     }
-    Ok(providers)
+    Ok(liquidity_sources)
 }
 
 pub struct PoolAggregator {

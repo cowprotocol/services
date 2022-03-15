@@ -13,7 +13,7 @@ use shared::{
     sources::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
-        uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetcher},
+        uniswap_v2::pool_cache::PoolCache,
         BaselineSource,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -390,15 +390,14 @@ async fn main() {
     });
     tracing::info!(?baseline_sources, "using baseline sources");
     let pool_caches: HashMap<BaselineSource, Arc<PoolCache>> =
-        sources::pair_providers(&web3, &baseline_sources)
+        sources::uniswap_like_liquidity_sources(&web3, &baseline_sources)
             .await
-            .expect("failed to load baseline source pair providers")
+            .expect("failed to load baseline source uniswap liquidity")
             .into_iter()
-            .map(|(source, pair_provider)| {
-                let fetcher = Box::new(PoolFetcher::uniswap(pair_provider, web3.clone()));
+            .map(|(source, (_, pool_fetcher))| {
                 let pool_cache = PoolCache::new(
                     cache_config,
-                    fetcher,
+                    pool_fetcher,
                     current_block_stream.clone(),
                     metrics.clone(),
                 )

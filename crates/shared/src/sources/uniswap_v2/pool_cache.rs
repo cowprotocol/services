@@ -20,7 +20,7 @@ impl PoolCacheMetrics for NoopPoolCacheMetrics {
 }
 
 pub struct PoolCache(
-    RecentBlockCache<TokenPair, Pool, Box<dyn PoolFetching>, Arc<dyn PoolCacheMetrics>>,
+    RecentBlockCache<TokenPair, Pool, Arc<dyn PoolFetching>, Arc<dyn PoolCacheMetrics>>,
 );
 
 impl CacheKey<Pool> for TokenPair {
@@ -34,7 +34,7 @@ impl CacheKey<Pool> for TokenPair {
 }
 
 #[async_trait::async_trait]
-impl CacheFetching<TokenPair, Pool> for Box<dyn PoolFetching> {
+impl CacheFetching<TokenPair, Pool> for Arc<dyn PoolFetching> {
     async fn fetch_values(&self, keys: HashSet<TokenPair>, block: Block) -> Result<Vec<Pool>> {
         self.fetch(keys, block).await
     }
@@ -50,7 +50,7 @@ impl PoolCache {
     /// Creates a new pool cache.
     pub fn new(
         config: CacheConfig,
-        fetcher: Box<dyn PoolFetching>,
+        fetcher: Arc<dyn PoolFetching>,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn PoolCacheMetrics>,
     ) -> Result<Self> {
