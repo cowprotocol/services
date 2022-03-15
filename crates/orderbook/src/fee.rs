@@ -11,7 +11,7 @@ use shared::{
     price_estimation::{native::NativePriceEstimating, single_estimate},
 };
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -84,6 +84,7 @@ pub struct MinFeeCalculator {
     fee_subsidy: FeeSubsidyConfiguration,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     cow_subsidy: Arc<dyn CowSubsidy>,
+    liquidity_order_owners: HashSet<H160>,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -96,11 +97,27 @@ pub struct FeeData {
 }
 
 /// Everything required to compute the fee amount in sell token
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeeParameters {
     pub gas_amount: f64,
     pub gas_price: f64,
     pub sell_token_price: f64,
+}
+
+impl Default for FeeParameters {
+    fn default() -> Self {
+        Self {
+            gas_amount: 0.,
+            gas_price: 0.,
+            // We can't use `derive(Default)` because then this field would have
+            // a value of `0.` and it is used in division. The actual value we
+            // use here doesn't really matter as long as its non-zero (since the
+            // resulting amount in native token or sell token will be 0
+            // regardless), but the multiplicative identity seemed like a
+            // natural default value to use.
+            sell_token_price: 1.,
+        }
+    }
 }
 
 // We want the conversion from f64 to U256 to use ceil because:
@@ -238,6 +255,7 @@ impl MinFeeCalculator {
         fee_subsidy: FeeSubsidyConfiguration,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         cow_subsidy: Arc<dyn CowSubsidy>,
+        liquidity_order_owners: HashSet<H160>,
     ) -> Self {
         Self {
             price_estimator,
@@ -248,6 +266,7 @@ impl MinFeeCalculator {
             fee_subsidy,
             native_price_estimator,
             cow_subsidy,
+            liquidity_order_owners,
         }
     }
 
@@ -299,6 +318,9 @@ impl MinFeeCalculating for MinFeeCalculator {
         user: H160,
     ) -> Result<Measurement, PriceEstimationError> {
         if fee_data.buy_token == fee_data.sell_token {
+            return Ok((U256::zero(), MAX_DATETIME));
+        }
+        if self.liquidity_order_owners.contains(&user) {
             return Ok((U256::zero(), MAX_DATETIME));
         }
 
@@ -361,6 +383,10 @@ impl MinFeeCalculating for MinFeeCalculator {
         subsidized_fee: U256,
         user: H160,
     ) -> Result<FeeParameters, GetUnsubsidizedMinFeeError> {
+        if self.liquidity_order_owners.contains(&user) {
+            return Ok(FeeParameters::default());
+        }
+
         let cow_factor = self.cow_subsidy.cow_subsidy_factor(user);
         let past_fee = self
             .measurements
@@ -471,7 +497,7 @@ mod tests {
     use chrono::Duration;
     use futures::FutureExt;
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
-    use maplit::hashmap;
+    use maplit::{hashmap, hashset};
     use mockall::{predicate::*, Sequence};
     use shared::{
         bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
@@ -509,6 +535,7 @@ mod tests {
                 fee_subsidy: Default::default(),
                 native_price_estimator: create_default_native_token_estimator(price_estimator),
                 cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+                liquidity_order_owners: Default::default(),
             }
         }
     }
@@ -656,6 +683,7 @@ mod tests {
             fee_subsidy: Default::default(),
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+            liquidity_order_owners: Default::default(),
         };
 
         // Selling unsupported token
@@ -733,6 +761,7 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy(0.5)),
+            liquidity_order_owners: Default::default(),
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data, user)
@@ -835,6 +864,7 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+            liquidity_order_owners: Default::default(),
         };
 
         let (fee, _) = fee_estimator
@@ -940,6 +970,7 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+            liquidity_order_owners: Default::default(),
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
@@ -954,5 +985,58 @@ mod tests {
             .now_or_never()
             .unwrap()
             .unwrap();
+    }
+
+    #[test]
+    fn no_fees_for_pmms() {
+        let liquidity_order_owner = H160([0x42; 20]);
+        let fee_estimator = MinFeeCalculator {
+            liquidity_order_owners: hashset!(liquidity_order_owner),
+            ..MinFeeCalculator::new_for_test(
+                Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+                    EstimatedGasPrice {
+                        legacy: 1.0,
+                        eip1559: None,
+                    },
+                )))),
+                Arc::new(FakePriceEstimator(price_estimation::Estimate {
+                    out_amount: 1.into(),
+                    gas: 9,
+                })),
+                Box::new(Utc::now),
+            )
+        };
+
+        let fee_data = FeeData {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            fee_estimator
+                .compute_subsidized_min_fee(fee_data, AppId::default(), liquidity_order_owner)
+                .now_or_never()
+                .unwrap()
+                .unwrap(),
+            (U256::from(0), MAX_DATETIME),
+        );
+        assert_eq!(
+            fee_estimator
+                .get_unsubsidized_min_fee(
+                    fee_data,
+                    AppId::default(),
+                    0.into(),
+                    liquidity_order_owner
+                )
+                .now_or_never()
+                .unwrap()
+                .unwrap(),
+            FeeParameters {
+                gas_amount: 0.,
+                gas_price: 0.,
+                sell_token_price: 1.
+            },
+        );
     }
 }

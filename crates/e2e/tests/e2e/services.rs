@@ -156,6 +156,7 @@ impl OrderbookServices {
                 ERC20::at(web3, contracts.weth.address()),
                 Default::default(),
             )),
+            Default::default(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

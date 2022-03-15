@@ -619,6 +619,7 @@ async fn main() {
             },
             native_price_estimator.clone(),
             cow_subsidy.clone(),
+            args.shared.liquidity_order_owners.iter().copied().collect(),
         ))
     };
     let fee_calculator = create_fee_calculator(price_estimator.clone());
