@@ -1,9 +1,9 @@
-use crate::price_estimation::{
-    old_estimator_to_stream, vec_estimates, PriceEstimateResult, PriceEstimating,
-    PriceEstimationError, Query,
+use crate::price_estimation::{PriceEstimating, PriceEstimationError, Query};
+use futures::stream::StreamExt;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
 };
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 /// An instrumented price estimator.
 pub struct InstrumentedPriceEstimator {
@@ -22,18 +22,6 @@ impl InstrumentedPriceEstimator {
             metrics,
         }
     }
-
-    async fn estimates_(&self, queries: &[Query]) -> Vec<PriceEstimateResult> {
-        let start = Instant::now();
-        let results = vec_estimates(self.inner.as_ref(), queries).await;
-        for result in &results {
-            let success = !matches!(result, Err(PriceEstimationError::Other(_)));
-            self.metrics.price_estimated(&self.name, success);
-        }
-        self.metrics
-            .price_estimation_timed(&self.name, start.elapsed());
-        results
-    }
 }
 
 #[async_trait::async_trait]
@@ -42,7 +30,19 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         &'a self,
         queries: &'a [Query],
     ) -> futures::stream::BoxStream<'_, (usize, super::PriceEstimateResult)> {
-        old_estimator_to_stream(self.estimates_(queries))
+        let start = Instant::now();
+        let measure_time = async move {
+            self.metrics
+                .price_estimation_timed(&self.name, start.elapsed());
+        };
+        self.inner
+            .estimates(queries)
+            .inspect(move |result| {
+                let success = !matches!(&result.1, Err(PriceEstimationError::Other(_)));
+                self.metrics.price_estimated(&self.name, success);
+            })
+            .chain(futures::stream::once(measure_time).filter_map(|_| async { None }))
+            .boxed()
     }
 }
 
@@ -57,7 +57,9 @@ pub trait Metrics: Send + Sync + 'static {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::price_estimation::{Estimate, MockPriceEstimating};
+    use crate::price_estimation::{
+        vec_estimates, Estimate, MockPriceEstimating, PriceEstimationError,
+    };
     use anyhow::anyhow;
     use ethcontract::H160;
     use futures::StreamExt;
