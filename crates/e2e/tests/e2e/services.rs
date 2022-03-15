@@ -152,8 +152,7 @@ impl OrderbookServices {
             native_price_estimator.clone(),
             Arc::new(CowSubsidyImpl::new(
                 ERC20::at(web3, contracts.weth.address()),
-                0.into(),
-                1.0,
+                Default::default(),
             )),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(

@@ -10,7 +10,7 @@ use model::{
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     api::{order_validation::OrderValidator, post_quote::OrderQuoter},
-    cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy},
+    cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy, SubsidyTiers},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
@@ -181,17 +181,17 @@ struct Arguments {
     )]
     partner_additional_fee_factors: HashMap<AppId, f64>,
 
-    /// Fee factor as extra subsidy for cow token owners.
-    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
-    cow_fee_factor: f64,
+    /// Used to configure how much of the regular fee a user should pay based on their COW balance.
+    ///
+    /// The expected format is "10.2:0.75,150:0.5" for 2 subsidy tiers.
+    /// A balance of [10.2,150) COW will cause you to pay 75% of the regular fee and a balance of
+    /// [150, inf) COW will cause you to pay 50% of the regular fee.
+    #[clap(long, env)]
+    cow_fee_factors: SubsidyTiers,
 
     /// Address of the cow token used for extra subsidy.
     #[clap(long, env)]
     cow_token_address: Option<H160>,
-
-    /// Minimum cow token threshold to get the extra subsidy.
-    #[clap(long, env, default_value = "0")]
-    cow_threshold: f64,
 
     /// The API endpoint to call the mip v2 solver for price estimation
     #[clap(long, env)]
@@ -609,8 +609,7 @@ async fn main() {
     let cow_subsidy = match args.cow_token_address {
         Some(address) => Arc::new(CowSubsidyImpl::new(
             ERC20::at(&web3, address),
-            U256::from_f64_lossy(args.cow_threshold),
-            args.cow_fee_factor,
+            args.cow_fee_factors,
         )) as Arc<dyn CowSubsidy>,
         None => Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>,
     };
