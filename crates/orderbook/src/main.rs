@@ -184,7 +184,7 @@ struct Arguments {
     /// A balance of [10.2,150) COW will cause you to pay 75% of the regular fee and a balance of
     /// [150, inf) COW will cause you to pay 50% of the regular fee.
     #[clap(long, env)]
-    cow_fee_factors: SubsidyTiers,
+    cow_fee_factors: Option<SubsidyTiers>,
 
     /// Address of the cow token used for extra subsidy.
     #[clap(long, env)]
@@ -600,7 +600,7 @@ async fn main() {
     let cow_subsidy = match args.cow_token_address {
         Some(address) => Arc::new(CowSubsidyImpl::new(
             ERC20::at(&web3, address),
-            args.cow_fee_factors,
+            args.cow_fee_factors.unwrap_or_default(),
         )) as Arc<dyn CowSubsidy>,
         None => Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>,
     };
