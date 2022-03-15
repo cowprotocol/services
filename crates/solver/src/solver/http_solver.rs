@@ -38,8 +38,6 @@ pub fn is_transaction_failure(error: &ExecutionError) -> bool {
         || matches!(error, ExecutionError::InvalidOpcode)
 }
 
-// TODO: exclude partially fillable orders
-// TODO: set settlement.fee_factor
 // TODO: special rounding for the prices we get from the solver?
 
 /// Data shared between multiple instances of the http solver for the same solve id.

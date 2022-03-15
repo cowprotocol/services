@@ -641,7 +641,8 @@ async fn main() {
     let order_validator = Arc::new(OrderValidator::new(
         Box::new(web3.clone()),
         native_token.clone(),
-        args.banned_users,
+        args.banned_users.into_iter().collect(),
+        args.shared.liquidity_order_owners.into_iter().collect(),
         args.min_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),

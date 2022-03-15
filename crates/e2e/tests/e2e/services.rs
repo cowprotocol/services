@@ -32,7 +32,9 @@ use shared::{
     Web3,
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
-use std::{future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration};
+use std::{
+    collections::HashSet, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
+};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
@@ -173,7 +175,8 @@ impl OrderbookServices {
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
             contracts.weth.clone(),
-            vec![],
+            HashSet::default(),
+            HashSet::default(),
             Duration::from_secs(120),
             fee_calculator.clone(),
             bad_token_detector.clone(),

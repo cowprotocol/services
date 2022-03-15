@@ -15,7 +15,7 @@ use model::{
 use shared::{
     bad_token::BadTokenDetecting, price_estimation::PriceEstimationError, web3_traits::CodeFetching,
 };
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 use warp::{http::StatusCode, reply::with_status};
 
 #[cfg_attr(test, mockall::automock)]
@@ -213,7 +213,8 @@ pub struct OrderValidator {
     /// when only part of the order data is available
     code_fetcher: Box<dyn CodeFetching>,
     native_token: WETH9,
-    banned_users: Vec<H160>,
+    banned_users: HashSet<H160>,
+    liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
@@ -258,10 +259,12 @@ impl PreOrderData {
 }
 
 impl OrderValidator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         code_fetcher: Box<dyn CodeFetching>,
         native_token: WETH9,
-        banned_users: Vec<H160>,
+        banned_users: HashSet<H160>,
+        liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -271,6 +274,7 @@ impl OrderValidator {
             code_fetcher,
             native_token,
             banned_users,
+            liquidity_order_owners,
             min_order_validity_period,
             fee_validator,
             bad_token_detector,
@@ -282,7 +286,7 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if order.partially_fillable {
+        if order.partially_fillable && !self.liquidity_order_owners.contains(&order.owner) {
             return Err(PartialValidationError::UnsupportedOrderType);
         }
         if self.banned_users.contains(&order.owner) {
@@ -457,13 +461,16 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
         || (order.sell_token == native_token.address() && order.buy_token == BUY_ETH_ADDRESS)
 }
 
-/// Min balance user must have in sell token for order to be accepted. None when addition overflows.
+/// Min balance user must have in sell token for order to be accepted.
+///
+/// None when addition overflows.
 fn minimum_balance(order: &OrderCreation) -> Option<U256> {
-    if order.partially_fillable {
-        Some(U256::from(1))
-    } else {
-        order.sell_amount.checked_add(order.fee_amount)
-    }
+    // TODO: Note that we are pessimistic here for partially fillable orders,
+    // since they don't need the full balance in order for the order to be
+    // tradable. However, since they are currently only used for PMMs for
+    // matching against user orders, it makes sense for the full sell token
+    // amount balance to be required.
+    order.sell_amount.checked_add(order.fee_amount)
 }
 
 #[cfg(test)]
@@ -475,6 +482,7 @@ mod tests {
     };
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
+    use maplit::hashset;
     use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
@@ -485,14 +493,6 @@ mod tests {
 
     #[test]
     fn minimum_balance_() {
-        let partially_fillable_order = OrderCreation {
-            partially_fillable: true,
-            ..Default::default()
-        };
-        assert_eq!(
-            minimum_balance(&partially_fillable_order),
-            Some(U256::from(1))
-        );
         let order = OrderCreation {
             sell_amount: U256::MAX,
             fee_amount: U256::from(1),
@@ -552,7 +552,7 @@ mod tests {
         let mut code_fetcher = Box::new(MockCodeFetching::new());
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
         let min_order_validity_period = Duration::from_secs(1);
-        let banned_users = vec![H160::from_low_u64_be(1)];
+        let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
             shared::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
         code_fetcher
@@ -563,6 +563,7 @@ mod tests {
             code_fetcher,
             native_token,
             banned_users,
+            hashset!(),
             min_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
@@ -658,7 +659,8 @@ mod tests {
         let validator = OrderValidator::new(
             code_fetcher,
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
@@ -679,24 +681,33 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
+        let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let min_order_validity_period = Duration::from_secs(1);
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
-            Duration::from_secs(1),
+            hashset!(),
+            hashset!(liquidity_order_owner),
+            min_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
+        let order = || PreOrderData {
+            valid_to: shared::time::now_in_epoch_seconds()
+                + min_order_validity_period.as_secs() as u32
+                + 2,
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            ..Default::default()
+        };
+
+        assert!(validator.partial_validate(order()).await.is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
-                valid_to: shared::time::now_in_epoch_seconds()
-                    + min_order_validity_period.as_secs() as u32
-                    + 2,
-                sell_token: H160::from_low_u64_be(1),
-                buy_token: H160::from_low_u64_be(2),
-                ..Default::default()
+                partially_fillable: true,
+                owner: liquidity_order_owner,
+                ..order()
             })
             .await
             .is_ok());
@@ -719,7 +730,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -757,7 +769,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -795,7 +808,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -837,7 +851,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -877,7 +892,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -915,7 +931,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -954,7 +971,8 @@ mod tests {
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
-            vec![],
+            hashset!(),
+            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
@@ -994,7 +1012,8 @@ mod tests {
                 let validator = OrderValidator::new(
                     Box::new(MockCodeFetching::new()),
                     dummy_contract!(WETH9, [0xef; 20]),
-                    vec![],
+                    hashset!(),
+                    hashset!(),
                     Duration::from_secs(1),
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),

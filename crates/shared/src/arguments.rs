@@ -130,6 +130,15 @@ pub struct Arguments {
     /// The 1Inch REST API URL to use.
     #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
     pub one_inch_url: Url,
+
+    /// The configured addresses whose orders should be considered liquidity and
+    /// not regular user orders.
+    ///
+    /// These orders have special semantics such as not being considered in the
+    /// settlements objective funtion, not receiving any surplus, and being
+    /// allowed to place partially fillable orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub liquidity_order_owners: Vec<H160>,
 }
 
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
