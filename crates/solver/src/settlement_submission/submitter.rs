@@ -462,7 +462,7 @@ impl<'a> Submitter<'a> {
                     SubmitApiError::EdenTransactionTooExpensive => {
                         tracing::warn!("submission failed: eden transaction too expensive")
                     }
-                    SubmitApiError::Other(err) => tracing::error!("submission failed: {}", err),
+                    SubmitApiError::Other(err) => tracing::error!("submission failed: {:?}", err),
                 },
             }
             tokio::time::sleep(params.retry_interval).await;
