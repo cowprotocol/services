@@ -377,7 +377,17 @@ impl Driver {
         let orders = auction
             .orders
             .into_iter()
-            .map(|order| self.order_converter.normalize_limit_order(order))
+            .filter_map(
+                |order| match self.order_converter.normalize_limit_order(order) {
+                    Ok(order) => Some(order),
+                    Err(err) => {
+                        // This should never happen unless we are getting malformed
+                        // orders from the API - so raise an alert if this happens.
+                        tracing::error!(?err, "error normalizing limit order");
+                        None
+                    }
+                },
+            )
             .collect::<Vec<_>>();
         tracing::info!("got {} orders: {:?}", orders.len(), orders);
 

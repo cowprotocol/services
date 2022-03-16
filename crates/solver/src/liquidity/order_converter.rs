@@ -25,7 +25,7 @@ impl OrderConverter {
     }
 
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
-    pub fn normalize_limit_order(&self, order: Order) -> LimitOrder {
+    pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
         let buy_token = if order.creation.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
@@ -33,23 +33,23 @@ impl OrderConverter {
             order.creation.buy_token
         };
 
+        let remaining = order.remaining_amounts()?;
+
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
         let scaled_fee_amount = U256::from_f64_lossy(
-            order.metadata.full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
+            remaining.full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
         );
         let is_liquidity_order = self.liquidity_order_owners.contains(&order.metadata.owner);
-        LimitOrder {
+        Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.creation.sell_token,
             buy_token,
-            // TODO discount previously executed sell amount
-            // https://github.com/gnosis/gp-v2-services/issues/673
-            sell_amount: order.creation.sell_amount,
-            buy_amount: order.creation.buy_amount,
+            sell_amount: remaining.sell_amount,
+            buy_amount: remaining.buy_amount,
             kind: order.creation.kind,
             partially_fillable: order.creation.partially_fillable,
-            unscaled_subsidized_fee: order.creation.fee_amount,
+            unscaled_subsidized_fee: remaining.fee_amount,
             scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {
@@ -58,7 +58,7 @@ impl OrderConverter {
                 scaled_unsubsidized_fee_amount: scaled_fee_amount,
                 is_liquidity_order,
             }),
-        }
+        })
     }
 }
 
@@ -126,7 +126,7 @@ pub mod tests {
         };
 
         assert_eq!(
-            converter.normalize_limit_order(order).buy_token,
+            converter.normalize_limit_order(order).unwrap().buy_token,
             native_token,
         );
     }
@@ -143,7 +143,10 @@ pub mod tests {
             ..Default::default()
         };
 
-        assert_eq!(converter.normalize_limit_order(order).buy_token, buy_token);
+        assert_eq!(
+            converter.normalize_limit_order(order).unwrap().buy_token,
+            buy_token
+        );
     }
 
     #[test]
@@ -165,6 +168,7 @@ pub mod tests {
                         ..Default::default()
                     }
                 })
+                .unwrap()
                 .scaled_unsubsidized_fee,
             30.into(),
         );
@@ -180,7 +184,8 @@ pub mod tests {
                         full_fee_amount: 50.into(),
                         ..Default::default()
                     },
-                },)
+                })
+                .unwrap()
                 .scaled_unsubsidized_fee,
             75.into(),
         );
@@ -323,5 +328,35 @@ pub mod tests {
                 assert!(encoder.add_trade(order, executed_amount, 0.into()).is_ok());
             },
         );
+    }
+
+    #[test]
+    fn scales_limit_order_amounts_for_partially_filled_orders() {
+        let converter = OrderConverter {
+            fee_objective_scaling_factor: 1.5,
+            ..OrderConverter::test(H160::default())
+        };
+        let order = converter
+            .normalize_limit_order(Order {
+                creation: OrderCreation {
+                    sell_amount: 10.into(),
+                    buy_amount: 20.into(),
+                    fee_amount: 30.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    executed_sell_amount_before_fees: 5.into(),
+                    full_fee_amount: 40.into(),
+                    ..Default::default()
+                },
+            })
+            .unwrap();
+
+        assert_eq!(order.sell_amount, 5.into());
+        assert_eq!(order.buy_amount, 10.into());
+        assert_eq!(order.unscaled_subsidized_fee, 15.into());
+        assert_eq!(order.scaled_unsubsidized_fee, 30.into());
     }
 }

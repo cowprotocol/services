@@ -373,7 +373,7 @@ mod tests {
         let orders = vec![order0, order1, order2];
         let orders = orders
             .into_iter()
-            .map(|order| order_converter.normalize_limit_order(order))
+            .map(|order| order_converter.normalize_limit_order(order).unwrap())
             .collect::<Vec<_>>();
 
         let cpo_0 = ConstantProductOrder {

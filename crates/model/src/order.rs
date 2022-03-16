@@ -107,6 +107,7 @@ impl Order {
                 sell_amount: self.creation.sell_amount,
                 buy_amount: self.creation.buy_amount,
                 fee_amount: self.creation.fee_amount,
+                full_fee_amount: self.metadata.full_fee_amount,
             });
         }
 
@@ -136,6 +137,7 @@ impl Order {
             sell_amount: scale(self.creation.sell_amount)?,
             buy_amount: scale(self.creation.buy_amount)?,
             fee_amount: scale(self.creation.fee_amount)?,
+            full_fee_amount: scale(self.metadata.full_fee_amount)?,
         })
     }
 }
@@ -146,6 +148,7 @@ pub struct RemainingOrderAmounts {
     pub sell_amount: U256,
     pub buy_amount: U256,
     pub fee_amount: U256,
+    pub full_fee_amount: U256,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -942,7 +945,10 @@ mod tests {
                     partially_fillable: false,
                     ..Default::default()
                 },
-                ..Default::default()
+                metadata: OrderMetadata {
+                    full_fee_amount: 42.into(),
+                    ..Default::default()
+                },
             }
             .remaining_amounts()
             .unwrap(),
@@ -950,6 +956,7 @@ mod tests {
                 sell_amount: 1000.into(),
                 buy_amount: U256::MAX,
                 fee_amount: 337.into(),
+                full_fee_amount: 42.into(),
             },
         );
 
@@ -967,6 +974,7 @@ mod tests {
                 },
                 metadata: OrderMetadata {
                     executed_sell_amount_before_fees: 0.into(),
+                    full_fee_amount: 13.into(),
                     ..Default::default()
                 },
             }
@@ -976,6 +984,7 @@ mod tests {
                 sell_amount: 10.into(),
                 buy_amount: 11.into(),
                 fee_amount: 12.into(),
+                full_fee_amount: 13.into(),
             },
         );
 
@@ -993,6 +1002,7 @@ mod tests {
                 },
                 metadata: OrderMetadata {
                     executed_sell_amount_before_fees: 90.into(),
+                    full_fee_amount: 200.into(),
                     ..Default::default()
                 },
             }
@@ -1002,6 +1012,7 @@ mod tests {
                 sell_amount: 10.into(),
                 buy_amount: 10.into(),
                 fee_amount: 10.into(),
+                full_fee_amount: 20.into(),
             },
         );
         assert_eq!(
@@ -1016,6 +1027,7 @@ mod tests {
                 },
                 metadata: OrderMetadata {
                     executed_buy_amount: 9_u32.into(),
+                    full_fee_amount: 200.into(),
                     ..Default::default()
                 },
             }
@@ -1025,6 +1037,7 @@ mod tests {
                 sell_amount: 10.into(),
                 buy_amount: 1.into(),
                 fee_amount: 10.into(),
+                full_fee_amount: 20.into(),
             },
         );
     }
