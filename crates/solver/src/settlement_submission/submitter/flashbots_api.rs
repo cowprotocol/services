@@ -41,11 +41,15 @@ impl TransactionSubmitting for FlashbotsApi {
             .await
     }
 
+    // https://docs.flashbots.net/flashbots-protect/rpc/cancellations
     async fn cancel_transaction(
         &self,
         id: &CancelHandle,
     ) -> Result<TransactionHandle, SubmitApiError> {
-        Ok(id.submitted_transaction)
+        self.rpc
+            .api::<PrivateNetwork>()
+            .submit_raw_transaction(id.noop_transaction.clone())
+            .await
     }
 
     async fn recover_pending_transaction(
