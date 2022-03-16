@@ -6,6 +6,7 @@ use crate::{
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
+use anyhow::{ensure, Context as _, Result};
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use derivative::Derivative;
 use hex_literal::hex;
@@ -84,6 +85,67 @@ impl Order {
         token_list.contains(&self.creation.buy_token)
             || token_list.contains(&self.creation.sell_token)
     }
+
+    /// Returns the remaining amounts for the order.
+    ///
+    /// For fill-or-kill orders, this trivially returns full buy, sell and fee
+    /// amounts for the order (since the order can only either be not executed
+    /// at all or fully executed).
+    ///
+    /// For partially fillable orders, it considers the currently executed
+    /// amount and computes what is left in the order.
+    ///
+    /// Returns an error on overflows or malformed orders.
+    pub fn remaining_amounts(&self) -> Result<RemainingOrderAmounts> {
+        if !self.creation.partially_fillable {
+            // Note that we skip the "fill-ratio" computation for fill-or-kill
+            // orders despite yielding the same results in most cases. This is
+            // because this computation only happens for partially fillable
+            // orders in the settlement contract, and therefore overflows that
+            // may happen would incorrectly return `Err`.
+            return Ok(RemainingOrderAmounts {
+                sell_amount: self.creation.sell_amount,
+                buy_amount: self.creation.buy_amount,
+                fee_amount: self.creation.fee_amount,
+            });
+        }
+
+        let (max_executable_amount, executed_amount) = match self.creation.kind {
+            OrderKind::Buy => (
+                self.creation.buy_amount,
+                biguint_to_u256(&self.metadata.executed_buy_amount)
+                    .context("buy order executed amount overflows a u256")?,
+            ),
+            OrderKind::Sell => (
+                self.creation.sell_amount,
+                self.metadata.executed_sell_amount_before_fees,
+            ),
+        };
+        ensure!(!max_executable_amount.is_zero(), "order with 0 amount");
+        let remaining_executable_amount = max_executable_amount
+            .checked_sub(executed_amount)
+            .context("order executed more than its maximum amount")?;
+        let scale = |amount: U256| -> Result<U256> {
+            amount
+                .checked_mul(remaining_executable_amount)
+                .and_then(|product| product.checked_div(max_executable_amount))
+                .context("overflow scaling remaining amounts")
+        };
+
+        Ok(RemainingOrderAmounts {
+            sell_amount: scale(self.creation.sell_amount)?,
+            buy_amount: scale(self.creation.buy_amount)?,
+            fee_amount: scale(self.creation.fee_amount)?,
+        })
+    }
+}
+
+/// Remaining order buy, sell and fee amounts.
+#[derive(Debug, Eq, PartialEq)]
+pub struct RemainingOrderAmounts {
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee_amount: U256,
 }
 
 #[derive(Clone, Default, Debug)]
@@ -573,6 +635,14 @@ pub fn debug_biguint_to_string(
     formatter.write_fmt(format_args!("{}", value))
 }
 
+fn biguint_to_u256(input: &BigUint) -> Option<U256> {
+    let bytes = input.to_bytes_be();
+    if bytes.len() > 32 {
+        return None;
+    }
+    Some(U256::from_big_endian(&bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -856,5 +926,169 @@ mod tests {
     #[test]
     fn debug_order_data() {
         dbg!(Order::default());
+    }
+
+    #[test]
+    fn computes_remaining_order_amounts() {
+        // For fill-or-kill orders, we don't overflow even for very large buy
+        // orders (where `{sell,fee}_amount * buy_amount` would overflow).
+        assert_eq!(
+            Order {
+                creation: OrderCreation {
+                    sell_amount: 1000.into(),
+                    buy_amount: U256::MAX,
+                    fee_amount: 337.into(),
+                    kind: OrderKind::Buy,
+                    partially_fillable: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }
+            .remaining_amounts()
+            .unwrap(),
+            RemainingOrderAmounts {
+                sell_amount: 1000.into(),
+                buy_amount: U256::MAX,
+                fee_amount: 337.into(),
+            },
+        );
+
+        // For partially fillable orders that are untouched, returns the full
+        // order amounts.
+        assert_eq!(
+            Order {
+                creation: OrderCreation {
+                    sell_amount: 10.into(),
+                    buy_amount: 11.into(),
+                    fee_amount: 12.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    executed_sell_amount_before_fees: 0.into(),
+                    ..Default::default()
+                },
+            }
+            .remaining_amounts()
+            .unwrap(),
+            RemainingOrderAmounts {
+                sell_amount: 10.into(),
+                buy_amount: 11.into(),
+                fee_amount: 12.into(),
+            },
+        );
+
+        // Scales amounts by how much has been executed. Rounds down like the
+        // settlement contract.
+        assert_eq!(
+            Order {
+                creation: OrderCreation {
+                    sell_amount: 100.into(),
+                    buy_amount: 100.into(),
+                    fee_amount: 101.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    executed_sell_amount_before_fees: 90.into(),
+                    ..Default::default()
+                },
+            }
+            .remaining_amounts()
+            .unwrap(),
+            RemainingOrderAmounts {
+                sell_amount: 10.into(),
+                buy_amount: 10.into(),
+                fee_amount: 10.into(),
+            },
+        );
+        assert_eq!(
+            Order {
+                creation: OrderCreation {
+                    sell_amount: 100.into(),
+                    buy_amount: 10.into(),
+                    fee_amount: 101.into(),
+                    kind: OrderKind::Buy,
+                    partially_fillable: true,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    executed_buy_amount: 9_u32.into(),
+                    ..Default::default()
+                },
+            }
+            .remaining_amounts()
+            .unwrap(),
+            RemainingOrderAmounts {
+                sell_amount: 10.into(),
+                buy_amount: 1.into(),
+                fee_amount: 10.into(),
+            },
+        );
+    }
+
+    #[test]
+    fn remaining_amount_errors() {
+        // Partially fillable order overflow when computing fill ratio.
+        assert!(Order {
+            creation: OrderCreation {
+                sell_amount: 1000.into(),
+                fee_amount: 337.into(),
+                buy_amount: U256::MAX,
+                kind: OrderKind::Buy,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .remaining_amounts()
+        .is_err());
+
+        // Partially filled order overflowing executed amount.
+        assert!(Order {
+            creation: OrderCreation {
+                buy_amount: U256::MAX,
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                executed_buy_amount: BigUint::from(1_u8) << 256,
+                ..Default::default()
+            },
+        }
+        .remaining_amounts()
+        .is_err());
+
+        // Partially filled order that has executed more than its maximum.
+        assert!(Order {
+            creation: OrderCreation {
+                sell_amount: 1.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                executed_sell_amount_before_fees: 2.into(),
+                ..Default::default()
+            },
+        }
+        .remaining_amounts()
+        .is_err());
+
+        // Partially fillable order with zero amount.
+        assert!(Order {
+            creation: OrderCreation {
+                sell_amount: 0.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }
+        .remaining_amounts()
+        .is_err());
     }
 }
