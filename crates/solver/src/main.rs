@@ -98,7 +98,7 @@ struct Arguments {
     #[clap(
         long,
         env,
-        default_value = "Naive,Baseline",
+        default_values = &["Naive", "Baseline"],
         arg_enum,
         ignore_case = true,
         use_value_delimiter = true
