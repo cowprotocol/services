@@ -7,7 +7,10 @@ use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use shared::{
     bad_token::BadTokenDetecting,
-    price_estimation::{self, ensure_token_supported, PriceEstimating, PriceEstimationError},
+    price_estimation::{
+        self, ensure_token_supported, native::native_single_estimate, PriceEstimating,
+        PriceEstimationError,
+    },
     price_estimation::{native::NativePriceEstimating, single_estimate},
 };
 use std::{
@@ -286,8 +289,7 @@ impl MinFeeCalculator {
                 .estimate()
                 .map_err(PriceEstimationError::from),
             single_estimate(self.price_estimator.as_ref(), &buy_token_query),
-            self.native_price_estimator
-                .estimate_native_price(&fee_data.sell_token)
+            native_single_estimate(self.native_price_estimator.as_ref(), &fee_data.sell_token),
         )?;
         let gas_price = gas_estimate.effective_gas_price();
         let gas_amount = buy_token_estimate.gas as f64;
