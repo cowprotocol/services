@@ -7,8 +7,11 @@ use anyhow::{Context as _, Result};
 use model::{auction::Auction, order::Order};
 use primitive_types::{H160, U256};
 use shared::{
-    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
-    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
+    bad_token::BadTokenDetecting,
+    current_block::CurrentBlockStream,
+    maintenance::Maintaining,
+    price_estimation::native::{native_vec_estimates, NativePriceEstimating},
+    time::now_in_epoch_seconds,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -331,8 +334,7 @@ async fn get_orders_with_native_prices(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let prices = native_price_estimator
-        .estimate_native_prices(&traded_tokens)
+    let prices = native_vec_estimates(native_price_estimator, &traded_tokens)
         .await
         .into_iter()
         .zip(traded_tokens)
@@ -381,6 +383,7 @@ mod tests {
         database::orders::SolvableOrders as DbOrders, metrics::NoopMetrics,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
+    use futures::StreamExt;
     use maplit::{btreemap, hashmap, hashset};
     use model::order::{OrderBuilder, OrderCreation, OrderKind, OrderMetadata, SellTokenSource};
     use primitive_types::H160;
@@ -508,9 +511,9 @@ mod tests {
             .return_once(|_| Vec::new());
 
         let mut native = MockNativePriceEstimating::new();
-        native
-            .expect_estimate_native_prices()
-            .returning(|a| vec![Ok(1.0); a.len()]);
+        native.expect_estimate_native_prices().returning(|a| {
+            futures::stream::iter(std::iter::repeat(Ok(1.0)).take(a.len()).enumerate()).boxed()
+        });
 
         let cache = SolvableOrdersCache::new(
             Duration::from_secs(0),
@@ -623,7 +626,7 @@ mod tests {
             .returning({
                 let prices = prices.clone();
                 move |tokens| {
-                    tokens
+                    let results = tokens
                         .iter()
                         .map(|token| {
                             prices
@@ -631,7 +634,9 @@ mod tests {
                                 .copied()
                                 .ok_or(PriceEstimationError::NoLiquidity)
                         })
-                        .collect()
+                        .enumerate()
+                        .collect::<Vec<_>>();
+                    futures::stream::iter(results).boxed()
                 }
             });
 

@@ -1,12 +1,13 @@
 use crate::price_estimation::{
     old_estimator_to_stream, vec_estimates, PriceEstimateResult, PriceEstimating, Query,
 };
-use futures::future::WeakShared;
-use futures::FutureExt;
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
+use futures::{future::WeakShared, FutureExt};
+use std::{
+    collections::HashMap,
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 type SharedEstimationRequest =
     WeakShared<Pin<Box<dyn Future<Output = PriceEstimateResult> + Send>>>;
