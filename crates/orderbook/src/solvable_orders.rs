@@ -25,7 +25,7 @@ use tokio::{sync::Notify, time::Instant};
 const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 pub trait AuctionMetrics: Send + Sync + 'static {
-    fn filtered_solvable_orders(&self, count: usize);
+    fn auction_updated(&self, filtered_orders: u64, errored_estimates: u64, timeout: bool);
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -164,16 +164,13 @@ impl SolvableOrdersCache {
         }
 
         // create auction
-        let order_count = orders.len();
         let (orders, prices) = get_orders_with_native_prices(
             orders.clone(),
             &*self.native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
+            self.auction_metrics.as_ref(),
         )
         .await;
-        let filtered_orders = order_count - orders.len();
-        self.auction_metrics
-            .filtered_solvable_orders(filtered_orders);
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
@@ -335,6 +332,7 @@ async fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
+    metrics: &dyn AuctionMetrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
@@ -344,12 +342,14 @@ async fn get_orders_with_native_prices(
         .collect::<Vec<_>>();
     let mut prices = HashMap::new();
     let mut price_stream = native_price_estimator.estimate_native_prices(&traded_tokens);
+    let mut errored_estimates: u64 = 0;
     let collect_prices = async {
         while let Some((index, result)) = price_stream.next().await {
             let token = &traded_tokens[index];
             let price = match result {
                 Ok(price) => price,
                 Err(err) => {
+                    errored_estimates += 1;
                     tracing::warn!(?token, ?err, "error estimating native token price");
                     continue;
                 }
@@ -361,15 +361,19 @@ async fn get_orders_with_native_prices(
             prices.insert(*token, price);
         }
     };
-    match tokio::time::timeout_at(deadline, collect_prices).await {
-        Ok(()) => (),
-        Err(_) => tracing::warn!(
-            "auction native price collection took too long, got {} out of {}",
-            prices.len(),
-            traded_tokens.len()
-        ),
-    }
+    let timeout = match tokio::time::timeout_at(deadline, collect_prices).await {
+        Ok(()) => false,
+        Err(_) => {
+            tracing::warn!(
+                "auction native price collection took too long, got {} out of {}",
+                prices.len(),
+                traded_tokens.len()
+            );
+            true
+        }
+    };
 
+    let original_order_count = orders.len();
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
@@ -390,6 +394,9 @@ async fn get_orders_with_native_prices(
             }
         }
     });
+
+    let filtered_orders = (original_order_count - orders.len()) as u64;
+    metrics.auction_updated(filtered_orders, errored_estimates, timeout);
 
     (orders, used_prices)
 }
@@ -674,6 +681,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
+            &NoopMetrics,
         )
         .await;
 
@@ -791,8 +799,13 @@ mod tests {
         ];
         // last token price won't be available
         let deadline = Instant::now() + Duration::from_secs_f32(3.5);
-        let (orders_, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator, deadline).await;
+        let (orders_, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            deadline,
+            &NoopMetrics,
+        )
+        .await;
         assert_eq!(orders_.len(), 1);
         // It is not guaranteed which order is the included one because the function uses a hashset
         // for the tokens.

@@ -25,7 +25,11 @@ pub struct Metrics {
     price_estimates: IntCounterVec,
     native_price_cache: IntCounterVec,
     price_estimation_times: HistogramVec,
-    filtered_solvable_orders: IntCounter,
+    // auction metrics
+    auction_creations: IntCounter,
+    auction_filtered_orders: IntCounter,
+    auction_errored_price_estimates: IntCounter,
+    auction_price_estimate_timeouts: IntCounter,
 }
 
 impl Metrics {
@@ -86,11 +90,29 @@ impl Metrics {
         .unwrap();
         registry.register(Box::new(price_estimation_times.clone()))?;
 
-        let filtered_solvable_orders = IntCounter::new(
-            "filtered_solvable_orders",
-            "Solvable orders that aren't considered because of missing native token prices",
+        let auction_creations = IntCounter::new(
+            "auction_creations",
+            "Number of times an auction has been created.",
         )?;
-        registry.register(Box::new(filtered_solvable_orders.clone()))?;
+        registry.register(Box::new(auction_creations.clone()))?;
+
+        let auction_filtered_orders = IntCounter::new(
+            "auction_filtered_orders",
+            "Number of orders that have been filtered out when creating auctions.",
+        )?;
+        registry.register(Box::new(auction_filtered_orders.clone()))?;
+
+        let auction_errored_price_estimates = IntCounter::new(
+            "auction_errored_price_estimates",
+            "Number of native price estimates that errored when creating auction.",
+        )?;
+        registry.register(Box::new(auction_errored_price_estimates.clone()))?;
+
+        let auction_price_estimate_timeouts = IntCounter::new(
+            "auction_price_estimate_timeouts",
+            "Number of times auction creation didn't get all native price estimates in time.",
+        )?;
+        registry.register(Box::new(auction_price_estimate_timeouts.clone()))?;
 
         Ok(Self {
             db_table_row_count,
@@ -102,7 +124,10 @@ impl Metrics {
             price_estimates,
             native_price_cache,
             price_estimation_times,
-            filtered_solvable_orders,
+            auction_creations,
+            auction_filtered_orders,
+            auction_errored_price_estimates,
+            auction_price_estimate_timeouts,
         })
     }
 
@@ -129,8 +154,14 @@ impl PoolCacheMetrics for Metrics {
 }
 
 impl crate::solvable_orders::AuctionMetrics for Metrics {
-    fn filtered_solvable_orders(&self, count: usize) {
-        self.filtered_solvable_orders.inc_by(count as _);
+    fn auction_updated(&self, filtered_orders: u64, errored_estimates: u64, timeout: bool) {
+        self.auction_creations.inc();
+        if timeout {
+            self.auction_price_estimate_timeouts.inc();
+        }
+        self.auction_filtered_orders.inc_by(filtered_orders);
+        self.auction_errored_price_estimates
+            .inc_by(errored_estimates);
     }
 }
 
@@ -192,5 +223,5 @@ impl shared::price_estimation::native_price_cache::Metrics for Metrics {
 pub struct NoopMetrics;
 
 impl crate::solvable_orders::AuctionMetrics for NoopMetrics {
-    fn filtered_solvable_orders(&self, _: usize) {}
+    fn auction_updated(&self, _: u64, _: u64, _: bool) {}
 }
