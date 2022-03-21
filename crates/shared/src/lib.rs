@@ -18,6 +18,7 @@ pub mod oneinch_api;
 pub mod paraswap_api;
 pub mod price_estimation;
 pub mod recent_block_cache;
+pub mod request_sharing;
 pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;

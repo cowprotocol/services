@@ -41,7 +41,6 @@ use shared::{
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         baseline::BaselinePriceEstimator,
-        buffered::BufferingPriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
         instrumented::InstrumentedPriceEstimator,
         native::NativePriceEstimator,
@@ -498,19 +497,17 @@ async fn main() {
                 native_token.address(),
                 native_token_price_estimation_amount,
             )),
-            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator {
-                paraswap: Arc::new(DefaultParaswapApi {
+            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
+                Arc::new(DefaultParaswapApi {
                     client: client.clone(),
                     partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
                 }),
-                token_info: token_info_fetcher.clone(),
-                disabled_paraswap_dexs: args.shared.disabled_paraswap_dexs.clone(),
-            }),
-            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator {
-                api: zeroex_api.clone(),
-            }),
-            PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator {
-                api: Arc::new(DefaultHttpSolverApi {
+                token_info_fetcher.clone(),
+                args.shared.disabled_paraswap_dexs.clone(),
+            )),
+            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(zeroex_api.clone())),
+            PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
+                Arc::new(DefaultHttpSolverApi {
                     name: "quasimodo-price-estimator",
                     network_name: network_name.to_string(),
                     chain_id,
@@ -525,13 +522,13 @@ async fn main() {
                         use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
                     },
                 }),
-                pools: pool_fetcher.clone(),
-                balancer_pools: balancer_pool_fetcher.clone(),
-                token_info: token_info_fetcher.clone(),
-                gas_info: gas_price_estimator.clone(),
-                native_token: native_token.address(),
-                base_tokens: base_tokens.clone(),
-            }),
+                pool_fetcher.clone(),
+                balancer_pool_fetcher.clone(),
+                token_info_fetcher.clone(),
+                gas_price_estimator.clone(),
+                native_token.address(),
+                base_tokens.clone(),
+            )),
             PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
                 one_inch_api.as_ref().unwrap().clone(),
                 args.shared.disabled_one_inch_protocols.clone(),
@@ -540,10 +537,7 @@ async fn main() {
 
         (
             estimator.name(),
-            Arc::new(BufferingPriceEstimator::new(Box::new(instrumented(
-                instance,
-                estimator.name(),
-            )))),
+            Arc::new(instrumented(instance, estimator.name())),
         )
     };
 

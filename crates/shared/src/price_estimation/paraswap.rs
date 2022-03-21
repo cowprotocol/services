@@ -1,12 +1,13 @@
 use crate::{
-    paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, Side},
+    paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side},
     price_estimation::{
         gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
+    request_sharing::RequestSharing,
     token_info::{TokenInfo, TokenInfoFetching},
 };
 use anyhow::{anyhow, Context, Result};
-use futures::StreamExt;
+use futures::{future::BoxFuture, FutureExt, StreamExt};
 use model::order::OrderKind;
 use primitive_types::H160;
 use std::{
@@ -15,12 +16,26 @@ use std::{
 };
 
 pub struct ParaswapPriceEstimator {
-    pub paraswap: Arc<dyn ParaswapApi>,
-    pub token_info: Arc<dyn TokenInfoFetching>,
-    pub disabled_paraswap_dexs: Vec<String>,
+    paraswap: Arc<dyn ParaswapApi>,
+    sharing: RequestSharing<Query, BoxFuture<'static, Result<PriceResponse, PriceEstimationError>>>,
+    token_info: Arc<dyn TokenInfoFetching>,
+    disabled_paraswap_dexs: Vec<String>,
 }
 
 impl ParaswapPriceEstimator {
+    pub fn new(
+        api: Arc<dyn ParaswapApi>,
+        token_info: Arc<dyn TokenInfoFetching>,
+        disabled_paraswap_dexs: Vec<String>,
+    ) -> Self {
+        Self {
+            paraswap: api,
+            sharing: Default::default(),
+            token_info,
+            disabled_paraswap_dexs,
+        }
+    }
+
     async fn estimate_(
         &self,
         query: &Query,
@@ -39,17 +54,19 @@ impl ParaswapPriceEstimator {
             },
             exclude_dexs: Some(self.disabled_paraswap_dexs.clone()),
         };
-
-        let response = self
-            .paraswap
-            .price(price_query)
-            .await
-            .map_err(|err| match err {
+        let paraswap = self.paraswap.clone();
+        let response_future = async move {
+            paraswap.price(price_query).await.map_err(|err| match err {
                 ParaswapResponseError::InsufficientLiquidity(_) => {
                     PriceEstimationError::NoLiquidity
                 }
                 _ => PriceEstimationError::Other(err.into()),
             })
+        };
+        let response = self
+            .sharing
+            .shared(*query, response_future.boxed())
+            .await
             .context("paraswap")?;
         Ok(Estimate {
             out_amount: match query.kind {
@@ -142,6 +159,7 @@ mod tests {
         };
         let estimator = ParaswapPriceEstimator {
             paraswap: Arc::new(paraswap),
+            sharing: Default::default(),
             token_info: Arc::new(token_info),
             disabled_paraswap_dexs: Vec::new(),
         };

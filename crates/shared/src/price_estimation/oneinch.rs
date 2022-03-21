@@ -1,15 +1,22 @@
 use crate::{
-    oneinch_api::{OneInchClient, ProtocolCache, RestResponse, SellOrderQuoteQuery},
+    oneinch_api::{
+        OneInchClient, ProtocolCache, RestResponse, SellOrderQuote, SellOrderQuoteQuery,
+    },
     price_estimation::{
         gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
+    request_sharing::RequestSharing,
 };
-use futures::StreamExt;
+use futures::{future::BoxFuture, FutureExt, StreamExt};
 use model::order::OrderKind;
 use std::sync::Arc;
 
 pub struct OneInchPriceEstimator {
     api: Arc<dyn OneInchClient>,
+    sharing: RequestSharing<
+        Query,
+        BoxFuture<'static, Result<RestResponse<SellOrderQuote>, PriceEstimationError>>,
+    >,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
 }
@@ -25,16 +32,19 @@ impl OneInchPriceEstimator {
             .get_allowed_protocols(&self.disabled_protocols, self.api.as_ref())
             .await?;
 
-        let quote = self
-            .api
-            .get_sell_order_quote(SellOrderQuoteQuery::with_default_options(
-                query.sell_token,
-                query.buy_token,
-                allowed_protocols,
-                query.in_amount,
-            ))
-            .await
-            .map_err(PriceEstimationError::Other)?;
+        let api = self.api.clone();
+        let oneinch_query = SellOrderQuoteQuery::with_default_options(
+            query.sell_token,
+            query.buy_token,
+            allowed_protocols,
+            query.in_amount,
+        );
+        let quote_future = async move {
+            api.get_sell_order_quote(oneinch_query)
+                .await
+                .map_err(PriceEstimationError::Other)
+        };
+        let quote = self.sharing.shared(*query, quote_future.boxed()).await?;
 
         match quote {
             RestResponse::Ok(quote) => Ok(Estimate {
@@ -52,6 +62,7 @@ impl OneInchPriceEstimator {
             api,
             disabled_protocols,
             protocol_cache: ProtocolCache::default(),
+            sharing: Default::default(),
         }
     }
 }

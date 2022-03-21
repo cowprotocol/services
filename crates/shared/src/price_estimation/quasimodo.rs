@@ -4,8 +4,8 @@ use crate::{
         gas_model::GasModel,
         model::{
             AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, CostModel,
-            FeeModel, OrderModel, StablePoolParameters, TokenInfoModel, WeightedPoolTokenData,
-            WeightedProductPoolParameters,
+            FeeModel, OrderModel, SettledBatchAuctionModel, StablePoolParameters, TokenInfoModel,
+            WeightedPoolTokenData, WeightedProductPoolParameters,
         },
         HttpSolverApi,
     },
@@ -14,6 +14,7 @@ use crate::{
         Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
     recent_block_cache::Block,
+    request_sharing::RequestSharing,
     sources::{
         balancer_v2::{
             pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
@@ -24,7 +25,7 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use ethcontract::{H160, U256};
-use futures::StreamExt;
+use futures::{future::BoxFuture, FutureExt, StreamExt};
 use gas_estimation::GasPriceEstimating;
 use model::{order::OrderKind, TokenPair};
 use num::{BigInt, BigRational};
@@ -35,16 +36,41 @@ use std::{
 };
 
 pub struct QuasimodoPriceEstimator {
-    pub api: Arc<dyn HttpSolverApi>,
-    pub pools: Arc<PoolCache>,
-    pub balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-    pub token_info: Arc<dyn TokenInfoFetching>,
-    pub gas_info: Arc<dyn GasPriceEstimating>,
-    pub native_token: H160,
-    pub base_tokens: Arc<BaseTokens>,
+    api: Arc<dyn HttpSolverApi>,
+    sharing: RequestSharing<
+        Query,
+        BoxFuture<'static, Result<SettledBatchAuctionModel, PriceEstimationError>>,
+    >,
+    pools: Arc<PoolCache>,
+    balancer_pools: Option<Arc<BalancerPoolFetcher>>,
+    token_info: Arc<dyn TokenInfoFetching>,
+    gas_info: Arc<dyn GasPriceEstimating>,
+    native_token: H160,
+    base_tokens: Arc<BaseTokens>,
 }
 
 impl QuasimodoPriceEstimator {
+    pub fn new(
+        api: Arc<dyn HttpSolverApi>,
+        pools: Arc<PoolCache>,
+        balancer_pools: Option<Arc<BalancerPoolFetcher>>,
+        token_info: Arc<dyn TokenInfoFetching>,
+        gas_info: Arc<dyn GasPriceEstimating>,
+        native_token: H160,
+        base_tokens: Arc<BaseTokens>,
+    ) -> Self {
+        Self {
+            api,
+            sharing: Default::default(),
+            pools,
+            balancer_pools,
+            token_info,
+            gas_info,
+            native_token,
+            base_tokens,
+        }
+    }
+
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
         let gas_price = U256::from_f64_lossy(self.gas_info.estimate().await?.effective_gas_price());
 
@@ -127,15 +153,21 @@ impl QuasimodoPriceEstimator {
             metadata: None,
         };
 
-        let settlement = self
-            .api
-            .solve(
+        let api = self.api.clone();
+        let settlement_future = async move {
+            api.solve(
                 &model,
                 // We need at least three seconds of timeout. Quasimodo
                 // reserves one second of timeout for shutdown, plus one
                 // more second is reserved for network interactions.
                 Duration::from_secs(3),
             )
+            .await
+            .map_err(PriceEstimationError::Other)
+        };
+        let settlement = self
+            .sharing
+            .shared(*query, settlement_future.boxed())
             .await?;
 
         if !settlement.orders.contains_key(&0) {
@@ -406,6 +438,7 @@ mod tests {
                     use_internal_buffers: true.into(),
                 },
             }),
+            sharing: Default::default(),
             pools,
             balancer_pools: Some(balancer_pool_fetcher),
             token_info,

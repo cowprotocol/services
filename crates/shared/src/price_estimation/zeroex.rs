@@ -2,34 +2,46 @@ use crate::{
     price_estimation::{
         gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
-    zeroex_api::{SwapQuery, ZeroExApi},
+    request_sharing::RequestSharing,
+    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi},
 };
-use futures::StreamExt;
+use futures::{future::BoxFuture, FutureExt, StreamExt};
 use model::order::OrderKind;
 use std::sync::Arc;
 
 pub struct ZeroExPriceEstimator {
-    pub api: Arc<dyn ZeroExApi>,
+    api: Arc<dyn ZeroExApi>,
+    sharing: RequestSharing<Query, BoxFuture<'static, Result<SwapResponse, PriceEstimationError>>>,
 }
 
 impl ZeroExPriceEstimator {
+    pub fn new(api: Arc<dyn ZeroExApi>) -> Self {
+        Self {
+            api,
+            sharing: Default::default(),
+        }
+    }
+
     async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (None, Some(query.in_amount)),
             OrderKind::Sell => (Some(query.in_amount), None),
         };
 
-        let swap = self
-            .api
-            .get_swap(SwapQuery {
-                sell_token: query.sell_token,
-                buy_token: query.buy_token,
-                sell_amount,
-                buy_amount,
-                slippage_percentage: Default::default(),
-            })
-            .await
-            .map_err(|err| PriceEstimationError::Other(err.into()))?;
+        let swap_query = SwapQuery {
+            sell_token: query.sell_token,
+            buy_token: query.buy_token,
+            sell_amount,
+            buy_amount,
+            slippage_percentage: Default::default(),
+        };
+        let api = self.api.clone();
+        let swap_future = async move {
+            api.get_swap(swap_query)
+                .await
+                .map_err(|err| PriceEstimationError::Other(err.into()))
+        };
+        let swap = self.sharing.shared(*query, swap_future.boxed()).await?;
 
         Ok(Estimate {
             out_amount: match query.kind {
@@ -95,6 +107,7 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
+            sharing: Default::default(),
         };
 
         let est = estimator
@@ -140,6 +153,7 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
+            sharing: Default::default(),
         };
 
         let est = estimator
@@ -164,6 +178,7 @@ mod tests {
 
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
+            sharing: Default::default(),
         };
 
         let result = estimator

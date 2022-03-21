@@ -1,5 +1,4 @@
 pub mod baseline;
-pub mod buffered;
 pub mod competition;
 pub mod gas;
 pub mod instrumented;
