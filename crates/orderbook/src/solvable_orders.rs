@@ -4,22 +4,25 @@ use crate::{
     orderbook::filter_unsupported_tokens,
 };
 use anyhow::{Context as _, Result};
+use futures::StreamExt;
 use model::{auction::Auction, order::Order};
 use primitive_types::{H160, U256};
 use shared::{
-    bad_token::BadTokenDetecting,
-    current_block::CurrentBlockStream,
-    maintenance::Maintaining,
-    price_estimation::native::{native_vec_estimates, NativePriceEstimating},
-    time::now_in_epoch_seconds,
+    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
+    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     iter::FromIterator,
     sync::{Arc, Mutex, Weak},
-    time::{Duration, Instant},
+    time::Duration,
 };
-use tokio::sync::Notify;
+use tokio::{sync::Notify, time::Instant};
+
+// When creating the auction after solvable orders change we need to fetch native prices for a
+// potentially large amount of tokens. This is the maximum amount of time we allot for this
+// operation.
+const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 pub trait AuctionMetrics: Send + Sync + 'static {
     fn filtered_solvable_orders(&self, count: usize);
@@ -162,8 +165,12 @@ impl SolvableOrdersCache {
 
         // create auction
         let order_count = orders.len();
-        let (orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &*self.native_price_estimator).await;
+        let (orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &*self.native_price_estimator,
+            Instant::now() + MAX_AUCTION_CREATION_TIME,
+        )
+        .await;
         let filtered_orders = order_count - orders.len();
         self.auction_metrics
             .filtered_solvable_orders(filtered_orders);
@@ -327,6 +334,7 @@ impl Maintaining for SolvableOrdersCache {
 async fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
+    deadline: Instant,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
@@ -334,34 +342,56 @@ async fn get_orders_with_native_prices(
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
-    let prices = native_vec_estimates(native_price_estimator, &traded_tokens)
-        .await
-        .into_iter()
-        .zip(traded_tokens)
-        .filter_map(|(price, token)| match price {
-            Ok(price) => Some((token, to_normalized_price(price)?)),
-            Err(err) => {
-                tracing::warn!(?token, ?err, "error estimating native token price");
-                None
-            }
-        })
-        .collect::<BTreeMap<_, _>>();
-
-    orders.retain(|order| {
-        let has_native_prices = prices.contains_key(&order.creation.sell_token)
-            && prices.contains_key(&order.creation.buy_token);
-
-        if !has_native_prices {
-            tracing::warn!(
-                order_uid = ?order.metadata.uid,
-                "filtered order because of missing native token price",
-            );
+    let mut prices = HashMap::new();
+    let mut price_stream = native_price_estimator.estimate_native_prices(&traded_tokens);
+    let collect_prices = async {
+        while let Some((index, result)) = price_stream.next().await {
+            let token = &traded_tokens[index];
+            let price = match result {
+                Ok(price) => price,
+                Err(err) => {
+                    tracing::warn!(?token, ?err, "error estimating native token price");
+                    continue;
+                }
+            };
+            let price = match to_normalized_price(price) {
+                Some(price) => price,
+                None => continue,
+            };
+            prices.insert(*token, price);
         }
+    };
+    match tokio::time::timeout_at(deadline, collect_prices).await {
+        Ok(()) => (),
+        Err(_) => tracing::warn!(
+            "auction native price collection took too long, got {} out of {}",
+            prices.len(),
+            traded_tokens.len()
+        ),
+    }
 
-        has_native_prices
+    // Filter both orders and prices so that we only return orders that have prices and prices that
+    // have orders.
+    let mut used_prices = BTreeMap::new();
+    orders.retain(|order| {
+        let (t0, t1) = (&order.creation.sell_token, &order.creation.buy_token);
+        match (prices.get(t0), prices.get(t1)) {
+            (Some(p0), Some(p1)) => {
+                used_prices.insert(*t0, *p0);
+                used_prices.insert(*t1, *p1);
+                true
+            }
+            _ => {
+                tracing::debug!(
+                    order_uid = ?order.metadata.uid,
+                    "filtered order because of missing native token price",
+                );
+                false
+            }
+        }
     });
 
-    (orders, prices)
+    (orders, used_prices)
 }
 
 fn to_normalized_price(price: f64) -> Option<U256> {
@@ -640,8 +670,12 @@ mod tests {
                 }
             });
 
-        let (filtered_orders, prices) =
-            get_orders_with_native_prices(orders.clone(), &native_price_estimator).await;
+        let (filtered_orders, prices) = get_orders_with_native_prices(
+            orders.clone(),
+            &native_price_estimator,
+            Instant::now() + MAX_AUCTION_CREATION_TIME,
+        )
+        .await;
 
         assert_eq!(filtered_orders, [orders[2].clone()]);
         assert_eq!(
@@ -723,5 +757,48 @@ mod tests {
             ..Default::default()
         })
         .is_err());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn native_prices_uses_timeout() {
+        shared::tracing::initialize_for_tests("debug");
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .returning(move |tokens| {
+                #[allow(clippy::unnecessary_to_owned)]
+                let results = tokens
+                    .to_vec()
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, _)| (i, Ok(1.0)));
+                futures::stream::iter(results)
+                    .then(|price| async {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
+                        price
+                    })
+                    .boxed()
+            });
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(H160::from_low_u64_be(0))
+                .with_buy_token(H160::from_low_u64_be(1))
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(H160::from_low_u64_be(2))
+                .with_buy_token(H160::from_low_u64_be(3))
+                .build(),
+        ];
+        // last token price won't be available
+        let deadline = Instant::now() + Duration::from_secs_f32(3.5);
+        let (orders_, prices) =
+            get_orders_with_native_prices(orders.clone(), &native_price_estimator, deadline).await;
+        assert_eq!(orders_.len(), 1);
+        // It is not guaranteed which order is the included one because the function uses a hashset
+        // for the tokens.
+        assert!(orders_[0] == orders[0] || orders_[0] == orders[1]);
+        assert_eq!(prices.len(), 2);
+        assert!(prices.contains_key(&orders_[0].creation.sell_token));
+        assert!(prices.contains_key(&orders_[0].creation.buy_token));
     }
 }
