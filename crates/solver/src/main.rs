@@ -30,6 +30,7 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
+    settlement_access_list::AccessListEstimatorType,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -183,6 +184,21 @@ struct Arguments {
         use_value_delimiter = true
     )]
     transaction_strategy: Vec<TransactionStrategyArg>,
+
+    /// Which access list estimators to use. Multiple estimators are used in sequence if a previous one
+    /// fails. Individual estimators might support different networks.
+    /// `Tenderly`: supports every network.
+    /// `Web3`: supports every network.
+    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    access_list_estimators: Vec<AccessListEstimatorType>,
+
+    /// The URL for tenderly transaction simulation.
+    #[clap(long, env)]
+    tenderly_url: Option<Url>,
+
+    /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
+    #[clap(long, env)]
+    tenderly_api_key: Option<String>,
 
     /// The API endpoint of the Eden network for transaction submission.
     #[clap(long, env, default_value = "https://api.edennetwork.io/v1/rpc")]
@@ -572,6 +588,17 @@ async fn main() {
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
         })
         .collect::<Vec<_>>();
+    let access_list_estimator = Arc::new(
+        solver::settlement_access_list::create_priority_estimator(
+            &client,
+            &web3,
+            args.access_list_estimators.as_slice(),
+            args.tenderly_url,
+            args.tenderly_api_key,
+        )
+        .await
+        .expect("failed to create access list estimator"),
+    );
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -581,6 +608,7 @@ async fn main() {
         retry_interval: args.submission_retry_interval_seconds,
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
+        access_list_estimator,
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {

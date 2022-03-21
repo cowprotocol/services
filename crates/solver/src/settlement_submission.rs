@@ -1,7 +1,10 @@
 mod dry_run;
 pub mod submitter;
 
-use crate::{metrics::SettlementSubmissionOutcome, settlement::Settlement};
+use crate::{
+    metrics::SettlementSubmissionOutcome, settlement::Settlement,
+    settlement_access_list::AccessListEstimating,
+};
 use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
@@ -27,6 +30,7 @@ pub struct SolutionSubmitter {
     pub web3: Web3,
     pub contract: GPv2Settlement,
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    pub access_list_estimator: Arc<dyn AccessListEstimating>,
     // for gas price estimation
     pub target_confirm_time: Duration,
     pub max_confirm_time: Duration,
@@ -116,6 +120,7 @@ impl SolutionSubmitter {
                             &account,
                             strategy_args.submit_api.as_ref(),
                             &gas_price_estimator,
+                            self.access_list_estimator.as_ref(),
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }

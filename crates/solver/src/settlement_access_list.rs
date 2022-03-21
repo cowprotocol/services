@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use anyhow::{anyhow, ensure, Context, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Address, H160, H256};
 use reqwest::{
@@ -38,7 +40,7 @@ struct NodeAccessList {
 }
 
 #[derive(Debug)]
-pub struct NodeApi {
+struct NodeApi {
     web3: Web3,
 }
 
@@ -54,6 +56,9 @@ impl AccessListEstimating for NodeApi {
         &self,
         txs: &[TransactionBuilder<DynTransport>],
     ) -> Result<Vec<Result<AccessList>>> {
+        if txs.is_empty() {
+            return Ok(Default::default());
+        }
         let batch_request = txs
             .iter()
             .map(|tx| -> Result<_> {
@@ -141,7 +146,7 @@ struct BlockNumber {
 }
 
 #[derive(Debug)]
-pub struct TenderlyApi {
+struct TenderlyApi {
     url: Url,
     client: Client,
     header: HeaderMap,
@@ -252,6 +257,11 @@ fn filter_access_list(access_list: AccessList) -> AccessList {
         .into_iter()
         .filter(|item| {
             item.address != H160::from_low_u64_be(1)
+                // `to` address is always warm, should not be put into access list
+                // this should be fixed with the latest Erigon release version
+                // https://github.com/ledgerwatch/erigon/pull/3453
+                && item.address
+                    != H160::from_str("0x9008d19f58aabd9ed0d60971565aa8510560ab41").unwrap()
                 && item
                     .storage_keys
                     .iter()
@@ -260,6 +270,8 @@ fn filter_access_list(access_list: AccessList) -> AccessList {
         .collect()
 }
 
+/// Contains multiple estimators, and uses them one by one until the first of them returns successfull result.
+/// Also does the filtering of the access list
 pub struct PriorityAccessListEstimating {
     estimators: Vec<Box<dyn AccessListEstimating>>,
 }
@@ -278,14 +290,58 @@ impl AccessListEstimating for PriorityAccessListEstimating {
     ) -> Result<Vec<Result<AccessList>>> {
         for (i, estimator) in self.estimators.iter().enumerate() {
             match estimator.estimate_access_lists(txs).await {
-                Ok(result) => return Ok(result),
+                Ok(result) => {
+                    return Ok(result
+                        .into_iter()
+                        .map(|access_list| access_list.map(filter_access_list))
+                        .collect())
+                }
                 Err(err) => {
                     tracing::warn!("access list estimator {} failed {:?}", i, err);
                 }
             }
         }
-        Err(anyhow! {"all estimators failed, no access list"})
+        Err(anyhow! {"no access list. no estimators defined or all estimators failed"})
     }
+}
+
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[clap(rename_all = "verbatim")]
+pub enum AccessListEstimatorType {
+    Web3,
+    Tenderly,
+}
+
+pub async fn create_priority_estimator(
+    client: &Client,
+    web3: &Web3,
+    estimator_types: &[AccessListEstimatorType],
+    tenderly_url: Option<Url>,
+    tenderly_api_key: Option<String>,
+) -> Result<impl AccessListEstimating> {
+    let network_id = web3.net().version().await?;
+    let mut estimators = Vec::<Box<dyn AccessListEstimating>>::new();
+
+    for estimator_type in estimator_types {
+        match estimator_type {
+            AccessListEstimatorType::Web3 => {
+                estimators.push(Box::new(NodeApi::new(web3.clone())));
+            }
+            AccessListEstimatorType::Tenderly => {
+                estimators.push(Box::new(TenderlyApi::new(
+                    tenderly_url
+                        .clone()
+                        .ok_or_else(|| anyhow!("Tenderly url is empty"))?,
+                    client.clone(),
+                    &tenderly_api_key
+                        .clone()
+                        .ok_or_else(|| anyhow!("Tenderly api key is empty"))?,
+                    network_id.clone(),
+                )?));
+            }
+        }
+    }
+    Ok(PriorityAccessListEstimating::new(estimators))
 }
 
 #[cfg(test)]
@@ -328,6 +384,8 @@ mod tests {
         let tx = example_tx();
         let access_lists = tenderly_api.estimate_access_lists(&[tx]).await.unwrap();
         dbg!(access_lists);
+        let access_lists = tenderly_api.estimate_access_lists(&[]).await.unwrap();
+        dbg!(access_lists);
     }
 
     #[tokio::test]
@@ -340,6 +398,8 @@ mod tests {
         let tx = example_tx();
 
         let access_lists = node_api.estimate_access_lists(&[tx]).await.unwrap();
+        dbg!(access_lists);
+        let access_lists = node_api.estimate_access_lists(&[]).await.unwrap();
         dbg!(access_lists);
     }
 

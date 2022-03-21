@@ -19,8 +19,11 @@ pub mod eden_api;
 pub mod flashbots_api;
 
 use super::{SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
-use crate::{settlement::Settlement, settlement_simulation::settle_method_builder};
-use anyhow::{anyhow, Context, Result};
+use crate::{
+    settlement::Settlement, settlement_access_list::AccessListEstimating,
+    settlement_simulation::settle_method_builder,
+};
+use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account, H160,
@@ -30,7 +33,7 @@ use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::time::{Duration, Instant};
-use web3::types::{TransactionReceipt, U64};
+use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -180,6 +183,7 @@ pub struct Submitter<'a> {
     account: &'a Account,
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
+    access_list_estimator: &'a dyn AccessListEstimating,
 }
 
 impl<'a> Submitter<'a> {
@@ -188,12 +192,14 @@ impl<'a> Submitter<'a> {
         account: &'a Account,
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
+        access_list_estimator: &'a dyn AccessListEstimating,
     ) -> Result<Self> {
         Ok(Self {
             contract,
             account,
             submit_api,
             gas_price_estimator,
+            access_list_estimator,
         })
     }
 }
@@ -345,7 +351,7 @@ impl<'a> Submitter<'a> {
         params: &SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, EstimatedGasPrice)>,
     ) -> SubmissionError {
-        let name = self.submit_api.name();
+        let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
@@ -367,7 +373,7 @@ impl<'a> Submitter<'a> {
                 SubmissionLoopStatus::Disabled(reason) => {
                     tracing::debug!(
                         "strategy {} temporarily disabled, reason: {:?}",
-                        name,
+                        submitter_name,
                         reason
                     );
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
@@ -393,7 +399,9 @@ impl<'a> Submitter<'a> {
 
             // create transaction
 
-            let method = self.build_method(settlement.clone(), &gas_price, nonce, gas_limit);
+            let method = self
+                .build_method(settlement.clone(), &gas_price, nonce, gas_limit)
+                .await;
 
             // simulate transaction
 
@@ -436,7 +444,7 @@ impl<'a> Submitter<'a> {
                 gas_price.cap(),
                 gas_price.tip(),
                 params.gas_estimate,
-                name,
+                submitter_name,
             );
 
             // execute transaction
@@ -444,25 +452,33 @@ impl<'a> Submitter<'a> {
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
                     tracing::info!(
-                        submitter = %self.submit_api.name(), ?handle,
+                        submitter = %submitter_name, ?handle,
                         "submitted transaction",
                     );
                     transactions.push((handle, gas_price));
                 }
                 Err(err) => match err {
                     SubmitApiError::InvalidNonce => {
-                        tracing::warn!("submission failed: invalid nonce")
+                        tracing::warn!("{} submission failed: invalid nonce", submitter_name)
                     }
                     SubmitApiError::ReplacementTransactionUnderpriced => {
-                        tracing::warn!("submission failed: replacement transaction underpriced")
+                        tracing::warn!(
+                            "{} submission failed: replacement transaction underpriced",
+                            submitter_name
+                        )
                     }
                     SubmitApiError::OpenEthereumTooCheapToReplace => {
-                        tracing::debug!("submission failed: OE has different replacement rules than our algorithm")
+                        tracing::debug!("{} submission failed: OE has different replacement rules than our algorithm", submitter_name)
                     }
                     SubmitApiError::EdenTransactionTooExpensive => {
-                        tracing::warn!("submission failed: eden transaction too expensive")
+                        tracing::warn!(
+                            "{} submission failed: eden transaction too expensive",
+                            submitter_name
+                        )
                     }
-                    SubmitApiError::Other(err) => tracing::error!("submission failed: {:?}", err),
+                    SubmitApiError::Other(err) => {
+                        tracing::error!("{} submission failed: {:?}", submitter_name, err)
+                    }
                 },
             }
             tokio::time::sleep(params.retry_interval).await;
@@ -470,17 +486,48 @@ impl<'a> Submitter<'a> {
     }
 
     /// Prepare transaction for simulation
-    fn build_method(
+    async fn build_method(
         &self,
         settlement: Settlement,
         gas_price: &EstimatedGasPrice,
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<DynTransport, ()> {
-        settle_method_builder(self.contract, settlement.into(), self.account.clone())
+        let method = settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(crate::into_gas_price(gas_price))
+            .gas_price(crate::into_gas_price(gas_price));
+        match self.estimate_access_list(&method.tx).await {
+            Ok(access_list) => method.access_list(access_list),
+            Err(err) => {
+                tracing::info!("access list not used, reason: {:?}", err);
+                method
+            }
+        }
+    }
+
+    /// Estimate access list and validate
+    async fn estimate_access_list(
+        &self,
+        tx: &TransactionBuilder<DynTransport>,
+    ) -> Result<AccessList> {
+        let access_list = self.access_list_estimator.estimate_access_list(tx).await?;
+        let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
+            tx.clone().estimate_gas(),
+            tx.clone().access_list(access_list.clone()).estimate_gas()
+        )?;
+
+        tracing::debug!(
+            "gas before/after access list: {}/{}, access_list: {:?}",
+            gas_before_access_list,
+            gas_after_access_list,
+            access_list,
+        );
+        ensure!(
+            gas_before_access_list > gas_after_access_list,
+            "access list exist but does not lower the gas usage"
+        );
+        Ok(access_list)
     }
 
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
@@ -554,6 +601,10 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Arc;
+
+    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
+
     use super::super::submitter::flashbots_api::FlashbotsApi;
     use super::*;
     use ethcontract::PrivateKey;
@@ -596,11 +647,22 @@ mod tests {
             gas_price_cap: 100e9,
             additional_tip_percentage_of_max_fee: Some(0.05),
         };
+        let access_list_estimator = Arc::new(
+            create_priority_estimator(
+                &Client::new(),
+                &web3,
+                &[AccessListEstimatorType::Web3],
+                None,
+                None,
+            )
+            .await
+            .unwrap(),
+        );
 
         let settlement = Settlement::new(Default::default());
         let gas_estimate =
             crate::settlement_simulation::simulate_and_estimate_gas_at_current_block(
-                std::iter::once((account.clone(), settlement.clone())),
+                std::iter::once((account.clone(), settlement.clone(), None)),
                 &contract,
                 &web3,
                 Default::default(),
@@ -612,8 +674,14 @@ mod tests {
             .unwrap()
             .unwrap();
 
-        let submitter =
-            Submitter::new(&contract, &account, &flashbots_api, &gas_price_estimator).unwrap();
+        let submitter = Submitter::new(
+            &contract,
+            &account,
+            &flashbots_api,
+            &gas_price_estimator,
+            access_list_estimator.as_ref(),
+        )
+        .unwrap();
 
         let params = SubmitterParams {
             target_confirm_time: Duration::from_secs(0),

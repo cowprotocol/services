@@ -10,6 +10,7 @@ use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
     liquidity_collector::LiquidityCollector,
     metrics::NoopMetrics,
+    settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
         submitter::custom_nodes_api::CustomNodesApi, SolutionSubmitter, StrategyArgs,
     },
@@ -192,6 +193,17 @@ async fn smart_contract_orders(web3: Web3) {
                     additional_tip_percentage_of_max_fee: 0.,
                 }),
             ],
+            access_list_estimator: Arc::new(
+                create_priority_estimator(
+                    &client,
+                    &web3,
+                    &[AccessListEstimatorType::Web3],
+                    None,
+                    None,
+                )
+                .await
+                .unwrap(),
+            ),
         },
         10,
         create_orderbook_api(),

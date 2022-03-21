@@ -10,13 +10,12 @@ use crate::{
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, Settlement},
     settlement_post_processing::PostProcessingPipeline,
-    settlement_simulation,
+    settlement_simulation::{self, settle_method},
     settlement_submission::SolutionSubmitter,
-    solver::{Auction, SettlementWithSolver, Solver, Solvers},
+    solver::{Auction, SettlementWithError, SettlementWithSolver, Solver, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::errors::ExecutionError;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
@@ -33,7 +32,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use web3::types::TransactionReceipt;
+use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
     settlement_contract: GPv2Settlement,
@@ -211,6 +210,7 @@ impl Driver {
         solver: Arc<dyn Solver>,
         settlement: &RatedSettlement,
         gas_price: EstimatedGasPrice,
+        access_list: Option<AccessList>,
     ) -> Result<bool> {
         // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
         if !self
@@ -226,6 +226,7 @@ impl Driver {
             std::iter::once((
                 solver.account().clone(),
                 settlement.settlement.without_onchain_liquidity(),
+                access_list,
             )),
             &self.settlement_contract,
             &self.web3,
@@ -243,7 +244,7 @@ impl Driver {
     // the block has changed just as were were querying the node.
     fn report_simulation_errors(
         &self,
-        errors: Vec<(Arc<dyn Solver>, Settlement, ExecutionError)>,
+        errors: Vec<SettlementWithError>,
         current_block_during_liquidity_fetch: u64,
         gas_price: EstimatedGasPrice,
     ) {
@@ -254,9 +255,13 @@ impl Driver {
         let simulation_gas_limit = self.simulation_gas_limit;
         let task = async move {
             let simulations = settlement_simulation::simulate_and_error_with_tenderly_link(
-                errors
-                    .iter()
-                    .map(|(solver, settlement, _)| (solver.account().clone(), settlement.clone())),
+                errors.iter().map(|(solver, settlement, access_list, _)| {
+                    (
+                        solver.account().clone(),
+                        settlement.clone(),
+                        access_list.clone(),
+                    )
+                }),
                 &contract,
                 &web3,
                 gas_price,
@@ -266,7 +271,7 @@ impl Driver {
             )
             .await;
 
-            for ((solver, settlement, _previous_error), result) in errors.iter().zip(simulations) {
+            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
                 metrics.settlement_simulation_failed_on_latest(solver.name());
                 if let Err(error_at_earlier_block) = result {
                     tracing::warn!(
@@ -312,13 +317,17 @@ impl Driver {
         prices: &ExternalPrices,
         gas_price: EstimatedGasPrice,
     ) -> Result<(
-        Vec<(Arc<dyn Solver>, RatedSettlement)>,
-        Vec<(Arc<dyn Solver>, Settlement, ExecutionError)>,
+        Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
+        Vec<SettlementWithError>,
     )> {
         let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
-            settlements
-                .iter()
-                .map(|settlement| (settlement.0.account().clone(), settlement.1.clone())),
+            settlements.iter().map(|settlement| {
+                (
+                    settlement.0.account().clone(),
+                    settlement.1.clone(),
+                    settlement.2.clone(),
+                )
+            }),
             &self.settlement_contract,
             &self.web3,
             gas_price,
@@ -345,11 +354,13 @@ impl Driver {
         };
         Ok(
             (settlements.into_iter().zip(simulations).enumerate()).partition_map(
-                |(i, ((solver, settlement), result))| match result {
-                    Ok(gas_estimate) => {
-                        Either::Left((solver.clone(), rate_settlement(i, settlement, gas_estimate)))
-                    }
-                    Err(err) => Either::Right((solver, settlement, err)),
+                |(i, ((solver, settlement, access_list), result))| match result {
+                    Ok(gas_estimate) => Either::Left((
+                        solver.clone(),
+                        rate_settlement(i, settlement, gas_estimate),
+                        access_list,
+                    )),
+                    Err(err) => Either::Right((solver, settlement, access_list, err)),
                 },
             ),
         )
@@ -478,10 +489,40 @@ impl Driver {
                 solver_settlements::retain_mature_settlements(self.min_order_age, settlements);
 
             solver_settlements.reserve(mature_settlements.len());
+
             for settlement in mature_settlements {
                 solver_settlements.push((solver.clone(), settlement))
             }
         }
+
+        // append access lists
+        let txs = solver_settlements
+            .iter()
+            .map(|(solver, settlement)| {
+                settle_method(
+                    gas_price,
+                    &self.settlement_contract,
+                    settlement.clone(),
+                    solver.account().clone(),
+                )
+                .tx
+            })
+            .collect::<Vec<_>>();
+        let mut access_lists = self
+            .solution_submitter
+            .access_list_estimator
+            .estimate_access_lists(&txs)
+            .await
+            .unwrap_or_default()
+            .into_iter();
+
+        let solver_settlements = solver_settlements
+            .into_iter()
+            .map(|(solver, settlement)| {
+                let access_list = access_lists.next().and_then(|access_list| access_list.ok());
+                (solver, settlement, access_list)
+            })
+            .collect();
 
         let (mut rated_settlements, errors) = self
             .rate_settlements(solver_settlements, &external_prices, gas_price)
@@ -491,19 +532,21 @@ impl Driver {
             rated_settlements.len(),
             errors.len()
         );
-        for (solver, _) in &rated_settlements {
+        for (solver, _, _) in &rated_settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
-        if let Some((winning_solver, mut winning_settlement)) = rated_settlements.pop() {
+        if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
+        {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
             if self
                 .can_settle_without_liquidity(
                     winning_solver.clone(),
                     &winning_settlement,
                     gas_price,
+                    access_list.clone(),
                 )
                 .await
                 .unwrap_or(false)
@@ -524,6 +567,7 @@ impl Driver {
                 .post_processing_pipeline
                 .optimize_settlement(
                     winning_settlement.settlement,
+                    access_list,
                     winning_solver.account().clone(),
                     gas_price,
                 )
@@ -559,7 +603,13 @@ impl Driver {
             }
             self.metrics.transaction_submission(start.elapsed());
 
-            self.report_on_batch(&(winning_solver, winning_settlement), rated_settlements);
+            self.report_on_batch(
+                &(winning_solver, winning_settlement),
+                rated_settlements
+                    .into_iter()
+                    .map(|(solver, settlement, _)| (solver, settlement))
+                    .collect(),
+            );
         }
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
@@ -580,18 +630,19 @@ fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenLis
 }
 
 fn print_settlements(
-    rated_settlements: &[(Arc<dyn Solver>, RatedSettlement)],
+    rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
     fee_objective_scaling_factor: &BigRational,
 ) {
     let mut text = String::new();
-    for (solver, settlement) in rated_settlements {
+    for (solver, settlement, access_list) in rated_settlements {
         use std::fmt::Write;
         write!(
             text,
             "\nid={} solver={} \
              objective={:.2e} surplus={:.2e} \
              gas_estimate={:.2e} gas_price={:.2e} \
-             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e}",
+             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
+             access_list_addreses={}",
             settlement.id,
             solver.name(),
             settlement.objective_value().to_f64().unwrap_or(f64::NAN),
@@ -605,6 +656,7 @@ fn print_settlements(
                 .unscaled_subsidized_fee
                 .to_f64()
                 .unwrap_or(f64::NAN),
+            access_list.clone().unwrap_or_default().len()
         )
         .unwrap();
     }
@@ -709,6 +761,7 @@ mod tests {
                     gas_estimate: 4.into(),
                     gas_price: BigRational::new(5u8.into(), 1u8.into()),
                 },
+                None,
             ),
             (
                 Arc::new(S) as Arc<dyn Solver>,
@@ -721,6 +774,7 @@ mod tests {
                     gas_estimate: 10.into(),
                     gas_price: BigRational::new(11u8.into(), 1u8.into()),
                 },
+                None,
             ),
         ];
 

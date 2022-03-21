@@ -13,7 +13,7 @@ harness = false
 anyhow = "1.0"
 contracts = { path = "../contracts" }
 criterion = "0.3"
-ethcontract = { version = "0.16.0", default-features = false }
+ethcontract = { version = "0.17.0", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"

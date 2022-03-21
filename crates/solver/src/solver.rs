@@ -9,6 +9,7 @@ use crate::{
 use anyhow::{anyhow, Result};
 use baseline_solver::BaselineSolver;
 use contracts::{BalancerV2Vault, GPv2Settlement};
+use ethcontract::errors::ExecutionError;
 use ethcontract::{Account, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
 use naive_solver::NaiveSolver;
@@ -27,6 +28,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use web3::types::AccessList;
 use zeroex_solver::ZeroExSolver;
 
 pub mod balancer_sor_solver;
@@ -121,7 +123,14 @@ impl Default for Auction {
 pub type Solvers = Vec<Arc<dyn Solver>>;
 
 /// A single settlement and a solver that produced it.
-pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement);
+pub type SettlementWithSolver = (Arc<dyn Solver>, Settlement, Option<AccessList>);
+
+pub type SettlementWithError = (
+    Arc<dyn Solver>,
+    Settlement,
+    Option<AccessList>,
+    ExecutionError,
+);
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
 #[clap(rename_all = "verbatim")]

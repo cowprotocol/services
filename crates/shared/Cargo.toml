@@ -18,8 +18,8 @@ cached = { version = "0.32", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { version = "0.16.0", default-features = false }
-ethcontract-mock = { version = "0.16.0", default-features = false }
+ethcontract = { version = "0.17.0", default-features = false }
+ethcontract-mock = { version = "0.17.0", default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/gnosis/gp-gas-estimation.git", tag = "v0.5.0", features = ["web3_", "tokio_"] }
 hex = { version = "0.4", default-features = false }

@@ -9,12 +9,17 @@ use gas_estimation::EstimatedGasPrice;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
 use shared::Web3;
+use web3::types::AccessList;
 
 /// Determines whether a settlement would be executed successfully.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool;
+    async fn settlement_would_succeed(
+        &self,
+        settlement: Settlement,
+        access_list: Option<AccessList>,
+    ) -> bool;
 }
 
 pub struct SettlementSimulator {
@@ -26,9 +31,13 @@ pub struct SettlementSimulator {
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
-    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
+    async fn settlement_would_succeed(
+        &self,
+        settlement: Settlement,
+        access_list: Option<AccessList>,
+    ) -> bool {
         let result = simulate_and_estimate_gas_at_current_block(
-            std::iter::once((self.solver_account.clone(), settlement)),
+            std::iter::once((self.solver_account.clone(), settlement, access_list)),
             &self.settlement_contract,
             &self.web3,
             self.gas_price,
@@ -68,6 +77,7 @@ impl PostProcessingPipeline {
     pub async fn optimize_settlement(
         &self,
         settlement: Settlement,
+        access_list: Option<AccessList>,
         solver_account: Account,
         gas_price: EstimatedGasPrice,
     ) -> Settlement {
@@ -81,6 +91,7 @@ impl PostProcessingPipeline {
         // an error will leave the settlement unmodified
         optimize_unwrapping(
             settlement,
+            access_list,
             &simulator,
             &self.buffer_retriever,
             &self.weth,

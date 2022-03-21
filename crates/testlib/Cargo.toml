@@ -9,6 +9,6 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.16.0", default-features = false }
-ethcontract-mock = { version = "0.16.0" }
+ethcontract = { version = "0.17.0", default-features = false }
+ethcontract-mock = { version = "0.17.0" }
 hex-literal = "0.3"

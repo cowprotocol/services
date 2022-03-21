@@ -13,7 +13,7 @@ use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
 use primitive_types::U256;
 use shared::Web3;
-use web3::types::{BlockId, CallRequest};
+use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
@@ -34,7 +34,7 @@ const SIMULATE_BATCH_SIZE: usize = 10;
 const MAX_BASE_GAS_FEE_INCREASE: f64 = 1.125;
 
 pub async fn simulate_and_estimate_gas_at_current_block(
-    settlements: impl Iterator<Item = (Account, Settlement)>,
+    settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     web3: &Web3,
     gas_price: EstimatedGasPrice,
@@ -48,43 +48,38 @@ pub async fn simulate_and_estimate_gas_at_current_block(
         return Ok(Vec::new());
     }
 
-    let web3 = web3::Web3::new(web3::transports::Batch::new(web3.transport().clone()));
+    let web3 = web3::Web3::new(shared::transport::buffered::Buffered::new(
+        web3.transport().clone(),
+    ));
+    let contract_with_buffered_transport = GPv2Settlement::at(&web3, contract.address());
     let mut results = Vec::new();
     for chunk in settlements.chunks(SIMULATE_BATCH_SIZE) {
         let calls = chunk
             .iter()
-            .map(|(account, settlement)| {
-                let tx = settle_method(gas_price, contract, settlement.clone(), account.clone()).tx;
-                let resolved_gas_price = tx
-                    .gas_price
-                    .map(|gas_price| gas_price.resolve_for_transaction())
-                    .unwrap_or_default();
-                let call_request = CallRequest {
-                    from: tx.from.map(|account| account.address()),
-                    to: tx.to,
-                    gas: None,
-                    gas_price: resolved_gas_price.gas_price,
-                    value: tx.value,
-                    data: tx.data,
-                    transaction_type: resolved_gas_price.transaction_type,
-                    access_list: None,
-                    max_fee_per_gas: resolved_gas_price.max_fee_per_gas,
-                    max_priority_fee_per_gas: resolved_gas_price.max_priority_fee_per_gas,
+            .map(|(account, settlement, access_list)| {
+                let tx = settle_method(
+                    gas_price,
+                    &contract_with_buffered_transport,
+                    settlement.clone(),
+                    account.clone(),
+                )
+                .tx;
+                let tx = match access_list {
+                    Some(access_list) => tx.access_list(access_list.clone()),
+                    None => tx,
                 };
-                web3.eth().estimate_gas(call_request, None)
+                tx.estimate_gas()
             })
             .collect::<Vec<_>>();
-        web3.transport().submit_batch().await?;
-        for call in calls {
-            results.push(call.await.map_err(ExecutionError::from));
-        }
+        let chuck_results = futures::future::join_all(calls).await;
+        results.extend(chuck_results);
     }
     Ok(results)
 }
 
 #[allow(clippy::needless_collect)]
 pub async fn simulate_and_error_with_tenderly_link(
-    settlements: impl Iterator<Item = (Account, Settlement)>,
+    settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     web3: &Web3,
     gas_price: EstimatedGasPrice,
@@ -94,8 +89,12 @@ pub async fn simulate_and_error_with_tenderly_link(
 ) -> Vec<Result<()>> {
     let mut batch = CallBatch::new(web3.transport());
     let futures = settlements
-        .map(|(account, settlement)| {
+        .map(|(account, settlement, access_list)| {
             let method = settle_method(gas_price, contract, settlement, account);
+            let method = match access_list {
+                Some(access_list) => method.access_list(access_list),
+                None => method,
+            };
             let transaction_builder = method.tx.clone();
             let view = method
                 .view()
@@ -120,7 +119,7 @@ pub async fn simulate_and_error_with_tenderly_link(
         .collect()
 }
 
-fn settle_method(
+pub fn settle_method(
     gas_price: EstimatedGasPrice,
     contract: &GPv2Settlement,
     settlement: Settlement,
@@ -209,8 +208,9 @@ mod tests {
             (
                 account.clone(),
                 Settlement::with_trades(Default::default(), vec![Default::default()], vec![]),
+                None,
             ),
-            (account.clone(), Settlement::new(Default::default())),
+            (account.clone(), Settlement::new(Default::default()), None),
         ];
         let result = simulate_and_error_with_tenderly_link(
             settlements.iter().cloned(),
@@ -603,8 +603,10 @@ mod tests {
         let account = Account::Offline(PrivateKey::from_raw([1; 32]).unwrap(), None);
 
         // 12 so that we hit more than one chunk.
-        let settlements =
-            vec![(account.clone(), Settlement::new(Default::default())); SIMULATE_BATCH_SIZE + 2];
+        let settlements = vec![
+            (account.clone(), Settlement::new(Default::default()), None);
+            SIMULATE_BATCH_SIZE + 2
+        ];
         let result = simulate_and_estimate_gas_at_current_block(
             settlements.iter().cloned(),
             &contract,
