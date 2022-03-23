@@ -1,13 +1,14 @@
 use super::{BadTokenDetecting, TokenQuality};
 use crate::{
     ethcontract_error::EthcontractErrorType,
+    event_handling::MAX_REORG_BLOCK_COUNT,
     sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
     trace_many, Web3,
 };
 use anyhow::{anyhow, bail, ensure, Context, Result};
 use contracts::{IUniswapV3Factory, ERC20};
 use ethcontract::{
-    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, BlockNumber, PrivateKey,
 };
 use model::TokenPair;
 use primitive_types::{H160, U256};
@@ -55,13 +56,43 @@ impl TokenOwnerFinding for BalancerVaultFinder {
 pub struct UniswapV3Finder {
     pub factory: IUniswapV3Factory,
     pub base_tokens: Vec<H160>,
+    fee_values: Vec<u32>,
 }
 
 impl UniswapV3Finder {
+    pub async fn new(
+        factory: IUniswapV3Factory,
+        base_tokens: Vec<H160>,
+        current_block: u64,
+    ) -> Result<Self> {
+        // We fetch these once at start up because we don't expect them to change often.
+        // Alternatively could use a time based cache.
+        let fee_values = Self::fee_values(&factory, current_block).await?;
+        tracing::debug!(?fee_values);
+        Ok(Self {
+            factory,
+            base_tokens,
+            fee_values,
+        })
+    }
+
     // Possible fee values as given by
     // https://github.com/Uniswap/v3-core/blob/9161f9ae4aaa109f7efdff84f1df8d4bc8bfd042/contracts/UniswapV3Factory.sol#L26
-    // Could theoretically change in the future in which case hard coded values would become wrong.
-    const FEE: [u32; 3] = [500, 3000, 10000];
+    async fn fee_values(factory: &IUniswapV3Factory, current_block: u64) -> Result<Vec<u32>> {
+        // We expect there to be few of these kind of events (currently there are 4) so fetching all
+        // of them is fine. Alternatively we could index these events in the database.
+        let events = factory
+            .events()
+            .fee_amount_enabled()
+            .from_block(BlockNumber::Earliest)
+            .to_block(BlockNumber::Number(
+                current_block.saturating_sub(MAX_REORG_BLOCK_COUNT).into(),
+            ))
+            .query()
+            .await?;
+        let fee_values = events.into_iter().map(|event| event.data.fee).collect();
+        Ok(fee_values)
+    }
 }
 
 #[async_trait::async_trait]
@@ -71,7 +102,7 @@ impl TokenOwnerFinding for UniswapV3Finder {
             .base_tokens
             .iter()
             .filter_map(|base_token| TokenPair::new(*base_token, token))
-            .flat_map(|pair| Self::FEE.iter().map(move |fee| (pair, *fee)))
+            .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
             .map(|(pair, fee)| {
                 uniswap_v3_pair_provider::pair_address(&self.factory.address(), &pair, fee)
             })
@@ -633,15 +664,16 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn mainnet_univ3() {
+        crate::tracing::initialize_for_tests("shared=debug");
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let base_tokens = vec![testlib::tokens::WETH];
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
-        let univ3 = UniswapV3Finder {
-            factory,
-            base_tokens,
-        };
+        let current_block = web3.eth().block_number().await.unwrap().as_u64();
+        let univ3 = UniswapV3Finder::new(factory, base_tokens, current_block)
+            .await
+            .unwrap();
         let token_cache = TraceCallDetector {
             web3,
             settlement_contract: settlement.address(),
