@@ -135,6 +135,14 @@ fn run() -> Result<()> {
             "ISwaprPair",
             "levelkdev/dxswap-core/3511bab996096f9c9c9bc3af0d94222650fd1e40/\
              build/IDXswapPair.json",
+        )?
+        .npm(
+            "CowProtocolToken",
+            "@gnosis.pm/cow-token@1.0.3/build/artifacts/src/contracts/CowProtocolToken.sol/CowProtocolToken.json",
+        )?
+        .npm(
+            "CowProtocolVirtualToken",
+            "@gnosis.pm/cow-token@1.0.3/build/artifacts/src/contracts/CowProtocolVirtualToken.sol/CowProtocolVirtualToken.json",
         )?;
 
     Ok(())

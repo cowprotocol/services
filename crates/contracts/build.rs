@@ -267,6 +267,16 @@ fn main() {
                 "_fill_otc_order"
             )
     });
+    generate_contract_with_config("CowProtocolToken", |builder| {
+        builder
+            .add_network_str("1", "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
+            .add_network_str("100", "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
+    });
+    generate_contract_with_config("CowProtocolVirtualToken", |builder| {
+        builder
+            .add_network_str("1", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
+            .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
+    });
 }
 
 fn generate_contract(name: &str) {
