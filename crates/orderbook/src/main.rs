@@ -132,6 +132,12 @@ struct Arguments {
     #[clap(long, env, parse(try_from_str), default_value = "false")]
     enable_presign_orders: bool,
 
+    /// Enables SC order to buy native token. This is disabled by default since
+    /// smart contracts typically can't buy native tokens unless a solver is
+    /// submitting transactions with an access list.
+    #[clap(long, env)]
+    enable_smart_contract_buy_native_token: bool,
+
     /// If solvable orders haven't been successfully update in this time in seconds attempting
     /// to get them errors and our liveness check fails.
     #[clap(
@@ -650,6 +656,7 @@ async fn main() {
         args.banned_users.into_iter().collect(),
         args.shared.liquidity_order_owners.into_iter().collect(),
         args.min_order_validity_period,
+        args.enable_smart_contract_buy_native_token,
         fee_calculator.clone(),
         bad_token_detector.clone(),
         balance_fetcher,

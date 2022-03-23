@@ -271,7 +271,7 @@ impl Driver {
             )
             .await;
 
-            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
+            for ((solver, settlement, access_list, _), result) in errors.iter().zip(simulations) {
                 metrics.settlement_simulation_failed_on_latest(solver.name());
                 if let Err(error_at_earlier_block) = result {
                     tracing::warn!(
@@ -281,7 +281,11 @@ impl Driver {
                         error_at_earlier_block,
                     );
                     // split warning into separate logs so that the messages aren't too long.
-                    tracing::warn!("settlement failure for: \n{:#?}", settlement);
+                    tracing::warn!(
+                        "settlement failure for: \n{:#?}\nAccess List: {:#?}",
+                        settlement,
+                        access_list
+                    );
 
                     metrics.settlement_simulation_failed(solver.name());
                 }
