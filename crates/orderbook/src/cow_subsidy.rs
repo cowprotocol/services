@@ -47,10 +47,12 @@ impl std::str::FromStr for SubsidyTiers {
                 .split_once(':')
                 .with_context(|| format!("too few arguments for subsidy tier in \"{}\"", tier))?;
 
-            let threshold: f64 = threshold
+            let threshold: u64 = threshold
                 .parse()
-                .with_context(|| format!("can not parse threshold \"{}\" as f64", threshold))?;
-            let threshold = U256::from_f64_lossy(threshold * 1e18);
+                .with_context(|| format!("can not parse threshold \"{}\" as u64", threshold))?;
+            let threshold = U256::from(threshold)
+                .checked_mul(U256::exp10(18))
+                .with_context(|| format!("threshold {threshold} would overflow U256"))?;
 
             let fee_factor: f64 = fee_factor
                 .parse()
