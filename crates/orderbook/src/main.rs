@@ -1,6 +1,9 @@
 use anyhow::{anyhow, Context, Result};
 use clap::{ArgEnum, Parser};
-use contracts::{BalancerV2Vault, GPv2Settlement, IUniswapV3Factory, ERC20, WETH9};
+use contracts::{
+    BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, GPv2Settlement, IUniswapV3Factory,
+    WETH9,
+};
 use ethcontract::errors::DeployError;
 use model::{
     app_id::AppId,
@@ -184,10 +187,6 @@ struct Arguments {
     /// [150, inf) COW will cause you to pay 50% of the regular fee.
     #[clap(long, env)]
     cow_fee_factors: Option<SubsidyTiers>,
-
-    /// Address of the cow token used for extra subsidy.
-    #[clap(long, env)]
-    cow_token_address: Option<H160>,
 
     /// The API endpoint to call the mip v2 solver for price estimation
     #[clap(long, env)]
@@ -602,12 +601,32 @@ async fn main() {
         Some(args.native_price_cache_max_update_size),
     );
 
-    let cow_subsidy = match args.cow_token_address {
-        Some(address) => Arc::new(CowSubsidyImpl::new(
-            ERC20::at(&web3, address),
-            args.cow_fee_factors.unwrap_or_default(),
-        )) as Arc<dyn CowSubsidy>,
-        None => Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>,
+    let cow_token = match CowProtocolToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    let cow_vtoken = match CowProtocolVirtualToken::deployed(&web3).await {
+        Err(DeployError::NotFound(_)) => None,
+        other => Some(other.unwrap()),
+    };
+    let cow_tokens = match (cow_token, cow_vtoken) {
+        (None, None) => None,
+        (Some(token), Some(vtoken)) => Some((token, vtoken)),
+        _ => panic!("should either have both cow token contracts or none"),
+    };
+    let cow_subsidy = match cow_tokens {
+        Some((token, vtoken)) => {
+            tracing::debug!("using cow token contracts for subsidy");
+            Arc::new(CowSubsidyImpl::new(
+                token,
+                vtoken,
+                args.cow_fee_factors.unwrap_or_default(),
+            )) as Arc<dyn CowSubsidy>
+        }
+        None => {
+            tracing::debug!("disabling cow subsidy because contracts not found on network");
+            Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>
+        }
     };
 
     let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>| {
