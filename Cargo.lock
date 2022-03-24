@@ -2758,6 +2758,7 @@ dependencies = [
  "num",
  "primitive-types",
  "prometheus",
+ "prometheus-metric-storage",
  "rand",
  "reqwest",
  "serde",

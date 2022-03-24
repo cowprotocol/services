@@ -3,7 +3,7 @@
 use crate::settlement::{Revertable, Settlement};
 
 use super::{
-    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
     AdditionalTip, CancelHandle, SubmissionLoopStatus,
 };
@@ -49,7 +49,7 @@ impl EdenApi {
     async fn submit_slot_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    ) -> Result<TransactionHandle> {
         let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
             Transaction::Request(_) => unreachable!("verified offline account was used"),
             Transaction::Raw { bytes, hash } => (bytes.0, hash),
@@ -85,9 +85,10 @@ impl TransactionSubmitting for EdenApi {
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    ) -> Result<TransactionHandle> {
         // try to submit with slot method
-        self.submit_slot_transaction(tx.clone())
+        let result = self
+            .submit_slot_transaction(tx.clone())
             .or_else(|err| async move {
                 // fallback to standard eth_sendRawTransaction
                 // want to keep this call as a safety measure until we are confident in `submit_slot_transaction`
@@ -97,13 +98,21 @@ impl TransactionSubmitting for EdenApi {
                     .submit_raw_transaction(tx)
                     .await
             })
-            .await
+            .await;
+
+        let successful = match &result {
+            Ok(_) => true,
+            // Sometimes `submit_slot_transaction()` times out and the fallback submission
+            // strategy reveals that the network is already aware of the transaction by returning
+            // the error message "already known".
+            Err(err) => err.to_string().contains("already known"),
+        };
+        super::track_submission_success("eden", successful);
+
+        result
     }
 
-    async fn cancel_transaction(
-        &self,
-        id: &CancelHandle,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
         self.rpc
             .api::<PrivateNetwork>()
             .submit_raw_transaction(id.noop_transaction.clone())

@@ -51,24 +51,6 @@ pub struct SubmitterParams {
 }
 
 #[derive(Debug)]
-/// Enum used to handle all kind of messages received from implementers of trait TransactionSubmitting
-pub enum SubmitApiError {
-    InvalidNonce,
-    ReplacementTransactionUnderpriced,
-    OpenEthereumTooCheapToReplace, // todo ds safe to remove after dropping OE support
-    /// EDEN network will reject transactions where the maximum gas cost in ETH
-    /// is over 1.0.
-    EdenTransactionTooExpensive,
-    Other(anyhow::Error),
-}
-
-impl From<anyhow::Error> for SubmitApiError {
-    fn from(err: anyhow::Error) -> Self {
-        Self::Other(err)
-    }
-}
-
-#[derive(Debug)]
 pub enum SubmissionLoopStatus {
     Enabled(AdditionalTip),
     Disabled(DisabledReason),
@@ -107,12 +89,9 @@ pub trait TransactionSubmitting: Send + Sync {
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<DynTransport>,
-    ) -> Result<TransactionHandle, SubmitApiError>;
+    ) -> Result<TransactionHandle>;
     /// Cancels already submitted transaction using the cancel handle
-    async fn cancel_transaction(
-        &self,
-        id: &CancelHandle,
-    ) -> Result<TransactionHandle, SubmitApiError>;
+    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle>;
     /// Try to find submitted transaction from previous submission loop (in this case we don't have a TransactionHandle)
     async fn recover_pending_transaction(
         &self,
@@ -457,29 +436,7 @@ impl<'a> Submitter<'a> {
                     );
                     transactions.push((handle, gas_price));
                 }
-                Err(err) => match err {
-                    SubmitApiError::InvalidNonce => {
-                        tracing::warn!("{} submission failed: invalid nonce", submitter_name)
-                    }
-                    SubmitApiError::ReplacementTransactionUnderpriced => {
-                        tracing::warn!(
-                            "{} submission failed: replacement transaction underpriced",
-                            submitter_name
-                        )
-                    }
-                    SubmitApiError::OpenEthereumTooCheapToReplace => {
-                        tracing::debug!("{} submission failed: OE has different replacement rules than our algorithm", submitter_name)
-                    }
-                    SubmitApiError::EdenTransactionTooExpensive => {
-                        tracing::warn!(
-                            "{} submission failed: eden transaction too expensive",
-                            submitter_name
-                        )
-                    }
-                    SubmitApiError::Other(err) => {
-                        tracing::error!("{} submission failed: {:?}", submitter_name, err)
-                    }
-                },
+                Err(err) => tracing::warn!("submission failed: {:?}", err),
             }
             tokio::time::sleep(params.retry_interval).await;
         }
@@ -550,7 +507,7 @@ impl<'a> Submitter<'a> {
         transaction: &TransactionHandle,
         gas_price: &EstimatedGasPrice,
         nonce: U256,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    ) -> Result<TransactionHandle> {
         let cancel_handle = CancelHandle {
             submitted_transaction: *transaction,
             noop_transaction: self.build_noop_transaction(&gas_price.bump(3.), nonce),
@@ -596,6 +553,23 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
         }
     }
     None
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "submission_strategies")]
+struct Metrics {
+    /// Tracks how many transactions get successfully submitted with the different submission strategies.
+    #[metric(labels("submitter", "result"))]
+    submissions: prometheus::CounterVec,
+}
+
+pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
+    let result = if was_successful { "success" } else { "error" };
+    Metrics::instance(shared::metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .submissions
+        .with_label_values(&[submitter, result])
+        .inc();
 }
 
 #[cfg(test)]

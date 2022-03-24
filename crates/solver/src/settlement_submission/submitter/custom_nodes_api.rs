@@ -4,7 +4,7 @@ use crate::{
 };
 
 use super::{
-    super::submitter::{SubmitApiError, TransactionHandle, TransactionSubmitting},
+    super::submitter::{TransactionHandle, TransactionSubmitting},
     AdditionalTip, CancelHandle, DisabledReason, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
@@ -33,7 +33,7 @@ impl TransactionSubmitting for CustomNodesApi {
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<DynTransport>,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    ) -> Result<TransactionHandle> {
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
@@ -52,33 +52,30 @@ impl TransactionSubmitting for CustomNodesApi {
             .collect::<Vec<_>>();
 
         loop {
-            let (result, _index, rest) = futures::future::select_all(futures).await;
+            let (result, index, rest) = futures::future::select_all(futures).await;
+            let lable = format!("custom_nodes_{index}");
             match result {
                 Ok(tx_hash) => {
+                    super::track_submission_success(lable.as_str(), true);
                     tracing::info!("created transaction with hash: {:?}", tx_hash);
                     return Ok(TransactionHandle {
                         tx_hash,
                         handle: tx_hash,
                     });
                 }
-                Err(err) if rest.is_empty() => {
-                    tracing::debug!("error {}", err);
-                    return Err(anyhow::Error::from(err)
-                        .context("all nodes tx failed")
-                        .into());
-                }
                 Err(err) => {
-                    tracing::warn!(?err, "single node tx failed");
+                    tracing::warn!(?err, ?lable, "single custom node tx failed");
+                    super::track_submission_success(lable.as_str(), false);
+                    if rest.is_empty() {
+                        return Err(anyhow::Error::from(err).context("all custom nodes tx failed"));
+                    }
                     futures = rest;
                 }
             }
         }
     }
 
-    async fn cancel_transaction(
-        &self,
-        id: &CancelHandle,
-    ) -> Result<TransactionHandle, SubmitApiError> {
+    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
         self.submit_transaction(id.noop_transaction.clone()).await
     }
 
