@@ -383,6 +383,26 @@ impl Solver for SellVolumeFilteringSolver {
 }
 
 #[cfg(test)]
+struct DummySolver;
+#[cfg(test)]
+#[async_trait::async_trait]
+impl Solver for DummySolver {
+    async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
+        todo!()
+    }
+    fn account(&self) -> &ethcontract::Account {
+        todo!()
+    }
+    fn name(&self) -> &'static str {
+        "DummySolver"
+    }
+}
+#[cfg(test)]
+pub fn dummy_arc_solver() -> Arc<dyn Solver> {
+    Arc::new(DummySolver)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{liquidity::LimitOrder, settlement::external_prices::externalprices};

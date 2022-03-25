@@ -485,15 +485,16 @@ impl Driver {
                 &mut settlements,
             );
 
-            let mature_settlements =
-                solver_settlements::retain_mature_settlements(self.min_order_age, settlements);
+            solver_settlements.reserve(settlements.len());
 
-            solver_settlements.reserve(mature_settlements.len());
-
-            for settlement in mature_settlements {
+            for settlement in settlements {
                 solver_settlements.push((solver.clone(), settlement))
             }
         }
+
+        // filters out all non-mature settlements
+        let solver_settlements =
+            solver_settlements::retain_mature_settlements(self.min_order_age, solver_settlements);
 
         // append access lists
         let txs = solver_settlements
@@ -672,7 +673,10 @@ enum SolverRunError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settlement::{OrderTrade, Trade};
+    use crate::{
+        settlement::{OrderTrade, Trade},
+        solver::dummy_arc_solver,
+    };
     use maplit::hashmap;
     use model::order::{Order, OrderCreation};
     use shared::token_list::Token;
@@ -735,23 +739,9 @@ mod tests {
     #[test]
     #[ignore]
     fn print_settlements() {
-        struct S;
-        #[async_trait::async_trait]
-        impl Solver for S {
-            async fn solve(&self, _: Auction) -> Result<Vec<Settlement>> {
-                todo!()
-            }
-            fn account(&self) -> &ethcontract::Account {
-                todo!()
-            }
-            fn name(&self) -> &'static str {
-                "solvername"
-            }
-        }
-
         let a = [
             (
-                Arc::new(S) as Arc<dyn Solver>,
+                dummy_arc_solver(),
                 RatedSettlement {
                     id: 0,
                     settlement: Default::default(),
@@ -764,7 +754,7 @@ mod tests {
                 None,
             ),
             (
-                Arc::new(S) as Arc<dyn Solver>,
+                dummy_arc_solver(),
                 RatedSettlement {
                     id: 6,
                     settlement: Default::default(),

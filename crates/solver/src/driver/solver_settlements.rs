@@ -1,8 +1,11 @@
-use crate::settlement::{external_prices::ExternalPrices, Settlement};
+use crate::{
+    settlement::{external_prices::ExternalPrices, Settlement},
+    solver::Solver,
+};
 use ethcontract::U256;
 use num::BigRational;
 use shared::conversions::U256Ext as _;
-use std::{collections::HashSet, time::Duration};
+use std::{collections::HashSet, sync::Arc, time::Duration};
 
 pub fn has_user_order(settlement: &Settlement) -> bool {
     !settlement.encoder.order_trades().is_empty()
@@ -99,11 +102,11 @@ fn merge_at_most_settlements(
 /// any user order of a settlement has matured.
 pub fn retain_mature_settlements(
     min_order_age: Duration,
-    settlements: Vec<Settlement>,
-) -> Vec<Settlement> {
+    settlements: Vec<(Arc<dyn Solver>, Settlement)>,
+) -> Vec<(Arc<dyn Solver>, Settlement)> {
     fn find_mature_settlements(
         min_order_age: Duration,
-        settlements: &[Settlement],
+        settlements: &[(Arc<dyn Solver>, Settlement)],
     ) -> HashSet<usize> {
         let settle_orders_older_than =
             chrono::offset::Utc::now() - chrono::Duration::from_std(min_order_age).unwrap();
@@ -114,7 +117,7 @@ pub fn retain_mature_settlements(
         loop {
             let mut new_order_added = false;
 
-            for (index, settlement) in settlements.iter().enumerate() {
+            for (index, (_, settlement)) in settlements.iter().enumerate() {
                 if valid_settlement_indices.contains(&index) {
                     break;
                 }
@@ -142,7 +145,8 @@ pub fn retain_mature_settlements(
         }
     }
 
-    let valid_settlement_indices = find_mature_settlements(min_order_age, &settlements[..]);
+    let valid_settlement_indices = find_mature_settlements(min_order_age, &settlements);
+
     settlements
         .into_iter()
         .enumerate()
@@ -156,6 +160,7 @@ mod tests {
     use super::*;
     use crate::settlement::external_prices::externalprices;
     use crate::settlement::{LiquidityOrderTrade, OrderTrade, Trade};
+    use crate::solver::dummy_arc_solver;
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
     use model::order::{Order, OrderCreation, OrderKind, OrderMetadata, OrderUid};
@@ -198,6 +203,24 @@ mod tests {
         }
     }
 
+    fn settlements_into_dummy_solver_settlements(
+        settlements: Vec<Settlement>,
+    ) -> Vec<(Arc<dyn Solver>, Settlement)> {
+        settlements
+            .into_iter()
+            .map(|settlement| (dummy_arc_solver(), settlement))
+            .collect()
+    }
+
+    fn solver_settlements_into_settlements(
+        solver_settlements: &[(Arc<dyn Solver>, Settlement)],
+    ) -> Vec<Settlement> {
+        solver_settlements
+            .iter()
+            .map(|(_, settlement)| settlement.clone())
+            .collect()
+    }
+
     fn assert_same_settlements(expected: &[Settlement], actual: &[Settlement]) {
         assert!(expected
             .iter()
@@ -215,9 +238,15 @@ mod tests {
         let s2 = settlement(vec![trade(recent, 2), trade(recent, 3)]);
         let s3 = settlement(vec![trade(recent, 4), trade(recent, 5)]);
         let settlements = vec![s1, s2, s3];
-        let mature_settlements = retain_mature_settlements(min_age, settlements);
+        let mature_settlements = retain_mature_settlements(
+            min_age,
+            settlements_into_dummy_solver_settlements(settlements),
+        );
 
-        assert_same_settlements(&mature_settlements, &[]);
+        assert_same_settlements(
+            &solver_settlements_into_settlements(&mature_settlements),
+            &[],
+        );
     }
 
     #[test]
@@ -233,9 +262,15 @@ mod tests {
         let s2 = settlement(vec![trade(recent, 3), trade(recent, 4)], vec![]);
         let s3 = settlement(vec![trade(recent, 5)], vec![liquidity_trade(old, 6)]);
         let settlements = vec![s1.clone(), s2, s3];
-        let mature_settlements = retain_mature_settlements(min_age, settlements);
+        let mature_settlements = retain_mature_settlements(
+            min_age,
+            settlements_into_dummy_solver_settlements(settlements),
+        );
 
-        assert_same_settlements(&mature_settlements, &[s1]);
+        assert_same_settlements(
+            &solver_settlements_into_settlements(&mature_settlements),
+            &[s1],
+        );
     }
 
     #[test]
@@ -252,9 +287,15 @@ mod tests {
         // referenced in any other valid settlements
         let s4 = settlement(vec![trade(recent, 5), trade(recent, 6)]);
         let settlements = vec![s1.clone(), s2.clone(), s3.clone(), s4];
-        let mature_settlements = retain_mature_settlements(min_age, settlements);
+        let mature_settlements = retain_mature_settlements(
+            min_age,
+            settlements_into_dummy_solver_settlements(settlements),
+        );
 
-        assert_same_settlements(&mature_settlements, &[s1, s2, s3]);
+        assert_same_settlements(
+            &solver_settlements_into_settlements(&mature_settlements),
+            &[s1, s2, s3],
+        );
     }
 
     #[test]
@@ -269,8 +310,14 @@ mod tests {
         let s1 = settlement(vec![trade(recent, 1), trade(recent, 2)], vec![]);
         let s2 = settlement(vec![trade(recent, 2)], vec![liquidity_trade(old, 3)]);
         let settlements = vec![s1, s2];
-        let mature_settlements = retain_mature_settlements(min_age, settlements);
-        assert_same_settlements(&mature_settlements, &[]);
+        let mature_settlements = retain_mature_settlements(
+            min_age,
+            settlements_into_dummy_solver_settlements(settlements),
+        );
+        assert_same_settlements(
+            &solver_settlements_into_settlements(&mature_settlements),
+            &[],
+        );
     }
 
     #[test]
