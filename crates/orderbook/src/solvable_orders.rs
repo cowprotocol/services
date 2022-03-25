@@ -25,7 +25,13 @@ use tokio::{sync::Notify, time::Instant};
 const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
 pub trait AuctionMetrics: Send + Sync + 'static {
-    fn auction_updated(&self, filtered_orders: u64, errored_estimates: u64, timeout: bool);
+    fn auction_updated(
+        &self,
+        solvable_orders: u64,
+        filtered_orders: u64,
+        errored_estimates: u64,
+        timeout: bool,
+    );
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -373,7 +379,7 @@ async fn get_orders_with_native_prices(
         }
     };
 
-    let original_order_count = orders.len();
+    let original_order_count = orders.len() as u64;
     // Filter both orders and prices so that we only return orders that have prices and prices that
     // have orders.
     let mut used_prices = BTreeMap::new();
@@ -395,8 +401,9 @@ async fn get_orders_with_native_prices(
         }
     });
 
-    let filtered_orders = (original_order_count - orders.len()) as u64;
-    metrics.auction_updated(filtered_orders, errored_estimates, timeout);
+    let solvable_orders = orders.len() as u64;
+    let filtered_orders = original_order_count - solvable_orders;
+    metrics.auction_updated(solvable_orders, filtered_orders, errored_estimates, timeout);
 
     (orders, used_prices)
 }

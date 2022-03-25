@@ -1,7 +1,8 @@
 use anyhow::Result;
 use gas_estimation::EstimatedGasPrice;
 use prometheus::{
-    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
+    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
+    IntGaugeVec, Opts,
 };
 use shared::{
     metrics::get_metrics_registry,
@@ -27,7 +28,8 @@ pub struct Metrics {
     price_estimation_times: HistogramVec,
     // auction metrics
     auction_creations: IntCounter,
-    auction_filtered_orders: IntCounter,
+    auction_solvable_orders: IntGauge,
+    auction_filtered_orders: IntGauge,
     auction_errored_price_estimates: IntCounter,
     auction_price_estimate_timeouts: IntCounter,
 }
@@ -96,9 +98,15 @@ impl Metrics {
         )?;
         registry.register(Box::new(auction_creations.clone()))?;
 
-        let auction_filtered_orders = IntCounter::new(
+        let auction_solvable_orders = IntGauge::new(
+            "auction_solvable_orders",
+            "Number of orders that are in the current auction.",
+        )?;
+        registry.register(Box::new(auction_solvable_orders.clone()))?;
+
+        let auction_filtered_orders = IntGauge::new(
             "auction_filtered_orders",
-            "Number of orders that have been filtered out when creating auctions.",
+            "Number of orders that have been filtered out in the current auction.",
         )?;
         registry.register(Box::new(auction_filtered_orders.clone()))?;
 
@@ -125,6 +133,7 @@ impl Metrics {
             native_price_cache,
             price_estimation_times,
             auction_creations,
+            auction_solvable_orders,
             auction_filtered_orders,
             auction_errored_price_estimates,
             auction_price_estimate_timeouts,
@@ -154,12 +163,19 @@ impl PoolCacheMetrics for Metrics {
 }
 
 impl crate::solvable_orders::AuctionMetrics for Metrics {
-    fn auction_updated(&self, filtered_orders: u64, errored_estimates: u64, timeout: bool) {
+    fn auction_updated(
+        &self,
+        solvable_orders: u64,
+        filtered_orders: u64,
+        errored_estimates: u64,
+        timeout: bool,
+    ) {
         self.auction_creations.inc();
+        self.auction_solvable_orders.set(solvable_orders as i64);
         if timeout {
             self.auction_price_estimate_timeouts.inc();
         }
-        self.auction_filtered_orders.inc_by(filtered_orders);
+        self.auction_filtered_orders.set(filtered_orders as i64);
         self.auction_errored_price_estimates
             .inc_by(errored_estimates);
     }
@@ -223,5 +239,5 @@ impl shared::price_estimation::native_price_cache::Metrics for Metrics {
 pub struct NoopMetrics;
 
 impl crate::solvable_orders::AuctionMetrics for NoopMetrics {
-    fn auction_updated(&self, _: u64, _: u64, _: bool) {}
+    fn auction_updated(&self, _: u64, _: u64, _: u64, _: bool) {}
 }
