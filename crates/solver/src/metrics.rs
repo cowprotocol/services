@@ -254,9 +254,18 @@ impl Metrics {
 
 impl SolverMetrics for Metrics {
     fn orders_fetched(&self, orders: &[LimitOrder]) {
+        let user_orders = orders
+            .iter()
+            .filter(|order| !order.is_liquidity_order)
+            .count();
+        let liquidity_orders = orders.len() - user_orders;
+
         self.liquidity
-            .with_label_values(&["Limit"])
-            .set(orders.len() as _);
+            .with_label_values(&["UserOrder"])
+            .set(user_orders as _);
+        self.liquidity
+            .with_label_values(&["LiquidityOrder"])
+            .set(liquidity_orders as _);
     }
 
     fn liquidity_fetched(&self, liquidity: &[Liquidity]) {
