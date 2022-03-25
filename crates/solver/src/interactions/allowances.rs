@@ -107,7 +107,7 @@ impl Allowances {
 }
 
 /// An ERC20 approval interaction.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Approval {
     /// The existing allowance is sufficient, so no additional `approve` is required.
     AllowanceSufficient,

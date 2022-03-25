@@ -1,15 +1,18 @@
-use crate::encoding::EncodedInteraction;
-use crate::settlement::Interaction;
 use crate::{
+    encoding::EncodedInteraction,
+    interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
     liquidity::{AmmOrderExecution, LimitOrder, Liquidity},
-    settlement::Settlement,
+    settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context as _, Result};
 use ethcontract::Bytes;
 use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 // To send an instance to the solver we need to identify tokens and orders through strings. This
 // struct combines the created model and a mapping of those identifiers to their original value.
@@ -19,11 +22,13 @@ pub struct SettlementContext {
     pub liquidity: Vec<Liquidity>,
 }
 
-pub fn convert_settlement(
+pub async fn convert_settlement(
     settled: SettledBatchAuctionModel,
     context: SettlementContext,
+    allowance_manager: Arc<dyn AllowanceManaging>,
 ) -> Result<Settlement> {
-    match IntermediateSettlement::new(settled.clone(), context)
+    match IntermediateSettlement::new(settled.clone(), context, allowance_manager)
+        .await
         .and_then(|intermediate| intermediate.into_settlement())
     {
         Ok(settlement) => Ok(settlement),
@@ -54,6 +59,7 @@ impl Execution {
 // the error checking up front and then working with a more convenient representation.
 struct IntermediateSettlement {
     executed_limit_orders: Vec<ExecutedLimitOrder>,
+    approvals: Vec<Approval>,
     executions: Vec<Execution>, // executions are sorted by execution coordinate.
     prices: HashMap<H160, U256>,
 }
@@ -89,7 +95,11 @@ impl Interaction for InteractionData {
 }
 
 impl IntermediateSettlement {
-    fn new(settled: SettledBatchAuctionModel, context: SettlementContext) -> Result<Self> {
+    async fn new(
+        settled: SettledBatchAuctionModel,
+        context: SettlementContext,
+        allowance_manager: Arc<dyn AllowanceManaging>,
+    ) -> Result<Self> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
@@ -100,19 +110,29 @@ impl IntermediateSettlement {
             .collect();
         let executions = merge_and_order_executions(executions_amm, executions_interactions)?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
+        let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         Ok(Self {
             executed_limit_orders,
             executions,
             prices,
+            approvals,
         })
     }
 
     fn into_settlement(self) -> Result<Settlement> {
         let mut settlement = Settlement::new(self.prices);
-        for order in self.executed_limit_orders.iter() {
+        for order in self.executed_limit_orders {
             settlement.with_liquidity(&order.order, order.executed_amount())?;
         }
-        for execution in self.executions.iter() {
+
+        // Make sure to always add approval interactions **before** any
+        // interactions from the execution plan - the execution plan typically
+        // consists of AMM swaps that require these approvals to be in place.
+        for approval in self.approvals {
+            settlement.encoder.append_to_execution_plan(approval);
+        }
+
+        for execution in self.executions {
             match execution {
                 Execution::ExecutionAmm(executed_amm) => {
                     let execution = AmmOrderExecution {
@@ -134,7 +154,7 @@ impl IntermediateSettlement {
                 Execution::ExecutionCustomInteraction(interaction_data) => {
                     settlement
                         .encoder
-                        .append_to_execution_plan(*interaction_data.clone());
+                        .append_to_execution_plan(*interaction_data);
                 }
             }
         }
@@ -219,12 +239,46 @@ fn match_settled_prices(
     Ok(prices)
 }
 
+async fn compute_approvals(
+    allowance_manager: Arc<dyn AllowanceManaging>,
+    approvals: Vec<ApprovalModel>,
+) -> Result<Vec<Approval>> {
+    if approvals.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let requests = approvals
+        .into_iter()
+        .try_fold(HashMap::new(), |mut grouped, approval| {
+            let amount = grouped
+                .entry((approval.token, approval.spender))
+                .or_insert(U256::zero());
+            *amount = amount
+                .checked_add(approval.amount)
+                .context("overflow when computing total approval amount")?;
+
+            Result::<_>::Ok(grouped)
+        })?
+        .into_iter()
+        .map(|((token, spender), amount)| ApprovalRequest {
+            token,
+            spender,
+            amount,
+        })
+        .collect::<Vec<_>>();
+
+    allowance_manager.get_approvals(&requests).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::{
-        tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
-        WeightedProductOrder,
+    use crate::{
+        interactions::allowances::MockAllowanceManaging,
+        liquidity::{
+            tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
+            WeightedProductOrder,
+        },
     };
     use hex_literal::hex;
     use maplit::hashmap;
@@ -237,8 +291,8 @@ mod tests {
         swap::fixed_point::Bfp,
     };
 
-    #[test]
-    fn convert_settlement_() {
+    #[tokio::test]
+    async fn convert_settlement_() {
         let t0 = H160::zero();
         let t1 = H160::from_low_u64_be(1);
 
@@ -351,13 +405,17 @@ mod tests {
             amms: hashmap! { 0 => updated_uniswap, 1 => updated_balancer_weighted, 2 => updated_balancer_stable },
             ref_token: Some(t0),
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
+            approvals: Vec::new(),
             interaction_data: Vec::new(),
             metadata: None,
         };
 
         let prepared = SettlementContext { orders, liquidity };
 
-        let settlement = convert_settlement(settled, prepared).unwrap();
+        let settlement =
+            convert_settlement(settled, prepared, Arc::new(MockAllowanceManaging::new()))
+                .await
+                .unwrap();
         assert_eq!(
             settlement.clearing_prices(),
             &hashmap! { t0 => 10.into(), t1 => 11.into() }
@@ -696,5 +754,92 @@ mod tests {
                 interactions.get(0).unwrap().clone()
             ]
         );
+    }
+
+    #[tokio::test]
+    pub async fn compute_approvals_groups_approvals_by_spender_and_token() {
+        let mut allowance_manager = MockAllowanceManaging::new();
+        allowance_manager
+            .expect_get_approvals()
+            .withf(|requests| {
+                // deal with underterministic ordering because of grouping
+                // implementation.
+                let grouped = requests
+                    .iter()
+                    .map(|request| ((request.token, request.spender), request.amount))
+                    .collect::<HashMap<_, _>>();
+
+                requests.len() == grouped.len()
+                    && grouped
+                        == hashmap! {
+                            (H160([1; 20]), H160([0xf1; 20])) => U256::from(12),
+                            (H160([1; 20]), H160([0xf2; 20])) => U256::from(3),
+                            (H160([2; 20]), H160([0xf1; 20])) => U256::from(4),
+                            (H160([2; 20]), H160([0xf2; 20])) => U256::from(5),
+                        }
+            })
+            .returning(|requests| {
+                Ok(requests
+                    .iter()
+                    .map(|_| Approval::AllowanceSufficient)
+                    .collect())
+            });
+
+        assert_eq!(
+            compute_approvals(
+                Arc::new(allowance_manager),
+                vec![
+                    ApprovalModel {
+                        token: H160([1; 20]),
+                        spender: H160([0xf1; 20]),
+                        amount: 10.into()
+                    },
+                    ApprovalModel {
+                        token: H160([1; 20]),
+                        spender: H160([0xf2; 20]),
+                        amount: 3.into(),
+                    },
+                    ApprovalModel {
+                        token: H160([1; 20]),
+                        spender: H160([0xf1; 20]),
+                        amount: 2.into(),
+                    },
+                    ApprovalModel {
+                        token: H160([2; 20]),
+                        spender: H160([0xf1; 20]),
+                        amount: 4.into(),
+                    },
+                    ApprovalModel {
+                        token: H160([2; 20]),
+                        spender: H160([0xf2; 20]),
+                        amount: 5.into(),
+                    },
+                ],
+            )
+            .await
+            .unwrap(),
+            vec![Approval::AllowanceSufficient; 4],
+        );
+    }
+
+    #[tokio::test]
+    pub async fn compute_approvals_errors_on_overflow() {
+        assert!(compute_approvals(
+            Arc::new(MockAllowanceManaging::new()),
+            vec![
+                ApprovalModel {
+                    token: H160([1; 20]),
+                    spender: H160([2; 20]),
+                    amount: U256::MAX,
+                },
+                ApprovalModel {
+                    token: H160([1; 20]),
+                    spender: H160([2; 20]),
+                    amount: 1.into(),
+                },
+            ],
+        )
+        .await
+        .is_err());
     }
 }

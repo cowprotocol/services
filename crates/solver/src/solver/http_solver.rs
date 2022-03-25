@@ -3,6 +3,7 @@ pub mod settlement;
 
 use self::settlement::SettlementContext;
 use crate::{
+    interactions::allowances::AllowanceManaging,
     liquidity::{LimitOrder, Liquidity},
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
@@ -57,6 +58,7 @@ pub struct HttpSolver {
     native_token: H160,
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
+    allowance_manager: Arc<dyn AllowanceManaging>,
     instance_cache: InstanceCache,
 }
 
@@ -68,6 +70,7 @@ impl HttpSolver {
         native_token: H160,
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
+        allowance_manager: Arc<dyn AllowanceManaging>,
         instance_cache: InstanceCache,
     ) -> Self {
         Self {
@@ -76,6 +79,7 @@ impl HttpSolver {
             native_token,
             token_info_fetcher,
             buffer_retriever,
+            allowance_manager,
             instance_cache,
         }
     }
@@ -390,7 +394,9 @@ impl Solver for HttpSolver {
         if !settled.has_execution_plan() {
             return Ok(Vec::new());
         }
-        settlement::convert_settlement(settled, context).map(|settlement| vec![settlement])
+        settlement::convert_settlement(settled, context, self.allowance_manager.clone())
+            .await
+            .map(|settlement| vec![settlement])
     }
 
     fn account(&self) -> &Account {
@@ -405,6 +411,7 @@ impl Solver for HttpSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::interactions::allowances::MockAllowanceManaging;
     use crate::liquidity::{tests::CapturingSettlementHandler, ConstantProductOrder, LimitOrder};
     use crate::solver::http_solver::buffers::MockBufferRetrieving;
     use ::model::TokenPair;
@@ -441,7 +448,6 @@ mod tests {
                     sell_token => TokenInfo { decimals: Some(18), symbol: Some("CAT".to_string()) },
                 }
             });
-        let mock_token_info_fetcher: Arc<dyn TokenInfoFetching> = Arc::new(mock_token_info_fetcher);
 
         let mut mock_buffer_retriever = MockBufferRetrieving::new();
         mock_buffer_retriever
@@ -452,7 +458,6 @@ mod tests {
                     sell_token => Ok(U256::from(1337)),
                 }
             });
-        let mock_buffer_retriever: Arc<dyn BufferRetrieving> = Arc::new(mock_buffer_retriever);
 
         let gas_price = 100.;
 
@@ -472,8 +477,9 @@ mod tests {
             },
             Account::Local(Address::default(), None),
             H160::zero(),
-            mock_token_info_fetcher,
-            mock_buffer_retriever,
+            Arc::new(mock_token_info_fetcher),
+            Arc::new(mock_buffer_retriever),
+            Arc::new(MockAllowanceManaging::new()),
             Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
