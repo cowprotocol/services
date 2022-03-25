@@ -5,12 +5,15 @@
 use crate::{
     encoding::EncodedInteraction, interactions::Erc20ApproveInteraction, settlement::Interaction,
 };
-use anyhow::{anyhow, bail, ensure, Result};
+use anyhow::{anyhow, bail, ensure, Context as _, Result};
 use contracts::ERC20;
 use ethcontract::{batch::CallBatch, errors::ExecutionError, H160, U256};
-use maplit::hashset;
+use maplit::hashmap;
 use shared::{dummy_contract, Web3};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    slice,
+};
 use web3::error::TransportError;
 
 const MAX_BATCH_SIZE: usize = 100;
@@ -25,9 +28,27 @@ pub trait AllowanceManaging: Send + Sync {
 
     /// Returns the approval interaction for the specified token and spender for
     /// at least the specified amount.
-    async fn get_approval(&self, token: H160, spender: H160, amount: U256) -> Result<Approval>;
+    async fn get_approval(&self, request: &ApprovalRequest) -> Result<Approval> {
+        Ok(self
+            .get_approvals(slice::from_ref(request))
+            .await?
+            .pop()
+            .expect("missing single approval result"))
+    }
+
+    /// Returns the approval interaction for the specified token and spender for
+    /// at least the specified amount.
+    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>>;
 }
 
+#[derive(Debug, PartialEq)]
+pub struct ApprovalRequest {
+    pub token: H160,
+    pub spender: H160,
+    pub amount: U256,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct Allowances {
     spender: H160,
     allowances: HashMap<H160, U256>,
@@ -135,45 +156,66 @@ impl AllowanceManager {
 #[async_trait::async_trait]
 impl AllowanceManaging for AllowanceManager {
     async fn get_allowances(&self, tokens: HashSet<H160>, spender: H160) -> Result<Allowances> {
-        Ok(Allowances::new(
-            spender,
-            fetch_allowances(self.web3.clone(), tokens, self.owner, spender).await?,
-        ))
+        Ok(fetch_allowances(
+            self.web3.clone(),
+            self.owner,
+            hashmap! { spender => tokens },
+        )
+        .await?
+        .remove(&spender)
+        .unwrap_or_else(|| Allowances::empty(spender)))
     }
 
-    async fn get_approval(&self, token: H160, spender: H160, amount: U256) -> Result<Approval> {
-        self.get_allowances(hashset![token], spender)
-            .await?
-            .approve_token(token, amount)
+    async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>> {
+        let mut spender_tokens = HashMap::<_, HashSet<_>>::new();
+        for request in requests {
+            spender_tokens
+                .entry(request.spender)
+                .or_default()
+                .insert(request.token);
+        }
+
+        let allowances = fetch_allowances(self.web3.clone(), self.owner, spender_tokens).await?;
+        requests
+            .iter()
+            .map(|request| {
+                allowances
+                    .get(&request.spender)
+                    .with_context(|| {
+                        format!("no allowances found for spender {}", request.spender)
+                    })?
+                    .approve_token(request.token, request.amount)
+            })
+            .collect()
     }
 }
 
 async fn fetch_allowances<T>(
     web3: ethcontract::Web3<T>,
-    tokens: HashSet<H160>,
     owner: H160,
-    spender: H160,
-) -> Result<HashMap<H160, U256>>
+    spender_tokens: HashMap<H160, HashSet<H160>>,
+) -> Result<HashMap<H160, Allowances>>
 where
     T: ethcontract::web3::BatchTransport + Send + Sync + 'static,
     T::Batch: Send,
     T::Out: Send,
 {
     let mut batch = CallBatch::new(web3.transport());
-    let results: Vec<_> = tokens
+    let results: Vec<_> = spender_tokens
         .into_iter()
-        .map(|token| {
+        .flat_map(|(spender, tokens)| tokens.into_iter().map(move |token| (spender, token)))
+        .map(|(spender, token)| {
             let allowance = ERC20::at(&web3, token)
                 .allowance(owner, spender)
                 .batch_call(&mut batch);
-            (token, allowance)
+            (spender, token, allowance)
         })
         .collect();
 
     batch.execute_all(MAX_BATCH_SIZE).await;
 
     let mut allowances = HashMap::new();
-    for (token, allowance) in results {
+    for (spender, token, allowance) in results {
         let allowance = match allowance.await {
             Ok(value) => value,
             Err(err) if is_batch_error(&err.inner) => bail!(err),
@@ -182,7 +224,12 @@ where
                 continue;
             }
         };
-        allowances.insert(token, allowance);
+
+        allowances
+            .entry(spender)
+            .or_insert_with(|| Allowances::empty(spender))
+            .allowances
+            .insert(token, allowance);
     }
 
     Ok(allowances)
@@ -210,7 +257,7 @@ mod tests {
         web3::types::CallRequest,
         Bytes,
     };
-    use maplit::hashmap;
+    use maplit::{hashmap, hashset};
     use serde_json::{json, Value};
     use shared::{addr, transport::mock};
 
@@ -380,14 +427,23 @@ mod tests {
 
         let allowances = fetch_allowances(
             web3,
-            hashset![H160([0x11; 20]), H160([0x22; 20])],
             owner,
-            spender,
+            hashmap! {
+                spender => hashset![H160([0x11; 20]), H160([0x22; 20])],
+            },
         )
         .await
         .unwrap();
 
-        assert_eq!(allowances, hashmap! { H160([0x11; 20]) => 1337.into() });
+        assert_eq!(
+            allowances,
+            hashmap! {
+                spender => Allowances {
+                    spender,
+                    allowances: hashmap! { H160([0x11; 20]) => 1337.into() },
+                },
+            },
+        );
     }
 
     #[tokio::test]
@@ -400,9 +456,10 @@ mod tests {
 
         let allowances = fetch_allowances(
             web3,
-            hashset![H160([0x11; 20]), H160([0x22; 20])],
             H160([1; 20]),
-            H160([2; 20]),
+            hashmap! {
+                H160([2; 20]) => hashset![H160([0x11; 20]), H160([0x22; 20])],
+            },
         )
         .await;
 

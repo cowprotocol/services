@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     encoding::EncodedInteraction,
-    interactions::allowances::{AllowanceManager, AllowanceManaging},
+    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
@@ -112,11 +112,11 @@ impl SingleOrderSolving for ParaswapSolver {
 
         settlement.encoder.append_to_execution_plan(
             self.allowance_fetcher
-                .get_approval(
-                    order.sell_token,
-                    price_response.token_transfer_proxy,
-                    price_response.src_amount,
-                )
+                .get_approval(&ApprovalRequest {
+                    token: order.sell_token,
+                    spender: price_response.token_transfer_proxy,
+                    amount: price_response.src_amount,
+                })
                 .await?,
         );
         settlement.encoder.append_to_execution_plan(transaction);
@@ -268,7 +268,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         token_info.expect_get_token_infos().returning(move |_| {
             hashmap! {
@@ -352,12 +352,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(
-                eq(sell_token),
-                eq(token_transfer_proxy),
-                eq(U256::from(100)),
-            )
-            .returning(move |_, _, _| {
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: token_transfer_proxy,
+                amount: U256::from(100),
+            }))
+            .returning(move |_| {
                 Ok(Approval::Approve {
                     token: sell_token,
                     spender: token_transfer_proxy,
@@ -367,12 +367,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(
-                eq(sell_token),
-                eq(token_transfer_proxy),
-                eq(U256::from(100)),
-            )
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: token_transfer_proxy,
+                amount: U256::from(100),
+            }))
+            .returning(|_| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
         token_info.expect_get_token_infos().returning(move |_| {
@@ -469,7 +469,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         token_info.expect_get_token_infos().returning(move |_| {
             hashmap! {

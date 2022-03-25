@@ -21,7 +21,7 @@ use super::{
     single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
-use crate::interactions::allowances::{AllowanceManager, AllowanceManaging};
+use crate::interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest};
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
@@ -112,7 +112,11 @@ impl SingleOrderSolving for ZeroExSolver {
 
         settlement.encoder.append_to_execution_plan(
             self.allowance_fetcher
-                .get_approval(order.sell_token, spender, swap.price.sell_amount)
+                .get_approval(&ApprovalRequest {
+                    token: order.sell_token,
+                    spender,
+                    amount: swap.price.sell_amount,
+                })
                 .await?,
         );
         settlement.encoder.append_to_execution_plan(swap);
@@ -273,8 +277,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(2)
-            .with(eq(sell_token), eq(allowance_target), eq(U256::from(100)))
-            .returning(move |_, _, _| {
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: allowance_target,
+                amount: U256::from(100),
+            }))
+            .returning(move |_| {
                 Ok(Approval::Approve {
                     token: sell_token,
                     spender: allowance_target,
@@ -409,8 +417,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(eq(sell_token), eq(allowance_target), eq(U256::from(100)))
-            .returning(move |_, _, _| {
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: allowance_target,
+                amount: U256::from(100),
+            }))
+            .returning(move |_| {
                 Ok(Approval::Approve {
                     token: sell_token,
                     spender: allowance_target,
@@ -420,7 +432,7 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
+            .returning(|_| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
         let solver = ZeroExSolver {
@@ -479,7 +491,7 @@ mod tests {
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         let solver = ZeroExSolver {
             account: account(),

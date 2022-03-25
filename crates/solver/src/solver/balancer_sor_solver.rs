@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     encoding::EncodedInteraction,
-    interactions::balancer_v2::SwapKind,
+    interactions::{allowances::ApprovalRequest, balancer_v2::SwapKind},
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
@@ -103,11 +103,11 @@ impl SingleOrderSolving for BalancerSorSolver {
         };
         let approval = self
             .allowance_fetcher
-            .get_approval(
-                order.sell_token,
-                self.vault.address(),
-                quoted_sell_amount_with_slippage,
-            )
+            .get_approval(&ApprovalRequest {
+                token: order.sell_token,
+                spender: self.vault.address(),
+                amount: quoted_sell_amount_with_slippage,
+            })
             .await?;
         let limits = compute_swap_limits(
             &quote,
@@ -302,8 +302,12 @@ mod tests {
         let mut allowance_fetcher = MockAllowanceManaging::new();
         allowance_fetcher
             .expect_get_approval()
-            .with(eq(sell_token), eq(vault.address()), eq(sell_amount))
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: vault.address(),
+                amount: sell_amount,
+            }))
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),
@@ -420,12 +424,12 @@ mod tests {
         let mut allowance_fetcher = MockAllowanceManaging::new();
         allowance_fetcher
             .expect_get_approval()
-            .with(
-                eq(sell_token),
-                eq(vault.address()),
-                eq(sell_amount * 1001 / 1000),
-            )
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender: vault.address(),
+                amount: sell_amount * 1001 / 1000,
+            }))
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         let solver = BalancerSorSolver::new(
             Account::Local(H160([0x42; 20]), None),

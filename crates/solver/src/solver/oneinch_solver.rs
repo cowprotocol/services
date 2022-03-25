@@ -9,7 +9,7 @@ use super::{
 };
 use crate::{
     encoding::EncodedInteraction,
-    interactions::allowances::{AllowanceManager, AllowanceManaging},
+    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
     liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
     settlement::{Interaction, Settlement},
 };
@@ -91,7 +91,11 @@ impl OneInchSolver {
         // Fetching allowance before making the SwapQuery so that the Swap info is as recent as possible
         let approval = self
             .allowance_fetcher
-            .get_approval(order.sell_token, spender.address, order.sell_amount)
+            .get_approval(&ApprovalRequest {
+                token: order.sell_token,
+                spender: spender.address,
+                amount: order.sell_amount,
+            })
             .await?;
 
         let query = SwapQuery::with_default_options(
@@ -235,7 +239,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         let solver = dummy_solver(client, allowance_fetcher);
 
@@ -287,7 +291,7 @@ mod tests {
 
         allowance_fetcher
             .expect_get_approval()
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient));
+            .returning(|_| Ok(Approval::AllowanceSufficient));
 
         client.expect_get_liquidity_sources().returning(|| {
             Ok(Protocols {
@@ -353,8 +357,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(eq(sell_token), eq(spender), eq(U256::from(100)))
-            .returning(move |_, _, _| {
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender,
+                amount: U256::from(100),
+            }))
+            .returning(move |_| {
                 Ok(Approval::Approve {
                     token: sell_token,
                     spender,
@@ -364,8 +372,12 @@ mod tests {
         allowance_fetcher
             .expect_get_approval()
             .times(1)
-            .with(eq(sell_token), eq(spender), eq(U256::from(100)))
-            .returning(|_, _, _| Ok(Approval::AllowanceSufficient))
+            .with(eq(ApprovalRequest {
+                token: sell_token,
+                spender,
+                amount: U256::from(100),
+            }))
+            .returning(|_| Ok(Approval::AllowanceSufficient))
             .in_sequence(&mut seq);
 
         let solver = dummy_solver(client, allowance_fetcher);
