@@ -144,6 +144,7 @@ impl BaselineSolver {
                             // TODO - https://github.com/gnosis/gp-v2-services/issues/1074
                             tracing::debug!("Excluded stable pool from baseline solving.")
                         }
+                        Liquidity::LimitOrder(_) => {}
                     }
                     amm_map
                 });

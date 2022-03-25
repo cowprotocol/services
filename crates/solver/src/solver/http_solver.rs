@@ -4,7 +4,7 @@ pub mod settlement;
 use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{LimitOrder, Liquidity},
+    liquidity::{Exchange, LimitOrder, Liquidity},
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
@@ -167,6 +167,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
             Liquidity::ConstantProduct(amm) => token_set.extend(amm.tokens),
             Liquidity::BalancerWeighted(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::BalancerStable(amm) => token_set.extend(amm.reserves.keys()),
+            Liquidity::LimitOrder(order) => token_set.extend([order.sell_token, order.buy_token]),
         }
     }
 
@@ -227,6 +228,11 @@ fn order_models(
                 return None;
             }
 
+            let cost = match order.exchange {
+                Exchange::GnosisProtocol => gas_model.gp_order_cost(),
+                Exchange::ZeroEx => gas_model.zeroex_order_cost(),
+            };
+
             Some((
                 index,
                 OrderModel {
@@ -237,9 +243,10 @@ fn order_models(
                     allow_partial_fill: order.partially_fillable,
                     is_sell_order: matches!(order.kind, OrderKind::Sell),
                     fee: order_fee(order),
-                    cost: gas_model.order_cost(),
+                    cost,
                     is_liquidity_order: order.is_liquidity_order,
                     mandatory: false,
+                    has_atomic_execution: !matches!(order.exchange, Exchange::GnosisProtocol),
                 },
             ))
         })
@@ -249,6 +256,7 @@ fn order_models(
 fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, AmmModel> {
     liquidity
         .iter()
+        .filter(|liquidity| !matches!(liquidity, Liquidity::LimitOrder(_)))
         .map(|liquidity| -> Result<_> {
             Ok(match liquidity {
                 Liquidity::ConstantProduct(amm) => AmmModel {
@@ -308,6 +316,7 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     cost: gas_model.balancer_cost(),
                     mandatory: false,
                 },
+                Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
             })
         })
         .enumerate()
@@ -359,7 +368,7 @@ impl Solver for HttpSolver {
         &self,
         Auction {
             id,
-            orders,
+            mut orders,
             liquidity,
             gas_price,
             deadline,
@@ -369,6 +378,11 @@ impl Solver for HttpSolver {
         if orders.is_empty() {
             return Ok(Vec::new());
         };
+        orders.extend(liquidity.iter().filter_map(|liquidity| match liquidity {
+            Liquidity::LimitOrder(order) => Some(order.clone()),
+            _ => None,
+        }));
+
         let (model, context) = {
             let mut guard = self.instance_cache.lock().await;
             match guard.as_mut() {

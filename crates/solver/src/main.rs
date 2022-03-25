@@ -25,7 +25,7 @@ use solver::{
     driver::Driver,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity,
+        uniswap_v2::UniswapLikeLiquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
@@ -514,16 +514,27 @@ async fn main() {
         args.shared.paraswap_partner,
         client.clone(),
         metrics.clone(),
-        zeroex_api,
+        zeroex_api.clone(),
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
     )
     .expect("failure creating solvers");
+
+    let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
+        Some(ZeroExLiquidity {
+            api: zeroex_api,
+            zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
+        })
+    } else {
+        None
+    };
+
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity,
         balancer_v2_liquidity,
+        zeroex_liquidity,
     };
     let market_makable_token_list =
         TokenList::from_url(&args.market_makable_token_list, chain_id, client.clone())
@@ -683,6 +694,7 @@ async fn build_amm_artifacts(
                 .expect("couldn't load deployed Swapr router")
                 .address(),
             BaselineSource::BalancerV2 => continue,
+            BaselineSource::ZeroEx => continue,
         };
         res.push(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
