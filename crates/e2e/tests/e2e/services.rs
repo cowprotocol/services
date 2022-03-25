@@ -164,6 +164,7 @@ impl OrderbookServices {
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
             db.clone(),
+            Default::default(),
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),

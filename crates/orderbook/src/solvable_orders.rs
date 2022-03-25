@@ -43,6 +43,7 @@ pub trait AuctionMetrics: Send + Sync + 'static {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     database: Arc<dyn OrderStoring>,
+    banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     notify: Notify,
@@ -68,9 +69,11 @@ pub struct SolvableOrders {
 }
 
 impl SolvableOrdersCache {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         min_order_validity_period: Duration,
         database: Arc<dyn OrderStoring>,
+        banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
@@ -80,6 +83,7 @@ impl SolvableOrdersCache {
         let self_ = Arc::new(Self {
             min_order_validity_period,
             database,
+            banned_users,
             balance_fetcher,
             bad_token_detector,
             notify: Default::default(),
@@ -130,9 +134,8 @@ impl SolvableOrdersCache {
     pub async fn update(&self, block: u64) -> Result<()> {
         let min_valid_to = now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32;
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
-        let orders =
-            filter_unsupported_tokens(db_solvable_orders.orders, self.bad_token_detector.as_ref())
-                .await?;
+        let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
+        let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -197,6 +200,12 @@ impl SolvableOrdersCache {
 
         Ok(())
     }
+}
+
+/// Filters all orders whose owners are in the set of "banned" users.
+fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
+    orders.retain(|order| !banned_users.contains(&order.metadata.owner));
+    orders
 }
 
 /// Returns existing balances and Vec of queries that need to be peformed.
@@ -562,6 +571,7 @@ mod tests {
         let cache = SolvableOrdersCache::new(
             Duration::from_secs(0),
             Arc::new(order_storing),
+            Default::default(),
             Arc::new(balance_fetcher),
             Arc::new(bad_token_detector),
             receiver,
@@ -820,5 +830,38 @@ mod tests {
         assert_eq!(prices.len(), 2);
         assert!(prices.contains_key(&orders_[0].creation.sell_token));
         assert!(prices.contains_key(&orders_[0].creation.buy_token));
+    }
+
+    #[test]
+    fn filters_banned_users() {
+        let banned_users = hashset!(H160([0xba; 20]), H160([0xbb; 20]));
+        let orders = [
+            H160([1; 20]),
+            H160([1; 20]),
+            H160([0xba; 20]),
+            H160([2; 20]),
+            H160([0xba; 20]),
+            H160([0xbb; 20]),
+            H160([3; 20]),
+        ]
+        .into_iter()
+        .map(|owner| Order {
+            metadata: OrderMetadata {
+                owner,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .collect();
+
+        let filtered_orders = filter_banned_user_orders(orders, &banned_users);
+        let filtered_owners = filtered_orders
+            .iter()
+            .map(|order| order.metadata.owner)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            filtered_owners,
+            [H160([1; 20]), H160([1; 20]), H160([2; 20]), H160([3; 20])],
+        );
     }
 }
