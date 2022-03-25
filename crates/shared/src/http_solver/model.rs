@@ -32,6 +32,11 @@ pub struct OrderModel {
     pub is_liquidity_order: bool,
     #[serde(default)]
     pub mandatory: bool,
+    /// Signals if the order will be executed as an atomic unit. In that case the order's
+    /// preconditions have to be met for it to be executed successfully. This is different from the
+    /// usual user provided orders because those can be batched together and it's only relevant if
+    /// the pre- and post conditions are met after the complete batch got executed.
+    pub has_atomic_execution: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -170,6 +175,8 @@ pub struct ExecutedOrderModel {
     pub exec_buy_amount: U256,
     pub cost: Option<CostModel>,
     pub fee: Option<FeeModel>,
+    // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
+    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -299,6 +306,7 @@ mod tests {
             },
             is_liquidity_order: false,
             mandatory: false,
+            has_atomic_execution: false,
         };
         let constant_product_pool_model = AmmModel {
             parameters: AmmParameters::ConstantProduct(ConstantProductPoolParameters {
@@ -418,6 +426,7 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": false,
+              "has_atomic_execution": false
             },
           },
           "amms": {

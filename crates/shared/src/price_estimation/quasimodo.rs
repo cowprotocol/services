@@ -97,6 +97,7 @@ impl QuasimodoPriceEstimator {
                 },
                 is_liquidity_order: false,
                 mandatory: true,
+                has_atomic_execution: false,
             },
         };
 

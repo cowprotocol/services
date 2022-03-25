@@ -1,4 +1,4 @@
-use super::{LimitOrder, SettlementHandling};
+use super::{Exchange, LimitOrder, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::WETH9;
@@ -58,6 +58,7 @@ impl OrderConverter {
                 scaled_unsubsidized_fee_amount: scaled_fee_amount,
                 is_liquidity_order,
             }),
+            exchange: Exchange::GnosisProtocol,
         })
     }
 }

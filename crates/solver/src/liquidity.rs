@@ -2,6 +2,7 @@ pub mod balancer_v2;
 pub mod order_converter;
 pub mod slippage;
 pub mod uniswap_v2;
+pub mod zeroex;
 
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
@@ -29,6 +30,7 @@ pub enum Liquidity {
     ConstantProduct(ConstantProductOrder),
     BalancerWeighted(WeightedProductOrder),
     BalancerStable(StablePoolOrder),
+    LimitOrder(LimitOrder),
 }
 
 impl Liquidity {
@@ -38,6 +40,9 @@ impl Liquidity {
             Liquidity::ConstantProduct(amm) => vec![amm.tokens],
             Liquidity::BalancerWeighted(amm) => token_pairs(&amm.reserves),
             Liquidity::BalancerStable(amm) => token_pairs(&amm.reserves),
+            Liquidity::LimitOrder(order) => TokenPair::new(order.sell_token, order.buy_token)
+                .map(|pair| vec![pair])
+                .unwrap_or_default(),
         }
     }
 }
@@ -57,6 +62,12 @@ where
     L: Settleable,
 {
     fn encode(&self, execution: L::Execution, encoder: &mut SettlementEncoder) -> Result<()>;
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum Exchange {
+    GnosisProtocol,
+    ZeroEx,
 }
 
 /// Basic limit sell and buy orders
@@ -83,6 +94,7 @@ pub struct LimitOrder {
     pub is_liquidity_order: bool,
     #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+    pub exchange: Exchange,
 }
 
 impl std::fmt::Debug for LimitOrder {
@@ -133,6 +145,7 @@ impl Default for LimitOrder {
             settlement_handling: tests::CapturingSettlementHandler::arc(),
             is_liquidity_order: false,
             id: Default::default(),
+            exchange: Exchange::GnosisProtocol,
         }
     }
 }

@@ -29,11 +29,18 @@ pub enum BaselineSource {
     BalancerV2,
     Baoswap,
     Swapr,
+    ZeroEx,
 }
 
 pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
     Ok(match chain_id {
-        1 | 4 => vec![
+        1 => vec![
+            BaselineSource::UniswapV2,
+            BaselineSource::SushiSwap,
+            BaselineSource::BalancerV2,
+            BaselineSource::ZeroEx,
+        ],
+        4 => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
@@ -63,6 +70,7 @@ pub async fn uniswap_like_liquidity_sources(
             BaselineSource::Baoswap => baoswap::get_liquidity_source(web3).await?,
             BaselineSource::Swapr => swapr::get_liquidity_source(web3).await?,
             BaselineSource::BalancerV2 => continue,
+            BaselineSource::ZeroEx => continue,
         };
 
         liquidity_sources.insert(*source, liquidity_source);

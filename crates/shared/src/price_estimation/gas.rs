@@ -45,6 +45,10 @@ pub static GAS_PER_ORDER: u64 = 66_315;
 /// lower bound for executing one trade on uniswap
 pub static GAS_PER_UNISWAP: u64 = 94_696;
 
+/// lower bound for execution of one trade on zeroex
+// estimated with https://dune.xyz/queries/536616
+pub static GAS_PER_ZEROEX_ORDER: u64 = 157_300;
+
 /// lower bound for executing one trade on balancer
 ///
 /// Taken from a sample of two swaps

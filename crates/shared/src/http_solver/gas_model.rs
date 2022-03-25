@@ -15,8 +15,12 @@ impl GasModel {
         }
     }
 
-    pub fn order_cost(&self) -> CostModel {
+    pub fn gp_order_cost(&self) -> CostModel {
         self.cost_for_gas(GAS_PER_ORDER.into())
+    }
+
+    pub fn zeroex_order_cost(&self) -> CostModel {
+        self.cost_for_gas(GAS_PER_ZEROEX_ORDER.into())
     }
 
     pub fn uniswap_cost(&self) -> CostModel {
