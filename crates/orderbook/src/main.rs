@@ -278,12 +278,6 @@ async fn main() {
         metrics.clone(),
     );
     let web3 = web3::Web3::new(transport);
-    let current_block = web3
-        .eth()
-        .block_number()
-        .await
-        .expect("block_number")
-        .as_u64();
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -404,15 +398,10 @@ async fn main() {
         other => Some(other.unwrap()),
     };
     if let Some(contract) = uniswapv3_factory {
-        finders.push(Arc::new(
-            UniswapV3Finder::new(
-                contract,
-                base_tokens.tokens().iter().copied().collect(),
-                current_block,
-            )
-            .await
-            .expect("create uniswapv3 finder"),
-        ));
+        finders.push(Arc::new(UniswapV3Finder {
+            factory: contract,
+            base_tokens: base_tokens.tokens().iter().copied().collect(),
+        }));
     }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
