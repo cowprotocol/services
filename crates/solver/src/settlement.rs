@@ -301,16 +301,11 @@ impl Settlement {
 
     // Computes the total scaled unsubsidized fee of all protocol trades (in wei ETH).
     pub fn total_scaled_unsubsidized_fees(&self, external_prices: &ExternalPrices) -> BigRational {
-        self.encoder
-            .order_trades()
-            .iter()
+        self.executed_trades()
             .filter_map(|order_trade| {
                 external_prices.try_get_native_amount(
-                    order_trade.trade.order.creation.sell_token,
-                    order_trade
-                        .trade
-                        .executed_scaled_unsubsidized_fee()?
-                        .to_big_rational(),
+                    order_trade.sell_token,
+                    order_trade.fee_amount.to_big_rational(),
                 )
             })
             .sum()
