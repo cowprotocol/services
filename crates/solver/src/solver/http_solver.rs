@@ -86,6 +86,7 @@ impl HttpSolver {
 
     async fn prepare_model(
         &self,
+        auction_id: u64,
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
@@ -149,6 +150,7 @@ impl HttpSolver {
             amms: amm_models,
             metadata: Some(MetadataModel {
                 environment: Some(self.solver.network_name.clone()),
+                auction_id: Some(auction_id),
             }),
         };
         Ok((model, SettlementContext { orders, liquidity }))
@@ -393,7 +395,7 @@ impl Solver for HttpSolver {
                 Some(data) if data.solve_id == id => (data.model.clone(), data.context.clone()),
                 _ => {
                     let (model, context) = self
-                        .prepare_model(orders, liquidity, gas_price, external_prices)
+                        .prepare_model(id, orders, liquidity, gas_price, external_prices)
                         .await?;
                     *guard = Some(InstanceData {
                         solve_id: id,
@@ -517,7 +519,7 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         })];
         let (model, _context) = solver
-            .prepare_model(limit_orders, liquidity, gas_price, Default::default())
+            .prepare_model(0u64, limit_orders, liquidity, gas_price, Default::default())
             .await
             .unwrap();
         let settled = solver

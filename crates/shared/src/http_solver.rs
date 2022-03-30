@@ -1,8 +1,8 @@
+use crate::http_solver::model::MetadataModel;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Url};
 use std::time::Duration;
-
 pub mod gas_model;
 pub mod model;
 
@@ -78,7 +78,14 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let mut url = self.base.clone();
         url.set_path("/solve");
 
-        let instance_name = self.generate_instance_name();
+        let instance_name = self.generate_instance_name(
+            model
+                .metadata
+                .as_ref()
+                .unwrap_or(&MetadataModel::default())
+                .auction_id
+                .unwrap_or(0u64),
+        );
         tracing::debug!("http solver instance name is {}", instance_name);
 
         url.query_pairs_mut()
@@ -136,15 +143,18 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 }
 
 impl DefaultHttpSolverApi {
-    fn generate_instance_name(&self) -> String {
+    fn generate_instance_name(&self, auction_id: u64) -> String {
         let now = chrono::Utc::now();
-        format!("{}_{}_{}", now, self.network_name, self.chain_id)
-            .chars()
-            .map(|x| match x {
-                ' ' => '_',
-                '/' => '_',
-                _ => x,
-            })
-            .collect()
+        format!(
+            "{}_{}_{}_{}",
+            now, self.network_name, self.chain_id, auction_id
+        )
+        .chars()
+        .map(|x| match x {
+            ' ' => '_',
+            '/' => '_',
+            _ => x,
+        })
+        .collect()
     }
 }

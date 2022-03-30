@@ -156,6 +156,7 @@ impl Driver {
 
     async fn submit_settlement(
         &self,
+        auction_id: u64,
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
@@ -177,8 +178,9 @@ impl Driver {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
-                    "Successfully submitted settlement id {} as tx hash {:?}",
+                    "Successfully submitted settlement id {} for the auction id {} with tx hash {:?}",
                     rated_settlement.id,
+                    auction_id,
                     receipt.transaction_hash
                 );
                 traded_orders
@@ -428,15 +430,16 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
+        let auction_id = self.next_auction_id();
         let auction = Auction {
-            id: self.next_auction_id(),
+            id: auction_id,
             orders: orders.clone(),
             liquidity,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
         };
-        tracing::debug!("solving auction ID {}", auction.id);
+        tracing::debug!("solving auction id {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
             let name = solver.name();
@@ -468,7 +471,12 @@ impl Driver {
             };
 
             for settlement in &settlements {
-                tracing::debug!("solver {} found solution:\n{:?}", name, settlement);
+                tracing::debug!(
+                    "for auction id {} solver {} found solution:\n{:?} ",
+                    auction_id,
+                    name,
+                    settlement
+                );
             }
 
             // Keep at most this many settlements. This is important in case where a solver produces
@@ -529,9 +537,10 @@ impl Driver {
             .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
         tracing::info!(
-            "{} settlements passed simulation and {} failed",
+            "{} settlements passed simulation and {} failed for auction id {}",
             rated_settlements.len(),
-            errors.len()
+            errors.len(),
+            auction_id
         );
         for (solver, _, _) in &rated_settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
@@ -578,7 +587,11 @@ impl Driver {
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
             if let Ok(receipt) = self
-                .submit_settlement(winning_solver.clone(), winning_settlement.clone())
+                .submit_settlement(
+                    auction_id,
+                    winning_solver.clone(),
+                    winning_settlement.clone(),
+                )
                 .await
             {
                 let orders = winning_settlement
