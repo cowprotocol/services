@@ -151,6 +151,7 @@ impl HttpSolver {
             metadata: Some(MetadataModel {
                 environment: Some(self.solver.network_name.clone()),
                 auction_id: Some(auction_id),
+                gas_price: Some(gas_price),
             }),
         };
         Ok((model, SettlementContext { orders, liquidity }))
