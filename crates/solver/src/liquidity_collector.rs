@@ -46,7 +46,7 @@ impl LiquidityCollector {
             amms.extend(stable_orders.into_iter().map(Liquidity::BalancerStable));
         }
         if let Some(zeroex_liquidity) = self.zeroex_liquidity.as_ref() {
-            amms.append(&mut zeroex_liquidity.get_liquidity().await?)
+            amms.append(&mut zeroex_liquidity.get_liquidity(limit_orders).await?)
         }
         tracing::debug!("got {} AMMs", amms.len());
 

@@ -497,7 +497,7 @@ async fn main() {
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
-        base_tokens,
+        base_tokens.clone(),
         native_token_contract.address(),
         args.mip_solver_url,
         args.cow_dex_ag_solver_url,
@@ -526,6 +526,7 @@ async fn main() {
         Some(ZeroExLiquidity {
             api: zeroex_api,
             zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
+            base_tokens,
         })
     } else {
         None
