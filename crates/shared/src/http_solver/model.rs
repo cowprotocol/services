@@ -161,6 +161,7 @@ pub struct MetadataModel {
     pub environment: Option<String>,
     pub auction_id: Option<u64>,
     pub gas_price: Option<f64>,
+    pub native_token: Option<H160>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -390,6 +391,7 @@ mod tests {
                 environment: Some(String::from("Such Meta")),
                 auction_id: None,
                 gas_price: None,
+                native_token: None,
             }),
         };
 
@@ -489,6 +491,7 @@ mod tests {
             "environment": "Such Meta",
             "auction_id": null,
             "gas_price": null,
+            "native_token": null,
           },
         });
         assert_eq!(result, expected);
