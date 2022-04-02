@@ -292,7 +292,7 @@ struct Arguments {
     /// This variable allows to restrict the set of tokens for which a price deviation check of settlement
     /// prices and external prices is executed. If the value is not set, then all tokens included
     /// in the settlement are checked for price deviation.
-    #[clap(long, env)]
+    #[clap(long, env, use_value_delimiter = true)]
     token_list_restriction_for_price_checks: Option<Vec<H160>>,
 }
 
