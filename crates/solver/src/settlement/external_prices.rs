@@ -55,6 +55,14 @@ impl ExternalPrices {
         )
     }
 
+    /// Returns the price of a token relative to the native token.
+    /// I.e., the price of the native token is 1 and
+    /// the price of a token T is represented as how much native token
+    // is needed in order to buy 1 atom of the token T
+    pub fn price(&self, token: &H160) -> Option<&BigRational> {
+        self.0.get(token)
+    }
+
     /// Converts a token amount into its native asset equivalent.
     ///
     /// # Panic

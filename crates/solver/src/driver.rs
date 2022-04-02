@@ -8,7 +8,7 @@ use crate::{
     liquidity_collector::LiquidityCollector,
     metrics::{SolverMetrics, SolverRunOutcome},
     orderbook::OrderBookApi,
-    settlement::{external_prices::ExternalPrices, Settlement},
+    settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
     settlement_simulation::{self, settle_method},
     settlement_submission::SolutionSubmitter,
@@ -19,7 +19,7 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
-use num::{BigRational, ToPrimitive};
+use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::H160;
 use rand::prelude::SliceRandom;
 use shared::{
@@ -58,6 +58,8 @@ pub struct Driver {
     post_processing_pipeline: PostProcessingPipeline,
     simulation_gas_limit: u128,
     fee_objective_scaling_factor: BigRational,
+    max_settlement_price_deviation: Option<Ratio<BigInt>>,
+    token_list_restriction_for_price_checks: PriceCheckTokens,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -83,6 +85,8 @@ impl Driver {
         weth_unwrap_factor: f64,
         simulation_gas_limit: u128,
         fee_objective_scaling_factor: f64,
+        max_settlement_price_deviation: Option<Ratio<BigInt>>,
+        token_list_restriction_for_price_checks: PriceCheckTokens,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -116,6 +120,8 @@ impl Driver {
             simulation_gas_limit,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
+            max_settlement_price_deviation,
+            token_list_restriction_for_price_checks,
         }
     }
 
@@ -448,6 +454,19 @@ impl Driver {
                 Ok(mut settlement) => {
                     // Do not continue with settlements that are empty or only liquidity orders.
                     settlement.retain(solver_settlements::has_user_order);
+                    if let Some(max_settlement_price_deviation) =
+                        &self.max_settlement_price_deviation
+                    {
+                        settlement.retain(|settlement| {
+                            settlement.satisfies_price_checks(
+                                auction_id,
+                                solver.name(),
+                                &external_prices,
+                                max_settlement_price_deviation,
+                                &self.token_list_restriction_for_price_checks,
+                            )
+                        });
+                    }
                     if settlement.is_empty() {
                         self.metrics.solver_run(SolverRunOutcome::Empty, name);
                         continue;
