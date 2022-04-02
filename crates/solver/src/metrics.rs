@@ -70,6 +70,7 @@ pub trait SolverMetrics: Send + Sync {
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str);
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64);
     fn settlement_revertable_status(&self, status: Revertable, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn report_order_surplus(&self, surplus_diff: f64);
@@ -88,6 +89,7 @@ pub struct Metrics {
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
     settlement_revertable_status: IntCounterVec,
+    settlement_access_list_saved_gas: Histogram,
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
@@ -155,6 +157,12 @@ impl Metrics {
             &["result", "solver_type"],
         )?;
         registry.register(Box::new(settlement_revertable_status.clone()))?;
+
+        let settlement_access_list_saved_gas = Histogram::with_opts(HistogramOpts::new(
+            "settlement_access_list_saved_gas",
+            "Saved gas by using access list for transaction submission",
+        ))?;
+        registry.register(Box::new(settlement_access_list_saved_gas.clone()))?;
 
         let solver_runs = IntCounterVec::new(
             Opts::new("solver_run", "Success/Failure counts"),
@@ -248,6 +256,7 @@ impl Metrics {
             complete_runloop_until_transaction,
             transaction_submission,
             transaction_gas_price_gwei,
+            settlement_access_list_saved_gas,
         })
     }
 }
@@ -358,6 +367,10 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64) {
+        self.settlement_access_list_saved_gas.observe(gas_saved);
+    }
+
     fn orders_matched_but_not_settled(&self, count: usize) {
         self.matched_but_unsettled_orders.inc_by(count as u64);
     }
@@ -450,6 +463,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &'static str) {}
     fn settlement_revertable_status(&self, _: Revertable, _: &'static str) {}
+    fn settlement_access_list_saved_gas(&self, _: f64) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}

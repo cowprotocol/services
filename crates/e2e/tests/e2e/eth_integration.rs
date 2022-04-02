@@ -211,7 +211,7 @@ async fn eth_integration(web3: Web3) {
         Duration::from_secs(0),
         Arc::new(NoopMetrics::default()),
         web3.clone(),
-        network_id,
+        network_id.clone(),
         1,
         Duration::from_secs(30),
         None,
@@ -238,6 +238,7 @@ async fn eth_integration(web3: Web3) {
                     &[AccessListEstimatorType::Web3],
                     None,
                     None,
+                    network_id,
                 )
                 .await
                 .unwrap(),
@@ -251,6 +252,7 @@ async fn eth_integration(web3: Web3) {
         1.0,
         None,
         None.into(),
+        None,
     );
     driver.single_run().await.unwrap();
 

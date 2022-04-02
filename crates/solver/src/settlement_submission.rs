@@ -13,7 +13,7 @@ use ethcontract::{
 };
 use futures::FutureExt;
 use gas_estimation::GasPriceEstimating;
-use primitive_types::U256;
+use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
     sync::Arc,
@@ -171,6 +171,17 @@ impl SubmissionError {
             Self::Canceled(_) => SettlementSubmissionOutcome::Cancel,
             Self::Disabled(_) => SettlementSubmissionOutcome::Disabled,
             Self::Other(_) => SettlementSubmissionOutcome::Failed,
+        }
+    }
+
+    pub fn transaction_hash(&self) -> Option<H256> {
+        match self {
+            Self::SimulationRevert(_) => None,
+            Self::Timeout => None,
+            Self::Revert(hash) => Some(*hash),
+            Self::Canceled(hash) => Some(*hash),
+            Self::Disabled(_) => None,
+            Self::Other(_) => None,
         }
     }
 

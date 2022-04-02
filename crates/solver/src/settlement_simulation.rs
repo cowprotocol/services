@@ -1,5 +1,5 @@
 use crate::{encoding::EncodedSettlement, settlement::Settlement};
-use anyhow::{Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     batch::CallBatch,
@@ -7,13 +7,18 @@ use ethcontract::{
     dyns::{DynMethodBuilder, DynTransport},
     errors::ExecutionError,
     transaction::TransactionBuilder,
-    Account,
+    Account, Address,
 };
 use futures::FutureExt;
 use gas_estimation::EstimatedGasPrice;
-use primitive_types::U256;
+use primitive_types::{H256, U256};
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Client, IntoUrl, Url,
+};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use shared::Web3;
-use web3::types::{AccessList, BlockId};
+use web3::types::{AccessList, BlockId, Bytes};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
@@ -119,6 +124,73 @@ pub async fn simulate_and_error_with_tenderly_link(
         .collect()
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct TenderlyResponse {
+    transaction: TenderlyTransaction,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TenderlyTransaction {
+    gas_used: u64,
+}
+
+pub async fn simulate_before_after_access_list(
+    web3: &Web3,
+    tenderly: &TenderlyApi,
+    network_id: String,
+    transaction_hash: H256,
+) -> Result<f64> {
+    let transaction = web3
+        .eth()
+        .transaction(transaction_hash.into())
+        .await?
+        .context("no transaction found")?;
+
+    if transaction.access_list.is_none() {
+        return Err(anyhow!(
+            "no need to analyze access list since no access list was found in mined transaction"
+        ));
+    }
+
+    let (block_number, from, to, transaction_index) = (
+        transaction
+            .block_number
+            .context("no block number field exist")?
+            .as_u64(),
+        transaction.from.context("no from field exist")?,
+        transaction.to.context("no to field exist")?,
+        transaction
+            .transaction_index
+            .context("no transaction_index field exist")?
+            .as_u64(),
+    );
+
+    let request = TenderlyRequest {
+        network_id,
+        block_number,
+        from,
+        input: transaction.input,
+        to,
+        generate_access_list: false,
+        transaction_index: Some(transaction_index),
+    };
+
+    let gas_used_without_access_list = tenderly
+        .send::<TenderlyResponse>(request)
+        .await?
+        .transaction
+        .gas_used;
+    let gas_used_with_access_list = web3
+        .eth()
+        .transaction_receipt(transaction_hash)
+        .await?
+        .ok_or_else(|| anyhow!("no transaction receipt"))?
+        .gas_used
+        .ok_or_else(|| anyhow!("no gas used field"))?;
+
+    Ok(gas_used_without_access_list as f64 - gas_used_with_access_list.to_f64_lossy())
+}
+
 pub fn settle_method(
     gas_price: EstimatedGasPrice,
     contract: &GPv2Settlement,
@@ -171,6 +243,72 @@ pub fn tenderly_link(
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TenderlyRequest {
+    pub network_id: String,
+    pub block_number: u64,
+    pub from: Address,
+    pub input: Bytes,
+    pub to: Address,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transaction_index: Option<u64>,
+    pub generate_access_list: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BlockNumber {
+    pub block_number: u64,
+}
+
+#[derive(Debug)]
+pub struct TenderlyApi {
+    url: Url,
+    client: Client,
+    header: HeaderMap,
+}
+
+impl TenderlyApi {
+    pub fn new(url: impl IntoUrl, client: Client, api_key: &str) -> Result<Self> {
+        Ok(Self {
+            url: url.into_url()?,
+            client,
+            header: {
+                let mut header = HeaderMap::new();
+                header.insert("x-access-key", HeaderValue::from_str(api_key)?);
+                header
+            },
+        })
+    }
+
+    pub async fn send<T>(&self, body: TenderlyRequest) -> reqwest::Result<T>
+    where
+        T: DeserializeOwned,
+    {
+        self.client
+            .post(self.url.clone())
+            .headers(self.header.clone())
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+
+    pub async fn block_number(&self, network_id: &str) -> reqwest::Result<BlockNumber> {
+        self.client
+            .get(format!(
+                "https://api.tenderly.co/api/v1/network/{}/block-number",
+                network_id
+            ))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -189,6 +327,7 @@ mod tests {
     use shared::http_solver::model::SettledBatchAuctionModel;
     use shared::sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter};
     use shared::transport::create_env_test_transport;
+    use std::str::FromStr;
     use std::sync::{Arc, Mutex};
 
     // cargo test -p solver settlement_simulation::tests::mainnet -- --ignored --nocapture
@@ -624,5 +763,32 @@ mod tests {
         .await
         .unwrap();
         let _ = dbg!(result);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn simulate_before_after_access_list_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let transaction_hash =
+            H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
+                .unwrap();
+        let tenderly_api = TenderlyApi::new(
+            // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
+            Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
+            Client::new(),
+            &std::env::var("TENDERLY_API_KEY").unwrap(),
+        )
+        .unwrap();
+        let gas_saved = simulate_before_after_access_list(
+            &web3,
+            &tenderly_api,
+            "1".to_string(),
+            transaction_hash,
+        )
+        .await
+        .unwrap();
+
+        dbg!(gas_saved);
     }
 }

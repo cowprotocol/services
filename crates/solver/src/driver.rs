@@ -10,7 +10,7 @@ use crate::{
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
-    settlement_simulation::{self, settle_method},
+    settlement_simulation::{self, settle_method, simulate_before_after_access_list, TenderlyApi},
     settlement_submission::SolutionSubmitter,
     solver::{Auction, SettlementWithError, SettlementWithSolver, Solver, Solvers},
 };
@@ -20,7 +20,7 @@ use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::H160;
+use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
 use shared::{
     current_block::{self, CurrentBlockStream},
@@ -60,6 +60,7 @@ pub struct Driver {
     fee_objective_scaling_factor: BigRational,
     max_settlement_price_deviation: Option<Ratio<BigInt>>,
     token_list_restriction_for_price_checks: PriceCheckTokens,
+    tenderly: Option<TenderlyApi>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -87,6 +88,7 @@ impl Driver {
         fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
+        tenderly: Option<TenderlyApi>,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -122,6 +124,7 @@ impl Driver {
                 .unwrap(),
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
+            tenderly,
         }
     }
 
@@ -196,6 +199,12 @@ impl Driver {
                     crate::metrics::SettlementSubmissionOutcome::Success,
                     name,
                 );
+                if let Err(err) = self
+                    .metric_access_list_gas_saved(receipt.transaction_hash)
+                    .await
+                {
+                    tracing::debug!("access list metric not saved: {}", err);
+                }
                 Ok(receipt)
             }
             Err(err) => {
@@ -208,9 +217,26 @@ impl Driver {
                 );
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
+                if let Some(transaction_hash) = err.transaction_hash() {
+                    if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
+                        tracing::debug!("access list metric not saved: {}", err);
+                    }
+                }
                 Err(err.into_anyhow())
             }
         }
+    }
+
+    async fn metric_access_list_gas_saved(&self, transaction_hash: H256) -> Result<()> {
+        let gas_saved = simulate_before_after_access_list(
+            &self.web3,
+            self.tenderly.as_ref().context("tenderly disabled")?,
+            self.network_id.clone(),
+            transaction_hash,
+        )
+        .await?;
+        self.metrics.settlement_access_list_saved_gas(gas_saved);
+        Ok(())
     }
 
     async fn can_settle_without_liquidity(

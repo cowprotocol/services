@@ -344,6 +344,8 @@ impl<'a> Submitter<'a> {
             .await
             .unwrap_or(None);
 
+        let mut access_list: Option<AccessList> = None;
+
         loop {
             let submission_status = self
                 .submit_api
@@ -381,6 +383,22 @@ impl<'a> Submitter<'a> {
             let method = self
                 .build_method(settlement.clone(), &gas_price, nonce, gas_limit)
                 .await;
+
+            // append access list
+
+            let method = match access_list.as_ref() {
+                Some(access_list) => method.access_list(access_list.clone()),
+                None => match self.estimate_access_list(&method.tx).await {
+                    Ok(new_access_list) => {
+                        access_list = Some(new_access_list.clone());
+                        method.access_list(new_access_list)
+                    }
+                    Err(err) => {
+                        tracing::info!("access list not created, reason: {:?}", err);
+                        method
+                    }
+                },
+            };
 
             // simulate transaction
 
@@ -450,17 +468,10 @@ impl<'a> Submitter<'a> {
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<DynTransport, ()> {
-        let method = settle_method_builder(self.contract, settlement.into(), self.account.clone())
+        settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
-            .gas_price(crate::into_gas_price(gas_price));
-        match self.estimate_access_list(&method.tx).await {
-            Ok(access_list) => method.access_list(access_list),
-            Err(err) => {
-                tracing::info!("access list not used, reason: {:?}", err);
-                method
-            }
-        }
+            .gas_price(crate::into_gas_price(gas_price))
     }
 
     /// Estimate access list and validate
@@ -474,15 +485,20 @@ impl<'a> Submitter<'a> {
             tx.clone().access_list(access_list.clone()).estimate_gas()
         )?;
 
-        tracing::debug!(
-            "gas before/after access list: {}/{}, access_list: {:?}",
-            gas_before_access_list,
-            gas_after_access_list,
-            access_list,
-        );
         ensure!(
             gas_before_access_list > gas_after_access_list,
             "access list exist but does not lower the gas usage"
+        );
+        let gas_percent_saved = (gas_before_access_list.to_f64_lossy()
+            - gas_after_access_list.to_f64_lossy())
+            / gas_before_access_list.to_f64_lossy()
+            * 100.;
+        tracing::debug!(
+            "gas before/after access list: {}/{}, access_list: {:?}, gas percent saved: {}",
+            gas_before_access_list,
+            gas_after_access_list,
+            access_list,
+            gas_percent_saved
         );
         Ok(access_list)
     }
@@ -628,6 +644,7 @@ mod tests {
                 &[AccessListEstimatorType::Web3],
                 None,
                 None,
+                "1".to_string(),
             )
             .await
             .unwrap(),

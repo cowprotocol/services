@@ -2,17 +2,16 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Address, H160, H256};
-use reqwest::{
-    header::{HeaderMap, HeaderValue},
-    Client, IntoUrl, Url,
-};
-use serde::{Deserialize, Serialize};
+use reqwest::{Client, IntoUrl, Url};
+use serde::Deserialize;
 use shared::Web3;
 use web3::{
     helpers,
     types::{AccessList, Bytes, CallRequest},
     BatchTransport, Transport,
 };
+
+use crate::settlement_simulation::{TenderlyApi, TenderlyRequest};
 
 #[async_trait::async_trait]
 pub trait AccessListEstimating: Send + Sync {
@@ -35,23 +34,23 @@ pub trait AccessListEstimating: Send + Sync {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct NodeAccessList {
+struct NodeResponse {
     access_list: AccessList,
 }
 
 #[derive(Debug)]
-struct NodeApi {
+struct NodeAccessList {
     web3: Web3,
 }
 
-impl NodeApi {
+impl NodeAccessList {
     pub fn new(web3: Web3) -> Self {
         Self { web3 }
     }
 }
 
 #[async_trait::async_trait]
-impl AccessListEstimating for NodeApi {
+impl AccessListEstimating for NodeAccessList {
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
@@ -93,7 +92,7 @@ impl AccessListEstimating for NodeApi {
                 // error during `resolve_call_request()`
                 Err(e) => Err(e),
                 Ok(_req) => match batch_response.next().unwrap() {
-                    Ok(response) => serde_json::from_value::<NodeAccessList>(response)
+                    Ok(response) => serde_json::from_value::<NodeResponse>(response)
                         // error parsing the response
                         .context("unexpected response format")
                         .map(|response| response.access_list),
@@ -105,14 +104,24 @@ impl AccessListEstimating for NodeApi {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct TenderlyRequest {
+#[derive(Debug)]
+struct TenderlyAccessList {
+    tenderly: TenderlyApi,
     network_id: String,
-    block_number: u64,
-    from: Address,
-    input: Bytes,
-    to: Address,
-    generate_access_list: bool,
+}
+
+impl TenderlyAccessList {
+    pub fn new(
+        url: impl IntoUrl,
+        client: Client,
+        api_key: &str,
+        network_id: String,
+    ) -> Result<Self> {
+        Ok(Self {
+            tenderly: TenderlyApi::new(url, client, api_key)?,
+            network_id,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -140,75 +149,15 @@ impl From<AccessListItem> for web3::types::AccessListItem {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct BlockNumber {
-    block_number: u64,
-}
-
-#[derive(Debug)]
-struct TenderlyApi {
-    url: Url,
-    client: Client,
-    header: HeaderMap,
-    network_id: String,
-}
-
-impl TenderlyApi {
-    #[allow(dead_code)]
-    pub fn new(
-        url: impl IntoUrl,
-        client: Client,
-        api_key: &str,
-        network_id: String,
-    ) -> Result<Self> {
-        Ok(Self {
-            url: url.into_url()?,
-            client,
-            header: {
-                let mut header = HeaderMap::new();
-                header.insert("x-access-key", HeaderValue::from_str(api_key)?);
-                header
-            },
-            network_id,
-        })
-    }
-
-    #[allow(dead_code)]
-    async fn send(&self, body: TenderlyRequest) -> reqwest::Result<TenderlyResponse> {
-        self.client
-            .post(self.url.clone())
-            .headers(self.header.clone())
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-    }
-
-    async fn block_number(&self, network_id: String) -> reqwest::Result<BlockNumber> {
-        self.client
-            .get(format!(
-                "https://api.tenderly.co/api/v1/network/{}/block-number",
-                network_id
-            ))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-    }
-}
-
 #[async_trait::async_trait]
-impl AccessListEstimating for TenderlyApi {
+impl AccessListEstimating for TenderlyAccessList {
     async fn estimate_access_lists(
         &self,
         txs: &[TransactionBuilder<DynTransport>],
     ) -> Result<Vec<Result<AccessList>>> {
         Ok(futures::future::join_all(txs.iter().map(|tx| async {
             let (from, to, input) = resolve_call_request(tx)?;
-            let block_number = self.block_number(self.network_id.clone()).await?;
+            let block_number = self.tenderly.block_number(&self.network_id).await?;
 
             let request = TenderlyRequest {
                 network_id: self.network_id.clone(),
@@ -217,9 +166,10 @@ impl AccessListEstimating for TenderlyApi {
                 input,
                 to,
                 generate_access_list: true,
+                transaction_index: None,
             };
 
-            let response = self.send(request).await?;
+            let response = self.tenderly.send::<TenderlyResponse>(request).await?;
             ensure!(
                 !response.generated_access_list.is_empty(),
                 "empty access list"
@@ -318,17 +268,17 @@ pub async fn create_priority_estimator(
     estimator_types: &[AccessListEstimatorType],
     tenderly_url: Option<Url>,
     tenderly_api_key: Option<String>,
+    network_id: String,
 ) -> Result<impl AccessListEstimating> {
-    let network_id = web3.net().version().await?;
     let mut estimators = Vec::<Box<dyn AccessListEstimating>>::new();
 
     for estimator_type in estimator_types {
         match estimator_type {
             AccessListEstimatorType::Web3 => {
-                estimators.push(Box::new(NodeApi::new(web3.clone())));
+                estimators.push(Box::new(NodeAccessList::new(web3.clone())));
             }
             AccessListEstimatorType::Tenderly => {
-                estimators.push(Box::new(TenderlyApi::new(
+                estimators.push(Box::new(TenderlyAccessList::new(
                     tenderly_url
                         .clone()
                         .ok_or_else(|| anyhow!("Tenderly url is empty"))?,
@@ -372,7 +322,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn tenderly_estimate_access_lists() {
-        let tenderly_api = TenderlyApi::new(
+        let tenderly_api = TenderlyAccessList::new(
             // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
             Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
             Client::new(),
@@ -393,7 +343,7 @@ mod tests {
     async fn node_estimate_access_lists() {
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
-        let node_api = NodeApi::new(web3);
+        let node_api = NodeAccessList::new(web3);
 
         let tx = example_tx();
 
@@ -408,7 +358,7 @@ mod tests {
     async fn node_estimate_multiple_access_lists() {
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
-        let node_api = NodeApi::new(web3.clone());
+        let node_api = NodeAccessList::new(web3.clone());
 
         let tx = example_tx();
         let tx2 = TransactionBuilder::new(web3); //empty transaction
@@ -430,6 +380,7 @@ mod tests {
             input: hex!("13d79a0b00000000000000000000000000000000000000000000").into(),
             to: H160::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41")),
             generate_access_list: true,
+            transaction_index: None,
         };
 
         let json = json!({
