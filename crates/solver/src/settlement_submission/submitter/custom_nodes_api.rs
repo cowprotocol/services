@@ -17,6 +17,15 @@ use futures::FutureExt;
 use gas_estimation::{EstimatedGasPrice, GasPrice1559};
 use shared::Web3;
 
+const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
+    "Transaction gas price supplied is too low", //openethereum
+    "Transaction nonce is too low",              //openethereum
+    "already known",                             //infura
+    "nonce too low",                             //infura
+    "OldNonce",                                  //erigon
+    "INTERNAL_ERROR: nonce too low",             //erigon
+];
+
 #[derive(Clone)]
 pub struct CustomNodesApi {
     nodes: Vec<Web3>,
@@ -64,8 +73,17 @@ impl TransactionSubmitting for CustomNodesApi {
                     });
                 }
                 Err(err) => {
-                    tracing::warn!(?err, ?lable, "single custom node tx failed");
-                    super::track_submission_success(lable.as_str(), false);
+                    // error is not real error if transaction pool responded that received transaction is already in the pool
+                    let real_error = match &err {
+                        web3::Error::Rpc(rpc_error) => !ALREADY_KNOWN_TRANSACTION
+                            .iter()
+                            .any(|message| rpc_error.message.starts_with(message)),
+                        _ => true,
+                    };
+                    if real_error {
+                        tracing::warn!(?err, ?lable, "single custom node tx failed");
+                        super::track_submission_success(lable.as_str(), false);
+                    }
                     if rest.is_empty() {
                         return Err(anyhow::Error::from(err).context("all custom nodes tx failed"));
                     }
