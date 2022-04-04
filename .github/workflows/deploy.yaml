@@ -7,13 +7,50 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    env:
-      AUTODEPLOY_TAG: develop
-      AUTODEPLOY_URL: https://dfusion.auto.gnosisdev.com/services/dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet/rollout
-      DOCKERHUB_PROJECT: gp-v2-services
-      DOCKER_NAME: ${{ secrets.DOCKER_NAME }}
-      DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-      AUTODEPLOY_TOKEN: ${{ secrets.AUTODEPLOY_TOKEN }}
+    permissions:
+      contents: read
+      packages: write
+
     steps:
-      - uses: actions/checkout@v2
-      - run: docker/deploy.sh ${GITHUB_REF#refs/*/}
+      - uses: actions/checkout@v3
+
+      - uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta_services
+        uses: docker/metadata-action@v3
+        with:
+          images: ghcr.io/${{ github.repository }}
+          labels: |
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+      - uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: ${{ steps.meta_services.outputs.tags }}
+          labels: ${{ steps.meta_services.outputs.labels }}
+
+      - id: meta_migration
+        uses: docker/metadata-action@v3
+        with:
+          images: ghcr.io/${{ github.repository }}-migration
+          labels: |
+            org.opencontainers.image.licenses=GPL-3.0-or-later
+      - uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: docker/Dockerfile.migration
+          push: true
+          tags: ${{ steps.meta_migration.outputs.tags }}
+          labels: ${{ steps.meta_migration.outputs.labels }}
+
+      - uses: cowprotocol/autodeploy@v1
+        if: ${{ github.ref == 'refs/heads/main' }}
+        with:
+          pods: dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet
+          url: ${{ secret.AUTODEPLOY_URL }}
+          token: ${{ secrets.AUTODEPLOY_TOKEN }}
