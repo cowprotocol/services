@@ -463,7 +463,10 @@ impl<'a> Submitter<'a> {
                 }
                 Err(err) => tracing::warn!("submission failed: {:?}", err),
             }
-            tracing::info!("Finished sending transaction...");
+            tracing::info!(
+                "Finished sending transaction with submitter {}...",
+                submitter_name
+            );
             tokio::time::sleep(params.retry_interval).await;
         }
     }
