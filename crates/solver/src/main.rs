@@ -542,6 +542,7 @@ async fn main() {
             api: zeroex_api,
             zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
             base_tokens,
+            gpv2: settlement_contract.clone(),
         })
     } else {
         None

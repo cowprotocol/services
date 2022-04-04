@@ -3,7 +3,7 @@ use crate::interactions::ZeroExInteraction;
 use crate::liquidity::{Exchange, LimitOrder, Liquidity};
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
-use contracts::IZeroEx;
+use contracts::{GPv2Settlement, IZeroEx};
 use model::order::OrderKind;
 use model::TokenPair;
 use primitive_types::U256;
@@ -15,11 +15,24 @@ pub struct ZeroExLiquidity {
     pub api: Arc<dyn ZeroExApi>,
     pub zeroex: IZeroEx,
     pub base_tokens: Arc<BaseTokens>,
+    pub gpv2: GPv2Settlement,
 }
 
 impl ZeroExLiquidity {
     pub async fn get_liquidity(&self, user_orders: &[LimitOrder]) -> Result<Vec<Liquidity>> {
-        let zeroex_orders = self.api.get_orders(&OrdersQuery::default()).await?;
+        let queries = &[
+            // orders fillable by anyone
+            OrdersQuery::default(),
+            // orders fillable only by our settlement contract
+            OrdersQuery {
+                sender: Some(self.gpv2.address()),
+                ..Default::default()
+            },
+        ];
+
+        let zeroex_orders =
+            futures::future::try_join_all(queries.iter().map(|query| self.api.get_orders(query)))
+                .await?;
 
         let user_order_pairs = user_orders
             .iter()
@@ -28,6 +41,7 @@ impl ZeroExLiquidity {
 
         let filtered_zeroex_orders = zeroex_orders
             .into_iter()
+            .flatten()
             .filter(|record| {
                 match TokenPair::new(record.order.taker_token, record.order.maker_token) {
                     Some(pair) => relevant_pairs.contains(&pair),
