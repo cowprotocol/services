@@ -28,6 +28,7 @@ use primitive_types::{H160, U256};
 use shared::{
     bad_token::{
         cache::CachingDetector,
+        instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         trace_call::{
             BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
@@ -423,15 +424,18 @@ async fn main() {
         Box::new(trace_call_detector),
         args.token_quality_cache_expiry,
     );
-    let bad_token_detector = Arc::new(ListBasedDetector::new(
-        allowed_tokens,
-        unsupported_tokens,
-        if args.skip_trace_api {
-            UnknownTokenStrategy::Allow
-        } else {
-            UnknownTokenStrategy::Forward(Box::new(caching_detector))
-        },
-    ));
+    let bad_token_detector = Arc::new(
+        ListBasedDetector::new(
+            allowed_tokens,
+            unsupported_tokens,
+            if args.skip_trace_api {
+                UnknownTokenStrategy::Allow
+            } else {
+                UnknownTokenStrategy::Forward(Box::new(caching_detector))
+            },
+        )
+        .instrumented(),
+    );
 
     let current_block_stream =
         current_block_stream(web3.clone(), args.shared.block_stream_poll_interval_seconds)

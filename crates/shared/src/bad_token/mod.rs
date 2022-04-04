@@ -1,4 +1,5 @@
 pub mod cache;
+pub mod instrumented;
 pub mod list_based;
 pub mod trace_call;
 
