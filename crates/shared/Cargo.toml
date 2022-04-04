@@ -14,7 +14,7 @@ assert_approx_eq = "1.1"
 async-stream = "0.3"
 async-trait = "0.1"
 atty = "0.2"
-cached = { version = "0.32", default-features = false }
+cached = { version = "0.34", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
