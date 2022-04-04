@@ -43,12 +43,14 @@ impl TransactionSubmitting for CustomNodesApi {
         &self,
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle> {
+        tracing::info!("Custom nodes submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
             .iter()
             .map(|node| {
                 async {
+                    tracing::info!("Sending transaction...");
                     match transaction_request.clone() {
                         Transaction::Request(tx) => node.eth().send_transaction(tx).await,
                         Transaction::Raw { bytes, hash: _ } => {
@@ -63,6 +65,7 @@ impl TransactionSubmitting for CustomNodesApi {
         loop {
             let (result, index, rest) = futures::future::select_all(futures).await;
             let lable = format!("custom_nodes_{index}");
+            tracing::info!("Loop iteration with node: {}", lable);
             match result {
                 Ok(tx_hash) => {
                     super::track_submission_success(lable.as_str(), true);
@@ -73,6 +76,7 @@ impl TransactionSubmitting for CustomNodesApi {
                     });
                 }
                 Err(err) => {
+                    tracing::info!("Error on sending transaction...");
                     // error is not real error if transaction pool responded that received transaction is already in the pool
                     let real_error = match &err {
                         web3::Error::Rpc(rpc_error) => !ALREADY_KNOWN_TRANSACTION
