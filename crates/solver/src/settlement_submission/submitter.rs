@@ -333,6 +333,11 @@ impl<'a> Submitter<'a> {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
+        tracing::info!(
+            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
+            submitter_name
+        );
+
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
         let pending_gas_price = self
             .submit_api
@@ -347,6 +352,8 @@ impl<'a> Submitter<'a> {
         let mut access_list: Option<AccessList> = None;
 
         loop {
+            tracing::info!("entered loop with submitter: {}", submitter_name);
+
             let submission_status = self
                 .submit_api
                 .submission_status(&settlement, &params.network_id);
@@ -456,6 +463,10 @@ impl<'a> Submitter<'a> {
                 }
                 Err(err) => tracing::warn!("submission failed: {:?}", err),
             }
+            tracing::info!(
+                "Finished sending transaction with submitter {}...",
+                submitter_name
+            );
             tokio::time::sleep(params.retry_interval).await;
         }
     }
