@@ -49,7 +49,7 @@ pub type Web3CallBatch = CallBatch<Web3Transport>;
 pub fn http_client(timeout: Duration) -> reqwest::Client {
     reqwest::ClientBuilder::new()
         .timeout(timeout)
-        .user_agent("gp-v2-services/2.0.0")
+        .user_agent("cowprotocol-services/2.0.0")
         .build()
         .unwrap()
 }

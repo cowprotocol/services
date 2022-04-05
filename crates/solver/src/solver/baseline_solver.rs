@@ -141,7 +141,7 @@ impl BaselineSolver {
                             }
                         }
                         Liquidity::BalancerStable(_order) => {
-                            // TODO - https://github.com/gnosis/gp-v2-services/issues/1074
+                            // TODO - https://github.com/cowprotocol/services/issues/80
                             tracing::debug!("Excluded stable pool from baseline solving.")
                         }
                         Liquidity::LimitOrder(_) => {}

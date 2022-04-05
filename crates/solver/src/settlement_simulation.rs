@@ -391,7 +391,7 @@ mod tests {
         // This e2e test re-simulates the settlement from here: https://etherscan.io/tx/0x6756c294eb84c899247f2ec64d6eee73e7aaf50d6cb49ba9bab636f450240f51
         // This settlement was wrongly settled, because the liquidity order did receive a surplus.
         // The liquidity order is:
-        // https://gnosis-protocol.io/orders/0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542
+        // https://explorer.cow.fi/orders/0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542
 
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);

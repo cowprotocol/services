@@ -273,7 +273,7 @@ struct Arguments {
     #[clap(long, env, default_value = "5")]
     errors_in_a_row_before_alert: u32,
 
-    #[clap(long, env, default_value = "https://protocol-mainnet.gnosis.io")]
+    #[clap(long, env, default_value = "https://api.cow.fi/mainnet/")]
     orderbook_api: String,
 }
 

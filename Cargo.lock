@@ -1117,7 +1117,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.5.0#7ce0050da5bb21df446b2ba0b27381f20f3b268d"
+source = "git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.5.0#6ec611d61717f350c774afb521a18952f1593c67"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1128,6 +1128,24 @@ dependencies = [
  "serde_json",
  "serde_with",
  "tokio",
+ "tracing",
+ "url",
+ "web3",
+]
+
+[[package]]
+name = "gas-estimation"
+version = "0.1.0"
+source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.5.0#7ce0050da5bb21df446b2ba0b27381f20f3b268d"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "http",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "serde_with",
  "tracing",
  "url",
  "web3",
@@ -1916,7 +1934,7 @@ dependencies = [
  "contracts",
  "ethcontract",
  "futures",
- "gas-estimation",
+ "gas-estimation 0.1.0 (git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.5.0)",
  "hex",
  "hex-literal",
  "maplit",
@@ -1925,7 +1943,7 @@ dependencies = [
  "num",
  "primitive-types",
  "prometheus",
- "prometheus-metric-storage",
+ "prometheus-metric-storage 0.4.0 (git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0)",
  "reqwest",
  "secp256k1",
  "serde",
@@ -2218,7 +2236,17 @@ checksum = "4386765c6446d3b5260d8cfcf2eb2d795ea741acce1be50c414a8ea7d9e42edd"
 dependencies = [
  "lazy_static",
  "prometheus",
- "prometheus-metric-storage-derive",
+ "prometheus-metric-storage-derive 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
+name = "prometheus-metric-storage"
+version = "0.4.0"
+source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
+dependencies = [
+ "lazy_static",
+ "prometheus",
+ "prometheus-metric-storage-derive 0.4.0 (git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0)",
 ]
 
 [[package]]
@@ -2226,6 +2254,16 @@ name = "prometheus-metric-storage-derive"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "681eb556e1680139d92b974285b280fbce867b43b1670db0b9d7dec0d5ea19c3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "prometheus-metric-storage-derive"
+version = "0.4.0"
+source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2682,7 +2720,7 @@ dependencies = [
  "ethcontract",
  "ethcontract-mock",
  "futures",
- "gas-estimation",
+ "gas-estimation 0.1.0 (git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.5.0)",
  "hex",
  "hex-literal",
  "http",
@@ -2697,7 +2735,7 @@ dependencies = [
  "once_cell",
  "primitive-types",
  "prometheus",
- "prometheus-metric-storage",
+ "prometheus-metric-storage 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "regex",
  "reqwest",
  "scopeguard",
@@ -2761,7 +2799,7 @@ dependencies = [
  "ethcontract",
  "ethcontract-mock",
  "futures",
- "gas-estimation",
+ "gas-estimation 0.1.0 (git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.5.0)",
  "hex",
  "hex-literal",
  "itertools",
@@ -2773,7 +2811,7 @@ dependencies = [
  "num",
  "primitive-types",
  "prometheus",
- "prometheus-metric-storage",
+ "prometheus-metric-storage 0.4.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "rand",
  "reqwest",
  "serde",

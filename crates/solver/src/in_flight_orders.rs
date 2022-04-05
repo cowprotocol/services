@@ -19,7 +19,7 @@ impl InFlightOrders {
             .split_off(&(auction.latest_settlement_block + 1));
 
         // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
-        // https://github.com/gnosis/gp-v2-services/issues/673
+        // https://github.com/cowprotocol/services/issues/123
         // Note that this is pessimistaic as it will result in not using the
         // remaining available amount of a partially fillable order while it is
         // in-flight. This is done to avoid `order filled` reverts.
