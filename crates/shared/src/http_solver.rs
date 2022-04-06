@@ -78,11 +78,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let mut url = self.base.clone();
         url.set_path("/solve");
 
-        let maybe_auction_id = model
-            .metadata
-            .as_ref()
-            .unwrap_or(&MetadataModel::default())
-            .auction_id;
+        let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0u64));
         tracing::debug!("http solver instance name is {}", instance_name);
 
