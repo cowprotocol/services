@@ -279,7 +279,7 @@ fn compute_uniswap_in(
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
-    for order in solution.traded_orders() {
+    for order in solution.traded_user_orders() {
         let order = &order.creation;
         let buy_token_price = solution
             .clearing_price(order.buy_token)

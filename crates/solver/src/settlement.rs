@@ -268,17 +268,24 @@ impl Settlement {
 
     /// Returns all orders included in the settlement.
     pub fn traded_orders(&self) -> impl Iterator<Item = &Order> + '_ {
-        let user_orders = self
-            .encoder
+        self.traded_user_orders()
+            .chain(self.traded_liquidity_orders())
+    }
+
+    /// Returns only user orders included in the settlement.
+    pub fn traded_user_orders(&self) -> impl Iterator<Item = &Order> + '_ {
+        self.encoder
             .order_trades()
             .iter()
-            .map(|trade| &trade.trade.order);
-        let liquidity_orders = self
-            .encoder
+            .map(|trade| &trade.trade.order)
+    }
+
+    /// Returns only liquidity orders included in the settlement.
+    pub fn traded_liquidity_orders(&self) -> impl Iterator<Item = &Order> + '_ {
+        self.encoder
             .liquidity_order_trades()
             .iter()
-            .map(|trade| &trade.trade.order);
-        user_orders.chain(liquidity_orders)
+            .map(|trade| &trade.trade.order)
     }
 
     /// Returns an iterator of all executed trades.
