@@ -43,8 +43,7 @@ impl OrderBookApi {
     }
 
     pub async fn solvable_orders(&self) -> reqwest::Result<Vec<Order>> {
-        let mut url = self.base.clone();
-        url.set_path("/api/v1/solvable_orders");
+        let url = self.base.join("api/v1/solvable_orders").unwrap();
         self.client
             .get(url)
             .send()
@@ -55,8 +54,7 @@ impl OrderBookApi {
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
-        let mut url = self.base.clone();
-        url.set_path(&format!("/api/v1/orders/{}", uid));
+        let url = self.base.join(&format!("api/v1/orders/{}", uid)).unwrap();
         self.client
             .get(url)
             .send()
@@ -93,8 +91,7 @@ impl ZeroExApi {
     }
 
     pub async fn can_be_settled(&self, order: &Order) -> Result<bool> {
-        let mut url = self.base.clone();
-        url.set_path("/swap/v1/price");
+        let mut url = self.base.join("swap/v1/price").unwrap();
         let (amount_name, amount) = match order.kind {
             OrderKind::Buy => ("buyAmount", order.buy_amount),
             OrderKind::Sell => ("sellAmount", order.sell_amount),
