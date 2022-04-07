@@ -263,11 +263,19 @@ impl TraceCallDetector {
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "can't transfer into settlement contract: {reason}"
+                )))
+            }
         };
         let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "can't transfer out of settlement contract: {reason}"
+                )))
+            }
         };
 
         let balance_before_in = match decode_u256(&traces[0]) {
@@ -354,8 +362,8 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
     let first = transaction_traces
         .first()
         .ok_or_else(|| anyhow!("expected at least one trace"))?;
-    if first.error.is_some() {
-        return Ok(Err("transaction failed".to_string()));
+    if let Some(error) = &first.error {
+        return Ok(Err(format!("transaction failed: {error}")));
     }
     let call_result = match &first.result {
         Some(Res::Call(call)) => call,
