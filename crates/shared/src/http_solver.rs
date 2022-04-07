@@ -1,4 +1,3 @@
-use crate::http_solver::model::MetadataModel;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Url};
@@ -78,14 +77,8 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let mut url = self.base.clone();
         url.set_path("/solve");
 
-        let instance_name = self.generate_instance_name(
-            model
-                .metadata
-                .as_ref()
-                .unwrap_or(&MetadataModel::default())
-                .auction_id
-                .unwrap_or(0u64),
-        );
+        let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
+        let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0u64));
         tracing::debug!("http solver instance name is {}", instance_name);
 
         url.query_pairs_mut()
@@ -107,6 +100,10 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 "use_internal_buffers",
                 use_internal_buffers.to_string().as_str(),
             );
+        }
+        if let Some(auction_id) = maybe_auction_id {
+            url.query_pairs_mut()
+                .append_pair("auction_id", auction_id.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let mut request = self.client.post(url).timeout(timeout);
