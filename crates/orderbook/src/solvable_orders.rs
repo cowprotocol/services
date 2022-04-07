@@ -251,6 +251,8 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             // that we first need a way to communicate this to the solver. We could repurpose
             // availableBalance for this.
             let needed_balance = match max_transfer_out_amount(&order) {
+                // Should only ever happen if a partially fillable order has been filled completely
+                Ok(balance) if balance.is_zero() => continue,
                 Ok(balance) => balance,
                 Err(err) => {
                     // This should only happen if we read bogus order data from
@@ -496,6 +498,8 @@ mod tests {
                 creation: OrderCreation {
                     sell_token: sell_token_0,
                     sell_token_balance: SellTokenSource::Erc20,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -507,6 +511,8 @@ mod tests {
                 creation: OrderCreation {
                     sell_token: sell_token_1,
                     sell_token_balance: SellTokenSource::Erc20,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -649,18 +655,26 @@ mod tests {
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token4)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
         ];
         let prices = btreemap! {
@@ -850,7 +864,11 @@ mod tests {
                 owner,
                 ..Default::default()
             },
-            ..Default::default()
+            creation: OrderCreation {
+                buy_amount: 1.into(),
+                sell_amount: 1.into(),
+                ..Default::default()
+            },
         })
         .collect();
 
@@ -863,5 +881,53 @@ mod tests {
             filtered_owners,
             [H160([1; 20]), H160([1; 20]), H160([2; 20]), H160([3; 20])],
         );
+    }
+
+    #[test]
+    fn filters_zero_amount_orders() {
+        let orders = vec![
+            // normal order with non zero amounts
+            Order {
+                creation: OrderCreation {
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // partially fillable order with remaining liquidity
+            Order {
+                creation: OrderCreation {
+                    partially_fillable: true,
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // normal order with zero amounts
+            Order::default(),
+            // partially fillable order completely filled
+            Order {
+                metadata: OrderMetadata {
+                    executed_buy_amount: 1u8.into(),
+                    executed_sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                creation: OrderCreation {
+                    partially_fillable: true,
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+            },
+        ];
+
+        let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
+        let expected_result = vec![orders[0].clone(), orders[1].clone()];
+        let mut filtered_orders = solvable_orders(orders, &balances);
+        // Deal with `solvable_orders()` sorting the orders.
+        filtered_orders.sort_by_key(|order| order.metadata.creation_date);
+        assert_eq!(expected_result, filtered_orders);
     }
 }
