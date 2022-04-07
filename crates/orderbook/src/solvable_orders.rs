@@ -251,6 +251,8 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             // that we first need a way to communicate this to the solver. We could repurpose
             // availableBalance for this.
             let needed_balance = match max_transfer_out_amount(&order) {
+                // Should only ever happen if a partially fillable order has been filled completely
+                Ok(balance) if balance.is_zero() => continue,
                 Ok(balance) => balance,
                 Err(err) => {
                     // This should only happen if we read bogus order data from
