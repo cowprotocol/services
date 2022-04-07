@@ -882,4 +882,52 @@ mod tests {
             [H160([1; 20]), H160([1; 20]), H160([2; 20]), H160([3; 20])],
         );
     }
+
+    #[test]
+    fn filters_zero_amount_orders() {
+        let orders = vec![
+            // normal order with non zero amounts
+            Order {
+                creation: OrderCreation {
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // partially fillable order with remaining liquidity
+            Order {
+                creation: OrderCreation {
+                    partially_fillable: true,
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            // normal order with zero amounts
+            Order::default(),
+            // partially fillable order completely filled
+            Order {
+                metadata: OrderMetadata {
+                    executed_buy_amount: 1u8.into(),
+                    executed_sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+                creation: OrderCreation {
+                    partially_fillable: true,
+                    buy_amount: 1u8.into(),
+                    sell_amount: 1u8.into(),
+                    ..Default::default()
+                },
+            },
+        ];
+
+        let balances = hashmap! {Query::from_order(&orders[0]) => U256::MAX};
+        let expected_result = vec![orders[0].clone(), orders[1].clone()];
+        let mut filtered_orders = solvable_orders(orders, &balances);
+        // Deal with `solvable_orders()` sorting the orders.
+        filtered_orders.sort_by_key(|order| order.metadata.creation_date);
+        assert_eq!(expected_result, filtered_orders);
+    }
 }
