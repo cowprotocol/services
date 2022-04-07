@@ -498,6 +498,8 @@ mod tests {
                 creation: OrderCreation {
                     sell_token: sell_token_0,
                     sell_token_balance: SellTokenSource::Erc20,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -509,6 +511,8 @@ mod tests {
                 creation: OrderCreation {
                     sell_token: sell_token_1,
                     sell_token_balance: SellTokenSource::Erc20,
+                    sell_amount: 1.into(),
+                    buy_amount: 1.into(),
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
@@ -651,18 +655,26 @@ mod tests {
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token2)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token1)
                 .with_buy_token(token3)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
             OrderBuilder::default()
                 .with_sell_token(token2)
                 .with_buy_token(token4)
+                .with_buy_amount(1.into())
+                .with_sell_amount(1.into())
                 .build(),
         ];
         let prices = btreemap! {
@@ -852,7 +864,11 @@ mod tests {
                 owner,
                 ..Default::default()
             },
-            ..Default::default()
+            creation: OrderCreation {
+                buy_amount: 1.into(),
+                sell_amount: 1.into(),
+                ..Default::default()
+            },
         })
         .collect();
 
