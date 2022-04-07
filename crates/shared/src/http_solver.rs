@@ -1,4 +1,3 @@
-use crate::http_solver::model::MetadataModel;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Url};
