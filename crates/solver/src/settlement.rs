@@ -87,7 +87,7 @@ impl Trade {
     }
 
     // Returns the executed fee amount (prorated of executed amount)
-    // cf. https://github.com/gnosis/gp-v2-contracts/blob/964f1eb76f366f652db7f4c2cb5ff9bfa26eb2cd/src/contracts/GPv2Settlement.sol#L370-L371
+    // cf. https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/GPv2Settlement.sol#L383-L385
     pub fn executed_fee(&self) -> Option<U256> {
         self.compute_fee_execution(self.order.creation.fee_amount)
     }

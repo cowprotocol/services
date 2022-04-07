@@ -147,7 +147,7 @@ impl StablePoolRef<'_> {
     // - calculate_invariant and
     // - get_token_balance_given_invariant_and_all_other_balances
     // which perform balancer-arithmetic on the balances array from inside calc_X_given_Y
-    // See issue for this task here: https://github.com/gnosis/gp-v2-services/issues/1332
+    // See issue for this task here: https://github.com/cowprotocol/services/issues/100
     fn upscale_balances_with_token_indices(
         &self,
         in_token: &H160,
