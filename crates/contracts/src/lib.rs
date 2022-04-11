@@ -129,6 +129,7 @@ mod tests {
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
+        #[allow(clippy::single_element_loop)]
         for network in &[100] {
             assert_has_deployment_address!(HoneyswapFactory for *network);
             assert_has_deployment_address!(HoneyswapRouter for *network);
