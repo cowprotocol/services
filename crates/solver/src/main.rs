@@ -134,7 +134,7 @@ struct Arguments {
     #[clap(long, env, default_value = "9587")]
     metrics_port: u16,
 
-    /// The port at which we serve our metrics
+    /// The maximum number of settlements that can be merged for a single solver.  
     #[clap(long, env, default_value = "5")]
     max_merged_settlements: usize,
 
