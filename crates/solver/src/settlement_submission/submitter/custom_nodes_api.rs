@@ -26,14 +26,27 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "INTERNAL_ERROR: nonce too low",             //erigon
 ];
 
+#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+pub enum PendingTransactionConfig {
+    /// Attempt to fetch pending transactions using txpool_content call. This can cause problems
+    /// when nodes return a large amount of data or are slow to respond.
+    TxPool,
+    /// Do not attempt to fetch pending transactions.
+    Ignore,
+}
+
 #[derive(Clone)]
 pub struct CustomNodesApi {
     nodes: Vec<Web3>,
+    pending_transaction_config: PendingTransactionConfig,
 }
 
 impl CustomNodesApi {
-    pub fn new(nodes: Vec<Web3>) -> Self {
-        Self { nodes }
+    pub fn new(nodes: Vec<Web3>, pending_transaction_config: PendingTransactionConfig) -> Self {
+        Self {
+            nodes,
+            pending_transaction_config,
+        }
     }
 }
 
@@ -107,6 +120,10 @@ impl TransactionSubmitting for CustomNodesApi {
         address: &H160,
         nonce: U256,
     ) -> Result<Option<EstimatedGasPrice>> {
+        match self.pending_transaction_config {
+            PendingTransactionConfig::Ignore => return Ok(None),
+            PendingTransactionConfig::TxPool => (),
+        }
         let transactions = crate::pending_transactions::pending_transactions(web3.transport())
             .await
             .context("pending_transactions failed")?;
