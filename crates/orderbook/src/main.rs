@@ -31,7 +31,7 @@ use shared::{
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         trace_call::{
-            BalancerVaultFinder, TokenOwnerFinding, TraceCallDetector,
+            BalancerVaultFinder, FeeValues, TokenOwnerFinding, TraceCallDetector,
             UniswapLikePairProviderFinder, UniswapV3Finder,
         },
     },
@@ -244,6 +244,9 @@ struct Arguments {
     /// will not have any further effect.
     #[clap(long, env, default_value = "2")]
     fast_price_estimation_results_required: NonZeroUsize,
+
+    #[clap(long, env, default_value = "static", arg_enum)]
+    token_detector_fee_values: FeeValues,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -410,6 +413,7 @@ async fn main() {
                 contract,
                 base_tokens.tokens().iter().copied().collect(),
                 current_block,
+                args.token_detector_fee_values,
             )
             .await
             .expect("create uniswapv3 finder"),
