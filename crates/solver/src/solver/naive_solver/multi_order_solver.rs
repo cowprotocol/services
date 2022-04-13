@@ -279,14 +279,26 @@ fn compute_uniswap_in(
 /// Thus we ensure that `buy_token_price / sell_token_price >= limit_buy_amount / limit_sell_amount`
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
-    for order in solution.traded_user_orders() {
+    for (order, is_liquidity_order) in solution
+        .traded_user_orders()
+        .map(|order| (order, false))
+        .chain(
+            solution
+                .traded_liquidity_orders()
+                .map(|order| (order, true)),
+        )
+    {
         let order = &order.creation;
-        let buy_token_price = solution
-            .clearing_price(order.buy_token)
-            .expect("Solution should contain clearing price for buy token");
         let sell_token_price = solution
             .clearing_price(order.sell_token)
             .expect("Solution should contain clearing price for sell token");
+        let buy_token_price = if is_liquidity_order {
+            sell_token_price / order.sell_amount * order.buy_amount
+        } else {
+            solution
+                .clearing_price(order.buy_token)
+                .expect("Solution should contain clearing price for buy token")
+        };
 
         match (
             order.sell_amount.checked_mul(sell_token_price),
