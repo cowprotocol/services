@@ -28,6 +28,7 @@ pub mod token_list;
 pub mod trace_many;
 pub mod tracing;
 pub mod transport;
+pub mod univ3_router_api;
 pub mod web3_traits;
 pub mod zeroex_api;
 
