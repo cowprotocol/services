@@ -177,7 +177,6 @@ pub trait Interaction: std::fmt::Debug + Send + Sync {
     fn encode(&self) -> Vec<EncodedInteraction>;
 }
 
-#[cfg(test)]
 impl Interaction for EncodedInteraction {
     fn encode(&self) -> Vec<EncodedInteraction> {
         vec![self.clone()]

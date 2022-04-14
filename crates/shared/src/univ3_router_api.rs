@@ -1,3 +1,5 @@
+//! Bindings for an instance of https://github.com/cowprotocol/univ3-api .
+
 use crate::solver_utils::deserialize_prefixed_hex;
 use anyhow::{Context, Result};
 use model::u256_decimal;
