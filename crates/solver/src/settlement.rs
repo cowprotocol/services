@@ -282,13 +282,16 @@ impl Settlement {
     }
 
     /// Returns an iterator of all executed trades.
-    pub fn executed_trades(&self) -> impl Iterator<Item = TradeExecution> + '_ {
+    pub fn executed_trades(&self) -> impl Iterator<Item = (&'_ Trade, TradeExecution)> + '_ {
         let order_trades = self.encoder.order_trades().iter().map(move |order_trade| {
             let order = &order_trade.trade.order.creation;
-            order_trade.trade.executed_amounts(
-                self.clearing_price(order.sell_token)?,
-                self.clearing_price(order.buy_token)?,
-            )
+            order_trade
+                .trade
+                .executed_amounts(
+                    self.clearing_price(order.sell_token)?,
+                    self.clearing_price(order.buy_token)?,
+                )
+                .map(|execution| (&order_trade.trade, execution))
         });
         let liquidity_order_trades =
             self.encoder
@@ -296,10 +299,13 @@ impl Settlement {
                 .iter()
                 .map(move |liquidity_order_trade| {
                     let order = &liquidity_order_trade.trade.order.creation;
-                    liquidity_order_trade.trade.executed_amounts(
-                        self.clearing_price(order.sell_token)?,
-                        liquidity_order_trade.buy_token_price,
-                    )
+                    liquidity_order_trade
+                        .trade
+                        .executed_amounts(
+                            self.clearing_price(order.sell_token)?,
+                            liquidity_order_trade.buy_token_price,
+                        )
+                        .map(|execution| (&liquidity_order_trade.trade, execution))
                 });
 
         order_trades
