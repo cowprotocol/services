@@ -1,5 +1,31 @@
-use model::{auction::Auction, order::OrderUid};
-use std::collections::{BTreeMap, HashSet};
+use crate::settlement::{Settlement, TradeExecution};
+use itertools::Itertools;
+use model::{
+    auction::Auction,
+    order::{Order, OrderUid},
+};
+use shared::conversions::u256_to_big_uint;
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+#[derive(Debug, Clone)]
+struct PartiallyFilledOrder {
+    order: Order,
+    in_flight_trades: Vec<TradeExecution>,
+}
+
+impl PartiallyFilledOrder {
+    pub fn order_with_remaining_amounts(&self) -> Order {
+        let mut updated_order = self.order.clone();
+
+        for trade in &self.in_flight_trades {
+            updated_order.metadata.executed_buy_amount += u256_to_big_uint(&trade.buy_amount);
+            updated_order.metadata.executed_sell_amount += u256_to_big_uint(&trade.sell_amount);
+            updated_order.metadata.executed_fee_amount += trade.fee_amount;
+        }
+
+        updated_order
+    }
+}
 
 /// After a settlement transaction we need to keep track of in flight orders until the api has
 /// seen the tx. Otherwise we would attempt to solve already matched orders again leading to
@@ -8,34 +34,73 @@ use std::collections::{BTreeMap, HashSet};
 pub struct InFlightOrders {
     /// Maps block to orders settled in that block.
     in_flight: BTreeMap<u64, Vec<OrderUid>>,
+    /// Tracks in flight trades which use liquidity from partially fillable orders.
+    in_flight_trades: HashMap<OrderUid, PartiallyFilledOrder>,
 }
 
 impl InFlightOrders {
-    /// Takes note of the new set of solvable orders and returns the ones that aren't in flight.
+    /// Takes note of the new set of solvable orders and returns the ones that aren't in flight and
+    /// scales down partially fillable orders if there are currently orders in-flight tapping into
+    /// their executable amounts.
     pub fn update_and_filter(&mut self, auction: &mut Auction) {
         // If api has seen block X then trades starting at X + 1 are still in flight.
         self.in_flight = self
             .in_flight
             .split_off(&(auction.latest_settlement_block + 1));
 
-        // TODO - could model inflight_trades as HashMap<OrderUid, Vec<Trade>>
-        // https://github.com/cowprotocol/services/issues/123
-        // Note that this is pessimistaic as it will result in not using the
-        // remaining available amount of a partially fillable order while it is
-        // in-flight. This is done to avoid `order filled` reverts.
         let in_flight = self
             .in_flight
             .values()
             .flatten()
             .copied()
             .collect::<HashSet<_>>();
-        auction
-            .orders
-            .retain(|order| !in_flight.contains(&order.metadata.uid));
+
+        self.in_flight_trades
+            .retain(|uid, _| in_flight.contains(uid));
+
+        auction.orders.iter_mut().for_each(|order| {
+            let uid = &order.metadata.uid;
+
+            if order.creation.partially_fillable {
+                if let Some(trades) = self.in_flight_trades.get(uid) {
+                    *order = trades.order_with_remaining_amounts();
+                }
+            } else if in_flight.contains(uid) {
+                // fill-or-kill orders can only be used once and there is already a trade in flight
+                // for this one => Modify it such that it gets filtered out in the next step.
+                order.metadata.executed_buy_amount = u256_to_big_uint(&order.creation.buy_amount);
+            }
+        });
+        auction.orders.retain(|order| {
+            u256_to_big_uint(&order.creation.buy_amount) > order.metadata.executed_buy_amount
+                && u256_to_big_uint(&order.creation.sell_amount)
+                    > order.metadata.executed_sell_amount
+        });
     }
 
-    pub fn mark_settled_orders(&mut self, block: u64, orders: impl Iterator<Item = OrderUid>) {
-        self.in_flight.entry(block).or_default().extend(orders);
+    /// Tracks all in_flight orders and how much of the executable amount of partially fillable
+    /// orders is currently used in in-flight trades.
+    pub fn mark_settled_orders(&mut self, block: u64, settlement: &Settlement) {
+        let mut uids = Vec::default();
+        settlement
+            .executed_trades()
+            .inspect(|(trade, _)| {
+                uids.push(trade.order.metadata.uid);
+            })
+            .filter(|(trade, _)| trade.order.creation.partially_fillable)
+            .into_group_map_by(|(trade, _)| &trade.order)
+            .into_iter()
+            .for_each(|(order, trades)| {
+                let uid = order.metadata.uid;
+                let most_recent_data = PartiallyFilledOrder {
+                    order: order.clone(),
+                    in_flight_trades: trades.into_iter().map(|(_, trade)| trade).collect(),
+                };
+                // always overwrite existing data with the most recent data
+                self.in_flight_trades.insert(uid, most_recent_data);
+            });
+
+        self.in_flight.entry(block).or_default().extend(uids);
     }
 }
 
