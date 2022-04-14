@@ -293,7 +293,7 @@ fn is_valid_solution(solution: &Settlement) -> bool {
             .clearing_price(order.sell_token)
             .expect("Solution should contain clearing price for sell token");
         let buy_token_price = if is_liquidity_order {
-            sell_token_price / order.sell_amount * order.buy_amount
+            sell_token_price / order.buy_amount * order.sell_amount
         } else {
             solution
                 .clearing_price(order.buy_token)
