@@ -35,7 +35,9 @@ use solver::{
     settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            custom_nodes_api::{CustomNodesApi, PendingTransactionConfig},
+            eden_api::EdenApi,
+            flashbots_api::FlashbotsApi,
         },
         SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
@@ -295,6 +297,10 @@ struct Arguments {
     /// in the settlement are checked for price deviation.
     #[clap(long, env, use_value_delimiter = true)]
     token_list_restriction_for_price_checks: Option<Vec<H160>>,
+
+    /// How pending transactions should be fetched.
+    #[clap(long, env, arg_enum, default_value = "ignore")]
+    pending_transaction_config: PendingTransactionConfig,
 }
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
@@ -583,7 +589,10 @@ async fn main() {
         .map(|strategy| match strategy {
             TransactionStrategyArg::PublicMempool => {
                 TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        vec![web3.clone()],
+                        args.pending_transaction_config,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                 })
@@ -608,7 +617,10 @@ async fn main() {
                     "missing transaction submission nodes"
                 );
                 TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        submission_nodes.clone(),
+                        args.pending_transaction_config,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                 })
