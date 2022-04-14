@@ -81,12 +81,11 @@ impl InFlightOrders {
     /// Tracks all in_flight orders and how much of the executable amount of partially fillable
     /// orders is currently used in in-flight trades.
     pub fn mark_settled_orders(&mut self, block: u64, settlement: &Settlement) {
-        let mut uids = Vec::default();
+        let uids = settlement.traded_orders().map(|order| order.metadata.uid);
+        self.in_flight.entry(block).or_default().extend(uids);
+
         settlement
             .executed_trades()
-            .inspect(|(trade, _)| {
-                uids.push(trade.order.metadata.uid);
-            })
             .filter(|(trade, _)| trade.order.creation.partially_fillable)
             .into_group_map_by(|(trade, _)| &trade.order)
             .into_iter()
@@ -99,8 +98,6 @@ impl InFlightOrders {
                 // always overwrite existing data with the most recent data
                 self.in_flight_trades.insert(uid, most_recent_data);
             });
-
-        self.in_flight.entry(block).or_default().extend(uids);
     }
 }
 
