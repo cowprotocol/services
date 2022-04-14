@@ -107,19 +107,99 @@ impl InFlightOrders {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::order::Order;
+    use crate::settlement::{LiquidityOrderTrade, OrderTrade, SettlementEncoder, Trade};
+    use maplit::hashmap;
+    use model::order::{Order, OrderCreation, OrderKind, OrderMetadata};
+    use primitive_types::H160;
 
     #[test]
     fn test() {
+        let token0 = H160::from_low_u64_be(0);
+        let token1 = H160::from_low_u64_be(1);
+
+        let fill_or_kill = Order {
+            creation: OrderCreation {
+                sell_token: token0,
+                buy_token: token1,
+                sell_amount: 100u8.into(),
+                buy_amount: 100u8.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid::from_integer(1),
+                ..Default::default()
+            },
+        };
+
+        // partially fillable order 30% filled
+        let mut partially_fillable_1 = fill_or_kill.clone();
+        partially_fillable_1.creation.partially_fillable = true;
+        partially_fillable_1.metadata.uid = OrderUid::from_integer(2);
+        partially_fillable_1.metadata.executed_buy_amount = 30u8.into();
+        partially_fillable_1.metadata.executed_sell_amount = 30u8.into();
+
+        // a different partially fillable order 30% filled
+        let mut partially_fillable_2 = partially_fillable_1.clone();
+        partially_fillable_2.metadata.uid = OrderUid::from_integer(3);
+
+        let user_trades = vec![OrderTrade {
+            trade: Trade {
+                order: fill_or_kill.clone(),
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+
+        let liquidity_trades = vec![
+            // This order uses some of the remaining executable amount of partially_fillable_1
+            LiquidityOrderTrade {
+                trade: Trade {
+                    order: partially_fillable_2.clone(),
+                    executed_amount: 20u8.into(),
+                    ..Default::default()
+                },
+                buy_token_price: 1u8.into(),
+                ..Default::default()
+            },
+            // Following orders use remaining executable amount of partially_fillable_2
+            LiquidityOrderTrade {
+                trade: Trade {
+                    order: partially_fillable_1.clone(),
+                    executed_amount: 50u8.into(),
+                    ..Default::default()
+                },
+                buy_token_price: 1u8.into(),
+                ..Default::default()
+            },
+            LiquidityOrderTrade {
+                trade: Trade {
+                    order: partially_fillable_1.clone(),
+                    executed_amount: 20u8.into(),
+                    ..Default::default()
+                },
+                buy_token_price: 1u8.into(),
+                ..Default::default()
+            },
+        ];
+
+        let prices = hashmap! {token0 => 1u8.into(), token1 => 1u8.into()};
+        let settlement = Settlement {
+            encoder: SettlementEncoder::with_trades(prices, user_trades, liquidity_trades),
+        };
+
         let mut inflight = InFlightOrders::default();
-        inflight.mark_settled_orders(1, [OrderUid::from_integer(0)].into_iter());
-        let mut order0 = Order::default();
+        inflight.mark_settled_orders(1, &settlement);
+        let mut order0 = fill_or_kill.clone();
         order0.metadata.uid = OrderUid::from_integer(0);
-        let mut order1 = Order::default();
-        order1.metadata.uid = OrderUid::from_integer(1);
         let mut auction = Auction {
             block: 0,
-            orders: vec![order0, order1],
+            orders: vec![
+                order0,
+                fill_or_kill,
+                partially_fillable_1,
+                partially_fillable_2,
+            ],
             ..Default::default()
         };
 
@@ -130,14 +210,29 @@ mod tests {
         };
 
         let filtered = update_and_get_filtered_orders(&auction);
-        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered.len(), 2);
+        // keep order 0 because there are no trades for it in flight
+        assert_eq!(filtered[0].metadata.uid, OrderUid::from_integer(0));
+        // drop order 1 because it's fill-or-kill and there is already one trade in flight
+        // keep order 2 and reduce remaning executable amount by trade amounts currently in flight
+        assert_eq!(filtered[1].metadata.uid, OrderUid::from_integer(3));
+        assert_eq!(filtered[1].metadata.executed_buy_amount, 50u8.into());
+        assert_eq!(filtered[1].metadata.executed_sell_amount, 50u8.into());
+        // drop order 3 because in flight orders filled the remaining executable amount
 
         auction.block = 1;
         let filtered = update_and_get_filtered_orders(&auction);
-        assert_eq!(filtered.len(), 1);
+        // same behaviour as above
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].metadata.uid, OrderUid::from_integer(0));
+        assert_eq!(filtered[1].metadata.uid, OrderUid::from_integer(3));
+        assert_eq!(filtered[1].metadata.executed_buy_amount, 50u8.into());
+        assert_eq!(filtered[1].metadata.executed_sell_amount, 50u8.into());
 
         auction.latest_settlement_block = 1;
         let filtered = update_and_get_filtered_orders(&auction);
-        assert_eq!(filtered.len(), 2);
+        // Because we drop all in-flight trades from blocks older than the settlement block there
+        // is nothing left to filter solvable orders by => keep all orders unaltered
+        assert_eq!(filtered.len(), 4);
     }
 }
