@@ -235,6 +235,7 @@ impl Driver {
             transaction_hash,
         )
         .await?;
+        tracing::debug!(?gas_saved, "access list gas saved");
         if gas_saved.is_sign_positive() {
             self.metrics
                 .settlement_access_list_saved_gas(gas_saved, "positive");
