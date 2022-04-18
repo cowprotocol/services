@@ -527,7 +527,7 @@ async fn main() {
             PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(zeroex_api.clone())),
             PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
                 Arc::new(DefaultHttpSolverApi {
-                    name: "quasimodo-price-estimator",
+                    name: "quasimodo-price-estimator".to_string(),
                     network_name: network_name.to_string(),
                     chain_id,
                     base: args.quasimodo_solver_url.clone().expect(

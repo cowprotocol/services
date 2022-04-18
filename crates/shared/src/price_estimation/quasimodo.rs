@@ -427,7 +427,7 @@ mod tests {
 
         let estimator = QuasimodoPriceEstimator {
             api: Arc::new(DefaultHttpSolverApi {
-                name: "test",
+                name: "test".to_string(),
                 network_name: "1".to_string(),
                 chain_id: 1,
                 base: Url::parse(&quasimodo_url).expect("failed to parse quasimodo url"),
