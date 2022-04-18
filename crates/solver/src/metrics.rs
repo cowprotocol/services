@@ -70,7 +70,7 @@ pub trait SolverMetrics: Send + Sync {
     fn single_order_solver_failed(&self, solver: &'static str);
     fn settlement_simulation_failed(&self, solver: &'static str);
     fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str);
-    fn settlement_access_list_saved_gas(&self, gas_saved: f64);
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64, sign: &'static str);
     fn settlement_revertable_status(&self, status: Revertable, solver: &'static str);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn report_order_surplus(&self, surplus_diff: f64);
@@ -89,7 +89,7 @@ pub struct Metrics {
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
     settlement_revertable_status: IntCounterVec,
-    settlement_access_list_saved_gas: Histogram,
+    settlement_access_list_saved_gas: HistogramVec,
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
@@ -158,10 +158,13 @@ impl Metrics {
         )?;
         registry.register(Box::new(settlement_revertable_status.clone()))?;
 
-        let settlement_access_list_saved_gas = Histogram::with_opts(HistogramOpts::new(
-            "settlement_access_list_saved_gas",
-            "Saved gas by using access list for transaction submission",
-        ))?;
+        let settlement_access_list_saved_gas = HistogramVec::new(
+            HistogramOpts::new(
+                "settlement_access_list_saved_gas",
+                "Saved gas by using access list for transaction submission",
+            ),
+            &["sign"],
+        )?;
         registry.register(Box::new(settlement_access_list_saved_gas.clone()))?;
 
         let solver_runs = IntCounterVec::new(
@@ -367,8 +370,10 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn settlement_access_list_saved_gas(&self, gas_saved: f64) {
-        self.settlement_access_list_saved_gas.observe(gas_saved);
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64, label: &'static str) {
+        self.settlement_access_list_saved_gas
+            .with_label_values(&[label])
+            .observe(gas_saved);
     }
 
     fn orders_matched_but_not_settled(&self, count: usize) {
@@ -463,7 +468,7 @@ impl SolverMetrics for NoopMetrics {
     fn settlement_simulation_failed(&self, _: &'static str) {}
     fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &'static str) {}
     fn settlement_revertable_status(&self, _: Revertable, _: &'static str) {}
-    fn settlement_access_list_saved_gas(&self, _: f64) {}
+    fn settlement_access_list_saved_gas(&self, _: f64, _: &'static str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}
