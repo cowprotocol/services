@@ -13,7 +13,7 @@ use model::order::OrderKind;
 use primitive_types::{H160, U256};
 use shared::{addr, univ3_router_api, Web3};
 
-pub struct Univ3RouterSolver {
+pub struct UniV3RouterSolver {
     api: univ3_router_api::Api,
     settlement_contract: H160,
     swap_router_02: H160,
@@ -21,7 +21,7 @@ pub struct Univ3RouterSolver {
     allowance: AllowanceManager,
 }
 
-impl Univ3RouterSolver {
+impl UniV3RouterSolver {
     pub fn new(
         api: univ3_router_api::Api,
         web3: Web3,
@@ -40,7 +40,7 @@ impl Univ3RouterSolver {
 }
 
 #[async_trait::async_trait]
-impl SingleOrderSolving for Univ3RouterSolver {
+impl SingleOrderSolving for UniV3RouterSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
@@ -121,7 +121,7 @@ mod tests {
         );
         let settlement_contract = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let weth = WETH9::deployed(&web3).await.unwrap();
-        let solver = Univ3RouterSolver::new(
+        let solver = UniV3RouterSolver::new(
             api,
             web3,
             settlement_contract.address(),
