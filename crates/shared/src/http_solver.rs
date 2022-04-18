@@ -2,8 +2,12 @@ use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::HeaderValue;
 use reqwest::{Client, Url};
 use std::time::Duration;
+
+use crate::http_client::response_body_with_size_limit;
 pub mod gas_model;
 pub mod model;
+
+const SOLVER_RESPONSE_SIZE_LIMIT: usize = 10_000_000;
 
 /// Implements an abstract HTTP solver API, can be mocked, instrumented, etc.
 #[mockall::automock]
@@ -115,12 +119,13 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let body = serde_json::to_string(&model).context("failed to encode body")?;
         tracing::trace!("request {}", body);
         let request = request.body(body.clone());
-        let response = request.send().await.context("failed to send request")?;
+        let mut response = request.send().await.context("failed to send request")?;
         let status = response.status();
-        let text = response
-            .text()
-            .await
-            .context("failed to decode response body")?;
+        let response_body =
+            response_body_with_size_limit(&mut response, SOLVER_RESPONSE_SIZE_LIMIT)
+                .await
+                .context("response body")?;
+        let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
         tracing::trace!("response {}", text);
         let context = || {
             format!(
@@ -134,7 +139,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             status,
             context()
         );
-        serde_json::from_str(text.as_str())
+        serde_json::from_str(text)
             .with_context(|| format!("failed to decode response json, {}", context()))
     }
 }

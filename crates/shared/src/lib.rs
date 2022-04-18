@@ -10,6 +10,7 @@ pub mod current_block;
 pub mod ethcontract_error;
 pub mod event_handling;
 pub mod gas_price_estimation;
+pub mod http_client;
 pub mod http_solver;
 pub mod maintenance;
 pub mod metrics;
