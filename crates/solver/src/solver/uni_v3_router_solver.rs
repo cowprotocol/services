@@ -99,7 +99,7 @@ impl SingleOrderSolving for UniV3RouterSolver {
     }
 
     fn name(&self) -> &'static str {
-        "Univ3Router"
+        "UniV3Router"
     }
 }
 
