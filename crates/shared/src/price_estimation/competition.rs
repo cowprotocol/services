@@ -51,6 +51,10 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
             vec![Some(Vec::with_capacity(self.inner.len())); queries.len()];
         // Receives items from the combined stream.
         let mut handle_single_result = move |estimator_index: usize, query_index: usize, result| {
+            let query = &queries[query_index];
+            let estimator = self.inner[estimator_index].0.as_str();
+            tracing::debug!(?query, ?result, estimator, "new price estimate");
+
             // Store the new result in the vector for this query.
             let results = estimates.get_mut(query_index).unwrap().as_mut()?;
             results.push((estimator_index, result));
@@ -65,7 +69,6 @@ impl PriceEstimating for RacingCompetitionPriceEstimator {
 
             // Find the best result.
             let results = estimates.get_mut(query_index).unwrap().take().unwrap();
-            let query = &queries[query_index];
             // Unwrap because there has to be at least one result.
             let best_index = best_result(query, results.iter().map(|(_, result)| result)).unwrap();
 
