@@ -138,12 +138,12 @@ pub type SettlementWithError = (
 pub enum SolverType {
     Naive,
     Baseline,
-    Mip,
     CowDexAg,
     OneInch,
     Paraswap,
     ZeroEx,
     Quasimodo,
+    LightQuasimodo,
     BalancerSor,
 }
 
@@ -153,9 +153,9 @@ pub fn create(
     solvers: Vec<(Account, SolverType)>,
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
-    mip_solver_url: Url,
     cow_dex_ag_solver_url: Url,
     quasimodo_solver_url: Url,
+    light_quasimodo_solver_url: Url,
     balancer_sor_url: Url,
     settlement_contract: &GPv2Settlement,
     vault_contract: Option<&BalancerV2Vault>,
@@ -171,7 +171,6 @@ pub fn create(
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
-    mip_uses_internal_buffers: bool,
     one_inch_url: Url,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
@@ -217,17 +216,6 @@ pub fn create(
             let solver = match solver_type {
                 SolverType::Naive => shared(NaiveSolver::new(account)),
                 SolverType::Baseline => shared(BaselineSolver::new(account, base_tokens.clone())),
-                SolverType::Mip => shared(create_http_solver(
-                    account,
-                    mip_solver_url.clone(),
-                    "Mip",
-                    SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: mip_uses_internal_buffers.into(),
-                    },
-                )),
                 SolverType::CowDexAg => shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
@@ -237,6 +225,7 @@ pub fn create(
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: false,
                         use_internal_buffers: None,
+                        restricted_token_set: None,
                     },
                 )),
                 SolverType::Quasimodo => shared(create_http_solver(
@@ -248,6 +237,19 @@ pub fn create(
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: true,
                         use_internal_buffers: quasimodo_uses_internal_buffers.into(),
+                        restricted_token_set: false.into(),
+                    },
+                )),
+                SolverType::LightQuasimodo => shared(create_http_solver(
+                    account,
+                    light_quasimodo_solver_url.clone(),
+                    "LightQuasimodo",
+                    SolverConfig {
+                        api_key: None,
+                        max_nr_exec_orders: 100,
+                        has_ucp_policy_parameter: true,
+                        use_internal_buffers: quasimodo_uses_internal_buffers.into(),
+                        restricted_token_set: true.into(),
                     },
                 )),
                 SolverType::OneInch => shared(SingleOrderSolver::new(

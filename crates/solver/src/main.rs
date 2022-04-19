@@ -54,13 +54,13 @@ struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8080")]
     orderbook_url: Url,
 
-    /// The API endpoint to call the mip solver
-    #[clap(long, env, default_value = "http://localhost:8000")]
-    mip_solver_url: Url,
-
-    /// The API endpoint to call the mip v2 solver
+    /// The API endpoint to call the quasimodo solver
     #[clap(long, env, default_value = "http://localhost:8000")]
     quasimodo_solver_url: Url,
+
+    /// The API endpoint to call the light quasimodo solver
+    #[clap(long, env, default_value = "http://localhost:8000")]
+    light_quasimodo_solver_url: Url,
 
     /// The API endpoint to call the cow-dex-ag-solver solver
     #[clap(long, env, default_value = "http://localhost:8000")]
@@ -520,9 +520,9 @@ async fn main() {
         solvers,
         base_tokens.clone(),
         native_token_contract.address(),
-        args.mip_solver_url,
         args.cow_dex_ag_solver_url,
         args.quasimodo_solver_url,
+        args.light_quasimodo_solver_url,
         args.balancer_sor_url,
         &settlement_contract,
         vault_contract.as_ref(),
@@ -538,7 +538,6 @@ async fn main() {
         zeroex_api.clone(),
         args.zeroex_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
-        args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
     )
     .expect("failure creating solvers");

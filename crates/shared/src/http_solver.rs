@@ -58,6 +58,9 @@ pub struct SolverConfig {
 
     /// Controls if/how to set `use_internal_buffers`.
     pub use_internal_buffers: Option<bool>,
+
+    /// Focus on restricted set of tokens.
+    pub restricted_token_set: Option<bool>,
 }
 
 #[async_trait::async_trait]
@@ -104,6 +107,10 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         if let Some(auction_id) = maybe_auction_id {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
+        }
+        if let Some(restricted_token_set) = self.config.restricted_token_set {
+            url.query_pairs_mut()
+                .append_pair("conservative", restricted_token_set.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let mut request = self.client.post(url).timeout(timeout);

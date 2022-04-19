@@ -495,6 +495,7 @@ mod tests {
                     max_nr_exec_orders: 0,
                     has_ucp_policy_parameter: false,
                     use_internal_buffers: None,
+                    restricted_token_set: None,
                 },
             },
             Account::Local(Address::default(), None),
