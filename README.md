@@ -193,14 +193,14 @@ The `solver-account` is responsible for signing transactions. Solutions for sett
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 
-| Orderbook URL                   | Network      | Environment |
-|---------------------------------|--------------|-------------|
-| https://barn.api.cow.fi/mainnet | Mainnet      | Staging     |
-| https://api.cow.fi/mainnet      | Mainnet      | Production  |
-| https://barn.api.cow.fi/rinkeby | Rinkeby      | Staging     |
-| https://api.cow.fi/rinkeby      | Rinkeby      | Production  |
-| https://barn.api.cow.fi/xdai    | Gnosis Chain | Staging     |
-| https://api.cow.fi/xdai         | Gnosis Chain | Production  |
+| Orderbook URL                       | Network      | Environment |
+|-------------------------------------|--------------|-------------|
+| https://barn.api.cow.fi/mainnet/api | Mainnet      | Staging     |
+| https://api.cow.fi/mainnet/api      | Mainnet      | Production  |
+| https://barn.api.cow.fi/rinkeby/api | Rinkeby      | Staging     |
+| https://api.cow.fi/rinkeby/api      | Rinkeby      | Production  |
+| https://barn.api.cow.fi/xdai/api    | Gnosis Chain | Staging     |
+| https://api.cow.fi/xdai/api         | Gnosis Chain | Production  |
 
 Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
 
