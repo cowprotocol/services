@@ -46,7 +46,7 @@ pub fn report_matched_but_not_settled(
 
 #[derive(Clone)]
 struct SurplusInfo {
-    solver_name: &'static str,
+    solver_name: String,
     ratio: BigRational,
 }
 
@@ -95,7 +95,7 @@ pub fn report_alternative_settlement_surplus(
             (
                 order_trade.trade.order.metadata.uid,
                 SurplusInfo {
-                    solver_name: winning_solver.name(),
+                    solver_name: winning_solver.name().to_string(),
                     ratio: order_trade
                         .trade
                         .surplus_ratio(sell_token_price, buy_token_price)
@@ -135,7 +135,7 @@ fn best_surplus_by_order(
             let sell_token_price = &clearing_prices[&order_trade.trade.order.creation.sell_token];
             let buy_token_price = &clearing_prices[&order_trade.trade.order.creation.buy_token];
             let surplus = SurplusInfo {
-                solver_name: solver.name(),
+                solver_name: solver.name().to_string(),
                 ratio: order_trade
                     .trade
                     .surplus_ratio(sell_token_price, buy_token_price)

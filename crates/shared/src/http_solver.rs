@@ -26,7 +26,7 @@ pub struct DefaultHttpSolverApi {
     /// Name of this solver.
     ///
     /// Used for logging and metrics reporting purposes.
-    pub name: &'static str,
+    pub name: String,
 
     /// Network ID or name.
     ///

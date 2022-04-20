@@ -425,8 +425,8 @@ impl Solver for HttpSolver {
         &self.account
     }
 
-    fn name(&self) -> &'static str {
-        self.solver.name
+    fn name(&self) -> &str {
+        &self.solver.name
     }
 }
 
@@ -485,7 +485,7 @@ mod tests {
 
         let solver = HttpSolver::new(
             DefaultHttpSolverApi {
-                name: "Test Solver",
+                name: "Test Solver".to_string(),
                 network_name: "mock_network_id".to_string(),
                 chain_id: 0,
                 base: url.parse().unwrap(),
