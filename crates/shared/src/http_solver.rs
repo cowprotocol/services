@@ -116,6 +116,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             header.set_sensitive(true);
             request = request.header("X-API-KEY", header);
         }
+        request = request.header("Content-Type", "application/json");
         let body = serde_json::to_string(&model).context("failed to encode body")?;
         tracing::trace!("request {}", body);
         let request = request.body(body.clone());
