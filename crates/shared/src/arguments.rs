@@ -111,10 +111,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub quasimodo_uses_internal_buffers: bool,
 
-    /// If mipsolver should use internal buffers to improve solution quality.
-    #[clap(long, env)]
-    pub mip_uses_internal_buffers: bool,
-
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.

@@ -437,6 +437,7 @@ mod tests {
                     max_nr_exec_orders: 100,
                     has_ucp_policy_parameter: false,
                     use_internal_buffers: true.into(),
+                    restricted_token_set: false.into(),
                 },
             }),
             sharing: Default::default(),

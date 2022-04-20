@@ -190,7 +190,7 @@ struct Arguments {
     #[clap(long, env)]
     cow_fee_factors: Option<SubsidyTiers>,
 
-    /// The API endpoint to call the mip v2 solver for price estimation
+    /// The API endpoint to call the quasimodo solver for price estimation
     #[clap(long, env)]
     quasimodo_solver_url: Option<Url>,
 
@@ -539,6 +539,7 @@ async fn main() {
                         max_nr_exec_orders: 100,
                         has_ucp_policy_parameter: false,
                         use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
+                        restricted_token_set: false.into(),
                     },
                 }),
                 pool_fetcher.clone(),
