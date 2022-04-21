@@ -35,9 +35,11 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.partner);
         tracing::debug!("Querying Paraswap price API: {}", url);
-        let response_text = self.client.get(url).send().await?.text().await?;
-        tracing::debug!("Response from Paraswap price API: {}", response_text);
-        parse_paraswap_response_text(&response_text)
+        let response = self.client.get(url).send().await?;
+        let status = response.status();
+        let text = response.text().await?;
+        tracing::debug!(%status, %text, "Response from Paraswap price API");
+        parse_paraswap_response_text(&text)
     }
     async fn transaction(
         &self,
