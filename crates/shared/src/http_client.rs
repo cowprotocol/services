@@ -125,9 +125,10 @@ impl RateLimiter {
 
 #[cfg(test)]
 mod tests {
-    use reqwest::Client;
-
     use super::*;
+    use futures::stream::{self, StreamExt};
+    use reqwest::Client;
+    use tokio::time::{sleep_until, Instant as TokioInstant};
 
     #[tokio::test]
     #[ignore]
@@ -146,5 +147,38 @@ mod tests {
         dbg!(bytes.len());
         let text = std::str::from_utf8(&bytes).unwrap();
         dbg!(text);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn rate_limited_requests() {
+        let client = Client::default();
+
+        let url = "https://apiv5.paraswap.io/prices?srcToken=0x99d8a9c45b2eca8864373a26d1459e3dff1e17f3&destToken=0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48&srcDecimals=18&destDecimals=6&amount=100000000&side=BUY&network=1&excludeDEXS=ParaSwapPool4";
+        let strategy = RateLimitingStrategy::try_new(
+            2.0,
+            Duration::from_millis(16),
+            Duration::from_millis(20_000),
+        )
+        .unwrap();
+        let rate_limiter = RateLimiter::from(strategy);
+        // note that 1_000 requests will not always trigger a rate limit
+        let mut stream = stream::iter(0..1_000).map(|_| async {}).buffer_unordered(2);
+        while stream.next().await.is_some() {
+            let request = client.get(url);
+            let response = rate_limiter.request(request).await;
+            match &response {
+                Ok(response) => println!("{}", response.status()),
+                Err(e) => {
+                    println!("error: {}", e);
+                    let instant = rate_limiter.strategy.lock().unwrap().drop_requests_until;
+                    println!(
+                        "sleeping for {} milliseconds",
+                        instant.duration_since(Instant::now()).as_millis()
+                    );
+                    sleep_until(TokioInstant::from_std(instant)).await;
+                }
+            }
+        }
     }
 }
