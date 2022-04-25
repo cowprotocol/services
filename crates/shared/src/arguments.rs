@@ -1,12 +1,13 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
     gas_price_estimation::GasEstimatorType,
+    http_client::RateLimitingStrategy,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
-use anyhow::{ensure, Result};
+use anyhow::{ensure, Context, Result};
 use ethcontract::{H160, U256};
 use std::{
-    num::{NonZeroU64, ParseFloatError},
+    num::{NonZeroU64, ParseFloatError, ParseIntError},
     str::FromStr,
     time::Duration,
 };
@@ -101,6 +102,15 @@ pub struct Arguments {
     #[clap(long, env, default_value = "ParaSwapPool4", use_value_delimiter = true)]
     pub disabled_paraswap_dexs: Vec<String>,
 
+    /// Configures the back off strategy for the paraswap API when our requests get rate limited.
+    /// Requests issued while back off is active get dropped entirely.
+    /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
+    /// back_off_growth_factor: f64 > 1.0
+    /// min_back_off: Duration in milliseconds
+    /// max_back_off: Duration in milliseconds
+    #[clap(long, env, verbatim_doc_comment)]
+    pub paraswap_rate_limiter: Option<RateLimitingStrategy>,
+
     #[clap(long, env)]
     pub zeroex_url: Option<String>,
 
@@ -157,6 +167,10 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
     Ok(Duration::from_secs_f32(s.parse()?))
 }
 
+pub fn duration_from_millis(s: &str) -> Result<Duration, ParseIntError> {
+    Ok(Duration::from_millis(s.parse()?))
+}
+
 pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
     Ok(U256::from_dec_str(s)? * U256::exp10(18))
 }
@@ -164,4 +178,27 @@ pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
 pub fn wei_from_gwei(s: &str) -> anyhow::Result<f64> {
     let in_gwei: f64 = s.parse()?;
     Ok(in_gwei * 1e9)
+}
+
+impl FromStr for RateLimitingStrategy {
+    type Err = anyhow::Error;
+
+    fn from_str(config: &str) -> Result<Self> {
+        let mut parts = config.split(',');
+        let back_off_growth_factor = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing back_off_growth_factor"))?;
+        let min_back_off = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing min_back_off"))?;
+        let max_back_off = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing max_back_off"))?;
+        let back_off_growth_factor: f64 = back_off_growth_factor
+            .parse()
+            .context("parsing back_off_growth_factor")?;
+        let min_back_off = duration_from_millis(min_back_off).context("parsing min_back_off")?;
+        let max_back_off = duration_from_millis(max_back_off).context("parsing max_back_off")?;
+        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
+    }
 }
