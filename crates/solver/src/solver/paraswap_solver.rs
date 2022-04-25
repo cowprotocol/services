@@ -15,6 +15,7 @@ use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
+use shared::http_client::RateLimiter;
 use shared::paraswap_api::{
     DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
     TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
@@ -53,6 +54,7 @@ impl ParaswapSolver {
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
+        rate_limiter: Option<RateLimiter>,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
 
@@ -64,6 +66,7 @@ impl ParaswapSolver {
             client: Box::new(DefaultParaswapApi {
                 client,
                 partner: partner.unwrap_or_else(|| REFERRER.into()),
+                rate_limiter,
             }),
             slippage_bps,
             disabled_paraswap_dexs,
@@ -538,6 +541,7 @@ mod tests {
             1,
             vec![],
             Client::new(),
+            None,
             None,
         );
 
