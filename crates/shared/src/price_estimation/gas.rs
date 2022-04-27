@@ -49,12 +49,9 @@ pub static GAS_PER_UNISWAP: u64 = 94_696;
 // estimated with https://dune.com/queries/639669
 pub static GAS_PER_ZEROEX_ORDER: u64 = 73_901;
 
-/// lower bound for executing one trade on balancer
-///
-/// Taken from a sample of two swaps
-/// https://etherscan.io/tx/0x72d234d35fd169ef497ba0a1dc23258c96f278fb688d375d135eb012e5311009
-/// https://etherscan.io/tx/0x1c345a6da1edb2bba953685a4cf85f6a0d967ac751f8c5b518578c5fd20a7c96
-pub static GAS_PER_BALANCER_SWAP: u64 = 120_000;
+/// Average gas used per BalancerSwapGivenOutInteraction.
+// estimated with https://dune.com/queries/639857
+pub static GAS_PER_BALANCER_SWAP: u64 = 89_406;
 
 /// Median gas used for unwrapping portion of WETH.
 pub static GAS_PER_WETH_UNWRAP: u64 = 14_192;
