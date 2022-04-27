@@ -7,7 +7,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use ethcontract::{H160, U256};
 use std::{
-    num::{NonZeroU64, ParseFloatError, ParseIntError},
+    num::{NonZeroU64, ParseFloatError},
     str::FromStr,
     time::Duration,
 };
@@ -106,8 +106,8 @@ pub struct Arguments {
     /// Requests issued while back off is active get dropped entirely.
     /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
     /// back_off_growth_factor: f64 > 1.0
-    /// min_back_off: Duration in milliseconds
-    /// max_back_off: Duration in milliseconds
+    /// min_back_off: f64 in seconds
+    /// max_back_off: f64 in seconds
     #[clap(long, env, verbatim_doc_comment)]
     pub paraswap_rate_limiter: Option<RateLimitingStrategy>,
 
@@ -167,10 +167,6 @@ pub fn duration_from_seconds(s: &str) -> Result<Duration, ParseFloatError> {
     Ok(Duration::from_secs_f32(s.parse()?))
 }
 
-pub fn duration_from_millis(s: &str) -> Result<Duration, ParseIntError> {
-    Ok(Duration::from_millis(s.parse()?))
-}
-
 pub fn wei_from_base_unit(s: &str) -> anyhow::Result<U256> {
     Ok(U256::from_dec_str(s)? * U256::exp10(18))
 }
@@ -197,8 +193,8 @@ impl FromStr for RateLimitingStrategy {
         let back_off_growth_factor: f64 = back_off_growth_factor
             .parse()
             .context("parsing back_off_growth_factor")?;
-        let min_back_off = duration_from_millis(min_back_off).context("parsing min_back_off")?;
-        let max_back_off = duration_from_millis(max_back_off).context("parsing max_back_off")?;
+        let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
+        let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
         Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }
