@@ -1,7 +1,7 @@
 use anyhow::{anyhow, ensure, Result};
 use reqwest::{RequestBuilder, Response};
 use std::{
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -61,26 +61,43 @@ impl RateLimitingStrategy {
 }
 
 impl RateLimitingStrategy {
-    pub fn increase_back_off_with_cap(&mut self) {
-        self.drop_requests_until = Instant::now() + self.next_back_off;
-        tracing::warn!(
-            "extended rate limiting for {}ms",
-            self.next_back_off.as_millis()
-        );
-        let increased_back_off = self.next_back_off.mul_f64(self.back_off_growth_factor);
-        self.next_back_off = std::cmp::min(increased_back_off, self.max_back_off);
-    }
-
-    pub fn reset_back_off(&mut self) {
-        tracing::debug!("reset rate limit");
+    /// Resets back off and stops rate limiting requests.
+    pub fn response_ok(&mut self) {
         self.next_back_off = self.min_back_off;
         self.drop_requests_until = Instant::now();
+    }
+
+    /// Returns updated back off if no other thread increased it in the mean time.
+    pub fn response_rate_limited(&mut self, previous_back_off: Duration) -> Option<Duration> {
+        if self.next_back_off != previous_back_off {
+            // Don't increase back off if somebody else already increased it in the meantime.
+            return None;
+        }
+
+        self.drop_requests_until = Instant::now() + self.next_back_off;
+        let increased_back_off = self.next_back_off.mul_f64(self.back_off_growth_factor);
+        self.next_back_off = std::cmp::min(increased_back_off, self.max_back_off);
+        Some(self.next_back_off)
+    }
+
+    pub fn get_next_back_off_if_not_rate_limited(&self, now: Instant) -> Option<Duration> {
+        if self.drop_requests_until > now {
+            return None;
+        }
+
+        Some(self.next_back_off)
     }
 }
 
 #[derive(Debug)]
 pub struct RateLimiter {
     pub strategy: Mutex<RateLimitingStrategy>,
+}
+
+impl RateLimiter {
+    fn strategy(&self) -> MutexGuard<RateLimitingStrategy> {
+        self.strategy.lock().unwrap()
+    }
 }
 
 impl From<RateLimitingStrategy> for RateLimiter {
@@ -97,33 +114,27 @@ impl RateLimiter {
     /// When a request eventually returns a normal result again future requests will no longer get
     /// dropped until the next 429 response occurs.
     pub async fn request(&self, request: RequestBuilder) -> Result<Response> {
-        let (next_back_off, drop_request) = {
-            let strategy = self.strategy.lock().unwrap();
-            (
-                strategy.next_back_off,
-                strategy.drop_requests_until > Instant::now(),
-            )
+        let now = Instant::now();
+        let next_back_off = match self.strategy().get_next_back_off_if_not_rate_limited(now) {
+            None => {
+                tracing::warn!("dropping request because API is currently rate limited");
+                anyhow::bail!("rate limited");
+            }
+            Some(next_back_off) => next_back_off,
         };
-
-        if drop_request {
-            tracing::warn!("dropping request because API is currently rate limited");
-            return Err(anyhow::anyhow!("rate limited".to_string()));
-        }
 
         let response = request.send().await?;
 
-        let mut strategy = self.strategy.lock().unwrap();
         if response.status() == 429 {
-            if strategy.next_back_off == next_back_off {
-                // only increase back off if no other request increased it in the mean time
-                strategy.increase_back_off_with_cap();
+            if let Some(new_back_off) = self.strategy().response_rate_limited(next_back_off) {
+                tracing::warn!("extended rate limiting for {}ms", new_back_off.as_millis());
             }
-            return Err(anyhow::anyhow!("rate limited".to_string()));
+            anyhow::bail!("rate limited");
         } else {
-            strategy.reset_back_off();
+            self.strategy().response_ok();
+            tracing::debug!("reset rate limit");
+            Ok(response)
         }
-
-        Ok(response)
     }
 }
 
