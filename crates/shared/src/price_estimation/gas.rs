@@ -54,8 +54,9 @@ pub static GAS_PER_ZEROEX_ORDER: u64 = 73_901;
 // estimated with https://dune.com/queries/639857
 pub static GAS_PER_BALANCER_SWAP: u64 = 89_406;
 
-/// Median gas used for unwrapping portion of WETH.
-pub static GAS_PER_WETH_UNWRAP: u64 = 14_192;
+/// Average gas used per UnwrapWethInteraction.
+// estimated with https://dune.com/queries/640753
+pub static GAS_PER_WETH_UNWRAP: u64 = 10_258;
 
 /// Median gas used for wrapping WETH for the first time.
 pub static GAS_PER_WETH_WRAP: u64 = 24_038;
