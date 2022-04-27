@@ -97,14 +97,18 @@ impl RateLimiter {
     /// When a request eventually returns a normal result again future requests will no longer get
     /// dropped until the next 429 response occurs.
     pub async fn request(&self, request: RequestBuilder) -> Result<Response> {
-        let next_back_off = {
-            tracing::warn!("dropping request because API is currently rate limited");
+        let (next_back_off, drop_request) = {
             let strategy = self.strategy.lock().unwrap();
-            if strategy.drop_requests_until > Instant::now() {
-                return Err(anyhow::anyhow!("rate limited".to_string()));
-            }
-            strategy.next_back_off
+            (
+                strategy.next_back_off,
+                strategy.drop_requests_until > Instant::now(),
+            )
         };
+
+        if drop_request {
+            tracing::warn!("dropping request because API is currently rate limited");
+            return Err(anyhow::anyhow!("rate limited".to_string()));
+        }
 
         let response = request.send().await?;
 
