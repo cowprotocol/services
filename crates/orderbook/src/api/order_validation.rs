@@ -216,6 +216,7 @@ pub struct OrderValidator {
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
+    enable_smart_contract_buy_native_token: bool,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -266,6 +267,7 @@ impl OrderValidator {
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
+        enable_smart_contract_buy_native_token: bool,
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
@@ -276,6 +278,7 @@ impl OrderValidator {
             banned_users,
             liquidity_order_owners,
             min_order_validity_period,
+            enable_smart_contract_buy_native_token,
             fee_validator,
             bad_token_detector,
             balance_fetcher,
@@ -316,7 +319,7 @@ impl OrderValidating for OrderValidator {
         if order.sell_token == BUY_ETH_ADDRESS {
             return Err(PartialValidationError::InvalidNativeSellToken);
         }
-        if order.buy_token == BUY_ETH_ADDRESS {
+        if order.buy_token == BUY_ETH_ADDRESS && !self.enable_smart_contract_buy_native_token {
             let code_size = self
                 .code_fetcher
                 .code_size(order.receiver)
@@ -483,6 +486,7 @@ mod tests {
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
+    use mockall::predicate::*;
     use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
@@ -565,6 +569,7 @@ mod tests {
             banned_users,
             hashset!(),
             min_order_validity_period,
+            false,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -662,6 +667,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -681,22 +687,29 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
+        let smart_contract_owner = H160([0xc0; 20]);
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher
+            .expect_code_size()
+            .with(eq(smart_contract_owner))
+            .returning(|_| Ok(1));
+
         let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let min_order_validity_period = Duration::from_secs(1);
         let validator = OrderValidator::new(
-            Box::new(MockCodeFetching::new()),
+            Box::new(code_fetcher),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(liquidity_order_owner),
             min_order_validity_period,
+            true,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         let order = || PreOrderData {
             valid_to: shared::time::now_in_epoch_seconds()
-                + min_order_validity_period.as_secs() as u32
-                + 2,
+                + min_order_validity_period.as_secs() as u32,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             ..Default::default()
@@ -707,6 +720,15 @@ mod tests {
             .partial_validate(PreOrderData {
                 partially_fillable: true,
                 owner: liquidity_order_owner,
+                ..order()
+            })
+            .await
+            .is_ok());
+        assert!(validator
+            .partial_validate(PreOrderData {
+                buy_token: BUY_ETH_ADDRESS,
+                owner: smart_contract_owner,
+                receiver: smart_contract_owner,
                 ..order()
             })
             .await
@@ -733,6 +755,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -772,6 +795,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -811,6 +835,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -854,6 +879,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -895,6 +921,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -934,6 +961,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -974,6 +1002,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            false,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -1015,6 +1044,7 @@ mod tests {
                     hashset!(),
                     hashset!(),
                     Duration::from_secs(1),
+                    false,
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
                     Arc::new(balance_fetcher),
