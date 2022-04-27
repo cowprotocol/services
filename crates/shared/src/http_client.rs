@@ -26,7 +26,8 @@ pub async fn response_body_with_size_limit(
 #[derive(Debug, Clone)]
 pub struct RateLimitingStrategy {
     drop_requests_until: Instant,
-    next_back_off: Duration,
+    /// How many requests got rate limited in a row.
+    times_rate_limited: u64,
     back_off_growth_factor: f64,
     min_back_off: Duration,
     max_back_off: Duration,
@@ -52,7 +53,7 @@ impl RateLimitingStrategy {
         );
         Ok(Self {
             drop_requests_until: Instant::now(),
-            next_back_off: min_back_off,
+            times_rate_limited: 0,
             back_off_growth_factor,
             min_back_off,
             max_back_off,
@@ -63,29 +64,43 @@ impl RateLimitingStrategy {
 impl RateLimitingStrategy {
     /// Resets back off and stops rate limiting requests.
     pub fn response_ok(&mut self) {
-        self.next_back_off = self.min_back_off;
+        self.times_rate_limited = 0;
         self.drop_requests_until = Instant::now();
     }
 
+    /// Calculates back off based on how often we got rate limited in a row.
+    fn get_current_back_off(&self) -> Duration {
+        let mut back_off = self.min_back_off;
+        for _ in 0..self.times_rate_limited {
+            // do this iteratively to reasonably prevent panics on overflow
+            back_off = back_off.mul_f64(self.back_off_growth_factor);
+            if back_off >= self.max_back_off {
+                return self.max_back_off;
+            }
+        }
+        back_off
+    }
+
     /// Returns updated back off if no other thread increased it in the mean time.
-    pub fn response_rate_limited(&mut self, previous_back_off: Duration) -> Option<Duration> {
-        if self.next_back_off != previous_back_off {
-            // Don't increase back off if somebody else already increased it in the meantime.
+    pub fn response_rate_limited(&mut self, previous_rate_limits: u64) -> Option<Duration> {
+        if self.times_rate_limited != previous_rate_limits {
+            // Don't increase back off if somebody else already updated it in the meantime.
             return None;
         }
 
-        self.drop_requests_until = Instant::now() + self.next_back_off;
-        let increased_back_off = self.next_back_off.mul_f64(self.back_off_growth_factor);
-        self.next_back_off = std::cmp::min(increased_back_off, self.max_back_off);
-        Some(self.next_back_off)
+        self.times_rate_limited += 1;
+        let new_back_off = self.get_current_back_off();
+        self.drop_requests_until = Instant::now() + new_back_off;
+        Some(new_back_off)
     }
 
-    pub fn get_next_back_off_if_not_rate_limited(&self, now: Instant) -> Option<Duration> {
+    /// Returns number of times we got rate limited in a row if we are currently allowing requests.
+    pub fn times_rate_limited(&self, now: Instant) -> Option<u64> {
         if self.drop_requests_until > now {
             return None;
         }
 
-        Some(self.next_back_off)
+        Some(self.times_rate_limited)
     }
 }
 
@@ -114,20 +129,19 @@ impl RateLimiter {
     /// When a request eventually returns a normal result again future requests will no longer get
     /// dropped until the next 429 response occurs.
     pub async fn request(&self, request: RequestBuilder) -> Result<Response> {
-        let now = Instant::now();
-        let next_back_off = match self.strategy().get_next_back_off_if_not_rate_limited(now) {
+        let times_rate_limited = match self.strategy().times_rate_limited(Instant::now()) {
             None => {
                 tracing::warn!("dropping request because API is currently rate limited");
                 anyhow::bail!("rate limited");
             }
-            Some(next_back_off) => next_back_off,
+            Some(times_rate_limited) => times_rate_limited,
         };
 
         let response = request.send().await?;
 
         if response.status() == 429 {
-            if let Some(new_back_off) = self.strategy().response_rate_limited(next_back_off) {
-                tracing::warn!("extended rate limiting for {}ms", new_back_off.as_millis());
+            if let Some(new_back_off) = self.strategy().response_rate_limited(times_rate_limited) {
+                tracing::warn!("extended rate limiting for {:?}", new_back_off);
             }
             anyhow::bail!("rate limited");
         } else {
