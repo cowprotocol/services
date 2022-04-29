@@ -70,15 +70,18 @@ impl RateLimitingStrategy {
 
     /// Calculates back off based on how often we got rate limited in a row.
     fn get_current_back_off(&self) -> Duration {
-        let mut back_off = self.min_back_off;
-        for _ in 0..self.times_rate_limited {
-            // do this iteratively to reasonably prevent panics on overflow
-            back_off = back_off.mul_f64(self.back_off_growth_factor);
-            if back_off >= self.max_back_off {
-                return self.max_back_off;
-            }
+        let factor = self
+            .back_off_growth_factor
+            .powi(i32::try_from(self.times_rate_limited).unwrap_or(i32::MAX));
+        let back_off_secs = self.min_back_off.as_secs_f64() * factor;
+        if !back_off_secs.is_normal() || back_off_secs < 0. || back_off_secs > u64::MAX as f64 {
+            // This would cause a panic in `Duration::from_secs_f64()`
+            // TODO refactor this when `Duration::try_from_secs_f64()` gets stabilized:
+            // https://doc.rust-lang.org/stable/std/time/struct.Duration.html#method.try_from_secs_f64
+            return self.max_back_off;
         }
-        back_off
+        let current_back_off = Duration::from_secs_f64(back_off_secs);
+        std::cmp::min(self.max_back_off, current_back_off)
     }
 
     /// Returns updated back off if no other thread increased it in the mean time.
@@ -209,5 +212,42 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn current_back_off_does_not_panic() {
+        let max = Duration::from_secs(60);
+        let back_off = RateLimitingStrategy {
+            drop_requests_until: Instant::now(),
+            // values overflowing i32::MAX get treated as i32::MAX internally
+            times_rate_limited: 1u64 << 32,
+            back_off_growth_factor: 1.1,
+            min_back_off: Duration::from_millis(16),
+            max_back_off: max,
+        }
+        .get_current_back_off();
+        assert_eq!(max, back_off);
+
+        let back_off = RateLimitingStrategy {
+            drop_requests_until: Instant::now(),
+            times_rate_limited: 1,
+            // internal calculations don't overflow `Duration`
+            back_off_growth_factor: f64::MAX,
+            min_back_off: Duration::from_millis(16),
+            max_back_off: max,
+        }
+        .get_current_back_off();
+        assert_eq!(max, back_off);
+
+        let max = Duration::from_secs(60);
+        let back_off = RateLimitingStrategy {
+            drop_requests_until: Instant::now(),
+            times_rate_limited: 3,
+            back_off_growth_factor: 2.,
+            min_back_off: Duration::from_millis(16),
+            max_back_off: max,
+        }
+        .get_current_back_off();
+        assert_eq!(Duration::from_millis(16 * 8), back_off);
     }
 }
