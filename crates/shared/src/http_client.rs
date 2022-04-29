@@ -72,7 +72,7 @@ impl RateLimitingStrategy {
     fn get_current_back_off(&self) -> Duration {
         let factor = self
             .back_off_growth_factor
-            .powi(i32::try_from(self.times_rate_limited).unwrap_or(i32::MAX));
+            .powf(self.times_rate_limited as f64);
         let back_off_secs = self.min_back_off.as_secs_f64() * factor;
         if !back_off_secs.is_normal() || back_off_secs < 0. || back_off_secs > u64::MAX as f64 {
             // This would cause a panic in `Duration::from_secs_f64()`
@@ -217,17 +217,6 @@ mod tests {
     #[test]
     fn current_back_off_does_not_panic() {
         let max = Duration::from_secs(60);
-        let back_off = RateLimitingStrategy {
-            drop_requests_until: Instant::now(),
-            // values overflowing i32::MAX get treated as i32::MAX internally
-            times_rate_limited: 1u64 << 32,
-            back_off_growth_factor: 1.1,
-            min_back_off: Duration::from_millis(16),
-            max_back_off: max,
-        }
-        .get_current_back_off();
-        assert_eq!(max, back_off);
-
         let back_off = RateLimitingStrategy {
             drop_requests_until: Instant::now(),
             times_rate_limited: 1,
