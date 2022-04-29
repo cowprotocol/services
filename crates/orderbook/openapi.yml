@@ -680,6 +680,16 @@ components:
         fullFeeAmount:
           description: "Amount that the signed fee would be without subsidies"
           $ref: "#/components/schemas/TokenAmount"
+        isLiquidityOrder:
+          description: |
+            Liquidity orders are functionally the same as normal smart contract orders but are not
+            placed with the intent of actively getting traded. Instead they facilitate the
+            trade of normal orders by allowing them to be matched against liquidity orders which
+            uses less gas and can have better prices than external liquidity.
+            As such liquidity orders will only be used in order to improve settlement of normal
+            orders. They should not be expected to be traded otherwise and should not expect to get
+            surplus.
+          type: boolean
       required:
         - creationTime
         - owner
