@@ -8,6 +8,6 @@ the Apache License, Version 2.0 ([`LICENSE-APACHE`](LICENSE-APACHE) or <http://w
 the MIT license, ([`LICENSE-MIT`](LICENSE-MIT) or <http://opensource.org/licenses/MIT>), at your option.
 
 Code under the following sub-directories are licensed exclusively under
-the GNU Lesser General Public License v3.0 or later ([`LICENSE`](LICENSE) or <https://www.gnu.org/licenses/lgpl-3.0-standalone.html>):
+the GNU General Public License v3.0 or later ([`LICENSE-GPL`](LICENSE-GPL) or <https://www.gnu.org/licenses/gpl-3.0-standalone.html>):
 - [`crates/orderbook`](crates/orderbook)
 - [`crates/solver`](crates/solver)
