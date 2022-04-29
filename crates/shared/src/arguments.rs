@@ -190,6 +190,10 @@ impl FromStr for RateLimitingStrategy {
         let max_back_off = parts
             .next()
             .ok_or_else(|| anyhow::anyhow!("missing max_back_off"))?;
+        ensure!(
+            parts.next().is_none(),
+            "extraneous rate limiting parameters"
+        );
         let back_off_growth_factor: f64 = back_off_growth_factor
             .parse()
             .context("parsing back_off_growth_factor")?;
