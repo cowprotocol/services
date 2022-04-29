@@ -2,6 +2,7 @@ use crate::current_block::{self, Block, CurrentBlockStream};
 use anyhow::Result;
 use futures::{future::join_all, Stream, StreamExt};
 use std::sync::Arc;
+use tracing::Instrument;
 
 /// Collects all service components requiring maintenance on each new block
 pub struct ServiceMaintenance {
@@ -30,14 +31,14 @@ impl ServiceMaintenance {
     async fn run_maintenance_for_block_stream(self, block_stream: impl Stream<Item = Block>) {
         futures::pin_mut!(block_stream);
         while let Some(block) = block_stream.next().await {
-            tracing::debug!(
-                "running maintenance on block number {:?} hash {:?}",
-                block.number,
-                block.hash
-            );
             self.run_maintenance()
+                .instrument(tracing::debug_span!(
+                    "maintenance",
+                    block_number = ?block.number,
+                    block_hash = ?block.hash,
+                ))
                 .await
-                .expect("Service maintenance always Ok")
+                .expect("Service maintenance always Ok");
         }
     }
 
