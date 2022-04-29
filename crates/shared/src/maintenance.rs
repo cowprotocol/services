@@ -31,12 +31,14 @@ impl ServiceMaintenance {
     async fn run_maintenance_for_block_stream(self, block_stream: impl Stream<Item = Block>) {
         futures::pin_mut!(block_stream);
         while let Some(block) = block_stream.next().await {
+            tracing::debug!(
+                "running maintenance on block number {:?} hash {:?}",
+                block.number,
+                block.hash
+            );
+            let block = block.number.unwrap_or_default().as_u64();
             self.run_maintenance()
-                .instrument(tracing::debug_span!(
-                    "maintenance",
-                    block_number = ?block.number,
-                    block_hash = ?block.hash,
-                ))
+                .instrument(tracing::debug_span!("maintenance", block,))
                 .await
                 .expect("Service maintenance always Ok");
         }
