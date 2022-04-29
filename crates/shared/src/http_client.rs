@@ -132,7 +132,7 @@ impl RateLimiter {
         let times_rate_limited = match self.strategy().times_rate_limited(Instant::now()) {
             None => {
                 tracing::warn!("dropping request because API is currently rate limited");
-                anyhow::bail!("rate limited");
+                anyhow::bail!("backing off rate limit");
             }
             Some(times_rate_limited) => times_rate_limited,
         };
