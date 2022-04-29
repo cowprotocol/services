@@ -1,3 +1,4 @@
+use crate::metrics;
 use anyhow::{anyhow, ensure, Result};
 use reqwest::{RequestBuilder, Response};
 use std::{
@@ -23,6 +24,25 @@ pub async fn response_body_with_size_limit(
     Ok(bytes)
 }
 
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "rate_limiter")]
+struct Metrics {
+    /// Number of requests dropped while being rate limited.
+    #[metric(labels("endpoint"))]
+    requests_dropped: prometheus::CounterVec,
+    /// Number of responses indicating a rate limiting error.
+    #[metric(labels("endpoint"))]
+    rate_limited_requests: prometheus::CounterVec,
+    /// Number of successful requests.
+    #[metric(labels("endpoint"))]
+    successful_requests: prometheus::CounterVec,
+}
+
+fn metrics() -> &'static Metrics {
+    Metrics::instance(metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+}
+
 #[derive(Debug, Clone)]
 pub struct RateLimitingStrategy {
     drop_requests_until: Instant,
@@ -31,6 +51,7 @@ pub struct RateLimitingStrategy {
     back_off_growth_factor: f64,
     min_back_off: Duration,
     max_back_off: Duration,
+    name: String,
 }
 
 impl RateLimitingStrategy {
@@ -38,6 +59,7 @@ impl RateLimitingStrategy {
         back_off_growth_factor: f64,
         min_back_off: Duration,
         max_back_off: Duration,
+        name: String,
     ) -> Result<Self> {
         ensure!(
             back_off_growth_factor.is_normal(),
@@ -57,6 +79,7 @@ impl RateLimitingStrategy {
             back_off_growth_factor,
             min_back_off,
             max_back_off,
+            name,
         })
     }
 }
@@ -64,6 +87,10 @@ impl RateLimitingStrategy {
 impl RateLimitingStrategy {
     /// Resets back off and stops rate limiting requests.
     pub fn response_ok(&mut self) {
+        metrics()
+            .successful_requests
+            .with_label_values(&[self.name.as_str()])
+            .inc();
         self.times_rate_limited = 0;
         self.drop_requests_until = Instant::now();
     }
@@ -86,6 +113,10 @@ impl RateLimitingStrategy {
 
     /// Returns updated back off if no other thread increased it in the mean time.
     pub fn response_rate_limited(&mut self, previous_rate_limits: u64) -> Option<Duration> {
+        metrics()
+            .rate_limited_requests
+            .with_label_values(&[self.name.as_str()])
+            .inc();
         if self.times_rate_limited != previous_rate_limits {
             // Don't increase back off if somebody else already updated it in the meantime.
             return None;
@@ -100,6 +131,10 @@ impl RateLimitingStrategy {
     /// Returns number of times we got rate limited in a row if we are currently allowing requests.
     pub fn times_rate_limited(&self, now: Instant) -> Option<u64> {
         if self.drop_requests_until > now {
+            metrics()
+                .requests_dropped
+                .with_label_values(&[self.name.as_str()])
+                .inc();
             return None;
         }
 
@@ -191,6 +226,7 @@ mod tests {
             2.0,
             Duration::from_millis(16),
             Duration::from_millis(20_000),
+            "test".into(),
         )
         .unwrap();
         let rate_limiter = RateLimiter::from(strategy);
@@ -224,6 +260,7 @@ mod tests {
             back_off_growth_factor: f64::MAX,
             min_back_off: Duration::from_millis(16),
             max_back_off: max,
+            name: "test".into(),
         }
         .get_current_back_off();
         assert_eq!(max, back_off);
@@ -235,6 +272,7 @@ mod tests {
             back_off_growth_factor: 2.,
             min_back_off: Duration::from_millis(16),
             max_back_off: max,
+            name: "test".into(),
         }
         .get_current_back_off();
         assert_eq!(Duration::from_millis(16 * 8), back_off);
