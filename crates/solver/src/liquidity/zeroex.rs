@@ -30,9 +30,19 @@ impl ZeroExLiquidity {
             },
         ];
 
-        let zeroex_orders =
-            futures::future::try_join_all(queries.iter().map(|query| self.api.get_orders(query)))
-                .await?;
+        let zeroex_orders_results =
+            futures::future::join_all(queries.iter().map(|query| self.api.get_orders(query))).await;
+        let zeroex_orders: Vec<OrderRecord> = zeroex_orders_results
+            .into_iter()
+            .map(|result| match result {
+                Ok(order_record_vec) => order_record_vec,
+                Err(err) => {
+                    tracing::warn!("ZeroExResponse error during liqudity fetching: {}", err);
+                    vec![]
+                }
+            })
+            .flatten()
+            .collect();
 
         let user_order_pairs = user_orders
             .iter()
@@ -41,7 +51,6 @@ impl ZeroExLiquidity {
 
         let filtered_zeroex_orders = zeroex_orders
             .into_iter()
-            .flatten()
             .filter(|record| {
                 match TokenPair::new(record.order.taker_token, record.order.maker_token) {
                     Some(pair) => relevant_pairs.contains(&pair),
