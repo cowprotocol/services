@@ -413,7 +413,7 @@ impl Driver {
         let id = self.next_auction_id();
         // extra function so that we can add span information
         self.single_run_(id)
-            .instrument(tracing::debug_span!("single_run", id))
+            .instrument(tracing::debug_span!("auction", id))
             .await
     }
 
