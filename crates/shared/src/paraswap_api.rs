@@ -1,4 +1,4 @@
-use crate::debug_bytes;
+use crate::{debug_bytes, http_client::RateLimiter};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
@@ -28,6 +28,7 @@ pub trait ParaswapApi: Send + Sync {
 pub struct DefaultParaswapApi {
     pub client: Client,
     pub partner: String,
+    pub rate_limiter: Option<RateLimiter>,
 }
 
 #[async_trait::async_trait]
@@ -35,9 +36,15 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.partner);
         tracing::debug!("Querying Paraswap price API: {}", url);
-        let response_text = self.client.get(url).send().await?.text().await?;
-        tracing::debug!("Response from Paraswap price API: {}", response_text);
-        parse_paraswap_response_text(&response_text)
+        let request = self.client.get(url);
+        let response = match &self.rate_limiter {
+            Some(limiter) => limiter.request(request).await?,
+            None => request.send().await?,
+        };
+        let status = response.status();
+        let text = response.text().await?;
+        tracing::debug!(%status, %text, "Response from Paraswap price API");
+        parse_paraswap_response_text(&text)
     }
     async fn transaction(
         &self,
@@ -47,12 +54,12 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-        let response_text = query
-            .into_request(&self.client)
-            .send()
-            .await?
-            .text()
-            .await?;
+        let request = query.into_request(&self.client);
+        let response = match &self.rate_limiter {
+            Some(limiter) => limiter.request(request).await?,
+            None => request.send().await?,
+        };
+        let response_text = response.text().await?;
         parse_paraswap_response_text(&response_text)
     }
 }
@@ -82,7 +89,7 @@ pub enum ParaswapResponseError {
     Retryable(String),
 
     #[error("other ParaSwap error: {0}")]
-    Other(String),
+    Other(#[from] anyhow::Error),
 }
 
 impl ParaswapResponseError {
@@ -117,7 +124,7 @@ where
             | "Too much slippage on quote, please try again" => {
                 Err(ParaswapResponseError::InsufficientLiquidity(message))
             }
-            _ => Err(ParaswapResponseError::Other(message)),
+            _ => Err(ParaswapResponseError::Other(anyhow::anyhow!(message))),
         },
     }
 }
@@ -725,6 +732,7 @@ mod tests {
         let api = DefaultParaswapApi {
             client: Client::new(),
             partner: "Test".into(),
+            rate_limiter: None,
         };
 
         let good_query = TransactionBuilderQuery {
