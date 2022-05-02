@@ -346,6 +346,7 @@ pub fn create(
                         disabled_paraswap_dexs.clone(),
                         client.clone(),
                         paraswap_partner.clone(),
+                        None,
                     ),
                     solver_metrics.clone(),
                 ))),

@@ -520,6 +520,7 @@ async fn main() {
                 Arc::new(DefaultParaswapApi {
                     client: client.clone(),
                     partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(Into::into),
                 }),
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
