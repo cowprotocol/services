@@ -15,7 +15,6 @@ use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use std::collections::HashSet;
 use thiserror::Error;
-use web3::types::Bytes;
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
 
@@ -137,7 +136,8 @@ impl Default for OrdersQuery {
 pub struct OrderMetadata {
     #[derivative(Default(value = "chrono::MIN_DATETIME"))]
     pub created_at: DateTime<Utc>,
-    pub order_hash: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub order_hash: Vec<u8>,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub remaining_fillable_taker_amount: u128,
 }
@@ -261,7 +261,8 @@ pub struct SwapResponse {
     pub price: PriceResponse,
     pub to: H160,
     #[derivative(Debug(format_with = "debug_bytes"))]
-    pub data: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub data: Vec<u8>,
     #[serde(with = "u256_decimal")]
     pub value: U256,
 }
@@ -587,11 +588,10 @@ mod tests {
                 per_page: 1000,
                 records: vec![OrderRecord {
                     metadata: OrderMetadata {
-                        order_hash: Bytes(
+                        order_hash:
                             hex::decode(
                                 "003427369d4c2a6b0aceeb7b315bb9a6086bc6fc4c887aa51efc73b662c9d127"
-                            ).unwrap()
-                        ),
+                            ).unwrap(),
                         remaining_fillable_taker_amount: 262467000000000000u128,
                         created_at: Utc.ymd(2022, 2, 26).and_hms_milli(6, 59, 0, 440)
                     },
@@ -646,9 +646,9 @@ mod tests {
                         estimated_gas: 111000,
                     },
                     to: crate::addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    data: Bytes(hex::decode(
+                    data: hex::decode(
                         "d9627aa40000000000000000000000000000000000000000000000000000000000000080000000000000000000000000000000000000000000000000016345785d8a00000000000000000000000000000000000000000000000000001206e6c0056936e100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000002000000000000000000000000c02aaa39b223fe8d0a0e5c4f27ead9083c756cc20000000000000000000000006810e776880c02933d47db1b9fc05908e5386b96869584cd0000000000000000000000001000000000000000000000000000000000000011000000000000000000000000000000000000000000000092415e982f60d431ba"
-                    ).unwrap()),
+                    ).unwrap(),
                     value: U256::from_dec_str("0").unwrap(),
                 }
             );

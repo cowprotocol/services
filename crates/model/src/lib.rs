@@ -2,6 +2,7 @@
 
 pub mod app_id;
 pub mod auction;
+pub mod bytes_hex;
 pub mod order;
 pub mod ratio_as_decimal;
 pub mod signature;
