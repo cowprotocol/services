@@ -10,7 +10,6 @@ use serde::{
 };
 use serde_json::Value;
 use thiserror::Error;
-use web3::types::Bytes;
 
 const BASE_URL: &str = "https://apiv5.paraswap.io";
 
@@ -325,7 +324,8 @@ pub struct TransactionBuilderResponse {
     pub value: U256,
     /// the calldata for the transaction
     #[derivative(Debug(format_with = "debug_bytes"))]
-    pub data: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub data: Vec<u8>,
     /// the suggested gas price
     #[serde(with = "u256_decimal")]
     pub gas_price: U256,

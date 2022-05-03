@@ -10,7 +10,6 @@ use model::u256_decimal;
 use num::BigInt;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{Deserialize, Serialize};
-use web3::types::Bytes;
 
 /// Trait for mockable Balancer SOR API.
 #[mockall::automock]
@@ -149,7 +148,8 @@ pub struct Swap {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     /// Additional user data to pass to the pool.
-    pub user_data: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub user_data: Vec<u8>,
 }
 
 impl Quote {

@@ -143,7 +143,7 @@ impl From<ZeroExResponseError> for SettlementError {
 
 impl Interaction for SwapResponse {
     fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.to, self.value, Bytes(self.data.0.clone()))]
+        vec![(self.to, self.value, Bytes(self.data.clone()))]
     }
 }
 
@@ -269,7 +269,7 @@ mod tests {
                     estimated_gas: Default::default(),
                 },
                 to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: web3::types::Bytes(hex::decode("00").unwrap()),
+                data: hex::decode("00").unwrap(),
                 value: U256::from_dec_str("0").unwrap(),
             })
         });
@@ -407,7 +407,7 @@ mod tests {
                     estimated_gas: Default::default(),
                 },
                 to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: web3::types::Bytes(hex::decode("").unwrap()),
+                data: hex::decode("").unwrap(),
                 value: U256::from_dec_str("0").unwrap(),
             })
         });
@@ -483,7 +483,7 @@ mod tests {
                     estimated_gas: Default::default(),
                 },
                 to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: web3::types::Bytes(vec![]),
+                data: vec![],
                 value: 0.into(),
             })
         });
