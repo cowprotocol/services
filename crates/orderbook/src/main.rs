@@ -702,7 +702,6 @@ async fn main() {
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
-        args.liquidity_order_owners.into_iter().collect(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![
