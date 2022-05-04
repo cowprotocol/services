@@ -157,6 +157,7 @@ impl AccessListEstimating for TenderlyAccessList {
     ) -> Result<Vec<Result<AccessList>>> {
         Ok(futures::future::join_all(txs.iter().map(|tx| async {
             let (from, to, input) = resolve_call_request(tx)?;
+            let input = input.0;
             let block_number = self.tenderly.block_number(&self.network_id).await?;
 
             let request = TenderlyRequest {

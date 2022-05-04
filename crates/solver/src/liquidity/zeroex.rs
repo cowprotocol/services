@@ -63,7 +63,7 @@ impl ZeroExLiquidity {
         }
 
         let limit_order = LimitOrder {
-            id: hex::encode(&record.metadata.order_hash.0),
+            id: hex::encode(&record.metadata.order_hash),
             sell_token: record.order.maker_token,
             buy_token: record.order.taker_token,
             sell_amount,

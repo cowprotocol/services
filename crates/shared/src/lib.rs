@@ -41,7 +41,6 @@ use std::{
     future::Future,
     time::{Duration, Instant},
 };
-use web3::types::Bytes;
 
 pub type Web3Transport = DynTransport;
 pub type Web3 = DynWeb3;
@@ -66,10 +65,10 @@ pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce
 }
 
 pub fn debug_bytes(
-    bytes: &Bytes,
+    bytes: impl AsRef<[u8]>,
     formatter: &mut std::fmt::Formatter,
 ) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
+    formatter.write_fmt(format_args!("0x{}", hex::encode(bytes.as_ref())))
 }
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a new anyhow error
