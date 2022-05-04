@@ -232,6 +232,7 @@ pub struct PreOrderData {
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
+    pub is_liquidity_order: bool,
 }
 
 fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
@@ -244,7 +245,11 @@ fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
 }
 
 impl PreOrderData {
-    pub fn from_order_creation(owner: H160, order: &OrderCreation) -> Self {
+    pub fn from_order_creation(
+        owner: H160,
+        order: &OrderCreation,
+        is_liquidity_order: bool,
+    ) -> Self {
         Self {
             owner,
             sell_token: order.sell_token,
@@ -254,6 +259,7 @@ impl PreOrderData {
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
+            is_liquidity_order,
         }
     }
 }
@@ -286,7 +292,7 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if order.partially_fillable && !self.liquidity_order_owners.contains(&order.owner) {
+        if order.partially_fillable && !order.is_liquidity_order {
             return Err(PartialValidationError::UnsupportedOrderType);
         }
         if self.banned_users.contains(&order.owner) {
@@ -359,9 +365,14 @@ impl OrderValidating for OrderValidator {
             }
         }
 
-        self.partial_validate(PreOrderData::from_order_creation(owner, &order_creation))
-            .await
-            .map_err(ValidationError::Partial)?;
+        let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
+        self.partial_validate(PreOrderData::from_order_creation(
+            owner,
+            &order_creation,
+            is_liquidity_order,
+        ))
+        .await
+        .map_err(ValidationError::Partial)?;
 
         let unsubsidized_fee = self
             .fee_validator
@@ -448,6 +459,7 @@ impl OrderValidating for OrderValidator {
             settlement_contract,
             unsubsidized_fee.amount_in_sell_token(),
             owner,
+            is_liquidity_order,
         );
         Ok((order, unsubsidized_fee))
     }
@@ -706,6 +718,7 @@ mod tests {
         assert!(validator
             .partial_validate(PreOrderData {
                 partially_fillable: true,
+                is_liquidity_order: true,
                 owner: liquidity_order_owner,
                 ..order()
             })
