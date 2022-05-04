@@ -22,6 +22,7 @@ use orderbook::{
     orderbook::Orderbook,
     serve_api,
     solvable_orders::SolvableOrdersCache,
+    solver_competition::SolverCompetition,
     verify_deployed_contract_constants,
 };
 use primitive_types::{H160, U256};
@@ -712,6 +713,7 @@ async fn main() {
             .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
     );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
@@ -720,6 +722,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
+        solver_competition,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
