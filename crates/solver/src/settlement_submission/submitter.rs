@@ -333,7 +333,7 @@ impl<'a> Submitter<'a> {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        tracing::info!(
+        tracing::debug!(
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
             submitter_name
         );
@@ -352,7 +352,7 @@ impl<'a> Submitter<'a> {
         let mut access_list: Option<AccessList> = None;
 
         loop {
-            tracing::info!("entered loop with submitter: {}", submitter_name);
+            tracing::debug!("entered loop with submitter: {}", submitter_name);
 
             let submission_status = self
                 .submit_api
@@ -463,7 +463,7 @@ impl<'a> Submitter<'a> {
                 }
                 Err(err) => tracing::warn!("submission failed: {:?}", err),
             }
-            tracing::info!(
+            tracing::debug!(
                 "Finished sending transaction with submitter {}...",
                 submitter_name
             );
