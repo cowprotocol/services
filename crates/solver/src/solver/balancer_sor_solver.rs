@@ -193,7 +193,7 @@ impl Interaction for BatchSwap {
                     swap.asset_in_index.into(),
                     swap.asset_out_index.into(),
                     swap.amount,
-                    Bytes(swap.user_data.0.clone()),
+                    Bytes(swap.user_data.clone()),
                 )
             })
             .collect();

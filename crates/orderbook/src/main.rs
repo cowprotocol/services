@@ -22,6 +22,7 @@ use orderbook::{
     orderbook::Orderbook,
     serve_api,
     solvable_orders::SolvableOrdersCache,
+    solver_competition::SolverCompetition,
     verify_deployed_contract_constants,
 };
 use primitive_types::{H160, U256};
@@ -520,6 +521,7 @@ async fn main() {
                 Arc::new(DefaultParaswapApi {
                     client: client.clone(),
                     partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(Into::into),
                 }),
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
@@ -527,7 +529,7 @@ async fn main() {
             PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(zeroex_api.clone())),
             PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
                 Arc::new(DefaultHttpSolverApi {
-                    name: "quasimodo-price-estimator",
+                    name: "quasimodo-price-estimator".to_string(),
                     network_name: network_name.to_string(),
                     chain_id,
                     base: args.quasimodo_solver_url.clone().expect(
@@ -677,7 +679,7 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.shared.liquidity_order_owners.into_iter().collect(),
+        args.shared.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),
@@ -692,6 +694,7 @@ async fn main() {
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
+        args.shared.liquidity_order_owners.into_iter().collect(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![
@@ -710,6 +713,7 @@ async fn main() {
             .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
     );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
@@ -718,6 +722,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
+        solver_competition,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));

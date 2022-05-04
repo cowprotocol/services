@@ -10,6 +10,7 @@ pub mod current_block;
 pub mod ethcontract_error;
 pub mod event_handling;
 pub mod gas_price_estimation;
+pub mod http_client;
 pub mod http_solver;
 pub mod maintenance;
 pub mod metrics;
@@ -40,7 +41,6 @@ use std::{
     future::Future,
     time::{Duration, Instant},
 };
-use web3::types::Bytes;
 
 pub type Web3Transport = DynTransport;
 pub type Web3 = DynWeb3;
@@ -65,10 +65,10 @@ pub async fn measure_time<T>(future: impl Future<Output = T>, timer: impl FnOnce
 }
 
 pub fn debug_bytes(
-    bytes: &Bytes,
+    bytes: impl AsRef<[u8]>,
     formatter: &mut std::fmt::Formatter,
 ) -> Result<(), std::fmt::Error> {
-    formatter.write_fmt(format_args!("0x{}", hex::encode(&bytes.0)))
+    formatter.write_fmt(format_args!("0x{}", hex::encode(bytes.as_ref())))
 }
 
 /// anyhow errors are not clonable natively. This is a workaround that creates a new anyhow error

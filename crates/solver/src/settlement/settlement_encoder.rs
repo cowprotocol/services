@@ -118,13 +118,14 @@ impl SettlementEncoder {
         &self.execution_plan
     }
 
-    // Fails if any used token doesn't have a price.
+    // Fails if any used token doesn't have a price or if executed amount is impossible.
     pub fn add_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         let sell_price = self
             .clearing_prices
             .get(&order.creation.sell_token)
@@ -159,13 +160,14 @@ impl SettlementEncoder {
         Ok(execution)
     }
 
-    // Fails if any used sell-token doesn't have a price.
+    // Fails if any used sell-token doesn't have a price. or if executed amount is impossible.
     pub fn add_liquidity_order_trade(
         &mut self,
         order: Order,
         executed_amount: U256,
         scaled_unsubsidized_fee: U256,
     ) -> Result<TradeExecution> {
+        verify_executed_amount(&order, executed_amount)?;
         // For the encoding strategy of liquidity orders, the sell prices are taken from
         // the uniform clearing price vector. Therefore, either there needs to be an existing price
         // for the sell token in the uniform clearing prices or we have to create a new price entry beforehand,
@@ -555,6 +557,17 @@ impl SettlementEncoder {
     }
 }
 
+fn verify_executed_amount(order: &Order, executed_amount: U256) -> Result<()> {
+    let valid_executed_amount = match (order.creation.partially_fillable, order.creation.kind) {
+        (true, OrderKind::Sell) => executed_amount <= order.creation.sell_amount,
+        (true, OrderKind::Buy) => executed_amount <= order.creation.buy_amount,
+        (false, OrderKind::Sell) => executed_amount == order.creation.sell_amount,
+        (false, OrderKind::Buy) => executed_amount == order.creation.buy_amount,
+    };
+    ensure!(valid_executed_amount, "invalid executed amount");
+    Ok(())
+}
+
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -644,9 +657,9 @@ pub mod tests {
             .with_buy_amount(20.into())
             .build();
 
-        assert!(settlement.add_trade(order01, 33.into(), 0.into()).is_ok());
+        assert!(settlement.add_trade(order01, 10.into(), 0.into()).is_ok());
         assert!(settlement
-            .add_liquidity_order_trade(order10, 11.into(), 0.into())
+            .add_liquidity_order_trade(order10, 20.into(), 0.into())
             .is_ok());
         let finished_settlement = settlement.finish();
         assert_eq!(
@@ -679,7 +692,7 @@ pub mod tests {
             .with_buy_amount(10.into())
             .build();
         assert!(settlement
-            .add_liquidity_order_trade(order01.clone(), 20.into(), 0.into())
+            .add_liquidity_order_trade(order01.clone(), 10.into(), 0.into())
             .is_ok());
         // ensures that the output of add_liquidity_order is sorted
         assert_eq!(settlement.tokens, vec![token(0), token(1)]);
@@ -767,7 +780,7 @@ pub mod tests {
                     },
                     ..Default::default()
                 },
-                0.into(),
+                3.into(),
                 0.into(),
             )
             .unwrap();
@@ -830,9 +843,9 @@ pub mod tests {
             .build();
         order13.metadata.uid.0[0] = 0;
         order12.metadata.uid.0[0] = 2;
-        encoder0.add_trade(order13, 13.into(), 0.into()).unwrap();
+        encoder0.add_trade(order13, 11.into(), 0.into()).unwrap();
         encoder0
-            .add_liquidity_order_trade(order12.clone(), 13.into(), 0.into())
+            .add_liquidity_order_trade(order12.clone(), 11.into(), 0.into())
             .unwrap();
         encoder0.append_to_execution_plan(NoopInteraction {});
         encoder0.add_unwrap(UnwrapWethInteraction {
@@ -856,9 +869,9 @@ pub mod tests {
             .build();
         order24.metadata.uid.0[0] = 1;
         order23.metadata.uid.0[0] = 4;
-        encoder1.add_trade(order24, 24.into(), 0.into()).unwrap();
+        encoder1.add_trade(order24, 22.into(), 0.into()).unwrap();
         encoder1
-            .add_liquidity_order_trade(order23.clone(), 19.into(), 0.into())
+            .add_liquidity_order_trade(order23.clone(), 11.into(), 0.into())
             .unwrap();
         encoder1.append_to_execution_plan(NoopInteraction {});
         encoder1.add_unwrap(UnwrapWethInteraction {
@@ -880,7 +893,7 @@ pub mod tests {
                     trade: Trade {
                         order: order12,
                         sell_token_index: 0,
-                        executed_amount: 13.into(),
+                        executed_amount: 11.into(),
                         scaled_unsubsidized_fee: 0.into()
                     },
                     buy_token_offset_index: 0,
@@ -890,7 +903,7 @@ pub mod tests {
                     trade: Trade {
                         order: order23,
                         sell_token_index: 1,
-                        executed_amount: 19.into(),
+                        executed_amount: 11.into(),
                         scaled_unsubsidized_fee: 0.into()
                     },
                     buy_token_offset_index: 1,
@@ -983,11 +996,11 @@ pub mod tests {
 
         let mut encoder0 = SettlementEncoder::new(prices.clone());
         encoder0
-            .add_trade(order13.clone(), 13.into(), 0.into())
+            .add_trade(order13.clone(), 11.into(), 0.into())
             .unwrap();
 
         let mut encoder1 = SettlementEncoder::new(prices);
-        encoder1.add_trade(order13, 24.into(), 0.into()).unwrap();
+        encoder1.add_trade(order13, 11.into(), 0.into()).unwrap();
 
         assert!(encoder0.merge(encoder1).is_err());
     }
@@ -1005,7 +1018,7 @@ pub mod tests {
             .with_buy_token(token(3))
             .with_buy_amount(11.into())
             .build();
-        encoder.add_trade(order_1_3, 4.into(), 0.into()).unwrap();
+        encoder.add_trade(order_1_3, 11.into(), 0.into()).unwrap();
 
         let weth = dummy_contract!(WETH9, token(2));
         encoder.add_unwrap(UnwrapWethInteraction {

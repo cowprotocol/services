@@ -2,9 +2,11 @@
 
 pub mod app_id;
 pub mod auction;
+pub mod bytes_hex;
 pub mod order;
 pub mod ratio_as_decimal;
 pub mod signature;
+pub mod solver_competition;
 pub mod trade;
 pub mod u256_decimal;
 
