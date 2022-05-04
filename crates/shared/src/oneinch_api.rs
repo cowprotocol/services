@@ -4,7 +4,7 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 //! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
 //! uses EIP 1559 gas prices.
-use crate::solver_utils::{deserialize_prefixed_hex, Slippage};
+use crate::solver_utils::Slippage;
 use anyhow::{ensure, Context, Result};
 use cached::{Cached, TimedCache};
 use ethcontract::{H160, U256};
@@ -360,7 +360,7 @@ pub struct ProtocolRouteSegment {
 pub struct Transaction {
     pub from: H160,
     pub to: H160,
-    #[serde(deserialize_with = "deserialize_prefixed_hex")]
+    #[serde(with = "model::bytes_hex")]
     pub data: Vec<u8>,
     #[serde(with = "u256_decimal")]
     pub value: U256,

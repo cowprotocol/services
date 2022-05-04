@@ -49,14 +49,3 @@ where
     let decimal_str = Cow::<str>::deserialize(deserializer)?;
     decimal_str.parse::<f64>().map_err(D::Error::custom)
 }
-
-pub fn deserialize_prefixed_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let prefixed_hex_str = Cow::<str>::deserialize(deserializer)?;
-    let hex_str = prefixed_hex_str
-        .strip_prefix("0x")
-        .ok_or_else(|| D::Error::custom("hex missing '0x' prefix"))?;
-    hex::decode(hex_str).map_err(D::Error::custom)
-}

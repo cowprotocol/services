@@ -18,7 +18,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use shared::Web3;
-use web3::types::{AccessList, BlockId, Bytes};
+use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
@@ -169,7 +169,7 @@ pub async fn simulate_before_after_access_list(
         network_id,
         block_number,
         from,
-        input: transaction.input,
+        input: transaction.input.0,
         to,
         generate_access_list: false,
         transaction_index: Some(transaction_index),
@@ -248,7 +248,8 @@ pub struct TenderlyRequest {
     pub network_id: String,
     pub block_number: u64,
     pub from: Address,
-    pub input: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub input: Vec<u8>,
     pub to: Address,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_index: Option<u64>,

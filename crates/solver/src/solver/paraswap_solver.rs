@@ -196,7 +196,7 @@ fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<usize
 
 impl Interaction for TransactionBuilderResponse {
     fn encode(&self) -> Vec<EncodedInteraction> {
-        vec![(self.to, self.value, Bytes(self.data.0.clone()))]
+        vec![(self.to, self.value, Bytes(self.data.clone()))]
     }
 }
 

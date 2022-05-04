@@ -483,6 +483,30 @@ paths:
           description: Too many order quotes
         500:
           description: Unexpected error quoting an order
+  /api/v1/solver_competition/{auction_id}:
+    get:
+      summary: Information about solver competition
+      description: |
+        Returns the settlements submitted by every solver for a specific auction
+        id. The auction id corresponds to the id external solvers are provided
+        with. Auction ids are not globally unique, they are reused from time to
+        time. The backend keeps the competition information for a limited amount
+        of time.
+      parameters:
+        - name: auction_id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        200:
+          description: competition info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        404:
+          description: No competition information available for this auction id.
 components:
   schemas:
     TransactionHash:
@@ -965,3 +989,57 @@ components:
             the fee after this expiration date. Encoded as ISO 8601 UTC.
           type: string
           example: "1985-03-10T18:35:18.814523Z"
+    SolverCompetitionResponse:
+      type: object
+      properties:
+        transaction_hash:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/TransactionHash"
+        gas_price:
+          type: number
+          description: gas price used for ranking solutions
+        solutions:
+          type: array
+          description: Maps from solver name to object describing that solver's settlement.
+          items:
+            $ref: "#/components/schemas/SolverSettlement"
+    SolverSettlement:
+      type: object
+      properties:
+        solver:
+          type: string
+          description: name of the solver
+        objective:
+          type: object
+          properties:
+            total:
+              type: number
+              description: the total objective value used for ranking solutions
+            surplus:
+              type: number
+            fees:
+              type: number
+            cost:
+              type: number
+            gas:
+              type: number
+        prices:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigUint"
+          description: |
+            The prices of tokens for settled user orders as passed to the settlement contract.
+        orders:
+          type: array
+          description: the touched orders
+          items:
+            type: object
+            properties:
+              id:
+                $ref: "#/components/schemas/UID"
+              executed_amount:
+                $ref: "#/components/schemas/BigUint"
+        call_data:
+          description: hex encoded transaction calldata
+          type: string
