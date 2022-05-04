@@ -29,16 +29,8 @@ pub fn serve_api(
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition: Arc<SolverCompetition>,
-    solver_competition_auth: String,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(
-        database,
-        orderbook,
-        quoter,
-        solver_competition,
-        solver_competition_auth,
-    )
-    .boxed();
+    let filter = api::handle_all_routes(database, orderbook, quoter, solver_competition).boxed();
     tracing::info!(%address, "serving order book");
     let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
     task::spawn(server)

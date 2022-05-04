@@ -207,7 +207,6 @@ impl OrderbookServices {
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
             Default::default(),
-            Default::default(),
         );
 
         Self {
