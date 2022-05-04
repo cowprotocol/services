@@ -22,7 +22,7 @@ pub fn post(
         async move {
             handler.set(auction_id, model);
             let json = warp::reply::json(&());
-            let reply = warp::reply::with_status(json, StatusCode::OK);
+            let reply = warp::reply::with_status(json, StatusCode::CREATED);
             Result::<_, Infallible>::Ok(reply)
         }
     })
@@ -47,7 +47,7 @@ mod tests {
             .body(body.clone());
         let response = request_.filter(&filter).await.unwrap().into_response();
         dbg!(&response);
-        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.status(), StatusCode::CREATED);
         assert!(handler.get(1).is_some());
     }
 }
