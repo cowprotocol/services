@@ -1,5 +1,7 @@
 use anyhow::{ensure, Result};
-use num::{bigint::Sign, rational::Ratio, BigInt, BigRational, ToPrimitive as _, Zero as _};
+use num::{
+    bigint::Sign, rational::Ratio, BigInt, BigRational, BigUint, ToPrimitive as _, Zero as _,
+};
 use primitive_types::U256;
 
 pub fn big_rational_to_float(ratio: &BigRational) -> Option<f64> {
@@ -18,6 +20,12 @@ pub fn u256_to_big_int(input: &U256) -> BigInt {
     let mut bytes = [0; 32];
     input.to_big_endian(&mut bytes);
     BigInt::from_bytes_be(Sign::Plus, &bytes)
+}
+
+pub fn u256_to_big_uint(input: &U256) -> BigUint {
+    let mut bytes = [0; 32];
+    input.to_big_endian(&mut bytes);
+    BigUint::from_bytes_be(&bytes)
 }
 
 pub fn u256_to_big_rational(input: &U256) -> BigRational {
