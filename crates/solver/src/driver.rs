@@ -32,6 +32,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use tracing::Instrument;
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
@@ -409,6 +410,14 @@ impl Driver {
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
+        let id = self.next_auction_id();
+        // extra function so that we can add span information
+        self.single_run_(id)
+            .instrument(tracing::debug_span!("auction", id))
+            .await
+    }
+
+    async fn single_run_(&mut self, auction_id: u64) -> Result<()> {
         let start = Instant::now();
         tracing::debug!("starting single run");
 
@@ -470,7 +479,6 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
-        let auction_id = self.next_auction_id();
         let auction = Auction {
             id: auction_id,
             orders: orders.clone(),
@@ -647,10 +655,6 @@ impl Driver {
                 )
                 .await
             {
-                let orders = winning_settlement
-                    .settlement
-                    .traded_orders()
-                    .map(|o| o.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -658,7 +662,10 @@ impl Driver {
                         0
                     }
                 };
-                self.in_flight_orders.mark_settled_orders(block, orders);
+
+                self.in_flight_orders
+                    .mark_settled_orders(block, &winning_settlement.settlement);
+
                 match receipt.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);

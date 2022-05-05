@@ -22,6 +22,7 @@ use orderbook::{
     orderbook::Orderbook,
     serve_api,
     solvable_orders::SolvableOrdersCache,
+    solver_competition::SolverCompetition,
     verify_deployed_contract_constants,
 };
 use primitive_types::{H160, U256};
@@ -247,6 +248,15 @@ struct Arguments {
 
     #[clap(long, env, default_value = "static", arg_enum)]
     token_detector_fee_values: FeeValues,
+
+    /// The configured addresses whose orders should be considered liquidity and
+    /// not regular user orders.
+    ///
+    /// These orders have special semantics such as not being considered in the
+    /// settlements objective funtion, not receiving any surplus, and being
+    /// allowed to place partially fillable orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub liquidity_order_owners: Vec<H160>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -520,6 +530,7 @@ async fn main() {
                 Arc::new(DefaultParaswapApi {
                     client: client.clone(),
                     partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(Into::into),
                 }),
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
@@ -652,7 +663,7 @@ async fn main() {
             },
             native_price_estimator.clone(),
             cow_subsidy.clone(),
-            args.shared.liquidity_order_owners.iter().copied().collect(),
+            args.liquidity_order_owners.iter().copied().collect(),
         ))
     };
     let fee_calculator = create_fee_calculator(price_estimator.clone());
@@ -677,7 +688,7 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.shared.liquidity_order_owners.iter().copied().collect(),
+        args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),
@@ -692,7 +703,6 @@ async fn main() {
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
-        args.shared.liquidity_order_owners.into_iter().collect(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![
@@ -711,6 +721,7 @@ async fn main() {
             .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
     );
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
+    let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
@@ -719,6 +730,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
+        solver_competition,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));

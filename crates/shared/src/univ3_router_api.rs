@@ -1,6 +1,5 @@
 //! Bindings for an instance of https://github.com/cowprotocol/univ3-api .
 
-use crate::solver_utils::deserialize_prefixed_hex;
 use anyhow::{Context, Result};
 use model::u256_decimal;
 use primitive_types::{H160, U256};
@@ -32,7 +31,7 @@ pub struct Response {
     pub quote: U256,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub gas: u64,
-    #[serde(deserialize_with = "deserialize_prefixed_hex")]
+    #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,
 }
 
