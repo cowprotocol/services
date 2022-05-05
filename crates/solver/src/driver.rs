@@ -655,10 +655,6 @@ impl Driver {
                 )
                 .await
             {
-                let orders = winning_settlement
-                    .settlement
-                    .traded_orders()
-                    .map(|o| o.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -666,7 +662,10 @@ impl Driver {
                         0
                     }
                 };
-                self.in_flight_orders.mark_settled_orders(block, orders);
+
+                self.in_flight_orders
+                    .mark_settled_orders(block, &winning_settlement.settlement);
+
                 match receipt.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);

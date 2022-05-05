@@ -1002,13 +1002,17 @@ components:
     SolverCompetitionResponse:
       type: object
       properties:
-        transaction_hash:
+        transactionHash:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
-        gas_price:
+        gasPrice:
           type: number
           description: gas price used for ranking solutions
+        liquidityCollectedBlock:
+          type: integer
+        competitionSimulationBlock:
+          type: integer
         solutions:
           type: array
           description: Maps from solver name to object describing that solver's settlement.
@@ -1033,7 +1037,7 @@ components:
             cost:
               type: number
             gas:
-              type: number
+              type: integer
         prices:
           type: object
           additionalProperties:
@@ -1048,8 +1052,8 @@ components:
             properties:
               id:
                 $ref: "#/components/schemas/UID"
-              executed_amount:
+              executedAmount:
                 $ref: "#/components/schemas/BigUint"
-        call_data:
+        callData:
           description: hex encoded transaction calldata
           type: string
