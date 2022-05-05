@@ -53,6 +53,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             partially_fillable: quote_request.partially_fillable,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
+            is_liquidity_order: quote_request.partially_fillable,
         }
     }
 }

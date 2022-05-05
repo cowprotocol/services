@@ -412,11 +412,6 @@ mod tests {
         );
         let order_converter = OrderConverter {
             native_token: native_token_contract.clone(),
-            liquidity_order_owners: vec!["0xe63A13Eedd01B624958AcFe32145298788a7a7BA"
-                .parse()
-                .unwrap()]
-            .into_iter()
-            .collect(),
             fee_objective_scaling_factor: 0.91_f64,
         };
         let value = json!(
@@ -447,6 +442,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": false,
         });
         let order0: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -477,6 +473,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": true,
         });
         let order1: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -507,6 +504,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": false,
         });
         let order2: Order = serde_json::from_value(value).unwrap();
 

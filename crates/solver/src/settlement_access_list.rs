@@ -242,10 +242,14 @@ impl AccessListEstimating for PriorityAccessListEstimating {
         for (i, estimator) in self.estimators.iter().enumerate() {
             match estimator.estimate_access_lists(txs).await {
                 Ok(result) => {
-                    return Ok(result
-                        .into_iter()
-                        .map(|access_list| access_list.map(filter_access_list))
-                        .collect())
+                    // result is valid if access list exist for at least one of the transactions
+                    let is_valid = result.iter().any(|access_list| access_list.is_ok());
+                    if is_valid {
+                        return Ok(result
+                            .into_iter()
+                            .map(|access_list| access_list.map(filter_access_list))
+                            .collect());
+                    }
                 }
                 Err(err) => {
                     tracing::warn!("access list estimator {} failed {:?}", i, err);
