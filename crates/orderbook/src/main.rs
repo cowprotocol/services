@@ -248,6 +248,15 @@ struct Arguments {
 
     #[clap(long, env, default_value = "static", arg_enum)]
     token_detector_fee_values: FeeValues,
+
+    /// The configured addresses whose orders should be considered liquidity and
+    /// not regular user orders.
+    ///
+    /// These orders have special semantics such as not being considered in the
+    /// settlements objective funtion, not receiving any surplus, and being
+    /// allowed to place partially fillable orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub liquidity_order_owners: Vec<H160>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -654,7 +663,7 @@ async fn main() {
             },
             native_price_estimator.clone(),
             cow_subsidy.clone(),
-            args.shared.liquidity_order_owners.iter().copied().collect(),
+            args.liquidity_order_owners.iter().copied().collect(),
         ))
     };
     let fee_calculator = create_fee_calculator(price_estimator.clone());
@@ -679,7 +688,7 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.shared.liquidity_order_owners.iter().copied().collect(),
+        args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),
@@ -694,7 +703,6 @@ async fn main() {
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
-        args.shared.liquidity_order_owners.into_iter().collect(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![

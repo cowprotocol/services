@@ -83,7 +83,6 @@ pub struct Orderbook {
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<OrderValidator>,
-    liquidity_order_owners: HashSet<H160>,
 }
 
 impl Orderbook {
@@ -97,7 +96,6 @@ impl Orderbook {
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<OrderValidator>,
-        liquidity_order_owners: HashSet<H160>,
     ) -> Self {
         Self {
             domain_separator,
@@ -108,7 +106,6 @@ impl Orderbook {
             solvable_orders,
             solvable_orders_max_update_age,
             order_validator,
-            liquidity_order_owners,
         }
     }
 
@@ -140,7 +137,7 @@ impl Orderbook {
 
         self.database.insert_order(&order, fee).await?;
 
-        if !self.liquidity_order_owners.contains(&order.metadata.owner) {
+        if !order.metadata.is_liquidity_order {
             Metrics::instance(metrics::get_metric_storage_registry())
                 .expect("unexpected error getting metrics instance")
                 .user_orders_created
