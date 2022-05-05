@@ -42,9 +42,9 @@ pub const SETTLEMENT_OVERHEAD: u64 = SETTLEMENT + TRADE + 2 * ERC20_TRANSFER;
 /// https://docs.google.com/spreadsheets/d/13UeUQ9DA4bHlcy9-i8d4nSLlCxSfjcXpTelvXYzyJzQ/edit?usp=sharing
 pub static GAS_PER_ORDER: u64 = 66_315;
 
-/// Average gas used per UniswapInteraction (v2).
+/// Median gas used per UniswapInteraction (v2).
 // estimated with https://dune.com/queries/640717
-pub static GAS_PER_UNISWAP: u64 = 104_650;
+pub static GAS_PER_UNISWAP: u64 = 90_171;
 
 /// Average gas used per ZeroExInteraction.
 // estimated with https://dune.com/queries/639669
