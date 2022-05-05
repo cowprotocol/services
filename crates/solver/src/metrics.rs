@@ -109,7 +109,7 @@ impl Metrics {
 
         let trade_counter = IntCounterVec::new(
             Opts::new("trade_counter", "Number of trades settled"),
-            &["solver_type"],
+            &["solver_type", "trade_type"],
         )?;
         registry.register(Box::new(trade_counter.clone()))?;
 
@@ -306,7 +306,13 @@ impl SolverMetrics for Metrics {
     fn order_settled(&self, order: &Order, solver: &str) {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
-        self.trade_counter.with_label_values(&[solver]).inc();
+        let order_type = match order.metadata.is_liquidity_order {
+            true => "liquidity_order",
+            false => "user_order",
+        };
+        self.trade_counter
+            .with_label_values(&[solver, order_type])
+            .inc();
         self.order_settlement_time.inc_by(
             time_to_settlement
                 .num_seconds()

@@ -19,10 +19,12 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
+use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
-use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
+use num::{rational::Ratio, BigInt, BigRational, BigUint, ToPrimitive};
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
+use shared::conversions::u256_to_big_uint;
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -165,6 +167,31 @@ impl Driver {
         .await
     }
 
+    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
+    /// orders multiple times will not result in duplicates. Partially fillable orders get
+    /// considered as traded only the first time we tap into their liquidity.
+    fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
+        let mut traded_orders = Vec::new();
+        for (_, group) in &settlement
+            .executed_trades()
+            .group_by(|(trade, _)| trade.order.metadata.uid)
+        {
+            let mut group = group.into_iter().peekable();
+            let order = &group.peek().unwrap().0.order;
+            let previously_filled = match order.creation.kind {
+                OrderKind::Buy => order.metadata.executed_buy_amount.clone(),
+                OrderKind::Sell => order.metadata.executed_sell_amount.clone(),
+            };
+            let newly_filled = group.fold(BigUint::default(), |acc, (trade, _)| {
+                acc + u256_to_big_uint(&trade.executed_amount)
+            });
+            if previously_filled == 0u8.into() && newly_filled > 0u8.into() {
+                traded_orders.push(order.clone());
+            }
+        }
+        traded_orders
+    }
+
     async fn submit_settlement(
         &self,
         auction_id: u64,
@@ -172,7 +199,7 @@ impl Driver {
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
-        let traded_orders = settlement.traded_orders().cloned().collect::<Vec<_>>();
+        let traded_orders = Self::get_traded_orders(&settlement);
 
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver.name());
