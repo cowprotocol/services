@@ -46,7 +46,14 @@ impl Default for Order {
             .signature
             .validate(domain, &order.hash_struct())
             .unwrap();
-        Self::from_order_creation(&order, domain, H160::default(), Default::default(), owner)
+        Self::from_order_creation(
+            &order,
+            domain,
+            H160::default(),
+            Default::default(),
+            owner,
+            false,
+        )
     }
 }
 
@@ -67,6 +74,7 @@ impl Order {
         settlement_contract: H160,
         full_fee_amount: U256,
         owner: H160,
+        is_liquidity_order: bool,
     ) -> Self {
         Self {
             metadata: OrderMetadata {
@@ -75,6 +83,7 @@ impl Order {
                 uid: order_creation.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
+                is_liquidity_order,
                 ..Default::default()
             },
             creation: *order_creation,
@@ -452,6 +461,7 @@ pub struct OrderMetadata {
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
+    pub is_liquidity_order: bool,
 }
 
 impl Default for OrderMetadata {
@@ -469,6 +479,7 @@ impl Default for OrderMetadata {
             status: OrderStatus::Open,
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
+            is_liquidity_order: false,
         }
     }
 }
@@ -688,6 +699,7 @@ mod tests {
             "settlementContract": "0x0000000000000000000000000000000000000002",
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
+            "isLiquidityOrder": false,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -704,6 +716,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
+                is_liquidity_order: false,
             },
             creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),
