@@ -122,7 +122,17 @@ pub struct InteractionData {
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,
+    /// The input amount into the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the settlement contract into the AMM
+    /// for this calldata.
+    ///
+    /// `GPv2Settlement -> AMM`
     pub input: TokenAmount,
+    /// The output amount from the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the AMM into the settlement contract
+    /// for this calldata.
+    ///
+    /// `AMM -> GPv2Settlement`
     pub output: TokenAmount,
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
