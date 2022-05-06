@@ -385,6 +385,7 @@ impl OrderValidating for OrderValidator {
                 order_creation.app_data,
                 order_creation.fee_amount,
                 owner,
+                payload.is_liquidity_order,
             )
             .await
             .map_err(|err| match err {
@@ -725,7 +726,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -766,7 +767,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -807,7 +808,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -848,7 +849,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Err(GetUnsubsidizedMinFeeError::InsufficientFee));
+            .returning(|_, _, _, _, _| Err(GetUnsubsidizedMinFeeError::InsufficientFee));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -889,7 +890,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector.expect_detect().returning(|_| {
             Ok(TokenQuality::Bad {
                 reason: Default::default(),
@@ -932,7 +933,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -974,7 +975,7 @@ mod tests {
         let mut balance_fetcher = MockBalanceFetching::new();
         fee_calculator
             .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+            .returning(|_, _, _, _, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -1017,7 +1018,7 @@ mod tests {
                 let mut balance_fetcher = MockBalanceFetching::new();
                 fee_calculator
                     .expect_get_unsubsidized_min_fee()
-                    .returning(|_, _, _, _| Ok(Default::default()));
+                    .returning(|_, _, _, _, _| Ok(Default::default()));
                 bad_token_detector
                     .expect_detect()
                     .returning(|_| Ok(TokenQuality::Good));

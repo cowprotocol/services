@@ -39,6 +39,8 @@ pub struct OrderQuoteRequest {
     buy_token_balance: BuyTokenDestination,
     #[serde(default)]
     price_quality: PriceQuality,
+    #[serde(default)]
+    is_liquidity_order: bool,
 }
 
 impl From<&OrderQuoteRequest> for PreOrderData {
@@ -281,6 +283,7 @@ impl OrderQuoter {
                         },
                         quote_request.app_data,
                         quote_request.from,
+                        quote_request.is_liquidity_order,
                     ),
                     single_estimate(price_estimator.as_ref(), &query)
                 )
@@ -336,6 +339,7 @@ impl OrderQuoter {
                         },
                         quote_request.app_data,
                         quote_request.from,
+                        quote_request.is_liquidity_order,
                     ),
                     single_estimate(price_estimator.as_ref(), &price_estimation_query)
                 )
@@ -373,6 +377,7 @@ impl OrderQuoter {
                         },
                         quote_request.app_data,
                         quote_request.from,
+                        quote_request.is_liquidity_order,
                     ),
                     single_estimate(price_estimator.as_ref(), &price_estimation_query)
                 )
@@ -451,7 +456,8 @@ mod tests {
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "buyTokenBalance": "internal",
-                "priceQuality": "optimal"
+                "priceQuality": "optimal",
+                "isLiquidityOrder": false,
             }))
             .unwrap(),
             OrderQuoteRequest {
@@ -467,7 +473,8 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
-                price_quality: PriceQuality::Optimal
+                price_quality: PriceQuality::Optimal,
+                is_liquidity_order: false,
             }
         );
     }
@@ -485,7 +492,8 @@ mod tests {
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "sellTokenBalance": "external",
-                "priceQuality": "fast"
+                "priceQuality": "fast",
+                "isLiquidityOrder": false,
             }))
             .unwrap(),
             OrderQuoteRequest {
@@ -501,7 +509,8 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
                 buy_token_balance: BuyTokenDestination::Erc20,
-                price_quality: PriceQuality::Fast
+                price_quality: PriceQuality::Fast,
+                is_liquidity_order: false,
             }
         );
     }
@@ -519,6 +528,7 @@ mod tests {
                 "validTo": 0x12345678,
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
+                "isLiquidityOrder": false,
             }))
             .unwrap(),
             OrderQuoteRequest {
@@ -534,7 +544,8 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,
-                price_quality: Default::default()
+                price_quality: Default::default(),
+                is_liquidity_order: false,
             }
         );
     }
@@ -618,7 +629,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -662,7 +673,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -705,7 +716,7 @@ mod tests {
         let expiration = Utc::now();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
+            .returning(move |_, _, _, _| Ok((3.into(), expiration)));
 
         let fee_calculator = Arc::new(fee_calculator);
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
@@ -765,7 +776,7 @@ mod tests {
         let mut fee_calculator = MockMinFeeCalculating::new();
         fee_calculator
             .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), Utc::now())));
+            .returning(move |_, _, _, _| Ok((3.into(), Utc::now())));
         let price_estimator = FakePriceEstimator(price_estimation::Estimate {
             out_amount: 14.into(),
             gas: 1000,

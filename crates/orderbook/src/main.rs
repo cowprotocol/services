@@ -248,15 +248,6 @@ struct Arguments {
 
     #[clap(long, env, default_value = "static", arg_enum)]
     token_detector_fee_values: FeeValues,
-
-    /// The configured addresses whose orders should be considered liquidity and
-    /// not regular user orders.
-    ///
-    /// These orders have special semantics such as not being considered in the
-    /// settlements objective funtion, not receiving any surplus, and being
-    /// allowed to place partially fillable orders.
-    #[clap(long, env, use_value_delimiter = true)]
-    pub liquidity_order_owners: Vec<H160>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
@@ -663,7 +654,6 @@ async fn main() {
             },
             native_price_estimator.clone(),
             cow_subsidy.clone(),
-            args.liquidity_order_owners.iter().copied().collect(),
         ))
     };
     let fee_calculator = create_fee_calculator(price_estimator.clone());

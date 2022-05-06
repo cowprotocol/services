@@ -60,6 +60,7 @@ pub fn get_fee_info(
                     },
                     Default::default(),
                     Default::default(),
+                    false,
                 )
                 .await;
             Result::<_, Infallible>::Ok(convert_json_response(result.map(

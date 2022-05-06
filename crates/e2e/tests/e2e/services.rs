@@ -152,7 +152,6 @@ impl OrderbookServices {
             },
             native_price_estimator.clone(),
             Arc::new(FixedCowSubsidy(1.0)),
-            Default::default(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

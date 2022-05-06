@@ -14,7 +14,7 @@ use shared::{
     price_estimation::{native::NativePriceEstimating, single_estimate},
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 
@@ -87,7 +87,6 @@ pub struct MinFeeCalculator {
     fee_subsidy: FeeSubsidyConfiguration,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     cow_subsidy: Arc<dyn CowSubsidy>,
-    liquidity_order_owners: HashSet<H160>,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -201,6 +200,7 @@ pub trait MinFeeCalculating: Send + Sync {
         fee_data: FeeData,
         app_data: AppId,
         user: H160,
+        is_liquidity_order: bool,
     ) -> Result<Measurement, PriceEstimationError>;
 
     /// Validates that the given subsidized fee is enough to process an order for the given token.
@@ -212,6 +212,7 @@ pub trait MinFeeCalculating: Send + Sync {
         app_data: AppId,
         subsidized_fee: U256,
         user: H160,
+        is_liquidity_order: bool,
     ) -> Result<FeeParameters, GetUnsubsidizedMinFeeError>;
 }
 
@@ -258,7 +259,6 @@ impl MinFeeCalculator {
         fee_subsidy: FeeSubsidyConfiguration,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         cow_subsidy: Arc<dyn CowSubsidy>,
-        liquidity_order_owners: HashSet<H160>,
     ) -> Self {
         Self {
             price_estimator,
@@ -269,7 +269,6 @@ impl MinFeeCalculator {
             fee_subsidy,
             native_price_estimator,
             cow_subsidy,
-            liquidity_order_owners,
         }
     }
 
@@ -318,11 +317,9 @@ impl MinFeeCalculating for MinFeeCalculator {
         fee_data: FeeData,
         app_data: AppId,
         user: H160,
+        is_liquidity_order: bool,
     ) -> Result<Measurement, PriceEstimationError> {
-        if fee_data.buy_token == fee_data.sell_token {
-            return Ok((U256::zero(), MAX_DATETIME));
-        }
-        if self.liquidity_order_owners.contains(&user) {
+        if is_liquidity_order || fee_data.buy_token == fee_data.sell_token {
             return Ok((U256::zero(), MAX_DATETIME));
         }
 
@@ -384,8 +381,9 @@ impl MinFeeCalculating for MinFeeCalculator {
         app_data: AppId,
         subsidized_fee: U256,
         user: H160,
+        is_liquidity_order: bool,
     ) -> Result<FeeParameters, GetUnsubsidizedMinFeeError> {
-        if self.liquidity_order_owners.contains(&user) {
+        if is_liquidity_order {
             return Ok(FeeParameters::default());
         }
 
@@ -499,7 +497,7 @@ mod tests {
     use chrono::Duration;
     use futures::FutureExt;
     use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
-    use maplit::{hashmap, hashset};
+    use maplit::hashmap;
     use mockall::{predicate::*, Sequence};
     use shared::{
         bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
@@ -537,7 +535,6 @@ mod tests {
                 fee_subsidy: Default::default(),
                 native_price_estimator: create_default_native_token_estimator(price_estimator),
                 cow_subsidy: Arc::new(FixedCowSubsidy::default()),
-                liquidity_order_owners: Default::default(),
             }
         }
     }
@@ -575,7 +572,7 @@ mod tests {
             ..Default::default()
         };
         let (fee, expiry) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default(), false)
             .await
             .unwrap();
         // Gas price increase after measurement
@@ -585,7 +582,7 @@ mod tests {
         // fee is valid before expiry
         *time.lock().unwrap() = expiry - Duration::seconds(10);
         assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, Default::default())
+            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, Default::default(), false)
             .await
             .is_ok());
 
@@ -599,7 +596,8 @@ mod tests {
                 },
                 Default::default(),
                 fee,
-                Default::default()
+                Default::default(),
+                false,
             )
             .await
             .is_err());
@@ -634,7 +632,7 @@ mod tests {
             ..Default::default()
         };
         let (fee, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default(), false)
             .await
             .unwrap();
 
@@ -642,7 +640,13 @@ mod tests {
         let lower_fee = fee - 1;
         // slightly lower fee is not valid
         assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), lower_fee, Default::default())
+            .get_unsubsidized_min_fee(
+                fee_data,
+                Default::default(),
+                lower_fee,
+                Default::default(),
+                false
+            )
             .await
             .is_err());
 
@@ -650,7 +654,13 @@ mod tests {
         let new_gas_price = gas_price.lock().unwrap().bump(0.5);
         *gas_price.lock().unwrap() = new_gas_price;
         assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), lower_fee, Default::default())
+            .get_unsubsidized_min_fee(
+                fee_data,
+                Default::default(),
+                lower_fee,
+                Default::default(),
+                false
+            )
             .await
             .is_ok());
     }
@@ -685,7 +695,6 @@ mod tests {
             fee_subsidy: Default::default(),
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
-            liquidity_order_owners: Default::default(),
         };
 
         // Selling unsupported token
@@ -699,6 +708,7 @@ mod tests {
                 },
                 Default::default(),
                 Default::default(),
+                false,
             )
             .await;
         assert!(matches!(
@@ -717,6 +727,7 @@ mod tests {
                 },
                 Default::default(),
                 Default::default(),
+                false,
             )
             .await;
         assert!(matches!(
@@ -763,34 +774,33 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy(0.5)),
-            liquidity_order_owners: Default::default(),
         };
         let (fee, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, app_data, user)
+            .compute_subsidized_min_fee(fee_data, app_data, user, false)
             .await
             .unwrap();
         assert_eq!(
             fee_estimator
-                .get_unsubsidized_min_fee(fee_data, app_data, fee, user)
+                .get_unsubsidized_min_fee(fee_data, app_data, fee, user, false)
                 .await
                 .unwrap()
                 .amount_in_sell_token(),
             fee * 4
         );
         assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, user)
+            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, user, false)
             .await
             .is_err());
         let lower_fee = fee - 1;
         assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, app_data, lower_fee, user)
+            .get_unsubsidized_min_fee(fee_data, app_data, lower_fee, user, false)
             .await
             .is_err());
 
         // repeat without user so no extra cow subsidy
         fee_estimator.cow_subsidy = Arc::new(FixedCowSubsidy(1.0));
         let (fee_2, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, app_data, user)
+            .compute_subsidized_min_fee(fee_data, app_data, user, false)
             .await
             .unwrap();
         assert_eq!(fee_2, fee * 2);
@@ -866,11 +876,10 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
-            liquidity_order_owners: Default::default(),
         };
 
         let (fee, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, app_data, Default::default())
+            .compute_subsidized_min_fee(fee_data, app_data, Default::default(), false)
             .await
             .unwrap();
         assert_eq!(
@@ -881,7 +890,7 @@ mod tests {
         );
 
         let (fee, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default(), false)
             .await
             .unwrap();
         assert_eq!(
@@ -972,10 +981,9 @@ mod tests {
             },
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
-            liquidity_order_owners: Default::default(),
         };
         let (fee, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default(), false)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -983,7 +991,7 @@ mod tests {
         assert_eq!(fee, 5.into());
         // Fee validates.
         fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, Default::default())
+            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, Default::default(), false)
             .now_or_never()
             .unwrap()
             .unwrap();
@@ -991,9 +999,7 @@ mod tests {
 
     #[test]
     fn no_fees_for_pmms() {
-        let liquidity_order_owner = H160([0x42; 20]);
         let fee_estimator = MinFeeCalculator {
-            liquidity_order_owners: hashset!(liquidity_order_owner),
             ..MinFeeCalculator::new_for_test(
                 Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
                     EstimatedGasPrice {
@@ -1017,7 +1023,7 @@ mod tests {
 
         assert_eq!(
             fee_estimator
-                .compute_subsidized_min_fee(fee_data, AppId::default(), liquidity_order_owner)
+                .compute_subsidized_min_fee(fee_data, AppId::default(), Default::default(), true)
                 .now_or_never()
                 .unwrap()
                 .unwrap(),
@@ -1029,7 +1035,8 @@ mod tests {
                     fee_data,
                     AppId::default(),
                     0.into(),
-                    liquidity_order_owner
+                    Default::default(),
+                    true
                 )
                 .now_or_never()
                 .unwrap()
