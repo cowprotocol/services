@@ -283,10 +283,13 @@ pub struct OrderCreation {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderCreationPayload {
     #[serde(flatten)]
     pub order_creation: OrderCreation,
     pub from: Option<H160>,
+    #[serde(default)]
+    pub is_liquidity_order: bool,
 }
 
 impl Default for OrderCreation {

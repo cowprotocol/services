@@ -115,11 +115,10 @@ impl Orderbook {
         &self,
         payload: OrderCreationPayload,
     ) -> Result<OrderUid, AddOrderError> {
-        let order_creation = payload.order_creation;
         // Eventually we will support all Signature types and can remove this.
         if !matches!(
             (
-                order_creation.signature.scheme(),
+                payload.order_creation.signature.scheme(),
                 self.enable_presign_orders
             ),
             (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
@@ -129,12 +128,7 @@ impl Orderbook {
 
         let (order, fee) = self
             .order_validator
-            .validate_and_construct_order(
-                order_creation,
-                payload.from,
-                &self.domain_separator,
-                self.settlement_contract,
-            )
+            .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
             .await?;
 
         self.database.insert_order(&order, fee).await?;

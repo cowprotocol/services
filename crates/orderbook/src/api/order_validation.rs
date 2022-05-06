@@ -7,7 +7,8 @@ use contracts::WETH9;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
+        BuyTokenDestination, Order, OrderCreation, OrderCreationPayload, OrderKind,
+        SellTokenSource, BUY_ETH_ADDRESS,
     },
     signature::SigningScheme,
     DomainSeparator,
@@ -48,8 +49,7 @@ pub trait OrderValidating: Send + Sync {
     /// other aspects of the order are not malformed.
     async fn validate_and_construct_order(
         &self,
-        order_creation: OrderCreation,
-        sender: Option<H160>,
+        payload: OrderCreationPayload,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError>;
@@ -214,7 +214,6 @@ pub struct OrderValidator {
     code_fetcher: Box<dyn CodeFetching>,
     native_token: WETH9,
     banned_users: HashSet<H160>,
-    liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
@@ -270,7 +269,6 @@ impl OrderValidator {
         code_fetcher: Box<dyn CodeFetching>,
         native_token: WETH9,
         banned_users: HashSet<H160>,
-        liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -280,7 +278,6 @@ impl OrderValidator {
             code_fetcher,
             native_token,
             banned_users,
-            liquidity_order_owners,
             min_order_validity_period,
             fee_validator,
             bad_token_detector,
@@ -337,11 +334,11 @@ impl OrderValidating for OrderValidator {
 
     async fn validate_and_construct_order(
         &self,
-        order_creation: OrderCreation,
-        sender: Option<H160>,
+        payload: OrderCreationPayload,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
+        let order_creation = &payload.order_creation;
         let owner = order_creation
             .signature
             .validate(domain_separator, &order_creation.hash_struct())
@@ -350,7 +347,7 @@ impl OrderValidating for OrderValidator {
         if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        if matches!(sender, Some(from) if from != owner) {
+        if matches!(payload.from, Some(from) if from != owner) {
             return Err(ValidationError::WrongOwner(owner));
         }
         for &token in &[order_creation.sell_token, order_creation.buy_token] {
@@ -365,11 +362,10 @@ impl OrderValidating for OrderValidator {
             }
         }
 
-        let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
         self.partial_validate(PreOrderData::from_order_creation(
             owner,
-            &order_creation,
-            is_liquidity_order,
+            order_creation,
+            payload.is_liquidity_order,
         ))
         .await
         .map_err(ValidationError::Partial)?;
@@ -406,7 +402,7 @@ impl OrderValidating for OrderValidator {
                 }
             })?;
 
-        let min_balance = match minimum_balance(&order_creation) {
+        let min_balance = match minimum_balance(order_creation) {
             Some(amount) => amount,
             None => return Err(ValidationError::SellAmountOverflow),
         };
@@ -454,12 +450,12 @@ impl OrderValidating for OrderValidator {
         }
 
         let order = Order::from_order_creation(
-            &order_creation,
+            order_creation,
             domain_separator,
             settlement_contract,
             unsubsidized_fee.amount_in_sell_token(),
             owner,
-            is_liquidity_order,
+            payload.is_liquidity_order,
         );
         Ok((order, unsubsidized_fee))
     }
@@ -575,7 +571,6 @@ mod tests {
             code_fetcher,
             native_token,
             banned_users,
-            hashset!(),
             min_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
@@ -585,6 +580,7 @@ mod tests {
             validator
                 .partial_validate(PreOrderData {
                     partially_fillable: true,
+                    is_liquidity_order: false,
                     ..Default::default()
                 })
                 .await,
@@ -672,7 +668,6 @@ mod tests {
             code_fetcher,
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
@@ -693,13 +688,11 @@ mod tests {
 
     #[tokio::test]
     async fn pre_validate_ok() {
-        let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let min_order_validity_period = Duration::from_secs(1);
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(liquidity_order_owner),
             min_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
@@ -719,7 +712,6 @@ mod tests {
             .partial_validate(PreOrderData {
                 partially_fillable: true,
                 is_liquidity_order: true,
-                owner: liquidity_order_owner,
                 ..order()
             })
             .await
@@ -744,22 +736,24 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (order, _) = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await
             .unwrap();
         assert_eq!(order.metadata.full_fee_amount, order.creation.fee_amount);
@@ -783,22 +777,24 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(0),
-            sell_amount: U256::from(0),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(0),
+                sell_amount: U256::from(0),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
@@ -822,27 +818,25 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            from: Some(Default::default()),
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(
-                order,
-                Some(Default::default()),
-                &Default::default(),
-                Default::default(),
-            )
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         assert!(matches!(result, Err(ValidationError::WrongOwner(_))));
     }
@@ -865,22 +859,24 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientFee)));
@@ -906,22 +902,24 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::UnsupportedToken(_))));
@@ -945,23 +943,25 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::MAX,
+                fee_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
@@ -985,22 +985,24 @@ mod tests {
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
-            hashset!(),
             Duration::from_secs(1),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+        let payload = OrderCreationPayload {
+            order_creation: OrderCreation {
+                valid_to: shared::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(payload, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
@@ -1026,7 +1028,6 @@ mod tests {
                     Box::new(MockCodeFetching::new()),
                     dummy_contract!(WETH9, [0xef; 20]),
                     hashset!(),
-                    hashset!(),
                     Duration::from_secs(1),
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
@@ -1044,16 +1045,18 @@ mod tests {
                     assert!(matches!(
                         validator
                             .validate_and_construct_order(
-                                order
-                                    .clone()
-                                    .sign_with(
-                                        signing_scheme,
-                                        &Default::default(),
-                                        SecretKeyRef::new(&ONE_KEY)
-                                    )
-                                    .build()
-                                    .creation,
-                                None,
+                                OrderCreationPayload {
+                                    order_creation: order
+                                        .clone()
+                                        .sign_with(
+                                            signing_scheme,
+                                            &Default::default(),
+                                            SecretKeyRef::new(&ONE_KEY)
+                                        )
+                                        .build()
+                                        .creation,
+                                    ..Default::default()
+                                },
                                 &Default::default(),
                                 Default::default()
                             )
@@ -1065,8 +1068,13 @@ mod tests {
                 assert!(matches!(
                     validator
                         .validate_and_construct_order(
-                            order.with_presign(Default::default()).build().creation,
-                            None,
+                            OrderCreationPayload {
+                                order_creation: order
+                                    .with_presign(Default::default())
+                                    .build()
+                                    .creation,
+                                ..Default::default()
+                            },
                             &Default::default(),
                             Default::default()
                         )

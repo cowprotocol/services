@@ -688,7 +688,6 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),

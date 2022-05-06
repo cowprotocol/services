@@ -174,7 +174,6 @@ impl OrderbookServices {
             Box::new(web3.clone()),
             contracts.weth.clone(),
             HashSet::default(),
-            HashSet::default(),
             Duration::from_secs(120),
             fee_calculator.clone(),
             bad_token_detector.clone(),
