@@ -19,6 +19,7 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
+use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
@@ -609,6 +610,50 @@ impl Driver {
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+
+        // Report solver competition data to the api.
+        let mut solver_competition_response = SolverCompetitionResponse {
+            gas_price: gas_price.effective_gas_price(),
+            liquidity_collected_block: current_block_during_liquidity_fetch,
+            // TODO: we don't have access to this and there is no guarantee there is one such block
+            competition_simulation_block: 0,
+            transaction_hash: None,
+            solutions: rated_settlements
+                .iter()
+                .map(|(solver, rated_settlement, _)| SolverSettlement {
+                    solver: solver.name().to_string(),
+                    objective: Objective {
+                        total: rated_settlement
+                            .objective_value()
+                            .to_f64()
+                            .unwrap_or(f64::NAN),
+                        surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
+                        fees: rated_settlement
+                            .unscaled_subsidized_fee
+                            .to_f64()
+                            .unwrap_or(f64::NAN),
+                        cost: rated_settlement.gas_estimate.to_f64_lossy()
+                            * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+                        gas: rated_settlement.gas_estimate.low_u64(),
+                    },
+                    prices: rated_settlement.settlement.clearing_prices().clone(),
+                    orders: rated_settlement
+                        .settlement
+                        .executed_trades()
+                        .map(|(trade, _)| solver_competition::Order {
+                            id: trade.order.metadata.uid,
+                            executed_amount: trade.executed_amount,
+                        })
+                        .collect(),
+                    // TODO: need some refactoring to make this easier to access
+                    call_data: Default::default(),
+                })
+                .collect(),
+        };
+        // This will happen again after transaction submission with the tx hash.
+        self.send_solver_competition(auction_id, &solver_competition_response)
+            .await;
+
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
@@ -655,10 +700,6 @@ impl Driver {
                 )
                 .await
             {
-                let orders = winning_settlement
-                    .settlement
-                    .traded_orders()
-                    .map(|o| o.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -666,7 +707,10 @@ impl Driver {
                         0
                     }
                 };
-                self.in_flight_orders.mark_settled_orders(block, orders);
+
+                self.in_flight_orders
+                    .mark_settled_orders(block, &winning_settlement.settlement);
+
                 match receipt.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
@@ -675,6 +719,10 @@ impl Driver {
                         tracing::error!("node did not return effective gas price in tx receipt");
                     }
                 }
+
+                solver_competition_response.transaction_hash = Some(receipt.transaction_hash);
+                self.send_solver_competition(auction_id, &solver_competition_response)
+                    .await;
             }
             self.metrics.transaction_submission(start.elapsed());
 
@@ -695,6 +743,12 @@ impl Driver {
         let id = self.solve_id;
         self.solve_id += 1;
         id
+    }
+
+    async fn send_solver_competition(&self, auction_id: u64, body: &SolverCompetitionResponse) {
+        if let Err(err) = self.api.send_solver_competition(auction_id, body).await {
+            tracing::warn!(?err, "failed to send solver competition");
+        }
     }
 }
 

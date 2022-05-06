@@ -1,5 +1,5 @@
 use anyhow::Result;
-use model::auction::Auction;
+use model::{auction::Auction, solver_competition::SolverCompetitionResponse};
 use reqwest::{Client, Url};
 
 pub struct OrderBookApi {
@@ -17,6 +17,23 @@ impl OrderBookApi {
         let url = self.base.join("api/v1/auction")?;
         let auction = self.client.get(url).send().await?.json().await?;
         Ok(auction)
+    }
+
+    pub async fn send_solver_competition(
+        &self,
+        auction_id: u64,
+        body: &SolverCompetitionResponse,
+    ) -> Result<()> {
+        let url = self
+            .base
+            .join(&format!("api/v1/solver_competition/{}", auction_id))?;
+        self.client
+            .post(url)
+            .json(&body)
+            .send()
+            .await?
+            .error_for_status()?;
+        Ok(())
     }
 }
 
