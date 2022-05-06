@@ -761,6 +761,14 @@ mod tests {
             target: H160::zero(),
             value: U256::zero(),
             call_data: Vec::new(),
+            input: TokenAmount {
+                token: token_a,
+                amount: U256::from(2_u8),
+            },
+            output: TokenAmount {
+                token: token_b,
+                amount: U256::from(1_u8),
+            },
             exec_plan: Some(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 1u32,

@@ -1,3 +1,4 @@
+use derivative::Derivative;
 use ethcontract::H160;
 use model::{
     ratio_as_decimal,
@@ -27,8 +28,8 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
-    pub fee: FeeModel,
-    pub cost: CostModel,
+    pub fee: TokenAmount,
+    pub cost: TokenAmount,
     pub is_liquidity_order: bool,
     #[serde(default)]
     pub mandatory: bool,
@@ -45,7 +46,7 @@ pub struct AmmModel {
     pub parameters: AmmParameters,
     #[serde(with = "ratio_as_decimal")]
     pub fee: BigRational,
-    pub cost: CostModel,
+    pub cost: TokenAmount,
     pub mandatory: bool,
 }
 
@@ -99,15 +100,8 @@ pub struct TokenInfoModel {
     pub internal_buffer: Option<U256>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CostModel {
-    #[serde(with = "u256_decimal")]
-    pub amount: U256,
-    pub token: H160,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct FeeModel {
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TokenAmount {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     pub token: H160,
@@ -121,11 +115,15 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Derivative, Deserialize, PartialEq)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
+    #[derivative(Debug(format_with = "debug_bytes"))]
+    #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,
+    pub input: TokenAmount,
+    pub output: TokenAmount,
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
 
@@ -176,8 +174,8 @@ pub struct ExecutedOrderModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
-    pub cost: Option<CostModel>,
-    pub fee: Option<FeeModel>,
+    pub cost: Option<TokenAmount>,
+    pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
@@ -186,7 +184,7 @@ pub struct ExecutedOrderModel {
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
-    pub cost: Option<CostModel>,
+    pub cost: Option<TokenAmount>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -299,11 +297,11 @@ mod tests {
             buy_amount: U256::from(2),
             allow_partial_fill: false,
             is_sell_order: true,
-            fee: FeeModel {
+            fee: TokenAmount {
                 amount: U256::from(2),
                 token: sell_token,
             },
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(1),
                 token: native_token,
             },
@@ -319,7 +317,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -339,7 +337,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(2.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(2),
                 token: native_token,
             },
@@ -358,7 +356,7 @@ mod tests {
                 amplification_parameter: BigRational::new(1337.into(), 100.into()),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -559,5 +557,50 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
+    }
+
+    #[test]
+    fn decode_interaction_data() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": "0x01020304",
+                        "input": {
+                            "token": "0x0101010101010101010101010101010101010101",
+                            "amount": "9999"
+                        },
+                        "output": {
+                            "token": "0x0202020202020202020202020202020202020202",
+                            "amount": "1000"
+                        },
+                        "exec_plan": {
+                            "sequence": 42,
+                            "position": 1337
+                        }
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                input: TokenAmount {
+                    token: H160([1; 20]),
+                    amount: 9999.into(),
+                },
+                output: TokenAmount {
+                    token: H160([2; 20]),
+                    amount: 1000.into(),
+                },
+                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                }),
+            },
+        );
     }
 }
