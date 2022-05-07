@@ -122,18 +122,18 @@ pub struct InteractionData {
     #[derivative(Debug(format_with = "debug_bytes"))]
     #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,
-    /// The input amount into the AMM interaction - i.e. the amount of tokens
+    /// The input amounts into the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the settlement contract into the AMM
     /// for this calldata.
     ///
     /// `GPv2Settlement -> AMM`
-    pub input: TokenAmount,
-    /// The output amount from the AMM interaction - i.e. the amount of tokens
+    pub inputs: Vec<TokenAmount>,
+    /// The output amounts from the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the AMM into the settlement contract
     /// for this calldata.
     ///
     /// `AMM -> GPv2Settlement`
-    pub output: TokenAmount,
+    pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
 
@@ -578,14 +578,22 @@ mod tests {
                         "target": "0xffffffffffffffffffffffffffffffffffffffff",
                         "value": "0",
                         "call_data": "0x01020304",
-                        "input": {
-                            "token": "0x0101010101010101010101010101010101010101",
-                            "amount": "9999"
-                        },
-                        "output": {
-                            "token": "0x0202020202020202020202020202020202020202",
-                            "amount": "1000"
-                        },
+                        "inputs": [
+                            {
+                                "token": "0x0101010101010101010101010101010101010101",
+                                "amount": "9999"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "token": "0x0202020202020202020202020202020202020202",
+                                "amount": "2000"
+                            },
+                            {
+                                "token": "0x0303030303030303030303030303030303030303",
+                                "amount": "3000"
+                            }
+                        ],
                         "exec_plan": {
                             "sequence": 42,
                             "position": 1337
@@ -598,14 +606,20 @@ mod tests {
                 target: H160([0xff; 20]),
                 value: 0.into(),
                 call_data: vec![1, 2, 3, 4],
-                input: TokenAmount {
+                inputs: vec![TokenAmount {
                     token: H160([1; 20]),
                     amount: 9999.into(),
-                },
-                output: TokenAmount {
-                    token: H160([2; 20]),
-                    amount: 1000.into(),
-                },
+                }],
+                outputs: vec![
+                    TokenAmount {
+                        token: H160([2; 20]),
+                        amount: 2000.into(),
+                    },
+                    TokenAmount {
+                        token: H160([3; 20]),
+                        amount: 3000.into(),
+                    }
+                ],
                 exec_plan: Some(ExecutionPlanCoordinatesModel {
                     sequence: 42,
                     position: 1337,
