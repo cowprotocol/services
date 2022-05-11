@@ -178,6 +178,10 @@ struct Arguments {
     #[clap(long, env, default_value = "10")]
     zeroex_slippage_bps: u32,
 
+    /// The slippage tolerance we apply to the price quoted by oneInchSolver
+    #[clap(long, env, default_value = "10")]
+    oneinch_slippage_bps: u32,
+
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
@@ -507,6 +511,7 @@ async fn main() {
         metrics.clone(),
         zeroex_api.clone(),
         args.zeroex_slippage_bps,
+        args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,

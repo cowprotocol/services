@@ -24,7 +24,7 @@ impl Slippage {
     }
 
     /// Creates a slippage amount from the specified basis points.
-    pub fn percentage_from_basis_points(basis_points: u16) -> Result<Self> {
+    pub fn percentage_from_basis_points(basis_points: u32) -> Result<Self> {
         let percent = (basis_points as f64) / 100.;
         Slippage::percentage(percent)
     }
