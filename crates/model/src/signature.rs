@@ -12,6 +12,7 @@ use web3::{
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
+    Eip1271,
     EthSign,
     PreSign,
 }
@@ -20,6 +21,7 @@ pub enum SigningScheme {
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
+    Eip1271(EcdsaSignature),
     EthSign(EcdsaSignature),
     PreSign(H160),
 }
@@ -34,6 +36,7 @@ impl Signature {
     pub fn default_with(scheme: SigningScheme) -> Self {
         match scheme {
             SigningScheme::Eip712 => Signature::Eip712(Default::default()),
+            SigningScheme::Eip1271 => Signature::Eip1271(Default::default()),
             SigningScheme::EthSign => Signature::EthSign(Default::default()),
             SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
@@ -54,13 +57,15 @@ impl Signature {
                 domain_separator,
                 struct_hash,
             ),
+            // EIP-1271 is validated on-chain
+            Signature::Eip1271(_) => None,
             Signature::PreSign(account) => Some(*account),
         }
     }
 
     pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
         Ok(match scheme {
-            scheme @ (SigningScheme::Eip712 | SigningScheme::EthSign) => {
+            scheme @ (SigningScheme::Eip712 | SigningScheme::Eip1271 | SigningScheme::EthSign) => {
                 let bytes: [u8; 65] = bytes
                     .try_into()
                     .context("ECDSA signature must be 65 bytes long")?;
@@ -86,7 +91,7 @@ impl Signature {
     #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::Eip712(sig) | Signature::Eip1271(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
             Signature::PreSign(account) => account.0.to_vec(),
         }
     }
@@ -94,6 +99,7 @@ impl Signature {
     pub fn scheme(&self) -> SigningScheme {
         match self {
             Signature::Eip712(_) => SigningScheme::Eip712,
+            Signature::Eip1271(_) => SigningScheme::Eip1271,
             Signature::EthSign(_) => SigningScheme::EthSign,
             Signature::PreSign(_) => SigningScheme::PreSign,
         }
@@ -104,6 +110,7 @@ impl Signature {
 #[serde(rename_all = "lowercase")]
 pub enum EcdsaSigningScheme {
     Eip712,
+    Eip1271,
     EthSign,
 }
 
@@ -111,6 +118,7 @@ impl From<EcdsaSigningScheme> for SigningScheme {
     fn from(scheme: EcdsaSigningScheme) -> Self {
         match scheme {
             EcdsaSigningScheme::Eip712 => Self::Eip712,
+            EcdsaSigningScheme::Eip1271 => Self::Eip1271,
             EcdsaSigningScheme::EthSign => Self::EthSign,
         }
     }
@@ -124,6 +132,7 @@ impl SigningScheme {
     pub fn try_to_ecdsa_scheme(&self) -> Option<EcdsaSigningScheme> {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
+            Self::Eip1271 => Some(EcdsaSigningScheme::Eip1271),
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
             Self::PreSign => None,
         }
@@ -162,6 +171,7 @@ fn hashed_signing_message(
 ) -> [u8; 32] {
     match signing_scheme {
         EcdsaSigningScheme::Eip712 => hashed_eip712_message(domain_separator, struct_hash),
+        EcdsaSigningScheme::Eip1271 => todo!(),
         EcdsaSigningScheme::EthSign => hashed_ethsign_message(domain_separator, struct_hash),
     }
 }
@@ -170,6 +180,7 @@ impl EcdsaSignature {
     pub fn to_signature(self, scheme: EcdsaSigningScheme) -> Signature {
         match scheme {
             EcdsaSigningScheme::Eip712 => Signature::Eip712(self),
+            EcdsaSigningScheme::Eip1271 => Signature::Eip1271(self),
             EcdsaSigningScheme::EthSign => Signature::EthSign(self),
         }
     }

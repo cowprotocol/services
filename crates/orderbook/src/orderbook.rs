@@ -120,7 +120,7 @@ impl Orderbook {
                 order_creation.signature.scheme(),
                 self.enable_presign_orders
             ),
-            (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
+            (SigningScheme::Eip712 | SigningScheme::EthSign | SigningScheme::Eip1271, _) | (SigningScheme::PreSign, true)
         ) {
             return Err(AddOrderError::UnsupportedSignature);
         }
