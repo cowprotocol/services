@@ -267,7 +267,7 @@ pub enum ExecutionPlan {
     /// settlement.
     Coordinates(ExecutionPlanCoordinatesModel),
 
-    /// The interacetion should **not** be included in the settlement as
+    /// The interaction should **not** be included in the settlement as
     /// internal buffers will be used instead.
     #[serde(with = "execution_plan_internal")]
     Internal,
