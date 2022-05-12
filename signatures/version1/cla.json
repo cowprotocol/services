@@ -1,3 +1,12 @@
 {
-   "signedContributors": []
+  "signedContributors": [
+    {
+      "name": "elpiel",
+      "id": 8925621,
+      "comment_id": 1124817274,
+      "created_at": "2022-05-12T10:18:38Z",
+      "repoId": 477694383,
+      "pullRequestNo": 198
+    }
+  ]
 }
