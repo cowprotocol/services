@@ -49,6 +49,9 @@ pub fn create_order(
         let orderbook = orderbook.clone();
         async move {
             let result = orderbook.add_order(order_payload).await;
+            if let Ok(order_uid) = result {
+                tracing::debug!("order created with uid {}", order_uid);
+            }
             Result::<_, Infallible>::Ok(create_order_response(result))
         }
     })
