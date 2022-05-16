@@ -476,7 +476,7 @@ impl OrderStoring for Postgres {
             .bind(uid.0.as_ref())
             .fetch_one(&self.pool)
             .await?;
-        OrderFeeQueryRow::into_fee(&fee)
+        OrderFeeQueryRow::into_fee(fee)
     }
 
     async fn user_orders(
@@ -635,7 +635,7 @@ struct OrderFeeQueryRow {
 }
 
 impl OrderFeeQueryRow {
-    fn into_fee(&self) -> Result<FeeParameters> {
+    fn into_fee(self) -> Result<FeeParameters> {
         Ok(FeeParameters {
             gas_price: self.gas_price,
             gas_amount: self.gas_amount,
