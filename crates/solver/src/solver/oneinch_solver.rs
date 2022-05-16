@@ -10,7 +10,7 @@ use super::{
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
-    liquidity::{slippage::MAX_SLIPPAGE_BPS, LimitOrder},
+    liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
 use anyhow::{anyhow, Result};
@@ -40,6 +40,7 @@ pub struct OneInchSolver {
     #[derivative(Debug = "ignore")]
     allowance_fetcher: Box<dyn AllowanceManaging>,
     protocol_cache: ProtocolCache,
+    oneinch_slippage_bps: u32,
 }
 
 impl From<RestError> for SettlementError {
@@ -53,6 +54,7 @@ impl From<RestError> for SettlementError {
 
 impl OneInchSolver {
     /// Creates a new 1Inch solver with a list of disabled protocols.
+    #[allow(clippy::too_many_arguments)]
     pub fn with_disabled_protocols(
         account: Account,
         web3: Web3,
@@ -61,6 +63,7 @@ impl OneInchSolver {
         disabled_protocols: impl IntoIterator<Item = String>,
         client: Client,
         one_inch_url: Url,
+        oneinch_slippage_bps: u32,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
@@ -70,6 +73,7 @@ impl OneInchSolver {
             client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             protocol_cache: ProtocolCache::default(),
+            oneinch_slippage_bps,
         })
     }
 }
@@ -104,7 +108,7 @@ impl OneInchSolver {
             order.sell_amount,
             self.settlement_contract.address(),
             protocols,
-            Slippage::percentage_from_basis_points(MAX_SLIPPAGE_BPS).unwrap(),
+            Slippage::percentage_from_basis_points(self.oneinch_slippage_bps).unwrap(),
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
@@ -196,6 +200,7 @@ mod tests {
             client: Box::new(client),
             allowance_fetcher: Box::new(allowance_fetcher),
             protocol_cache: ProtocolCache::default(),
+            oneinch_slippage_bps: 10u32,
         }
     }
 
@@ -426,6 +431,7 @@ mod tests {
             vec!["PMM1".to_string()],
             Client::new(),
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
+            10u32,
         )
         .unwrap();
         let settlement = solver
