@@ -21,10 +21,9 @@ use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
-use num::{rational::Ratio, BigInt, BigRational, BigUint, ToPrimitive};
+use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
-use shared::conversions::u256_to_big_uint;
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -174,18 +173,17 @@ impl Driver {
         let mut traded_orders = Vec::new();
         for (_, group) in &settlement
             .executed_trades()
-            .group_by(|(trade, _)| trade.order.metadata.uid)
+            .map(|(trade, _)| trade)
+            .group_by(|trade| trade.order.metadata.uid)
         {
             let mut group = group.into_iter().peekable();
-            let order = &group.peek().unwrap().0.order;
-            let previously_filled = match order.creation.kind {
-                OrderKind::Buy => order.metadata.executed_buy_amount.clone(),
-                OrderKind::Sell => order.metadata.executed_sell_amount.clone(),
-            };
-            let newly_filled = group.fold(BigUint::default(), |acc, (trade, _)| {
-                acc + u256_to_big_uint(&trade.executed_amount)
-            });
-            if previously_filled == 0u8.into() && newly_filled > 0u8.into() {
+            let order = &group.peek().unwrap().order;
+            let was_already_filled = match order.creation.kind {
+                OrderKind::Buy => &order.metadata.executed_buy_amount,
+                OrderKind::Sell => &order.metadata.executed_sell_amount,
+            } > &0u8.into();
+            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
+            if !was_already_filled && is_getting_filled {
                 traded_orders.push(order.clone());
             }
         }
