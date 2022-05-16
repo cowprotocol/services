@@ -672,6 +672,7 @@ async fn main() {
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         database.clone(),
+        gas_price_estimator.clone(),
         args.banned_users.iter().copied().collect(),
         balance_fetcher.clone(),
         bad_token_detector.clone(),

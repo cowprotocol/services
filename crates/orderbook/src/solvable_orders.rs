@@ -1,15 +1,19 @@
 use crate::{
     account_balances::{BalanceFetching, Query},
     database::orders::OrderStoring,
-    orderbook::filter_unsupported_tokens,
+    orderbook::{filter_low_fee_payments, filter_unsupported_tokens},
 };
 use anyhow::{Context as _, Result};
 use futures::StreamExt;
+use gas_estimation::GasPriceEstimating;
 use model::{auction::Auction, order::Order};
 use primitive_types::{H160, U256};
 use shared::{
-    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
-    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
+    bad_token::BadTokenDetecting,
+    current_block::CurrentBlockStream,
+    maintenance::Maintaining,
+    price_estimation::{native::NativePriceEstimating, PriceEstimationError},
+    time::now_in_epoch_seconds,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -43,6 +47,7 @@ pub trait AuctionMetrics: Send + Sync + 'static {
 pub struct SolvableOrdersCache {
     min_order_validity_period: Duration,
     database: Arc<dyn OrderStoring>,
+    gas_price_estimator: Arc<dyn GasPriceEstimating>,
     banned_users: HashSet<H160>,
     balance_fetcher: Arc<dyn BalanceFetching>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -73,6 +78,7 @@ impl SolvableOrdersCache {
     pub fn new(
         min_order_validity_period: Duration,
         database: Arc<dyn OrderStoring>,
+        gas_price_estimator: Arc<dyn GasPriceEstimating>,
         banned_users: HashSet<H160>,
         balance_fetcher: Arc<dyn BalanceFetching>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -83,6 +89,7 @@ impl SolvableOrdersCache {
         let self_ = Arc::new(Self {
             min_order_validity_period,
             database,
+            gas_price_estimator,
             banned_users,
             balance_fetcher,
             bad_token_detector,
@@ -136,7 +143,13 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-
+        let current_gas_price = self
+            .gas_price_estimator
+            .estimate()
+            .await
+            .map_err(PriceEstimationError::from)?;
+        let orders =
+            filter_low_fee_payments(current_gas_price, self.database.clone(), orders).await?;
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
         let old_balances = {
@@ -435,14 +448,18 @@ mod tests {
     use super::*;
     use crate::{
         account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
-        database::orders::SolvableOrders as DbOrders, metrics::NoopMetrics,
+        database::orders::SolvableOrders as DbOrders, fee::FeeParameters, metrics::NoopMetrics,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::StreamExt;
+    use gas_estimation::EstimatedGasPrice;
     use maplit::{btreemap, hashmap, hashset};
     use model::order::{OrderBuilder, OrderCreation, OrderKind, OrderMetadata, SellTokenSource};
     use primitive_types::H160;
-    use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
+    use shared::{
+        gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+    };
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
@@ -556,6 +573,14 @@ mod tests {
                 })
             });
 
+        order_storing.expect_fee_of_order().returning(|_| {
+            Ok(FeeParameters {
+                gas_amount: 50.0f64,
+                gas_price: 50.0f64,
+                sell_token_price: 50.0f64,
+            })
+        });
+
         balance_fetcher
             .expect_get_balances()
             .times(1)
@@ -573,10 +598,15 @@ mod tests {
         native.expect_estimate_native_prices().returning(|a| {
             futures::stream::iter(std::iter::repeat(Ok(1.0)).take(a.len()).enumerate()).boxed()
         });
+        let gas_price_estimator = FakeGasPriceEstimator::new(EstimatedGasPrice {
+            legacy: 50.0f64,
+            eip1559: None,
+        });
 
         let cache = SolvableOrdersCache::new(
             Duration::from_secs(0),
             Arc::new(order_storing),
+            Arc::new(gas_price_estimator),
             Default::default(),
             Arc::new(balance_fetcher),
             Arc::new(bad_token_detector),

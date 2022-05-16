@@ -1,11 +1,13 @@
 use crate::{
     api::order_validation::{OrderValidating, OrderValidator, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
+    fee::FeeParameters,
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
+use gas_estimation::EstimatedGasPrice;
 use model::{
     auction::Auction,
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
@@ -269,6 +271,40 @@ impl LivenessChecking for Orderbook {
     }
 }
 
+pub async fn filter_low_fee_payments(
+    current_gas_price: EstimatedGasPrice,
+    order_storing: Arc<dyn OrderStoring>,
+    orders: Vec<Order>,
+) -> Result<Vec<Order>> {
+    let orders_with_fee_parameters = orders.iter().map(|order| async {
+        let fees = order_storing
+            .fee_of_order(&order.metadata.uid)
+            .await
+            .unwrap();
+        (order.clone(), fees)
+    });
+    let orders_with_fee_parameters: Vec<(Order, FeeParameters)> =
+        futures::future::join_all(orders_with_fee_parameters).await;
+    let acceptable_gas_price_increase = 1.5f64;
+    // Todo: The following filtering could have also been already done on a database level, in order to increase the performance
+    let orders = orders_with_fee_parameters
+        .iter()
+        .filter(|(order, fee_estimate)| {
+            let gas_price_condition = if let Some(eip1559_gas_price) = current_gas_price.eip1559 {
+                fee_estimate.gas_price * acceptable_gas_price_increase
+                    > eip1559_gas_price.base_fee_per_gas
+            } else {
+                fee_estimate.gas_price * acceptable_gas_price_increase > current_gas_price.legacy
+            };
+            gas_price_condition
+                || (order.metadata.creation_date + chrono::Duration::minutes(30)
+                    > chrono::offset::Utc::now())
+        })
+        .map(|(order, _)| order.clone())
+        .collect();
+    Ok(orders)
+}
+
 pub async fn filter_unsupported_tokens(
     mut orders: Vec<Order>,
     bad_token: &dyn BadTokenDetecting,
@@ -298,10 +334,119 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::orders::MockOrderStoring;
     use ethcontract::H160;
     use futures::FutureExt;
-    use model::order::OrderBuilder;
+    use gas_estimation::GasPrice1559;
+    use mockall::predicate;
+    use model::order::OrderMetadata;
+    use model::order::{OrderBuilder, OrderCreation, OrderKind};
     use shared::bad_token::list_based::ListBasedDetector;
+
+    #[test]
+    fn test_filter_low_fee_payments() {
+        let current_gas_price = EstimatedGasPrice {
+            legacy: 50.0f64,
+            eip1559: Some(GasPrice1559 {
+                base_fee_per_gas: 50.0f64,
+                max_fee_per_gas: 51.0f64,
+                max_priority_fee_per_gas: 1.0f64,
+            }),
+        };
+        let sufficient_fee_order = Order {
+            metadata: OrderMetadata {
+                creation_date: chrono::offset::Utc::now() - chrono::Duration::minutes(1),
+                ..Default::default()
+            },
+            creation: OrderCreation {
+                kind: OrderKind::Sell,
+                sell_amount: 1i32.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+        };
+
+        let mut order_storing = MockOrderStoring::new();
+        let uid = sufficient_fee_order.metadata.uid;
+        order_storing
+            .expect_fee_of_order()
+            .with(predicate::eq(uid))
+            .times(1)
+            .returning(|_| {
+                Ok(FeeParameters {
+                    gas_amount: 50.0f64,
+                    gas_price: 50.0f64,
+                    sell_token_price: 50.0f64,
+                })
+            });
+
+        let in_sufficient_fee_order_and_old = Order {
+            metadata: OrderMetadata {
+                creation_date: chrono::offset::Utc::now() - chrono::Duration::minutes(31),
+                ..Default::default()
+            },
+            creation: OrderCreation {
+                kind: OrderKind::Sell,
+                sell_amount: 2.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+        };
+        let uid = in_sufficient_fee_order_and_old.metadata.uid;
+        order_storing
+            .expect_fee_of_order()
+            .with(predicate::eq(uid))
+            .times(1)
+            .returning(|_| {
+                Ok(FeeParameters {
+                    gas_amount: 50.0f64,
+                    gas_price: 10.0f64,
+                    sell_token_price: 50.0f64,
+                })
+            });
+
+        let in_sufficient_fee_order_but_recent = Order {
+            metadata: OrderMetadata {
+                creation_date: chrono::offset::Utc::now() - chrono::Duration::minutes(1),
+                ..Default::default()
+            },
+            creation: OrderCreation {
+                kind: OrderKind::Sell,
+                sell_amount: 3.into(),
+                buy_amount: 1.into(),
+                ..Default::default()
+            },
+        };
+        let uid = in_sufficient_fee_order_but_recent.metadata.uid;
+        order_storing
+            .expect_fee_of_order()
+            .with(predicate::eq(uid))
+            .times(1)
+            .returning(move |_| {
+                Ok(FeeParameters {
+                    gas_amount: 50.0f64,
+                    gas_price: 10.0f64,
+                    sell_token_price: 50.0f64,
+                })
+            });
+
+        let result = filter_low_fee_payments(
+            current_gas_price,
+            Arc::new(order_storing),
+            vec![
+                sufficient_fee_order.clone(),
+                in_sufficient_fee_order_but_recent.clone(),
+                in_sufficient_fee_order_and_old,
+            ],
+        )
+        .now_or_never()
+        .unwrap()
+        .unwrap();
+        assert_eq!(
+            result,
+            vec![sufficient_fee_order, in_sufficient_fee_order_but_recent]
+        );
+    }
 
     #[test]
     fn filter_unsupported_tokens_() {

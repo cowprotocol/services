@@ -36,6 +36,8 @@ pub trait OrderStoring: Send + Sync {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>>;
+
+    async fn fee_of_order(&self, uid: &OrderUid) -> Result<FeeParameters>;
 }
 
 pub struct SolvableOrders {
@@ -468,6 +470,15 @@ impl OrderStoring for Postgres {
             .await
     }
 
+    async fn fee_of_order(&self, uid: &OrderUid) -> Result<FeeParameters> {
+        let query = "SELECT gas_amount, gas_price, sell_token_price FROM order_fee_parameters where uid= $1;";
+        let fee: OrderFeeQueryRow = sqlx::query_as(query)
+            .bind(uid.0.as_ref())
+            .fetch_one(&self.pool)
+            .await?;
+        OrderFeeQueryRow::into_fee(&fee)
+    }
+
     async fn user_orders(
         &self,
         owner: &H160,
@@ -612,6 +623,23 @@ impl OrdersQueryRow {
         Ok(Order {
             metadata: order_metadata,
             creation: order_creation,
+        })
+    }
+}
+
+#[derive(sqlx::FromRow)]
+struct OrderFeeQueryRow {
+    gas_amount: f64,
+    gas_price: f64,
+    sell_token_price: f64,
+}
+
+impl OrderFeeQueryRow {
+    fn into_fee(&self) -> Result<FeeParameters> {
+        Ok(FeeParameters {
+            gas_price: self.gas_price,
+            gas_amount: self.gas_amount,
+            sell_token_price: self.sell_token_price,
         })
     }
 }
