@@ -1,5 +1,5 @@
 use anyhow::{anyhow, ensure, Context, Result};
-use reqwest::header::HeaderValue;
+use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, Url};
 use std::time::Duration;
 
@@ -110,7 +110,12 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
-        let mut request = self.client.post(url).timeout(timeout);
+        let mut request = self
+            .client
+            .post(url)
+            .timeout(timeout)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json");
         if let Some(api_key) = &self.config.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);
