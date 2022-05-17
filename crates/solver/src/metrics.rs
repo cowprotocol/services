@@ -83,7 +83,7 @@ pub trait SolverMetrics: Send + Sync {
 // TODO add labeled interaction counter once we support more than one interaction
 pub struct Metrics {
     trade_counter: IntCounterVec,
-    order_settlement_time: IntCounter,
+    order_settlement_time: IntCounterVec,
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
@@ -113,9 +113,12 @@ impl Metrics {
         )?;
         registry.register(Box::new(trade_counter.clone()))?;
 
-        let order_settlement_time = IntCounter::new(
-            "order_settlement_time_seconds",
-            "Counter for the number of seconds between creation and settlement of an order",
+        let order_settlement_time = IntCounterVec::new(
+            Opts::new(
+                "order_settlement_time_seconds",
+                "Counter for the number of seconds between creation and settlement of an order",
+            ),
+            &["order_type"],
         )?;
         registry.register(Box::new(order_settlement_time.clone()))?;
 
@@ -313,12 +316,14 @@ impl SolverMetrics for Metrics {
         self.trade_counter
             .with_label_values(&[solver, order_type])
             .inc();
-        self.order_settlement_time.inc_by(
-            time_to_settlement
-                .num_seconds()
-                .try_into()
-                .unwrap_or_default(),
-        )
+        self.order_settlement_time
+            .with_label_values(&[order_type])
+            .inc_by(
+                time_to_settlement
+                    .num_seconds()
+                    .try_into()
+                    .unwrap_or_default(),
+            )
     }
 
     fn settlement_simulation_succeeded(&self, solver: &str) {
