@@ -171,6 +171,7 @@ pub async fn simulate_before_after_access_list(
         from,
         input: transaction.input.0,
         to,
+        gas: Some(transaction.gas.as_u64()),
         generate_access_list: false,
         transaction_index: Some(transaction_index),
     };
@@ -251,6 +252,7 @@ pub struct TenderlyRequest {
     #[serde(with = "model::bytes_hex")]
     pub input: Vec<u8>,
     pub to: Address,
+    pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_index: Option<u64>,
     pub generate_access_list: bool,
