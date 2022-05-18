@@ -252,6 +252,7 @@ pub struct TenderlyRequest {
     #[serde(with = "model::bytes_hex")]
     pub input: Vec<u8>,
     pub to: Address,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_index: Option<u64>,
