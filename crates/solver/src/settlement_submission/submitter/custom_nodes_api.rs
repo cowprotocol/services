@@ -82,7 +82,6 @@ impl TransactionSubmitting for CustomNodesApi {
 
         loop {
             let ((label, result), _, rest) = futures::future::select_all(futures).await;
-            tracing::debug!(%label, "custom node loop iteration");
             match result {
                 Ok(tx_hash) => {
                     super::track_submission_success(&label, true);

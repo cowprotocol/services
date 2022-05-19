@@ -468,7 +468,6 @@ impl<'a> Submitter<'a> {
                     );
                 }
             }
-            tracing::debug!("Finished sending transaction with submitter {submitter_name}...");
             tokio::time::sleep(params.retry_interval).await;
         }
     }
