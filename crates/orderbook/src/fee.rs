@@ -2,7 +2,10 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
-use model::{app_id::AppId, order::OrderKind};
+use model::{
+    app_id::{AppId, PartnerId},
+    order::OrderKind,
+};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use shared::{
@@ -64,7 +67,7 @@ pub struct FeeSubsidyConfiguration {
     /// fee.
     ///
     /// Fee factors are applied **after** flat fee discounts.
-    pub partner_additional_fee_factors: HashMap<AppId, f64>,
+    pub partner_additional_fee_factors: HashMap<PartnerId, f64>,
 }
 
 impl Default for FeeSubsidyConfiguration {
@@ -151,7 +154,7 @@ impl FeeParameters {
 
         let factor = config
             .partner_additional_fee_factors
-            .get(&app_data)
+            .get(&app_data.partner_id())
             .copied()
             .unwrap_or(1.0)
             * config.fee_factor
@@ -758,7 +761,7 @@ mod tests {
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
             fee_subsidy: FeeSubsidyConfiguration {
-                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+                partner_additional_fee_factors: hashmap! { app_data.partner_id() => 0.5 },
                 ..Default::default()
             },
             native_price_estimator,
@@ -861,7 +864,7 @@ mod tests {
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
             fee_subsidy: FeeSubsidyConfiguration {
                 fee_factor: 0.8,
-                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+                partner_additional_fee_factors: hashmap! { app_data.partner_id() => 0.5 },
                 ..Default::default()
             },
             native_price_estimator,
@@ -926,7 +929,7 @@ mod tests {
             fee_factor: 0.5,
             min_discounted_fee: 0.,
             partner_additional_fee_factors: maplit::hashmap! {
-                app_id => 0.1,
+                app_id.partner_id() => 0.1,
             },
         };
 

@@ -6,7 +6,7 @@ use contracts::{
 };
 use ethcontract::errors::DeployError;
 use model::{
-    app_id::AppId,
+    app_id::{AppId, PartnerId},
     order::{OrderUid, BUY_ETH_ADDRESS},
     DomainSeparator,
 };
@@ -180,7 +180,7 @@ struct Arguments {
         default_value = "",
         parse(try_from_str = parse_partner_fee_factor),
     )]
-    partner_additional_fee_factors: HashMap<AppId, f64>,
+    partner_additional_fee_factors: HashMap<PartnerId, f64>,
 
     /// Used to configure how much of the regular fee a user should pay based on their
     /// COW + VCOW balance in base units on the current network.
@@ -796,14 +796,14 @@ async fn check_database_connection(orderbook: &Orderbook) {
 }
 
 /// Parses a comma separated list of colon separated values representing fee factors for AppIds.
-fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
+fn parse_partner_fee_factor(s: &str) -> Result<HashMap<PartnerId, f64>> {
     let mut res = HashMap::default();
     if s.is_empty() {
         return Ok(res);
     }
     for pair_str in s.split(',') {
         let mut split = pair_str.trim().split(':');
-        let key = split
+        let key: AppId = split
             .next()
             .ok_or_else(|| anyhow!("missing AppId"))?
             .trim()
@@ -818,7 +818,7 @@ fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
         if split.next().is_some() {
             return Err(anyhow!("Invalid pair lengths"));
         }
-        res.insert(key, value);
+        res.insert(key.partner_id(), value);
     }
     Ok(res)
 }
@@ -845,17 +845,17 @@ mod tests {
         // without spaces
         assert_eq!(
             parse_partner_fee_factor(&format!("{}:0.5,{}:0.7", x, y)).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+            hashmap! { PartnerId([0u8; 4]) => 0.5, PartnerId([1u8; 4]) => 0.7 }
         );
         // with spaces
         assert_eq!(
             parse_partner_fee_factor(&format!("{}: 0.5, {}: 0.7", x, y)).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+            hashmap! { PartnerId([0u8; 4]) => 0.5, PartnerId([1u8; 4]) => 0.7 }
         );
         // whole numbers
         assert_eq!(
             parse_partner_fee_factor(&format!("{}: 1, {}: 2", x, y)).unwrap(),
-            hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
+            hashmap! { PartnerId([0u8; 4]) => 1., PartnerId([1u8; 4]) => 2. }
         );
     }
 
