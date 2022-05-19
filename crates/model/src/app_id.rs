@@ -16,7 +16,17 @@ pub struct AppId(pub [u8; 32]);
 // byte 0:
 //    bit 0: isLiquidityOrder
 //    bit 1-7: reserved
-// byte 1-31: reserved
+// byte 1-25: reserved
+// byte 26-27: salt
+// byte 28-31: partner_id
+
+/// ID of partner which created the order and forwarded it to us.
+#[derive(Clone, Copy, Default, Eq, Hash, PartialEq, Debug)]
+pub struct PartnerId(pub [u8; 4]);
+
+/// Arbitrary data to make otherwise identical orders unique.
+#[derive(Clone, Copy, Default, Eq, Hash, PartialEq, Debug)]
+pub struct Salt(pub [u8; 2]);
 
 impl Debug for AppId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
@@ -93,6 +103,23 @@ impl AppId {
     pub fn is_liquidity_order(&self) -> bool {
         !self.is_excluded() && (self.0[0] & (1 << 7) != 0)
     }
+
+    pub fn partner_id(&self) -> PartnerId {
+        // We can interpret those bits even from excluded patterns because integrators already used
+        // those bits for the partner id before the semantics of the AppId were well defined.
+        let mut result = [0u8; 4];
+        result.clone_from_slice(&self.0[28..]);
+        PartnerId(result)
+    }
+
+    pub fn salt(&self) -> Salt {
+        // We can interpret those bits even from excluded patterns because integrators used to use
+        // all bits of the AppId for their partner id. This essentially already resulted in all of
+        // their orders using the same salt we can't make the situation any worse for them.
+        let mut result = [0u8; 2];
+        result.clone_from_slice(&self.0[26..28]);
+        Salt(result)
+    }
 }
 
 #[cfg(test)]
@@ -161,5 +188,19 @@ mod tests {
         assert!(!app_id.is_liquidity_order());
         app_id.0[0] |= 1u8 << 7;
         assert!(app_id.is_liquidity_order());
+    }
+
+    #[test]
+    fn read_partner_id() {
+        let pattern = hex!("E9F29AE547955463ED535162AEFEE525D8D309571A2B18BC26086C8C35D781EB");
+        let app_id = AppId(pattern);
+        assert_eq!(app_id.partner_id(), PartnerId(hex!("35D781EB")));
+    }
+
+    #[test]
+    fn read_salt() {
+        let pattern = hex!("E9F29AE547955463ED535162AEFEE525D8D309571A2B18BC26086C8C35D781EB");
+        let app_id = AppId(pattern);
+        assert_eq!(app_id.salt(), Salt(hex!("6C8C")));
     }
 }
