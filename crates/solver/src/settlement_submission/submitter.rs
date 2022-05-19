@@ -461,12 +461,14 @@ impl<'a> Submitter<'a> {
                     );
                     transactions.push((handle, gas_price));
                 }
-                Err(err) => tracing::warn!("submission failed: {:?}", err),
+                Err(err) => {
+                    tracing::warn!(
+                        submitter = %submitter_name, ?err,
+                        "submission failed",
+                    );
+                }
             }
-            tracing::debug!(
-                "Finished sending transaction with submitter {}...",
-                submitter_name
-            );
+            tracing::debug!("Finished sending transaction with submitter {submitter_name}...");
             tokio::time::sleep(params.retry_interval).await;
         }
     }
