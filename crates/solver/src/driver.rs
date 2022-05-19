@@ -529,10 +529,19 @@ impl Driver {
                     }
 
                     // Do not continue with settlements that are empty or only liquidity orders.
+                    let settlement_count = settlement.len();
                     settlement.retain(solver_settlements::has_user_order);
+                    if settlement_count != settlement.len() {
+                        tracing::debug!(
+                            solver_name = %name,
+                            "settlement(s) filtered containing only liquidity orders",
+                        );
+                    }
+
                     if let Some(max_settlement_price_deviation) =
                         &self.max_settlement_price_deviation
                     {
+                        let settlement_count = settlement.len();
                         settlement.retain(|settlement| {
                             settlement.satisfies_price_checks(
                                 auction_id,
@@ -542,7 +551,14 @@ impl Driver {
                                 &self.token_list_restriction_for_price_checks,
                             )
                         });
+                        if settlement_count != settlement.len() {
+                            tracing::debug!(
+                                solver_name = %name,
+                                "settlement(s) filtered for violating stable price checks",
+                            );
+                        }
                     }
+
                     if settlement.is_empty() {
                         self.metrics.solver_run(SolverRunOutcome::Empty, name);
                         continue;

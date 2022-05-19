@@ -147,6 +147,17 @@ pub fn retain_mature_settlements(
 
     let valid_settlement_indices = find_mature_settlements(min_order_age, &settlements);
 
+    for (_, (solver, settlement)) in settlements
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !valid_settlement_indices.contains(i))
+    {
+        tracing::debug!(
+            solver_name = %solver.name(), ?settlement,
+            "filtered settlement for not being mature",
+        );
+    }
+
     settlements
         .into_iter()
         .enumerate()
