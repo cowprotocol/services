@@ -416,7 +416,8 @@ impl Solver for HttpSolver {
         if !settled.has_execution_plan() {
             tracing::debug!(
                 name = %self.name(), ?settled,
-                "ignoring settlement without execution plan");
+                "ignoring settlement without execution plan",
+            );
             return Ok(Vec::new());
         }
 
