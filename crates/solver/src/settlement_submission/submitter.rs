@@ -195,7 +195,7 @@ impl<'a> Submitter<'a> {
         let nonce = self.nonce().await?;
         let name = self.submit_api.name();
 
-        tracing::info!(
+        tracing::debug!(
             "starting solution submission at nonce {} with submitter {}",
             nonce,
             name
@@ -221,15 +221,15 @@ impl<'a> Submitter<'a> {
 
         let fallback_result = tokio::select! {
             method_error = submit_future.fuse() => {
-                tracing::info!("stopping submission for {} because simulation failed: {:?}", name, method_error);
+                tracing::debug!("stopping submission for {} because simulation failed: {:?}", name, method_error);
                 Err(method_error)
             },
             new_nonce = nonce_future.fuse() => {
-                tracing::info!("stopping submission for {} because account nonce changed to {}", name, new_nonce);
+                tracing::debug!("stopping submission for {} because account nonce changed to {}", name, new_nonce);
                 Ok(None)
             },
             _ = deadline_future.fuse() => {
-                tracing::info!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
+                tracing::debug!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
 
                 if let Some((transaction, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(1.125).ceil();
@@ -261,7 +261,7 @@ impl<'a> Submitter<'a> {
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
 
-            tracing::info!(
+            tracing::debug!(
                 "waiting up to {} seconds for {} to see if a transaction was mined",
                 MINED_TX_PROPAGATE_TIME.as_secs(),
                 name
@@ -277,7 +277,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::info!("{} found mined transaction {:?}", name, receipt);
+                    tracing::debug!("{} found mined transaction {:?}", name, receipt);
                     return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
@@ -287,7 +287,7 @@ impl<'a> Submitter<'a> {
             }
         }
 
-        tracing::info!("{} did not find any mined transaction", name);
+        tracing::debug!("{} did not find any mined transaction", name);
         fallback_result
             .transpose()
             .unwrap_or(Err(SubmissionError::Timeout))
@@ -401,7 +401,7 @@ impl<'a> Submitter<'a> {
                         method.access_list(new_access_list)
                     }
                     Err(err) => {
-                        tracing::info!("access list not created, reason: {:?}", err);
+                        tracing::debug!("access list not created, reason: {:?}", err);
                         method
                     }
                 },
@@ -442,7 +442,7 @@ impl<'a> Submitter<'a> {
                 }
             }
 
-            tracing::info!(
+            tracing::debug!(
                 "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
                 gas_price.base_fee(),
                 gas_price.cap(),
@@ -455,7 +455,7 @@ impl<'a> Submitter<'a> {
 
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
-                    tracing::info!(
+                    tracing::debug!(
                         submitter = %submitter_name, ?handle,
                         "submitted transaction",
                     );
@@ -695,7 +695,7 @@ mod tests {
             network_id: "1".to_string(),
         };
         let result = submitter.submit(settlement, params).await;
-        tracing::info!("finished with result {:?}", result);
+        tracing::debug!("finished with result {:?}", result);
     }
 
     #[test]

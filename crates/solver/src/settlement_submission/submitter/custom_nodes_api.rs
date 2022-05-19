@@ -56,7 +56,7 @@ impl TransactionSubmitting for CustomNodesApi {
         &self,
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle> {
-        tracing::info!("Custom nodes submit transaction entered");
+        tracing::debug!("Custom nodes submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
@@ -66,7 +66,7 @@ impl TransactionSubmitting for CustomNodesApi {
                 let label = format!("custom_nodes_{i}");
                 let transaction_request = transaction_request.clone();
                 async move {
-                    tracing::info!(%label, "sending transaction...");
+                    tracing::debug!(%label, "sending transaction...");
                     let result = match transaction_request {
                         Transaction::Request(tx) => node.eth().send_transaction(tx).await,
                         Transaction::Raw { bytes, .. } => {
@@ -82,11 +82,11 @@ impl TransactionSubmitting for CustomNodesApi {
 
         loop {
             let ((label, result), _, rest) = futures::future::select_all(futures).await;
-            tracing::info!(%label, "custom node loop iteration");
+            tracing::debug!(%label, "custom node loop iteration");
             match result {
                 Ok(tx_hash) => {
                     super::track_submission_success(&label, true);
-                    tracing::info!(%label, "created transaction with hash: {:?}", tx_hash);
+                    tracing::debug!(%label, "created transaction with hash: {:?}", tx_hash);
                     return Ok(TransactionHandle {
                         tx_hash,
                         handle: tx_hash,
