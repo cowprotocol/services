@@ -412,13 +412,30 @@ impl Solver for HttpSolver {
             .checked_duration_since(Instant::now())
             .ok_or_else(|| anyhow!("no time left to send request"))?;
         let settled = self.solver.solve(&model, timeout).await?;
-        tracing::trace!(?settled);
+
         if !settled.has_execution_plan() {
+            tracing::debug!(
+                name = %self.name(), ?settled,
+                "ignoring settlement without execution plan");
             return Ok(Vec::new());
         }
-        settlement::convert_settlement(settled, context, self.allowance_manager.clone())
-            .await
-            .map(|settlement| vec![settlement])
+
+        match settlement::convert_settlement(
+            settled.clone(),
+            context,
+            self.allowance_manager.clone(),
+        )
+        .await
+        {
+            Ok(settlement) => Ok(vec![settlement]),
+            Err(err) => {
+                tracing::debug!(
+                    name = %self.name(), ?settled,
+                    "failed to process HTTP solver result",
+                );
+                Err(err)
+            }
+        }
     }
 
     fn account(&self) -> &Account {

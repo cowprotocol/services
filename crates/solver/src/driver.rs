@@ -513,6 +513,7 @@ impl Driver {
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
         };
+
         tracing::debug!("solving auction id {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
@@ -520,6 +521,13 @@ impl Driver {
 
             let mut settlements = match settlements {
                 Ok(mut settlement) => {
+                    for settlement in &settlement {
+                        tracing::debug!(
+                            %auction_id, solver_name = %name, ?settlement,
+                            "found solution",
+                        );
+                    }
+
                     // Do not continue with settlements that are empty or only liquidity orders.
                     settlement.retain(solver_settlements::has_user_order);
                     if let Some(max_settlement_price_deviation) =
@@ -552,19 +560,10 @@ impl Driver {
                             self.metrics.solver_run(SolverRunOutcome::Failure, name)
                         }
                     }
-                    tracing::warn!("solver {} error: {:?}", name, err);
+                    tracing::warn!(solver_name = %name, ?err, "solver error");
                     continue;
                 }
             };
-
-            for settlement in &settlements {
-                tracing::debug!(
-                    "for auction id {} solver {} found solution:\n{:?} ",
-                    auction_id,
-                    name,
-                    settlement
-                );
-            }
 
             // Keep at most this many settlements. This is important in case where a solver produces
             // a large number of settlements which would hold up the driver logic when simulating
@@ -590,6 +589,16 @@ impl Driver {
         // filters out all non-mature settlements
         let solver_settlements =
             solver_settlements::retain_mature_settlements(self.min_order_age, solver_settlements);
+
+        // log considered settlements. While we already log all found settlements, this additonal
+        // statement allows us to figure out which settlements were filtered out and which ones are
+        // going to be simulated and considered for competition.
+        for (solver, settlement) in &solver_settlements {
+            tracing::debug!(
+                %auction_id, solver_name = %solver.name(), ?settlement,
+                "considering solution for solver competition",
+            );
+        }
 
         // append access lists
         let txs = solver_settlements

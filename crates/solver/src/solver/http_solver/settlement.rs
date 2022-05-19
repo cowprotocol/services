@@ -27,16 +27,9 @@ pub async fn convert_settlement(
     context: SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
 ) -> Result<Settlement> {
-    match IntermediateSettlement::new(settled.clone(), context, allowance_manager)
-        .await
-        .and_then(|intermediate| intermediate.into_settlement())
-    {
-        Ok(settlement) => Ok(settlement),
-        Err(err) => {
-            tracing::debug!("failed to process HTTP solver result: {:?}", settled);
-            Err(err)
-        }
-    }
+    IntermediateSettlement::new(settled, context, allowance_manager)
+        .await?
+        .into_settlement()
 }
 
 #[derive(Clone, Debug)]
