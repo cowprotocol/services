@@ -554,7 +554,7 @@ impl Driver {
                         if settlement_count != settlement.len() {
                             tracing::debug!(
                                 solver_name = %name,
-                                "settlement(s) filtered for violating stable price checks",
+                                "settlement(s) filtered for violating maximum external price deviation",
                             );
                         }
                     }

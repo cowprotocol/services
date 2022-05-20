@@ -154,7 +154,7 @@ pub fn retain_mature_settlements(
     {
         tracing::debug!(
             solver_name = %solver.name(), ?settlement,
-            "filtered settlement for not being mature",
+            "filtered settlement for not including any mature orders",
         );
     }
 
