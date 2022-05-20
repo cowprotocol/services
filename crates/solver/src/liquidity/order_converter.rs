@@ -2,12 +2,13 @@ use super::{Exchange, LimitOrder, SettlementHandling};
 use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::WETH9;
-use ethcontract::U256;
+use ethcontract::{H160, U256};
 use model::order::{Order, BUY_ETH_ADDRESS};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 
 pub struct OrderConverter {
     pub native_token: WETH9,
+    pub additional_liquidity_order_owners: HashSet<H160>,
     pub fee_objective_scaling_factor: f64,
 }
 
@@ -15,9 +16,10 @@ impl OrderConverter {
     /// Creates a order converter with the specified WETH9 address for unit
     /// testing purposes.
     #[cfg(test)]
-    pub fn test(native_token: ethcontract::H160) -> Self {
+    pub fn test(native_token: H160) -> Self {
         Self {
             native_token: shared::dummy_contract!(WETH9, native_token),
+            additional_liquidity_order_owners: HashSet::new(),
             fee_objective_scaling_factor: 1.,
         }
     }
@@ -38,7 +40,12 @@ impl OrderConverter {
         let scaled_fee_amount = U256::from_f64_lossy(
             remaining.full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
         );
-        let is_liquidity_order = order.metadata.is_liquidity_order;
+
+        let is_liquidity_order = order.metadata.is_liquidity_order
+            || self
+                .additional_liquidity_order_owners
+                .contains(&order.metadata.owner);
+
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.creation.sell_token,

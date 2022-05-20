@@ -256,7 +256,7 @@ struct Arguments {
     /// settlements objective funtion, not receiving any surplus, and being
     /// allowed to place partially fillable orders.
     #[clap(long, env, use_value_delimiter = true)]
-    pub liquidity_order_owners: Vec<H160>,
+    liquidity_order_owners: Vec<H160>,
 }
 
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {

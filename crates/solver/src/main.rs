@@ -308,6 +308,14 @@ struct Arguments {
     /// How pending transactions should be fetched.
     #[clap(long, env, arg_enum, default_value = "ignore")]
     pending_transaction_config: PendingTransactionConfig,
+
+    /// Additional configuration for specifying liquidity order owners at the
+    /// driver level.
+    ///
+    /// This has the effect of having these orders only be considered for COWs
+    /// instead of generally trading them against on-chain AMM liquidity.
+    #[clap(long, env, use_value_delimiter = true)]
+    additional_liquidity_order_owners: Vec<H160>,
 }
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
@@ -630,6 +638,10 @@ async fn main() {
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {
         native_token: native_token_contract.clone(),
+        additional_liquidity_order_owners: args
+            .additional_liquidity_order_owners
+            .into_iter()
+            .collect(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
     };
     let tenderly = args
