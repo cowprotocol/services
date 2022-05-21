@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::Instrument;
+use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
@@ -356,7 +356,7 @@ impl Driver {
                 }
             }
         };
-        tokio::task::spawn(task);
+        tokio::task::spawn(task.instrument(Span::current()));
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
