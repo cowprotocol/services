@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::Instrument;
+use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
@@ -356,7 +356,7 @@ impl Driver {
                 }
             }
         };
-        tokio::task::spawn(task);
+        tokio::task::spawn(task.instrument(Span::current()));
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
@@ -439,7 +439,7 @@ impl Driver {
         let id = self.next_auction_id();
         // extra function so that we can add span information
         self.single_run_(id)
-            .instrument(tracing::debug_span!("auction", id))
+            .instrument(tracing::info_span!("auction", id))
             .await
     }
 
