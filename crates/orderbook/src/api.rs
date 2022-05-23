@@ -198,13 +198,7 @@ pub fn handle_all_routes(
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
-        .allow_headers(vec![
-            "Origin",
-            "Content-Type",
-            "X-Auth-Token",
-            "X-AppId",
-            "X-Request-ID",
-        ]);
+        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
 
     // Give each request a unique tracing span.
     // This allows us to match log statements across concurrent API requests. We
