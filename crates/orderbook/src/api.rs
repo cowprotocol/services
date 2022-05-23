@@ -23,10 +23,13 @@ use crate::{
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
-use std::fmt::Debug;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-use std::{convert::Infallible, sync::Arc};
+use std::{
+    convert::Infallible,
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
+    time::Instant,
+};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
@@ -195,13 +198,28 @@ pub fn handle_all_routes(
     let cors = warp::cors()
         .allow_any_origin()
         .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
-        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+        .allow_headers(vec![
+            "Origin",
+            "Content-Type",
+            "X-Auth-Token",
+            "X-AppId",
+            "X-Request-ID",
+        ]);
 
     // Give each request a unique tracing span.
-    // This allows us to match log statements across concurrent API requests.
-    let request_id = Arc::new(AtomicUsize::new(0));
-    let tracing_span = warp::trace(move |_| {
-        tracing::info_span!("request", id = request_id.fetch_add(1, Ordering::SeqCst))
+    // This allows us to match log statements across concurrent API requests. We
+    // first try to read the request ID from our reverse proxy (this way we can
+    // line up API request logs with Nginx requests) but fall back to an
+    // internal counter.
+    let internal_request_id = Arc::new(AtomicUsize::new(0));
+    let tracing_span = warp::trace(move |info| {
+        if let Some(header) = info.request_headers().get("X-Request-ID") {
+            let request_id = String::from_utf8_lossy(header.as_bytes());
+            tracing::info_span!("request", id = &*request_id)
+        } else {
+            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
+            tracing::info_span!("request", id = request_id)
+        }
     });
 
     routes_with_metrics
