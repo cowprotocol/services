@@ -610,6 +610,9 @@ components:
         buyTokenBalance:
           $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
+        signingScheme:
+          $ref: "#/components/schemas/SigningScheme"
+          default: "eip712"
       required:
         - sellToken
         - buyToken
