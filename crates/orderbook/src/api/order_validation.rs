@@ -748,9 +748,18 @@ mod tests {
         assert!(validator.partial_validate(order()).await.is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
+                valid_to: u32::MAX,
+                signing_scheme: SigningScheme::PreSign,
+                ..order()
+            })
+            .await
+            .is_ok());
+        assert!(validator
+            .partial_validate(PreOrderData {
                 partially_fillable: true,
                 is_liquidity_order: true,
                 owner: liquidity_order_owner,
+                valid_to: u32::MAX,
                 ..order()
             })
             .await
