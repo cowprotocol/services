@@ -831,6 +831,7 @@ components:
               InsufficientAllowance,
               InsufficientBalance,
               InsufficientValidTo,
+              ExcessiveValidTo,
               InvalidSignature,
               TransferEthToContract,
               TransferSimulationFailed,

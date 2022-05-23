@@ -98,6 +98,16 @@ struct Arguments {
     )]
     min_order_validity_period: Duration,
 
+    /// The maximum amount of time in seconds an order can be valid for. Defaults to 3 hours. This
+    /// restriction does not apply to liquidity owner orders or presign orders.
+    #[clap(
+        long,
+        env,
+        default_value = "10800",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    max_order_validity_period: Duration,
+
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
@@ -690,6 +700,7 @@ async fn main() {
         args.banned_users.iter().copied().collect(),
         args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
+        args.max_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),
         balance_fetcher,
