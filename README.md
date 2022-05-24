@@ -174,6 +174,8 @@ cargo run --bin orderbook -- \
 
 `--skip-trace-api true` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
 
+Note: Current version of the code does not compile under Windows OS. Context and workaround are [here](https://github.com/cowprotocol/services/issues/226).
+
 ### Solvers
 
 To see all supported command line arguments run `cargo run --bin solver -- --help`.
