@@ -658,7 +658,7 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
-        // Before sorting, make sure to shuffle the settlements. This is make sure we give
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
         // preference to any specific solver when there is an objective value tie.
         rated_settlements.shuffle(&mut rand::thread_rng());
 
