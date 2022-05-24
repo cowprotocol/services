@@ -176,6 +176,7 @@ impl OrderbookServices {
             HashSet::default(),
             HashSet::default(),
             Duration::from_secs(120),
+            Duration::MAX,
             fee_calculator.clone(),
             bad_token_detector.clone(),
             balance_fetcher,
