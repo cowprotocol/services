@@ -761,6 +761,8 @@ mod tests {
             target: H160::zero(),
             value: U256::zero(),
             call_data: Vec::new(),
+            inputs: vec![],
+            outputs: vec![],
             exec_plan: Some(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 1u32,

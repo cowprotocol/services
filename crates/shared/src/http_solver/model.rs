@@ -1,3 +1,4 @@
+use derivative::Derivative;
 use ethcontract::H160;
 use model::{
     ratio_as_decimal,
@@ -27,8 +28,8 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
-    pub fee: FeeModel,
-    pub cost: CostModel,
+    pub fee: TokenAmount,
+    pub cost: TokenAmount,
     pub is_liquidity_order: bool,
     #[serde(default)]
     pub mandatory: bool,
@@ -45,7 +46,7 @@ pub struct AmmModel {
     pub parameters: AmmParameters,
     #[serde(with = "ratio_as_decimal")]
     pub fee: BigRational,
-    pub cost: CostModel,
+    pub cost: TokenAmount,
     pub mandatory: bool,
 }
 
@@ -99,15 +100,8 @@ pub struct TokenInfoModel {
     pub internal_buffer: Option<U256>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CostModel {
-    #[serde(with = "u256_decimal")]
-    pub amount: U256,
-    pub token: H160,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct FeeModel {
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TokenAmount {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     pub token: H160,
@@ -121,12 +115,57 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Derivative, Deserialize, PartialEq)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
+    #[derivative(Debug(format_with = "debug_bytes"))]
+    #[serde(with = "bytes_hex_or_array")]
     pub call_data: Vec<u8>,
+    /// The input amounts into the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the settlement contract into the AMM
+    /// for this calldata.
+    ///
+    /// `GPv2Settlement -> AMM`
+    #[serde(default)]
+    pub inputs: Vec<TokenAmount>,
+    /// The output amounts from the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the AMM into the settlement contract
+    /// for this calldata.
+    ///
+    /// `AMM -> GPv2Settlement`
+    #[serde(default)]
+    pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+}
+
+/// Module to allow for backwards compatibility with the HTTP solver API.
+///
+/// Specifically, the HTTP solver API used to expect calldata as a JSON array of
+/// integers that fit in a `u8`. This changed to allow `0x-` prefixed hex
+/// strings to be more consistent with how bytes are typically represented in
+/// Ethereum-related APIs. This module implements JSON deserialization that
+/// accepts either format.
+mod bytes_hex_or_array {
+    use serde::{Deserialize, Deserializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HexOrArray {
+        Hex(#[serde(with = "model::bytes_hex")] Vec<u8>),
+        Array(Vec<u8>),
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = match HexOrArray::deserialize(deserializer)? {
+            HexOrArray::Hex(bytes) => bytes,
+            HexOrArray::Array(bytes) => bytes,
+        };
+        Ok(bytes)
+    }
 }
 
 #[serde_as]
@@ -176,8 +215,8 @@ pub struct ExecutedOrderModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
-    pub cost: Option<CostModel>,
-    pub fee: Option<FeeModel>,
+    pub cost: Option<TokenAmount>,
+    pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
 }
@@ -186,7 +225,7 @@ pub struct ExecutedOrderModel {
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
-    pub cost: Option<CostModel>,
+    pub cost: Option<TokenAmount>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -299,11 +338,11 @@ mod tests {
             buy_amount: U256::from(2),
             allow_partial_fill: false,
             is_sell_order: true,
-            fee: FeeModel {
+            fee: TokenAmount {
                 amount: U256::from(2),
                 token: sell_token,
             },
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(1),
                 token: native_token,
             },
@@ -319,7 +358,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -339,7 +378,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(2.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(2),
                 token: native_token,
             },
@@ -358,7 +397,7 @@ mod tests {
                 amplification_parameter: BigRational::new(1337.into(), 100.into()),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -559,5 +598,88 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
+    }
+
+    #[test]
+    fn decode_interaction_data() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": "0x01020304",
+                        "inputs": [
+                            {
+                                "token": "0x0101010101010101010101010101010101010101",
+                                "amount": "9999"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "token": "0x0202020202020202020202020202020202020202",
+                                "amount": "2000"
+                            },
+                            {
+                                "token": "0x0303030303030303030303030303030303030303",
+                                "amount": "3000"
+                            }
+                        ],
+                        "exec_plan": {
+                            "sequence": 42,
+                            "position": 1337
+                        }
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                inputs: vec![TokenAmount {
+                    token: H160([1; 20]),
+                    amount: 9999.into(),
+                }],
+                outputs: vec![
+                    TokenAmount {
+                        token: H160([2; 20]),
+                        amount: 2000.into(),
+                    },
+                    TokenAmount {
+                        token: H160([3; 20]),
+                        amount: 3000.into(),
+                    }
+                ],
+                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                }),
+            },
+        );
+    }
+
+    #[test]
+    fn decode_interaction_data_backwards_compatibility() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": [1, 2, 3, 4]
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                exec_plan: None,
+            },
+        );
     }
 }
