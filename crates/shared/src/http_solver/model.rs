@@ -136,7 +136,7 @@ pub struct InteractionData {
     /// `AMM -> GPv2Settlement`
     #[serde(default)]
     pub outputs: Vec<TokenAmount>,
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    pub exec_plan: Option<ExecutionPlan>,
 }
 
 /// Module to allow for backwards compatibility with the HTTP solver API.
@@ -188,10 +188,16 @@ impl SettledBatchAuctionModel {
     pub fn has_execution_plan(&self) -> bool {
         // Its a bit weird that we expect all entries to contain an execution plan. Could make
         // execution plan required and assert that the vector of execution updates is non-empty
-        self.amms
+
+        let amm_executions = self
+            .amms
             .values()
-            .flat_map(|u| &u.execution)
-            .all(|u| u.exec_plan.is_some())
+            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan));
+        let interaction_executions = self.interaction_data.iter().map(|i| &i.exec_plan);
+
+        amm_executions
+            .chain(interaction_executions)
+            .all(|ex| ex.is_some())
     }
 }
 
@@ -218,7 +224,7 @@ pub struct ExecutedOrderModel {
     pub cost: Option<TokenAmount>,
     pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    pub exec_plan: Option<ExecutionPlan>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -239,7 +245,7 @@ pub struct ExecutedAmmModel {
     /// The exec plan is allowed to be optional because the http solver isn't always
     /// able to determine and order of execution. That is, solver may have a solution
     /// which it wants to share with the driver even if it couldn't derive an execution plan.
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    pub exec_plan: Option<ExecutionPlan>,
 }
 
 impl UpdatedAmmModel {
@@ -251,6 +257,42 @@ impl UpdatedAmmModel {
             .iter()
             .any(|exec| exec.exec_sell_amount.gt(zero) || exec.exec_buy_amount.gt(zero));
         !self.execution.is_empty() && has_non_trivial_execution
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ExecutionPlan {
+    /// The coordinates at which the interaction should be included within a
+    /// settlement.
+    Coordinates(ExecutionPlanCoordinatesModel),
+
+    /// The interaction should **not** be included in the settlement as
+    /// internal buffers will be used instead.
+    #[serde(with = "execution_plan_internal")]
+    Internal,
+}
+
+/// A module for implementing `serde` (de)serialization for the execution plan
+/// enum.
+///
+/// This is a work-around for untagged enum serialization not supporting empty
+/// variants <https://github.com/serde-rs/serde/issues/1560>.
+mod execution_plan_internal {
+    use super::*;
+
+    #[derive(Deserialize, Serialize)]
+    enum Kind {
+        #[serde(rename = "internal")]
+        Internal,
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Kind::deserialize(deserializer)?;
+        Ok(())
     }
 }
 
@@ -280,10 +322,10 @@ mod tests {
         };
 
         let trivial_execution_with_plan = ExecutedAmmModel {
-            exec_plan: Some(ExecutionPlanCoordinatesModel {
+            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
-            }),
+            })),
             ..Default::default()
         };
 
@@ -601,6 +643,25 @@ mod tests {
     }
 
     #[test]
+    fn decode_execution_plan() {
+        for (json, expected) in [
+            (r#""internal""#, ExecutionPlan::Internal),
+            (
+                r#"{ "sequence": 42, "position": 1337 }"#,
+                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                }),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<ExecutionPlan>(json).unwrap(),
+                expected,
+            );
+        }
+    }
+
+    #[test]
     fn decode_interaction_data() {
         assert_eq!(
             serde_json::from_str::<InteractionData>(
@@ -625,10 +686,7 @@ mod tests {
                                 "amount": "3000"
                             }
                         ],
-                        "exec_plan": {
-                            "sequence": 42,
-                            "position": 1337
-                        }
+                        "exec_plan": "internal"
                     }
                 "#,
             )
@@ -651,10 +709,7 @@ mod tests {
                         amount: 3000.into(),
                     }
                 ],
-                exec_plan: Some(ExecutionPlanCoordinatesModel {
-                    sequence: 42,
-                    position: 1337,
-                }),
+                exec_plan: Some(ExecutionPlan::Internal),
             },
         );
     }

@@ -558,8 +558,13 @@ mod tests {
         assert!(execution.exec_buy_amount.gt(&U256::zero()));
         assert_eq!(execution.exec_sell_amount, U256::from(base(2)));
         assert!(execution.exec_plan.is_some());
-        assert_eq!(execution.exec_plan.as_ref().unwrap().sequence, 0);
-        assert_eq!(execution.exec_plan.as_ref().unwrap().position, 0);
+        assert!(matches!(
+            execution.exec_plan.as_ref().unwrap(),
+            ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            }),
+        ));
 
         assert_eq!(settled.prices.len(), 2);
     }
