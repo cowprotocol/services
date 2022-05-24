@@ -120,21 +120,52 @@ pub struct InteractionData {
     pub target: H160,
     pub value: U256,
     #[derivative(Debug(format_with = "debug_bytes"))]
-    #[serde(with = "model::bytes_hex")]
+    #[serde(with = "bytes_hex_or_array")]
     pub call_data: Vec<u8>,
     /// The input amounts into the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the settlement contract into the AMM
     /// for this calldata.
     ///
     /// `GPv2Settlement -> AMM`
+    #[serde(default)]
     pub inputs: Vec<TokenAmount>,
     /// The output amounts from the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the AMM into the settlement contract
     /// for this calldata.
     ///
     /// `AMM -> GPv2Settlement`
+    #[serde(default)]
     pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+}
+
+/// Module to allow for backwards compatibility with the HTTP solver API.
+///
+/// Specifically, the HTTP solver API used to expect calldata as a JSON array of
+/// numbers in the range `[0, 256)`. This changed to allow `0x-` prefixed hex
+/// strings to be more consistent with how bytes are typically represented in
+/// Ethereum-related APIs. This module implements JSON deserialization that
+/// accepts either format.
+mod bytes_hex_or_array {
+    use serde::{Deserialize, Deserializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HexOrArray {
+        Hex(#[serde(with = "model::bytes_hex")] Vec<u8>),
+        Array(Vec<u8>),
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = match HexOrArray::deserialize(deserializer)? {
+            HexOrArray::Hex(bytes) => bytes,
+            HexOrArray::Array(bytes) => bytes,
+        };
+        Ok(bytes)
+    }
 }
 
 #[serde_as]
@@ -624,6 +655,30 @@ mod tests {
                     sequence: 42,
                     position: 1337,
                 }),
+            },
+        );
+    }
+
+    #[test]
+    fn decode_interaction_data_backwards_compatibility() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": [1, 2, 3, 4]
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                exec_plan: None,
             },
         );
     }
