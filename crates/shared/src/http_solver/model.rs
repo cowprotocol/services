@@ -142,7 +142,7 @@ pub struct InteractionData {
 /// Module to allow for backwards compatibility with the HTTP solver API.
 ///
 /// Specifically, the HTTP solver API used to expect calldata as a JSON array of
-/// numbers in the range `[0, 256)`. This changed to allow `0x-` prefixed hex
+/// integers that fit in a `u8`. This changed to allow `0x-` prefixed hex
 /// strings to be more consistent with how bytes are typically represented in
 /// Ethereum-related APIs. This module implements JSON deserialization that
 /// accepts either format.
