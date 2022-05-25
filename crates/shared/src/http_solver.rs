@@ -63,8 +63,8 @@ pub struct SolverConfig {
     /// Controls if/how to set `use_internal_buffers`.
     pub use_internal_buffers: Option<bool>,
 
-    /// Controls the optimization function to use.
-    pub optimize: Option<OptimizeFor>,
+    /// Controls the objective function to optimize for.
+    pub objective: Option<Objective>,
 }
 
 impl Default for SolverConfig {
@@ -74,13 +74,13 @@ impl Default for SolverConfig {
             max_nr_exec_orders: 100,
             has_ucp_policy_parameter: false,
             use_internal_buffers: None,
-            optimize: None,
+            objective: None,
         }
     }
 }
 
 #[derive(Debug)]
-pub enum OptimizeFor {
+pub enum Objective {
     CappedSurplusFeesCosts,
     SurplusFeesCosts,
 }
@@ -126,12 +126,12 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 use_internal_buffers.to_string().as_str(),
             );
         }
-        match self.config.optimize {
-            Some(OptimizeFor::CappedSurplusFeesCosts) => {
+        match self.config.objective {
+            Some(Objective::CappedSurplusFeesCosts) => {
                 url.query_pairs_mut()
                     .append_pair("optimize", "cappedsurplusfeescosts");
             }
-            Some(OptimizeFor::SurplusFeesCosts) => {
+            Some(Objective::SurplusFeesCosts) => {
                 url.query_pairs_mut()
                     .append_pair("optimize", "surplusfeescosts");
             }
