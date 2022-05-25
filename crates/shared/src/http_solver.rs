@@ -142,6 +142,8 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
+        let body = serde_json::to_string(&model).context("failed to encode body")?;
+        tracing::trace!(%url, %body, "request");
         let mut request = self
             .client
             .post(url)
@@ -153,8 +155,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             header.set_sensitive(true);
             request = request.header("X-API-KEY", header);
         }
-        let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::trace!("request {}", body);
         let request = request.body(body.clone());
         let mut response = request.send().await.context("failed to send request")?;
         let status = response.status();
@@ -163,7 +163,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .await
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
-        tracing::trace!("response {}", text);
+        tracing::trace!(body = %text, "response");
         let context = || {
             format!(
                 "request query {}, request body {}, response body {}",
