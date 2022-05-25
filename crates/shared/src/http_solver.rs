@@ -49,7 +49,7 @@ pub struct DefaultHttpSolverApi {
 }
 
 /// Configuration for solver requests.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SolverConfig {
     /// Optional value for the `X-API-KEY` header.
     pub api_key: Option<String>,
@@ -62,6 +62,27 @@ pub struct SolverConfig {
 
     /// Controls if/how to set `use_internal_buffers`.
     pub use_internal_buffers: Option<bool>,
+
+    /// Controls the optimization function to use.
+    pub optimize: Option<OptimizeFor>,
+}
+
+impl Default for SolverConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            max_nr_exec_orders: 100,
+            has_ucp_policy_parameter: false,
+            use_internal_buffers: None,
+            optimize: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum OptimizeFor {
+    CappedSurplusFeesCosts,
+    SurplusFeesCosts,
 }
 
 #[async_trait::async_trait]
@@ -104,6 +125,17 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 "use_internal_buffers",
                 use_internal_buffers.to_string().as_str(),
             );
+        }
+        match self.config.optimize {
+            Some(OptimizeFor::CappedSurplusFeesCosts) => {
+                url.query_pairs_mut()
+                    .append_pair("optimize", "cappedsurplusfeescosts");
+            }
+            Some(OptimizeFor::SurplusFeesCosts) => {
+                url.query_pairs_mut()
+                    .append_pair("optimize", "surplusfeescosts");
+            }
+            _ => {}
         }
         if let Some(auction_id) = maybe_auction_id {
             url.query_pairs_mut()

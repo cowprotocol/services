@@ -282,32 +282,23 @@ pub fn create(
                     mip_solver_url.clone(),
                     "Mip".to_string(),
                     SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: mip_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(mip_uses_internal_buffers),
+                        ..Default::default()
                     },
                 ))),
                 SolverType::CowDexAg => Ok(shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
                     "CowDexAg".to_string(),
-                    SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: None,
-                    },
+                    SolverConfig::default(),
                 ))),
                 SolverType::Quasimodo => Ok(shared(create_http_solver(
                     account,
                     quasimodo_solver_url.clone(),
                     "Quasimodo".to_string(),
                     SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: true,
-                        use_internal_buffers: quasimodo_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(quasimodo_uses_internal_buffers),
+                        ..Default::default()
                     },
                 ))),
                 SolverType::OneInch => Ok(shared(SingleOrderSolver::new(
@@ -389,10 +380,8 @@ pub fn create(
             solver.url,
             solver.name,
             SolverConfig {
-                api_key: None,
-                max_nr_exec_orders: 100,
-                has_ucp_policy_parameter: false,
-                use_internal_buffers: mip_uses_internal_buffers.into(),
+                use_internal_buffers: Some(mip_uses_internal_buffers),
+                ..Default::default()
             },
         ))
     });

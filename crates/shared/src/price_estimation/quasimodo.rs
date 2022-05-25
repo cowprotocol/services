@@ -433,10 +433,8 @@ mod tests {
                 base: Url::parse(&quasimodo_url).expect("failed to parse quasimodo url"),
                 client,
                 config: SolverConfig {
-                    api_key: None,
-                    max_nr_exec_orders: 100,
-                    has_ucp_policy_parameter: false,
-                    use_internal_buffers: true.into(),
+                    use_internal_buffers: Some(true),
+                    ..Default::default()
                 },
             }),
             sharing: Default::default(),

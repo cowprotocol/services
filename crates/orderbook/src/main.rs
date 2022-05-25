@@ -38,7 +38,7 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    http_solver::{DefaultHttpSolverApi, SolverConfig, OptimizeFor},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
     network::network_name,
@@ -556,10 +556,9 @@ async fn main() {
                     ),
                     client: client.clone(),
                     config: SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
+                        optimize: Some(OptimizeFor::SurplusFeesCosts),
+                        ..Default::default()
                     },
                 }),
                 pool_fetcher.clone(),
