@@ -129,11 +129,11 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         match self.config.objective {
             Some(Objective::CappedSurplusFeesCosts) => {
                 url.query_pairs_mut()
-                    .append_pair("optimize", "cappedsurplusfeescosts");
+                    .append_pair("objective", "cappedsurplusfeescosts");
             }
             Some(Objective::SurplusFeesCosts) => {
                 url.query_pairs_mut()
-                    .append_pair("optimize", "surplusfeescosts");
+                    .append_pair("objective", "surplusfeescosts");
             }
             _ => {}
         }
