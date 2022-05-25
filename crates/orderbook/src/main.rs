@@ -38,7 +38,7 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
-    http_solver::{DefaultHttpSolverApi, SolverConfig, OptimizeFor},
+    http_solver::{DefaultHttpSolverApi, OptimizeFor, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
     network::network_name,
