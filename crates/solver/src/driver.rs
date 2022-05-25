@@ -658,6 +658,10 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+        // preference to any specific solver when there is an objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
+
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
