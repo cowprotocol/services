@@ -16,12 +16,13 @@ pub enum SigningScheme {
     EthSign,
     PreSign,
 }
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
-    Eip1271(EcdsaSignature),
+    Eip1271(#[serde(with = "prefixed_hex")] Vec<u8>),
     EthSign(EcdsaSignature),
     PreSign(H160),
 }
@@ -65,7 +66,7 @@ impl Signature {
 
     pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
         Ok(match scheme {
-            scheme @ (SigningScheme::Eip712 | SigningScheme::Eip1271 | SigningScheme::EthSign) => {
+            scheme @ (SigningScheme::Eip712 | SigningScheme::EthSign) => {
                 let bytes: [u8; 65] = bytes
                     .try_into()
                     .context("ECDSA signature must be 65 bytes long")?;
@@ -80,6 +81,7 @@ impl Signature {
                         .expect("scheme is an ecdsa scheme"),
                 )
             }
+            SigningScheme::Eip1271 => Signature::Eip1271(bytes.to_vec()),
             SigningScheme::PreSign => Signature::PreSign(H160(
                 bytes
                     .try_into()
@@ -91,7 +93,8 @@ impl Signature {
     #[allow(clippy::wrong_self_convention)]
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
-            Signature::Eip712(sig) | Signature::Eip1271(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::Eip1271(data) => data.clone(),
             Signature::PreSign(account) => account.0.to_vec(),
         }
     }
@@ -110,7 +113,6 @@ impl Signature {
 #[serde(rename_all = "lowercase")]
 pub enum EcdsaSigningScheme {
     Eip712,
-    Eip1271,
     EthSign,
 }
 
@@ -118,7 +120,6 @@ impl From<EcdsaSigningScheme> for SigningScheme {
     fn from(scheme: EcdsaSigningScheme) -> Self {
         match scheme {
             EcdsaSigningScheme::Eip712 => Self::Eip712,
-            EcdsaSigningScheme::Eip1271 => Self::Eip1271,
             EcdsaSigningScheme::EthSign => Self::EthSign,
         }
     }
@@ -132,7 +133,7 @@ impl SigningScheme {
     pub fn try_to_ecdsa_scheme(&self) -> Option<EcdsaSigningScheme> {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
-            Self::Eip1271 => Some(EcdsaSigningScheme::Eip1271),
+            Self::Eip1271 => None,
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
             Self::PreSign => None,
         }
@@ -171,7 +172,6 @@ fn hashed_signing_message(
 ) -> [u8; 32] {
     match signing_scheme {
         EcdsaSigningScheme::Eip712 => hashed_eip712_message(domain_separator, struct_hash),
-        EcdsaSigningScheme::Eip1271 => todo!(),
         EcdsaSigningScheme::EthSign => hashed_ethsign_message(domain_separator, struct_hash),
     }
 }
@@ -180,7 +180,6 @@ impl EcdsaSignature {
     pub fn to_signature(self, scheme: EcdsaSigningScheme) -> Signature {
         match scheme {
             EcdsaSigningScheme::Eip712 => Signature::Eip712(self),
-            EcdsaSigningScheme::Eip1271 => Signature::Eip1271(self),
             EcdsaSigningScheme::EthSign => Signature::EthSign(self),
         }
     }
@@ -284,6 +283,52 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
         }
 
         deserializer.deserialize_str(Visitor {})
+    }
+}
+
+mod prefixed_hex {
+    use serde::{de, Deserializer, Serializer};
+
+    struct PrefixedHexVisitor {}
+
+    impl<'de> de::Visitor<'de> for PrefixedHexVisitor {
+        type Value = Vec<u8>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            write!(formatter, "hex encoded string with a '0x' prefix")
+        }
+
+        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            s.strip_prefix("0x")
+                .and_then(|hex| {
+                    if hex.len() > 0 {
+                        // we don't need the hex error so we convert the Result into Option
+                        hex::decode(hex).ok()
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_str(PrefixedHexVisitor {})
+    }
+
+    pub fn serialize<S>(value: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let signature_hex = hex::encode(value);
+
+        serializer.serialize_str(&format!("0x{signature_hex}"))
     }
 }
 
@@ -405,5 +450,41 @@ mod tests {
             .to_string(),
             "failed to decode \"42\" as hex ecdsa signature: Invalid string length"
         );
+
+        // EIP-1271 signature
+        {
+            assert_eq!(
+                serde_json::from_value::<Signature>(json!(
+                {
+                    "signature": "1234",
+                    "signingScheme": "eip1271"
+                }))
+                .unwrap_err()
+                .to_string(),
+                "invalid value: string \"1234\", expected hex encoded string with a '0x' prefix"
+            );
+
+
+            assert_eq!(
+                serde_json::from_value::<Signature>(json!(
+                {
+                    "signature": "0x",
+                    "signingScheme": "eip1271"
+                }))
+                .unwrap_err()
+                .to_string(),
+                "invalid value: string \"0x\", expected hex encoded string with a '0x' prefix"
+            );
+
+            assert_eq!(
+                serde_json::from_value::<Signature>(json!(
+                {
+                    "signature": "0x42",
+                    "signingScheme": "eip1271"
+                }))
+                .unwrap(),
+                Signature::Eip1271(vec![66]),
+            );
+        }
     }
 }

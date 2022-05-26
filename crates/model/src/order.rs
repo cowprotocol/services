@@ -86,7 +86,7 @@ impl Order {
                 is_liquidity_order,
                 ..Default::default()
             },
-            creation: *order_creation,
+            creation: order_creation.clone(),
         }
     }
 
@@ -257,7 +257,7 @@ impl OrderBuilder {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Copy, Clone, Deserialize, Debug, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Deserialize, Debug, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderCreation {
     pub sell_token: H160,
