@@ -66,6 +66,7 @@ fn order_flags(order: &OrderCreation) -> U256 {
         SigningScheme::Eip712 => 0b00,
         SigningScheme::EthSign => 0b01,
         SigningScheme::PreSign => 0b11,
+        SigningScheme::Eip1271 => 0b10,
     } << 5;
     result.into()
 }
