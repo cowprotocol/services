@@ -9,7 +9,7 @@ use model::{
     order::{
         BuyTokenDestination, Order, OrderCreation, OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
     },
-    signature::SigningScheme,
+    signature::{Signature, SigningScheme},
     DomainSeparator,
 };
 use shared::{
@@ -342,10 +342,17 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
-        let owner = order_creation
+        let owner = match order_creation.signature {
+            Signature::Eip712(_) | Signature::EthSign(_) | Signature::PreSign(_) => order_creation
             .signature
             .validate(domain_separator, &order_creation.hash_struct())
-            .ok_or(ValidationError::InvalidSignature)?;
+            .ok_or(ValidationError::InvalidSignature)?,
+            Signature::Eip1271(data) => {
+                
+                todo!("Call the contract isValidSignature")
+            },
+        };
+        
 
         if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);

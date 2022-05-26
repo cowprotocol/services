@@ -395,6 +395,7 @@ impl OrderCreation {
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Hash)]
 pub struct OrderCancellation {
     pub order_uid: OrderUid,
+    // todo: use `Signature` in order to allow EIP-1271 signatures
     pub signature: EcdsaSignature,
     pub signing_scheme: EcdsaSigningScheme,
 }
