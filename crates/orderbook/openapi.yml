@@ -551,15 +551,15 @@ components:
     SellTokenSource:
       description: Where should the sell token be drawn from?
       type: string
-      enum: [ erc20, internal, external ]
+      enum: [erc20, internal, external]
     BuyTokenDestination:
       description: Where should the buy token be transfered to?
       type: string
-      enum: [ erc20, internal ]
+      enum: [erc20, internal]
     PriceQuality:
       description: How good should the price estimate be?
       type: string
-      enum: [ fast, optimal ]
+      enum: [fast, optimal]
     OrderStatus:
       description: The current order status
       type: string
@@ -640,6 +640,12 @@ components:
                 might otherwise silently work with an unexpected address that for example does not have
                 any balance.
               $ref: "#/components/schemas/Address"
+              nullable: true
+            quoteId:
+              description: |
+                Orders can optionally include a quote ID. This way the order can be linked to a quote
+                and enable providing more metadata when analyzing order slippage.
+              type: integer
               nullable: true
           required:
             - signingScheme
@@ -892,7 +898,13 @@ components:
       properties:
         errorType:
           type: string
-          enum: ["NoLiquidity", "UnsupportedToken", "AmountIsZero", "SellAmountDoesNotCoverFee"]
+          enum:
+            [
+              "NoLiquidity",
+              "UnsupportedToken",
+              "AmountIsZero",
+              "SellAmountDoesNotCoverFee",
+            ]
         description:
           type: string
       required:
@@ -1003,6 +1015,11 @@ components:
             the fee after this expiration date. Encoded as ISO 8601 UTC.
           type: string
           example: "1985-03-10T18:35:18.814523Z"
+        id:
+          description: |
+            Order ID linked to a quote to enable providing more metadata when analyzing
+            order slippage.
+          type: integer
     SolverCompetitionResponse:
       type: object
       properties:

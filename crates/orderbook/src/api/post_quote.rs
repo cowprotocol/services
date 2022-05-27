@@ -4,45 +4,29 @@ use crate::{
         order_validation::{OrderValidating, PreOrderData, ValidationError},
         IntoWarpReply,
     },
-    fee::{FeeData, MinFeeCalculating, PriceQuality},
+    fee::{FeeData, MinFeeCalculating},
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use ethcontract::{H160, U256};
+use ethcontract::U256;
 use futures::try_join;
 use model::{
-    app_id::AppId,
-    order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    signature::SigningScheme,
+    order::OrderKind,
+    quote::{
+        OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount,
+    },
     u256_decimal,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use shared::price_estimation::{self, single_estimate, PriceEstimating, PriceEstimationError};
-use std::{convert::Infallible, sync::Arc};
+use std::{
+    convert::Infallible,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
+};
 use warp::{hyper::StatusCode, Filter, Rejection};
-
-/// The order parameters to quote a price and fee for.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuoteRequest {
-    from: H160,
-    sell_token: H160,
-    buy_token: H160,
-    receiver: Option<H160>,
-    #[serde(flatten)]
-    side: OrderQuoteSide,
-    valid_to: u32,
-    app_data: AppId,
-    partially_fillable: bool,
-    #[serde(default)]
-    sell_token_balance: SellTokenSource,
-    #[serde(default)]
-    buy_token_balance: BuyTokenDestination,
-    #[serde(default)]
-    signing_scheme: SigningScheme,
-    #[serde(default)]
-    price_quality: PriceQuality,
-}
 
 impl From<&OrderQuoteRequest> for PreOrderData {
     fn from(quote_request: &OrderQuoteRequest) -> Self {
@@ -60,71 +44,6 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             is_liquidity_order: quote_request.partially_fillable,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(tag = "kind", rename_all = "lowercase")]
-pub enum OrderQuoteSide {
-    #[serde(rename_all = "camelCase")]
-    Sell {
-        #[serde(flatten)]
-        sell_amount: SellAmount,
-    },
-    #[serde(rename_all = "camelCase")]
-    Buy {
-        #[serde(with = "u256_decimal")]
-        buy_amount_after_fee: U256,
-    },
-}
-
-impl Default for OrderQuoteSide {
-    fn default() -> Self {
-        Self::Buy {
-            buy_amount_after_fee: U256::one(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(untagged)]
-pub enum SellAmount {
-    BeforeFee {
-        #[serde(rename = "sellAmountBeforeFee", with = "u256_decimal")]
-        value: U256,
-    },
-    AfterFee {
-        #[serde(rename = "sellAmountAfterFee", with = "u256_decimal")]
-        value: U256,
-    },
-}
-
-/// The quoted order by the service.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuote {
-    pub sell_token: H160,
-    pub buy_token: H160,
-    pub receiver: Option<H160>,
-    #[serde(with = "u256_decimal")]
-    pub sell_amount: U256,
-    #[serde(with = "u256_decimal")]
-    pub buy_amount: U256,
-    pub valid_to: u32,
-    pub app_data: AppId,
-    #[serde(with = "u256_decimal")]
-    pub fee_amount: U256,
-    pub kind: OrderKind,
-    pub partially_fillable: bool,
-    pub sell_token_balance: SellTokenSource,
-    pub buy_token_balance: BuyTokenDestination,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderQuoteResponse {
-    pub quote: OrderQuote,
-    pub from: H160,
-    pub expiration: DateTime<Utc>,
 }
 
 #[derive(Debug)]
@@ -188,6 +107,7 @@ pub struct OrderQuoter {
     pub order_validator: Arc<dyn OrderValidating>,
     pub fast_fee_calculator: Arc<dyn MinFeeCalculating>,
     pub fast_price_estimator: Arc<dyn PriceEstimating>,
+    pub current_id: Arc<AtomicU64>,
 }
 
 impl OrderQuoter {
@@ -202,6 +122,7 @@ impl OrderQuoter {
             fee_calculator,
             price_estimator,
             order_validator,
+            current_id: Default::default(),
         }
     }
 
@@ -245,6 +166,7 @@ impl OrderQuoter {
             },
             from: quote_request.from,
             expiration: fee_parameters.expiration,
+            id: self.current_id.fetch_add(1, Ordering::SeqCst),
         })
     }
 
@@ -394,19 +316,6 @@ impl OrderQuoter {
     }
 }
 
-impl OrderQuoteRequest {
-    /// This method is used by the old, deprecated, fee endpoint to convert {Buy, Sell}Requests
-    pub fn new(sell_token: H160, buy_token: H160, side: OrderQuoteSide) -> Self {
-        Self {
-            sell_token,
-            buy_token,
-            side,
-            valid_to: u32::MAX,
-            ..Default::default()
-        }
-    }
-}
-
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("quote")
         .and(warp::post())
@@ -437,7 +346,13 @@ mod tests {
     };
     use anyhow::anyhow;
     use chrono::{NaiveDateTime, Utc};
+    use ethcontract::H160;
     use futures::FutureExt;
+    use model::{
+        app_id::AppId,
+        order::{BuyTokenDestination, SellTokenSource},
+        signature::SigningScheme,
+    };
     use serde_json::json;
     use shared::price_estimation::mocks::FakePriceEstimator;
     use warp::{test::request, Reply};
@@ -589,6 +504,7 @@ mod tests {
             quote,
             from: H160::zero(),
             expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+            id: 0,
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
             order_quote_response.clone(),
