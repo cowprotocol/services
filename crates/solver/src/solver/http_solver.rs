@@ -508,12 +508,7 @@ mod tests {
                 chain_id: 0,
                 base: url.parse().unwrap(),
                 client: Client::new(),
-                config: SolverConfig {
-                    api_key: None,
-                    max_nr_exec_orders: 0,
-                    has_ucp_policy_parameter: false,
-                    use_internal_buffers: None,
-                },
+                config: SolverConfig::default(),
             },
             Account::Local(Address::default(), None),
             H160::zero(),
