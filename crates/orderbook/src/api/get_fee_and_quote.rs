@@ -1,11 +1,11 @@
-use crate::api::{
-    convert_json_response,
-    post_quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, OrderQuoter, SellAmount},
-};
+use crate::api::{convert_json_response, post_quote::OrderQuoter};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
-use model::u256_decimal;
+use model::{
+    quote::{OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, SellAmount},
+    u256_decimal,
+};
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};

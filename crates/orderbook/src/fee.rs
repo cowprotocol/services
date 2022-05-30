@@ -4,7 +4,6 @@ use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
 use model::{app_id::AppId, order::OrderKind};
 use primitive_types::{H160, U256};
-use serde::{Deserialize, Serialize};
 use shared::{
     bad_token::BadTokenDetecting,
     price_estimation::{
@@ -21,19 +20,6 @@ use std::{
 use crate::cow_subsidy::CowSubsidy;
 
 pub type Measurement = (U256, DateTime<Utc>);
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "snake_case")]
-pub enum PriceQuality {
-    Fast,
-    Optimal,
-}
-
-impl Default for PriceQuality {
-    fn default() -> Self {
-        Self::Optimal
-    }
-}
 
 /// Fee subsidy configuration.
 ///
