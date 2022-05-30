@@ -322,7 +322,7 @@ impl OrderValidating for OrderValidator {
             ));
         }
 
-        let now = shared::time::now_in_epoch_seconds();
+        let now = model::time::now_in_epoch_seconds();
         if order.valid_to < now + self.min_order_validity_period.as_secs() as u32 {
             return Err(PartialValidationError::InsufficientValidTo);
         }
@@ -584,7 +584,7 @@ mod tests {
         let max_order_validity_period = Duration::from_secs(100);
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
-            shared::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
+            model::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
         code_fetcher
             .expect_code_size()
             .times(1)
@@ -737,7 +737,7 @@ mod tests {
             Arc::new(MockBalanceFetching::new()),
         );
         let order = || PreOrderData {
-            valid_to: shared::time::now_in_epoch_seconds()
+            valid_to: model::time::now_in_epoch_seconds()
                 + min_order_validity_period.as_secs() as u32
                 + 2,
             sell_token: H160::from_low_u64_be(1),
@@ -792,7 +792,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -832,7 +832,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(0),
@@ -872,7 +872,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -916,7 +916,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -958,7 +958,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -998,7 +998,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -1039,7 +1039,7 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
