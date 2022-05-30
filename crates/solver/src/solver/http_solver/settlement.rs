@@ -27,16 +27,9 @@ pub async fn convert_settlement(
     context: SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
 ) -> Result<Settlement> {
-    match IntermediateSettlement::new(settled.clone(), context, allowance_manager)
-        .await
-        .and_then(|intermediate| intermediate.into_settlement())
-    {
-        Ok(settlement) => Ok(settlement),
-        Err(err) => {
-            tracing::debug!("failed to process HTTP solver result: {:?}", settled);
-            Err(err)
-        }
-    }
+    IntermediateSettlement::new(settled, context, allowance_manager)
+        .await?
+        .into_settlement()
 }
 
 #[derive(Clone, Debug)]
@@ -48,11 +41,19 @@ enum Execution {
 }
 
 impl Execution {
-    fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
+    fn execution_plan(&self) -> Option<&ExecutionPlan> {
         match self {
-            Execution::Amm(executed_amm) => executed_amm.exec_plan.clone(),
-            Execution::CustomInteraction(interaction) => interaction.exec_plan.clone(),
-            Execution::LimitOrder(order) => order.exec_plan.clone(),
+            Execution::Amm(executed_amm) => &executed_amm.exec_plan,
+            Execution::CustomInteraction(interaction) => &interaction.exec_plan,
+            Execution::LimitOrder(order) => &order.exec_plan,
+        }
+        .as_ref()
+    }
+
+    fn coordinates(&self) -> Option<ExecutionPlanCoordinatesModel> {
+        match self.execution_plan()? {
+            ExecutionPlan::Coordinates(coords) => Some(coords.clone()),
+            _ => None,
         }
     }
 
@@ -104,7 +105,7 @@ struct ExecutedLimitOrder {
     order: LimitOrder,
     executed_buy_amount: U256,
     executed_sell_amount: U256,
-    exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    exec_plan: Option<ExecutionPlan>,
 }
 
 impl ExecutedLimitOrder {
@@ -122,7 +123,7 @@ struct ExecutedAmm {
     input: (H160, U256),
     output: (H160, U256),
     order: Liquidity,
-    exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    exec_plan: Option<ExecutionPlan>,
 }
 
 impl Interaction for InteractionData {
@@ -167,6 +168,19 @@ impl IntermediateSettlement {
         }
 
         for execution in &self.executions {
+            if let Some(ExecutionPlan::Internal) = execution.execution_plan() {
+                // This AMM execution or interaction should be internalized and
+                // replaced with buffer trading. Ideally, we would be able to
+                // log the interaction calldata that would be equivalent to the
+                // buffer swap, but that would require a larger refactor around
+                // how we build settlements. For now, just log the execution
+                // itself which is enough to manually recontruct what the actual
+                // calldata would have been.
+                tracing::debug!(?execution, "internalized AMM execution");
+
+                continue;
+            }
+
             execution.add_to_settlement(&mut settlement)?;
         }
 
@@ -336,6 +350,7 @@ mod tests {
         }];
 
         let cp_amm_handler = CapturingSettlementHandler::arc();
+        let internal_amm_handler = CapturingSettlementHandler::arc();
         let wp_amm_handler = CapturingSettlementHandler::arc();
         let sp_amm_handler = CapturingSettlementHandler::arc();
         let liquidity = vec![
@@ -344,6 +359,12 @@ mod tests {
                 reserves: (3, 4),
                 fee: 5.into(),
                 settlement_handling: cp_amm_handler.clone(),
+            }),
+            Liquidity::ConstantProduct(ConstantProductOrder {
+                tokens: TokenPair::new(t0, t1).unwrap(),
+                reserves: (6, 7),
+                fee: 8.into(),
+                settlement_handling: internal_amm_handler.clone(),
             }),
             Liquidity::BalancerWeighted(WeightedProductOrder {
                 reserves: hashmap! {
@@ -395,10 +416,20 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(9),
                 exec_buy_amount: U256::from(8),
-                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 0,
                     position: 0,
-                }),
+                })),
+            }],
+            cost: Default::default(),
+        };
+        let internal_uniswap = UpdatedAmmModel {
+            execution: vec![ExecutedAmmModel {
+                sell_token: t1,
+                buy_token: t0,
+                exec_sell_amount: U256::from(1),
+                exec_buy_amount: U256::from(1),
+                exec_plan: Some(ExecutionPlan::Internal),
             }],
             cost: Default::default(),
         };
@@ -408,10 +439,10 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(2),
                 exec_buy_amount: U256::from(1),
-                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 1,
                     position: 0,
-                }),
+                })),
             }],
             cost: Default::default(),
         };
@@ -421,16 +452,21 @@ mod tests {
                 buy_token: t0,
                 exec_sell_amount: U256::from(6),
                 exec_buy_amount: U256::from(4),
-                exec_plan: Some(ExecutionPlanCoordinatesModel {
+                exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                     sequence: 2,
                     position: 0,
-                }),
+                })),
             }],
             cost: Default::default(),
         };
         let settled = SettledBatchAuctionModel {
             orders: hashmap! { 0 => executed_order },
-            amms: hashmap! { 0 => updated_uniswap, 1 => updated_balancer_weighted, 2 => updated_balancer_stable },
+            amms: hashmap! {
+                0 => updated_uniswap,
+                1 => internal_uniswap,
+                2 => updated_balancer_weighted,
+                3 => updated_balancer_stable,
+            },
             ref_token: Some(t0),
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
             approvals: Vec::new(),
@@ -457,6 +493,7 @@ mod tests {
                 output: (t1, 9.into()),
             }]
         );
+        assert_eq!(internal_amm_handler.calls(), vec![]);
         assert_eq!(
             wp_amm_handler.calls(),
             vec![AmmOrderExecution {
@@ -708,37 +745,37 @@ mod tests {
                     order: Liquidity::BalancerWeighted(wpo),
                     input: (token_c, U256::from(996570293625184642u128)),
                     output: (token_b, U256::from(354009510372384890u128)),
-                    exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 0u32,
-                    }),
+                    })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
                     input: (token_b, U256::from(354009510372389956u128)),
                     output: (token_a, U256::from(932415220613609833982u128)),
-                    exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 1u32,
-                    }),
+                    })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
                     input: (token_c, U256::from(2)),
                     output: (token_b, U256::from(1)),
-                    exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 2u32,
-                    }),
+                    })),
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
                     input: (token_c, U256::from(4)),
                     output: (token_b, U256::from(3)),
-                    exec_plan: Some(ExecutionPlanCoordinatesModel {
+                    exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                         sequence: 0u32,
                         position: 3u32,
-                    }),
+                    })),
                 })),
             ],
         );
@@ -759,19 +796,21 @@ mod tests {
             order: Liquidity::ConstantProduct(cpo_1),
             input: (token_a, U256::from(2_u8)),
             output: (token_b, U256::from(1_u8)),
-            exec_plan: Some(ExecutionPlanCoordinatesModel {
+            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 2u32,
-            }),
+            })),
         }];
         let interactions = vec![InteractionData {
             target: H160::zero(),
             value: U256::zero(),
             call_data: Vec::new(),
-            exec_plan: Some(ExecutionPlanCoordinatesModel {
+            inputs: vec![],
+            outputs: vec![],
+            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 1u32,
                 position: 1u32,
-            }),
+            })),
         }];
         let orders = vec![ExecutedLimitOrder {
             order: Default::default(),

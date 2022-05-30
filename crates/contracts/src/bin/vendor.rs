@@ -59,12 +59,12 @@ fn run() -> Result<()> {
             "GPv2AllowListAuthentication",
             // We use `_Implementation` because the use of a proxy contract makes
             // deploying  for the e2e tests more cumbersome.
-            "@gnosis.pm/gp-v2-contracts@1.0.1/\
+            "@cowprotocol/contracts@1.1.2/\
              deployments/mainnet/GPv2AllowListAuthentication_Implementation.json",
         )?
         .npm(
             "GPv2Settlement",
-            "@gnosis.pm/gp-v2-contracts@1.0.1/deployments/mainnet/GPv2Settlement.json",
+            "@cowprotocol/contracts@1.1.2/deployments/mainnet/GPv2Settlement.json",
         )?
         .npm(
             "UniswapV2Factory",
@@ -138,11 +138,11 @@ fn run() -> Result<()> {
         )?
         .npm(
             "CowProtocolToken",
-            "@gnosis.pm/cow-token@1.0.3/build/artifacts/src/contracts/CowProtocolToken.sol/CowProtocolToken.json",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolToken.sol/CowProtocolToken.json",
         )?
         .npm(
             "CowProtocolVirtualToken",
-            "@gnosis.pm/cow-token@1.0.3/build/artifacts/src/contracts/CowProtocolVirtualToken.sol/CowProtocolVirtualToken.json",
+            "@cowprotocol/token@1.1.0/build/artifacts/src/contracts/CowProtocolVirtualToken.sol/CowProtocolVirtualToken.json",
         )?;
 
     Ok(())

@@ -13,9 +13,18 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::H160;
-use shared::{bad_token::BadTokenDetecting, metrics::LivenessChecking};
+use shared::{bad_token::BadTokenDetecting, metrics, metrics::LivenessChecking};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 use thiserror::Error;
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "orderbook")]
+struct Metrics {
+    /// Number of user (non-liquidity) orders created.
+    user_orders_created: prometheus::Counter,
+    /// Number of liquidity orders created.
+    liquidity_orders_created: prometheus::Counter,
+}
 
 #[derive(Debug, Error)]
 pub enum AddOrderError {
@@ -129,6 +138,15 @@ impl Orderbook {
             .await?;
 
         self.database.insert_order(&order, fee).await?;
+
+        let metrics = Metrics::instance(metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance");
+        if order.metadata.is_liquidity_order {
+            metrics.liquidity_orders_created.inc();
+        } else {
+            metrics.user_orders_created.inc();
+        }
+
         self.solvable_orders.request_update();
 
         Ok(order.metadata.uid)

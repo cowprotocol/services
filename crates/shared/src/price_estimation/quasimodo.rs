@@ -3,8 +3,8 @@ use crate::{
     http_solver::{
         gas_model::GasModel,
         model::{
-            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, CostModel,
-            FeeModel, OrderModel, SettledBatchAuctionModel, StablePoolParameters, TokenInfoModel,
+            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, OrderModel,
+            SettledBatchAuctionModel, StablePoolParameters, TokenAmount, TokenInfoModel,
             WeightedPoolTokenData, WeightedProductPoolParameters,
         },
         HttpSolverApi,
@@ -87,11 +87,11 @@ impl QuasimodoPriceEstimator {
                 buy_amount,
                 allow_partial_fill: false,
                 is_sell_order: query.kind == OrderKind::Sell,
-                fee: FeeModel {
+                fee: TokenAmount {
                     amount: U256::from(GAS_PER_ORDER) * gas_price,
                     token: self.native_token,
                 },
-                cost: CostModel {
+                cost: TokenAmount {
                     amount: U256::from(GAS_PER_ORDER) * gas_price,
                     token: self.native_token,
                 },
@@ -290,7 +290,7 @@ impl QuasimodoPriceEstimator {
         Ok(models)
     }
 
-    fn extract_cost(&self, cost: &Option<CostModel>) -> Result<U256, PriceEstimationError> {
+    fn extract_cost(&self, cost: &Option<TokenAmount>) -> Result<U256, PriceEstimationError> {
         if let Some(cost) = cost {
             if cost.token != self.native_token {
                 Err(anyhow::anyhow!("cost specified as an unknown token {}", cost.token).into())
@@ -427,16 +427,14 @@ mod tests {
 
         let estimator = QuasimodoPriceEstimator {
             api: Arc::new(DefaultHttpSolverApi {
-                name: "test",
+                name: "test".to_string(),
                 network_name: "1".to_string(),
                 chain_id: 1,
                 base: Url::parse(&quasimodo_url).expect("failed to parse quasimodo url"),
                 client,
                 config: SolverConfig {
-                    api_key: None,
-                    max_nr_exec_orders: 100,
-                    has_ucp_policy_parameter: false,
-                    use_internal_buffers: true.into(),
+                    use_internal_buffers: Some(true),
+                    ..Default::default()
                 },
             }),
             sharing: Default::default(),

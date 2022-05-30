@@ -9,6 +9,7 @@ pub mod gas_price;
 pub mod metrics;
 pub mod orderbook;
 pub mod solvable_orders;
+pub mod solver_competition;
 
 use crate::{api::post_quote::OrderQuoter, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
@@ -16,6 +17,7 @@ use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
 use futures::Future;
 use model::DomainSeparator;
+use solver_competition::SolverCompetition;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 use warp::Filter;
@@ -26,8 +28,9 @@ pub fn serve_api(
     quoter: Arc<OrderQuoter>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
+    solver_competition: Arc<SolverCompetition>,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(database, orderbook, quoter).boxed();
+    let filter = api::handle_all_routes(database, orderbook, quoter, solver_competition).boxed();
     tracing::info!(%address, "serving order book");
     let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
     task::spawn(server)

@@ -59,15 +59,28 @@ pub struct UniswapV3Finder {
     fee_values: Vec<u32>,
 }
 
+#[derive(Debug, Clone, Copy, clap::ArgEnum)]
+pub enum FeeValues {
+    /// Use hardcoded list
+    Static,
+    /// Fetch on creation based on events queried from node.
+    /// Some nodes struggle with the request and take a long time to respond leading to timeouts.
+    Dynamic,
+}
+
 impl UniswapV3Finder {
     pub async fn new(
         factory: IUniswapV3Factory,
         base_tokens: Vec<H160>,
         current_block: u64,
+        fee_values: FeeValues,
     ) -> Result<Self> {
-        // We fetch these once at start up because we don't expect them to change often.
-        // Alternatively could use a time based cache.
-        let fee_values = Self::fee_values(&factory, current_block).await?;
+        let fee_values = match fee_values {
+            FeeValues::Static => vec![500, 3000, 10000, 100],
+            // We fetch these once at start up because we don't expect them to change often.
+            // Alternatively could use a time based cache.
+            FeeValues::Dynamic => Self::fee_values(&factory, current_block).await?,
+        };
         tracing::debug!(?fee_values);
         Ok(Self {
             factory,
@@ -263,11 +276,19 @@ impl TraceCallDetector {
 
         let gas_in = match ensure_transaction_ok_and_get_gas(&traces[1])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "can't transfer into settlement contract: {reason}"
+                )))
+            }
         };
         let gas_out = match ensure_transaction_ok_and_get_gas(&traces[4])? {
             Ok(gas) => gas,
-            Err(reason) => return Ok(TokenQuality::bad(reason)),
+            Err(reason) => {
+                return Ok(TokenQuality::bad(format!(
+                    "can't transfer out of settlement contract: {reason}"
+                )))
+            }
         };
 
         let balance_before_in = match decode_u256(&traces[0]) {
@@ -283,7 +304,7 @@ impl TraceCallDetector {
             Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
         };
 
-        let balance_recpient_before = match decode_u256(&traces[3]) {
+        let balance_recipient_before = match decode_u256(&traces[3]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
         };
@@ -298,7 +319,15 @@ impl TraceCallDetector {
         // todo: Maybe do >= checks in case token transfer for whatever reason grants user more than
         // an amount transferred like an anti fee.
 
-        if balance_after_in != balance_before_in + amount {
+        let computed_balance_after_in = match balance_before_in.checked_add(amount) {
+            Some(amount) => amount,
+            None => {
+                return Ok(TokenQuality::bad(
+                    "token total supply does not fit a uint256",
+                ))
+            }
+        };
+        if balance_after_in != computed_balance_after_in {
             return Ok(TokenQuality::bad(
                 "balance after in transfer does not match",
             ));
@@ -308,7 +337,15 @@ impl TraceCallDetector {
                 "balance after out transfer does not match",
             ));
         }
-        if balance_recpient_before + amount != balance_recipient_after {
+        let computed_balance_recipient_after = match balance_recipient_before.checked_add(amount) {
+            Some(amount) => amount,
+            None => {
+                return Ok(TokenQuality::bad(
+                    "token total supply does not fit a uint256",
+                ))
+            }
+        };
+        if computed_balance_recipient_after != balance_recipient_after {
             return Ok(TokenQuality::bad("balance of recipient does not match"));
         }
 
@@ -354,8 +391,8 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
     let first = transaction_traces
         .first()
         .ok_or_else(|| anyhow!("expected at least one trace"))?;
-    if first.error.is_some() {
-        return Ok(Err("transaction failed".to_string()));
+    if let Some(error) = &first.error {
+        return Ok(Err(format!("transaction failed: {error}")));
     }
     let call_result = match &first.result {
         Some(Res::Call(call)) => call,
@@ -618,6 +655,8 @@ mod tests {
             H160(hex!("2129ff6000b95a973236020bcd2b2006b0d8e019")),
             // Should be denied because can't approve more than balance
             H160(hex!("decade1c6bf2cd9fb89afad73e4a519c867adcf5")),
+            // All balances are maxuint256
+            H160(hex!("0027449Bf0887ca3E431D263FFDeFb244D95b555")),
         ];
 
         // Of the deny listed tokens the following are detected as good:
@@ -671,7 +710,7 @@ mod tests {
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
         let current_block = web3.eth().block_number().await.unwrap().as_u64();
-        let univ3 = UniswapV3Finder::new(factory, base_tokens, current_block)
+        let univ3 = UniswapV3Finder::new(factory, base_tokens, current_block, FeeValues::Dynamic)
             .await
             .unwrap();
         let token_cache = TraceCallDetector {

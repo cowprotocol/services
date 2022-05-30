@@ -24,7 +24,7 @@ impl Slippage {
     }
 
     /// Creates a slippage amount from the specified basis points.
-    pub fn percentage_from_basis_points(basis_points: u16) -> Result<Self> {
+    pub fn percentage_from_basis_points(basis_points: u32) -> Result<Self> {
         let percent = (basis_points as f64) / 100.;
         Slippage::percentage(percent)
     }
@@ -48,15 +48,4 @@ where
 {
     let decimal_str = Cow::<str>::deserialize(deserializer)?;
     decimal_str.parse::<f64>().map_err(D::Error::custom)
-}
-
-pub fn deserialize_prefixed_hex<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let prefixed_hex_str = Cow::<str>::deserialize(deserializer)?;
-    let hex_str = prefixed_hex_str
-        .strip_prefix("0x")
-        .ok_or_else(|| D::Error::custom("hex missing '0x' prefix"))?;
-    hex::decode(hex_str).map_err(D::Error::custom)
 }

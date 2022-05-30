@@ -7,13 +7,11 @@ use super::{
     common::PrivateNetwork,
     AdditionalTip, CancelHandle, Strategy, SubmissionLoopStatus,
 };
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use ethcontract::{
-    transaction::{Transaction, TransactionBuilder},
-    H160, H256, U256,
+    transaction::{Transaction, TransactionBuilder}, H256,
 };
 use futures::{FutureExt, TryFutureExt};
-use gas_estimation::EstimatedGasPrice;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
@@ -86,13 +84,18 @@ impl TransactionSubmitting for EdenApi {
         &self,
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
+        let tx_hash = match tx.clone().build().now_or_never() {
+            Some(Ok(Transaction::Raw { hash, .. })) => hash,
+            _ => bail!("Eden submission requires fully built raw transactions"),
+        };
+
         // try to submit with slot method
         let result = self
             .submit_slot_transaction(tx.clone())
             .or_else(|err| async move {
-                // fallback to standard eth_sendRawTransaction
-                // want to keep this call as a safety measure until we are confident in `submit_slot_transaction`
-                tracing::debug!("fallback to eth_sendRawTransaction with error {:?}", err);
+                // fallback to standard `eth_sendRawTransaction` if `eth_sendSlotTx` fails
+                // which can happens when we don't have a slot.
+                tracing::debug!(?err, "fallback to eth_sendRawTransaction");
                 self.rpc
                     .api::<PrivateNetwork>()
                     .submit_raw_transaction(tx)
@@ -103,9 +106,17 @@ impl TransactionSubmitting for EdenApi {
         let successful = match &result {
             Ok(_) => true,
             // Sometimes `submit_slot_transaction()` times out and the fallback submission
-            // strategy reveals that the network is already aware of the transaction by returning
-            // the error message "already known".
-            Err(err) => err.to_string().contains("already known"),
+            // strategy reveals that the network is already aware of the transaction, either
+            // because the `eth_submitSlotTx` actually worked, or the transaction became
+            // public as part of another submission strategy (such as public mem-pool).
+            Err(err) if err.to_string().contains("already known") => {
+                tracing::debug!(?tx_hash, "transaction already known");
+                true
+            }
+            Err(err) => {
+                tracing::debug!(?err, "transaction submission error");
+                false
+            }
         };
         super::track_submission_success("eden", successful);
 

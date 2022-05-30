@@ -42,22 +42,21 @@ pub const SETTLEMENT_OVERHEAD: u64 = SETTLEMENT + TRADE + 2 * ERC20_TRANSFER;
 /// https://docs.google.com/spreadsheets/d/13UeUQ9DA4bHlcy9-i8d4nSLlCxSfjcXpTelvXYzyJzQ/edit?usp=sharing
 pub static GAS_PER_ORDER: u64 = 66_315;
 
-/// lower bound for executing one trade on uniswap
-pub static GAS_PER_UNISWAP: u64 = 94_696;
+/// Median gas used per UniswapInteraction (v2).
+// estimated with https://dune.com/queries/640717
+pub static GAS_PER_UNISWAP: u64 = 90_171;
 
-/// lower bound for execution of one trade on zeroex
-// estimated with https://dune.xyz/queries/536616
-pub static GAS_PER_ZEROEX_ORDER: u64 = 157_300;
+/// Median gas used per ZeroExInteraction.
+// estimated with https://dune.com/queries/639669
+pub static GAS_PER_ZEROEX_ORDER: u64 = 66_358;
 
-/// lower bound for executing one trade on balancer
-///
-/// Taken from a sample of two swaps
-/// https://etherscan.io/tx/0x72d234d35fd169ef497ba0a1dc23258c96f278fb688d375d135eb012e5311009
-/// https://etherscan.io/tx/0x1c345a6da1edb2bba953685a4cf85f6a0d967ac751f8c5b518578c5fd20a7c96
-pub static GAS_PER_BALANCER_SWAP: u64 = 120_000;
+/// Median gas used per BalancerSwapGivenOutInteraction.
+// estimated with https://dune.com/queries/639857
+pub static GAS_PER_BALANCER_SWAP: u64 = 88_892;
 
-/// Median gas used for unwrapping portion of WETH.
-pub static GAS_PER_WETH_UNWRAP: u64 = 14_192;
+/// Median gas used per UnwrapWethInteraction.
+// estimated with https://dune.com/queries/640753
+pub static GAS_PER_WETH_UNWRAP: u64 = 9_223;
 
 /// Median gas used for wrapping WETH for the first time.
 pub static GAS_PER_WETH_WRAP: u64 = 24_038;

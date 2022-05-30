@@ -19,6 +19,8 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
+use model::order::{Order, OrderKind};
+use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
@@ -32,6 +34,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
@@ -163,6 +166,30 @@ impl Driver {
         .await
     }
 
+    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
+    /// orders multiple times will not result in duplicates. Partially fillable orders get
+    /// considered as traded only the first time we tap into their liquidity.
+    fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
+        let mut traded_orders = Vec::new();
+        for (_, group) in &settlement
+            .executed_trades()
+            .map(|(trade, _)| trade)
+            .group_by(|trade| trade.order.metadata.uid)
+        {
+            let mut group = group.into_iter().peekable();
+            let order = &group.peek().unwrap().order;
+            let was_already_filled = match order.creation.kind {
+                OrderKind::Buy => &order.metadata.executed_buy_amount,
+                OrderKind::Sell => &order.metadata.executed_sell_amount,
+            } > &0u8.into();
+            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
+            if !was_already_filled && is_getting_filled {
+                traded_orders.push(order.clone());
+            }
+        }
+        traded_orders
+    }
+
     async fn submit_settlement(
         &self,
         auction_id: u64,
@@ -170,7 +197,7 @@ impl Driver {
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
-        let traded_orders = settlement.traded_orders().cloned().collect::<Vec<_>>();
+        let traded_orders = Self::get_traded_orders(&settlement);
 
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver.name());
@@ -235,7 +262,15 @@ impl Driver {
             transaction_hash,
         )
         .await?;
-        self.metrics.settlement_access_list_saved_gas(gas_saved);
+        tracing::debug!(?gas_saved, "access list gas saved");
+        if gas_saved.is_sign_positive() {
+            self.metrics
+                .settlement_access_list_saved_gas(gas_saved, "positive");
+        } else {
+            self.metrics
+                .settlement_access_list_saved_gas(-gas_saved, "negative");
+        }
+
         Ok(())
     }
 
@@ -321,7 +356,7 @@ impl Driver {
                 }
             }
         };
-        tokio::task::spawn(task);
+        tokio::task::spawn(task.instrument(Span::current()));
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
@@ -401,6 +436,14 @@ impl Driver {
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
+        let id = self.next_auction_id();
+        // extra function so that we can add span information
+        self.single_run_(id)
+            .instrument(tracing::info_span!("auction", id))
+            .await
+    }
+
+    async fn single_run_(&mut self, auction_id: u64) -> Result<()> {
         let start = Instant::now();
         tracing::debug!("starting single run");
 
@@ -462,7 +505,6 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
-        let auction_id = self.next_auction_id();
         let auction = Auction {
             id: auction_id,
             orders: orders.clone(),
@@ -471,6 +513,7 @@ impl Driver {
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
         };
+
         tracing::debug!("solving auction id {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
@@ -478,11 +521,27 @@ impl Driver {
 
             let mut settlements = match settlements {
                 Ok(mut settlement) => {
+                    for settlement in &settlement {
+                        tracing::debug!(
+                            %auction_id, solver_name = %name, ?settlement,
+                            "found solution",
+                        );
+                    }
+
                     // Do not continue with settlements that are empty or only liquidity orders.
+                    let settlement_count = settlement.len();
                     settlement.retain(solver_settlements::has_user_order);
+                    if settlement_count != settlement.len() {
+                        tracing::debug!(
+                            solver_name = %name,
+                            "settlement(s) filtered containing only liquidity orders",
+                        );
+                    }
+
                     if let Some(max_settlement_price_deviation) =
                         &self.max_settlement_price_deviation
                     {
+                        let settlement_count = settlement.len();
                         settlement.retain(|settlement| {
                             settlement.satisfies_price_checks(
                                 auction_id,
@@ -492,7 +551,14 @@ impl Driver {
                                 &self.token_list_restriction_for_price_checks,
                             )
                         });
+                        if settlement_count != settlement.len() {
+                            tracing::debug!(
+                                solver_name = %name,
+                                "settlement(s) filtered for violating maximum external price deviation",
+                            );
+                        }
                     }
+
                     if settlement.is_empty() {
                         self.metrics.solver_run(SolverRunOutcome::Empty, name);
                         continue;
@@ -510,19 +576,10 @@ impl Driver {
                             self.metrics.solver_run(SolverRunOutcome::Failure, name)
                         }
                     }
-                    tracing::warn!("solver {} error: {:?}", name, err);
+                    tracing::warn!(solver_name = %name, ?err, "solver error");
                     continue;
                 }
             };
-
-            for settlement in &settlements {
-                tracing::debug!(
-                    "for auction id {} solver {} found solution:\n{:?} ",
-                    auction_id,
-                    name,
-                    settlement
-                );
-            }
 
             // Keep at most this many settlements. This is important in case where a solver produces
             // a large number of settlements which would hold up the driver logic when simulating
@@ -548,6 +605,16 @@ impl Driver {
         // filters out all non-mature settlements
         let solver_settlements =
             solver_settlements::retain_mature_settlements(self.min_order_age, solver_settlements);
+
+        // log considered settlements. While we already log all found settlements, this additonal
+        // statement allows us to figure out which settlements were filtered out and which ones are
+        // going to be simulated and considered for competition.
+        for (solver, settlement) in &solver_settlements {
+            tracing::debug!(
+                %auction_id, solver_name = %solver.name(), ?settlement,
+                "considering solution for solver competition",
+            );
+        }
 
         // append access lists
         let txs = solver_settlements
@@ -591,8 +658,56 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+        // preference to any specific solver when there is an objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
+
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+
+        // Report solver competition data to the api.
+        let mut solver_competition_response = SolverCompetitionResponse {
+            gas_price: gas_price.effective_gas_price(),
+            liquidity_collected_block: current_block_during_liquidity_fetch,
+            // TODO: we don't have access to this and there is no guarantee there is one such block
+            competition_simulation_block: 0,
+            transaction_hash: None,
+            solutions: rated_settlements
+                .iter()
+                .map(|(solver, rated_settlement, _)| SolverSettlement {
+                    solver: solver.name().to_string(),
+                    objective: Objective {
+                        total: rated_settlement
+                            .objective_value()
+                            .to_f64()
+                            .unwrap_or(f64::NAN),
+                        surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
+                        fees: rated_settlement
+                            .unscaled_subsidized_fee
+                            .to_f64()
+                            .unwrap_or(f64::NAN),
+                        cost: rated_settlement.gas_estimate.to_f64_lossy()
+                            * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+                        gas: rated_settlement.gas_estimate.low_u64(),
+                    },
+                    prices: rated_settlement.settlement.clearing_prices().clone(),
+                    orders: rated_settlement
+                        .settlement
+                        .executed_trades()
+                        .map(|(trade, _)| solver_competition::Order {
+                            id: trade.order.metadata.uid,
+                            executed_amount: trade.executed_amount,
+                        })
+                        .collect(),
+                    // TODO: need some refactoring to make this easier to access
+                    call_data: Default::default(),
+                })
+                .collect(),
+        };
+        // This will happen again after transaction submission with the tx hash.
+        self.send_solver_competition(auction_id, &solver_competition_response)
+            .await;
+
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {
             // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
@@ -639,10 +754,6 @@ impl Driver {
                 )
                 .await
             {
-                let orders = winning_settlement
-                    .settlement
-                    .traded_orders()
-                    .map(|o| o.metadata.uid);
                 let block = match receipt.block_number {
                     Some(block) => block.as_u64(),
                     None => {
@@ -650,7 +761,10 @@ impl Driver {
                         0
                     }
                 };
-                self.in_flight_orders.mark_settled_orders(block, orders);
+
+                self.in_flight_orders
+                    .mark_settled_orders(block, &winning_settlement.settlement);
+
                 match receipt.effective_gas_price {
                     Some(price) => {
                         self.metrics.transaction_gas_price(price);
@@ -659,6 +773,10 @@ impl Driver {
                         tracing::error!("node did not return effective gas price in tx receipt");
                     }
                 }
+
+                solver_competition_response.transaction_hash = Some(receipt.transaction_hash);
+                self.send_solver_competition(auction_id, &solver_competition_response)
+                    .await;
             }
             self.metrics.transaction_submission(start.elapsed());
 
@@ -679,6 +797,12 @@ impl Driver {
         let id = self.solve_id;
         self.solve_id += 1;
         id
+    }
+
+    async fn send_solver_competition(&self, auction_id: u64, body: &SolverCompetitionResponse) {
+        if let Err(err) = self.api.send_solver_competition(auction_id, body).await {
+            tracing::warn!(?err, "failed to send solver competition");
+        }
     }
 }
 

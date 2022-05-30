@@ -2,6 +2,7 @@
 
 use crate::{
     app_id::AppId,
+    quote::QuoteId,
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
@@ -46,7 +47,14 @@ impl Default for Order {
             .signature
             .validate(domain, &order.hash_struct())
             .unwrap();
-        Self::from_order_creation(&order, domain, H160::default(), Default::default(), owner)
+        Self::from_order_creation(
+            &order,
+            domain,
+            H160::default(),
+            Default::default(),
+            owner,
+            false,
+        )
     }
 }
 
@@ -67,6 +75,7 @@ impl Order {
         settlement_contract: H160,
         full_fee_amount: U256,
         owner: H160,
+        is_liquidity_order: bool,
     ) -> Self {
         Self {
             metadata: OrderMetadata {
@@ -75,6 +84,7 @@ impl Order {
                 uid: order_creation.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
+                is_liquidity_order,
                 ..Default::default()
             },
             creation: *order_creation,
@@ -274,10 +284,12 @@ pub struct OrderCreation {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderCreationPayload {
     #[serde(flatten)]
     pub order_creation: OrderCreation,
     pub from: Option<H160>,
+    pub quote_id: Option<QuoteId>,
 }
 
 impl Default for OrderCreation {
@@ -329,7 +341,7 @@ impl OrderCreation {
 
 // EIP-712
 impl OrderCreation {
-    // See <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/src/contracts/libraries/GPv2Order.sol>
+    // See <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L47>
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
@@ -452,6 +464,7 @@ pub struct OrderMetadata {
     pub settlement_contract: H160,
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
+    pub is_liquidity_order: bool,
 }
 
 impl Default for OrderMetadata {
@@ -469,6 +482,7 @@ impl Default for OrderMetadata {
             status: OrderStatus::Open,
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
+            is_liquidity_order: false,
         }
     }
 }
@@ -688,6 +702,7 @@ mod tests {
             "settlementContract": "0x0000000000000000000000000000000000000002",
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
+            "isLiquidityOrder": false,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -704,6 +719,7 @@ mod tests {
                 status: OrderStatus::Open,
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
+                is_liquidity_order: false,
             },
             creation: OrderCreation {
                 sell_token: H160::from_low_u64_be(10),
@@ -741,7 +757,7 @@ mod tests {
     }
 
     // from the test `should recover signing address for all supported ECDSA-based schemes` in
-    // <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/test/GPv2Signing.test.ts#L280>.
+    // <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
     #[test]
     fn order_creation_signature() {
         let domain_separator = DomainSeparator(hex!(
@@ -794,7 +810,7 @@ mod tests {
     }
 
     // from the test `should compute order unique identifier` in
-    // <https://github.com/gnosis/gp-v2-contracts/blob/v1.0.1/test/GPv2Signing.test.ts#L143>
+    // <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L143>
     #[test]
     fn compute_order_uid() {
         let domain_separator = DomainSeparator(hex!(

@@ -1,3 +1,4 @@
+use derivative::Derivative;
 use ethcontract::H160;
 use model::{
     ratio_as_decimal,
@@ -27,8 +28,8 @@ pub struct OrderModel {
     pub buy_amount: U256,
     pub allow_partial_fill: bool,
     pub is_sell_order: bool,
-    pub fee: FeeModel,
-    pub cost: CostModel,
+    pub fee: TokenAmount,
+    pub cost: TokenAmount,
     pub is_liquidity_order: bool,
     #[serde(default)]
     pub mandatory: bool,
@@ -45,7 +46,7 @@ pub struct AmmModel {
     pub parameters: AmmParameters,
     #[serde(with = "ratio_as_decimal")]
     pub fee: BigRational,
-    pub cost: CostModel,
+    pub cost: TokenAmount,
     pub mandatory: bool,
 }
 
@@ -99,15 +100,8 @@ pub struct TokenInfoModel {
     pub internal_buffer: Option<U256>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct CostModel {
-    #[serde(with = "u256_decimal")]
-    pub amount: U256,
-    pub token: H160,
-}
-
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub struct FeeModel {
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TokenAmount {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     pub token: H160,
@@ -121,12 +115,57 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Derivative, Deserialize, PartialEq)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
+    #[derivative(Debug(format_with = "debug_bytes"))]
+    #[serde(with = "bytes_hex_or_array")]
     pub call_data: Vec<u8>,
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    /// The input amounts into the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the settlement contract into the AMM
+    /// for this calldata.
+    ///
+    /// `GPv2Settlement -> AMM`
+    #[serde(default)]
+    pub inputs: Vec<TokenAmount>,
+    /// The output amounts from the AMM interaction - i.e. the amount of tokens
+    /// that are expected to be sent from the AMM into the settlement contract
+    /// for this calldata.
+    ///
+    /// `AMM -> GPv2Settlement`
+    #[serde(default)]
+    pub outputs: Vec<TokenAmount>,
+    pub exec_plan: Option<ExecutionPlan>,
+}
+
+/// Module to allow for backwards compatibility with the HTTP solver API.
+///
+/// Specifically, the HTTP solver API used to expect calldata as a JSON array of
+/// integers that fit in a `u8`. This changed to allow `0x-` prefixed hex
+/// strings to be more consistent with how bytes are typically represented in
+/// Ethereum-related APIs. This module implements JSON deserialization that
+/// accepts either format.
+mod bytes_hex_or_array {
+    use serde::{Deserialize, Deserializer};
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum HexOrArray {
+        Hex(#[serde(with = "model::bytes_hex")] Vec<u8>),
+        Array(Vec<u8>),
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let bytes = match HexOrArray::deserialize(deserializer)? {
+            HexOrArray::Hex(bytes) => bytes,
+            HexOrArray::Array(bytes) => bytes,
+        };
+        Ok(bytes)
+    }
 }
 
 #[serde_as]
@@ -149,10 +188,16 @@ impl SettledBatchAuctionModel {
     pub fn has_execution_plan(&self) -> bool {
         // Its a bit weird that we expect all entries to contain an execution plan. Could make
         // execution plan required and assert that the vector of execution updates is non-empty
-        self.amms
+
+        let amm_executions = self
+            .amms
             .values()
-            .flat_map(|u| &u.execution)
-            .all(|u| u.exec_plan.is_some())
+            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan));
+        let interaction_executions = self.interaction_data.iter().map(|i| &i.exec_plan);
+
+        amm_executions
+            .chain(interaction_executions)
+            .all(|ex| ex.is_some())
     }
 }
 
@@ -176,17 +221,17 @@ pub struct ExecutedOrderModel {
     pub exec_sell_amount: U256,
     #[serde(with = "u256_decimal")]
     pub exec_buy_amount: U256,
-    pub cost: Option<CostModel>,
-    pub fee: Option<FeeModel>,
+    pub cost: Option<TokenAmount>,
+    pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    pub exec_plan: Option<ExecutionPlan>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
-    pub cost: Option<CostModel>,
+    pub cost: Option<TokenAmount>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -200,7 +245,7 @@ pub struct ExecutedAmmModel {
     /// The exec plan is allowed to be optional because the http solver isn't always
     /// able to determine and order of execution. That is, solver may have a solution
     /// which it wants to share with the driver even if it couldn't derive an execution plan.
-    pub exec_plan: Option<ExecutionPlanCoordinatesModel>,
+    pub exec_plan: Option<ExecutionPlan>,
 }
 
 impl UpdatedAmmModel {
@@ -212,6 +257,42 @@ impl UpdatedAmmModel {
             .iter()
             .any(|exec| exec.exec_sell_amount.gt(zero) || exec.exec_buy_amount.gt(zero));
         !self.execution.is_empty() && has_non_trivial_execution
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum ExecutionPlan {
+    /// The coordinates at which the interaction should be included within a
+    /// settlement.
+    Coordinates(ExecutionPlanCoordinatesModel),
+
+    /// The interaction should **not** be included in the settlement as
+    /// internal buffers will be used instead.
+    #[serde(with = "execution_plan_internal")]
+    Internal,
+}
+
+/// A module for implementing `serde` (de)serialization for the execution plan
+/// enum.
+///
+/// This is a work-around for untagged enum serialization not supporting empty
+/// variants <https://github.com/serde-rs/serde/issues/1560>.
+mod execution_plan_internal {
+    use super::*;
+
+    #[derive(Deserialize, Serialize)]
+    enum Kind {
+        #[serde(rename = "internal")]
+        Internal,
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<(), D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Kind::deserialize(deserializer)?;
+        Ok(())
     }
 }
 
@@ -241,10 +322,10 @@ mod tests {
         };
 
         let trivial_execution_with_plan = ExecutedAmmModel {
-            exec_plan: Some(ExecutionPlanCoordinatesModel {
+            exec_plan: Some(ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
                 sequence: 0,
                 position: 0,
-            }),
+            })),
             ..Default::default()
         };
 
@@ -299,11 +380,11 @@ mod tests {
             buy_amount: U256::from(2),
             allow_partial_fill: false,
             is_sell_order: true,
-            fee: FeeModel {
+            fee: TokenAmount {
                 amount: U256::from(2),
                 token: sell_token,
             },
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(1),
                 token: native_token,
             },
@@ -319,7 +400,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -339,7 +420,7 @@ mod tests {
                 },
             }),
             fee: BigRational::new(2.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(2),
                 token: native_token,
             },
@@ -358,7 +439,7 @@ mod tests {
                 amplification_parameter: BigRational::new(1337.into(), 100.into()),
             }),
             fee: BigRational::new(3.into(), 1000.into()),
-            cost: CostModel {
+            cost: TokenAmount {
                 amount: U256::from(3),
                 token: native_token,
             },
@@ -559,5 +640,101 @@ mod tests {
             }
         "#;
         assert!(serde_json::from_str::<SettledBatchAuctionModel>(x).is_ok());
+    }
+
+    #[test]
+    fn decode_execution_plan() {
+        for (json, expected) in [
+            (r#""internal""#, ExecutionPlan::Internal),
+            (
+                r#"{ "sequence": 42, "position": 1337 }"#,
+                ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                    sequence: 42,
+                    position: 1337,
+                }),
+            ),
+        ] {
+            assert_eq!(
+                serde_json::from_str::<ExecutionPlan>(json).unwrap(),
+                expected,
+            );
+        }
+    }
+
+    #[test]
+    fn decode_interaction_data() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": "0x01020304",
+                        "inputs": [
+                            {
+                                "token": "0x0101010101010101010101010101010101010101",
+                                "amount": "9999"
+                            }
+                        ],
+                        "outputs": [
+                            {
+                                "token": "0x0202020202020202020202020202020202020202",
+                                "amount": "2000"
+                            },
+                            {
+                                "token": "0x0303030303030303030303030303030303030303",
+                                "amount": "3000"
+                            }
+                        ],
+                        "exec_plan": "internal"
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                inputs: vec![TokenAmount {
+                    token: H160([1; 20]),
+                    amount: 9999.into(),
+                }],
+                outputs: vec![
+                    TokenAmount {
+                        token: H160([2; 20]),
+                        amount: 2000.into(),
+                    },
+                    TokenAmount {
+                        token: H160([3; 20]),
+                        amount: 3000.into(),
+                    }
+                ],
+                exec_plan: Some(ExecutionPlan::Internal),
+            },
+        );
+    }
+
+    #[test]
+    fn decode_interaction_data_backwards_compatibility() {
+        assert_eq!(
+            serde_json::from_str::<InteractionData>(
+                r#"
+                    {
+                        "target": "0xffffffffffffffffffffffffffffffffffffffff",
+                        "value": "0",
+                        "call_data": [1, 2, 3, 4]
+                    }
+                "#,
+            )
+            .unwrap(),
+            InteractionData {
+                target: H160([0xff; 20]),
+                value: 0.into(),
+                call_data: vec![1, 2, 3, 4],
+                inputs: Vec::new(),
+                outputs: Vec::new(),
+                exec_plan: None,
+            },
+        );
     }
 }

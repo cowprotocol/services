@@ -18,7 +18,7 @@ use reqwest::{
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use shared::Web3;
-use web3::types::{AccessList, BlockId, Bytes};
+use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
 
@@ -169,8 +169,9 @@ pub async fn simulate_before_after_access_list(
         network_id,
         block_number,
         from,
-        input: transaction.input,
+        input: transaction.input.0,
         to,
+        gas: Some(transaction.gas.as_u64()),
         generate_access_list: false,
         transaction_index: Some(transaction_index),
     };
@@ -248,8 +249,11 @@ pub struct TenderlyRequest {
     pub network_id: String,
     pub block_number: u64,
     pub from: Address,
-    pub input: Bytes,
+    #[serde(with = "model::bytes_hex")]
+    pub input: Vec<u8>,
     pub to: Address,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gas: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub transaction_index: Option<u64>,
     pub generate_access_list: bool,
@@ -391,7 +395,7 @@ mod tests {
         // This e2e test re-simulates the settlement from here: https://etherscan.io/tx/0x6756c294eb84c899247f2ec64d6eee73e7aaf50d6cb49ba9bab636f450240f51
         // This settlement was wrongly settled, because the liquidity order did receive a surplus.
         // The liquidity order is:
-        // https://gnosis-protocol.io/orders/0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542
+        // https://explorer.cow.fi/orders/0x4da985bb7639bdac928553d0c39a3840388e27f825c572bb8addb47ef2de1f03e63a13eedd01b624958acfe32145298788a7a7ba61be1542
 
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
@@ -411,11 +415,6 @@ mod tests {
         );
         let order_converter = OrderConverter {
             native_token: native_token_contract.clone(),
-            liquidity_order_owners: vec!["0xe63A13Eedd01B624958AcFe32145298788a7a7BA"
-                .parse()
-                .unwrap()]
-            .into_iter()
-            .collect(),
             fee_objective_scaling_factor: 0.91_f64,
         };
         let value = json!(
@@ -446,6 +445,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": false,
         });
         let order0: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -476,6 +476,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": true,
         });
         let order1: Order = serde_json::from_value(value).unwrap();
         let value = json!(
@@ -506,6 +507,7 @@ mod tests {
             "settlementContract": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
             "sellTokenBalance": "erc20",
             "buyTokenBalance": "erc20",
+            "isLiquidityOrder": false,
         });
         let order2: Order = serde_json::from_value(value).unwrap();
 

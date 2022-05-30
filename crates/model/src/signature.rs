@@ -8,13 +8,20 @@ use web3::{
     types::Recovery,
 };
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
     EthSign,
     PreSign,
 }
+
+impl Default for SigningScheme {
+    fn default() -> Self {
+        SigningScheme::Eip712
+    }
+}
+
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "signingScheme", content = "signature")]
@@ -26,7 +33,7 @@ pub enum Signature {
 
 impl Default for Signature {
     fn default() -> Self {
-        Self::default_with(SigningScheme::Eip712)
+        Self::default_with(SigningScheme::default())
     }
 }
 

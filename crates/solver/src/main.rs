@@ -1,7 +1,6 @@
-use anyhow::anyhow;
 use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
-use ethcontract::{Account, PrivateKey, H160};
+use ethcontract::H160;
 use num::rational::Ratio;
 use reqwest::Url;
 use shared::{
@@ -39,9 +38,9 @@ use solver::{
         },
         SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
-    solver::SolverType,
+    solver::{ExternalSolverArg, SolverAccountArg, SolverType},
 };
-use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 #[derive(Debug, Parser)]
 struct Arguments {
@@ -119,6 +118,10 @@ struct Arguments {
     )]
     solver_accounts: Option<Vec<SolverAccountArg>>,
 
+    /// List of external solvers in the form of `name|url|account`.
+    #[clap(long, env, use_value_delimiter = true)]
+    external_solvers: Option<Vec<ExternalSolverArg>>,
+
     /// A settlement must contain at least one order older than this duration in seconds for it
     /// to be applied.  Larger values delay individual settlements more but have a higher
     /// coincidence of wants chance.
@@ -172,6 +175,10 @@ struct Arguments {
     /// The slippage tolerance we apply to the price quoted by zeroEx
     #[clap(long, env, default_value = "10")]
     zeroex_slippage_bps: u32,
+
+    /// The slippage tolerance we apply to the price quoted by oneInchSolver
+    #[clap(long, env, default_value = "10")]
+    oneinch_slippage_bps: u32,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
@@ -305,39 +312,6 @@ enum TransactionStrategyArg {
     Flashbots,
     CustomNodes,
     DryRun,
-}
-
-#[derive(Debug)]
-enum SolverAccountArg {
-    PrivateKey(PrivateKey),
-    Address(H160),
-}
-
-impl SolverAccountArg {
-    fn into_account(self, chain_id: u64) -> Account {
-        match self {
-            SolverAccountArg::PrivateKey(key) => Account::Offline(key, Some(chain_id)),
-            SolverAccountArg::Address(address) => Account::Local(address, None),
-        }
-    }
-}
-
-impl FromStr for SolverAccountArg {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        s.parse::<PrivateKey>()
-            .map(SolverAccountArg::PrivateKey)
-            .or_else(|pk_err| {
-                Ok(SolverAccountArg::Address(s.parse().map_err(
-                    |addr_err| {
-                        anyhow!("could not parse as private key: {}", pk_err)
-                            .context(anyhow!("could not parse as address: {}", addr_err))
-                            .context("invalid solver account, it is neither a private key or an Ethereum address")
-                    },
-                )?))
-            })
-    }
 }
 
 #[tokio::main]
@@ -531,9 +505,11 @@ async fn main() {
         metrics.clone(),
         zeroex_api.clone(),
         args.zeroex_slippage_bps,
+        args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
+        args.external_solvers.unwrap_or_default(),
     )
     .expect("failure creating solvers");
 
@@ -644,7 +620,6 @@ async fn main() {
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {
         native_token: native_token_contract.clone(),
-        liquidity_order_owners: args.shared.liquidity_order_owners.into_iter().collect(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,
     };
     let tenderly = args
@@ -734,45 +709,4 @@ async fn build_amm_artifacts(
         ));
     }
     res
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    impl PartialEq for SolverAccountArg {
-        fn eq(&self, other: &Self) -> bool {
-            match (self, other) {
-                (SolverAccountArg::PrivateKey(a), SolverAccountArg::PrivateKey(b)) => {
-                    a.public_address() == b.public_address()
-                }
-                (SolverAccountArg::Address(a), SolverAccountArg::Address(b)) => a == b,
-                _ => false,
-            }
-        }
-    }
-
-    #[test]
-    fn parses_solver_account_arg() {
-        assert_eq!(
-            "0x4242424242424242424242424242424242424242424242424242424242424242"
-                .parse::<SolverAccountArg>()
-                .unwrap(),
-            SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
-        );
-        assert_eq!(
-            "0x4242424242424242424242424242424242424242"
-                .parse::<SolverAccountArg>()
-                .unwrap(),
-            SolverAccountArg::Address(H160([0x42; 20])),
-        );
-    }
-
-    #[test]
-    fn errors_on_invalid_solver_account_arg() {
-        assert!("0x010203040506070809101112131415161718192021"
-            .parse::<SolverAccountArg>()
-            .is_err());
-        assert!("not an account".parse::<SolverAccountArg>().is_err());
-    }
 }

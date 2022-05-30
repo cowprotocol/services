@@ -59,6 +59,7 @@ pub trait OrderValidating: Send + Sync {
 pub enum PartialValidationError {
     Forbidden,
     InsufficientValidTo,
+    ExcessiveValidTo,
     TransferEthToContract,
     InvalidNativeSellToken,
     SameBuyAndSellToken,
@@ -95,6 +96,10 @@ impl IntoWarpReply for PartialValidationError {
                     "InsufficientValidTo",
                     "validTo is not far enough in the future",
                 ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ExcessiveValidTo => with_status(
+                super::error("ExcessiveValidTo", "validTo is too far into the future"),
                 StatusCode::BAD_REQUEST,
             ),
             Self::TransferEthToContract => with_status(
@@ -216,13 +221,14 @@ pub struct OrderValidator {
     banned_users: HashSet<H160>,
     liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
+    max_order_validity_period: Duration,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
-#[derive(Default, Debug, PartialEq)]
+#[derive(Debug, PartialEq, Default)]
 pub struct PreOrderData {
     pub owner: H160,
     pub sell_token: H160,
@@ -232,6 +238,8 @@ pub struct PreOrderData {
     pub partially_fillable: bool,
     pub buy_token_balance: BuyTokenDestination,
     pub sell_token_balance: SellTokenSource,
+    pub signing_scheme: SigningScheme,
+    pub is_liquidity_order: bool,
 }
 
 fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
@@ -244,7 +252,11 @@ fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
 }
 
 impl PreOrderData {
-    pub fn from_order_creation(owner: H160, order: &OrderCreation) -> Self {
+    pub fn from_order_creation(
+        owner: H160,
+        order: &OrderCreation,
+        is_liquidity_order: bool,
+    ) -> Self {
         Self {
             owner,
             sell_token: order.sell_token,
@@ -254,6 +266,8 @@ impl PreOrderData {
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
+            signing_scheme: order.signature.scheme(),
+            is_liquidity_order,
         }
     }
 }
@@ -266,6 +280,7 @@ impl OrderValidator {
         banned_users: HashSet<H160>,
         liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
+        max_order_validity_period: Duration,
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
@@ -276,6 +291,7 @@ impl OrderValidator {
             banned_users,
             liquidity_order_owners,
             min_order_validity_period,
+            max_order_validity_period,
             fee_validator,
             bad_token_detector,
             balance_fetcher,
@@ -286,7 +302,7 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if order.partially_fillable && !self.liquidity_order_owners.contains(&order.owner) {
+        if order.partially_fillable && !order.is_liquidity_order {
             return Err(PartialValidationError::UnsupportedOrderType);
         }
         if self.banned_users.contains(&order.owner) {
@@ -305,11 +321,18 @@ impl OrderValidating for OrderValidator {
                 order.sell_token_balance,
             ));
         }
-        if order.valid_to
-            < shared::time::now_in_epoch_seconds() + self.min_order_validity_period.as_secs() as u32
-        {
+
+        let now = shared::time::now_in_epoch_seconds();
+        if order.valid_to < now + self.min_order_validity_period.as_secs() as u32 {
             return Err(PartialValidationError::InsufficientValidTo);
         }
+        if order.valid_to > now.saturating_add(self.max_order_validity_period.as_secs() as u32)
+            && !order.is_liquidity_order
+            && order.signing_scheme != SigningScheme::PreSign
+        {
+            return Err(PartialValidationError::ExcessiveValidTo);
+        }
+
         if has_same_buy_and_sell_token(&order, &self.native_token) {
             return Err(PartialValidationError::SameBuyAndSellToken);
         }
@@ -359,9 +382,14 @@ impl OrderValidating for OrderValidator {
             }
         }
 
-        self.partial_validate(PreOrderData::from_order_creation(owner, &order_creation))
-            .await
-            .map_err(ValidationError::Partial)?;
+        let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
+        self.partial_validate(PreOrderData::from_order_creation(
+            owner,
+            &order_creation,
+            is_liquidity_order,
+        ))
+        .await
+        .map_err(ValidationError::Partial)?;
 
         let unsubsidized_fee = self
             .fee_validator
@@ -448,6 +476,7 @@ impl OrderValidating for OrderValidator {
             settlement_contract,
             unsubsidized_fee.amount_in_sell_token(),
             owner,
+            is_liquidity_order,
         );
         Ok((order, unsubsidized_fee))
     }
@@ -552,6 +581,7 @@ mod tests {
         let mut code_fetcher = Box::new(MockCodeFetching::new());
         let native_token = dummy_contract!(WETH9, [0xef; 20]);
         let min_order_validity_period = Duration::from_secs(1);
+        let max_order_validity_period = Duration::from_secs(100);
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
             shared::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
@@ -565,6 +595,7 @@ mod tests {
             banned_users,
             hashset!(),
             min_order_validity_period,
+            max_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -621,6 +652,15 @@ mod tests {
         assert!(matches!(
             validator
                 .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to + max_order_validity_period.as_secs() as u32 + 1,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::ExcessiveValidTo)
+        ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
                     valid_to: legit_valid_to,
                     buy_token: H160::from_low_u64_be(2),
                     sell_token: H160::from_low_u64_be(2),
@@ -662,6 +702,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -683,12 +724,14 @@ mod tests {
     async fn pre_validate_ok() {
         let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let min_order_validity_period = Duration::from_secs(1);
+        let max_order_validity_period = Duration::from_secs(100);
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
             hashset!(),
             hashset!(liquidity_order_owner),
             min_order_validity_period,
+            max_order_validity_period,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -705,8 +748,18 @@ mod tests {
         assert!(validator.partial_validate(order()).await.is_ok());
         assert!(validator
             .partial_validate(PreOrderData {
+                valid_to: u32::MAX,
+                signing_scheme: SigningScheme::PreSign,
+                ..order()
+            })
+            .await
+            .is_ok());
+        assert!(validator
+            .partial_validate(PreOrderData {
                 partially_fillable: true,
+                is_liquidity_order: true,
                 owner: liquidity_order_owner,
+                valid_to: u32::MAX,
                 ..order()
             })
             .await
@@ -733,6 +786,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -772,6 +826,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -811,6 +866,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -854,6 +910,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -895,6 +952,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -934,6 +992,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -974,6 +1033,7 @@ mod tests {
             hashset!(),
             hashset!(),
             Duration::from_secs(1),
+            Duration::from_secs(100),
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
@@ -1015,6 +1075,7 @@ mod tests {
                     hashset!(),
                     hashset!(),
                     Duration::from_secs(1),
+                    Duration::MAX,
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
                     Arc::new(balance_fetcher),

@@ -1117,7 +1117,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/gnosis/gp-gas-estimation.git?tag=v0.5.0#7ce0050da5bb21df446b2ba0b27381f20f3b268d"
+source = "git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.5.0#6ec611d61717f350c774afb521a18952f1593c67"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2213,8 +2213,7 @@ dependencies = [
 [[package]]
 name = "prometheus-metric-storage"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4386765c6446d3b5260d8cfcf2eb2d795ea741acce1be50c414a8ea7d9e42edd"
+source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
 dependencies = [
  "lazy_static",
  "prometheus",
@@ -2224,8 +2223,7 @@ dependencies = [
 [[package]]
 name = "prometheus-metric-storage-derive"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "681eb556e1680139d92b974285b280fbce867b43b1670db0b9d7dec0d5ea19c3"
+source = "git+https://github.com/cowprotocol/prometheus-metric-storage?tag=v0.4.0#a8e013be8d9a20c470d3d615cf8d26ddad0403ec"
 dependencies = [
  "proc-macro2",
  "quote",

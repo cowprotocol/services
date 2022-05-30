@@ -6,11 +6,11 @@ use crate::{
     liquidity::{LimitOrder, Liquidity},
     settlement::Settlement,
 };
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use baseline_solver::BaselineSolver;
 use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::errors::ExecutionError;
-use ethcontract::{Account, H160, U256};
+use ethcontract::{Account, PrivateKey, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
 use naive_solver::NaiveSolver;
 use num::BigRational;
@@ -24,6 +24,7 @@ use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::SingleOrderSolver;
+use std::str::FromStr;
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -38,6 +39,7 @@ mod naive_solver;
 mod oneinch_solver;
 mod paraswap_solver;
 mod single_order_solver;
+pub mod uni_v3_router_solver;
 mod zeroex_solver;
 
 /// Interface that all solvers must implement.
@@ -61,7 +63,7 @@ pub trait Solver: Send + Sync + 'static {
     /// Returns displayable name of the solver.
     ///
     /// This method is used for logging and metrics collection.
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 }
 
 /// A batch auction for a solver to produce a settlement for.
@@ -146,6 +148,62 @@ pub enum SolverType {
     BalancerSor,
 }
 
+#[derive(Debug)]
+pub enum SolverAccountArg {
+    PrivateKey(PrivateKey),
+    Address(H160),
+}
+
+impl SolverAccountArg {
+    pub fn into_account(self, chain_id: u64) -> Account {
+        match self {
+            SolverAccountArg::PrivateKey(key) => Account::Offline(key, Some(chain_id)),
+            SolverAccountArg::Address(address) => Account::Local(address, None),
+        }
+    }
+}
+
+impl FromStr for SolverAccountArg {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<PrivateKey>()
+            .map(SolverAccountArg::PrivateKey)
+            .or_else(|pk_err| {
+                Ok(SolverAccountArg::Address(s.parse().map_err(
+                    |addr_err| {
+                        anyhow!("could not parse as private key: {}", pk_err)
+                            .context(anyhow!("could not parse as address: {}", addr_err))
+                            .context("invalid solver account, it is neither a private key or an Ethereum address")
+                    },
+                )?))
+            })
+    }
+}
+
+#[derive(Debug)]
+pub struct ExternalSolverArg {
+    pub name: String,
+    pub url: Url,
+    pub account: SolverAccountArg,
+}
+
+impl FromStr for ExternalSolverArg {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.split('|');
+        let name = parts.next().ok_or_else(|| anyhow!("missing name"))?;
+        let url = parts.next().ok_or_else(|| anyhow!("missing url"))?;
+        let account = parts.next().ok_or_else(|| anyhow!("missing account"))?;
+        Ok(Self {
+            name: name.to_string(),
+            url: url.parse().context("parse url")?,
+            account: account.parse().context("parse account")?,
+        })
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn create(
     web3: Web3,
@@ -169,15 +227,16 @@ pub fn create(
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
+    oneinch_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
     one_inch_url: Url,
+    external_solvers: Vec<ExternalSolverArg>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
-    #[allow(clippy::unnecessary_wraps)]
-    fn shared(solver: impl Solver + 'static) -> Result<Arc<dyn Solver>> {
-        Ok(Arc::new(solver))
+    fn shared(solver: impl Solver + 'static) -> Arc<dyn Solver> {
+        Arc::new(solver)
     }
 
     let buffer_retriever = Arc::new(BufferRetriever::new(
@@ -191,7 +250,7 @@ pub fn create(
     let http_solver_cache = http_solver::InstanceCache::default();
     // Helper function to create http solver instances.
     let create_http_solver =
-        |account: Account, url: Url, name: &'static str, config: SolverConfig| -> HttpSolver {
+        |account: Account, url: Url, name: String, config: SolverConfig| -> HttpSolver {
             HttpSolver::new(
                 DefaultHttpSolverApi {
                     name,
@@ -210,46 +269,39 @@ pub fn create(
             )
         };
 
-    solvers
+    let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
         .map(|(account, solver_type)| {
             let solver = match solver_type {
-                SolverType::Naive => shared(NaiveSolver::new(account)),
-                SolverType::Baseline => shared(BaselineSolver::new(account, base_tokens.clone())),
-                SolverType::Mip => shared(create_http_solver(
+                SolverType::Naive => Ok(shared(NaiveSolver::new(account))),
+                SolverType::Baseline => {
+                    Ok(shared(BaselineSolver::new(account, base_tokens.clone())))
+                }
+                SolverType::Mip => Ok(shared(create_http_solver(
                     account,
                     mip_solver_url.clone(),
-                    "Mip",
+                    "Mip".to_string(),
                     SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: mip_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(mip_uses_internal_buffers),
+                        ..Default::default()
                     },
-                )),
-                SolverType::CowDexAg => shared(create_http_solver(
+                ))),
+                SolverType::CowDexAg => Ok(shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
-                    "CowDexAg",
-                    SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: None,
-                    },
-                )),
-                SolverType::Quasimodo => shared(create_http_solver(
+                    "CowDexAg".to_string(),
+                    SolverConfig::default(),
+                ))),
+                SolverType::Quasimodo => Ok(shared(create_http_solver(
                     account,
                     quasimodo_solver_url.clone(),
-                    "Quasimodo",
+                    "Quasimodo".to_string(),
                     SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: true,
-                        use_internal_buffers: quasimodo_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(quasimodo_uses_internal_buffers),
+                        ..Default::default()
                     },
-                )),
-                SolverType::OneInch => shared(SingleOrderSolver::new(
+                ))),
+                SolverType::OneInch => Ok(shared(SingleOrderSolver::new(
                     OneInchSolver::with_disabled_protocols(
                         account,
                         web3.clone(),
@@ -258,9 +310,10 @@ pub fn create(
                         disabled_one_inch_protocols.clone(),
                         client.clone(),
                         one_inch_url.clone(),
+                        oneinch_slippage_bps,
                     )?,
                     solver_metrics.clone(),
-                )),
+                ))),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,
@@ -271,12 +324,12 @@ pub fn create(
                         zeroex_slippage_bps,
                     )
                     .unwrap();
-                    shared(SingleOrderSolver::new(
+                    Ok(shared(SingleOrderSolver::new(
                         zeroex_solver,
                         solver_metrics.clone(),
-                    ))
+                    )))
                 }
-                SolverType::Paraswap => shared(SingleOrderSolver::new(
+                SolverType::Paraswap => Ok(shared(SingleOrderSolver::new(
                     ParaswapSolver::new(
                         account,
                         web3.clone(),
@@ -286,10 +339,11 @@ pub fn create(
                         disabled_paraswap_dexs.clone(),
                         client.clone(),
                         paraswap_partner.clone(),
+                        None,
                     ),
                     solver_metrics.clone(),
-                )),
-                SolverType::BalancerSor => shared(SingleOrderSolver::new(
+                ))),
+                SolverType::BalancerSor => Ok(shared(SingleOrderSolver::new(
                     BalancerSorSolver::new(
                         account,
                         vault_contract
@@ -306,7 +360,7 @@ pub fn create(
                         allowance_mananger.clone(),
                     ),
                     solver_metrics.clone(),
-                )),
+                ))),
             };
 
             if let Ok(solver) = &solver {
@@ -318,7 +372,22 @@ pub fn create(
             }
             solver
         })
-        .collect()
+        .collect::<Result<_>>()?;
+
+    let external_solvers = external_solvers.into_iter().map(|solver| {
+        shared(create_http_solver(
+            solver.account.into_account(chain_id),
+            solver.url,
+            solver.name,
+            SolverConfig {
+                use_internal_buffers: Some(mip_uses_internal_buffers),
+                ..Default::default()
+            },
+        ))
+    });
+    solvers.extend(external_solvers);
+
+    Ok(solvers)
 }
 
 /// Returns a naive solver to be used e.g. in e2e tests.
@@ -377,7 +446,7 @@ impl Solver for SellVolumeFilteringSolver {
         self.inner.account()
     }
 
-    fn name(&self) -> &'static str {
+    fn name(&self) -> &str {
         self.inner.name()
     }
 }
@@ -474,5 +543,53 @@ mod tests {
         let prices = Default::default();
         let solver = SellVolumeFilteringSolver::new(Box::new(NoopSolver()), 0.into());
         assert_eq!(solver.filter_orders(orders, &prices).await.len(), 0);
+    }
+
+    impl PartialEq for SolverAccountArg {
+        fn eq(&self, other: &Self) -> bool {
+            match (self, other) {
+                (SolverAccountArg::PrivateKey(a), SolverAccountArg::PrivateKey(b)) => {
+                    a.public_address() == b.public_address()
+                }
+                (SolverAccountArg::Address(a), SolverAccountArg::Address(b)) => a == b,
+                _ => false,
+            }
+        }
+    }
+
+    #[test]
+    fn parses_solver_account_arg() {
+        assert_eq!(
+            "0x4242424242424242424242424242424242424242424242424242424242424242"
+                .parse::<SolverAccountArg>()
+                .unwrap(),
+            SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
+        );
+        assert_eq!(
+            "0x4242424242424242424242424242424242424242"
+                .parse::<SolverAccountArg>()
+                .unwrap(),
+            SolverAccountArg::Address(H160([0x42; 20])),
+        );
+    }
+
+    #[test]
+    fn errors_on_invalid_solver_account_arg() {
+        assert!("0x010203040506070809101112131415161718192021"
+            .parse::<SolverAccountArg>()
+            .is_err());
+        assert!("not an account".parse::<SolverAccountArg>().is_err());
+    }
+
+    #[test]
+    fn parse_external_solver_arg() {
+        let arg = "name|http://solver.com/|0x4242424242424242424242424242424242424242424242424242424242424242";
+        let parsed = ExternalSolverArg::from_str(arg).unwrap();
+        assert_eq!(parsed.name, "name");
+        assert_eq!(parsed.url.to_string(), "http://solver.com/");
+        assert_eq!(
+            parsed.account,
+            SolverAccountArg::PrivateKey(PrivateKey::from_raw([0x42; 32]).unwrap())
+        );
     }
 }

@@ -9,21 +9,27 @@ mod get_orders;
 mod get_orders_by_tx;
 mod get_solvable_orders;
 mod get_solvable_orders_v2;
+pub mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
 pub mod order_validation;
 pub mod post_quote;
+pub mod post_solver_competition;
 
+use crate::solver_competition::SolverCompetition;
 use crate::{
     api::post_quote::OrderQuoter, database::trades::TradeRetrieving, orderbook::Orderbook,
 };
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
-use std::fmt::Debug;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-use std::{convert::Infallible, sync::Arc};
+use std::{
+    convert::Infallible,
+    fmt::Debug,
+    sync::atomic::{AtomicUsize, Ordering},
+    sync::Arc,
+    time::Instant,
+};
 use warp::{
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
@@ -34,6 +40,7 @@ pub fn handle_all_routes(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
     quoter: Arc<OrderQuoter>,
+    solver_competition: Arc<SolverCompetition>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -83,6 +90,12 @@ pub fn handle_all_routes(
     let get_auction = get_auction::get_auction(orderbook.clone())
         .map(|result| (result, "v1/auction"))
         .boxed();
+    let get_solver_competition = get_solver_competition::get(solver_competition.clone())
+        .map(|result| (result, "v1/solver_competition"))
+        .boxed();
+    let post_solver_competition = post_solver_competition::post(solver_competition)
+        .map(|result| (result, "v1/solver_competition"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -112,6 +125,10 @@ pub fn handle_all_routes(
                 .or(post_quote)
                 .unify()
                 .or(get_auction)
+                .unify()
+                .or(get_solver_competition)
+                .unify()
+                .or(post_solver_competition)
                 .unify(),
         )
         .untuple_one()
@@ -184,10 +201,19 @@ pub fn handle_all_routes(
         .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
 
     // Give each request a unique tracing span.
-    // This allows us to match log statements across concurrent API requests.
-    let request_id = Arc::new(AtomicUsize::new(0));
-    let tracing_span = warp::trace(move |_| {
-        tracing::info_span!("request", id = request_id.fetch_add(1, Ordering::SeqCst))
+    // This allows us to match log statements across concurrent API requests. We
+    // first try to read the request ID from our reverse proxy (this way we can
+    // line up API request logs with Nginx requests) but fall back to an
+    // internal counter.
+    let internal_request_id = Arc::new(AtomicUsize::new(0));
+    let tracing_span = warp::trace(move |info| {
+        if let Some(header) = info.request_headers().get("X-Request-ID") {
+            let request_id = String::from_utf8_lossy(header.as_bytes());
+            tracing::info_span!("request", id = &*request_id)
+        } else {
+            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
+            tracing::info_span!("request", id = request_id)
+        }
     });
 
     routes_with_metrics

@@ -157,6 +157,7 @@ impl AccessListEstimating for TenderlyAccessList {
     ) -> Result<Vec<Result<AccessList>>> {
         Ok(futures::future::join_all(txs.iter().map(|tx| async {
             let (from, to, input) = resolve_call_request(tx)?;
+            let input = input.0;
             let block_number = self.tenderly.block_number(&self.network_id).await?;
 
             let request = TenderlyRequest {
@@ -167,6 +168,7 @@ impl AccessListEstimating for TenderlyAccessList {
                 to,
                 generate_access_list: true,
                 transaction_index: None,
+                gas: None,
             };
 
             let response = self.tenderly.send::<TenderlyResponse>(request).await?;
@@ -241,10 +243,14 @@ impl AccessListEstimating for PriorityAccessListEstimating {
         for (i, estimator) in self.estimators.iter().enumerate() {
             match estimator.estimate_access_lists(txs).await {
                 Ok(result) => {
-                    return Ok(result
-                        .into_iter()
-                        .map(|access_list| access_list.map(filter_access_list))
-                        .collect())
+                    // result is valid if access list exist for at least one of the transactions
+                    let is_valid = result.iter().any(|access_list| access_list.is_ok());
+                    if is_valid {
+                        return Ok(result
+                            .into_iter()
+                            .map(|access_list| access_list.map(filter_access_list))
+                            .collect());
+                    }
                 }
                 Err(err) => {
                     tracing::warn!("access list estimator {} failed {:?}", i, err);
@@ -381,6 +387,7 @@ mod tests {
             to: H160::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41")),
             generate_access_list: true,
             transaction_index: None,
+            gas: None,
         };
 
         let json = json!({

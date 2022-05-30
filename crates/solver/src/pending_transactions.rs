@@ -49,7 +49,7 @@ async fn pending_block(transport: &DynTransport) -> Result<Block> {
         .execute("eth_getBlockByNumber", params)
         .await
         .context("transport failed")?;
-    Ok(serde_json::from_value(response).context("deserialize failed")?)
+    serde_json::from_value(response).context("deserialize failed")
 }
 
 // Get pending transactions from a mempool.

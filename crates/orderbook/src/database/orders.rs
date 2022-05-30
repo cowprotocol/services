@@ -201,6 +201,7 @@ const ORDERS_SELECT: &str = "\
     o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, o.buy_amount, \
     o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature, \
     o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance, \
+    o.is_liquidity_order, \
     (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy, \
     (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell, \
     (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee, \
@@ -228,8 +229,8 @@ async fn insert_order(
             INSERT INTO orders (
                 uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
                 valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme, \
-                settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount) \
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19);";
+                settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount, is_liquidity_order) \
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);";
     let receiver = order
         .creation
         .receiver
@@ -256,6 +257,7 @@ async fn insert_order(
             order.creation.buy_token_balance,
         ))
         .bind(u256_to_big_decimal(&order.metadata.full_fee_amount))
+        .bind(order.metadata.is_liquidity_order)
         .execute(transaction)
         .await
         .map(|_| ())
@@ -526,6 +528,7 @@ struct OrdersQueryRow {
     sell_token_balance: DbSellTokenSource,
     buy_token_balance: DbBuyTokenDestination,
     presignature_pending: bool,
+    is_liquidity_order: bool,
 }
 
 impl OrdersQueryRow {
@@ -581,6 +584,7 @@ impl OrdersQueryRow {
             settlement_contract: h160_from_vec(self.settlement_contract)?,
             full_fee_amount: big_decimal_to_u256(&self.full_fee_amount)
                 .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
+            is_liquidity_order: self.is_liquidity_order,
         };
         let signing_scheme = self.signing_scheme.into();
         let order_creation = OrderCreation {
@@ -671,6 +675,7 @@ mod tests {
             sell_token_balance: DbSellTokenSource::External,
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
+            is_liquidity_order: true,
         };
 
         // Open - sell (filled - 0%)

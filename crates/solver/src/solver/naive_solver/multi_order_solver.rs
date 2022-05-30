@@ -146,7 +146,7 @@ fn solve_with_uniswap(
     // it either comes out of the fees or existing buffers. Compute that amount:
     let uniswap_out_with_rounding = big_int_to_u256(&settlement.executed_trades().fold(
         BigInt::default(),
-        |mut total, trade| {
+        |mut total, (_, trade)| {
             if trade.sell_token == uniswap_out_token {
                 total -= trade.sell_amount.to_big_int();
             } else {
@@ -932,7 +932,10 @@ mod tests {
         };
 
         let settlement = solve(orders, &pool.into()).unwrap();
-        let trades = settlement.executed_trades().collect::<Vec<_>>();
+        let trades = settlement
+            .executed_trades()
+            .map(|(_, trade)| trade)
+            .collect::<Vec<_>>();
 
         // Check the prices are set according to the expected pool swap:
         assert_eq!(settlement.clearing_prices(), &expected_prices);

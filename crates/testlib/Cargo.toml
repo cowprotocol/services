@@ -1,9 +1,9 @@
 [package]
 name = "testlib"
 version = "0.1.0"
-authors = ["Gnosis Developers <developers@gnosis.io>"]
+authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2018"
-license = "GPL-3.0-or-later"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

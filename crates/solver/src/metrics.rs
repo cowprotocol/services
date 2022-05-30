@@ -62,16 +62,16 @@ pub trait SolverMetrics: Send + Sync {
     fn orders_fetched(&self, orders: &[LimitOrder]);
     fn liquidity_fetched(&self, liquidity: &[Liquidity]);
     fn settlement_computed(&self, solver_type: &str, start: Instant);
-    fn order_settled(&self, order: &Order, solver: &'static str);
-    fn settlement_simulation_succeeded(&self, solver: &'static str);
-    fn settlement_simulation_failed_on_latest(&self, solver: &'static str);
-    fn solver_run(&self, outcome: SolverRunOutcome, solver: &'static str);
-    fn single_order_solver_succeeded(&self, solver: &'static str);
-    fn single_order_solver_failed(&self, solver: &'static str);
-    fn settlement_simulation_failed(&self, solver: &'static str);
-    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str);
-    fn settlement_access_list_saved_gas(&self, gas_saved: f64);
-    fn settlement_revertable_status(&self, status: Revertable, solver: &'static str);
+    fn order_settled(&self, order: &Order, solver: &str);
+    fn settlement_simulation_succeeded(&self, solver: &str);
+    fn settlement_simulation_failed_on_latest(&self, solver: &str);
+    fn solver_run(&self, outcome: SolverRunOutcome, solver: &str);
+    fn single_order_solver_succeeded(&self, solver: &str);
+    fn single_order_solver_failed(&self, solver: &str);
+    fn settlement_simulation_failed(&self, solver: &str);
+    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str);
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64, sign: &str);
+    fn settlement_revertable_status(&self, status: Revertable, solver: &str);
     fn orders_matched_but_not_settled(&self, count: usize);
     fn report_order_surplus(&self, surplus_diff: f64);
     fn runloop_completed(&self);
@@ -83,13 +83,13 @@ pub trait SolverMetrics: Send + Sync {
 // TODO add labeled interaction counter once we support more than one interaction
 pub struct Metrics {
     trade_counter: IntCounterVec,
-    order_settlement_time: IntCounter,
+    order_settlement_time: IntCounterVec,
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
     settlement_submissions: IntCounterVec,
     settlement_revertable_status: IntCounterVec,
-    settlement_access_list_saved_gas: Histogram,
+    settlement_access_list_saved_gas: HistogramVec,
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
@@ -109,13 +109,16 @@ impl Metrics {
 
         let trade_counter = IntCounterVec::new(
             Opts::new("trade_counter", "Number of trades settled"),
-            &["solver_type"],
+            &["solver_type", "trade_type"],
         )?;
         registry.register(Box::new(trade_counter.clone()))?;
 
-        let order_settlement_time = IntCounter::new(
-            "order_settlement_time_seconds",
-            "Counter for the number of seconds between creation and settlement of an order",
+        let order_settlement_time = IntCounterVec::new(
+            Opts::new(
+                "order_settlement_time_seconds",
+                "Counter for the number of seconds between creation and settlement of an order",
+            ),
+            &["order_type"],
         )?;
         registry.register(Box::new(order_settlement_time.clone()))?;
 
@@ -158,10 +161,13 @@ impl Metrics {
         )?;
         registry.register(Box::new(settlement_revertable_status.clone()))?;
 
-        let settlement_access_list_saved_gas = Histogram::with_opts(HistogramOpts::new(
-            "settlement_access_list_saved_gas",
-            "Saved gas by using access list for transaction submission",
-        ))?;
+        let settlement_access_list_saved_gas = HistogramVec::new(
+            HistogramOpts::new(
+                "settlement_access_list_saved_gas",
+                "Saved gas by using access list for transaction submission",
+            ),
+            &["sign"],
+        )?;
         registry.register(Box::new(settlement_access_list_saved_gas.clone()))?;
 
         let solver_runs = IntCounterVec::new(
@@ -283,7 +289,7 @@ impl SolverMetrics for Metrics {
             self.liquidity.with_label_values(&[label]).set(0);
         });
         liquidity.iter().for_each(|liquidity| {
-            let label: &'static str = liquidity.into();
+            let label: &str = liquidity.into();
             self.liquidity.with_label_values(&[label]).inc();
         })
     }
@@ -300,31 +306,39 @@ impl SolverMetrics for Metrics {
             )
     }
 
-    fn order_settled(&self, order: &Order, solver: &'static str) {
+    fn order_settled(&self, order: &Order, solver: &str) {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
-        self.trade_counter.with_label_values(&[solver]).inc();
-        self.order_settlement_time.inc_by(
-            time_to_settlement
-                .num_seconds()
-                .try_into()
-                .unwrap_or_default(),
-        )
+        let order_type = match order.metadata.is_liquidity_order {
+            true => "liquidity_order",
+            false => "user_order",
+        };
+        self.trade_counter
+            .with_label_values(&[solver, order_type])
+            .inc();
+        self.order_settlement_time
+            .with_label_values(&[order_type])
+            .inc_by(
+                time_to_settlement
+                    .num_seconds()
+                    .try_into()
+                    .unwrap_or_default(),
+            )
     }
 
-    fn settlement_simulation_succeeded(&self, solver: &'static str) {
+    fn settlement_simulation_succeeded(&self, solver: &str) {
         self.settlement_simulations
             .with_label_values(&["success", solver])
             .inc()
     }
 
-    fn settlement_simulation_failed_on_latest(&self, solver: &'static str) {
+    fn settlement_simulation_failed_on_latest(&self, solver: &str) {
         self.settlement_simulations
             .with_label_values(&["failure_on_latest", solver])
             .inc()
     }
 
-    fn solver_run(&self, outcome: SolverRunOutcome, solver: &'static str) {
+    fn solver_run(&self, outcome: SolverRunOutcome, solver: &str) {
         let result = match outcome {
             SolverRunOutcome::Success => "success",
             SolverRunOutcome::Empty => "empty",
@@ -334,25 +348,25 @@ impl SolverMetrics for Metrics {
         self.solver_runs.with_label_values(&[result, solver]).inc()
     }
 
-    fn single_order_solver_succeeded(&self, solver: &'static str) {
+    fn single_order_solver_succeeded(&self, solver: &str) {
         self.single_order_solver_runs
             .with_label_values(&["success", solver])
             .inc()
     }
 
-    fn single_order_solver_failed(&self, solver: &'static str) {
+    fn single_order_solver_failed(&self, solver: &str) {
         self.single_order_solver_runs
             .with_label_values(&["failure", solver])
             .inc()
     }
 
-    fn settlement_simulation_failed(&self, solver: &'static str) {
+    fn settlement_simulation_failed(&self, solver: &str) {
         self.settlement_simulations
             .with_label_values(&["failure", solver])
             .inc()
     }
 
-    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &'static str) {
+    fn settlement_submitted(&self, outcome: SettlementSubmissionOutcome, solver: &str) {
         let result = match outcome {
             SettlementSubmissionOutcome::Success => "success",
             SettlementSubmissionOutcome::Revert => "revert",
@@ -367,8 +381,10 @@ impl SolverMetrics for Metrics {
             .inc()
     }
 
-    fn settlement_access_list_saved_gas(&self, gas_saved: f64) {
-        self.settlement_access_list_saved_gas.observe(gas_saved);
+    fn settlement_access_list_saved_gas(&self, gas_saved: f64, label: &str) {
+        self.settlement_access_list_saved_gas
+            .with_label_values(&[label])
+            .observe(gas_saved);
     }
 
     fn orders_matched_but_not_settled(&self, count: usize) {
@@ -400,7 +416,7 @@ impl SolverMetrics for Metrics {
             .set(gas_price.to_f64_lossy() / 1e9)
     }
 
-    fn settlement_revertable_status(&self, status: Revertable, solver: &'static str) {
+    fn settlement_revertable_status(&self, status: Revertable, solver: &str) {
         let result = match status {
             Revertable::NoRisk => "no_risk",
             Revertable::HighRisk => "high_risk",
@@ -454,16 +470,16 @@ impl SolverMetrics for NoopMetrics {
     fn orders_fetched(&self, _liquidity: &[LimitOrder]) {}
     fn liquidity_fetched(&self, _liquidity: &[Liquidity]) {}
     fn settlement_computed(&self, _solver_type: &str, _start: Instant) {}
-    fn order_settled(&self, _: &Order, _: &'static str) {}
-    fn settlement_simulation_succeeded(&self, _: &'static str) {}
-    fn settlement_simulation_failed_on_latest(&self, _: &'static str) {}
-    fn solver_run(&self, _: SolverRunOutcome, _: &'static str) {}
-    fn single_order_solver_succeeded(&self, _: &'static str) {}
-    fn single_order_solver_failed(&self, _: &'static str) {}
-    fn settlement_simulation_failed(&self, _: &'static str) {}
-    fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &'static str) {}
-    fn settlement_revertable_status(&self, _: Revertable, _: &'static str) {}
-    fn settlement_access_list_saved_gas(&self, _: f64) {}
+    fn order_settled(&self, _: &Order, _: &str) {}
+    fn settlement_simulation_succeeded(&self, _: &str) {}
+    fn settlement_simulation_failed_on_latest(&self, _: &str) {}
+    fn solver_run(&self, _: SolverRunOutcome, _: &str) {}
+    fn single_order_solver_succeeded(&self, _: &str) {}
+    fn single_order_solver_failed(&self, _: &str) {}
+    fn settlement_simulation_failed(&self, _: &str) {}
+    fn settlement_submitted(&self, _: SettlementSubmissionOutcome, _: &str) {}
+    fn settlement_revertable_status(&self, _: Revertable, _: &str) {}
+    fn settlement_access_list_saved_gas(&self, _: f64, _: &str) {}
     fn orders_matched_but_not_settled(&self, _: usize) {}
     fn report_order_surplus(&self, _: f64) {}
     fn runloop_completed(&self) {}

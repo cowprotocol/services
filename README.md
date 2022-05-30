@@ -1,8 +1,8 @@
-![pull request](https://github.com/gnosis/gp-v2-services/workflows/pull%20request/badge.svg) ![deploy](https://github.com/gnosis/gp-v2-services/workflows/deploy/badge.svg)
+![pull request](https://github.com/cowprotocol/services/workflows/pull%20request/badge.svg) ![deploy](https://github.com/cowprotocol/services/workflows/deploy/badge.svg)
 
-# GPv2 Services
+# Cow Protocol Services
 
-This repository contains backend code for [Gnosis Protocol V2](https://docs.gnosis.io/protocol/) written in Rust.
+This repository contains backend code for [Cow Protocol Services](https://docs.cow.fi/) written in Rust.
 
 ## Order Book
 
@@ -12,8 +12,8 @@ They can also use the API to estimate fee amounts and limit prices before placin
 
 Solvers also interact with the order book by querying a list of open orders that they can attempt to settle.
 
-The api is documented with [openapi](https://protocol-rinkeby.dev.gnosisdev.com/api/).
-A simple example script that uses the API to place random orders can be found in [this repo](https://github.com/gnosis/gp-v2-trading-bot)
+The api is documented with [openapi](https://api.cow.fi/docs/).
+A simple example script that uses the API to place random orders can be found in [this repo](https://github.com/cowprotocol/trading-bot)
 
 The order book service itself uses PostgreSQL as a backend to persist orders.
 In addition to connecting the http api to the database it also checks order validity based on the block time, trade events, erc20 funding and approval so that solvers can query only valid orders.
@@ -109,9 +109,9 @@ Finally, we need to apply the schema (set up in the `database` folder). Again, t
 - Docker
 
 ```sh
-docker build --tag gp-v2-migrations -f docker/Dockerfile.migration .
+docker build --tag services-migration -f docker/Dockerfile.migration .
 # If you are running postgres in locally, your URL is `localhost` instead of `host.docker.internal`
-docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql gp-v2-migrations migrate
+docker run -ti -e FLYWAY_URL="jdbc:postgresql://host.docker.internal/?user="$USER"&password=" -v $PWD/database/sql:/flyway/sql services-migration migrate
 ```
 
 In case you run into `java.net.UnknownHostException: host.docker.internal` add `--add-host=host.docker.internal:host-gateway` right after `docker run`.
@@ -151,7 +151,7 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
 ### Prerequisites
 Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
-Because Gnosis only runs their services on mainnet, rinkeby and gnosis chain you need to select one of those.
+Because services are only run on Mainnet, Rinkeby and Gnosis Chain you need to select one of those.
 
 Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
 
@@ -174,6 +174,8 @@ cargo run --bin orderbook -- \
 
 `--skip-trace-api true` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
 
+Note: Current version of the code does not compile under Windows OS. Context and workaround are [here](https://github.com/cowprotocol/services/issues/226).
+
 ### Solvers
 
 To see all supported command line arguments run `cargo run --bin solver -- --help`.
@@ -193,17 +195,17 @@ The `solver-account` is responsible for signing transactions. Solutions for sett
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 
-| Orderbook URL                   | Network      | Environment |
-|---------------------------------|--------------|-------------|
-| https://barn.api.cow.fi/mainnet | Mainnet      | Staging     |
-| https://api.cow.fi/mainnet      | Mainnet      | Production  |
-| https://barn.api.cow.fi/rinkeby | Rinkeby      | Staging     |
-| https://api.cow.fi/rinkeby      | Rinkeby      | Production  |
-| https://barn.api.cow.fi/xdai    | Gnosis Chain | Staging     |
-| https://api.cow.fi/xdai         | Gnosis Chain | Production  |
+| Orderbook URL                       | Network      | Environment |
+|-------------------------------------|--------------|-------------|
+| https://barn.api.cow.fi/mainnet/api | Mainnet      | Staging     |
+| https://api.cow.fi/mainnet/api      | Mainnet      | Production  |
+| https://barn.api.cow.fi/rinkeby/api | Rinkeby      | Staging     |
+| https://api.cow.fi/rinkeby/api      | Rinkeby      | Production  |
+| https://barn.api.cow.fi/xdai/api    | Gnosis Chain | Staging     |
+| https://api.cow.fi/xdai/api         | Gnosis Chain | Production  |
 
 Always make sure that the `solver` and the `orderbook` it connects to are configured to use the same network.
 
 ### Frontend
 
-To conveniently submit orders checkout the [CowSwap](https://github.com/gnosis/cowswap) frontend and point it to your local instance.
+To conveniently submit orders checkout the [CowSwap](https://github.com/cowprotocol/cowswap) frontend and point it to your local instance.
