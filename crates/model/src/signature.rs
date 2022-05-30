@@ -22,8 +22,11 @@ pub enum SigningScheme {
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
-    Eip1271(#[serde(with = "prefixed_hex")] Vec<u8>),
     EthSign(EcdsaSignature),
+    /// Smart contract signatures as defined in [EIP-1271][eip1271].
+    ///
+    /// [eip1271]: https://eips.ethereum.org/EIPS/eip-1271
+    Eip1271(#[serde(with = "crate::bytes_hex")] Vec<u8>),
     PreSign(H160),
 }
 
@@ -286,52 +289,6 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
     }
 }
 
-mod prefixed_hex {
-    use serde::{de, Deserializer, Serializer};
-
-    struct PrefixedHexVisitor {}
-
-    impl<'de> de::Visitor<'de> for PrefixedHexVisitor {
-        type Value = Vec<u8>;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            write!(formatter, "hex encoded string with a '0x' prefix")
-        }
-
-        fn visit_str<E>(self, s: &str) -> Result<Self::Value, E>
-        where
-            E: de::Error,
-        {
-            s.strip_prefix("0x")
-                .and_then(|hex| {
-                    if hex.len() > 0 {
-                        // we don't need the hex error so we convert the Result into Option
-                        hex::decode(hex).ok()
-                    } else {
-                        None
-                    }
-                })
-                .ok_or_else(|| de::Error::invalid_value(de::Unexpected::Str(s), &self))
-        }
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_str(PrefixedHexVisitor {})
-    }
-
-    pub fn serialize<S>(value: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let signature_hex = hex::encode(value);
-
-        serializer.serialize_str(&format!("0x{signature_hex}"))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -461,20 +418,9 @@ mod tests {
                 }))
                 .unwrap_err()
                 .to_string(),
-                "invalid value: string \"1234\", expected hex encoded string with a '0x' prefix"
+                "missing '0x' prefix"
             );
 
-
-            assert_eq!(
-                serde_json::from_value::<Signature>(json!(
-                {
-                    "signature": "0x",
-                    "signingScheme": "eip1271"
-                }))
-                .unwrap_err()
-                .to_string(),
-                "invalid value: string \"0x\", expected hex encoded string with a '0x' prefix"
-            );
 
             assert_eq!(
                 serde_json::from_value::<Signature>(json!(
