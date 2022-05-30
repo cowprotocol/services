@@ -168,6 +168,7 @@ impl AccessListEstimating for TenderlyAccessList {
                 to,
                 generate_access_list: true,
                 transaction_index: None,
+                gas: None,
             };
 
             let response = self.tenderly.send::<TenderlyResponse>(request).await?;
@@ -386,6 +387,7 @@ mod tests {
             to: H160::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41")),
             generate_access_list: true,
             transaction_index: None,
+            gas: None,
         };
 
         let json = json!({

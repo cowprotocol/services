@@ -1,5 +1,5 @@
 use anyhow::{anyhow, ensure, Context, Result};
-use reqwest::header::HeaderValue;
+use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, Url};
 use std::time::Duration;
 
@@ -49,7 +49,7 @@ pub struct DefaultHttpSolverApi {
 }
 
 /// Configuration for solver requests.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SolverConfig {
     /// Optional value for the `X-API-KEY` header.
     pub api_key: Option<String>,
@@ -62,6 +62,27 @@ pub struct SolverConfig {
 
     /// Controls if/how to set `use_internal_buffers`.
     pub use_internal_buffers: Option<bool>,
+
+    /// Controls the objective function to optimize for.
+    pub objective: Option<Objective>,
+}
+
+impl Default for SolverConfig {
+    fn default() -> Self {
+        Self {
+            api_key: None,
+            max_nr_exec_orders: 100,
+            has_ucp_policy_parameter: false,
+            use_internal_buffers: None,
+            objective: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Objective {
+    CappedSurplusFeesCosts,
+    SurplusFeesCosts,
 }
 
 #[async_trait::async_trait]
@@ -105,19 +126,35 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 use_internal_buffers.to_string().as_str(),
             );
         }
+        match self.config.objective {
+            Some(Objective::CappedSurplusFeesCosts) => {
+                url.query_pairs_mut()
+                    .append_pair("objective", "cappedsurplusfeescosts");
+            }
+            Some(Objective::SurplusFeesCosts) => {
+                url.query_pairs_mut()
+                    .append_pair("objective", "surplusfeescosts");
+            }
+            _ => {}
+        }
         if let Some(auction_id) = maybe_auction_id {
             url.query_pairs_mut()
                 .append_pair("auction_id", auction_id.to_string().as_str());
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
-        let mut request = self.client.post(url).timeout(timeout);
+        let body = serde_json::to_string(&model).context("failed to encode body")?;
+        tracing::trace!(%url, %body, "request");
+        let mut request = self
+            .client
+            .post(url)
+            .timeout(timeout)
+            .header(header::CONTENT_TYPE, "application/json")
+            .header(header::ACCEPT, "application/json");
         if let Some(api_key) = &self.config.api_key {
             let mut header = HeaderValue::from_str(api_key.as_str()).unwrap();
             header.set_sensitive(true);
             request = request.header("X-API-KEY", header);
         }
-        let body = serde_json::to_string(&model).context("failed to encode body")?;
-        tracing::trace!("request {}", body);
         let request = request.body(body.clone());
         let mut response = request.send().await.context("failed to send request")?;
         let status = response.status();
@@ -126,7 +163,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
                 .await
                 .context("response body")?;
         let text = std::str::from_utf8(&response_body).context("failed to decode response body")?;
-        tracing::trace!("response {}", text);
+        tracing::trace!(body = %text, "response");
         let context = || {
             format!(
                 "request query {}, request body {}, response body {}",

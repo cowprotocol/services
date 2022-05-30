@@ -19,6 +19,7 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use itertools::{Either, Itertools};
+use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
@@ -33,7 +34,7 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::Instrument;
+use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
@@ -165,6 +166,30 @@ impl Driver {
         .await
     }
 
+    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
+    /// orders multiple times will not result in duplicates. Partially fillable orders get
+    /// considered as traded only the first time we tap into their liquidity.
+    fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
+        let mut traded_orders = Vec::new();
+        for (_, group) in &settlement
+            .executed_trades()
+            .map(|(trade, _)| trade)
+            .group_by(|trade| trade.order.metadata.uid)
+        {
+            let mut group = group.into_iter().peekable();
+            let order = &group.peek().unwrap().order;
+            let was_already_filled = match order.creation.kind {
+                OrderKind::Buy => &order.metadata.executed_buy_amount,
+                OrderKind::Sell => &order.metadata.executed_sell_amount,
+            } > &0u8.into();
+            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
+            if !was_already_filled && is_getting_filled {
+                traded_orders.push(order.clone());
+            }
+        }
+        traded_orders
+    }
+
     async fn submit_settlement(
         &self,
         auction_id: u64,
@@ -172,7 +197,7 @@ impl Driver {
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
         let settlement = rated_settlement.settlement;
-        let traded_orders = settlement.traded_orders().cloned().collect::<Vec<_>>();
+        let traded_orders = Self::get_traded_orders(&settlement);
 
         self.metrics
             .settlement_revertable_status(settlement.revertable(), solver.name());
@@ -331,7 +356,7 @@ impl Driver {
                 }
             }
         };
-        tokio::task::spawn(task);
+        tokio::task::spawn(task.instrument(Span::current()));
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
@@ -414,7 +439,7 @@ impl Driver {
         let id = self.next_auction_id();
         // extra function so that we can add span information
         self.single_run_(id)
-            .instrument(tracing::debug_span!("auction", id))
+            .instrument(tracing::info_span!("auction", id))
             .await
     }
 
@@ -488,6 +513,7 @@ impl Driver {
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
         };
+
         tracing::debug!("solving auction id {}", auction.id);
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
@@ -495,11 +521,27 @@ impl Driver {
 
             let mut settlements = match settlements {
                 Ok(mut settlement) => {
+                    for settlement in &settlement {
+                        tracing::debug!(
+                            %auction_id, solver_name = %name, ?settlement,
+                            "found solution",
+                        );
+                    }
+
                     // Do not continue with settlements that are empty or only liquidity orders.
+                    let settlement_count = settlement.len();
                     settlement.retain(solver_settlements::has_user_order);
+                    if settlement_count != settlement.len() {
+                        tracing::debug!(
+                            solver_name = %name,
+                            "settlement(s) filtered containing only liquidity orders",
+                        );
+                    }
+
                     if let Some(max_settlement_price_deviation) =
                         &self.max_settlement_price_deviation
                     {
+                        let settlement_count = settlement.len();
                         settlement.retain(|settlement| {
                             settlement.satisfies_price_checks(
                                 auction_id,
@@ -509,7 +551,14 @@ impl Driver {
                                 &self.token_list_restriction_for_price_checks,
                             )
                         });
+                        if settlement_count != settlement.len() {
+                            tracing::debug!(
+                                solver_name = %name,
+                                "settlement(s) filtered for violating maximum external price deviation",
+                            );
+                        }
                     }
+
                     if settlement.is_empty() {
                         self.metrics.solver_run(SolverRunOutcome::Empty, name);
                         continue;
@@ -527,19 +576,10 @@ impl Driver {
                             self.metrics.solver_run(SolverRunOutcome::Failure, name)
                         }
                     }
-                    tracing::warn!("solver {} error: {:?}", name, err);
+                    tracing::warn!(solver_name = %name, ?err, "solver error");
                     continue;
                 }
             };
-
-            for settlement in &settlements {
-                tracing::debug!(
-                    "for auction id {} solver {} found solution:\n{:?} ",
-                    auction_id,
-                    name,
-                    settlement
-                );
-            }
 
             // Keep at most this many settlements. This is important in case where a solver produces
             // a large number of settlements which would hold up the driver logic when simulating
@@ -565,6 +605,16 @@ impl Driver {
         // filters out all non-mature settlements
         let solver_settlements =
             solver_settlements::retain_mature_settlements(self.min_order_age, solver_settlements);
+
+        // log considered settlements. While we already log all found settlements, this additonal
+        // statement allows us to figure out which settlements were filtered out and which ones are
+        // going to be simulated and considered for competition.
+        for (solver, settlement) in &solver_settlements {
+            tracing::debug!(
+                %auction_id, solver_name = %solver.name(), ?settlement,
+                "considering solution for solver competition",
+            );
+        }
 
         // append access lists
         let txs = solver_settlements
@@ -607,6 +657,10 @@ impl Driver {
         for (solver, _, _) in &rated_settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
+
+        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
+        // preference to any specific solver when there is an objective value tie.
+        rated_settlements.shuffle(&mut rand::thread_rng());
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);

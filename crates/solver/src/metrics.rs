@@ -83,7 +83,7 @@ pub trait SolverMetrics: Send + Sync {
 // TODO add labeled interaction counter once we support more than one interaction
 pub struct Metrics {
     trade_counter: IntCounterVec,
-    order_settlement_time: IntCounter,
+    order_settlement_time: IntCounterVec,
     solver_computation_time: IntCounterVec,
     liquidity: IntGaugeVec,
     settlement_simulations: IntCounterVec,
@@ -109,13 +109,16 @@ impl Metrics {
 
         let trade_counter = IntCounterVec::new(
             Opts::new("trade_counter", "Number of trades settled"),
-            &["solver_type"],
+            &["solver_type", "trade_type"],
         )?;
         registry.register(Box::new(trade_counter.clone()))?;
 
-        let order_settlement_time = IntCounter::new(
-            "order_settlement_time_seconds",
-            "Counter for the number of seconds between creation and settlement of an order",
+        let order_settlement_time = IntCounterVec::new(
+            Opts::new(
+                "order_settlement_time_seconds",
+                "Counter for the number of seconds between creation and settlement of an order",
+            ),
+            &["order_type"],
         )?;
         registry.register(Box::new(order_settlement_time.clone()))?;
 
@@ -306,13 +309,21 @@ impl SolverMetrics for Metrics {
     fn order_settled(&self, order: &Order, solver: &str) {
         let time_to_settlement =
             chrono::offset::Utc::now().signed_duration_since(order.metadata.creation_date);
-        self.trade_counter.with_label_values(&[solver]).inc();
-        self.order_settlement_time.inc_by(
-            time_to_settlement
-                .num_seconds()
-                .try_into()
-                .unwrap_or_default(),
-        )
+        let order_type = match order.metadata.is_liquidity_order {
+            true => "liquidity_order",
+            false => "user_order",
+        };
+        self.trade_counter
+            .with_label_values(&[solver, order_type])
+            .inc();
+        self.order_settlement_time
+            .with_label_values(&[order_type])
+            .inc_by(
+                time_to_settlement
+                    .num_seconds()
+                    .try_into()
+                    .unwrap_or_default(),
+            )
     }
 
     fn settlement_simulation_succeeded(&self, solver: &str) {

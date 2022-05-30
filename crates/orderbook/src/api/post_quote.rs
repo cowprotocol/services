@@ -13,6 +13,7 @@ use futures::try_join;
 use model::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    signature::SigningScheme,
     u256_decimal,
 };
 use serde::{Deserialize, Serialize};
@@ -38,6 +39,8 @@ pub struct OrderQuoteRequest {
     #[serde(default)]
     buy_token_balance: BuyTokenDestination,
     #[serde(default)]
+    signing_scheme: SigningScheme,
+    #[serde(default)]
     price_quality: PriceQuality,
 }
 
@@ -53,6 +56,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             partially_fillable: quote_request.partially_fillable,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
+            signing_scheme: quote_request.signing_scheme,
             is_liquidity_order: quote_request.partially_fillable,
         }
     }
@@ -451,6 +455,7 @@ mod tests {
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "buyTokenBalance": "internal",
+                "signingScheme": "presign",
                 "priceQuality": "optimal"
             }))
             .unwrap(),
@@ -467,6 +472,7 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
+                signing_scheme: SigningScheme::PreSign,
                 price_quality: PriceQuality::Optimal
             }
         );
@@ -500,8 +506,8 @@ mod tests {
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
-                buy_token_balance: BuyTokenDestination::Erc20,
-                price_quality: PriceQuality::Fast
+                price_quality: PriceQuality::Fast,
+                ..Default::default()
             }
         );
     }
@@ -532,9 +538,7 @@ mod tests {
                 valid_to: 0x12345678,
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
-                sell_token_balance: SellTokenSource::Erc20,
-                buy_token_balance: BuyTokenDestination::Erc20,
-                price_quality: Default::default()
+                ..Default::default()
             }
         );
     }

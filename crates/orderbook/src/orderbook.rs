@@ -22,6 +22,8 @@ use thiserror::Error;
 struct Metrics {
     /// Number of user (non-liquidity) orders created.
     user_orders_created: prometheus::Counter,
+    /// Number of liquidity orders created.
+    liquidity_orders_created: prometheus::Counter,
 }
 
 #[derive(Debug, Error)]
@@ -137,11 +139,12 @@ impl Orderbook {
 
         self.database.insert_order(&order, fee).await?;
 
-        if !order.metadata.is_liquidity_order {
-            Metrics::instance(metrics::get_metric_storage_registry())
-                .expect("unexpected error getting metrics instance")
-                .user_orders_created
-                .inc();
+        let metrics = Metrics::instance(metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance");
+        if order.metadata.is_liquidity_order {
+            metrics.liquidity_orders_created.inc();
+        } else {
+            metrics.user_orders_created.inc();
         }
 
         self.solvable_orders.request_update();

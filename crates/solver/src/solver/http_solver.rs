@@ -178,12 +178,12 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
     Vec::from_iter(token_set)
 }
 
-fn order_fee(order: &LimitOrder) -> FeeModel {
+fn order_fee(order: &LimitOrder) -> TokenAmount {
     let amount = match order.is_liquidity_order {
         true => order.unscaled_subsidized_fee,
         false => order.scaled_unsubsidized_fee,
     };
-    FeeModel {
+    TokenAmount {
         amount,
         token: order.sell_token,
     }
@@ -412,13 +412,31 @@ impl Solver for HttpSolver {
             .checked_duration_since(Instant::now())
             .ok_or_else(|| anyhow!("no time left to send request"))?;
         let settled = self.solver.solve(&model, timeout).await?;
-        tracing::trace!(?settled);
+
         if !settled.has_execution_plan() {
+            tracing::debug!(
+                name = %self.name(), ?settled,
+                "ignoring settlement without execution plan",
+            );
             return Ok(Vec::new());
         }
-        settlement::convert_settlement(settled, context, self.allowance_manager.clone())
-            .await
-            .map(|settlement| vec![settlement])
+
+        match settlement::convert_settlement(
+            settled.clone(),
+            context,
+            self.allowance_manager.clone(),
+        )
+        .await
+        {
+            Ok(settlement) => Ok(vec![settlement]),
+            Err(err) => {
+                tracing::debug!(
+                    name = %self.name(), ?settled,
+                    "failed to process HTTP solver result",
+                );
+                Err(err)
+            }
+        }
     }
 
     fn account(&self) -> &Account {
@@ -490,12 +508,7 @@ mod tests {
                 chain_id: 0,
                 base: url.parse().unwrap(),
                 client: Client::new(),
-                config: SolverConfig {
-                    api_key: None,
-                    max_nr_exec_orders: 0,
-                    has_ucp_policy_parameter: false,
-                    use_internal_buffers: None,
-                },
+                config: SolverConfig::default(),
             },
             Account::Local(Address::default(), None),
             H160::zero(),
@@ -540,8 +553,13 @@ mod tests {
         assert!(execution.exec_buy_amount.gt(&U256::zero()));
         assert_eq!(execution.exec_sell_amount, U256::from(base(2)));
         assert!(execution.exec_plan.is_some());
-        assert_eq!(execution.exec_plan.as_ref().unwrap().sequence, 0);
-        assert_eq!(execution.exec_plan.as_ref().unwrap().position, 0);
+        assert!(matches!(
+            execution.exec_plan.as_ref().unwrap(),
+            ExecutionPlan::Coordinates(ExecutionPlanCoordinatesModel {
+                sequence: 0,
+                position: 0,
+            }),
+        ));
 
         assert_eq!(settled.prices.len(), 2);
     }

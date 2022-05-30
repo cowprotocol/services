@@ -38,7 +38,7 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
-    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
     network::network_name,
@@ -97,6 +97,16 @@ struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     min_order_validity_period: Duration,
+
+    /// The maximum amount of time in seconds an order can be valid for. Defaults to 3 hours. This
+    /// restriction does not apply to liquidity owner orders or presign orders.
+    #[clap(
+        long,
+        env,
+        default_value = "10800",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    max_order_validity_period: Duration,
 
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
@@ -546,10 +556,9 @@ async fn main() {
                     ),
                     client: client.clone(),
                     config: SolverConfig {
-                        api_key: None,
-                        max_nr_exec_orders: 100,
-                        has_ucp_policy_parameter: false,
-                        use_internal_buffers: args.shared.quasimodo_uses_internal_buffers.into(),
+                        use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
+                        objective: Some(Objective::SurplusFeesCosts),
+                        ..Default::default()
                     },
                 }),
                 pool_fetcher.clone(),
@@ -690,6 +699,7 @@ async fn main() {
         args.banned_users.iter().copied().collect(),
         args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
+        args.max_order_validity_period,
         fee_calculator.clone(),
         bad_token_detector.clone(),
         balance_fetcher,

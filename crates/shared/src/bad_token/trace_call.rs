@@ -304,7 +304,7 @@ impl TraceCallDetector {
             Err(_) => return Ok(TokenQuality::bad("can't decode final settlement balance")),
         };
 
-        let balance_recpient_before = match decode_u256(&traces[3]) {
+        let balance_recipient_before = match decode_u256(&traces[3]) {
             Ok(balance) => balance,
             Err(_) => return Ok(TokenQuality::bad("can't decode recipient balance before")),
         };
@@ -319,7 +319,15 @@ impl TraceCallDetector {
         // todo: Maybe do >= checks in case token transfer for whatever reason grants user more than
         // an amount transferred like an anti fee.
 
-        if balance_after_in != balance_before_in + amount {
+        let computed_balance_after_in = match balance_before_in.checked_add(amount) {
+            Some(amount) => amount,
+            None => {
+                return Ok(TokenQuality::bad(
+                    "token total supply does not fit a uint256",
+                ))
+            }
+        };
+        if balance_after_in != computed_balance_after_in {
             return Ok(TokenQuality::bad(
                 "balance after in transfer does not match",
             ));
@@ -329,7 +337,15 @@ impl TraceCallDetector {
                 "balance after out transfer does not match",
             ));
         }
-        if balance_recpient_before + amount != balance_recipient_after {
+        let computed_balance_recipient_after = match balance_recipient_before.checked_add(amount) {
+            Some(amount) => amount,
+            None => {
+                return Ok(TokenQuality::bad(
+                    "token total supply does not fit a uint256",
+                ))
+            }
+        };
+        if computed_balance_recipient_after != balance_recipient_after {
             return Ok(TokenQuality::bad("balance of recipient does not match"));
         }
 
@@ -639,6 +655,8 @@ mod tests {
             H160(hex!("2129ff6000b95a973236020bcd2b2006b0d8e019")),
             // Should be denied because can't approve more than balance
             H160(hex!("decade1c6bf2cd9fb89afad73e4a519c867adcf5")),
+            // All balances are maxuint256
+            H160(hex!("0027449Bf0887ca3E431D263FFDeFb244D95b555")),
         ];
 
         // Of the deny listed tokens the following are detected as good:
