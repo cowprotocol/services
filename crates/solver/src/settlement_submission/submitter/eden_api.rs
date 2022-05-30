@@ -9,7 +9,8 @@ use super::{
 };
 use anyhow::{bail, Context, Result};
 use ethcontract::{
-    transaction::{Transaction, TransactionBuilder}, H256,
+    transaction::{Transaction, TransactionBuilder},
+    H256,
 };
 use futures::{FutureExt, TryFutureExt};
 use reqwest::{Client, IntoUrl, Url};

@@ -38,51 +38,59 @@ impl TransactionSubmitting for CustomNodesApi {
         &self,
         tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle> {
-        tracing::info!("Custom nodes submit transaction entered");
+        tracing::debug!("Custom nodes submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
             .iter()
-            .map(|node| {
-                async {
-                    tracing::info!("Sending transaction...");
-                    match transaction_request.clone() {
+            .enumerate()
+            .map(|(i, node)| {
+                let label = format!("custom_nodes_{i}");
+                let transaction_request = transaction_request.clone();
+                async move {
+                    tracing::debug!(%label, "sending transaction...");
+                    let result = match transaction_request {
                         Transaction::Request(tx) => node.eth().send_transaction(tx).await,
-                        Transaction::Raw { bytes, hash: _ } => {
+                        Transaction::Raw { bytes, .. } => {
                             node.eth().send_raw_transaction(bytes.0.into()).await
                         }
-                    }
+                    };
+
+                    (label, result)
                 }
                 .boxed()
             })
             .collect::<Vec<_>>();
 
         loop {
-            let (result, index, rest) = futures::future::select_all(futures).await;
-            let lable = format!("custom_nodes_{index}");
-            tracing::info!("Loop iteration with node: {}", lable);
+            let ((label, result), _, rest) = futures::future::select_all(futures).await;
             match result {
                 Ok(tx_hash) => {
-                    super::track_submission_success(lable.as_str(), true);
-                    tracing::info!("created transaction with hash: {:?}", tx_hash);
+                    super::track_submission_success(&label, true);
+                    tracing::debug!(%label, "created transaction with hash: {:?}", tx_hash);
                     return Ok(TransactionHandle {
                         tx_hash,
                         handle: tx_hash,
                     });
                 }
                 Err(err) => {
-                    tracing::info!("Error on sending transaction...");
-                    // error is not real error if transaction pool responded that received transaction is already in the pool
-                    let real_error = match &err {
-                        web3::Error::Rpc(rpc_error) => !ALREADY_KNOWN_TRANSACTION
-                            .iter()
-                            .any(|message| rpc_error.message.starts_with(message)),
-                        _ => true,
-                    };
-                    if real_error {
-                        tracing::warn!(?err, ?lable, "single custom node tx failed");
-                        super::track_submission_success(lable.as_str(), false);
+                    if matches!(
+                        &err,
+                        web3::Error::Rpc(rpc_error)
+                            if ALREADY_KNOWN_TRANSACTION
+                                .iter()
+                                .any(|message| rpc_error.message.starts_with(message))
+                    ) {
+                        tracing::debug!(%label, ?transaction_request, "transaction already known");
+                        // error is not real error if transaction pool responded that received transaction is
+                        // already in the pool, meaning that the transaction was created successfully and we can
+                        // continue searching our futures for a successful node RPC response without incrementing
+                        // any error metrics...
+                    } else {
+                        tracing::warn!(?err, %label, "single custom node tx failed");
+                        super::track_submission_success(&label, false);
                     }
+
                     if rest.is_empty() {
                         return Err(anyhow::Error::from(err).context("all custom nodes tx failed"));
                     }
