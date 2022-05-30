@@ -2,6 +2,7 @@ use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
     api::IntoWarpReply,
     fee::{FeeData, FeeParameters, GetUnsubsidizedMinFeeError, MinFeeCalculating},
+    signature_validator::SignatureValidator,
 };
 use contracts::WETH9;
 use ethcontract::{H160, U256};
@@ -139,6 +140,8 @@ pub enum ValidationError {
     UnsupportedToken(H160),
     WrongOwner(H160),
     ZeroAmount,
+    /// For EIP-1271 we must always have a sender (the smart wallet address)
+    MissingSender,
     Other(anyhow::Error),
 }
 
@@ -200,6 +203,13 @@ impl IntoWarpReply for ValidationError {
                 super::error("ZeroAmount", "Buy or sell amount is zero."),
                 StatusCode::BAD_REQUEST,
             ),
+            Self::MissingSender => with_status(
+                super::error(
+                    "MissingSender",
+                    "For EIP-1271 signatures the sender should always be provided",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             Self::Other(err) => with_status(
                 super::internal_error(err.context("order_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -220,6 +230,8 @@ pub struct OrderValidator {
     fee_validator: Arc<dyn MinFeeCalculating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    // For EIP-1271 validation of signatures
+    signature_validator: Arc<dyn SignatureValidator>,
 }
 
 #[derive(Default, Debug, PartialEq)]
@@ -275,6 +287,7 @@ impl OrderValidator {
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        signature_validator: Arc<dyn SignatureValidator>,
     ) -> Self {
         Self {
             code_fetcher,
@@ -285,6 +298,7 @@ impl OrderValidator {
             fee_validator,
             bad_token_detector,
             balance_fetcher,
+            signature_validator,
         }
     }
 }
@@ -342,24 +356,44 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
-        let owner = match order_creation.signature {
-            Signature::Eip712(_) | Signature::EthSign(_) | Signature::PreSign(_) => order_creation
-            .signature
-            .validate(domain_separator, &order_creation.hash_struct())
-            .ok_or(ValidationError::InvalidSignature)?,
-            Signature::Eip1271(data) => {
-                
-                todo!("Call the contract isValidSignature")
-            },
-        };
-        
-
         if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        if matches!(sender, Some(from) if from != owner) {
-            return Err(ValidationError::WrongOwner(owner));
-        }
+
+        let owner = match &order_creation.signature {
+            Signature::Eip712(_) | Signature::EthSign(_) | Signature::PreSign(_) => {
+                let owner = order_creation
+                    .signature
+                    .validate(domain_separator, &order_creation.hash_struct())
+                    .ok_or(ValidationError::InvalidSignature)?;
+
+                if matches!(sender, Some(from) if from != owner) {
+                    return Err(ValidationError::WrongOwner(owner));
+                }
+
+                owner
+            }
+            Signature::Eip1271(data) => {
+                // TODO: This has should be generated based on the signing type - EIP-712 or EthSign!
+                // This now supports only EIP-712
+                let hash = order_creation.hash_struct();
+
+                // Because the sender should be the smart wallet we always expect to have an Address
+                let owner = sender.ok_or(ValidationError::MissingSender)?;
+
+                if !self
+                    .signature_validator
+                    .is_valid_signature(owner, hash, data)
+                    .await
+                    .map_err(ValidationError::Other)?
+                {
+                    return Err(ValidationError::InvalidSignature)
+                }
+
+                owner
+            }
+        };
+
         for &token in &[order_creation.sell_token, order_creation.buy_token] {
             if !self
                 .bad_token_detector
@@ -498,6 +532,7 @@ mod tests {
     use crate::{
         account_balances::MockBalanceFetching,
         fee::{GetUnsubsidizedMinFeeError, MockMinFeeCalculating},
+        signature_validator::MockSignatureValidator,
     };
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
@@ -587,6 +622,7 @@ mod tests {
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidator::new()),
         );
         assert!(matches!(
             validator
@@ -684,6 +720,7 @@ mod tests {
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidator::new()),
         );
 
         assert!(matches!(
@@ -711,6 +748,7 @@ mod tests {
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = || PreOrderData {
             valid_to: shared::time::now_in_epoch_seconds()
@@ -756,6 +794,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -795,6 +834,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -834,6 +874,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -877,6 +918,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -918,6 +960,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -957,6 +1000,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -997,6 +1041,7 @@ mod tests {
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidator::new()),
         );
         let order = OrderCreation {
             valid_to: shared::time::now_in_epoch_seconds() + 2,
@@ -1020,6 +1065,7 @@ mod tests {
                 let mut fee_calculator = MockMinFeeCalculating::new();
                 let mut bad_token_detector = MockBadTokenDetecting::new();
                 let mut balance_fetcher = MockBalanceFetching::new();
+
                 fee_calculator
                     .expect_get_unsubsidized_min_fee()
                     .returning(|_, _, _, _| Ok(Default::default()));
@@ -1038,6 +1084,7 @@ mod tests {
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
                     Arc::new(balance_fetcher),
+                    Arc::new(MockSignatureValidator::new()),
                 );
 
                 let order = OrderBuilder::default()
