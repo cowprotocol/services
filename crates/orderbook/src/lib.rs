@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod orderbook;
 pub mod solvable_orders;
 pub mod solver_competition;
+pub mod signature_validator;
 
 use crate::{api::post_quote::OrderQuoter, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
