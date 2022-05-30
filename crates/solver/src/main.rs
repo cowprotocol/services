@@ -628,6 +628,7 @@ async fn main() {
         .await
         .expect("failed to create access list estimator"),
     );
+    let submitted_transactions = Default::default();
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -638,6 +639,7 @@ async fn main() {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
+        submitted_transactions,
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {

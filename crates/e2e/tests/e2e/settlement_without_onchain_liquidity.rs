@@ -237,6 +237,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 .await
                 .unwrap(),
             ),
+            submitted_transactions: Default::default(),
         },
         10,
         create_orderbook_api(),

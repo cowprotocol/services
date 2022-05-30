@@ -9,22 +9,51 @@ use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     errors::{ExecutionError, MethodError},
-    Account, TransactionHash,
+    Account, Address, TransactionHash,
 };
 use futures::FutureExt;
-use gas_estimation::GasPriceEstimating;
+use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
-    sync::Arc,
+    collections::HashMap,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use submitter::{
-    DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting,
+    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
+    TransactionHandle, TransactionSubmitting,
 };
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
+
+type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
+
+#[derive(Default)]
+pub struct TxPool {
+    eden: SubTxPool,
+    flashbots: SubTxPool,
+    custom_nodes: SubTxPool,
+}
+
+impl TxPool {
+    pub fn get_sub_pool(&self, strategy: Strategy) -> &SubTxPool {
+        match strategy {
+            Strategy::Eden => &self.eden,
+            Strategy::Flashbots => &self.flashbots,
+            Strategy::CustomNodes => &self.custom_nodes,
+        }
+    }
+
+    pub fn get_sub_pool_mut(&mut self, strategy: Strategy) -> &mut SubTxPool {
+        match strategy {
+            Strategy::Eden => &mut self.eden,
+            Strategy::Flashbots => &mut self.flashbots,
+            Strategy::CustomNodes => &mut self.custom_nodes,
+        }
+    }
+}
 
 pub struct SolutionSubmitter {
     pub web3: Web3,
@@ -37,6 +66,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
+    pub submitted_transactions: Arc<Mutex<TxPool>>,
 }
 
 pub struct StrategyArgs {
@@ -121,6 +151,7 @@ impl SolutionSubmitter {
                             strategy_args.submit_api.as_ref(),
                             &gas_price_estimator,
                             self.access_list_estimator.as_ref(),
+                            self.submitted_transactions.clone(),
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }

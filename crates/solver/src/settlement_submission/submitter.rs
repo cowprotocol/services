@@ -18,7 +18,7 @@ pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
 
-use super::{SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{SubmissionError, TxPool, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
     settlement::Settlement, settlement_access_list::AccessListEstimating,
     settlement_simulation::settle_method_builder,
@@ -26,13 +26,17 @@ use crate::{
 use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
-    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account, H160,
+    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account,
 };
 use futures::FutureExt;
 use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
-use std::time::{Duration, Instant};
+use std::{
+    fmt,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Parameters for transaction submitting
@@ -54,6 +58,19 @@ pub struct SubmitterParams {
 pub enum SubmissionLoopStatus {
     Enabled(AdditionalTip),
     Disabled(DisabledReason),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Strategy {
+    Eden,
+    Flashbots,
+    CustomNodes,
+}
+
+impl fmt::Display for Strategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
 }
 
 #[derive(Debug)]
@@ -92,17 +109,10 @@ pub trait TransactionSubmitting: Send + Sync {
     ) -> Result<TransactionHandle>;
     /// Cancels already submitted transaction using the cancel handle
     async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle>;
-    /// Try to find submitted transaction from previous submission loop (in this case we don't have a TransactionHandle)
-    async fn recover_pending_transaction(
-        &self,
-        web3: &Web3,
-        address: &H160,
-        nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
-    /// Returns displayable name of the submitter. Used for logging and metrics collection.
-    fn name(&self) -> &'static str;
+    /// Returns type of the submitter.
+    fn name(&self) -> Strategy;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -163,6 +173,7 @@ pub struct Submitter<'a> {
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
+    submitted_transactions: Arc<Mutex<TxPool>>,
 }
 
 impl<'a> Submitter<'a> {
@@ -172,6 +183,7 @@ impl<'a> Submitter<'a> {
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
+        submitted_transactions: Arc<Mutex<TxPool>>,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -179,6 +191,7 @@ impl<'a> Submitter<'a> {
             submit_api,
             gas_price_estimator,
             access_list_estimator,
+            submitted_transactions,
         })
     }
 }
@@ -202,7 +215,23 @@ impl<'a> Submitter<'a> {
         );
 
         // Continually simulate and submit transactions
-        let mut transactions = Vec::new();
+        let mut transactions = vec![];
+        {
+            let mut submitted_transactions = self.submitted_transactions.lock().unwrap();
+
+            // Remove old submitted transactions with nonce < current nonce
+            submitted_transactions
+                .get_sub_pool_mut(name)
+                .retain(|key, _| key.1 >= nonce);
+
+            // Take pending transactions from previous submission loops with the same nonce
+            if let Some(value) = submitted_transactions
+                .get_sub_pool(name)
+                .get(&(self.account.address(), nonce))
+            {
+                transactions.extend(value.iter());
+            };
+        };
         let submit_future = self.submit_with_increasing_gas_prices_until_simulation_fails(
             settlement,
             nonce,
@@ -257,6 +286,13 @@ impl<'a> Submitter<'a> {
         // 6. If we don't wait another 20s to receive block B, we wont see mined tx.
 
         if !transactions.is_empty() {
+            {
+                let mut submitted_transactions = self.submitted_transactions.lock().unwrap();
+                submitted_transactions
+                    .get_sub_pool_mut(name)
+                    .insert((self.account.address(), nonce), transactions.clone());
+            }
+
             const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
@@ -339,15 +375,7 @@ impl<'a> Submitter<'a> {
         );
 
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-        let pending_gas_price = self
-            .submit_api
-            .recover_pending_transaction(
-                &self.contract.raw_instance().web3(),
-                &self.account.address(),
-                nonce,
-            )
-            .await
-            .unwrap_or(None);
+        let mut pending_transaction = transactions.last().copied();
 
         let mut access_list: Option<AccessList> = None;
 
@@ -377,7 +405,21 @@ impl<'a> Submitter<'a> {
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
             let gas_price = match estimator.estimate_with_limits(gas_limit, time_limit).await {
-                Ok(gas_price) => gas_price,
+                Ok(gas_price) => match pending_transaction {
+                    Some((_, pending_gas_price)) => {
+                        tracing::debug!("found pending transaction: {:?}", pending_transaction);
+                        let min_needed_gas_price = pending_gas_price.bump(1.125).ceil();
+                        pending_transaction = None;
+                        if gas_price.cap() >= pending_gas_price.cap()
+                            && gas_price.tip() >= pending_gas_price.tip()
+                        {
+                            gas_price
+                        } else {
+                            min_needed_gas_price
+                        }
+                    }
+                    None => gas_price,
+                },
                 Err(err) => {
                     tracing::error!("gas estimation failed: {:?}", err);
                     tokio::time::sleep(params.retry_interval).await;
@@ -423,15 +465,9 @@ impl<'a> Submitter<'a> {
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
-
-            // Doing `.or(pending_gas_price.as_ref())` is a warning on Rust 1.58 but doing or_else
-            // is a warning on 1.59. So silence the warning on the older compiler until everyone has
-            // upgraded.
-            #[allow(clippy::or_fun_call)]
             if let Some(previous_gas_price) = transactions
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
-                .or(pending_gas_price.as_ref())
             {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
                 if gas_price.tip() < previous_gas_price.tip()
@@ -676,12 +712,15 @@ mod tests {
             .unwrap()
             .unwrap();
 
+        let submitted_transactions = Default::default();
+
         let submitter = Submitter::new(
             &contract,
             &account,
             &flashbots_api,
             &gas_price_estimator,
             access_list_estimator.as_ref(),
+            submitted_transactions,
         )
         .unwrap();
 
