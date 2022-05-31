@@ -62,6 +62,15 @@ pub async fn current_block_stream(
     Ok(receiver)
 }
 
+/// A method for creating a block stream with an initial value that never observes any new blocks.
+/// This is useful for testing and creating "mock" components.
+pub fn mock_single_block(block: Block) -> CurrentBlockStream {
+    let (sender, receiver) = watch::channel(block);
+    // Make sure the `sender` never drops so the `receiver` stays open.
+    std::mem::forget(sender);
+    receiver
+}
+
 pub type CurrentBlockStream = watch::Receiver<Block>;
 
 pub fn into_stream(receiver: watch::Receiver<Block>) -> WatchStream<Block> {

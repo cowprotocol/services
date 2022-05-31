@@ -1,5 +1,5 @@
 use crate::{
-    api::order_validation::{OrderValidating, OrderValidator, ValidationError},
+    api::order_validation::{OrderValidating, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
@@ -123,7 +123,7 @@ pub struct Orderbook {
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
-    order_validator: Arc<OrderValidator>,
+    order_validator: Arc<dyn OrderValidating>,
 }
 
 impl Orderbook {
@@ -135,7 +135,7 @@ impl Orderbook {
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
-        order_validator: Arc<OrderValidator>,
+        order_validator: Arc<dyn OrderValidating>,
     ) -> Self {
         Self {
             domain_separator,
@@ -372,10 +372,43 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        account_balances::MockBalanceFetching, api::order_validation::MockOrderValidating,
+        database::orders::MockOrderStoring, metrics::NoopMetrics,
+    };
     use ethcontract::H160;
     use futures::FutureExt;
-    use model::order::OrderBuilder;
-    use shared::bad_token::list_based::ListBasedDetector;
+    use mockall::predicate::eq;
+    use model::{
+        app_id::AppId,
+        order::{OrderBuilder, OrderCreation, OrderMetadata},
+    };
+    use shared::{
+        bad_token::{list_based::ListBasedDetector, MockBadTokenDetecting},
+        current_block,
+        price_estimation::native::MockNativePriceEstimating,
+    };
+
+    fn mock_orderbook() -> Orderbook {
+        Orderbook {
+            domain_separator: Default::default(),
+            settlement_contract: H160([0xba; 20]),
+            database: Arc::new(MockOrderStoring::new()),
+            bad_token_detector: Arc::new(MockBadTokenDetecting::new()),
+            solvable_orders: SolvableOrdersCache::new(
+                Duration::default(),
+                Arc::new(MockOrderStoring::new()),
+                Default::default(),
+                Arc::new(MockBalanceFetching::new()),
+                Arc::new(MockBadTokenDetecting::new()),
+                current_block::mock_single_block(Default::default()),
+                Arc::new(MockNativePriceEstimating::new()),
+                Arc::new(NoopMetrics),
+            ),
+            solvable_orders_max_update_age: Default::default(),
+            order_validator: Arc::new(MockOrderValidating::new()),
+        }
+    }
 
     #[test]
     fn filter_unsupported_tokens_() {
@@ -402,5 +435,106 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(result, &orders[1..2]);
+    }
+
+    #[tokio::test]
+    async fn replace_order_verifies_signer_and_app_data() {
+        let old_order = Order {
+            metadata: OrderMetadata {
+                uid: OrderUid([1; 56]),
+                owner: H160([1; 20]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let new_order_uid = OrderUid([2; 56]);
+        let cancellation = OrderCancellation {
+            order_uid: old_order.metadata.uid,
+            ..Default::default()
+        };
+
+        let mut database = MockOrderStoring::new();
+        database
+            .expect_single_order()
+            .with(eq(old_order.metadata.uid))
+            .returning({
+                let old_order = old_order.clone();
+                move |_| Ok(Some(old_order.clone()))
+            });
+        database.expect_replace_order().returning(|_, _, _| Ok(()));
+
+        let mut order_validator = MockOrderValidating::new();
+        order_validator
+            .expect_validate_and_construct_order()
+            .returning(move |creation, from, _, _| {
+                Ok((
+                    Order {
+                        metadata: OrderMetadata {
+                            owner: from.unwrap(),
+                            uid: new_order_uid,
+                            ..Default::default()
+                        },
+                        creation,
+                    },
+                    Default::default(),
+                ))
+            });
+
+        let orderbook = Orderbook {
+            database: Arc::new(database),
+            order_validator: Arc::new(order_validator),
+            ..mock_orderbook()
+        };
+
+        // App data does not encode cancellation.
+        assert!(matches!(
+            orderbook
+                .replace_order(
+                    old_order.metadata.uid,
+                    OrderCreationPayload {
+                        from: Some(old_order.metadata.owner),
+                        ..Default::default()
+                    },
+                )
+                .await,
+            Err(ReplaceOrderError::InvalidReplacement)
+        ));
+
+        // Different owner
+        assert!(matches!(
+            orderbook
+                .replace_order(
+                    old_order.metadata.uid,
+                    OrderCreationPayload {
+                        from: Some(H160([2; 20])),
+                        order_creation: OrderCreation {
+                            app_data: AppId(cancellation.hash_struct()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await,
+            Err(ReplaceOrderError::InvalidReplacement)
+        ));
+
+        // Stars align...
+        assert_eq!(
+            orderbook
+                .replace_order(
+                    old_order.metadata.uid,
+                    OrderCreationPayload {
+                        from: Some(old_order.metadata.owner),
+                        order_creation: OrderCreation {
+                            app_data: AppId(cancellation.hash_struct()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap(),
+            new_order_uid,
+        );
     }
 }
