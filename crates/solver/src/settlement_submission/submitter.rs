@@ -225,6 +225,9 @@ impl<'a> Submitter<'a> {
                 .retain(|key, _| key.1 >= nonce);
 
             // Take pending transactions from previous submission loops with the same nonce
+            // Those exist if
+            // 1. Previous loop timed out and no transaction was mined
+            // 2. Previous loop ended with simulation revert, and cancellation tx was sent but not mined
             if let Some(value) = submitted_transactions
                 .get_sub_pool(name)
                 .get(&(self.account.address(), nonce))
@@ -287,6 +290,9 @@ impl<'a> Submitter<'a> {
 
         if !transactions.is_empty() {
             {
+                // Update (overwrite) the submitted transaction list with `transactions` variable that,
+                // at this point, contains both transactions from previous submission loop and
+                // transactions from current submission loop
                 let mut submitted_transactions = self.submitted_transactions.lock().unwrap();
                 submitted_transactions
                     .get_sub_pool_mut(name)
