@@ -1092,8 +1092,8 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(
-            old_order_cancellation,
-            Some(new_order.metadata.creation_date)
+            old_order_cancellation.unwrap().timestamp_millis(),
+            new_order.metadata.creation_date.timestamp_millis(),
         );
     }
 
