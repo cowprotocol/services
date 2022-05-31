@@ -192,7 +192,7 @@ impl SettledBatchAuctionModel {
         //   a solution but don't know how to order the AMMs to execute it". I think that we
         //   can, as the parent comment suggests, clean this up and just make the field required.
 
-        // For now **intentionally** allow interactions without execution plans.
+        // **Intentionally** allow interactions without execution plans.
 
         self.amms
             .values()
