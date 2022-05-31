@@ -154,7 +154,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         .with_sell_amount(to_wei(100))
         .with_buy_token(token_b.address())
         .with_buy_amount(to_wei(90))
-        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
+        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .with_kind(OrderKind::Sell)
         .sign_with(
             EcdsaSigningScheme::Eip712,
