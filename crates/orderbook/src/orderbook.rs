@@ -9,7 +9,6 @@ use ethcontract::H256;
 use model::{
     auction::Auction,
     order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
-    signature::SigningScheme,
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -20,10 +19,31 @@ use thiserror::Error;
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "orderbook")]
 struct Metrics {
-    /// Number of user (non-liquidity) orders created.
-    user_orders_created: prometheus::Counter,
-    /// Number of liquidity orders created.
-    liquidity_orders_created: prometheus::Counter,
+    /// Counter for measuring order statistics.
+    #[metric(labels("kind", "operation"))]
+    orders: prometheus::CounterVec,
+}
+
+enum OrderOperation {
+    Created,
+    Cancelled,
+}
+
+impl Metrics {
+    fn on_order_operation(order: &Order, operation: OrderOperation) {
+        let metrics = Self::instance(metrics::get_metric_storage_registry())
+            .expect("unexpected error getting metrics instance");
+
+        let kind = match order.metadata.is_liquidity_order {
+            true => "liquidity",
+            false => "user",
+        };
+        let op = match operation {
+            OrderOperation::Created => "created",
+            OrderOperation::Cancelled => "cancelled",
+        };
+        metrics.orders.with_label_values(&[kind, op]).inc();
+    }
 }
 
 #[derive(Debug, Error)]
@@ -32,8 +52,6 @@ pub enum AddOrderError {
     DuplicatedOrder,
     #[error("{0:?}")]
     OrderValidation(ValidationError),
-    #[error("unsupported signature kind")]
-    UnsupportedSignature,
     #[error("database error: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -76,12 +94,33 @@ pub enum OrderCancellationError {
     Other(#[from] anyhow::Error),
 }
 
+#[derive(Debug, Error)]
+pub enum ReplaceOrderError {
+    #[error("unable to cancel existing order: {0}")]
+    Cancellation(#[from] OrderCancellationError),
+    #[error("unable to add new order: {0}")]
+    Add(#[from] AddOrderError),
+    #[error("the new order is not a valid replacement for the old one")]
+    InvalidReplacement,
+}
+
+impl From<ValidationError> for ReplaceOrderError {
+    fn from(err: ValidationError) -> Self {
+        Self::Add(err.into())
+    }
+}
+
+impl From<InsertionError> for ReplaceOrderError {
+    fn from(err: InsertionError) -> Self {
+        Self::Add(err.into())
+    }
+}
+
 pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: Arc<dyn OrderStoring>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    enable_presign_orders: bool,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<OrderValidator>,
@@ -94,7 +133,6 @@ impl Orderbook {
         settlement_contract: H160,
         database: Arc<dyn OrderStoring>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        enable_presign_orders: bool,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<OrderValidator>,
@@ -104,7 +142,6 @@ impl Orderbook {
             settlement_contract,
             database,
             bad_token_detector,
-            enable_presign_orders,
             solvable_orders,
             solvable_orders_max_update_age,
             order_validator,
@@ -115,22 +152,10 @@ impl Orderbook {
         &self,
         payload: OrderCreationPayload,
     ) -> Result<OrderUid, AddOrderError> {
-        let order_creation = payload.order_creation;
-        // Eventually we will support all Signature types and can remove this.
-        if !matches!(
-            (
-                order_creation.signature.scheme(),
-                self.enable_presign_orders
-            ),
-            (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
-        ) {
-            return Err(AddOrderError::UnsupportedSignature);
-        }
-
         let (order, fee) = self
             .order_validator
             .validate_and_construct_order(
-                order_creation,
+                payload.order_creation,
                 payload.from,
                 &self.domain_separator,
                 self.settlement_contract,
@@ -138,34 +163,24 @@ impl Orderbook {
             .await?;
 
         self.database.insert_order(&order, fee).await?;
-
-        let metrics = Metrics::instance(metrics::get_metric_storage_registry())
-            .expect("unexpected error getting metrics instance");
-        if order.metadata.is_liquidity_order {
-            metrics.liquidity_orders_created.inc();
-        } else {
-            metrics.user_orders_created.inc();
-        }
+        Metrics::on_order_operation(&order, OrderOperation::Created);
 
         self.solvable_orders.request_update();
 
         Ok(order.metadata.uid)
     }
 
-    pub async fn cancel_order(
+    /// Finds an order for cancellation.
+    ///
+    /// Returns an error if the order cannot be found or cannot be cancelled.
+    async fn find_order_for_cancellation(
         &self,
-        cancellation: OrderCancellation,
-    ) -> Result<(), OrderCancellationError> {
-        // TODO - Would like to use get_order_by_uid, but not implemented on self
-        let orders = self
-            .get_orders(&OrderFilter {
-                uid: Some(cancellation.order_uid),
-                ..Default::default()
-            })
-            .await?;
-        // Could be that order doesn't exist and is not fetched.
-        let order = orders
-            .first()
+        order_uid: &OrderUid,
+    ) -> Result<Order, OrderCancellationError> {
+        let order = self
+            .database
+            .single_order(order_uid)
+            .await?
             .ok_or(OrderCancellationError::OrderNotFound)?;
 
         match order.metadata.status {
@@ -179,6 +194,18 @@ impl Orderbook {
             _ => {}
         }
 
+        Ok(order)
+    }
+
+    pub async fn cancel_order(
+        &self,
+        cancellation: OrderCancellation,
+    ) -> Result<(), OrderCancellationError> {
+        let order = self
+            .find_order_for_cancellation(&cancellation.order_uid)
+            .await?;
+
+        // Verify the cancellation signer is the same as the order signer.
         let signer = cancellation
             .validate(&self.domain_separator)
             .ok_or(OrderCancellationError::InvalidSignature)?;
@@ -191,7 +218,51 @@ impl Orderbook {
         self.database
             .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
+        Metrics::on_order_operation(&order, OrderOperation::Created);
+
+        self.solvable_orders.request_update();
+
         Ok(())
+    }
+
+    pub async fn replace_order(
+        &self,
+        old_order: OrderUid,
+        new_order: OrderCreationPayload,
+    ) -> Result<OrderUid, ReplaceOrderError> {
+        let old_order = self.find_order_for_cancellation(&old_order).await?;
+        let (new_order, new_fee) = self
+            .order_validator
+            .validate_and_construct_order(
+                new_order.order_creation,
+                new_order.from,
+                &self.domain_separator,
+                self.settlement_contract,
+            )
+            .await?;
+
+        // Verify that the new order is a valid replacement order by checking
+        // that the `app_data` encodes an order cancellation and that both the
+        // old and new orders have the same signer.
+        let cancellation = OrderCancellation {
+            order_uid: old_order.metadata.uid,
+            ..Default::default()
+        };
+        if new_order.creation.app_data != cancellation.hash_struct()
+            || new_order.metadata.owner != old_order.metadata.owner
+        {
+            return Err(ReplaceOrderError::InvalidReplacement);
+        }
+
+        self.database
+            .replace_order(&old_order.metadata.uid, &new_order, new_fee)
+            .await?;
+        Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
+        Metrics::on_order_operation(&new_order, OrderOperation::Created);
+
+        self.solvable_orders.request_update();
+
+        Ok(new_order.metadata.uid)
     }
 
     pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {

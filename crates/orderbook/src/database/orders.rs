@@ -23,6 +23,12 @@ use std::{borrow::Cow, convert::TryInto};
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
+    async fn replace_order(
+        &self,
+        old_order: &OrderUid,
+        new_order: &Order,
+        new_fee: FeeParameters,
+    ) -> Result<(), InsertionError>;
     // Legacy generic orders route that we are phasing out.
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
@@ -292,6 +298,27 @@ async fn insert_fee(
         .map_err(InsertionError::DbError)
 }
 
+async fn cancel_order(
+    order_uid: &OrderUid,
+    timestamp: DateTime<Utc>,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    // We do not overwrite previously cancelled orders,
+    // but this query does allow the user to soft cancel
+    // an order that has already been invalidated on-chain.
+    const QUERY: &str = "\
+            UPDATE orders
+            SET cancellation_timestamp = $1 \
+            WHERE uid = $2\
+            AND cancellation_timestamp IS NULL;";
+    sqlx::query(QUERY)
+        .bind(timestamp)
+        .bind(order_uid.0.as_ref())
+        .execute(transaction)
+        .await
+        .map(|_| ())
+}
+
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
     async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError> {
@@ -310,21 +337,36 @@ impl OrderStoring for Postgres {
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
-        // We do not overwrite previously cancelled orders,
-        // but this query does allow the user to soft cancel
-        // an order that has already been invalidated on-chain.
-        const QUERY: &str = "\
-            UPDATE orders
-            SET cancellation_timestamp = $1 \
-            WHERE uid = $2\
-            AND cancellation_timestamp IS NULL;";
-        sqlx::query(QUERY)
-            .bind(now)
-            .bind(order_uid.0.as_ref())
-            .execute(&self.pool)
+        let order_uid = *order_uid;
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move { cancel_order(&order_uid, now, transaction).await }.boxed()
+            })
             .await
             .context("cancel_order failed")
-            .map(|_| ())
+    }
+
+    async fn replace_order(
+        &self,
+        old_order: &model::order::OrderUid,
+        new_order: &model::order::Order,
+        new_fee: FeeParameters,
+    ) -> anyhow::Result<(), super::orders::InsertionError> {
+        let old_order = *old_order;
+        let new_order = new_order.clone();
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move {
+                    cancel_order(&old_order, new_order.metadata.creation_date, transaction).await?;
+                    insert_order(&new_order, transaction).await?;
+                    insert_fee(&new_order.metadata.uid, &new_fee, transaction).await?;
+                    Ok(())
+                }
+                .boxed()
+            })
+            .await
     }
 
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
@@ -993,6 +1035,116 @@ mod tests {
         let second_cancellation: CancellationQueryRow =
             sqlx::query_as(query).fetch_one(&db.pool).await.unwrap();
         assert_eq!(first_cancellation, second_cancellation);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_replace_order() {
+        let owner = H160([0x77; 20]);
+
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let old_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&old_order, Default::default())
+            .await
+            .unwrap();
+
+        let new_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([2; 56]),
+                creation_date: Utc::now(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.replace_order(&old_order.metadata.uid, &new_order, Default::default())
+            .await
+            .unwrap();
+
+        let order_statuses = db
+            .user_orders(&owner, 0, None)
+            .await
+            .unwrap()
+            .iter()
+            .map(|order| (order.metadata.uid, order.metadata.status))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order_statuses,
+            vec![
+                (new_order.metadata.uid, OrderStatus::Open),
+                (old_order.metadata.uid, OrderStatus::Cancelled),
+            ]
+        );
+
+        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                .bind(old_order.metadata.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            old_order_cancellation,
+            Some(new_order.metadata.creation_date)
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_replace_order_no_cancellation_on_error() {
+        let owner = H160([0x77; 20]);
+
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let old_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&old_order, Default::default())
+            .await
+            .unwrap();
+
+        let new_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([2; 56]),
+                creation_date: Utc::now(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&new_order, Default::default())
+            .await
+            .unwrap();
+
+        // Attempt to replace an old order with one that already exists should fail.
+        let err = db
+            .replace_order(&old_order.metadata.uid, &new_order, Default::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, InsertionError::DuplicatedRecord));
+
+        // Old order cancellation status should remain unchanged.
+        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                .bind(old_order.metadata.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(old_order_cancellation, None);
     }
 
     #[tokio::test]
