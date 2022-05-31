@@ -201,8 +201,9 @@ paths:
                 $ref: "#/components/schemas/ReplaceOrderError"
         401:
           description: |
-            Invalid replacement order, either the old and new orders have different signers
-            or the new order's app data is not an encoded cancellation of the old order.
+            Invalid replacement order. This can happen if the old and new orders have
+            different signers, the new order's app data is not an encoded cancellation of
+            the old order, or the new order is based on presign or EIP-1271 signatures.
         403:
           description: Forbidden
         404:
