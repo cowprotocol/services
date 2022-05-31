@@ -28,6 +28,47 @@ use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
+#[derive(Default, Clone)]
+pub struct WrappedTxPool(Arc<Mutex<TxPool>>);
+
+impl WrappedTxPool {
+    pub fn get(
+        &self,
+        strategy: Strategy,
+        sender: Address,
+        nonce: U256,
+    ) -> Option<Vec<(TransactionHandle, EstimatedGasPrice)>> {
+        self.0
+            .lock()
+            .unwrap()
+            .get_sub_pool(strategy)
+            .get(&(sender, nonce))
+            .cloned()
+    }
+
+    pub fn remove_if(&self, strategy: Strategy, nonce: U256) {
+        self.0
+            .lock()
+            .unwrap()
+            .get_sub_pool_mut(strategy)
+            .retain(|key, _| key.1 >= nonce);
+    }
+
+    pub fn update(
+        &self,
+        strategy: Strategy,
+        sender: Address,
+        nonce: U256,
+        transactions: Vec<(TransactionHandle, EstimatedGasPrice)>,
+    ) {
+        self.0
+            .lock()
+            .unwrap()
+            .get_sub_pool_mut(strategy)
+            .insert((sender, nonce), transactions);
+    }
+}
+
 // Key (Address, U256) represents pair (sender, nonce)
 type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
 
@@ -67,7 +108,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub submitted_transactions: Arc<Mutex<TxPool>>,
+    pub submitted_transactions: WrappedTxPool,
 }
 
 pub struct StrategyArgs {
@@ -353,5 +394,27 @@ mod tests {
 
         let strategy = TransactionStrategy::DryRun;
         assert!(strategy.strategy_args().is_none());
+    }
+
+    #[test]
+    fn wrapped_tx_pool() {
+        let strategy = Strategy::Eden;
+        let sender = Address::default();
+        let nonce = U256::zero();
+        let transactions: Vec<(TransactionHandle, EstimatedGasPrice)> = Default::default();
+
+        let submitted_transactions = WrappedTxPool::default();
+
+        submitted_transactions.update(strategy, sender, nonce, transactions);
+        let entry = submitted_transactions.get(strategy, sender, nonce);
+        assert!(entry.is_some());
+
+        submitted_transactions.remove_if(strategy, 0.into());
+        let entry = submitted_transactions.get(strategy, sender, nonce);
+        assert!(entry.is_some());
+
+        submitted_transactions.remove_if(strategy, 1.into());
+        let entry = submitted_transactions.get(strategy, sender, nonce);
+        assert!(entry.is_none());
     }
 }
