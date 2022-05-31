@@ -188,15 +188,15 @@ impl SettledBatchAuctionModel {
     pub fn has_execution_plan(&self) -> bool {
         // Its a bit weird that we expect all entries to contain an execution plan. Could make
         // execution plan required and assert that the vector of execution updates is non-empty
+        // - NOTE(nlordell): This was done as a way for the HTTP solvers to say "look, we found
+        //   a solution but don't know how to order the AMMs to execute it". I think that we
+        //   can, as the parent comment suggests, clean this up and just make the field required.
 
-        let amm_executions = self
-            .amms
+        // **Intentionally** allow interactions without execution plans.
+
+        self.amms
             .values()
-            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan));
-        let interaction_executions = self.interaction_data.iter().map(|i| &i.exec_plan);
-
-        amm_executions
-            .chain(interaction_executions)
+            .flat_map(|u| u.execution.iter().map(|e| &e.exec_plan))
             .all(|ex| ex.is_some())
     }
 }
