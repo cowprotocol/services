@@ -28,6 +28,34 @@ use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
+// Key (Address, U256) represents pair (sender, nonce)
+type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
+
+#[derive(Default)]
+struct TxPool {
+    eden: SubTxPool,
+    flashbots: SubTxPool,
+    custom_nodes: SubTxPool,
+}
+
+impl TxPool {
+    pub fn get_sub_pool(&self, strategy: Strategy) -> &SubTxPool {
+        match strategy {
+            Strategy::Eden => &self.eden,
+            Strategy::Flashbots => &self.flashbots,
+            Strategy::CustomNodes => &self.custom_nodes,
+        }
+    }
+
+    pub fn get_sub_pool_mut(&mut self, strategy: Strategy) -> &mut SubTxPool {
+        match strategy {
+            Strategy::Eden => &mut self.eden,
+            Strategy::Flashbots => &mut self.flashbots,
+            Strategy::CustomNodes => &mut self.custom_nodes,
+        }
+    }
+}
+
 #[derive(Default, Clone)]
 pub struct WrappedTxPool(Arc<Mutex<TxPool>>);
 
@@ -66,34 +94,6 @@ impl WrappedTxPool {
             .unwrap()
             .get_sub_pool_mut(strategy)
             .insert((sender, nonce), transactions);
-    }
-}
-
-// Key (Address, U256) represents pair (sender, nonce)
-type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
-
-#[derive(Default)]
-pub struct TxPool {
-    eden: SubTxPool,
-    flashbots: SubTxPool,
-    custom_nodes: SubTxPool,
-}
-
-impl TxPool {
-    pub fn get_sub_pool(&self, strategy: Strategy) -> &SubTxPool {
-        match strategy {
-            Strategy::Eden => &self.eden,
-            Strategy::Flashbots => &self.flashbots,
-            Strategy::CustomNodes => &self.custom_nodes,
-        }
-    }
-
-    pub fn get_sub_pool_mut(&mut self, strategy: Strategy) -> &mut SubTxPool {
-        match strategy {
-            Strategy::Eden => &mut self.eden,
-            Strategy::Flashbots => &mut self.flashbots,
-            Strategy::CustomNodes => &mut self.custom_nodes,
-        }
     }
 }
 
