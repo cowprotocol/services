@@ -169,7 +169,7 @@ paths:
       summary: Cancels order and replaces it with a new one
       description: |
         Cancel an order by providing a replacement order where the app data field
-        id the EIP-712-struct-hash of a cancellation for the original order. This
+        is the EIP-712-struct-hash of a cancellation for the original order. This
         allows an old order to be cancelled AND a new order to be created in an
         atomic operation with a single signature. This may be useful for replacing
         orders when on-chain prices move outside of the original order's limit price.
