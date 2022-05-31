@@ -28,6 +28,7 @@ use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
+// Key (Address, U256) represents pair (sender, nonce)
 type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
 
 #[derive(Default)]
