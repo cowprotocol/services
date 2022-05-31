@@ -157,8 +157,54 @@ paths:
           description: Order deleted
         400:
           description: Malformed signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCancellationError"
         401:
           description: Invalid signature
+        404:
+          description: Order was not found
+    patch:
+      summary: Cancels order and replaces it with a new one
+      description: |
+        Cancel an order by providing a replacement order where the app data field
+        id the EIP-712-struct-hash of a cancellation for the original order. This
+        allows an old order to be cancelled AND a new order to be created in an
+        atomic operation with a single signature. This may be useful for replacing
+        orders when on-chain prices move outside of the original order's limit price.
+      parameters:
+        - in: path
+          name: UID
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+      requestBody:
+        description: "replacement order"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreation"
+      responses:
+        201:
+          description: Previous order was cancelled and the new replacement order was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UID"
+        400:
+          description: Error cancelling and replacing new order with an old one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplaceOrderError"
+        401:
+          description: |
+            Invalid replacement order, either the old and new orders have different signers
+            or the new order's app data is not an encoded cancellation of the old order.
+        403:
+          description: Forbidden
         404:
           description: Order was not found
   /api/v1/transactions/{txHash}/orders:
@@ -851,6 +897,7 @@ components:
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
+              UnsupportedSignature,
             ]
         description:
           type: string
@@ -871,6 +918,40 @@ components:
               OrderFullyExecuted,
               OrderExpired,
               OnChainOrder,
+            ]
+        description:
+          type: string
+      required:
+        - errorType
+        - description
+    ReplaceOrderError:
+      type: object
+      properties:
+        errorType:
+          type: string
+          enum:
+            [
+              AlreadyCancelled,
+              OrderFullyExecuted,
+              OrderExpired,
+              OnChainOrder,
+              DuplicateOrder,
+              InsufficientFee,
+              InsufficientAllowance,
+              InsufficientBalance,
+              InsufficientValidTo,
+              ExcessiveValidTo,
+              InvalidSignature,
+              TransferEthToContract,
+              TransferSimulationFailed,
+              UnsupportedToken,
+              WrongOwner,
+              SameBuyAndSellToken,
+              ZeroAmount,
+              UnsupportedBuyTokenDestination,
+              UnsupportedSellTokenSource,
+              UnsupportedOrderType,
+              UnsupportedSignature,
             ]
         description:
           type: string

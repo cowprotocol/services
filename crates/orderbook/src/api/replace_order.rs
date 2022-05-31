@@ -40,7 +40,7 @@ impl IntoWarpReply for ReplaceOrderError {
             ReplaceOrderError::Add(err) => err.into_warp_reply(),
             err @ ReplaceOrderError::InvalidReplacement => reply::with_status(
                 super::error("InvalidReplacement", err.to_string()),
-                StatusCode::BAD_REQUEST,
+                StatusCode::UNAUTHORIZED,
             ),
         }
     }
