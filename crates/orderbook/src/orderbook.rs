@@ -230,6 +230,16 @@ impl Orderbook {
         old_order: OrderUid,
         new_order: OrderCreationPayload,
     ) -> Result<OrderUid, ReplaceOrderError> {
+        // Replacement order signatures need to be validated meaning we cannot
+        // accept `PreSign` orders, otherwise anyone can cancel a user order by
+        // submitting a `PreSign` order on someone's behalf.
+        new_order
+            .order_creation
+            .signature
+            .scheme()
+            .try_to_ecdsa_scheme()
+            .ok_or(ReplaceOrderError::InvalidReplacement)?;
+
         let old_order = self.find_order_for_cancellation(&old_order).await?;
         let (new_order, new_fee) = self
             .order_validator
@@ -382,6 +392,7 @@ mod tests {
     use model::{
         app_id::AppId,
         order::{OrderBuilder, OrderCreation, OrderMetadata},
+        signature::Signature,
     };
     use shared::{
         bad_token::{list_based::ListBasedDetector, MockBadTokenDetecting},
@@ -509,6 +520,25 @@ mod tests {
                         from: Some(H160([2; 20])),
                         order_creation: OrderCreation {
                             app_data: AppId(cancellation.hash_struct()),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                )
+                .await,
+            Err(ReplaceOrderError::InvalidReplacement)
+        ));
+
+        // Non-signed order.
+        assert!(matches!(
+            orderbook
+                .replace_order(
+                    old_order.metadata.uid,
+                    OrderCreationPayload {
+                        from: Some(old_order.metadata.owner),
+                        order_creation: OrderCreation {
+                            app_data: AppId(cancellation.hash_struct()),
+                            signature: Signature::PreSign(old_order.metadata.owner),
                             ..Default::default()
                         },
                         ..Default::default()
