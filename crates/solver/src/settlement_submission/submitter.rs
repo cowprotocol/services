@@ -18,7 +18,7 @@ pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
 
-use super::{SubmissionError, WrappedTxPool, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{GlobalTxPool, SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
     settlement::Settlement, settlement_access_list::AccessListEstimating,
     settlement_simulation::settle_method_builder,
@@ -196,7 +196,7 @@ pub struct Submitter<'a> {
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
-    submitted_transactions: WrappedTxPool,
+    submitted_transactions: SubTxPoolRef,
 }
 
 impl<'a> Submitter<'a> {
@@ -206,8 +206,9 @@ impl<'a> Submitter<'a> {
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
-        submitted_transactions: WrappedTxPool,
+        submitted_transactions: GlobalTxPool,
     ) -> Result<Self> {
+        let submitted_transactions = submitted_transactions.add_sub_pool();
         Ok(Self {
             contract,
             account,
@@ -237,7 +238,7 @@ impl<'a> Submitter<'a> {
             name
         );
 
-        self.submitted_transactions.remove_older_than(name, nonce);
+        self.submitted_transactions.remove_older_than(nonce);
 
         // Take pending transactions from previous submission loops with the same nonce
         // Those exist if
@@ -245,7 +246,7 @@ impl<'a> Submitter<'a> {
         // 2. Previous loop ended with simulation revert, and cancellation tx was sent but not mined
         let mut transactions = self
             .submitted_transactions
-            .get(name, self.account.address(), nonce)
+            .get(self.account.address(), nonce)
             .unwrap_or_default();
 
         // Continually simulate and submit transactions
@@ -306,12 +307,8 @@ impl<'a> Submitter<'a> {
             // Update (overwrite) the submitted transaction list with `transactions` variable that,
             // at this point, contains both transactions from previous submission loop and
             // transactions from current submission loop
-            self.submitted_transactions.update(
-                name,
-                self.account.address(),
-                nonce,
-                transactions.clone(),
-            );
+            self.submitted_transactions
+                .update(self.account.address(), nonce, transactions.clone());
 
             const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);

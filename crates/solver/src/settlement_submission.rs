@@ -21,8 +21,8 @@ use std::{
     time::{Duration, Instant},
 };
 use submitter::{
-    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
-    TransactionHandle, TransactionSubmitting,
+    DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionHandle,
+    TransactionSubmitting,
 };
 use web3::types::TransactionReceipt;
 
@@ -30,71 +30,53 @@ const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
 // Key (Address, U256) represents pair (sender, nonce)
 type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
-
-#[derive(Default)]
-struct TxPool {
-    eden: SubTxPool,
-    flashbots: SubTxPool,
-    custom_nodes: SubTxPool,
-}
-
-impl TxPool {
-    pub fn get_sub_pool(&self, strategy: Strategy) -> &SubTxPool {
-        match strategy {
-            Strategy::Eden => &self.eden,
-            Strategy::Flashbots => &self.flashbots,
-            Strategy::CustomNodes => &self.custom_nodes,
-        }
-    }
-
-    pub fn get_sub_pool_mut(&mut self, strategy: Strategy) -> &mut SubTxPool {
-        match strategy {
-            Strategy::Eden => &mut self.eden,
-            Strategy::Flashbots => &mut self.flashbots,
-            Strategy::CustomNodes => &mut self.custom_nodes,
-        }
-    }
-}
+type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
 #[derive(Default, Clone)]
-pub struct WrappedTxPool(Arc<Mutex<TxPool>>);
+pub struct GlobalTxPool {
+    pools: TxPool,
+}
 
-impl WrappedTxPool {
+impl GlobalTxPool {
+    pub fn add_sub_pool(&self) -> SubTxPoolRef {
+        let pools = self.pools.clone();
+        let index = {
+            let mut pools = pools.lock().unwrap();
+            let index = pools.len();
+            pools.push(SubTxPool::default());
+            index
+        };
+        SubTxPoolRef { pools, index }
+    }
+}
+
+pub struct SubTxPoolRef {
+    pools: TxPool,
+    index: usize,
+}
+
+impl SubTxPoolRef {
     pub fn get(
         &self,
-        strategy: Strategy,
         sender: Address,
         nonce: U256,
     ) -> Option<Vec<(TransactionHandle, EstimatedGasPrice)>> {
-        self.0
-            .lock()
-            .unwrap()
-            .get_sub_pool(strategy)
+        self.pools.lock().unwrap()[self.index]
             .get(&(sender, nonce))
             .cloned()
     }
 
-    /// Remove old transactions with too low nonce
-    pub fn remove_older_than(&self, strategy: Strategy, nonce: U256) {
-        self.0
-            .lock()
-            .unwrap()
-            .get_sub_pool_mut(strategy)
-            .retain(|key, _| key.1 >= nonce);
+    pub fn remove_older_than(&self, nonce: U256) {
+        self.pools.lock().unwrap()[self.index].retain(|key, _| key.1 >= nonce);
     }
 
     pub fn update(
         &self,
-        strategy: Strategy,
         sender: Address,
         nonce: U256,
         transactions: Vec<(TransactionHandle, EstimatedGasPrice)>,
     ) {
-        self.0
-            .lock()
-            .unwrap()
-            .get_sub_pool_mut(strategy)
-            .insert((sender, nonce), transactions);
+        self.pools.lock().unwrap()[self.index].insert((sender, nonce), transactions);
     }
 }
 
@@ -109,7 +91,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub submitted_transactions: WrappedTxPool,
+    pub submitted_transactions: GlobalTxPool,
 }
 
 pub struct StrategyArgs {
@@ -399,24 +381,23 @@ mod tests {
     }
 
     #[test]
-    fn wrapped_tx_pool() {
-        let strategy = Strategy::Eden;
+    fn global_tx_pool() {
         let sender = Address::default();
         let nonce = U256::zero();
         let transactions: Vec<(TransactionHandle, EstimatedGasPrice)> = Default::default();
 
-        let submitted_transactions = WrappedTxPool::default();
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool();
 
-        submitted_transactions.update(strategy, sender, nonce, transactions);
-        let entry = submitted_transactions.get(strategy, sender, nonce);
+        submitted_transactions.update(sender, nonce, transactions);
+        let entry = submitted_transactions.get(sender, nonce);
         assert!(entry.is_some());
 
-        submitted_transactions.remove_older_than(strategy, 0.into());
-        let entry = submitted_transactions.get(strategy, sender, nonce);
+        submitted_transactions.remove_older_than(0.into());
+        let entry = submitted_transactions.get(sender, nonce);
         assert!(entry.is_some());
 
-        submitted_transactions.remove_older_than(strategy, 1.into());
-        let entry = submitted_transactions.get(strategy, sender, nonce);
+        submitted_transactions.remove_older_than(1.into());
+        let entry = submitted_transactions.get(sender, nonce);
         assert!(entry.is_none());
     }
 }
