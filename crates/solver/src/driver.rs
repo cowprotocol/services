@@ -17,7 +17,7 @@ use crate::{
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
@@ -278,7 +278,7 @@ impl Driver {
         &self,
         solver: Arc<dyn Solver>,
         settlement: &RatedSettlement,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
         access_list: Option<AccessList>,
     ) -> Result<bool> {
         // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
@@ -315,7 +315,7 @@ impl Driver {
         &self,
         errors: Vec<SettlementWithError>,
         current_block_during_liquidity_fetch: u64,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
     ) {
         let contract = self.settlement_contract.clone();
         let web3 = self.web3.clone();
@@ -384,7 +384,7 @@ impl Driver {
         &self,
         settlements: Vec<SettlementWithSolver>,
         prices: &ExternalPrices,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
     ) -> Result<(
         Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
         Vec<SettlementWithError>,

@@ -29,7 +29,7 @@ use ethcontract::{
     contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account, H160,
 };
 use futures::FutureExt;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::time::{Duration, Instant};
@@ -98,7 +98,7 @@ pub trait TransactionSubmitting: Send + Sync {
         web3: &Web3,
         address: &H160,
         nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>>;
+    ) -> Result<Option<GasPrice1559>>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
     /// Returns displayable name of the submitter. Used for logging and metrics collection.
@@ -132,24 +132,22 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         &self,
         gas_limit: f64,
         time_limit: Duration,
-    ) -> Result<EstimatedGasPrice> {
+    ) -> Result<GasPrice1559> {
         match self.inner.estimate_with_limits(gas_limit, time_limit).await {
-            Ok(mut gas_price) if gas_price.cap() <= self.gas_price_cap => {
+            Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
-                if let Some(ref mut eip1559) = gas_price.eip1559 {
-                    eip1559.max_priority_fee_per_gas +=
-                        self.max_additional_tip.unwrap_or_default().min(
-                            eip1559.max_fee_per_gas
-                                * self
-                                    .additional_tip_percentage_of_max_fee
-                                    .unwrap_or_default(),
-                        );
-                }
+                gas_price.max_priority_fee_per_gas +=
+                    self.max_additional_tip.unwrap_or_default().min(
+                        gas_price.max_fee_per_gas
+                            * self
+                                .additional_tip_percentage_of_max_fee
+                                .unwrap_or_default(),
+                    );
                 Ok(gas_price)
             }
             Ok(gas_price) => Err(anyhow!(
                 "gas station gas price {} is larger than cap {}",
-                gas_price.cap(),
+                gas_price.max_fee_per_gas,
                 self.gas_price_cap
             )),
             Err(err) => Err(err),
@@ -328,7 +326,7 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         nonce: U256,
         params: &SubmitterParams,
-        transactions: &mut Vec<(TransactionHandle, EstimatedGasPrice)>,
+        transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
@@ -434,8 +432,8 @@ impl<'a> Submitter<'a> {
                 .or(pending_gas_price.as_ref())
             {
                 let previous_gas_price = previous_gas_price.bump(1.125).ceil();
-                if gas_price.tip() < previous_gas_price.tip()
-                    || gas_price.cap() < previous_gas_price.cap()
+                if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
+                    || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
@@ -444,9 +442,9 @@ impl<'a> Submitter<'a> {
 
             tracing::debug!(
                 "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
-                gas_price.base_fee(),
-                gas_price.cap(),
-                gas_price.tip(),
+                gas_price.base_fee_per_gas,
+                gas_price.max_fee_per_gas,
+                gas_price.max_priority_fee_per_gas,
                 params.gas_estimate,
                 submitter_name,
             );
@@ -476,7 +474,7 @@ impl<'a> Submitter<'a> {
     async fn build_method(
         &self,
         settlement: Settlement,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
         gas_limit: f64,
     ) -> MethodBuilder<DynTransport, ()> {
@@ -518,7 +516,7 @@ impl<'a> Submitter<'a> {
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
     fn build_noop_transaction(
         &self,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
     ) -> TransactionBuilder<DynTransport> {
         TransactionBuilder::new(self.contract.raw_instance().web3())
@@ -533,7 +531,7 @@ impl<'a> Submitter<'a> {
     async fn cancel_transaction(
         &self,
         transaction: &TransactionHandle,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
     ) -> Result<TransactionHandle> {
         let cancel_handle = CancelHandle {
