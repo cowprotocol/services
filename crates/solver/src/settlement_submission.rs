@@ -74,7 +74,8 @@ impl WrappedTxPool {
             .cloned()
     }
 
-    pub fn remove_if(&self, strategy: Strategy, nonce: U256) {
+    /// Remove old transactions with too low nonce
+    pub fn remove_older_than(&self, strategy: Strategy, nonce: U256) {
         self.0
             .lock()
             .unwrap()
@@ -186,6 +187,7 @@ impl SolutionSubmitter {
                             gas_price_cap: self.gas_price_cap,
                             additional_tip_percentage_of_max_fee: Some(strategy_args.additional_tip_percentage_of_max_fee),
                             max_additional_tip: Some(strategy_args.max_additional_tip),
+                            pending_gas_price: None,
                         };
                         let submitter = Submitter::new(
                             &self.contract,
@@ -409,11 +411,11 @@ mod tests {
         let entry = submitted_transactions.get(strategy, sender, nonce);
         assert!(entry.is_some());
 
-        submitted_transactions.remove_if(strategy, 0.into());
+        submitted_transactions.remove_older_than(strategy, 0.into());
         let entry = submitted_transactions.get(strategy, sender, nonce);
         assert!(entry.is_some());
 
-        submitted_transactions.remove_if(strategy, 1.into());
+        submitted_transactions.remove_older_than(strategy, 1.into());
         let entry = submitted_transactions.get(strategy, sender, nonce);
         assert!(entry.is_none());
     }
