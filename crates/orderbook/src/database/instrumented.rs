@@ -129,6 +129,21 @@ impl OrderStoring for Instrumented {
         self.inner.cancel_order(order_uid, now).await
     }
 
+    async fn replace_order(
+        &self,
+        old_order: &model::order::OrderUid,
+        new_order: &model::order::Order,
+        new_fee: FeeParameters,
+    ) -> anyhow::Result<(), super::orders::InsertionError> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("replace_order")
+            .start_timer();
+        self.inner
+            .replace_order(old_order, new_order, new_fee)
+            .await
+    }
+
     async fn orders(
         &self,
         filter: &super::orders::OrderFilter,

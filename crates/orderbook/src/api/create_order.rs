@@ -19,10 +19,6 @@ impl IntoWarpReply for AddOrderError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::OrderValidation(err) => err.into_warp_reply(),
-            Self::UnsupportedSignature => with_status(
-                super::error("UnsupportedSignature", "signing scheme is not supported"),
-                StatusCode::BAD_REQUEST,
-            ),
             Self::DuplicatedOrder => with_status(
                 super::error("DuplicatedOrder", "order already exists"),
                 StatusCode::BAD_REQUEST,

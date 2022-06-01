@@ -15,6 +15,7 @@ mod get_user_orders;
 pub mod order_validation;
 pub mod post_quote;
 pub mod post_solver_competition;
+mod replace_order;
 
 use crate::solver_competition::SolverCompetition;
 use crate::{
@@ -69,6 +70,9 @@ pub fn handle_all_routes(
     let cancel_order = cancel_order::cancel_order(orderbook.clone())
         .map(|result| (result, "v1/cancel_order"))
         .boxed();
+    let replace_order = replace_order::filter(orderbook.clone())
+        .map(|result| (result, "v1/replace_order"))
+        .boxed();
     let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone())
         .map(|result| (result, "v1/get_amount_estimate"))
         .boxed();
@@ -111,6 +115,8 @@ pub fn handle_all_routes(
                 .or(get_trades)
                 .unify()
                 .or(cancel_order)
+                .unify()
+                .or(replace_order)
                 .unify()
                 .or(get_amount_estimate)
                 .unify()
