@@ -66,6 +66,7 @@ impl SubTxPoolRef {
             .cloned()
     }
 
+    /// Remove old transactions with too low nonce
     pub fn remove_older_than(&self, nonce: U256) {
         self.pools.lock().unwrap()[self.index].retain(|key, _| key.1 >= nonce);
     }
