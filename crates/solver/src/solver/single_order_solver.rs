@@ -62,7 +62,7 @@ impl<I: SingleOrderSolving> Solver for SingleOrderSolver<I> {
                         tracing::debug!(
                             "Solver {} can not find a solution for the order:{:?}",
                             name,
-                            order.clone()
+                            order
                         );
                     }
                     Ok(settlement) => {
