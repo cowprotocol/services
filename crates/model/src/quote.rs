@@ -6,7 +6,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -28,9 +28,15 @@ pub struct OrderQuoteRequest {
     pub from: H160,
     pub sell_token: H160,
     pub buy_token: H160,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub receiver: Option<H160>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
+    #[serde(
+        default,
+        deserialize_with = "deserialize_non_null",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub valid_to: Option<u32>,
     #[serde(default)]
     pub app_data: AppId,
@@ -44,6 +50,14 @@ pub struct OrderQuoteRequest {
     pub signing_scheme: SigningScheme,
     #[serde(default)]
     pub price_quality: PriceQuality,
+}
+
+fn deserialize_non_null<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: Deserializer<'de>,
+{
+    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -123,5 +137,50 @@ impl OrderQuoteRequest {
             side,
             ..Default::default()
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn serialize_defaults() {
+        assert_eq!(
+            json!(OrderQuoteRequest::default()),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000000",
+                "buyToken": "0x0000000000000000000000000000000000000000",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+                "partiallyFillable": false,
+                "sellTokenBalance": "erc20",
+                "buyTokenBalance": "erc20",
+                "signingScheme": "eip712",
+                "priceQuality": "optimal",
+            })
+        );
+    }
+
+    #[test]
+    fn deserialize_denies_null_valid_to() {
+        assert!(serde_json::from_value::<OrderQuoteRequest>(json!({
+            "from": "0x0000000000000000000000000000000000000000",
+            "sellToken": "0x0000000000000000000000000000000000000000",
+            "buyToken": "0x0000000000000000000000000000000000000000",
+            "kind": "buy",
+            "buyAmountAfterFee": "1",
+            "validTo": null,
+            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
+            "partiallyFillable": false,
+            "sellTokenBalance": "erc20",
+            "buyTokenBalance": "erc20",
+            "signingScheme": "eip712",
+            "priceQuality": "optimal",
+        }))
+        .is_err());
     }
 }

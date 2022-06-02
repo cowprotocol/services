@@ -1089,9 +1089,6 @@ components:
           required:
             - sellToken
             - buyToken
-            - validTo
-            - appData
-            - partiallyFillable
             - from
     OrderQuoteResponse:
       description: |
