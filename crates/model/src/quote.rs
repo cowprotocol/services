@@ -2,11 +2,11 @@ use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
-    u256_decimal,
+    time, u256_decimal,
 };
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -32,12 +32,8 @@ pub struct OrderQuoteRequest {
     pub receiver: Option<H160>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
-    #[serde(
-        default,
-        deserialize_with = "deserialize_non_null",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub valid_to: Option<u32>,
+    #[serde(default, flatten)]
+    pub validity: Validity,
     #[serde(default)]
     pub app_data: AppId,
     #[serde(default)]
@@ -50,14 +46,6 @@ pub struct OrderQuoteRequest {
     pub signing_scheme: SigningScheme,
     #[serde(default)]
     pub price_quality: PriceQuality,
-}
-
-fn deserialize_non_null<'de, T, D>(deserializer: D) -> Result<Option<T>, D::Error>
-where
-    T: Deserialize<'de>,
-    D: Deserializer<'de>,
-{
-    T::deserialize(deserializer).map(Some)
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -79,6 +67,32 @@ impl Default for OrderQuoteSide {
     fn default() -> Self {
         Self::Buy {
             buy_amount_after_fee: U256::one(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(untagged)]
+pub enum Validity {
+    #[serde(rename_all = "camelCase")]
+    To { valid_to: u32 },
+    #[serde(rename_all = "camelCase")]
+    For { valid_for: u32 },
+}
+
+impl Default for Validity {
+    fn default() -> Self {
+        // use the default CowSwap validity of 30 minutes.
+        Self::For { valid_for: 30 * 60 }
+    }
+}
+
+impl Validity {
+    /// Returns a materialized valid-to value for the specified validity.
+    pub fn actual_valid_to(self) -> u32 {
+        match self {
+            Validity::To { valid_to } => valid_to,
+            Validity::For { valid_for } => time::now_in_epoch_seconds().saturating_add(valid_for),
         }
     }
 }
@@ -155,6 +169,7 @@ mod tests {
                 "buyToken": "0x0000000000000000000000000000000000000000",
                 "kind": "buy",
                 "buyAmountAfterFee": "1",
+                "validFor": 1800,
                 "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
                 "partiallyFillable": false,
                 "sellTokenBalance": "erc20",
@@ -163,24 +178,5 @@ mod tests {
                 "priceQuality": "optimal",
             })
         );
-    }
-
-    #[test]
-    fn deserialize_denies_null_valid_to() {
-        assert!(serde_json::from_value::<OrderQuoteRequest>(json!({
-            "from": "0x0000000000000000000000000000000000000000",
-            "sellToken": "0x0000000000000000000000000000000000000000",
-            "buyToken": "0x0000000000000000000000000000000000000000",
-            "kind": "buy",
-            "buyAmountAfterFee": "1",
-            "validTo": null,
-            "appData": "0x0000000000000000000000000000000000000000000000000000000000000000",
-            "partiallyFillable": false,
-            "sellTokenBalance": "erc20",
-            "buyTokenBalance": "erc20",
-            "signingScheme": "eip712",
-            "priceQuality": "optimal",
-        }))
-        .is_err());
     }
 }

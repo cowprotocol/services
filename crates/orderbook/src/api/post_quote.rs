@@ -15,7 +15,7 @@ use model::{
     quote::{
         OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount,
     },
-    time, u256_decimal,
+    u256_decimal,
 };
 use serde::Serialize;
 use shared::price_estimation::{self, single_estimate, PriceEstimating, PriceEstimationError};
@@ -28,9 +28,6 @@ use std::{
 };
 use warp::{hyper::StatusCode, Filter, Rejection};
 
-// Use the default validity from the CowSwap UI of 30 minutes.
-const DEFAULT_VALIDITY: u32 = 30 * 60;
-
 impl From<&OrderQuoteRequest> for PreOrderData {
     fn from(quote_request: &OrderQuoteRequest) -> Self {
         let owner = quote_request.from;
@@ -39,9 +36,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             sell_token: quote_request.sell_token,
             buy_token: quote_request.buy_token,
             receiver: quote_request.receiver.unwrap_or(owner),
-            valid_to: quote_request
-                .valid_to
-                .unwrap_or_else(|| time::now_in_epoch_seconds() + DEFAULT_VALIDITY),
+            valid_to: quote_request.validity.actual_valid_to(),
             partially_fillable: quote_request.partially_fillable,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
@@ -358,7 +353,9 @@ mod tests {
     use model::{
         app_id::AppId,
         order::{BuyTokenDestination, SellTokenSource},
+        quote::Validity,
         signature::SigningScheme,
+        time,
     };
     use serde_json::json;
     use shared::price_estimation::mocks::FakePriceEstimator;
@@ -389,7 +386,9 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee { value: 1337.into() },
                 },
-                valid_to: Some(0x12345678),
+                validity: Validity::To {
+                    valid_to: 0x12345678
+                },
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -409,7 +408,7 @@ mod tests {
                 "buyToken": "0x0303030303030303030303030303030303030303",
                 "kind": "sell",
                 "sellAmountBeforeFee": "1337",
-                "validTo": 0x12345678,
+                "validFor": 1000,
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "sellTokenBalance": "external",
@@ -424,7 +423,7 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee { value: 1337.into() },
                 },
-                valid_to: Some(0x12345678),
+                validity: Validity::For { valid_for: 1000 },
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -457,7 +456,6 @@ mod tests {
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: U256::from(1337),
                 },
-                valid_to: Some(0x12345678),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 ..Default::default()
@@ -696,7 +694,7 @@ mod tests {
     #[test]
     fn pre_order_data_from_quote_request() {
         let quote_request = OrderQuoteRequest {
-            valid_to: Some(0),
+            validity: Validity::To { valid_to: 0 },
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -705,9 +703,9 @@ mod tests {
     }
 
     #[test]
-    fn pre_order_data_from_quote_request_without_validity_sane_default() {
+    fn pre_order_data_from_quote_request_with_valid_for() {
         let quote_request = OrderQuoteRequest {
-            valid_to: None,
+            validity: Validity::For { valid_for: 100 },
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -715,7 +713,7 @@ mod tests {
         let valid_duration = result.valid_to - time::now_in_epoch_seconds();
 
         // use time-range to make sure test isn't flaky.
-        assert!((DEFAULT_VALIDITY - 5..=DEFAULT_VALIDITY + 5).contains(&valid_duration));
+        assert!((95..=105).contains(&valid_duration));
     }
 
     #[tokio::test]
@@ -726,7 +724,7 @@ mod tests {
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: 2.into(),
             },
-            valid_to: Some(0),
+            validity: Validity::To { valid_to: 0 },
             ..Default::default()
         };
 
