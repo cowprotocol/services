@@ -216,6 +216,7 @@ struct Arguments {
     eden_api_url: Url,
 
     /// The API endpoint of the Flashbots network for transaction submission.
+    /// Multiple values could be defined for different Flashbots endpoints (Flashbots Protect and Flashbots fast).
     #[clap(
         long,
         env,
