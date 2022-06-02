@@ -419,6 +419,7 @@ mod tests {
                 Arc::new(crate::sources::balancer_v2::pool_fetching::NoopBalancerPoolCacheMetrics),
                 client.clone(),
                 &contracts,
+                Default::default(),
             )
             .await
             .expect("failed to create Balancer pool fetcher"),
