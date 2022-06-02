@@ -1045,10 +1045,26 @@ components:
           required:
             - kind
             - buyAmountAfterFee
+    OrderQuoteValidity:
+      description: The validity for the order
+      oneOf:
+        - type: object
+          description: Absolute validity
+          properties:
+            validTo:
+              description: Unix timestamp until the order is valid. uint32.
+              type: integer
+        - type: object
+          description: Relative validity
+          properties:
+            validFor:
+              description: Number of seconds that the order should be valid for. uint32.
+              type: integer
     OrderQuoteRequest:
       description: Request fee and price quote.
       allOf:
         - $ref: "#/components/schemas/OrderQuoteSide"
+        - $ref: "#/components/schemas/OrderQuoteValidity"
         - type: object
           properties:
             sellToken:
@@ -1063,9 +1079,6 @@ components:
                 owner (i.e. the order signer).
               $ref: "#/components/schemas/Address"
               nullable: true
-            validTo:
-              description: Unix timestamp until the order is valid. uint32.
-              type: integer
             appData:
               description: |
                 Arbitrary application specific data that can be added to an order. This can
