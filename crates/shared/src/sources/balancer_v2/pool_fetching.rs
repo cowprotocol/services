@@ -136,6 +136,11 @@ pub trait BalancerPoolFetching: Send + Sync {
 
 pub struct BalancerPoolFetcher {
     fetcher: Arc<dyn InternalPoolFetching>,
+    // We observed some balancer pools like https://app.balancer.fi/#/pool/0x072f14b85add63488ddad88f855fda4a99d6ac9b000200000000000000000027
+    // being problematic because their token balance becomes out of sync leading to simulation
+    // failures.
+    // https://forum.balancer.fi/t/medium-severity-bug-found/3161
+    pool_id_deny_list: Vec<H256>,
 }
 
 /// An enum containing all supported Balancer factory types.
@@ -185,6 +190,7 @@ impl BalancerPoolFetcher {
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
         contracts: &BalancerContracts,
+        deny_listed_pool_ids: Vec<H256>,
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
@@ -195,7 +201,10 @@ impl BalancerPoolFetcher {
             metrics,
         )?);
 
-        Ok(Self { fetcher })
+        Ok(Self {
+            fetcher,
+            pool_id_deny_list: deny_listed_pool_ids,
+        })
     }
 
     async fn fetch_pools(
@@ -203,7 +212,10 @@ impl BalancerPoolFetcher {
         token_pairs: HashSet<TokenPair>,
         at_block: Block,
     ) -> Result<Vec<Pool>> {
-        let pool_ids = self.fetcher.pool_ids_for_token_pairs(token_pairs).await;
+        let mut pool_ids = self.fetcher.pool_ids_for_token_pairs(token_pairs).await;
+        for id in &self.pool_id_deny_list {
+            pool_ids.remove(id);
+        }
         let pools = self.fetcher.pools_by_id(pool_ids, at_block).await?;
 
         Ok(pools)
@@ -349,13 +361,15 @@ fn pool_address_from_id(pool_id: H256) -> H160 {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::{
         sources::balancer_v2::{
             graph_api::{BalancerSubgraphClient, PoolData, PoolType},
             pool_init::EmptyPoolInitializer,
         },
-        token_info::TokenInfoFetcher,
+        token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         transport,
     };
     use hex_literal::hex;
@@ -368,6 +382,54 @@ mod tests {
             ))),
             addr!("36128d5436d2d70cab39c9af9cce146c38554ff0"),
         );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn balancer_pool_fetcher_print() {
+        let transport = transport::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
+        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let token_info_fetcher =
+            Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
+                web3: web3.clone(),
+            })));
+        let block_stream =
+            crate::current_block::current_block_stream(web3.clone(), Duration::from_secs(1000))
+                .await
+                .unwrap();
+        let deny_list = vec![H256(hex_literal::hex!(
+            "072f14b85add63488ddad88f855fda4a99d6ac9b000200000000000000000027"
+        ))];
+        // let deny_list = vec![];
+        let pool_fetcher = BalancerPoolFetcher::new(
+            chain_id,
+            token_info_fetcher,
+            BalancerFactoryKind::value_variants(),
+            Default::default(),
+            block_stream,
+            Arc::new(NoopBalancerPoolCacheMetrics),
+            Default::default(),
+            &contracts,
+            deny_list,
+        )
+        .await
+        .unwrap();
+        pool_fetcher.run_maintenance().await.unwrap();
+        let pair = TokenPair::new(
+            addr!("C02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"),
+            addr!("C011a73ee8576Fb46F5E1c5751cA3B9Fe0af2a6F"),
+        )
+        .unwrap();
+        let fetched_pools_by_id = pool_fetcher
+            .fetch_pools([pair].into_iter().collect(), Block::Recent)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|pool| (pool.id, pool))
+            .collect::<HashMap<_, _>>();
+        dbg!(fetched_pools_by_id.len());
     }
 
     #[tokio::test]
@@ -394,6 +456,7 @@ mod tests {
                 .await
                 .unwrap(),
             ),
+            pool_id_deny_list: Default::default(),
         };
 
         // index all the pools.
