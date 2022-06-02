@@ -12,13 +12,15 @@ use std::sync::Arc;
 pub struct ZeroExPriceEstimator {
     api: Arc<dyn ZeroExApi>,
     sharing: RequestSharing<Query, BoxFuture<'static, Result<SwapResponse, PriceEstimationError>>>,
+    excluded_sources: Vec<String>,
 }
 
 impl ZeroExPriceEstimator {
-    pub fn new(api: Arc<dyn ZeroExApi>) -> Self {
+    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>) -> Self {
         Self {
             api,
             sharing: Default::default(),
+            excluded_sources,
         }
     }
 
@@ -34,6 +36,7 @@ impl ZeroExPriceEstimator {
             sell_amount,
             buy_amount,
             slippage_percentage: Default::default(),
+            excluded_sources: self.excluded_sources.clone(),
         };
         let api = self.api.clone();
         let swap_future = async move {
@@ -108,6 +111,7 @@ mod tests {
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
             sharing: Default::default(),
+            excluded_sources: Default::default(),
         };
 
         let est = estimator
@@ -154,6 +158,7 @@ mod tests {
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(zeroex_api),
             sharing: Default::default(),
+            excluded_sources: Default::default(),
         };
 
         let est = estimator
@@ -179,6 +184,7 @@ mod tests {
         let estimator = ZeroExPriceEstimator {
             api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
             sharing: Default::default(),
+            excluded_sources: Default::default(),
         };
 
         let result = estimator

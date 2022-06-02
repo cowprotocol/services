@@ -140,6 +140,10 @@ pub struct Arguments {
     /// The 1Inch REST API URL to use.
     #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
     pub one_inch_url: Url,
+
+    /// The list of disabled 0x sources.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub disabled_zeroex_sources: Vec<String>,
 }
 
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
