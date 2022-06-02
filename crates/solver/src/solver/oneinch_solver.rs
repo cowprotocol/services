@@ -114,6 +114,10 @@ impl OneInchSolver {
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = match self.client.get_swap(query).await? {
             RestResponse::Ok(swap) => swap,
+            RestResponse::Err(error) if error.description == "insufficient liquidity" => {
+                // This means the order cannot get matched which shouldn't be treated as an error.
+                return Ok(None);
+            }
             RestResponse::Err(error) => return Err((error).into()),
         };
 
