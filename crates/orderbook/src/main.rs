@@ -545,7 +545,10 @@ async fn main() {
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
             )),
-            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(zeroex_api.clone())),
+            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
+                zeroex_api.clone(),
+                args.shared.disabled_zeroex_sources.clone(),
+            )),
             PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
                 Arc::new(DefaultHttpSolverApi {
                     name: "quasimodo-price-estimator".to_string(),

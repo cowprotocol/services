@@ -33,7 +33,7 @@ fn addr2str(addr: H160) -> String {
 ///
 /// These parameters are currently incomplete, and missing parameters can be
 /// added incrementally as needed.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct SwapQuery {
     /// Contract address of a token to sell.
     pub sell_token: H160,
@@ -45,6 +45,8 @@ pub struct SwapQuery {
     pub buy_amount: Option<U256>,
     /// Limit of price slippage you are willing to accept.
     pub slippage_percentage: Slippage,
+    /// List of sources to exclude.
+    pub excluded_sources: Vec<String>,
 }
 
 impl SwapQuery {
@@ -66,6 +68,10 @@ impl SwapQuery {
         if let Some(amount) = self.buy_amount {
             url.query_pairs_mut()
                 .append_pair("buyAmount", &amount.to_string());
+        }
+        if !self.excluded_sources.is_empty() {
+            url.query_pairs_mut()
+                .append_pair("excludedSources", &self.excluded_sources.join(","));
         }
         url.query_pairs_mut()
             .append_pair("affiliateAddress", AFFILIATE_ADDRESS);
@@ -472,6 +478,7 @@ mod tests {
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
+            excluded_sources: Vec::new(),
         };
 
         let price_response = zeroex_client.get_swap(swap_query).await;
@@ -491,14 +498,42 @@ mod tests {
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
+            excluded_sources: Vec::new(),
         };
 
-        let price_response = zeroex_client.get_price(swap_query).await;
+        let price_response = zeroex_client.get_price(swap_query.clone()).await;
         dbg!(&price_response);
         assert!(price_response.is_ok());
         let swap_response = zeroex_client.get_swap(swap_query).await;
         dbg!(&swap_response);
         assert!(swap_response.is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn excluded_sources() {
+        let zeroex = DefaultZeroExApi::default();
+        let query = SwapQuery {
+            sell_token: testlib::tokens::WETH,
+            buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
+            sell_amount: Some(U256::from_f64_lossy(1000e18)),
+            buy_amount: None,
+            slippage_percentage: Slippage(0.1_f64),
+            excluded_sources: Vec::new(),
+        };
+
+        let swap = zeroex.get_swap(query.clone()).await;
+        dbg!(&swap);
+        assert!(swap.is_ok());
+
+        let swap = zeroex
+            .get_swap(SwapQuery {
+                excluded_sources: vec!["Balancer_V2".to_string()],
+                ..query
+            })
+            .await;
+        dbg!(&swap);
+        assert!(swap.is_ok());
     }
 
     #[tokio::test]
