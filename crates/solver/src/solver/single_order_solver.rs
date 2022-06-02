@@ -56,15 +56,6 @@ impl<I: SingleOrderSolving> Solver for SingleOrderSolver<I> {
         let settle = async {
             while let Some(order) = orders.pop_front() {
                 match self.inner.try_settle_order(order.clone(), &auction).await {
-                    Ok(None) => {
-                        let name = self.inner.name();
-                        self.metrics.single_order_solver_failed(name);
-                        tracing::debug!(
-                            "Solver {} can not find a solution for the order:{:?}",
-                            name,
-                            order
-                        );
-                    }
                     Ok(settlement) => {
                         self.metrics
                             .single_order_solver_succeeded(self.inner.name());
