@@ -2,6 +2,7 @@
 
 use crate::{
     app_id::AppId,
+    quote::QuoteId,
     signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
@@ -283,10 +284,12 @@ pub struct OrderCreation {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OrderCreationPayload {
     #[serde(flatten)]
     pub order_creation: OrderCreation,
     pub from: Option<H160>,
+    pub quote_id: Option<QuoteId>,
 }
 
 impl Default for OrderCreation {

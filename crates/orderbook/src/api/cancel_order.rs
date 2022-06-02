@@ -1,15 +1,15 @@
-use crate::api::{convert_json_response, extract_payload, IntoWarpReply};
-use crate::orderbook::{OrderCancellationError, Orderbook};
+use crate::{
+    api::{convert_json_response, extract_payload, IntoWarpReply},
+    orderbook::{OrderCancellationError, Orderbook},
+};
 use anyhow::Result;
-use model::signature::EcdsaSignature;
 use model::{
     order::{OrderCancellation, OrderUid},
-    signature::EcdsaSigningScheme,
+    signature::{EcdsaSignature, EcdsaSigningScheme},
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, sync::Arc};
-use warp::reply::with_status;
-use warp::{hyper::StatusCode, Filter, Rejection};
+use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
 #[derive(Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

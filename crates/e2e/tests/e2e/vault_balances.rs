@@ -113,7 +113,7 @@ async fn vault_balances(web3: Web3) {
         .with_fee_amount(to_wei(1))
         .with_buy_token(contracts.weth.address())
         .with_buy_amount(to_wei(8))
-        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
+        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
             &contracts.domain_separator,

@@ -3,9 +3,9 @@ use crate::{
     {database::orders::OrderFilter, orderbook::Orderbook},
 };
 use anyhow::{Context, Result};
+use model::time::now_in_epoch_seconds;
 use primitive_types::H160;
 use serde::Deserialize;
-use shared::time::now_in_epoch_seconds;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection};
 

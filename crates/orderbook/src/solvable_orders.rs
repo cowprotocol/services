@@ -5,11 +5,11 @@ use crate::{
 };
 use anyhow::{Context as _, Result};
 use futures::StreamExt;
-use model::{auction::Auction, order::Order};
+use model::{auction::Auction, order::Order, time::now_in_epoch_seconds};
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
-    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
+    price_estimation::native::NativePriceEstimating,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},

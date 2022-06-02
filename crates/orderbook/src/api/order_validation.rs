@@ -66,6 +66,7 @@ pub enum PartialValidationError {
     UnsupportedBuyTokenDestination(BuyTokenDestination),
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
+    UnsupportedSignature,
     Other(anyhow::Error),
 }
 
@@ -121,6 +122,10 @@ impl IntoWarpReply for PartialValidationError {
                     "SameBuyAndSellToken",
                     "Buy token is the same as the sell token.",
                 ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedSignature => with_status(
+                super::error("UnsupportedSignature", "signing scheme is not supported"),
                 StatusCode::BAD_REQUEST,
             ),
             Self::Other(err) => with_status(
@@ -222,6 +227,7 @@ pub struct OrderValidator {
     liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
     max_order_validity_period: Duration,
+    enable_presign_orders: bool,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
@@ -281,6 +287,7 @@ impl OrderValidator {
         liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
         max_order_validity_period: Duration,
+        enable_presign_orders: bool,
         fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
@@ -292,6 +299,7 @@ impl OrderValidator {
             liquidity_order_owners,
             min_order_validity_period,
             max_order_validity_period,
+            enable_presign_orders,
             fee_validator,
             bad_token_detector,
             balance_fetcher,
@@ -302,12 +310,14 @@ impl OrderValidator {
 #[async_trait::async_trait]
 impl OrderValidating for OrderValidator {
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError> {
-        if order.partially_fillable && !order.is_liquidity_order {
-            return Err(PartialValidationError::UnsupportedOrderType);
-        }
         if self.banned_users.contains(&order.owner) {
             return Err(PartialValidationError::Forbidden);
         }
+
+        if order.partially_fillable && !order.is_liquidity_order {
+            return Err(PartialValidationError::UnsupportedOrderType);
+        }
+
         if order.buy_token_balance != BuyTokenDestination::Erc20 {
             return Err(PartialValidationError::UnsupportedBuyTokenDestination(
                 order.buy_token_balance,
@@ -322,7 +332,15 @@ impl OrderValidating for OrderValidator {
             ));
         }
 
-        let now = shared::time::now_in_epoch_seconds();
+        // Eventually we will support all Signature types and can remove this.
+        if !matches!(
+            (order.signing_scheme, self.enable_presign_orders),
+            (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
+        ) {
+            return Err(PartialValidationError::UnsupportedSignature);
+        }
+
+        let now = model::time::now_in_epoch_seconds();
         if order.valid_to < now + self.min_order_validity_period.as_secs() as u32 {
             return Err(PartialValidationError::InsufficientValidTo);
         }
@@ -584,7 +602,7 @@ mod tests {
         let max_order_validity_period = Duration::from_secs(100);
         let banned_users = hashset![H160::from_low_u64_be(1)];
         let legit_valid_to =
-            shared::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
+            model::time::now_in_epoch_seconds() + min_order_validity_period.as_secs() as u32 + 2;
         code_fetcher
             .expect_code_size()
             .times(1)
@@ -596,6 +614,7 @@ mod tests {
             hashset!(),
             min_order_validity_period,
             max_order_validity_period,
+            false,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -689,6 +708,16 @@ mod tests {
                 .await,
             Err(PartialValidationError::InvalidNativeSellToken)
         ));
+        assert!(matches!(
+            validator
+                .partial_validate(PreOrderData {
+                    valid_to: legit_valid_to,
+                    signing_scheme: SigningScheme::PreSign,
+                    ..Default::default()
+                })
+                .await,
+            Err(PartialValidationError::UnsupportedSignature)
+        ));
 
         let mut code_fetcher = Box::new(MockCodeFetching::new());
         let _err = anyhow!("Failed to fetch Code Size!");
@@ -703,6 +732,7 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            false,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
@@ -732,12 +762,13 @@ mod tests {
             hashset!(liquidity_order_owner),
             min_order_validity_period,
             max_order_validity_period,
+            true,
             Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         let order = || PreOrderData {
-            valid_to: shared::time::now_in_epoch_seconds()
+            valid_to: model::time::now_in_epoch_seconds()
                 + min_order_validity_period.as_secs() as u32
                 + 2,
             sell_token: H160::from_low_u64_be(1),
@@ -787,12 +818,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -827,12 +859,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(0),
@@ -867,12 +900,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -911,12 +945,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -953,12 +988,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -993,12 +1029,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -1034,12 +1071,13 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
+            true,
             Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: shared::time::now_in_epoch_seconds() + 2,
+            valid_to: model::time::now_in_epoch_seconds() + 2,
             sell_token: H160::from_low_u64_be(1),
             buy_token: H160::from_low_u64_be(2),
             buy_amount: U256::from(1),
@@ -1076,6 +1114,7 @@ mod tests {
                     hashset!(),
                     Duration::from_secs(1),
                     Duration::MAX,
+                    true,
                     Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
                     Arc::new(balance_fetcher),
