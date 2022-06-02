@@ -2,7 +2,7 @@ use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
-    time, u256_decimal,
+    u256_decimal,
 };
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
@@ -31,8 +31,10 @@ pub struct OrderQuoteRequest {
     pub receiver: Option<H160>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
-    pub valid_to: u32,
+    pub valid_to: Option<u32>,
+    #[serde(default)]
     pub app_data: AppId,
+    #[serde(default)]
     pub partially_fillable: bool,
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
@@ -119,10 +121,6 @@ impl OrderQuoteRequest {
             sell_token,
             buy_token,
             side,
-            // Use the default validity from the CowSwap UI of 20 minutes. This
-            // prevents any weird issues that we may encounter in some of our
-            // legacy routes if we futher restrict "good" values.
-            valid_to: time::now_in_epoch_seconds() + 20 * 60,
             ..Default::default()
         }
     }
