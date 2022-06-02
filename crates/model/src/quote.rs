@@ -6,7 +6,7 @@ use crate::{
 };
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
-use serde::{Deserialize, Serialize};
+use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -32,7 +32,7 @@ pub struct OrderQuoteRequest {
     pub receiver: Option<H160>,
     #[serde(flatten)]
     pub side: OrderQuoteSide,
-    #[serde(default, flatten)]
+    #[serde(flatten)]
     pub validity: Validity,
     #[serde(default)]
     pub app_data: AppId,
@@ -71,29 +71,68 @@ impl Default for OrderQuoteSide {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(untagged)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Validity {
-    #[serde(rename_all = "camelCase")]
-    To { valid_to: u32 },
-    #[serde(rename_all = "camelCase")]
-    For { valid_for: u32 },
-}
-
-impl Default for Validity {
-    fn default() -> Self {
-        // use the default CowSwap validity of 30 minutes.
-        Self::For { valid_for: 30 * 60 }
-    }
+    To(u32),
+    For(u32),
 }
 
 impl Validity {
     /// Returns a materialized valid-to value for the specified validity.
     pub fn actual_valid_to(self) -> u32 {
         match self {
-            Validity::To { valid_to } => valid_to,
-            Validity::For { valid_for } => time::now_in_epoch_seconds().saturating_add(valid_for),
+            Validity::To(valid_to) => valid_to,
+            Validity::For(valid_for) => time::now_in_epoch_seconds().saturating_add(valid_for),
         }
+    }
+}
+
+impl Default for Validity {
+    fn default() -> Self {
+        // use the default CowSwap validity of 30 minutes.
+        Self::For(30 * 60)
+    }
+}
+
+/// Helper struct for `Validity` serialization.
+
+impl<'de> Deserialize<'de> for Validity {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(rename = "validity", rename_all = "camelCase")]
+        struct Helper {
+            valid_to: Option<u32>,
+            valid_for: Option<u32>,
+        }
+
+        let data = Helper::deserialize(deserializer)?;
+        match (data.valid_to, data.valid_for) {
+            (Some(valid_to), None) => Ok(Self::To(valid_to)),
+            (None, Some(valid_for)) => Ok(Self::For(valid_for)),
+            (None, None) => Ok(Self::default()),
+            _ => Err(de::Error::custom(
+                "must specify at most one of `validTo` or `validFor`",
+            )),
+        }
+    }
+}
+
+impl Serialize for Validity {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let (field, value) = match self {
+            Self::To(valid_to) => ("validTo", valid_to),
+            Self::For(valid_for) => ("validFor", valid_for),
+        };
+
+        let mut ser = serializer.serialize_struct("Validity", 1)?;
+        ser.serialize_field(field, value)?;
+        ser.end()
     }
 }
 

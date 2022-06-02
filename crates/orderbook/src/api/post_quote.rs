@@ -386,9 +386,7 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee { value: 1337.into() },
                 },
-                validity: Validity::To {
-                    valid_to: 0x12345678
-                },
+                validity: Validity::To(0x12345678),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -423,7 +421,7 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee { value: 1337.into() },
                 },
-                validity: Validity::For { valid_for: 1000 },
+                validity: Validity::For(1000),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -456,6 +454,7 @@ mod tests {
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: U256::from(1337),
                 },
+                validity: Validity::To(0x12345678),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 ..Default::default()
@@ -694,7 +693,7 @@ mod tests {
     #[test]
     fn pre_order_data_from_quote_request() {
         let quote_request = OrderQuoteRequest {
-            validity: Validity::To { valid_to: 0 },
+            validity: Validity::To(0),
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -705,7 +704,7 @@ mod tests {
     #[test]
     fn pre_order_data_from_quote_request_with_valid_for() {
         let quote_request = OrderQuoteRequest {
-            validity: Validity::For { valid_for: 100 },
+            validity: Validity::For(100),
             ..Default::default()
         };
         let result = PreOrderData::from(&quote_request);
@@ -724,7 +723,7 @@ mod tests {
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: 2.into(),
             },
-            validity: Validity::To { valid_to: 0 },
+            validity: Validity::To(0),
             ..Default::default()
         };
 
