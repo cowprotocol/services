@@ -428,6 +428,7 @@ async fn main() {
                     metrics.clone(),
                     client.clone(),
                     &contracts,
+                    args.shared.balancer_pool_deny_list,
                 )
                 .await
                 .expect("failed to create Balancer pool fetcher"),
