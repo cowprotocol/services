@@ -216,8 +216,13 @@ struct Arguments {
     eden_api_url: Url,
 
     /// The API endpoint of the Flashbots network for transaction submission.
-    #[clap(long, env, default_value = "https://rpc.flashbots.net")]
-    flashbots_api_url: Url,
+    #[clap(
+        long,
+        env,
+        use_value_delimiter = true,
+        default_value = "https://rpc.flashbots.net"
+    )]
+    flashbots_api_url: Vec<Url>,
 
     /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[clap(
@@ -559,51 +564,58 @@ async fn main() {
             "network id of custom node doesn't match main node"
         );
     }
-    let transaction_strategies = args
-        .transaction_strategy
-        .iter()
-        .map(|strategy| match strategy {
+    let mut transaction_strategies = vec![];
+    for strategy in args.transaction_strategy {
+        match strategy {
             TransactionStrategyArg::PublicMempool => {
-                TransactionStrategy::CustomNodes(StrategyArgs {
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(
                         vec![web3.clone()],
                         args.pending_transaction_config,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                })
+                }))
             }
-            TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
-                submit_api: Box::new(
-                    EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
-                ),
-                max_additional_tip: args.max_additional_eden_tip,
-                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-            }),
-            TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
-                submit_api: Box::new(
-                    FlashbotsApi::new(client.clone(), args.flashbots_api_url.clone()).unwrap(),
-                ),
-                max_additional_tip: args.max_additional_flashbot_tip,
-                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-            }),
+            TransactionStrategyArg::Eden => {
+                transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
+                    submit_api: Box::new(
+                        EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
+                    ),
+                    max_additional_tip: args.max_additional_eden_tip,
+                    additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                }))
+            }
+            TransactionStrategyArg::Flashbots => {
+                for flashbots_url in args.flashbots_api_url.clone() {
+                    transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
+                        submit_api: Box::new(
+                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
+                        ),
+                        max_additional_tip: args.max_additional_flashbot_tip,
+                        additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                    }))
+                }
+            }
             TransactionStrategyArg::CustomNodes => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                TransactionStrategy::CustomNodes(StrategyArgs {
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(
                         submission_nodes.clone(),
                         args.pending_transaction_config,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                })
+                }))
             }
-            TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
-        })
-        .collect::<Vec<_>>();
+            TransactionStrategyArg::DryRun => {
+                transaction_strategies.push(TransactionStrategy::DryRun)
+            }
+        }
+    }
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
             &client,
