@@ -107,7 +107,7 @@ impl SingleOrderSolving for UniV3RouterSolver {
 mod tests {
     use super::*;
     use contracts::WETH9;
-    use model::order::{Order, OrderCreation};
+    use model::order::{Order, OrderData};
 
     #[tokio::test]
     #[ignore]
@@ -130,7 +130,7 @@ mod tests {
         let settlement = solver
             .try_settle_order(
                 Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: weth.address(),
                         buy_token: testlib::tokens::DAI,
                         sell_amount: U256::from_f64_lossy(1e18),

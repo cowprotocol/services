@@ -1,7 +1,7 @@
 use ethcontract::Bytes;
 use model::{
-    order::{BuyTokenDestination, OrderCreation, OrderKind, SellTokenSource},
-    signature::SigningScheme,
+    order::{BuyTokenDestination, OrderData, OrderKind, SellTokenSource},
+    signature::{Signature, SigningScheme},
 };
 use primitive_types::{H160, U256};
 
@@ -21,7 +21,8 @@ pub type EncodedTrade = (
 
 /// Creates the data which the smart contract's `decodeTrade` expects.
 pub fn encode_trade(
-    order: &OrderCreation,
+    order: &OrderData,
+    signature: &Signature,
     sell_token_index: usize,
     buy_token_index: usize,
     executed_amount: &U256,
@@ -35,13 +36,13 @@ pub fn encode_trade(
         order.valid_to,
         Bytes(order.app_data.0),
         order.fee_amount,
-        order_flags(order),
+        order_flags(order, signature),
         *executed_amount,
-        Bytes(order.signature.to_bytes().to_vec()),
+        Bytes(signature.to_bytes().to_vec()),
     )
 }
 
-fn order_flags(order: &OrderCreation) -> U256 {
+fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
     let mut result = 0u8;
     // The kind is encoded as 1 bit in position 0.
     result |= match order.kind {
@@ -62,7 +63,7 @@ fn order_flags(order: &OrderCreation) -> U256 {
         BuyTokenDestination::Internal => 0b1,
     } << 4;
     // The signing scheme is encoded as a 2 bits in position 5.
-    result |= match order.signature.scheme() {
+    result |= match signature.scheme() {
         SigningScheme::Eip712 => 0b00,
         SigningScheme::EthSign => 0b01,
         SigningScheme::PreSign => 0b11,
@@ -87,20 +88,19 @@ pub struct EncodedSettlement {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::signature::Signature;
 
     #[test]
     fn order_flag_permutations() {
-        for (order, flags) in &[
+        for (order, signature, flags) in &[
             (
-                OrderCreation {
+                OrderData {
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Erc20,
-                    signature: Signature::default_with(SigningScheme::Eip712),
                     ..Default::default()
                 },
+                Signature::default_with(SigningScheme::Eip712),
                 // ......0 - sell order
                 // .....0. - fill-or-kill order
                 // ...00.. - ERC20 sell token balance
@@ -109,14 +109,14 @@ mod tests {
                 0b0000000,
             ),
             (
-                OrderCreation {
+                OrderData {
                     kind: OrderKind::Sell,
                     partially_fillable: true,
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Internal,
-                    signature: Signature::default_with(SigningScheme::Eip712),
                     ..Default::default()
                 },
+                Signature::default_with(SigningScheme::Eip712),
                 // ......0 - sell order
                 // .....1. - partially fillable order
                 // ...00.. - ERC20 sell token balance
@@ -125,14 +125,14 @@ mod tests {
                 0b0010010,
             ),
             (
-                OrderCreation {
+                OrderData {
                     kind: OrderKind::Buy,
                     partially_fillable: false,
                     sell_token_balance: SellTokenSource::External,
                     buy_token_balance: BuyTokenDestination::Erc20,
-                    signature: Signature::default_with(SigningScheme::PreSign),
                     ..Default::default()
                 },
+                Signature::default_with(SigningScheme::PreSign),
                 // ......1 - buy order
                 // .....0. - fill-or-kill order
                 // ...10.. - Vault-external sell token balance
@@ -141,14 +141,14 @@ mod tests {
                 0b1101001,
             ),
             (
-                OrderCreation {
+                OrderData {
                     kind: OrderKind::Sell,
                     partially_fillable: false,
                     sell_token_balance: SellTokenSource::Internal,
                     buy_token_balance: BuyTokenDestination::Erc20,
-                    signature: Signature::default_with(SigningScheme::EthSign),
                     ..Default::default()
                 },
+                Signature::default_with(SigningScheme::EthSign),
                 // ......0 - sell order
                 // .....0. - fill-or-kill order
                 // ...11.. - Vault-internal sell token balance
@@ -157,14 +157,14 @@ mod tests {
                 0b0101100,
             ),
             (
-                OrderCreation {
+                OrderData {
                     kind: OrderKind::Buy,
                     partially_fillable: true,
                     sell_token_balance: SellTokenSource::Internal,
                     buy_token_balance: BuyTokenDestination::Internal,
-                    signature: Signature::default_with(SigningScheme::PreSign),
                     ..Default::default()
                 },
+                Signature::default_with(SigningScheme::PreSign),
                 // ......1 - buy order
                 // .....1. - partially fillable order
                 // ...11.. - Vault-internal sell token balance
@@ -173,7 +173,7 @@ mod tests {
                 0b1111111,
             ),
         ] {
-            assert_eq!(order_flags(order), U256::from(*flags));
+            assert_eq!(order_flags(order, signature), U256::from(*flags));
         }
     }
 }

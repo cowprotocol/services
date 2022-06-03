@@ -280,7 +280,7 @@ fn compute_uniswap_in(
 ///
 fn is_valid_solution(solution: &Settlement) -> bool {
     for order in solution.traded_orders() {
-        let order = &order.creation;
+        let order = &order.data;
         let buy_token_price = solution
             .clearing_price(order.buy_token)
             .expect("Solution should contain clearing price for buy token");
@@ -305,7 +305,7 @@ mod tests {
     use liquidity::tests::CapturingSettlementHandler;
     use maplit::hashmap;
     use model::{
-        order::{Order, OrderCreation},
+        order::{Order, OrderData},
         TokenPair,
     };
     use num::rational::Ratio;
@@ -591,7 +591,7 @@ mod tests {
         let orders = vec![
             // Unreasonable order a -> b
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: to_wei(1),
@@ -605,7 +605,7 @@ mod tests {
             .into(),
             // Reasonable order a -> b
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: to_wei(1000),
@@ -619,7 +619,7 @@ mod tests {
             .into(),
             // Reasonable order b -> a
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
                     sell_amount: to_wei(1000),
@@ -633,7 +633,7 @@ mod tests {
             .into(),
             // Unreasonable order b -> a
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
                     sell_amount: to_wei(2),
@@ -666,7 +666,7 @@ mod tests {
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: to_wei(900),
@@ -679,7 +679,7 @@ mod tests {
             }
             .into(),
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
                     sell_amount: to_wei(900),
@@ -709,7 +709,7 @@ mod tests {
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: to_wei(10),
@@ -721,7 +721,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
                     sell_amount: to_wei(10),
@@ -792,7 +792,7 @@ mod tests {
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: U256::MAX,
@@ -805,7 +805,7 @@ mod tests {
             }
             .into(),
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_b,
                     buy_token: token_a,
                     sell_amount: 1.into(),
@@ -836,7 +836,7 @@ mod tests {
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: 70145218378783248142575u128.into(),
@@ -849,7 +849,7 @@ mod tests {
             }
             .into(),
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: 900_000_000_000_000u128.into(),
@@ -884,7 +884,7 @@ mod tests {
         let token_b = Address::from_low_u64_be(1);
         let orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: token_a,
                     buy_token: token_b,
                     sell_amount: 9_000_000.into(),
@@ -897,7 +897,7 @@ mod tests {
             }
             .into(),
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     buy_token: token_a,
                     sell_token: token_b,
                     buy_amount: 8_000_001.into(),

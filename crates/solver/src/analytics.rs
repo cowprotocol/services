@@ -90,8 +90,8 @@ pub fn report_alternative_settlement_surplus(
         .order_trades()
         .iter()
         .map(|order_trade| {
-            let sell_token_price = &submitted_prices[&order_trade.trade.order.creation.sell_token];
-            let buy_token_price = &submitted_prices[&order_trade.trade.order.creation.buy_token];
+            let sell_token_price = &submitted_prices[&order_trade.trade.order.data.sell_token];
+            let buy_token_price = &submitted_prices[&order_trade.trade.order.data.buy_token];
             (
                 order_trade.trade.order.metadata.uid,
                 SurplusInfo {
@@ -132,8 +132,8 @@ fn best_surplus_by_order(
         let clearing_prices = get_prices(&solution.settlement);
         for order_trade in trades {
             let order_id = order_trade.trade.order.metadata.uid;
-            let sell_token_price = &clearing_prices[&order_trade.trade.order.creation.sell_token];
-            let buy_token_price = &clearing_prices[&order_trade.trade.order.creation.buy_token];
+            let sell_token_price = &clearing_prices[&order_trade.trade.order.data.sell_token];
+            let buy_token_price = &clearing_prices[&order_trade.trade.order.data.buy_token];
             let surplus = SurplusInfo {
                 solver_name: solver.name().to_string(),
                 ratio: order_trade

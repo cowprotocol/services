@@ -174,7 +174,7 @@ mod tests {
     use crate::solver::dummy_arc_solver;
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation, OrderKind, OrderMetadata, OrderUid};
+    use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
     use num::{BigRational, One as _};
     use primitive_types::{H160, U256};
     use std::collections::HashSet;
@@ -353,7 +353,7 @@ mod tests {
                         uid: uid(uid_),
                         ..Default::default()
                     },
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: token0,
                         buy_token: token1,
                         sell_amount: executed_amount,
@@ -361,6 +361,7 @@ mod tests {
                         kind: OrderKind::Buy,
                         ..Default::default()
                     },
+                    ..Default::default()
                 },
                 ..Default::default()
             },

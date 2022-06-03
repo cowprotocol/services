@@ -168,7 +168,7 @@ mod tests {
     use ethcontract::{Web3, H160, U256};
     use mockall::predicate::*;
     use mockall::Sequence;
-    use model::order::{Order, OrderCreation, OrderKind};
+    use model::order::{Order, OrderData, OrderKind};
     use shared::transport::{create_env_test_transport, create_test_transport};
     use shared::zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse};
 
@@ -195,7 +195,7 @@ mod tests {
         let settlement = solver
             .try_settle_order(
                 Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),
@@ -237,7 +237,7 @@ mod tests {
         let settlement = solver
             .try_settle_order(
                 Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),
