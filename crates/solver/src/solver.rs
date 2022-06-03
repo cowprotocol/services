@@ -227,6 +227,7 @@ pub fn create(
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
+    disabled_zeroex_sources: Vec<String>,
     oneinch_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
@@ -322,6 +323,7 @@ pub fn create(
                         chain_id,
                         zeroex_api.clone(),
                         zeroex_slippage_bps,
+                        disabled_zeroex_sources.clone(),
                     )
                     .unwrap();
                     Ok(shared(SingleOrderSolver::new(

@@ -434,6 +434,7 @@ async fn main() {
                     metrics.clone(),
                     client.clone(),
                     &contracts,
+                    args.shared.balancer_pool_deny_list,
                 )
                 .await
                 .expect("failed to create Balancer pool fetcher"),
@@ -517,6 +518,7 @@ async fn main() {
         metrics.clone(),
         zeroex_api.clone(),
         args.zeroex_slippage_bps,
+        args.shared.disabled_zeroex_sources,
         args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,

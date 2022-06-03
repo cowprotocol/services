@@ -48,6 +48,7 @@ pub struct ZeroExSolver {
     api: Arc<dyn ZeroExApi>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
     zeroex_slippage_bps: u32,
+    excluded_sources: Vec<String>,
 }
 
 /// Chain ID for Mainnet.
@@ -61,6 +62,7 @@ impl ZeroExSolver {
         chain_id: u64,
         api: Arc<dyn ZeroExApi>,
         zeroex_slippage_bps: u32,
+        excluded_sources: Vec<String>,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -72,6 +74,7 @@ impl ZeroExSolver {
             allowance_fetcher: Box::new(allowance_fetcher),
             api,
             zeroex_slippage_bps,
+            excluded_sources,
         })
     }
 }
@@ -94,6 +97,7 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_amount,
             slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
                 .unwrap(),
+            excluded_sources: self.excluded_sources.clone(),
         };
         let swap = self.api.get_swap(query).await?;
 
@@ -185,6 +189,7 @@ mod tests {
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
             10u32,
+            Default::default(),
         )
         .unwrap();
         let settlement = solver
@@ -226,6 +231,7 @@ mod tests {
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
             10u32,
+            Default::default(),
         )
         .unwrap();
         let settlement = solver
@@ -294,6 +300,7 @@ mod tests {
             api: Arc::new(client),
             allowance_fetcher,
             zeroex_slippage_bps: 10u32,
+            excluded_sources: Default::default(),
         };
 
         let buy_order_passing_limit = LimitOrder {
@@ -383,7 +390,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32
+            10u32,
+            Default::default(),
         )
         .is_err())
     }
@@ -440,6 +448,7 @@ mod tests {
             api: Arc::new(client),
             allowance_fetcher,
             zeroex_slippage_bps: 10u32,
+            excluded_sources: Default::default(),
         };
 
         let order = LimitOrder {
@@ -498,6 +507,7 @@ mod tests {
             api: Arc::new(client),
             allowance_fetcher,
             zeroex_slippage_bps: 10u32,
+            excluded_sources: Default::default(),
         };
 
         let order = LimitOrder {
