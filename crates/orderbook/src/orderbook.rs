@@ -8,7 +8,7 @@ use chrono::Utc;
 use ethcontract::H256;
 use model::{
     auction::Auction,
-    order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
+    order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -150,7 +150,7 @@ impl Orderbook {
 
     pub async fn add_order(
         &self,
-        payload: OrderCreationPayload,
+        payload: OrderCreation,
     ) -> Result<OrderUid, AddOrderError> {
         let (order, fee) = self
             .order_validator
@@ -223,7 +223,7 @@ impl Orderbook {
     pub async fn replace_order(
         &self,
         old_order: OrderUid,
-        new_order: OrderCreationPayload,
+        new_order: OrderCreation,
     ) -> Result<OrderUid, ReplaceOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
         // accept `PreSign` orders, otherwise anyone can cancel a user order by
@@ -497,7 +497,7 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         signature: CreationSignature::Eip712 {
                             from: Some(old_order.metadata.owner),
                             signature: Default::default(),
@@ -514,7 +514,7 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         signature: CreationSignature::Eip712 {
                             from: Some(H160([2; 20])),
                             signature: Default::default(),
@@ -535,7 +535,7 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         signature: CreationSignature::PreSign {
                             from: old_order.metadata.owner,
                         },
@@ -555,7 +555,7 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         signature: CreationSignature::Eip712 {
                             from: Some(old_order.metadata.owner),
                             signature: Default::default(),

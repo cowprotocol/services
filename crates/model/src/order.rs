@@ -44,7 +44,7 @@ pub struct Order {
 impl Default for Order {
     fn default() -> Self {
         let domain = &DomainSeparator::default();
-        let creation = OrderCreationPayload::default();
+        let creation = OrderCreation::default();
         Self::from_order_creation(
             &creation,
             domain,
@@ -68,7 +68,7 @@ pub enum OrderStatus {
 
 impl Order {
     pub fn from_order_creation(
-        order: &OrderCreationPayload,
+        order: &OrderCreation,
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
@@ -90,8 +90,8 @@ impl Order {
         })
     }
 
-    pub fn into_order_creation(self) -> OrderCreationPayload {
-        OrderCreationPayload {
+    pub fn into_order_creation(self) -> OrderCreation {
+        OrderCreation {
             data: self.data,
             signature: self.signature.into_creation_signature(),
             quote_id: None,
@@ -360,7 +360,7 @@ impl OrderData {
 // An order as provided to the orderbook by the frontend.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderCreationPayload {
+pub struct OrderCreation {
     #[serde(flatten)]
     pub data: OrderData,
     #[serde(flatten)]
@@ -368,7 +368,7 @@ pub struct OrderCreationPayload {
     pub quote_id: Option<QuoteId>,
 }
 
-impl OrderCreationPayload {
+impl OrderCreation {
     /// Recovers the owner address for the specified domain.
     ///
     /// This can return an error for orders with ECDSA signatures if the
@@ -380,7 +380,7 @@ impl OrderCreationPayload {
     }
 }
 
-impl Default for OrderCreationPayload {
+impl Default for OrderCreation {
     // Custom implementation to make sure the default order creation is valid.
     fn default() -> Self {
         let order = OrderData {

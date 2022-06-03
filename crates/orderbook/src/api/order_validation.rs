@@ -7,7 +7,7 @@ use contracts::WETH9;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderCreationPayload, OrderData, OrderKind, SellTokenSource,
+        BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
     signature::{RecoveryError, SigningScheme},
@@ -49,7 +49,7 @@ pub trait OrderValidating: Send + Sync {
     /// other aspects of the order are not malformed.
     async fn validate_and_construct_order(
         &self,
-        order: OrderCreationPayload,
+        order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError>;
@@ -382,7 +382,7 @@ impl OrderValidating for OrderValidator {
 
     async fn validate_and_construct_order(
         &self,
-        order: OrderCreationPayload,
+        order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
@@ -830,7 +830,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -874,7 +874,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -918,7 +918,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -965,7 +965,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -1011,7 +1011,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -1055,7 +1055,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -1100,7 +1100,7 @@ mod tests {
             Arc::new(bad_token_detector),
             Arc::new(balance_fetcher),
         );
-        let order = OrderCreationPayload {
+        let order = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
