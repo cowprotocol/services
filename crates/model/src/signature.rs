@@ -45,6 +45,20 @@ impl Signature {
             SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
     }
+
+    pub fn into_creation_signature(self) -> CreationSignature {
+        match self {
+            Self::Eip712(signature) => CreationSignature::Eip712 {
+                from: None,
+                signature,
+            },
+            Self::EthSign(signature) => CreationSignature::EthSign {
+                from: None,
+                signature,
+            },
+            Self::PreSign(owner) => CreationSignature::PreSign { from: owner },
+        }
+    }
 }
 
 impl Signature {
@@ -225,6 +239,16 @@ impl EcdsaSignature {
             s: signature.s,
         }
     }
+
+    /// Returns an arbitrary non-zero signature that can be used for recovery
+    /// when you don't actually care about the owner.
+    pub fn non_zero() -> Self {
+        Self {
+            r: H256([1; 32]),
+            s: H256([2; 32]),
+            v: 27,
+        }
+    }
 }
 
 impl Serialize for EcdsaSignature {
@@ -280,6 +304,87 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
         }
 
         deserializer.deserialize_str(Visitor {})
+    }
+}
+
+/// An intermediate signature reprensentation used for order creation.
+///
+/// This is to account for the fact that for on-chain signatures like pre-sign
+/// and EIP-1271, the address of the signer is required.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "signingScheme", rename_all = "lowercase")]
+pub enum CreationSignature {
+    Eip712 {
+        from: Option<H160>,
+        signature: EcdsaSignature,
+    },
+    EthSign {
+        from: Option<H160>,
+        signature: EcdsaSignature,
+    },
+    PreSign {
+        from: H160,
+    },
+}
+
+impl CreationSignature {
+    /// Returns the protocol signature matching an API signature specified
+    /// during order creation.
+    pub fn to_protocol_signature(&self) -> Signature {
+        match self {
+            Self::Eip712 { signature, .. } => Signature::Eip712(*signature),
+            Self::EthSign { signature, .. } => Signature::EthSign(*signature),
+            Self::PreSign { from } => Signature::PreSign(*from),
+        }
+    }
+
+    /// Recovers the owner for the specified creation signature.
+    pub fn recover_owner(
+        &self,
+        domain_separator: &DomainSeparator,
+        struct_hash: &[u8; 32],
+    ) -> Result<H160, RecoveryError> {
+        let (scheme, from, signature) = match self {
+            Self::Eip712 { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
+            Self::EthSign { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
+
+            // We can return early for on-chain signatures since the owner is
+            // part of the signature!
+            Self::PreSign { from } => return Ok(*from),
+        };
+
+        let signer = signature
+            .validate(scheme, domain_separator, struct_hash)
+            .ok_or(RecoveryError::UnableToRecoverSigner)?;
+        if matches!(from, Some(from) if signer != *from) {
+            return Err(RecoveryError::UnexpectedSigner(signer));
+        }
+
+        Ok(signer)
+    }
+
+    /// Returns the expected owner.
+    pub fn expected_owner(&self) -> Option<H160> {
+        match self {
+            Self::Eip712 { from, .. } => *from,
+            Self::EthSign { from, .. } => *from,
+            Self::PreSign { from } => Some(*from),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RecoveryError {
+    UnableToRecoverSigner,
+    UnexpectedSigner(H160),
+}
+
+impl Default for CreationSignature {
+    fn default() -> Self {
+        Self::Eip712 {
+            from: None,
+            signature: EcdsaSignature::non_zero(),
+        }
     }
 }
 

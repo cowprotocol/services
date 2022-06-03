@@ -178,7 +178,7 @@ impl Driver {
         {
             let mut group = group.into_iter().peekable();
             let order = &group.peek().unwrap().order;
-            let was_already_filled = match order.creation.kind {
+            let was_already_filled = match order.data.kind {
                 OrderKind::Buy => &order.metadata.executed_buy_amount,
                 OrderKind::Sell => &order.metadata.executed_sell_amount,
             } > &0u8.into();
@@ -809,7 +809,7 @@ impl Driver {
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
     !settlement
         .traded_orders()
-        .any(|order| token_list.get(&order.creation.sell_token).is_none())
+        .any(|order| token_list.get(&order.data.sell_token).is_none())
 }
 
 fn print_settlements(
@@ -860,7 +860,7 @@ mod tests {
         solver::dummy_arc_solver,
     };
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation};
+    use model::order::{Order, OrderData};
     use shared::token_list::Token;
     use std::collections::HashMap;
 
@@ -888,7 +888,7 @@ mod tests {
         let trade = |token| OrderTrade {
             trade: Trade {
                 order: Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: token,
                         ..Default::default()
                     },

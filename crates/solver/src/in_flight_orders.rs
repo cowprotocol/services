@@ -61,20 +61,19 @@ impl InFlightOrders {
         auction.orders.iter_mut().for_each(|order| {
             let uid = &order.metadata.uid;
 
-            if order.creation.partially_fillable {
+            if order.data.partially_fillable {
                 if let Some(trades) = self.in_flight_trades.get(uid) {
                     *order = trades.order_with_remaining_amounts();
                 }
             } else if in_flight.contains(uid) {
                 // fill-or-kill orders can only be used once and there is already a trade in flight
                 // for this one => Modify it such that it gets filtered out in the next step.
-                order.metadata.executed_buy_amount = u256_to_big_uint(&order.creation.buy_amount);
+                order.metadata.executed_buy_amount = u256_to_big_uint(&order.data.buy_amount);
             }
         });
         auction.orders.retain(|order| {
-            u256_to_big_uint(&order.creation.buy_amount) > order.metadata.executed_buy_amount
-                && u256_to_big_uint(&order.creation.sell_amount)
-                    > order.metadata.executed_sell_amount
+            u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
+                && u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount
         });
     }
 
@@ -86,7 +85,7 @@ impl InFlightOrders {
 
         settlement
             .executed_trades()
-            .filter(|(trade, _)| trade.order.creation.partially_fillable)
+            .filter(|(trade, _)| trade.order.data.partially_fillable)
             .into_group_map_by(|(trade, _)| &trade.order)
             .into_iter()
             .for_each(|(order, trades)| {
@@ -106,7 +105,7 @@ mod tests {
     use super::*;
     use crate::settlement::{LiquidityOrderTrade, OrderTrade, SettlementEncoder, Trade};
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation, OrderKind, OrderMetadata};
+    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
     use primitive_types::H160;
 
     #[test]
@@ -115,7 +114,7 @@ mod tests {
         let token1 = H160::from_low_u64_be(1);
 
         let fill_or_kill = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_token: token0,
                 buy_token: token1,
                 sell_amount: 100u8.into(),
@@ -127,11 +126,12 @@ mod tests {
                 uid: OrderUid::from_integer(1),
                 ..Default::default()
             },
+            ..Default::default()
         };
 
         // partially fillable order 30% filled
         let mut partially_fillable_1 = fill_or_kill.clone();
-        partially_fillable_1.creation.partially_fillable = true;
+        partially_fillable_1.data.partially_fillable = true;
         partially_fillable_1.metadata.uid = OrderUid::from_integer(2);
         partially_fillable_1.metadata.executed_buy_amount = 30u8.into();
         partially_fillable_1.metadata.executed_sell_amount = 30u8.into();

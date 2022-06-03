@@ -107,7 +107,7 @@ async fn smart_contract_orders(web3: Web3) {
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .with_presign(trader.address())
         .build()
-        .creation;
+        .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
         .json(&order)

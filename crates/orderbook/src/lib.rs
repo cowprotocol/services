@@ -58,7 +58,7 @@ pub async fn verify_deployed_contract_constants(
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }
 
-    if !bytecode.contains(&hex::encode(model::order::OrderCreation::TYPE_HASH)) {
+    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
         return Err(anyhow!("Bytecode did not contain order type hash"));
     }
     Ok(())
