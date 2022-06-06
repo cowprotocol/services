@@ -6,11 +6,10 @@ use anyhow::Result;
 use contracts::{GPv2Settlement, IZeroEx};
 use model::order::OrderKind;
 use model::TokenPair;
-// use hex_literal::hex;
 use primitive_types::{H160, U256};
 use shared::baseline_solver::BaseTokens;
 use shared::zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct ZeroExLiquidity {
@@ -19,6 +18,8 @@ pub struct ZeroExLiquidity {
     pub base_tokens: Arc<BaseTokens>,
     pub gpv2: GPv2Settlement,
 }
+
+type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
     pub async fn get_liquidity(&self, user_orders: &[LimitOrder]) -> Result<Vec<Liquidity>> {
@@ -43,21 +44,25 @@ impl ZeroExLiquidity {
                     vec![]
                 }
             });
-        // let fake_order = [TokenPair::new(
-        //     H160(hex!("2b591e99afe9f32eaa6214f7b7629768c40eeb39")),
-        //     H160::default(),
-        // )
-        // .unwrap()]
-        // .into_iter();
 
         let user_order_pairs = user_orders
             .iter()
             .filter_map(|order| TokenPair::new(order.buy_token, order.sell_token));
         let relevant_pairs = self.base_tokens.relevant_pairs(user_order_pairs);
 
-        // divide orders in buckets and choose best orders in those buckets
-        let mut order_buckets: HashMap<(H160, H160), Vec<OrderRecord>> = HashMap::default();
+        let order_buckets = self.generate_order_buckets(zeroex_orders, relevant_pairs);
+        let filtered_zeroex_orders = self.get_useful_orders(order_buckets, 5);
 
+        Ok(filtered_zeroex_orders)
+    }
+
+    fn generate_order_buckets(
+        &self,
+        zeroex_orders: impl Iterator<Item = OrderRecord>,
+        relevant_pairs: HashSet<TokenPair>,
+    ) -> OrderBuckets {
+        // divide orders in buckets and choose best orders in those buckets
+        let mut buckets: OrderBuckets = Default::default();
         zeroex_orders
             .filter(|record| {
                 match TokenPair::new(record.order.taker_token, record.order.maker_token) {
@@ -66,45 +71,47 @@ impl ZeroExLiquidity {
                 }
             })
             .for_each(|order| {
-                let orders_list = order_buckets
+                let bucket = buckets
                     .entry((order.order.maker_token, order.order.taker_token))
                     .or_insert(vec![]);
-                orders_list.push(order);
+                bucket.push(order);
             });
-        let mut limit_orders_n = vec![];
-        order_buckets.into_values().for_each(|mut order_list| {
-            order_list.sort_by(|order_1, order_2| {
-                let ratio_1 = order_1.order.taker_amount / order_1.order.maker_amount;
-                let ratio_2 = order_2.order.taker_amount / order_2.order.maker_amount;
-                ratio_1.cmp(&ratio_2)
-            });
-            let mut copy_of_list = order_list.clone();
-            limit_orders_n.extend(order_list.into_iter().take(5));
-
-            if copy_of_list.len() > 5 {
-                copy_of_list.drain(0..5);
-            }
-            copy_of_list.sort_by_key(|order| order.metadata.remaining_fillable_taker_amount);
-            copy_of_list.reverse();
-            limit_orders_n.extend(copy_of_list.iter().take(5).cloned());
-        });
-        let mut limit_orders_list: Vec<LimitOrder> = limit_orders_n
-            .into_iter()
-            .flat_map(|order| self.convert_to_limit_order(order))
-            .collect();
-        limit_orders_list.sort_by_key(|order| order.id.clone());
-        limit_orders_list.dedup();
-        let filtered_zeroex_orders: Vec<Liquidity> = limit_orders_list
-            .iter()
-            .filter_map(|record| self.record_into_liquidity(record.clone()))
-            .collect();
-        println!("Number of zeroex orders {:?}", filtered_zeroex_orders.len());
-
-        Ok(filtered_zeroex_orders)
+        buckets
     }
 
-    // Turns 0x OrderRecord into LimitOrder for sorting and deduplication
-    fn convert_to_limit_order(&self, record: OrderRecord) -> Option<LimitOrder> {
+    /// Get the `orders_per_type` best priced and biggest volume orders.
+    fn get_useful_orders(
+        &self,
+        order_buckets: OrderBuckets,
+        orders_per_type: usize,
+    ) -> Vec<Liquidity> {
+        let mut filtered_zeroex_orders = vec![];
+        order_buckets.into_values().for_each(|mut orders| {
+            if orders.len() <= 2 * orders_per_type {
+                filtered_zeroex_orders.extend(orders);
+                return;
+            }
+            // Sorting to have best priced orders at the end of the vector
+            orders.sort_by(|order_1, order_2| {
+                let price_1 = order_1.order.taker_amount as f64 / order_1.order.maker_amount as f64;
+                let price_2 = order_2.order.taker_amount as f64 / order_2.order.maker_amount as f64;
+                price_2.partial_cmp(&price_1).unwrap()
+            });
+            filtered_zeroex_orders.extend(orders.drain(orders.len() - orders_per_type..));
+
+            orders.sort_by_key(|order| order.metadata.remaining_fillable_taker_amount);
+            orders.reverse();
+            filtered_zeroex_orders.extend(orders.iter().take(orders_per_type).cloned());
+        });
+        let filtered_zeroex_orders: Vec<_> = filtered_zeroex_orders
+            .into_iter()
+            .flat_map(|order| self.record_into_liquidity(order))
+            .collect();
+        filtered_zeroex_orders
+    }
+
+    // Turns 0x LimitOrder into liquidity which solvers can use.
+    fn record_into_liquidity(&self, record: OrderRecord) -> Option<Liquidity> {
         let sell_amount: U256 = record.remaining_maker_amount().ok()?.into();
         if sell_amount.is_zero() || record.metadata.remaining_fillable_taker_amount == 0 {
             // filter out orders with 0 amounts to prevent errors in the solver
@@ -128,12 +135,7 @@ impl ZeroExLiquidity {
             }),
             exchange: Exchange::ZeroEx,
         };
-        Some(limit_order)
-    }
-
-    // Turns 0x LimitOrder into liquidity which solvers can use.
-    fn record_into_liquidity(&self, record: LimitOrder) -> Option<Liquidity> {
-        Some(Liquidity::LimitOrder(record))
+        Some(Liquidity::LimitOrder(limit_order))
     }
 }
 
