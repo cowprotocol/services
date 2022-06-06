@@ -50,6 +50,7 @@ impl GlobalTxPool {
     }
 }
 
+#[derive(Default, Clone)]
 pub struct SubTxPoolRef {
     pools: TxPool,
     index: usize,
@@ -91,8 +92,7 @@ pub struct SolutionSubmitter {
     pub max_confirm_time: Duration,
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
-    pub transaction_strategies: Vec<TransactionStrategy>,
-    pub submitted_transactions: GlobalTxPool,
+    pub transaction_strategies: Vec<(TransactionStrategy, SubTxPoolRef)>,
 }
 
 pub struct StrategyArgs {
@@ -133,7 +133,7 @@ impl SolutionSubmitter {
         let is_dry_run: bool = self
             .transaction_strategies
             .iter()
-            .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
+            .any(|(strategy, _)| matches!(strategy, TransactionStrategy::DryRun));
 
         let network_id = self.web3.net().version().await?;
 
@@ -143,7 +143,7 @@ impl SolutionSubmitter {
             let mut futures = self
                 .transaction_strategies
                 .iter()
-                .map(|strategy| {
+                .map(|(strategy, sub_tx_pool)| {
                     async {
                         match &*strategy {
                             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -178,7 +178,7 @@ impl SolutionSubmitter {
                             strategy_args.submit_api.as_ref(),
                             &gas_price_estimator,
                             self.access_list_estimator.as_ref(),
-                            self.submitted_transactions.clone(),
+                            sub_tx_pool.clone(),
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }

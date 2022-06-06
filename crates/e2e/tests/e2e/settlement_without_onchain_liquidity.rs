@@ -23,7 +23,7 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::custom_nodes_api::CustomNodesApi, SolutionSubmitter, StrategyArgs,
+        submitter::custom_nodes_api::CustomNodesApi, GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
 use std::{sync::Arc, time::Duration};
@@ -195,6 +195,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             decimals: 18,
         }
     });
+    let submitted_transactions = GlobalTxPool::default();
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
         liquidity_collector,
@@ -218,13 +219,14 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
             gas_price_cap: f64::MAX,
             max_confirm_time: Duration::from_secs(120),
             retry_interval: Duration::from_secs(5),
-            transaction_strategies: vec![
+            transaction_strategies: vec![(
                 solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                 }),
-            ],
+                submitted_transactions.add_sub_pool(),
+            )],
             access_list_estimator: Arc::new(
                 create_priority_estimator(
                     &client,
@@ -237,7 +239,6 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
                 .await
                 .unwrap(),
             ),
-            submitted_transactions: Default::default(),
         },
         10,
         create_orderbook_api(),

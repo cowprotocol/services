@@ -18,7 +18,7 @@ pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
 
-use super::{GlobalTxPool, SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
     settlement::Settlement, settlement_access_list::AccessListEstimating,
     settlement_simulation::settle_method_builder,
@@ -206,9 +206,8 @@ impl<'a> Submitter<'a> {
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
-        submitted_transactions: GlobalTxPool,
+        submitted_transactions: SubTxPoolRef,
     ) -> Result<Self> {
-        let submitted_transactions = submitted_transactions.add_sub_pool();
         Ok(Self {
             contract,
             account,

@@ -36,7 +36,7 @@ use solver::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
         },
-        SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
     solver::{ExternalSolverArg, SolverAccountArg, SolverType},
 };
@@ -590,8 +590,13 @@ async fn main() {
                 })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
-        })
-        .collect::<Vec<_>>();
+        });
+
+    // pair each transaction strategy with one SubTxPool
+    let submitted_transactions = GlobalTxPool::default();
+    let transaction_strategies = transaction_strategies
+        .map(|strategy| (strategy, submitted_transactions.add_sub_pool()))
+        .collect();
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
             &client,
@@ -604,7 +609,7 @@ async fn main() {
         .await
         .expect("failed to create access list estimator"),
     );
-    let submitted_transactions = Default::default();
+
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),
@@ -615,7 +620,6 @@ async fn main() {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
-        submitted_transactions,
     };
     let api = OrderBookApi::new(args.orderbook_url, client.clone());
     let order_converter = OrderConverter {
