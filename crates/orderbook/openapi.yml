@@ -157,8 +157,55 @@ paths:
           description: Order deleted
         400:
           description: Malformed signature
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderCancellationError"
         401:
           description: Invalid signature
+        404:
+          description: Order was not found
+    patch:
+      summary: Cancels order and replaces it with a new one
+      description: |
+        Cancel an order by providing a replacement order where the app data field
+        is the EIP-712-struct-hash of a cancellation for the original order. This
+        allows an old order to be cancelled AND a new order to be created in an
+        atomic operation with a single signature. This may be useful for replacing
+        orders when on-chain prices move outside of the original order's limit price.
+      parameters:
+        - in: path
+          name: UID
+          schema:
+            $ref: "#/components/schemas/UID"
+          required: true
+      requestBody:
+        description: "replacement order"
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderCreation"
+      responses:
+        201:
+          description: Previous order was cancelled and the new replacement order was created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UID"
+        400:
+          description: Error cancelling and replacing new order with an old one.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReplaceOrderError"
+        401:
+          description: |
+            Invalid replacement order. This can happen if the old and new orders have
+            different signers, the new order's app data is not an encoded cancellation of
+            the old order, or the new order is based on presign or EIP-1271 signatures.
+        403:
+          description: Forbidden
         404:
           description: Order was not found
   /api/v1/transactions/{txHash}/orders:
@@ -206,10 +253,12 @@ paths:
                   $ref: "#/components/schemas/Trade"
   /api/v1/solvable_orders:
     get:
+      deprecated: true
       summary: Get solvable orders.
       description: |
         The set of orders that solvers should be solving right now. These orders are determined to
         be valid at the time of the request.
+        This is deprecated in favour of '/api/v1/auction'.
       responses:
         200:
           description: the orders
@@ -221,10 +270,12 @@ paths:
                   $ref: "#/components/schemas/Order"
   /api/v2/solvable_orders:
     get:
+      deprecated: true
       summary: Get solvable orders.
       description: |
         The set of orders that solvers should be solving right now. These orders are determined to
         be valid at the time of the request.
+        This is deprecated in favour of '/api/v1/auction'.
       responses:
         200:
           description: the orders
@@ -256,10 +307,12 @@ paths:
                 $ref: "#/components/schemas/Auction"
   /api/v1/fee:
     get:
+      deprecated: true
       description: |
         The fee that is charged for placing an order.
         The fee is described by a minimum fee - in order to cover the gas costs for onchain settling - and
         a feeRatio charged to the users for using the service.
+        This is deprecated in favour of '/api/v1/quote'.
       parameters:
         - name: sellToken
           in: query
@@ -296,8 +349,10 @@ paths:
           description: Unexpected internal error while processing the request
   /api/v1/markets/{baseToken}-{quoteToken}/{kind}/{amount}:
     get:
+      deprecated: true
       description: |
         The estimated amount in quote token for either buying or selling `amount` of baseToken.
+        This is deprecated in favour of '/api/v1/quote'
       parameters:
         - name: baseToken
           in: path
@@ -334,11 +389,13 @@ paths:
           description: Unexpected internal error while processing the request
   /api/v1/feeAndQuote/sell:
     get:
+      deprecated: true
       description: |
         For a total available amount of sell_token returns the fee in the sell token and the
         resulting buy amount after the fee has been deducted.
         sellAmountBeforeFee is the total amount that is available for the order. From it the fee
         is deducted and the buy amount is calculated.
+        This is deprecated in favour of '/api/v1/quote'.
       parameters:
         - name: sellToken
           in: query
@@ -374,9 +431,11 @@ paths:
           description: Unexpected internal error while processing the request
   /api/v1/feeAndQuote/buy:
     get:
+      deprecated: true
       description: |
         For a target buy amount returns the total sell_amount that is needed and how much of it is
         the fee.
+        This is deprecated in favour of '/api/v1/quote'.
       parameters:
         - name: sellToken
           in: query
@@ -851,6 +910,7 @@ components:
               UnsupportedBuyTokenDestination,
               UnsupportedSellTokenSource,
               UnsupportedOrderType,
+              UnsupportedSignature,
             ]
         description:
           type: string
@@ -871,6 +931,40 @@ components:
               OrderFullyExecuted,
               OrderExpired,
               OnChainOrder,
+            ]
+        description:
+          type: string
+      required:
+        - errorType
+        - description
+    ReplaceOrderError:
+      type: object
+      properties:
+        errorType:
+          type: string
+          enum:
+            [
+              AlreadyCancelled,
+              OrderFullyExecuted,
+              OrderExpired,
+              OnChainOrder,
+              DuplicateOrder,
+              InsufficientFee,
+              InsufficientAllowance,
+              InsufficientBalance,
+              InsufficientValidTo,
+              ExcessiveValidTo,
+              InvalidSignature,
+              TransferEthToContract,
+              TransferSimulationFailed,
+              UnsupportedToken,
+              WrongOwner,
+              SameBuyAndSellToken,
+              ZeroAmount,
+              UnsupportedBuyTokenDestination,
+              UnsupportedSellTokenSource,
+              UnsupportedOrderType,
+              UnsupportedSignature,
             ]
         description:
           type: string

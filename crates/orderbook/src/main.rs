@@ -502,6 +502,7 @@ async fn main() {
                 metrics.clone(),
                 client.clone(),
                 &contracts,
+                args.shared.balancer_pool_deny_list,
             )
             .await
             .expect("failed to create Balancer pool fetcher"),
@@ -545,7 +546,10 @@ async fn main() {
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
             )),
-            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(zeroex_api.clone())),
+            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
+                zeroex_api.clone(),
+                args.shared.disabled_zeroex_sources.clone(),
+            )),
             PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
                 Arc::new(DefaultHttpSolverApi {
                     name: "quasimodo-price-estimator".to_string(),
@@ -700,6 +704,7 @@ async fn main() {
         args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
+        args.enable_presign_orders,
         fee_calculator.clone(),
         bad_token_detector.clone(),
         balance_fetcher,
@@ -709,7 +714,6 @@ async fn main() {
         settlement_contract.address(),
         database.clone(),
         bad_token_detector,
-        args.enable_presign_orders,
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),

@@ -55,6 +55,12 @@ impl<'de> Deserialize<'de> for AppId {
     }
 }
 
+impl PartialEq<[u8; 32]> for AppId {
+    fn eq(&self, other: &[u8; 32]) -> bool {
+        self.0 == *other
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
