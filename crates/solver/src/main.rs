@@ -553,6 +553,7 @@ async fn main() {
             "network id of custom node doesn't match main node"
         );
     }
+    let submitted_transactions = GlobalTxPool::default();
     let transaction_strategies = args
         .transaction_strategy
         .iter()
@@ -562,6 +563,7 @@ async fn main() {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(),
                 })
             }
             TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
@@ -570,6 +572,7 @@ async fn main() {
                 ),
                 max_additional_tip: args.max_additional_eden_tip,
                 additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                sub_tx_pool: submitted_transactions.add_sub_pool(),
             }),
             TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
                 submit_api: Box::new(
@@ -577,6 +580,7 @@ async fn main() {
                 ),
                 max_additional_tip: args.max_additional_flashbot_tip,
                 additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                sub_tx_pool: submitted_transactions.add_sub_pool(),
             }),
             TransactionStrategyArg::CustomNodes => {
                 assert!(
@@ -587,15 +591,11 @@ async fn main() {
                     submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(),
                 })
             }
             TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
-        });
-
-    // pair each transaction strategy with one SubTxPool
-    let submitted_transactions = GlobalTxPool::default();
-    let transaction_strategies = transaction_strategies
-        .map(|strategy| (strategy, submitted_transactions.add_sub_pool()))
+        })
         .collect();
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
@@ -609,7 +609,6 @@ async fn main() {
         .await
         .expect("failed to create access list estimator"),
     );
-
     let solution_submitter = SolutionSubmitter {
         web3: web3.clone(),
         contract: settlement_contract.clone(),

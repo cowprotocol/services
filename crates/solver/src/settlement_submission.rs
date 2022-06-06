@@ -92,13 +92,14 @@ pub struct SolutionSubmitter {
     pub max_confirm_time: Duration,
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
-    pub transaction_strategies: Vec<(TransactionStrategy, SubTxPoolRef)>,
+    pub transaction_strategies: Vec<TransactionStrategy>,
 }
 
 pub struct StrategyArgs {
     pub submit_api: Box<dyn TransactionSubmitting>,
     pub max_additional_tip: f64,
     pub additional_tip_percentage_of_max_fee: f64,
+    pub sub_tx_pool: SubTxPoolRef,
 }
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
@@ -133,7 +134,7 @@ impl SolutionSubmitter {
         let is_dry_run: bool = self
             .transaction_strategies
             .iter()
-            .any(|(strategy, _)| matches!(strategy, TransactionStrategy::DryRun));
+            .any(|strategy| matches!(strategy, TransactionStrategy::DryRun));
 
         let network_id = self.web3.net().version().await?;
 
@@ -143,7 +144,7 @@ impl SolutionSubmitter {
             let mut futures = self
                 .transaction_strategies
                 .iter()
-                .map(|(strategy, sub_tx_pool)| {
+                .map(|strategy| {
                     async {
                         match &*strategy {
                             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
@@ -178,7 +179,7 @@ impl SolutionSubmitter {
                             strategy_args.submit_api.as_ref(),
                             &gas_price_estimator,
                             self.access_list_estimator.as_ref(),
-                            sub_tx_pool.clone(),
+                            strategy_args.sub_tx_pool.clone(),
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }
@@ -329,6 +330,7 @@ mod tests {
                 submit_api: Box::new(MockTransactionSubmitting::new()),
                 max_additional_tip: Default::default(),
                 additional_tip_percentage_of_max_fee: Default::default(),
+                sub_tx_pool: Default::default(),
             }
         }
     }
