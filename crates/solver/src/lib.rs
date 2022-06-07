@@ -25,10 +25,10 @@ pub async fn get_settlement_contract(web3: &Web3) -> Result<contracts::GPv2Settl
     Ok(contracts::GPv2Settlement::deployed(web3).await?)
 }
 
-pub fn into_gas_price(gas_price: &gas_estimation::EstimatedGasPrice) -> ethcontract::GasPrice {
-    if let Some(eip1559) = gas_price.eip1559 {
-        (eip1559.max_fee_per_gas, eip1559.max_priority_fee_per_gas).into()
-    } else {
-        gas_price.legacy.into()
-    }
+pub fn into_gas_price(gas_price: &gas_estimation::GasPrice1559) -> ethcontract::GasPrice {
+    (
+        gas_price.max_fee_per_gas,
+        gas_price.max_priority_fee_per_gas,
+    )
+        .into()
 }

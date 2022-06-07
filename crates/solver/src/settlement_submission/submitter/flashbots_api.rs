@@ -7,7 +7,7 @@ use super::{
 };
 use anyhow::{Context, Result};
 use ethcontract::{transaction::TransactionBuilder, H160, U256};
-use gas_estimation::EstimatedGasPrice;
+use gas_estimation::GasPrice1559;
 use reqwest::{Client, IntoUrl};
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 
@@ -59,7 +59,7 @@ impl TransactionSubmitting for FlashbotsApi {
         _web3: &Web3,
         _address: &H160,
         _nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>> {
+    ) -> Result<Option<GasPrice1559>> {
         Ok(None)
     }
 

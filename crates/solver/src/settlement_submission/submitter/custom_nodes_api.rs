@@ -14,7 +14,7 @@ use ethcontract::{
     H160, U256,
 };
 use futures::FutureExt;
-use gas_estimation::{EstimatedGasPrice, GasPrice1559};
+use gas_estimation::GasPrice1559;
 use shared::Web3;
 
 const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
@@ -127,7 +127,7 @@ impl TransactionSubmitting for CustomNodesApi {
         web3: &Web3,
         address: &H160,
         nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>> {
+    ) -> Result<Option<GasPrice1559>> {
         match self.pending_transaction_config {
             PendingTransactionConfig::Ignore => return Ok(None),
             PendingTransactionConfig::TxPool => (),
@@ -143,24 +143,20 @@ impl TransactionSubmitting for CustomNodesApi {
             None => return Ok(None),
         };
         match transaction.fee {
-            Fee::Legacy { gas_price } => Ok(Some(EstimatedGasPrice {
-                legacy: gas_price.to_f64_lossy(),
-                ..Default::default()
+            Fee::Legacy { gas_price } => Ok(Some(GasPrice1559 {
+                base_fee_per_gas: 0.0,
+                max_fee_per_gas: gas_price.to_f64_lossy(),
+                max_priority_fee_per_gas: gas_price.to_f64_lossy(),
             })),
             Fee::Eip1559 {
                 max_priority_fee_per_gas,
                 max_fee_per_gas,
-            } => Ok(Some(EstimatedGasPrice {
-                eip1559: Some(GasPrice1559 {
-                    max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
-                    max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
-                    base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(
-                        web3.transport(),
-                    )
+            } => Ok(Some(GasPrice1559 {
+                max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
+                max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
+                base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(web3.transport())
                     .await?
                     .to_f64_lossy(),
-                }),
-                ..Default::default()
             })),
         }
     }
