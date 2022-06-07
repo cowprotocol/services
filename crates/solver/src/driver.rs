@@ -706,8 +706,9 @@ impl Driver {
                             executed_amount: trade.executed_amount,
                         })
                         .collect(),
-                    // TODO: need some refactoring to make this easier to access
-                    call_data: Default::default(),
+                    call_data: settlement_simulation::call_data(
+                        rated_settlement.settlement.clone().into(),
+                    ),
                 })
                 .collect(),
         };
