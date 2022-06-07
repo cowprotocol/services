@@ -648,6 +648,14 @@ impl Driver {
         let (mut rated_settlements, errors) = self
             .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
+        // We don't know the exact block because simulation can happen over multiple blocks but
+        // this is a good approximation.
+        let block_during_simulation = self
+            .block_stream
+            .borrow()
+            .number
+            .unwrap_or_default()
+            .as_u64();
         tracing::info!(
             "{} settlements passed simulation and {} failed for auction id {}",
             rated_settlements.len(),
@@ -669,8 +677,7 @@ impl Driver {
         let mut solver_competition_response = SolverCompetitionResponse {
             gas_price: gas_price.effective_gas_price(),
             liquidity_collected_block: current_block_during_liquidity_fetch,
-            // TODO: we don't have access to this and there is no guarantee there is one such block
-            competition_simulation_block: 0,
+            competition_simulation_block: block_during_simulation,
             transaction_hash: None,
             solutions: rated_settlements
                 .iter()
