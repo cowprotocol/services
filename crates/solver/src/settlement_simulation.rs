@@ -11,7 +11,7 @@ use ethcontract::{
 };
 use futures::FutureExt;
 use gas_estimation::GasPrice1559;
-use primitive_types::{H256, U256};
+use primitive_types::{H160, H256, U256};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, IntoUrl, Url,
@@ -220,6 +220,19 @@ pub fn settle_method_builder(
             settlement.interactions,
         )
         .from(from)
+}
+
+/// The call data of a settle call with this settlement.
+pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
+    let contract = GPv2Settlement::at(&shared::transport::dummy::web3(), H160::default());
+    let method = contract.settle(
+        settlement.tokens,
+        settlement.clearing_prices,
+        settlement.trades,
+        settlement.interactions,
+    );
+    // Unwrap because there should always be calldata.
+    method.tx.data.unwrap().0
 }
 
 // Creates a simulation link in the gp-v2 tenderly workspace
@@ -789,5 +802,12 @@ mod tests {
         .unwrap();
 
         dbg!(gas_saved);
+    }
+
+    #[test]
+    fn calldata_works() {
+        let settlement = EncodedSettlement::default();
+        let data = call_data(settlement);
+        assert!(!data.is_empty());
     }
 }
