@@ -5,15 +5,14 @@ use crate::settlement::{Revertable, Settlement};
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
-    AdditionalTip, CancelHandle, SubmissionLoopStatus,
+    AdditionalTip, CancelHandle, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{bail, Context, Result};
 use ethcontract::{
     transaction::{Transaction, TransactionBuilder},
-    H160, H256, U256,
+    H256,
 };
 use futures::{FutureExt, TryFutureExt};
-use gas_estimation::GasPrice1559;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
@@ -132,15 +131,6 @@ impl TransactionSubmitting for EdenApi {
             .await
     }
 
-    async fn recover_pending_transaction(
-        &self,
-        _web3: &Web3,
-        _address: &H160,
-        _nonce: U256,
-    ) -> Result<Option<GasPrice1559>> {
-        Ok(None)
-    }
-
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
         // disable strategy if there is a high possibility for a transaction to be reverted (check done only for mainnet)
         if shared::gas_price_estimation::is_mainnet(network_id) {
@@ -152,8 +142,8 @@ impl TransactionSubmitting for EdenApi {
         SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
 
-    fn name(&self) -> &'static str {
-        "Eden"
+    fn name(&self) -> Strategy {
+        Strategy::Eden
     }
 }
 

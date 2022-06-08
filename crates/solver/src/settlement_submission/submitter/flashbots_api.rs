@@ -3,11 +3,10 @@ use crate::settlement::{Revertable, Settlement};
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
-    AdditionalTip, CancelHandle, SubmissionLoopStatus,
+    AdditionalTip, CancelHandle, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
-use ethcontract::{transaction::TransactionBuilder, H160, U256};
-use gas_estimation::GasPrice1559;
+use ethcontract::transaction::TransactionBuilder;
 use reqwest::{Client, IntoUrl};
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 
@@ -54,15 +53,6 @@ impl TransactionSubmitting for FlashbotsApi {
             .await
     }
 
-    async fn recover_pending_transaction(
-        &self,
-        _web3: &Web3,
-        _address: &H160,
-        _nonce: U256,
-    ) -> Result<Option<GasPrice1559>> {
-        Ok(None)
-    }
-
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
         if shared::gas_price_estimation::is_mainnet(network_id) {
             if let Revertable::NoRisk = settlement.revertable() {
@@ -73,7 +63,7 @@ impl TransactionSubmitting for FlashbotsApi {
         SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
 
-    fn name(&self) -> &'static str {
-        "Flashbots"
+    fn name(&self) -> Strategy {
+        Strategy::Flashbots
     }
 }

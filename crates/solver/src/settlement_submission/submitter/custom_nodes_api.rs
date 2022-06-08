@@ -1,20 +1,15 @@
-use crate::{
-    pending_transactions::Fee,
-    settlement::{Revertable, Settlement},
-};
+use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, CancelHandle, DisabledReason, SubmissionLoopStatus,
+    AdditionalTip, CancelHandle, DisabledReason, Strategy, SubmissionLoopStatus,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use ethcontract::{
     dyns::DynTransport,
     transaction::{Transaction, TransactionBuilder},
-    H160, U256,
 };
 use futures::FutureExt;
-use gas_estimation::GasPrice1559;
 use shared::Web3;
 
 const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
@@ -26,27 +21,14 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "INTERNAL_ERROR: nonce too low",             //erigon
 ];
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
-pub enum PendingTransactionConfig {
-    /// Attempt to fetch pending transactions using txpool_content call. This can cause problems
-    /// when nodes return a large amount of data or are slow to respond.
-    TxPool,
-    /// Do not attempt to fetch pending transactions.
-    Ignore,
-}
-
 #[derive(Clone)]
 pub struct CustomNodesApi {
     nodes: Vec<Web3>,
-    pending_transaction_config: PendingTransactionConfig,
 }
 
 impl CustomNodesApi {
-    pub fn new(nodes: Vec<Web3>, pending_transaction_config: PendingTransactionConfig) -> Self {
-        Self {
-            nodes,
-            pending_transaction_config,
-        }
+    pub fn new(nodes: Vec<Web3>) -> Self {
+        Self { nodes }
     }
 }
 
@@ -122,45 +104,6 @@ impl TransactionSubmitting for CustomNodesApi {
         self.submit_transaction(id.noop_transaction.clone()).await
     }
 
-    async fn recover_pending_transaction(
-        &self,
-        web3: &Web3,
-        address: &H160,
-        nonce: U256,
-    ) -> Result<Option<GasPrice1559>> {
-        match self.pending_transaction_config {
-            PendingTransactionConfig::Ignore => return Ok(None),
-            PendingTransactionConfig::TxPool => (),
-        }
-        let transactions = crate::pending_transactions::pending_transactions(web3.transport())
-            .await
-            .context("pending_transactions failed")?;
-        let transaction = match transactions
-            .iter()
-            .find(|transaction| transaction.from == *address && transaction.nonce == nonce)
-        {
-            Some(transaction) => transaction,
-            None => return Ok(None),
-        };
-        match transaction.fee {
-            Fee::Legacy { gas_price } => Ok(Some(GasPrice1559 {
-                base_fee_per_gas: 0.0,
-                max_fee_per_gas: gas_price.to_f64_lossy(),
-                max_priority_fee_per_gas: gas_price.to_f64_lossy(),
-            })),
-            Fee::Eip1559 {
-                max_priority_fee_per_gas,
-                max_fee_per_gas,
-            } => Ok(Some(GasPrice1559 {
-                max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
-                max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
-                base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(web3.transport())
-                    .await?
-                    .to_f64_lossy(),
-            })),
-        }
-    }
-
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
         // disable strategy if there is a slightest possibility for a transaction to be reverted (check done only for mainnet)
         if shared::gas_price_estimation::is_mainnet(network_id) {
@@ -172,7 +115,7 @@ impl TransactionSubmitting for CustomNodesApi {
         SubmissionLoopStatus::Enabled(AdditionalTip::Off)
     }
 
-    fn name(&self) -> &'static str {
-        "CustomNodes"
+    fn name(&self) -> Strategy {
+        Strategy::CustomNodes
     }
 }
