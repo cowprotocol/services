@@ -24,7 +24,7 @@ derive_more = "0.99"
 ethcontract = { version = "0.17.0", default-features = false }
 ethcontract-mock = { version = "0.17.0" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.5.0", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.6.0", features = ["web3_"] }
 hex = "0.4"
 hex-literal = "0.3"
 itertools = "0.10"

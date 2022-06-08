@@ -12,7 +12,7 @@ use ethcontract::{
     Account, Address, TransactionHash,
 };
 use futures::FutureExt;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
@@ -29,7 +29,7 @@ use web3::types::TransactionReceipt;
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
 // Key (Address, U256) represents pair (sender, nonce)
-type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, EstimatedGasPrice)>>;
+type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>;
 type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
 #[derive(Default, Clone)]
@@ -63,7 +63,7 @@ impl SubTxPoolRef {
         &self,
         sender: Address,
         nonce: U256,
-    ) -> Option<Vec<(TransactionHandle, EstimatedGasPrice)>> {
+    ) -> Option<Vec<(TransactionHandle, GasPrice1559)>> {
         self.pools.lock().unwrap()[self.index]
             .get(&(sender, nonce))
             .cloned()
@@ -78,7 +78,7 @@ impl SubTxPoolRef {
         &self,
         sender: Address,
         nonce: U256,
-        transactions: Vec<(TransactionHandle, EstimatedGasPrice)>,
+        transactions: Vec<(TransactionHandle, GasPrice1559)>,
     ) {
         self.pools.lock().unwrap()[self.index].insert((sender, nonce), transactions);
     }
@@ -389,7 +389,7 @@ mod tests {
     fn global_tx_pool() {
         let sender = Address::default();
         let nonce = U256::zero();
-        let transactions: Vec<(TransactionHandle, EstimatedGasPrice)> = Default::default();
+        let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
 
         let submitted_transactions = GlobalTxPool::default().add_sub_pool();
 

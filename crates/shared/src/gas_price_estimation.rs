@@ -1,8 +1,8 @@
 use crate::Web3;
 use anyhow::{ensure, Context, Result};
 use gas_estimation::{
-    blocknative::BlockNative, nativegasestimator::NativeGasEstimator, EstimatedGasPrice,
-    EthGasStation, GasNowGasStation, GasPriceEstimating, GnosisSafeGasStation,
+    blocknative::BlockNative, nativegasestimator::NativeGasEstimator, EthGasStation,
+    GasNowGasStation, GasPrice1559, GasPriceEstimating, GnosisSafeGasStation,
     PriorityGasPriceEstimating, Transport,
 };
 use serde::de::DeserializeOwned;
@@ -111,20 +111,16 @@ pub fn is_mainnet(network_id: &str) -> bool {
 }
 
 #[derive(Default)]
-pub struct FakeGasPriceEstimator(pub Arc<Mutex<EstimatedGasPrice>>);
+pub struct FakeGasPriceEstimator(pub Arc<Mutex<GasPrice1559>>);
 
 impl FakeGasPriceEstimator {
-    pub fn new(gas_price: EstimatedGasPrice) -> Self {
+    pub fn new(gas_price: GasPrice1559) -> Self {
         Self(Arc::new(Mutex::new(gas_price)))
     }
 }
 #[async_trait::async_trait]
 impl GasPriceEstimating for FakeGasPriceEstimator {
-    async fn estimate_with_limits(
-        &self,
-        _: f64,
-        _: std::time::Duration,
-    ) -> Result<EstimatedGasPrice> {
+    async fn estimate_with_limits(&self, _: f64, _: std::time::Duration) -> Result<GasPrice1559> {
         Ok(*self.0.lock().unwrap())
     }
 }
