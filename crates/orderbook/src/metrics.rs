@@ -1,5 +1,5 @@
 use anyhow::Result;
-use gas_estimation::EstimatedGasPrice;
+use gas_estimation::GasPrice1559;
 use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
     IntGaugeVec, Opts,
@@ -188,7 +188,7 @@ impl crate::database::instrumented::Metrics for Metrics {
 }
 
 impl crate::gas_price::Metrics for Metrics {
-    fn gas_price(&self, estimate: EstimatedGasPrice) {
+    fn gas_price(&self, estimate: GasPrice1559) {
         self.gas_price.set(estimate.effective_gas_price() / 1e9);
     }
 }

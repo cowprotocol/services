@@ -5,7 +5,7 @@ use crate::settlement_simulation::simulate_and_estimate_gas_at_current_block;
 use crate::solver::http_solver::buffers::BufferRetriever;
 use contracts::{GPv2Settlement, WETH9};
 use ethcontract::Account;
-use gas_estimation::EstimatedGasPrice;
+use gas_estimation::GasPrice1559;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
 use shared::Web3;
@@ -25,7 +25,7 @@ pub trait SettlementSimulating: Send + Sync {
 pub struct SettlementSimulator {
     web3: Web3,
     settlement_contract: GPv2Settlement,
-    gas_price: EstimatedGasPrice,
+    gas_price: GasPrice1559,
     solver_account: Account,
 }
 
@@ -79,7 +79,7 @@ impl PostProcessingPipeline {
         settlement: Settlement,
         access_list: Option<AccessList>,
         solver_account: Account,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
     ) -> Settlement {
         let simulator = SettlementSimulator {
             web3: self.web3.clone(),

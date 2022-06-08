@@ -10,8 +10,8 @@ use ethcontract::{
     Account, Address,
 };
 use futures::FutureExt;
-use gas_estimation::EstimatedGasPrice;
-use primitive_types::{H256, U256};
+use gas_estimation::GasPrice1559;
+use primitive_types::{H160, H256, U256};
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Client, IntoUrl, Url,
@@ -42,7 +42,7 @@ pub async fn simulate_and_estimate_gas_at_current_block(
     settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     web3: &Web3,
-    gas_price: EstimatedGasPrice,
+    gas_price: GasPrice1559,
 ) -> Result<Vec<Result<U256, ExecutionError>>> {
     // Collect into Vec to not rely on Itertools::chunk which would make this future !Send.
     let settlements: Vec<_> = settlements.collect();
@@ -87,7 +87,7 @@ pub async fn simulate_and_error_with_tenderly_link(
     settlements: impl Iterator<Item = (Account, Settlement, Option<AccessList>)>,
     contract: &GPv2Settlement,
     web3: &Web3,
-    gas_price: EstimatedGasPrice,
+    gas_price: GasPrice1559,
     network_id: &str,
     block: u64,
     simulation_gas_limit: u128,
@@ -193,7 +193,7 @@ pub async fn simulate_before_after_access_list(
 }
 
 pub fn settle_method(
-    gas_price: EstimatedGasPrice,
+    gas_price: GasPrice1559,
     contract: &GPv2Settlement,
     settlement: Settlement,
     account: Account,
@@ -220,6 +220,19 @@ pub fn settle_method_builder(
             settlement.interactions,
         )
         .from(from)
+}
+
+/// The call data of a settle call with this settlement.
+pub fn call_data(settlement: EncodedSettlement) -> Vec<u8> {
+    let contract = GPv2Settlement::at(&shared::transport::dummy::web3(), H160::default());
+    let method = contract.settle(
+        settlement.tokens,
+        settlement.clearing_prices,
+        settlement.trades,
+        settlement.interactions,
+    );
+    // Unwrap because there should always be calldata.
+    method.tx.data.unwrap().0
 }
 
 // Creates a simulation link in the gp-v2 tenderly workspace
@@ -757,10 +770,7 @@ mod tests {
             settlements.iter().cloned(),
             &contract,
             &web3,
-            EstimatedGasPrice {
-                legacy: 0.0,
-                eip1559: None,
-            },
+            GasPrice1559::default(),
         )
         .await
         .unwrap();
@@ -792,5 +802,12 @@ mod tests {
         .unwrap();
 
         dbg!(gas_saved);
+    }
+
+    #[test]
+    fn calldata_works() {
+        let settlement = EncodedSettlement::default();
+        let data = call_data(settlement);
+        assert!(!data.is_empty());
     }
 }

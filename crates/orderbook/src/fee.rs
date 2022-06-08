@@ -484,7 +484,7 @@ impl MinFeeStoring for InMemoryFeeStore {
 mod tests {
     use chrono::Duration;
     use futures::FutureExt;
-    use gas_estimation::{gas_price::EstimatedGasPrice, GasPrice1559};
+    use gas_estimation::GasPrice1559;
     use maplit::{hashmap, hashset};
     use mockall::{predicate::*, Sequence};
     use shared::{
@@ -530,13 +530,10 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_min_fee_if_validated_before_expiry() {
-        let gas_price = Arc::new(Mutex::new(EstimatedGasPrice {
-            eip1559: Some(GasPrice1559 {
-                max_fee_per_gas: 100.0,
-                max_priority_fee_per_gas: 50.0,
-                base_fee_per_gas: 30.0,
-            }),
-            ..Default::default()
+        let gas_price = Arc::new(Mutex::new(GasPrice1559 {
+            max_fee_per_gas: 100.0,
+            max_priority_fee_per_gas: 50.0,
+            base_fee_per_gas: 30.0,
         }));
         let time = Arc::new(Mutex::new(Utc::now()));
 
@@ -593,13 +590,10 @@ mod tests {
 
     #[tokio::test]
     async fn accepts_fee_if_higher_than_current_min_fee() {
-        let gas_price = Arc::new(Mutex::new(EstimatedGasPrice {
-            eip1559: Some(GasPrice1559 {
-                max_fee_per_gas: 100.0,
-                max_priority_fee_per_gas: 50.0,
-                base_fee_per_gas: 30.0,
-            }),
-            ..Default::default()
+        let gas_price = Arc::new(Mutex::new(GasPrice1559 {
+            max_fee_per_gas: 100.0,
+            max_priority_fee_per_gas: 50.0,
+            base_fee_per_gas: 30.0,
         }));
 
         let gas_price_estimator = Arc::new(FakeGasPriceEstimator(gas_price.clone()));
@@ -646,16 +640,12 @@ mod tests {
         let unsupported_token = H160::from_low_u64_be(1);
         let supported_token = H160::from_low_u64_be(2);
 
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-            EstimatedGasPrice {
-                eip1559: Some(GasPrice1559 {
-                    max_fee_per_gas: 100.0,
-                    max_priority_fee_per_gas: 50.0,
-                    base_fee_per_gas: 30.0,
-                }),
-                ..Default::default()
-            },
-        ))));
+        let gas_price_estimator =
+            Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+                max_fee_per_gas: 100.0,
+                max_priority_fee_per_gas: 50.0,
+                base_fee_per_gas: 30.0,
+            }))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1000,
@@ -720,16 +710,12 @@ mod tests {
             ..Default::default()
         };
 
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-            EstimatedGasPrice {
-                eip1559: Some(GasPrice1559 {
-                    max_fee_per_gas: 100.0,
-                    max_priority_fee_per_gas: 50.0,
-                    base_fee_per_gas: 30.0,
-                }),
-                ..Default::default()
-            },
-        ))));
+        let gas_price_estimator =
+            Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+                max_fee_per_gas: 100.0,
+                max_priority_fee_per_gas: 50.0,
+                base_fee_per_gas: 30.0,
+            }))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 1000,
@@ -799,12 +785,11 @@ mod tests {
             gas_price: gas_estimate,
         };
 
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-            EstimatedGasPrice {
-                legacy: 42.,
-                ..Default::default()
-            },
-        ))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+            base_fee_per_gas: 0.0,
+            max_fee_per_gas: 42.0,
+            max_priority_fee_per_gas: 42.0,
+        }))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: U256::from_f64_lossy(
                 native_token_price_estimation_amount / sell_token_price,
@@ -935,12 +920,12 @@ mod tests {
             buy_token: H160::from_low_u64_be(1),
             ..Default::default()
         };
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-            EstimatedGasPrice {
-                legacy: 1.0,
-                eip1559: None,
-            },
-        ))));
+        let gas_price_estimator =
+            Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+                base_fee_per_gas: 0.0,
+                max_fee_per_gas: 1.0,
+                max_priority_fee_per_gas: 1.0,
+            }))));
         let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
             out_amount: 1.into(),
             gas: 9,
@@ -981,12 +966,11 @@ mod tests {
         let fee_estimator = MinFeeCalculator {
             liquidity_order_owners: hashset!(liquidity_order_owner),
             ..MinFeeCalculator::new_for_test(
-                Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-                    EstimatedGasPrice {
-                        legacy: 1.0,
-                        eip1559: None,
-                    },
-                )))),
+                Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+                    base_fee_per_gas: 0.0,
+                    max_fee_per_gas: 1.0,
+                    max_priority_fee_per_gas: 1.0,
+                })))),
                 Arc::new(FakePriceEstimator(price_estimation::Estimate {
                     out_amount: 1.into(),
                     gas: 9,
