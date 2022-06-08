@@ -50,6 +50,8 @@ impl GlobalTxPool {
     }
 }
 
+/// Currently used to access only specific sub tx pool (indexed one) in the list of pools.
+/// Can be used to access other sub tx pools if needed.
 #[derive(Default, Clone)]
 pub struct SubTxPoolRef {
     pools: TxPool,
