@@ -61,7 +61,7 @@ impl ZeroExLiquidity {
         zeroex_orders: impl Iterator<Item = OrderRecord>,
         relevant_pairs: HashSet<TokenPair>,
     ) -> OrderBuckets {
-        // divide orders in buckets and choose best orders in those buckets
+        // divide orders in buckets
         let mut buckets: OrderBuckets = Default::default();
         zeroex_orders
             .filter(|record| {
@@ -101,7 +101,7 @@ impl ZeroExLiquidity {
 
             orders.sort_by_key(|order| order.metadata.remaining_fillable_taker_amount);
             orders.reverse();
-            filtered_zeroex_orders.extend(orders.iter().take(orders_per_type).cloned());
+            filtered_zeroex_orders.extend(orders.into_iter().rev().take(orders_per_type));
         });
         let filtered_zeroex_orders: Vec<_> = filtered_zeroex_orders
             .into_iter()
@@ -110,7 +110,7 @@ impl ZeroExLiquidity {
         filtered_zeroex_orders
     }
 
-    // Turns 0x LimitOrder into liquidity which solvers can use.
+    /// Turns 0x OrderRecord into liquidity which solvers can use.
     fn record_into_liquidity(&self, record: OrderRecord) -> Option<Liquidity> {
         let sell_amount: U256 = record.remaining_maker_amount().ok()?.into();
         if sell_amount.is_zero() || record.metadata.remaining_fillable_taker_amount == 0 {

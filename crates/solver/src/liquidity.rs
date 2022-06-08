@@ -6,6 +6,7 @@ pub mod zeroex;
 
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
+#[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
 use model::order::Order;
@@ -70,8 +71,9 @@ pub enum Exchange {
 }
 
 /// Basic limit sell and buy orders
-#[derive(Clone, Derivative)]
-#[derivative(PartialEq)]
+#[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
 pub struct LimitOrder {
     // Opaque Identifier for debugging purposes
     pub id: String,
@@ -90,7 +92,7 @@ pub struct LimitOrder {
     /// perspective.
     pub scaled_unsubsidized_fee: U256,
     pub is_liquidity_order: bool,
-    #[derivative(PartialEq = "ignore")]
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
     pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
     pub exchange: Exchange,
 }
