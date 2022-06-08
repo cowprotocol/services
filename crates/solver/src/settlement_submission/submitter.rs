@@ -154,12 +154,12 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
             Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
                 gas_price.max_priority_fee_per_gas +=
-                        self.max_additional_tip.unwrap_or_default().min(
-                            gas_price.max_fee_per_gas
-                                * self
-                                    .additional_tip_percentage_of_max_fee
-                                    .unwrap_or_default(),
-                        );
+                    self.max_additional_tip.unwrap_or_default().min(
+                        gas_price.max_fee_per_gas
+                            * self
+                                .additional_tip_percentage_of_max_fee
+                                .unwrap_or_default(),
+                    );
                 Ok(gas_price)
             }
             Ok(gas_price) => Err(anyhow!(
@@ -176,7 +176,8 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
                 tracing::debug!("found pending transaction: {:?}", pending_gas_price);
                 let pending_gas_price = pending_gas_price.bump(1.125).ceil();
                 if gas_price.max_fee_per_gas >= pending_gas_price.max_fee_per_gas
-                    && gas_price.max_priority_fee_per_gas >= pending_gas_price.max_priority_fee_per_gas
+                    && gas_price.max_priority_fee_per_gas
+                        >= pending_gas_price.max_priority_fee_per_gas
                 {
                     gas_price
                 } else {
