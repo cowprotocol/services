@@ -36,7 +36,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             sell_token: quote_request.sell_token,
             buy_token: quote_request.buy_token,
             receiver: quote_request.receiver.unwrap_or(owner),
-            valid_to: quote_request.valid_to,
+            valid_to: quote_request.validity.actual_valid_to(),
             partially_fillable: quote_request.partially_fillable,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
@@ -141,8 +141,10 @@ impl OrderQuoter {
         quote_request: &OrderQuoteRequest,
     ) -> Result<OrderQuoteResponse, OrderQuoteError> {
         tracing::debug!("Received quote request {:?}", quote_request);
+        let pre_order = PreOrderData::from(quote_request);
+        let valid_to = pre_order.valid_to;
         self.order_validator
-            .partial_validate(quote_request.into())
+            .partial_validate(pre_order)
             .await
             .map_err(|err| OrderQuoteError::Order(ValidationError::Partial(err)))?;
         let fee_parameters = self
@@ -156,7 +158,7 @@ impl OrderQuoter {
                 receiver: quote_request.receiver,
                 sell_amount: fee_parameters.sell_amount,
                 buy_amount: fee_parameters.buy_amount,
-                valid_to: quote_request.valid_to,
+                valid_to,
                 app_data: quote_request.app_data,
                 fee_amount: fee_parameters.fee_amount,
                 kind: fee_parameters.kind,
@@ -351,7 +353,9 @@ mod tests {
     use model::{
         app_id::AppId,
         order::{BuyTokenDestination, SellTokenSource},
+        quote::Validity,
         signature::SigningScheme,
+        time,
     };
     use serde_json::json;
     use shared::price_estimation::mocks::FakePriceEstimator;
@@ -382,7 +386,7 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::AfterFee { value: 1337.into() },
                 },
-                valid_to: 0x12345678,
+                validity: Validity::To(0x12345678),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
@@ -402,7 +406,7 @@ mod tests {
                 "buyToken": "0x0303030303030303030303030303030303030303",
                 "kind": "sell",
                 "sellAmountBeforeFee": "1337",
-                "validTo": 0x12345678,
+                "validFor": 1000,
                 "appData": "0x9090909090909090909090909090909090909090909090909090909090909090",
                 "partiallyFillable": false,
                 "sellTokenBalance": "external",
@@ -417,7 +421,7 @@ mod tests {
                 side: OrderQuoteSide::Sell {
                     sell_amount: SellAmount::BeforeFee { value: 1337.into() },
                 },
-                valid_to: 0x12345678,
+                validity: Validity::For(1000),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::External,
@@ -450,9 +454,32 @@ mod tests {
                 side: OrderQuoteSide::Buy {
                     buy_amount_after_fee: U256::from(1337),
                 },
-                valid_to: 0x12345678,
+                validity: Validity::To(0x12345678),
                 app_data: AppId([0x90; 32]),
                 partially_fillable: false,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[test]
+    fn deserialize_minimum_parameters() {
+        assert_eq!(
+            serde_json::from_value::<OrderQuoteRequest>(json!({
+                "from": "0x0101010101010101010101010101010101010101",
+                "sellToken": "0x0202020202020202020202020202020202020202",
+                "buyToken": "0x0303030303030303030303030303030303030303",
+                "kind": "sell",
+                "sellAmountAfterFee": "1337",
+            }))
+            .unwrap(),
+            OrderQuoteRequest {
+                from: H160([0x01; 20]),
+                sell_token: H160([0x02; 20]),
+                buy_token: H160([0x03; 20]),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee { value: 1337.into() },
+                },
                 ..Default::default()
             }
         );
@@ -665,10 +692,27 @@ mod tests {
 
     #[test]
     fn pre_order_data_from_quote_request() {
-        let quote_request = OrderQuoteRequest::default();
+        let quote_request = OrderQuoteRequest {
+            validity: Validity::To(0),
+            ..Default::default()
+        };
         let result = PreOrderData::from(&quote_request);
         let expected = PreOrderData::default();
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn pre_order_data_from_quote_request_with_valid_for() {
+        let quote_request = OrderQuoteRequest {
+            validity: Validity::For(100),
+            ..Default::default()
+        };
+        let result = PreOrderData::from(&quote_request);
+
+        let valid_duration = result.valid_to - time::now_in_epoch_seconds();
+
+        // use time-range to make sure test isn't flaky.
+        assert!((95..=105).contains(&valid_duration));
     }
 
     #[tokio::test]
@@ -679,6 +723,7 @@ mod tests {
             side: OrderQuoteSide::Buy {
                 buy_amount_after_fee: 2.into(),
             },
+            validity: Validity::To(0),
             ..Default::default()
         };
 
