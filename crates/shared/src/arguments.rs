@@ -202,11 +202,6 @@ impl FromStr for RateLimitingStrategy {
             .context("parsing back_off_growth_factor")?;
         let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
         let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(
-            back_off_growth_factor,
-            min_back_off,
-            max_back_off,
-            "paraswap".into(),
-        )
+        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }

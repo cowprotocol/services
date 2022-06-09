@@ -52,7 +52,6 @@ pub struct RateLimitingStrategy {
     back_off_growth_factor: f64,
     min_back_off: Duration,
     max_back_off: Duration,
-    name: String,
 }
 
 impl RateLimitingStrategy {
@@ -60,7 +59,6 @@ impl RateLimitingStrategy {
         back_off_growth_factor: f64,
         min_back_off: Duration,
         max_back_off: Duration,
-        name: String,
     ) -> Result<Self> {
         ensure!(
             back_off_growth_factor.is_normal(),
@@ -80,15 +78,14 @@ impl RateLimitingStrategy {
             back_off_growth_factor,
             min_back_off,
             max_back_off,
-            name,
         })
     }
 
     /// Resets back off and stops rate limiting requests.
-    pub fn response_ok(&mut self) {
+    pub fn response_ok(&mut self, name: &str) {
         metrics()
             .successful_requests
-            .with_label_values(&[self.name.as_str()])
+            .with_label_values(&[name])
             .inc();
         self.times_rate_limited = 0;
         self.drop_requests_until = Instant::now();
@@ -111,10 +108,14 @@ impl RateLimitingStrategy {
     }
 
     /// Returns updated back off if no other thread increased it in the mean time.
-    pub fn response_rate_limited(&mut self, previous_rate_limits: u64) -> Option<Duration> {
+    pub fn response_rate_limited(
+        &mut self,
+        previous_rate_limits: u64,
+        name: &str,
+    ) -> Option<Duration> {
         metrics()
             .rate_limited_requests
-            .with_label_values(&[self.name.as_str()])
+            .with_label_values(&[name])
             .inc();
         if self.times_rate_limited != previous_rate_limits {
             // Don't increase back off if somebody else already updated it in the meantime.
@@ -128,12 +129,9 @@ impl RateLimitingStrategy {
     }
 
     /// Returns number of times we got rate limited in a row if we are currently allowing requests.
-    pub fn times_rate_limited(&self, now: Instant) -> Option<u64> {
+    pub fn times_rate_limited(&self, now: Instant, name: &str) -> Option<u64> {
         if self.drop_requests_until > now {
-            metrics()
-                .requests_dropped
-                .with_label_values(&[self.name.as_str()])
-                .inc();
+            metrics().requests_dropped.with_label_values(&[name]).inc();
             return None;
         }
 
@@ -144,18 +142,18 @@ impl RateLimitingStrategy {
 #[derive(Debug)]
 pub struct RateLimiter {
     pub strategy: Mutex<RateLimitingStrategy>,
+    pub name: String,
 }
 
 impl RateLimiter {
     fn strategy(&self) -> MutexGuard<RateLimitingStrategy> {
         self.strategy.lock().unwrap()
     }
-}
 
-impl From<RateLimitingStrategy> for RateLimiter {
-    fn from(strategy: RateLimitingStrategy) -> Self {
+    pub fn from_strategy(strategy: RateLimitingStrategy, name: String) -> Self {
         Self {
             strategy: Mutex::new(strategy),
+            name,
         }
     }
 }
@@ -173,9 +171,12 @@ impl RateLimiter {
     where
         anyhow::Error: From<E>,
     {
-        let times_rate_limited = match self.strategy().times_rate_limited(Instant::now()) {
+        let times_rate_limited = match self
+            .strategy()
+            .times_rate_limited(Instant::now(), &self.name)
+        {
             None => {
-                tracing::warn!("dropping task because API is currently rate limited");
+                tracing::warn!(?self.name, "dropping task because API is currently rate limited");
                 anyhow::bail!("backing off rate limit");
             }
             Some(times_rate_limited) => times_rate_limited,
@@ -184,12 +185,15 @@ impl RateLimiter {
         let result = task.await;
 
         if requires_back_off(&result) {
-            if let Some(new_back_off) = self.strategy().response_rate_limited(times_rate_limited) {
-                tracing::warn!("extended rate limiting for {:?}", new_back_off);
+            if let Some(new_back_off) = self
+                .strategy()
+                .response_rate_limited(times_rate_limited, &self.name)
+            {
+                tracing::warn!(?self.name, ?new_back_off, "extended rate limiting");
             }
         } else {
-            self.strategy().response_ok();
-            tracing::debug!("reset rate limit");
+            self.strategy().response_ok(&self.name);
+            tracing::debug!(?self.name, "reset rate limit");
         }
 
         result.map_err(anyhow::Error::from)
@@ -236,10 +240,9 @@ mod tests {
             2.0,
             Duration::from_millis(16),
             Duration::from_millis(20_000),
-            "test".into(),
         )
         .unwrap();
-        let rate_limiter = RateLimiter::from(strategy);
+        let rate_limiter = RateLimiter::from_strategy(strategy, "test".into());
         // note that 1_000 requests will not always trigger a rate limit
         let mut stream = stream::iter(0..1_000).map(|_| async {}).buffer_unordered(2);
         while stream.next().await.is_some() {
@@ -272,7 +275,6 @@ mod tests {
             back_off_growth_factor: f64::MAX,
             min_back_off: Duration::from_millis(16),
             max_back_off: max,
-            name: "test".into(),
         }
         .get_current_back_off();
         assert_eq!(max, back_off);
@@ -284,7 +286,6 @@ mod tests {
             back_off_growth_factor: 2.,
             min_back_off: Duration::from_millis(16),
             max_back_off: max,
-            name: "test".into(),
         }
         .get_current_back_off();
         assert_eq!(Duration::from_millis(16 * 8), back_off);

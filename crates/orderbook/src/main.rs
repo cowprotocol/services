@@ -39,7 +39,7 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
-    http_client::RateLimitingStrategy,
+    http_client::{RateLimiter, RateLimitingStrategy},
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
@@ -585,15 +585,19 @@ async fn main() {
                 native_token.address(),
                 native_token_price_estimation_amount,
             )),
-            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
-                Arc::new(DefaultParaswapApi {
-                    client: client.clone(),
-                    partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(Into::into),
-                }),
-                token_info_fetcher.clone(),
-                args.shared.disabled_paraswap_dexs.clone(),
-            )),
+            PriceEstimatorType::Paraswap => {
+                Box::new(ParaswapPriceEstimator::new(
+                    Arc::new(DefaultParaswapApi {
+                        client: client.clone(),
+                        partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                        rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
+                            RateLimiter::from_strategy(strategy, "paraswap".into())
+                        }),
+                    }),
+                    token_info_fetcher.clone(),
+                    args.shared.disabled_paraswap_dexs.clone(),
+                ))
+            }
             PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
                 zeroex_api.clone(),
                 args.shared.disabled_zeroex_sources.clone(),
@@ -619,7 +623,10 @@ async fn main() {
         (
             estimator.name(),
             Arc::new(instrumented(instance, estimator.name()).rate_limited(
-                args.price_estimation_rate_limiter.clone(),
+                RateLimiter::from_strategy(
+                    args.price_estimation_rate_limiter.clone(),
+                    estimator.name(),
+                ),
                 args.price_estimation_healthy_response_time,
             )),
         )

@@ -1,5 +1,5 @@
 use crate::{
-    http_client::{RateLimiter, RateLimitingStrategy},
+    http_client::RateLimiter,
     price_estimation::{single_estimate, PriceEstimating, PriceEstimationError, Query},
 };
 use futures::stream::{BoxStream, StreamExt};
@@ -12,7 +12,7 @@ pub trait RateLimitedPriceEstimatorExt {
     /// Wraps an existing price estimator in rate limiting one.
     fn rate_limited(
         self,
-        strategy: RateLimitingStrategy,
+        rate_limiter: RateLimiter,
         healthy_response_time: Duration,
     ) -> RateLimitedPriceEstimator;
 }
@@ -20,12 +20,12 @@ pub trait RateLimitedPriceEstimatorExt {
 impl<T: PriceEstimating + 'static> RateLimitedPriceEstimatorExt for T {
     fn rate_limited(
         self,
-        strategy: RateLimitingStrategy,
+        rate_limiter: RateLimiter,
         healthy_response_time: Duration,
     ) -> RateLimitedPriceEstimator {
         RateLimitedPriceEstimator {
             inner: Arc::new(self),
-            rate_limiter: strategy.into(),
+            rate_limiter,
             healthy_response_time,
         }
     }
@@ -43,12 +43,12 @@ impl RateLimitedPriceEstimator {
     /// Wraps an existing price estimator in rate limiting one.
     pub fn new(
         inner: Arc<dyn PriceEstimating>,
-        strategy: RateLimitingStrategy,
+        rate_limiter: RateLimiter,
         healthy_response_time: Duration,
     ) -> Self {
         Self {
             inner,
-            rate_limiter: strategy.into(),
+            rate_limiter,
             healthy_response_time,
         }
     }
@@ -82,7 +82,10 @@ impl PriceEstimating for RateLimitedPriceEstimator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::price_estimation::{Estimate, MockPriceEstimating, PriceEstimateResult};
+    use crate::{
+        http_client::RateLimitingStrategy,
+        price_estimation::{Estimate, MockPriceEstimating, PriceEstimateResult},
+    };
     use futures::{FutureExt, StreamExt};
     use primitive_types::H160;
     use tokio::time::{sleep, Duration};
@@ -126,9 +129,9 @@ mod tests {
             .boxed()
         });
 
+        let strategy = RateLimitingStrategy::try_new(2.0, MAX_BACK_OFF, MAX_BACK_OFF).unwrap();
         let estimator = inner.rate_limited(
-            RateLimitingStrategy::try_new(2.0, MAX_BACK_OFF, MAX_BACK_OFF, "rate_limited".into())
-                .unwrap(),
+            RateLimiter::from_strategy(strategy, "rate_limited".into()),
             HEALTHY_RESPONSE_TIME,
         );
 
