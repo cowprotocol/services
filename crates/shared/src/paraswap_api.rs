@@ -1,4 +1,7 @@
-use crate::{debug_bytes, http_client::RateLimiter};
+use crate::{
+    debug_bytes,
+    http_client::{requires_back_off, RateLimiter},
+};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
@@ -35,16 +38,18 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.partner);
         tracing::debug!("Querying Paraswap price API: {}", url);
-        let request = self.client.get(url);
+        let request = self.client.get(url).send();
+
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.request(request).await?,
-            None => request.send().await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await?,
+            None => request.await?,
         };
         let status = response.status();
         let text = response.text().await?;
         tracing::debug!(%status, %text, "Response from Paraswap price API");
         parse_paraswap_response_text(&text)
     }
+
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
@@ -53,10 +58,10 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client);
+        let request = query.into_request(&self.client).send();
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.request(request).await?,
-            None => request.send().await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await?,
+            None => request.await?,
         };
         let response_text = response.text().await?;
         parse_paraswap_response_text(&response_text)

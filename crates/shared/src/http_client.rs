@@ -1,7 +1,8 @@
 use crate::metrics;
 use anyhow::{anyhow, ensure, Result};
-use reqwest::{RequestBuilder, Response};
+use reqwest::Response;
 use std::{
+    future::Future,
     sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
@@ -66,8 +67,8 @@ impl RateLimitingStrategy {
             "back_off_growth_factor must be a normal f64"
         );
         ensure!(
-            back_off_growth_factor > 1.0,
-            "back_off_growth_factor needs to be greater than 1.0"
+            back_off_growth_factor >= 1.0,
+            "back_off_growth_factor needs to be at least 1.0"
         );
         ensure!(
             min_back_off <= max_back_off,
@@ -82,9 +83,7 @@ impl RateLimitingStrategy {
             name,
         })
     }
-}
 
-impl RateLimitingStrategy {
     /// Resets back off and stops rate limiting requests.
     pub fn response_ok(&mut self) {
         metrics()
@@ -162,32 +161,43 @@ impl From<RateLimitingStrategy> for RateLimiter {
 }
 
 impl RateLimiter {
-    /// If a request receives the response "Too many requests" (status code 429) future requests
-    /// will get dropped for some time. Every successive 429 response increases that time exponentially.
-    /// When a request eventually returns a normal result again future requests will no longer get
-    /// dropped until the next 429 response occurs.
-    pub async fn request(&self, request: RequestBuilder) -> Result<Response> {
+    /// If a task produces a result which indicates rate limiting is required future requests
+    /// will get dropped for some time. Every successive response like that increases that time exponentially.
+    /// When a task eventually returns a normal result again future tasks will no longer get
+    /// dropped until the next rate limiting response occurs.
+    pub async fn execute<T, E>(
+        &self,
+        task: impl Future<Output = Result<T, E>>,
+        requires_back_off: impl Fn(&Result<T, E>) -> bool,
+    ) -> Result<T>
+    where
+        anyhow::Error: From<E>,
+    {
         let times_rate_limited = match self.strategy().times_rate_limited(Instant::now()) {
             None => {
-                tracing::warn!("dropping request because API is currently rate limited");
+                tracing::warn!("dropping task because API is currently rate limited");
                 anyhow::bail!("backing off rate limit");
             }
             Some(times_rate_limited) => times_rate_limited,
         };
 
-        let response = request.send().await?;
+        let result = task.await;
 
-        if response.status() == 429 {
+        if requires_back_off(&result) {
             if let Some(new_back_off) = self.strategy().response_rate_limited(times_rate_limited) {
                 tracing::warn!("extended rate limiting for {:?}", new_back_off);
             }
-            anyhow::bail!("rate limited");
         } else {
             self.strategy().response_ok();
             tracing::debug!("reset rate limit");
-            Ok(response)
         }
+
+        result.map_err(anyhow::Error::from)
     }
+}
+
+pub fn requires_back_off(response: &Result<Response, reqwest::Error>) -> bool {
+    matches!(response, Ok(response) if response.status() == 429)
 }
 
 #[cfg(test)]
@@ -233,8 +243,10 @@ mod tests {
         // note that 1_000 requests will not always trigger a rate limit
         let mut stream = stream::iter(0..1_000).map(|_| async {}).buffer_unordered(2);
         while stream.next().await.is_some() {
-            let request = client.get(url);
-            let response = rate_limiter.request(request).await;
+            let request = client.get(url).send();
+            let response = rate_limiter
+                .execute(request, super::requires_back_off)
+                .await;
             match &response {
                 Ok(response) => println!("{}", response.status()),
                 Err(e) => {
