@@ -27,6 +27,8 @@ struct Order {
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
+    partially_fillable: bool,
+    is_liquidity_order: bool,
 }
 
 struct OrderBookApi {
@@ -167,6 +169,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
+            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self
                     .open_orders
