@@ -27,6 +27,8 @@ struct Order {
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
+    partially_fillable: bool,
+    is_liquidity_order: bool,
 }
 
 struct OrderBookApi {
@@ -128,10 +130,7 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(match order.kind {
-            OrderKind::Buy => order.sell_amount >= response.sell_amount,
-            OrderKind::Sell => order.buy_amount <= response.buy_amount,
-        })
+        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
     }
 }
 
@@ -173,6 +172,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
+            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self
                     .open_orders
