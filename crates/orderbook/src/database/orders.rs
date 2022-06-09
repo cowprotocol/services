@@ -149,6 +149,7 @@ impl DbBuyTokenDestination {
 #[sqlx(rename_all = "lowercase")]
 pub enum DbSigningScheme {
     Eip712,
+    Eip1271,
     EthSign,
     PreSign,
 }
@@ -157,6 +158,7 @@ impl DbSigningScheme {
     pub fn from(signing_scheme: SigningScheme) -> Self {
         match signing_scheme {
             SigningScheme::Eip712 => Self::Eip712,
+            SigningScheme::Eip1271 => Self::Eip1271,
             SigningScheme::EthSign => Self::EthSign,
             SigningScheme::PreSign => Self::PreSign,
         }
@@ -165,6 +167,7 @@ impl DbSigningScheme {
     fn into(self) -> SigningScheme {
         match self {
             Self::Eip712 => SigningScheme::Eip712,
+            Self::Eip1271 => SigningScheme::Eip1271,
             Self::EthSign => SigningScheme::EthSign,
             Self::PreSign => SigningScheme::PreSign,
         }

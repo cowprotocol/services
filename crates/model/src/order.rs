@@ -67,6 +67,9 @@ pub enum OrderStatus {
 }
 
 impl Order {
+    /// This method will return an error if the optional owner does not match
+    /// the one from the ECDSA signature or if the signature is
+    /// validated on-chain (`EIP-1271`).
     pub fn from_order_creation(
         order: &OrderCreation,
         domain: &DomainSeparator,
@@ -91,6 +94,7 @@ impl Order {
     }
 
     pub fn into_order_creation(self) -> OrderCreation {
+        
         OrderCreation {
             data: self.data,
             signature: self.signature.into_creation_signature(),
@@ -372,11 +376,30 @@ impl OrderCreation {
     /// Recovers the owner address for the specified domain.
     ///
     /// This can return an error for orders with ECDSA signatures if the
-    /// optinally specidied `from` address does not match the address
+    /// optionally specified `from` address does not match the address
     /// EC-recovered address from the signature.
+    ///
+    /// This method will also return an error if the Signature is `EIP-1271`,
+    /// since it's validated on-chain.
     pub fn recover_owner(&self, domain: &DomainSeparator) -> Result<H160, RecoveryError> {
-        self.signature
-            .recover_owner(domain, &self.data.hash_struct())
+        let (scheme, from, signature) = match &self.signature {
+            CreationSignature::Eip712 { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
+            CreationSignature::EthSign { from, signature } => (EcdsaSigningScheme::EthSign, from, signature),
+            CreationSignature::Eip1271 { .. } => return Err(RecoveryError::OnChainRecovery),
+            // We can return early for on-chain signatures since the owner is
+            // part of the signature!
+            CreationSignature::PreSign { from } => return Ok(*from),
+        };
+
+        let signer = signature
+            .validate(scheme, domain, &self.data.hash_struct())
+            .ok_or(RecoveryError::UnableToRecoverSigner)?;
+
+        if matches!(from, Some(from) if signer != *from) {
+            return Err(RecoveryError::UnexpectedSigner(signer));
+        }
+
+        Ok(signer)
     }
 }
 

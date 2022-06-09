@@ -12,6 +12,7 @@ use web3::{
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
     Eip712,
+    Eip1271,
     EthSign,
     PreSign,
 }
@@ -22,12 +23,13 @@ impl Default for SigningScheme {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
     EthSign(EcdsaSignature),
+    Eip1271 { signature: Vec<u8>, from: H160 },
     PreSign(H160),
 }
 
@@ -42,6 +44,7 @@ impl Signature {
         match scheme {
             SigningScheme::Eip712 => Signature::Eip712(Default::default()),
             SigningScheme::EthSign => Signature::EthSign(Default::default()),
+            SigningScheme::Eip1271 => Signature::Eip1271 { signature: Default::default(), from: Default::default() },
             SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
     }
@@ -56,6 +59,7 @@ impl Signature {
                 from: None,
                 signature,
             },
+            Self::Eip1271{signature, from} => CreationSignature::Eip1271 { signature, from },
             Self::PreSign(owner) => CreationSignature::PreSign { from: owner },
         }
     }
@@ -75,6 +79,8 @@ impl Signature {
                 domain_separator,
                 struct_hash,
             ),
+            // EIP-1271 is validate on-chain!
+            Signature::Eip1271 { .. } => None,
             Signature::PreSign(account) => Some(*account),
         }
     }
@@ -96,6 +102,7 @@ impl Signature {
                         .expect("scheme is an ecdsa scheme"),
                 )
             }
+            SigningScheme::Eip1271 => todo!(),
             SigningScheme::PreSign => Signature::PreSign(H160(
                 bytes
                     .try_into()
@@ -108,6 +115,12 @@ impl Signature {
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            // `{from}{signature}`
+            Signature::Eip1271 { signature, from } => {
+                let mut bytes = from.as_bytes().to_vec();
+                bytes.extend(signature);
+                bytes
+            },
             Signature::PreSign(account) => account.0.to_vec(),
         }
     }
@@ -115,6 +128,7 @@ impl Signature {
     pub fn scheme(&self) -> SigningScheme {
         match self {
             Signature::Eip712(_) => SigningScheme::Eip712,
+            Signature::Eip1271{..} => SigningScheme::Eip1271,
             Signature::EthSign(_) => SigningScheme::EthSign,
             Signature::PreSign(_) => SigningScheme::PreSign,
         }
@@ -145,6 +159,7 @@ impl SigningScheme {
     pub fn try_to_ecdsa_scheme(&self) -> Option<EcdsaSigningScheme> {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
+            Self::Eip1271 => None,
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
             Self::PreSign => None,
         }
@@ -307,7 +322,7 @@ impl<'de> Deserialize<'de> for EcdsaSignature {
     }
 }
 
-/// An intermediate signature reprensentation used for order creation.
+/// An intermediate signature representation used for order creation.
 ///
 /// This is to account for the fact that for on-chain signatures like pre-sign
 /// and EIP-1271, the address of the signer is required.
@@ -322,6 +337,10 @@ pub enum CreationSignature {
         from: Option<H160>,
         signature: EcdsaSignature,
     },
+    Eip1271 {
+        from: H160,
+        signature: Vec<u8>,
+    },
     PreSign {
         from: H160,
     },
@@ -334,33 +353,9 @@ impl CreationSignature {
         match self {
             Self::Eip712 { signature, .. } => Signature::Eip712(*signature),
             Self::EthSign { signature, .. } => Signature::EthSign(*signature),
+            Self::Eip1271 { signature, from } => Signature::Eip1271 { signature: signature.clone(), from: *from },
             Self::PreSign { from } => Signature::PreSign(*from),
         }
-    }
-
-    /// Recovers the owner for the specified creation signature.
-    pub fn recover_owner(
-        &self,
-        domain_separator: &DomainSeparator,
-        struct_hash: &[u8; 32],
-    ) -> Result<H160, RecoveryError> {
-        let (scheme, from, signature) = match self {
-            Self::Eip712 { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
-            Self::EthSign { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
-
-            // We can return early for on-chain signatures since the owner is
-            // part of the signature!
-            Self::PreSign { from } => return Ok(*from),
-        };
-
-        let signer = signature
-            .validate(scheme, domain_separator, struct_hash)
-            .ok_or(RecoveryError::UnableToRecoverSigner)?;
-        if matches!(from, Some(from) if signer != *from) {
-            return Err(RecoveryError::UnexpectedSigner(signer));
-        }
-
-        Ok(signer)
     }
 
     /// Returns the expected owner.
@@ -368,6 +363,7 @@ impl CreationSignature {
         match self {
             Self::Eip712 { from, .. } => *from,
             Self::EthSign { from, .. } => *from,
+            Self::Eip1271 { from, .. } => Some(*from),
             Self::PreSign { from } => Some(*from),
         }
     }
@@ -375,6 +371,9 @@ impl CreationSignature {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RecoveryError {
+    /// Recovery is only possible on-chain
+    /// Returned only if the signature in `EIP-1271`
+    OnChainRecovery,
     UnableToRecoverSigner,
     UnexpectedSigner(H160),
 }

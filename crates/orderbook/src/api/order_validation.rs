@@ -10,7 +10,7 @@ use model::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
-    signature::{RecoveryError, SigningScheme},
+    signature::{CreationSignature, EcdsaSigningScheme, RecoveryError, SigningScheme},
     DomainSeparator,
 };
 use shared::{
@@ -155,6 +155,7 @@ pub enum ValidationError {
 impl From<RecoveryError> for ValidationError {
     fn from(err: RecoveryError) -> Self {
         match err {
+            RecoveryError::OnChainRecovery => todo!(),
             RecoveryError::UnableToRecoverSigner => Self::InvalidSignature,
             RecoveryError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
         }
@@ -386,7 +387,47 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
-        let owner = order.recover_owner(domain_separator)?;
+
+        // TODO: Another option would be to have a validation trait & struct
+        // which will recover the owner from the signature using either off-chain or on-chain method.
+        // Basically the same as we have here, but implemented as a struct with a trait.
+        let owner = match order.signature {
+            CreationSignature::Eip712 { from, signature } => {
+                let signer = signature
+                    .validate(
+                        EcdsaSigningScheme::Eip712,
+                        domain_separator,
+                        &order.data.hash_struct(),
+                    )
+                    .ok_or(RecoveryError::UnableToRecoverSigner)?;
+
+                if matches!(from, Some(from) if signer != from) {
+                    return Err(ValidationError::WrongOwner(signer));
+                }
+
+                signer
+            }
+            CreationSignature::Eip1271 { from, signature } => {
+                todo!("On-chain call to isValidSignature")
+            }
+            CreationSignature::EthSign { from, signature } => {
+                let signer = signature
+                    .validate(
+                        EcdsaSigningScheme::EthSign,
+                        domain_separator,
+                        &order.data.hash_struct(),
+                    )
+                    .ok_or(ValidationError::InvalidSignature)?;
+
+                if matches!(from, Some(from) if signer != from) {
+                    return Err(ValidationError::WrongOwner(signer));
+                }
+
+                signer
+            }
+            CreationSignature::PreSign { from } => from,
+        };
+        
         let signing_scheme = order.signature.to_protocol_signature().scheme();
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
