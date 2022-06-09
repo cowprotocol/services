@@ -346,7 +346,7 @@ impl CreationSignature {
     ) -> Result<H160, RecoveryError> {
         let (scheme, from, signature) = match self {
             Self::Eip712 { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
-            Self::EthSign { from, signature } => (EcdsaSigningScheme::Eip712, from, signature),
+            Self::EthSign { from, signature } => (EcdsaSigningScheme::EthSign, from, signature),
 
             // We can return early for on-chain signatures since the owner is
             // part of the signature!

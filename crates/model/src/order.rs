@@ -761,13 +761,14 @@ mod tests {
     #[test]
     fn order_creation_serialization() {
         let owner = H160([0xff; 20]);
-        for (signature, signing_scheme, signature_bytes) in [
+        for (signature, signing_scheme, from, signature_bytes) in [
             (
                 CreationSignature::Eip712 {
                     from: Some(owner),
                     signature: Default::default(),
                 },
                 "eip712",
+                Some("0xffffffffffffffffffffffffffffffffffffffff"),
                 Some(
                     "0x0000000000000000000000000000000000000000000000000000000000000000\
                        0000000000000000000000000000000000000000000000000000000000000000\
@@ -776,17 +777,23 @@ mod tests {
             ),
             (
                 CreationSignature::EthSign {
-                    from: Some(owner),
+                    from: None,
                     signature: Default::default(),
                 },
                 "ethsign",
+                None,
                 Some(
                     "0x0000000000000000000000000000000000000000000000000000000000000000\
                        0000000000000000000000000000000000000000000000000000000000000000\
                        00",
                 ),
             ),
-            (CreationSignature::PreSign { from: owner }, "presign", None),
+            (
+                CreationSignature::PreSign { from: owner },
+                "presign",
+                Some("0xffffffffffffffffffffffffffffffffffffffff"),
+                None,
+            ),
         ] {
             let order = OrderCreation {
                 data: OrderData {
@@ -820,8 +827,8 @@ mod tests {
                 "sellTokenBalance": "erc20",
                 "buyTokenBalance": "erc20",
                 "quoteId": 42,
-                "from": "0xffffffffffffffffffffffffffffffffffffffff",
                 "signingScheme": signing_scheme,
+                "from": from,
             });
             if let Some(signature_bytes) = signature_bytes {
                 order_json["signature"] = json!(signature_bytes);
