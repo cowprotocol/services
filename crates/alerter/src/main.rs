@@ -10,6 +10,7 @@ use model::{
     u256_decimal,
 };
 use primitive_types::{H160, U256};
+use prometheus::IntGauge;
 use reqwest::Client;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -142,6 +143,12 @@ struct Alerter {
     last_alert: Option<Instant>,
     // order and for how long it has been matchable
     open_orders: Vec<(Order, Option<Instant>)>,
+    // Expose a prometheus metric so that we can use our Grafana alert infrastructure.
+    //
+    // Set to 0 or 1 depending on whether our alert condition is satisfied which is that there
+    // hasn't been a trade for some time and that there is an order that has been matchable for some
+    // time.
+    no_trades_but_matchable_order: IntGauge,
 }
 
 struct AlertConfig {
@@ -155,6 +162,12 @@ struct AlertConfig {
 
 impl Alerter {
     pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
+        let registry = shared::metrics::get_metrics_registry();
+        let no_trades_but_matchable_order =
+            IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
+        registry
+            .register(Box::new(no_trades_but_matchable_order.clone()))
+            .unwrap();
         Self {
             orderbook_api,
             zeroex_api,
@@ -162,6 +175,7 @@ impl Alerter {
             last_observed_trade: Instant::now(),
             last_alert: None,
             open_orders: Vec::new(),
+            no_trades_but_matchable_order,
         }
     }
 
@@ -212,12 +226,7 @@ impl Alerter {
     pub async fn update(&mut self) -> Result<()> {
         self.update_open_orders().await?;
         if self.last_observed_trade.elapsed() <= self.config.time_without_trade {
-            return Ok(());
-        }
-        if matches!(
-            self.last_alert,
-            Some(instant) if instant.elapsed() < self.config.min_alert_interval
-        ) {
+            self.no_trades_but_matchable_order.set(0);
             return Ok(());
         }
         for i in 0..self.open_orders.len() {
@@ -230,14 +239,22 @@ impl Alerter {
             if can_be_settled {
                 let solvable_since = *self.open_orders[i].1.get_or_insert(now);
                 if now.duration_since(solvable_since) > self.config.min_order_solvable_time {
-                    self.last_alert = Some(now);
-                    self.alert(&self.open_orders[i].0);
+                    let should_alert = match self.last_alert {
+                        None => true,
+                        Some(instant) => instant.elapsed() >= self.config.min_alert_interval,
+                    };
+                    if should_alert {
+                        self.last_alert = Some(now);
+                        self.alert(&self.open_orders[i].0);
+                    }
+                    self.no_trades_but_matchable_order.set(1);
                 }
-                break;
+                return Ok(());
             } else {
                 self.open_orders[i].1 = None;
             }
         }
+        self.no_trades_but_matchable_order.set(0);
         Ok(())
     }
 }
@@ -278,6 +295,9 @@ struct Arguments {
 
     #[clap(long, env, default_value = "https://api.cow.fi/mainnet/")]
     orderbook_api: String,
+
+    #[clap(long, env, default_value = "9588")]
+    metrics_port: u16,
 }
 
 #[tokio::main]
@@ -285,6 +305,10 @@ async fn main() {
     let args = Arguments::parse();
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     tracing::info!("running alerter with {:#?}", args);
+
+    shared::metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);
+    let filter = shared::metrics::handle_metrics();
+    tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
 
     let client = Client::builder()
         .timeout(Duration::from_secs(10))
