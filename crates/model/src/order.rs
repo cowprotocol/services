@@ -758,6 +758,80 @@ mod tests {
         assert_eq!(serialized, value);
     }
 
+    #[test]
+    fn order_creation_serialization() {
+        let owner = H160([0xff; 20]);
+        for (signature, signing_scheme, signature_bytes) in [
+            (
+                CreationSignature::Eip712 {
+                    from: Some(owner),
+                    signature: Default::default(),
+                },
+                "eip712",
+                Some(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000\
+                       0000000000000000000000000000000000000000000000000000000000000000\
+                       00",
+                ),
+            ),
+            (
+                CreationSignature::EthSign {
+                    from: Some(owner),
+                    signature: Default::default(),
+                },
+                "ethsign",
+                Some(
+                    "0x0000000000000000000000000000000000000000000000000000000000000000\
+                       0000000000000000000000000000000000000000000000000000000000000000\
+                       00",
+                ),
+            ),
+            (CreationSignature::PreSign { from: owner }, "presign", None),
+        ] {
+            let order = OrderCreation {
+                data: OrderData {
+                    sell_token: H160([0x11; 20]),
+                    buy_token: H160([0x22; 20]),
+                    receiver: Some(H160([0x33; 20])),
+                    sell_amount: 123.into(),
+                    buy_amount: 456.into(),
+                    valid_to: 1337,
+                    app_data: AppId([0x44; 32]),
+                    fee_amount: 789.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    sell_token_balance: SellTokenSource::Erc20,
+                    buy_token_balance: BuyTokenDestination::Erc20,
+                },
+                signature,
+                quote_id: Some(42),
+            };
+            let mut order_json = json!({
+                "sellToken": "0x1111111111111111111111111111111111111111",
+                "buyToken": "0x2222222222222222222222222222222222222222",
+                "receiver": "0x3333333333333333333333333333333333333333",
+                "sellAmount": "123",
+                "buyAmount": "456",
+                "validTo": 1337,
+                "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+                "feeAmount": "789",
+                "kind": "sell",
+                "partiallyFillable": false,
+                "sellTokenBalance": "erc20",
+                "buyTokenBalance": "erc20",
+                "quoteId": 42,
+                "from": "0xffffffffffffffffffffffffffffffffffffffff",
+                "signingScheme": signing_scheme,
+            });
+            if let Some(signature_bytes) = signature_bytes {
+                order_json["signature"] = json!(signature_bytes);
+            }
+
+            assert_eq!(json!(order), order_json);
+            assert_eq!(order, serde_json::from_value(order_json).unwrap());
+        }
+    }
+
     // from the test `should recover signing address for all supported ECDSA-based schemes` in
     // <https://github.com/cowprotocol/contracts/blob/v1.1.2/test/GPv2Signing.test.ts#L280>.
     #[test]
