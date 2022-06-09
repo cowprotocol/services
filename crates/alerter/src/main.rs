@@ -45,14 +45,20 @@ impl OrderBookApi {
     }
 
     pub async fn solvable_orders(&self) -> reqwest::Result<Vec<Order>> {
-        let url = self.base.join("api/v1/solvable_orders").unwrap();
-        self.client
+        #[derive(serde::Deserialize)]
+        struct Auction {
+            orders: Vec<Order>,
+        }
+        let url = self.base.join("api/v1/auction").unwrap();
+        let auction: Auction = self
+            .client
             .get(url)
             .send()
             .await?
             .error_for_status()?
             .json()
-            .await
+            .await?;
+        Ok(auction.orders)
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
