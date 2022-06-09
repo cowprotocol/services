@@ -8,8 +8,8 @@ use std::{convert::Infallible, sync::Arc};
 use warp::reply::with_status;
 use warp::{hyper::StatusCode, Filter, Rejection};
 
-pub fn create_order_request(
-) -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone {
+pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
+{
     warp::path!("orders")
         .and(warp::post())
         .and(extract_payload())

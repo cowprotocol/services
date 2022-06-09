@@ -148,10 +148,7 @@ impl Orderbook {
         }
     }
 
-    pub async fn add_order(
-        &self,
-        payload: OrderCreation,
-    ) -> Result<OrderUid, AddOrderError> {
+    pub async fn add_order(&self, payload: OrderCreation) -> Result<OrderUid, AddOrderError> {
         let (order, fee) = self
             .order_validator
             .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
