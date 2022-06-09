@@ -1723,6 +1723,7 @@ mod tests {
         let uid = OrderUid([0u8; 56]);
         let order = Order {
             data: OrderData {
+                valid_to: u32::MAX,
                 ..Default::default()
             },
             metadata: OrderMetadata {
