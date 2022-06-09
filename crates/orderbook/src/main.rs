@@ -585,19 +585,17 @@ async fn main() {
                 native_token.address(),
                 native_token_price_estimation_amount,
             )),
-            PriceEstimatorType::Paraswap => {
-                Box::new(ParaswapPriceEstimator::new(
-                    Arc::new(DefaultParaswapApi {
-                        client: client.clone(),
-                        partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                        rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
-                            RateLimiter::from_strategy(strategy, "paraswap".into())
-                        }),
+            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
+                Arc::new(DefaultParaswapApi {
+                    client: client.clone(),
+                    partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
+                        RateLimiter::from_strategy(strategy, "paraswap_api".into())
                     }),
-                    token_info_fetcher.clone(),
-                    args.shared.disabled_paraswap_dexs.clone(),
-                ))
-            }
+                }),
+                token_info_fetcher.clone(),
+                args.shared.disabled_paraswap_dexs.clone(),
+            )),
             PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
                 zeroex_api.clone(),
                 args.shared.disabled_zeroex_sources.clone(),
