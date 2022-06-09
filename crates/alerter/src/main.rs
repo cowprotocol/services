@@ -122,10 +122,7 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(match order.kind {
-            OrderKind::Buy => order.sell_amount >= response.sell_amount,
-            OrderKind::Sell => order.buy_amount <= response.buy_amount,
-        })
+        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
     }
 }
 
