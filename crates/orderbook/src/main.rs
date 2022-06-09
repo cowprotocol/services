@@ -39,6 +39,7 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    http_client::RateLimitingStrategy,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
@@ -54,6 +55,7 @@ use shared::{
         native_price_cache::CachingNativePriceEstimator,
         oneinch::OneInchPriceEstimator,
         paraswap::ParaswapPriceEstimator,
+        rate_limited::RateLimitedPriceEstimatorExt,
         sanitized::SanitizedPriceEstimator,
         zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
@@ -209,6 +211,24 @@ struct Arguments {
     /// The API endpoint to call the yearn solver for price estimation
     #[clap(long, env)]
     yearn_solver_url: Option<Url>,
+
+    /// Configures the back off strategy for price estimators when requests take too long.
+    /// Requests issued while back off is active get dropped entirely.
+    /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
+    /// back_off_growth_factor: f64 > 1.0
+    /// min_back_off: f64 in seconds
+    /// max_back_off: f64 in seconds
+    #[clap(long, env, verbatim_doc_comment, default_value = "1,0,0")]
+    pub price_estimation_rate_limiter: RateLimitingStrategy,
+
+    #[clap(
+        long,
+        env,
+        verbatim_doc_comment,
+        default_value = "5",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub price_estimation_healthy_response_time: Duration,
 
     /// How long cached native prices stay valid.
     #[clap(
@@ -598,7 +618,10 @@ async fn main() {
 
         (
             estimator.name(),
-            Arc::new(instrumented(instance, estimator.name())),
+            Arc::new(instrumented(instance, estimator.name()).rate_limited(
+                args.price_estimation_rate_limiter.clone(),
+                args.price_estimation_healthy_response_time,
+            )),
         )
     };
 
