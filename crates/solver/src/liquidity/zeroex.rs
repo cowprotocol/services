@@ -50,14 +50,18 @@ impl ZeroExLiquidity {
             .filter_map(|order| TokenPair::new(order.buy_token, order.sell_token));
         let relevant_pairs = self.base_tokens.relevant_pairs(user_order_pairs);
 
-        let order_buckets = self.generate_order_buckets(zeroex_orders, relevant_pairs);
-        let filtered_zeroex_orders = self.get_useful_orders(order_buckets, 5);
+        let order_buckets = ZeroExLiquidity::generate_order_buckets(zeroex_orders, relevant_pairs);
+        let filtered_zeroex_orders = ZeroExLiquidity::get_useful_orders(order_buckets, 5);
 
-        Ok(filtered_zeroex_orders)
+        let zeroex_liquidity_orders: Vec<_> = filtered_zeroex_orders
+            .into_iter()
+            .flat_map(|order| self.record_into_liquidity(order))
+            .collect();
+
+        Ok(zeroex_liquidity_orders)
     }
 
     fn generate_order_buckets(
-        &self,
         zeroex_orders: impl Iterator<Item = OrderRecord>,
         relevant_pairs: HashSet<TokenPair>,
     ) -> OrderBuckets {
@@ -73,40 +77,32 @@ impl ZeroExLiquidity {
             .for_each(|order| {
                 let bucket = buckets
                     .entry((order.order.maker_token, order.order.taker_token))
-                    .or_insert(vec![]);
+                    .or_default();
                 bucket.push(order);
             });
         buckets
     }
 
     /// Get the `orders_per_type` best priced and biggest volume orders.
-    fn get_useful_orders(
-        &self,
-        order_buckets: OrderBuckets,
-        orders_per_type: usize,
-    ) -> Vec<Liquidity> {
+    fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec<OrderRecord> {
         let mut filtered_zeroex_orders = vec![];
-        order_buckets.into_values().for_each(|mut orders| {
+        for mut orders in order_buckets.into_values() {
             if orders.len() <= 2 * orders_per_type {
                 filtered_zeroex_orders.extend(orders);
-                return;
+                continue;
             }
             // Sorting to have best priced orders at the end of the vector
+            // best priced orders are those that have the maximum maker_amount / taker_amount ratio
             orders.sort_by(|order_1, order_2| {
-                let price_1 = order_1.order.taker_amount as f64 / order_1.order.maker_amount as f64;
-                let price_2 = order_2.order.taker_amount as f64 / order_2.order.maker_amount as f64;
-                price_2.partial_cmp(&price_1).unwrap()
+                let price_1 = order_1.order.maker_amount as f64 / order_1.order.taker_amount as f64;
+                let price_2 = order_2.order.maker_amount as f64 / order_2.order.taker_amount as f64;
+                price_1.partial_cmp(&price_2).unwrap()
             });
             filtered_zeroex_orders.extend(orders.drain(orders.len() - orders_per_type..));
 
             orders.sort_by_key(|order| order.metadata.remaining_fillable_taker_amount);
-            orders.reverse();
             filtered_zeroex_orders.extend(orders.into_iter().rev().take(orders_per_type));
-        });
-        let filtered_zeroex_orders: Vec<_> = filtered_zeroex_orders
-            .into_iter()
-            .flat_map(|order| self.record_into_liquidity(order))
-            .collect();
+        }
         filtered_zeroex_orders
     }
 
@@ -155,5 +151,148 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
             zeroex: self.zeroex.clone(),
         });
         Ok(())
+    }
+}
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+    use shared::zeroex_api::OrderMetadata;
+
+    #[test]
+    fn order_buckets_get_created() {
+        let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
+        let token_a = H160([0x00; 20]);
+        let token_b = H160([0xff; 20]);
+        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
+        let relevant_pairs = base_tokens.relevant_pairs(fake_order);
+        let order: Order = Default::default();
+        let metadata: OrderMetadata = Default::default();
+        let bogous_order_1 = OrderRecord {
+            order: Order {
+                taker_token: token_a,
+                maker_token: token_b,
+                ..order.clone()
+            },
+            metadata: metadata.clone(),
+        };
+        let bogous_order_2 = OrderRecord {
+            order: Order {
+                taker_token: token_b,
+                maker_token: token_a,
+                ..order.clone()
+            },
+            metadata: metadata.clone(),
+        };
+        let order_buckets = ZeroExLiquidity::generate_order_buckets(
+            [bogous_order_1, bogous_order_2].into_iter(),
+            relevant_pairs,
+        );
+        for (_, order_records) in order_buckets.iter() {
+            assert_eq!(order_records.len(), 1);
+        }
+        assert_eq!(order_buckets.keys().len(), 2);
+    }
+
+    #[test]
+    fn biggest_volume_orders_get_selected() {
+        let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
+        let token_a = H160([0x00; 20]);
+        let token_b = H160([0xff; 20]);
+        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
+        let relevant_pairs = base_tokens.relevant_pairs(fake_order);
+        let order = Order {
+            taker_token: token_a,
+            maker_token: token_b,
+            taker_amount: 100000000,
+            maker_amount: 100000000,
+            ..Default::default()
+        };
+        let bogous_order_1 = OrderRecord {
+            order: order.clone(),
+            metadata: OrderMetadata {
+                remaining_fillable_taker_amount: 1000,
+                ..Default::default()
+            },
+        };
+        let bogous_order_2 = OrderRecord {
+            order: order.clone(),
+            metadata: OrderMetadata {
+                remaining_fillable_taker_amount: 100,
+                ..Default::default()
+            },
+        };
+        let bogous_order_3 = OrderRecord {
+            order: order.clone(),
+            metadata: OrderMetadata {
+                remaining_fillable_taker_amount: 10000,
+                ..Default::default()
+            },
+        };
+        let order_buckets = ZeroExLiquidity::generate_order_buckets(
+            [bogous_order_1, bogous_order_2, bogous_order_3].into_iter(),
+            relevant_pairs,
+        );
+        let filtered_zeroex_orders = ZeroExLiquidity::get_useful_orders(order_buckets, 1);
+        assert_eq!(filtered_zeroex_orders.len(), 2);
+        assert_eq!(
+            filtered_zeroex_orders[0]
+                .metadata
+                .remaining_fillable_taker_amount,
+            10000
+        );
+        assert_eq!(
+            filtered_zeroex_orders[1]
+                .metadata
+                .remaining_fillable_taker_amount,
+            1000
+        );
+    }
+
+    #[test]
+    fn best_priced_orders_get_selected() {
+        let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
+        let token_a = H160([0x00; 20]);
+        let token_b = H160([0xff; 20]);
+        let fake_order = [TokenPair::new(token_a, token_b).unwrap()].into_iter();
+        let relevant_pairs = base_tokens.relevant_pairs(fake_order);
+        let order = Order {
+            taker_token: token_a,
+            maker_token: token_b,
+            ..Default::default()
+        };
+        let metadata: OrderMetadata = Default::default();
+        let bogous_order_1 = OrderRecord {
+            order: Order {
+                taker_amount: 10000000,
+                maker_amount: 100000000,
+                ..order.clone()
+            },
+            metadata: metadata.clone(),
+        };
+        let bogous_order_2 = OrderRecord {
+            order: Order {
+                taker_amount: 1000,
+                maker_amount: 100000000,
+                ..order.clone()
+            },
+            metadata: metadata.clone(),
+        };
+        let bogous_order_3 = OrderRecord {
+            order: Order {
+                taker_amount: 100000,
+                maker_amount: 100000000,
+                ..order.clone()
+            },
+            metadata: metadata.clone(),
+        };
+        let order_buckets = ZeroExLiquidity::generate_order_buckets(
+            [bogous_order_1, bogous_order_2, bogous_order_3].into_iter(),
+            relevant_pairs,
+        );
+        let filtered_zeroex_orders = ZeroExLiquidity::get_useful_orders(order_buckets, 1);
+        assert_eq!(filtered_zeroex_orders.len(), 2);
+        assert_eq!(filtered_zeroex_orders[0].order.taker_amount, 1000);
+        assert_eq!(filtered_zeroex_orders[1].order.taker_amount, 100000);
     }
 }
