@@ -180,9 +180,9 @@ pub mod tests {
             order: Order {
                 taker_token: token_b,
                 maker_token: token_a,
-                ..order.clone()
+                ..order
             },
-            metadata: metadata.clone(),
+            metadata,
         };
         let order_buckets = ZeroExLiquidity::generate_order_buckets(
             [bogous_order_1, bogous_order_2].into_iter(),
@@ -223,7 +223,7 @@ pub mod tests {
             },
         };
         let bogous_order_3 = OrderRecord {
-            order: order.clone(),
+            order,
             metadata: OrderMetadata {
                 remaining_fillable_taker_amount: 10000,
                 ..Default::default()
@@ -282,9 +282,9 @@ pub mod tests {
             order: Order {
                 taker_amount: 100000,
                 maker_amount: 100000000,
-                ..order.clone()
+                ..order
             },
-            metadata: metadata.clone(),
+            metadata,
         };
         let order_buckets = ZeroExLiquidity::generate_order_buckets(
             [bogous_order_1, bogous_order_2, bogous_order_3].into_iter(),
