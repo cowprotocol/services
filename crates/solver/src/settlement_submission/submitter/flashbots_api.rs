@@ -3,12 +3,12 @@ use crate::settlement::{Revertable, Settlement};
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
-    AdditionalTip, CancelHandle, Strategy, SubmissionLoopStatus,
+    AdditionalTip, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
-use ethcontract::transaction::TransactionBuilder;
+use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder};
 use reqwest::{Client, IntoUrl};
-use shared::{transport::http::HttpTransport, Web3, Web3Transport};
+use shared::{transport::http::HttpTransport, Web3};
 
 #[derive(Clone)]
 pub struct FlashbotsApi {
@@ -17,7 +17,7 @@ pub struct FlashbotsApi {
 
 impl FlashbotsApi {
     pub fn new(client: Client, url: impl IntoUrl) -> Result<Self> {
-        let transport = Web3Transport::new(HttpTransport::new(
+        let transport = DynTransport::new(HttpTransport::new(
             client,
             url.into_url().context("bad flashbots url")?,
             "flashbots".to_owned(),
@@ -32,7 +32,7 @@ impl FlashbotsApi {
 impl TransactionSubmitting for FlashbotsApi {
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<Web3Transport>,
+        tx: TransactionBuilder<DynTransport>,
     ) -> Result<TransactionHandle> {
         let result = self
             .rpc
@@ -46,10 +46,13 @@ impl TransactionSubmitting for FlashbotsApi {
     }
 
     // https://docs.flashbots.net/flashbots-protect/rpc/cancellations
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<DynTransport>,
+    ) -> Result<TransactionHandle> {
         self.rpc
             .api::<PrivateNetwork>()
-            .submit_raw_transaction(id.noop_transaction.clone())
+            .submit_raw_transaction(tx)
             .await
     }
 

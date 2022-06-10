@@ -2,7 +2,7 @@ use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, CancelHandle, DisabledReason, Strategy, SubmissionLoopStatus,
+    AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
 use anyhow::Result;
 use ethcontract::{
@@ -100,8 +100,11 @@ impl TransactionSubmitting for CustomNodesApi {
         }
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
-        self.submit_transaction(id.noop_transaction.clone()).await
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<DynTransport>,
+    ) -> Result<TransactionHandle> {
+        self.submit_transaction(tx).await
     }
 
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
