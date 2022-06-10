@@ -10,7 +10,7 @@ use model::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
-    signature::{RecoveryError, SigningScheme},
+    signature::{SigningScheme, VerificationError},
     DomainSeparator,
 };
 use shared::{
@@ -152,11 +152,11 @@ pub enum ValidationError {
     Other(anyhow::Error),
 }
 
-impl From<RecoveryError> for ValidationError {
-    fn from(err: RecoveryError) -> Self {
+impl From<VerificationError> for ValidationError {
+    fn from(err: VerificationError) -> Self {
         match err {
-            RecoveryError::UnableToRecoverSigner => Self::InvalidSignature,
-            RecoveryError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
+            VerificationError::UnableToRecoverSigner => Self::InvalidSignature,
+            VerificationError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
         }
     }
 }
@@ -387,7 +387,7 @@ impl OrderValidating for OrderValidator {
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
         let owner = order.recover_owner(domain_separator)?;
-        let signing_scheme = order.signature.to_protocol_signature().scheme();
+        let signing_scheme = order.signature.scheme();
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -536,7 +536,7 @@ mod tests {
     use maplit::hashset;
     use model::{
         order::OrderBuilder,
-        signature::{CreationSignature, EcdsaSignature, EcdsaSigningScheme},
+        signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
     };
     use secp256k1::ONE_KEY;
     use shared::{
@@ -927,10 +927,8 @@ mod tests {
                 sell_amount: U256::from(1),
                 ..Default::default()
             },
-            signature: CreationSignature::Eip712 {
-                from: Some(Default::default()),
-                signature: EcdsaSignature::non_zero(),
-            },
+            from: Some(Default::default()),
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator

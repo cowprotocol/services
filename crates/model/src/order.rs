@@ -3,7 +3,7 @@
 use crate::{
     app_id::AppId,
     quote::QuoteId,
-    signature::{CreationSignature, EcdsaSignature, EcdsaSigningScheme, RecoveryError, Signature},
+    signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
@@ -30,7 +30,7 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
@@ -39,21 +39,6 @@ pub struct Order {
     pub data: OrderData,
     #[serde(flatten)]
     pub signature: Signature,
-}
-
-impl Default for Order {
-    fn default() -> Self {
-        let domain = &DomainSeparator::default();
-        let creation = OrderCreation::default();
-        Self::from_order_creation(
-            &creation,
-            domain,
-            H160::default(),
-            Default::default(),
-            false,
-        )
-        .unwrap()
-    }
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -73,7 +58,7 @@ impl Order {
         settlement_contract: H160,
         full_fee_amount: U256,
         is_liquidity_order: bool,
-    ) -> Result<Self, RecoveryError> {
+    ) -> Result<Self, VerificationError> {
         let owner = order.recover_owner(domain)?;
         Ok(Self {
             metadata: OrderMetadata {
@@ -85,7 +70,7 @@ impl Order {
                 is_liquidity_order,
                 ..Default::default()
             },
-            signature: order.signature.to_protocol_signature(),
+            signature: order.signature,
             data: order.data,
         })
     }
@@ -93,7 +78,8 @@ impl Order {
     pub fn into_order_creation(self) -> OrderCreation {
         OrderCreation {
             data: self.data,
-            signature: self.signature.into_creation_signature(),
+            from: Some(self.metadata.owner),
+            signature: self.signature,
             quote_id: None,
         }
     }
@@ -363,8 +349,9 @@ impl OrderData {
 pub struct OrderCreation {
     #[serde(flatten)]
     pub data: OrderData,
+    pub from: Option<H160>,
     #[serde(flatten)]
-    pub signature: CreationSignature,
+    pub signature: Signature,
     pub quote_id: Option<QuoteId>,
 }
 
@@ -374,22 +361,22 @@ impl OrderCreation {
     /// This can return an error for orders with ECDSA signatures if the
     /// optinally specidied `from` address does not match the address
     /// EC-recovered address from the signature.
-    pub fn recover_owner(&self, domain: &DomainSeparator) -> Result<H160, RecoveryError> {
+    pub fn recover_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
         self.signature
-            .recover_owner(domain, &self.data.hash_struct())
+            .verify_owner(self.from, domain, &self.data.hash_struct())
     }
 }
 
 impl Default for OrderCreation {
     // Custom implementation to make sure the default order creation is valid.
     fn default() -> Self {
-        let order = OrderData {
-            valid_to: u32::MAX,
-            ..Default::default()
-        };
         Self {
-            data: order,
-            signature: Default::default(),
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            from: None,
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             quote_id: None,
         }
     }
@@ -436,7 +423,7 @@ impl OrderCancellation {
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Option<H160> {
         self.signature
-            .validate(self.signing_scheme, domain_separator, &self.hash_struct())
+            .recover(self.signing_scheme, domain_separator, &self.hash_struct())
     }
 }
 
@@ -763,36 +750,26 @@ mod tests {
         let owner = H160([0xff; 20]);
         for (signature, signing_scheme, from, signature_bytes) in [
             (
-                CreationSignature::Eip712 {
-                    from: Some(owner),
-                    signature: Default::default(),
-                },
+                Signature::default_with(SigningScheme::Eip712),
                 "eip712",
-                Some("0xffffffffffffffffffffffffffffffffffffffff"),
-                Some(
-                    "0x0000000000000000000000000000000000000000000000000000000000000000\
-                       0000000000000000000000000000000000000000000000000000000000000000\
-                       00",
-                ),
+                Some(owner),
+                "0x0000000000000000000000000000000000000000000000000000000000000000\
+                   0000000000000000000000000000000000000000000000000000000000000000\
+                   00",
             ),
             (
-                CreationSignature::EthSign {
-                    from: None,
-                    signature: Default::default(),
-                },
+                Signature::default_with(SigningScheme::EthSign),
                 "ethsign",
                 None,
-                Some(
-                    "0x0000000000000000000000000000000000000000000000000000000000000000\
-                       0000000000000000000000000000000000000000000000000000000000000000\
-                       00",
-                ),
+                "0x0000000000000000000000000000000000000000000000000000000000000000\
+                   0000000000000000000000000000000000000000000000000000000000000000\
+                   00",
             ),
             (
-                CreationSignature::PreSign { from: owner },
+                Signature::PreSign(owner),
                 "presign",
-                Some("0xffffffffffffffffffffffffffffffffffffffff"),
-                None,
+                Some(owner),
+                "0xffffffffffffffffffffffffffffffffffffffff",
             ),
         ] {
             let order = OrderCreation {
@@ -810,10 +787,11 @@ mod tests {
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Erc20,
                 },
+                from,
                 signature,
                 quote_id: Some(42),
             };
-            let mut order_json = json!({
+            let order_json = json!({
                 "sellToken": "0x1111111111111111111111111111111111111111",
                 "buyToken": "0x2222222222222222222222222222222222222222",
                 "receiver": "0x3333333333333333333333333333333333333333",
@@ -828,11 +806,9 @@ mod tests {
                 "buyTokenBalance": "erc20",
                 "quoteId": 42,
                 "signingScheme": signing_scheme,
+                "signature": signature_bytes,
                 "from": from,
             });
-            if let Some(signature_bytes) = signature_bytes {
-                order_json["signature"] = json!(signature_bytes);
-            }
 
             assert_eq!(json!(order), order_json);
             assert_eq!(order, serde_json::from_value(order_json).unwrap());
@@ -885,7 +861,7 @@ mod tests {
             let signature = Signature::from_bytes(*signing_scheme, signature).unwrap();
 
             let owner = signature
-                .validate(&domain_separator, &order.hash_struct())
+                .recover(&domain_separator, &order.hash_struct())
                 .unwrap();
             assert_eq!(owner, expected_owner);
         }
@@ -1015,7 +991,7 @@ mod tests {
 
         let owner = order
             .signature
-            .validate(&DomainSeparator::default(), &order.data.hash_struct())
+            .recover(&DomainSeparator::default(), &order.data.hash_struct())
             .unwrap();
 
         assert_eq!(owner, h160_from_public_key(public_key));

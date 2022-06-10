@@ -227,7 +227,6 @@ impl Orderbook {
         // submitting a `PreSign` order on someone's behalf.
         new_order
             .signature
-            .to_protocol_signature()
             .scheme()
             .try_to_ecdsa_scheme()
             .ok_or(ReplaceOrderError::InvalidReplacement)?;
@@ -383,7 +382,7 @@ mod tests {
     use model::{
         app_id::AppId,
         order::{OrderBuilder, OrderData, OrderMetadata},
-        signature::CreationSignature,
+        signature::Signature,
     };
     use shared::{
         bad_token::{list_based::ListBasedDetector, MockBadTokenDetecting},
@@ -472,12 +471,12 @@ mod tests {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
-                            owner: creation.signature.expected_owner().unwrap(),
+                            owner: creation.from.unwrap(),
                             uid: new_order_uid,
                             ..Default::default()
                         },
                         data: creation.data,
-                        signature: creation.signature.to_protocol_signature(),
+                        signature: creation.signature,
                     },
                     Default::default(),
                 ))
@@ -495,10 +494,8 @@ mod tests {
                 .replace_order(
                     old_order.metadata.uid,
                     OrderCreation {
-                        signature: CreationSignature::Eip712 {
-                            from: Some(old_order.metadata.owner),
-                            signature: Default::default(),
-                        },
+                        from: Some(old_order.metadata.owner),
+                        signature: Signature::Eip712(Default::default()),
                         ..Default::default()
                     },
                 )
@@ -512,10 +509,8 @@ mod tests {
                 .replace_order(
                     old_order.metadata.uid,
                     OrderCreation {
-                        signature: CreationSignature::Eip712 {
-                            from: Some(H160([2; 20])),
-                            signature: Default::default(),
-                        },
+                        from: Some(H160([2; 20])),
+                        signature: Signature::Eip712(Default::default()),
                         data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
@@ -533,9 +528,8 @@ mod tests {
                 .replace_order(
                     old_order.metadata.uid,
                     OrderCreation {
-                        signature: CreationSignature::PreSign {
-                            from: old_order.metadata.owner,
-                        },
+                        from: Some(old_order.metadata.owner),
+                        signature: Signature::PreSign(old_order.metadata.owner),
                         data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
@@ -553,10 +547,8 @@ mod tests {
                 .replace_order(
                     old_order.metadata.uid,
                     OrderCreation {
-                        signature: CreationSignature::Eip712 {
-                            from: Some(old_order.metadata.owner),
-                            signature: Default::default(),
-                        },
+                        from: Some(old_order.metadata.owner),
+                        signature: Signature::Eip712(Default::default()),
                         data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
