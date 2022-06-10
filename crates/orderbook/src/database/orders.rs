@@ -1045,6 +1045,10 @@ mod tests {
         db.clear().await.unwrap();
 
         let old_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
             metadata: OrderMetadata {
                 owner,
                 uid: OrderUid([1; 56]),
@@ -1057,6 +1061,10 @@ mod tests {
             .unwrap();
 
         let new_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
             metadata: OrderMetadata {
                 owner,
                 uid: OrderUid([2; 56]),
@@ -1900,8 +1908,13 @@ mod tests {
 
         let owners: Vec<H160> = (0u64..2).map(H160::from_low_u64_le).collect();
 
+        let data = OrderData {
+            valid_to: u32::MAX,
+            ..Default::default()
+        };
         let orders = [
             Order {
+                data: data.clone(),
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(3),
                     owner: owners[0],
@@ -1911,6 +1924,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data: data.clone(),
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(1),
                     owner: owners[1],
@@ -1920,6 +1934,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data: data.clone(),
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(0),
                     owner: owners[0],
@@ -1929,6 +1944,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data: data.clone(),
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(2),
                     owner: owners[1],
@@ -1967,6 +1983,10 @@ mod tests {
 
         let orders: Vec<Order> = (0..=3)
             .map(|i| Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(i),
                     ..Default::default()
