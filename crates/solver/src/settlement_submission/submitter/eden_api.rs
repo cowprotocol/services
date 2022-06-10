@@ -18,6 +18,12 @@ use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 use web3::{helpers, types::Bytes};
 
+const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
+    "already known",
+    "nonce too low",
+    "replacement transaction underpriced",
+];
+
 #[derive(Clone)]
 pub struct EdenApi {
     client: Client,
@@ -104,22 +110,21 @@ impl TransactionSubmitting for EdenApi {
             })
             .await;
 
-        let successful = match &result {
-            Ok(_) => true,
-            // Sometimes `submit_slot_transaction()` times out and the fallback submission
-            // strategy reveals that the network is already aware of the transaction, either
-            // because the `eth_submitSlotTx` actually worked, or the transaction became
-            // public as part of another submission strategy (such as public mem-pool).
-            Err(err) if err.to_string().contains("already known") => {
-                tracing::debug!(?tx_hash, "transaction already known");
-                true
-            }
+        match &result {
+            Ok(_) => super::track_submission_success("eden", true),
             Err(err) => {
-                tracing::debug!(?err, "transaction submission error");
-                false
+                let error = err.to_string();
+                if ALREADY_KNOWN_TRANSACTION
+                    .iter()
+                    .any(|message| error.contains(message))
+                {
+                    tracing::debug!(?tx_hash, "transaction already known");
+                } else {
+                    tracing::warn!(?error, "transaction submission error");
+                    super::track_submission_success("eden", false);
+                }
             }
         };
-        super::track_submission_success("eden", successful);
 
         result
     }
