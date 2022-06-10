@@ -25,18 +25,19 @@ use crate::{
 };
 use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{
-    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account,
-};
+use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account};
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::Web3;
+use shared::{Web3, Web3Transport};
 use std::{
     fmt,
     time::{Duration, Instant},
 };
 use web3::types::{AccessList, TransactionReceipt, U64};
+
+/// Minimal gas price replacement factor
+const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -89,14 +90,6 @@ pub struct TransactionHandle {
     pub tx_hash: H256,
 }
 
-#[derive(Debug, Clone)]
-pub struct CancelHandle {
-    /// transaction previosly submitted using TransactionSubmitting::submit_transaction()
-    pub submitted_transaction: TransactionHandle,
-    /// empty transaction with the same nonce used for cancelling the previously submitted transaction
-    pub noop_transaction: TransactionBuilder<DynTransport>,
-}
-
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait TransactionSubmitting: Send + Sync {
@@ -104,10 +97,13 @@ pub trait TransactionSubmitting: Send + Sync {
     /// Returns transaction handle
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle>;
-    /// Cancels already submitted transaction using the cancel handle
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle>;
+    /// Cancels already submitted transaction using the noop transaction
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
     /// Returns type of the submitter.
@@ -174,7 +170,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         gas_price.map(|gas_price| match self.pending_gas_price {
             Some(pending_gas_price) => {
                 tracing::debug!("found pending transaction: {:?}", pending_gas_price);
-                let pending_gas_price = pending_gas_price.bump(1.125).ceil();
+                let pending_gas_price = pending_gas_price.bump(GAS_PRICE_BUMP).ceil();
                 if gas_price.max_fee_per_gas >= pending_gas_price.max_fee_per_gas
                     && gas_price.max_priority_fee_per_gas
                         >= pending_gas_price.max_priority_fee_per_gas
@@ -276,10 +272,10 @@ impl<'a> Submitter<'a> {
             _ = deadline_future.fuse() => {
                 tracing::debug!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
 
-                if let Some((transaction, gas_price)) = transactions.last() {
-                    let gas_price = gas_price.bump(1.125).ceil();
+                if let Some((_, gas_price)) = transactions.last() {
+                    let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
-                        .cancel_transaction(transaction, &gas_price, nonce)
+                        .cancel_transaction(&gas_price, nonce)
                         .await
                     {
                         Ok(handle) => transactions.push((handle, gas_price)),
@@ -455,11 +451,9 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
-                if let Some((previous_tx, _)) = transactions.last() {
-                    match self
-                        .cancel_transaction(previous_tx, &gas_price, nonce)
-                        .await
-                    {
+                if let Some((_, previous_gas_price)) = transactions.last() {
+                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                    match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
@@ -472,7 +466,7 @@ impl<'a> Submitter<'a> {
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
             {
-                let previous_gas_price = previous_gas_price.bump(1.125).ceil();
+                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
@@ -518,7 +512,7 @@ impl<'a> Submitter<'a> {
         gas_price: &GasPrice1559,
         nonce: U256,
         gas_limit: f64,
-    ) -> MethodBuilder<DynTransport, ()> {
+    ) -> MethodBuilder<Web3Transport, ()> {
         settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
@@ -528,7 +522,7 @@ impl<'a> Submitter<'a> {
     /// Estimate access list and validate
     async fn estimate_access_list(
         &self,
-        tx: &TransactionBuilder<DynTransport>,
+        tx: &TransactionBuilder<Web3Transport>,
     ) -> Result<AccessList> {
         let access_list = self.access_list_estimator.estimate_access_list(tx).await?;
         let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
@@ -559,7 +553,7 @@ impl<'a> Submitter<'a> {
         &self,
         gas_price: &GasPrice1559,
         nonce: U256,
-    ) -> TransactionBuilder<DynTransport> {
+    ) -> TransactionBuilder<Web3Transport> {
         TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())
@@ -571,15 +565,11 @@ impl<'a> Submitter<'a> {
     /// Prepare all data needed for cancellation of previously submitted transaction and execute cancellation
     async fn cancel_transaction(
         &self,
-        transaction: &TransactionHandle,
         gas_price: &GasPrice1559,
         nonce: U256,
     ) -> Result<TransactionHandle> {
-        let cancel_handle = CancelHandle {
-            submitted_transaction: *transaction,
-            noop_transaction: self.build_noop_transaction(&gas_price.bump(3.), nonce),
-        };
-        self.submit_api.cancel_transaction(&cancel_handle).await
+        let noop_transaction = self.build_noop_transaction(gas_price, nonce);
+        self.submit_api.cancel_transaction(noop_transaction).await
     }
 }
 

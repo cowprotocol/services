@@ -2,15 +2,12 @@ use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, CancelHandle, DisabledReason, Strategy, SubmissionLoopStatus,
+    AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
 use anyhow::Result;
-use ethcontract::{
-    dyns::DynTransport,
-    transaction::{Transaction, TransactionBuilder},
-};
+use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
-use shared::Web3;
+use shared::{Web3, Web3Transport};
 
 const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "Transaction gas price supplied is too low", //openethereum
@@ -36,7 +33,7 @@ impl CustomNodesApi {
 impl TransactionSubmitting for CustomNodesApi {
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         tracing::debug!("Custom nodes submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
@@ -100,8 +97,11 @@ impl TransactionSubmitting for CustomNodesApi {
         }
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
-        self.submit_transaction(id.noop_transaction.clone()).await
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle> {
+        self.submit_transaction(tx).await
     }
 
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {

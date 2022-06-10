@@ -5,7 +5,7 @@ use crate::settlement::{Revertable, Settlement};
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
-    AdditionalTip, CancelHandle, Strategy, SubmissionLoopStatus,
+    AdditionalTip, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{bail, Context, Result};
 use ethcontract::{
@@ -124,10 +124,13 @@ impl TransactionSubmitting for EdenApi {
         result
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle> {
         self.rpc
             .api::<PrivateNetwork>()
-            .submit_raw_transaction(id.noop_transaction.clone())
+            .submit_raw_transaction(tx)
             .await
     }
 
