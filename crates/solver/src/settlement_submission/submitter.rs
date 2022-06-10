@@ -25,13 +25,11 @@ use crate::{
 };
 use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{
-    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account,
-};
+use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account};
 use futures::FutureExt;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::Web3;
+use shared::{Web3, Web3Transport};
 use std::{
     fmt,
     time::{Duration, Instant},
@@ -99,12 +97,12 @@ pub trait TransactionSubmitting: Send + Sync {
     /// Returns transaction handle
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle>;
     /// Cancels already submitted transaction using the noop transaction
     async fn cancel_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
@@ -514,7 +512,7 @@ impl<'a> Submitter<'a> {
         gas_price: &GasPrice1559,
         nonce: U256,
         gas_limit: f64,
-    ) -> MethodBuilder<DynTransport, ()> {
+    ) -> MethodBuilder<Web3Transport, ()> {
         settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
@@ -524,7 +522,7 @@ impl<'a> Submitter<'a> {
     /// Estimate access list and validate
     async fn estimate_access_list(
         &self,
-        tx: &TransactionBuilder<DynTransport>,
+        tx: &TransactionBuilder<Web3Transport>,
     ) -> Result<AccessList> {
         let access_list = self.access_list_estimator.estimate_access_list(tx).await?;
         let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
@@ -555,7 +553,7 @@ impl<'a> Submitter<'a> {
         &self,
         gas_price: &GasPrice1559,
         nonce: U256,
-    ) -> TransactionBuilder<DynTransport> {
+    ) -> TransactionBuilder<Web3Transport> {
         TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())

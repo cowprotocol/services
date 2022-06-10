@@ -9,14 +9,13 @@ use super::{
 };
 use anyhow::{bail, Context, Result};
 use ethcontract::{
-    dyns::DynTransport,
     transaction::{Transaction, TransactionBuilder},
     H256,
 };
 use futures::{FutureExt, TryFutureExt};
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
-use shared::{transport::http::HttpTransport, Web3};
+use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 use web3::{helpers, types::Bytes};
 
 #[derive(Clone)]
@@ -34,7 +33,7 @@ struct EdenSuccess {
 impl EdenApi {
     pub fn new(client: Client, url: impl IntoUrl) -> Result<Self> {
         let url = url.into_url().context("bad eden url")?;
-        let transport = DynTransport::new(HttpTransport::new(
+        let transport = Web3Transport::new(HttpTransport::new(
             client.clone(),
             url.clone(),
             "eden".to_owned(),
@@ -48,7 +47,7 @@ impl EdenApi {
     // is a non-standard json that can't be automatically deserialized when `Transport` is used.
     async fn submit_slot_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         let (raw_signed_transaction, tx_hash) = match tx.build().now_or_never().unwrap().unwrap() {
             Transaction::Request(_) => unreachable!("verified offline account was used"),
@@ -84,7 +83,7 @@ impl EdenApi {
 impl TransactionSubmitting for EdenApi {
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         let tx_hash = match tx.clone().build().now_or_never() {
             Some(Ok(Transaction::Raw { hash, .. })) => hash,
@@ -127,7 +126,7 @@ impl TransactionSubmitting for EdenApi {
 
     async fn cancel_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         self.rpc
             .api::<PrivateNetwork>()
