@@ -571,6 +571,7 @@ async fn main() {
                 gas_price_estimator.clone(),
                 native_token.address(),
                 base_tokens.clone(),
+                network_name.to_string(),
             )),
             PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
                 one_inch_api.as_ref().unwrap().clone(),
