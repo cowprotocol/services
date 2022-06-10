@@ -386,7 +386,7 @@ impl OrderValidating for OrderValidator {
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
-        let owner = order.recover_owner(domain_separator)?;
+        let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -534,10 +534,7 @@ mod tests {
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
-    use model::{
-        order::OrderBuilder,
-        signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
-    };
+    use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
         bad_token::{MockBadTokenDetecting, TokenQuality},
@@ -928,7 +925,6 @@ mod tests {
                 ..Default::default()
             },
             from: Some(Default::default()),
-            signature: Signature::Eip712(EcdsaSignature::non_zero()),
             ..Default::default()
         };
         let result = validator

@@ -59,7 +59,7 @@ impl Order {
         full_fee_amount: U256,
         is_liquidity_order: bool,
     ) -> Result<Self, VerificationError> {
-        let owner = order.recover_owner(domain)?;
+        let owner = order.verify_owner(domain)?;
         Ok(Self {
             metadata: OrderMetadata {
                 owner,
@@ -356,12 +356,13 @@ pub struct OrderCreation {
 }
 
 impl OrderCreation {
-    /// Recovers the owner address for the specified domain.
+    /// Recovers the owner address for the specified domain, and then verifies
+    /// it matches the expected address.
     ///
-    /// This can return an error for orders with ECDSA signatures if the
-    /// optinally specidied `from` address does not match the address
-    /// EC-recovered address from the signature.
-    pub fn recover_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
+    /// Returns the recovered address on success, or an error if there is an
+    /// issue performing the EC-recover or the recovered address does not match
+    /// the expected one.
+    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
         self.signature
             .verify_owner(self.from, domain, &self.data.hash_struct())
     }
