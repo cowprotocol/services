@@ -3,9 +3,9 @@ use crate::{
     http_solver::{
         gas_model::GasModel,
         model::{
-            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, OrderModel,
-            SettledBatchAuctionModel, StablePoolParameters, TokenAmount, TokenInfoModel,
-            WeightedPoolTokenData, WeightedProductPoolParameters, MetadataModel
+            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters,
+            MetadataModel, OrderModel, SettledBatchAuctionModel, StablePoolParameters, TokenAmount,
+            TokenInfoModel, WeightedPoolTokenData, WeightedProductPoolParameters,
         },
         HttpSolverApi,
     },
@@ -457,7 +457,7 @@ mod tests {
                 testlib::tokens::WETH,
                 &[testlib::tokens::WETH, t1.1, t2.1],
             )),
-            network_name: "Ethereum / Mainnet".to_string()
+            network_name: "Ethereum / Mainnet".to_string(),
         };
 
         let result = estimator
