@@ -39,7 +39,6 @@ use shared::{
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
-    http_client::{RateLimiter, RateLimitingStrategy},
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
@@ -60,6 +59,7 @@ use shared::{
         zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
     },
+    rate_limiter::{RateLimiter, RateLimitingStrategy},
     recent_block_cache::CacheConfig,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{

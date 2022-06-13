@@ -1,6 +1,6 @@
 use crate::{
-    http_client::RateLimiter,
     price_estimation::{single_estimate, PriceEstimating, PriceEstimationError, Query},
+    rate_limiter::RateLimiter,
 };
 use futures::stream::{BoxStream, StreamExt};
 use std::{
@@ -83,8 +83,8 @@ impl PriceEstimating for RateLimitedPriceEstimator {
 mod tests {
     use super::*;
     use crate::{
-        http_client::RateLimitingStrategy,
         price_estimation::{Estimate, MockPriceEstimating, PriceEstimateResult},
+        rate_limiter::RateLimitingStrategy,
     };
     use futures::{FutureExt, StreamExt};
     use primitive_types::H160;

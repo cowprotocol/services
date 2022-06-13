@@ -1,7 +1,7 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
     gas_price_estimation::GasEstimatorType,
-    http_client::RateLimitingStrategy,
+    rate_limiter::RateLimitingStrategy,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use anyhow::{ensure, Context, Result};
