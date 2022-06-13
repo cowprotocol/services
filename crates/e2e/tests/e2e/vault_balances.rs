@@ -9,7 +9,6 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use serde_json::json;
 use shared::{sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -119,10 +118,10 @@ async fn vault_balances(web3: Web3) {
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
         )
         .build()
-        .creation;
+        .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order).to_string())
+        .json(&order)
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);

@@ -3,12 +3,12 @@ use crate::{
     orderbook::{Orderbook, ReplaceOrderError},
 };
 use anyhow::Result;
-use model::order::{OrderCreationPayload, OrderUid};
+use model::order::{OrderCreation, OrderUid};
 use reqwest::StatusCode;
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply, Filter, Rejection};
 
-fn request() -> impl Filter<Extract = (OrderUid, OrderCreationPayload), Error = Rejection> + Clone {
+fn request() -> impl Filter<Extract = (OrderUid, OrderCreation), Error = Rejection> + Clone {
     warp::path!("orders" / OrderUid)
         .and(warp::patch())
         .and(extract_payload())
@@ -53,7 +53,7 @@ mod tests {
     #[tokio::test]
     async fn replace_order_request_filter() {
         let old_order = OrderUid::default();
-        let new_order = OrderCreationPayload::default();
+        let new_order = OrderCreation::default();
 
         let result = warp::test::request()
             .path(&format!("/orders/{old_order}"))

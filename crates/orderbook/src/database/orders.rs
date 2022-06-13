@@ -8,7 +8,7 @@ use futures::{stream::TryStreamExt, FutureExt};
 use model::{
     app_id::AppId,
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderKind, OrderMetadata, OrderStatus, OrderUid,
+        BuyTokenDestination, Order, OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid,
         SellTokenSource,
     },
     signature::{Signature, SigningScheme},
@@ -238,30 +238,28 @@ async fn insert_order(
                 settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount, is_liquidity_order) \
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);";
     let receiver = order
-        .creation
+        .data
         .receiver
         .map(|address| address.as_bytes().to_vec());
     sqlx::query(QUERY)
         .bind(order.metadata.uid.0.as_ref())
         .bind(order.metadata.owner.as_bytes())
         .bind(order.metadata.creation_date)
-        .bind(order.creation.sell_token.as_bytes())
-        .bind(order.creation.buy_token.as_bytes())
+        .bind(order.data.sell_token.as_bytes())
+        .bind(order.data.buy_token.as_bytes())
         .bind(receiver)
-        .bind(u256_to_big_decimal(&order.creation.sell_amount))
-        .bind(u256_to_big_decimal(&order.creation.buy_amount))
-        .bind(order.creation.valid_to)
-        .bind(&order.creation.app_data.0[..])
-        .bind(u256_to_big_decimal(&order.creation.fee_amount))
-        .bind(DbOrderKind::from(order.creation.kind))
-        .bind(order.creation.partially_fillable)
-        .bind(&*order.creation.signature.to_bytes())
-        .bind(DbSigningScheme::from(order.creation.signature.scheme()))
+        .bind(u256_to_big_decimal(&order.data.sell_amount))
+        .bind(u256_to_big_decimal(&order.data.buy_amount))
+        .bind(order.data.valid_to)
+        .bind(&order.data.app_data.0[..])
+        .bind(u256_to_big_decimal(&order.data.fee_amount))
+        .bind(DbOrderKind::from(order.data.kind))
+        .bind(order.data.partially_fillable)
+        .bind(&*order.signature.to_bytes())
+        .bind(DbSigningScheme::from(order.signature.scheme()))
         .bind(order.metadata.settlement_contract.as_bytes())
-        .bind(DbSellTokenSource::from(order.creation.sell_token_balance))
-        .bind(DbBuyTokenDestination::from(
-            order.creation.buy_token_balance,
-        ))
+        .bind(DbSellTokenSource::from(order.data.sell_token_balance))
+        .bind(DbBuyTokenDestination::from(order.data.buy_token_balance))
         .bind(u256_to_big_decimal(&order.metadata.full_fee_amount))
         .bind(order.metadata.is_liquidity_order)
         .execute(transaction)
@@ -601,7 +599,7 @@ impl OrdersQueryRow {
 
     fn into_order(self) -> Result<Order> {
         let status = self.calculate_status();
-        let order_metadata = OrderMetadata {
+        let metadata = OrderMetadata {
             creation_date: self.creation_timestamp,
             owner: h160_from_vec(self.owner)?,
             uid: OrderUid(
@@ -629,7 +627,7 @@ impl OrdersQueryRow {
             is_liquidity_order: self.is_liquidity_order,
         };
         let signing_scheme = self.signing_scheme.into();
-        let order_creation = OrderCreation {
+        let data = OrderData {
             sell_token: h160_from_vec(self.sell_token)?,
             buy_token: h160_from_vec(self.buy_token)?,
             receiver: self.receiver.map(h160_from_vec).transpose()?,
@@ -647,13 +645,14 @@ impl OrdersQueryRow {
                 .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
             kind: self.kind.into(),
             partially_fillable: self.partially_fillable,
-            signature: Signature::from_bytes(signing_scheme, &self.signature)?,
             sell_token_balance: self.sell_token_balance.into(),
             buy_token_balance: self.buy_token_balance.into(),
         };
+        let signature = Signature::from_bytes(signing_scheme, &self.signature)?;
         Ok(Order {
-            metadata: order_metadata,
-            creation: order_creation,
+            metadata,
+            data,
+            signature,
         })
     }
 }
@@ -908,7 +907,7 @@ mod tests {
         db.insert_order(&order, Default::default()).await.unwrap();
 
         // Note that order UIDs do not care about the signing scheme.
-        order.creation.signature = Signature::default_with(SigningScheme::PreSign);
+        order.signature = Signature::default_with(SigningScheme::PreSign);
         assert!(matches!(
             db.insert_order(&order, Default::default()).await,
             Err(InsertionError::DuplicatedRecord)
@@ -966,7 +965,7 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(2),
                     receiver: Some(H160::from_low_u64_be(6)),
@@ -977,10 +976,10 @@ mod tests {
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: true,
-                    signature: Signature::default_with(*signing_scheme),
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Internal,
                 },
+                signature: Signature::default_with(*signing_scheme),
             };
             db.insert_order(&order, Default::default()).await.unwrap();
             assert_eq!(db.orders(&filter).await.unwrap(), vec![order]);
@@ -1046,6 +1045,10 @@ mod tests {
         db.clear().await.unwrap();
 
         let old_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
             metadata: OrderMetadata {
                 owner,
                 uid: OrderUid([1; 56]),
@@ -1058,6 +1061,10 @@ mod tests {
             .unwrap();
 
         let new_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
             metadata: OrderMetadata {
                 owner,
                 uid: OrderUid([2; 56]),
@@ -1161,12 +1168,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(2),
                     valid_to: 10,
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
@@ -1175,12 +1183,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(3),
                     valid_to: 11,
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
@@ -1189,12 +1198,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(3),
                     valid_to: 12,
                     ..Default::default()
                 },
+                ..Default::default()
             },
         ];
         for order in orders.iter() {
@@ -1283,13 +1293,13 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1382,11 +1392,11 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1508,13 +1518,13 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 1.into(),
                 buy_amount: 1.into(),
-                signature: Signature::default_with(SigningScheme::PreSign),
                 ..Default::default()
             },
+            signature: Signature::default_with(SigningScheme::PreSign),
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1604,8 +1614,7 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
@@ -1613,6 +1622,7 @@ mod tests {
                 partially_fillable: true,
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1720,14 +1730,15 @@ mod tests {
         db.clear().await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
-            creation: OrderCreation {
-                signature: Signature::default_with(SigningScheme::PreSign),
+            data: OrderData {
+                valid_to: u32::MAX,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 ..Default::default()
             },
+            signature: Signature::default_with(SigningScheme::PreSign),
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1795,14 +1806,14 @@ mod tests {
         db.clear().await.unwrap();
         let order_uid = |uid: u8| OrderUid([uid; 56]);
         let order = |uid: u8, scheme: SigningScheme| Order {
-            creation: OrderCreation {
-                signature: Signature::default_with(scheme),
+            data: OrderData {
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid: order_uid(uid),
                 ..Default::default()
             },
+            signature: Signature::default_with(scheme),
         };
 
         db.insert_order(&order(0, SigningScheme::Eip712), Default::default())
@@ -1897,8 +1908,13 @@ mod tests {
 
         let owners: Vec<H160> = (0u64..2).map(H160::from_low_u64_le).collect();
 
+        let data = OrderData {
+            valid_to: u32::MAX,
+            ..Default::default()
+        };
         let orders = [
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(3),
                     owner: owners[0],
@@ -1908,6 +1924,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(1),
                     owner: owners[1],
@@ -1917,6 +1934,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(0),
                     owner: owners[0],
@@ -1926,6 +1944,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(2),
                     owner: owners[1],
@@ -1964,11 +1983,15 @@ mod tests {
 
         let orders: Vec<Order> = (0..=3)
             .map(|i| Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(i),
                     ..Default::default()
                 },
-                creation: Default::default(),
+                ..Default::default()
             })
             .collect();
 

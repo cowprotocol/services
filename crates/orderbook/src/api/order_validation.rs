@@ -7,9 +7,10 @@ use contracts::WETH9;
 use ethcontract::{H160, U256};
 use model::{
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderKind, SellTokenSource, BUY_ETH_ADDRESS,
+        BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
+        BUY_ETH_ADDRESS,
     },
-    signature::SigningScheme,
+    signature::{SigningScheme, VerificationError},
     DomainSeparator,
 };
 use shared::{
@@ -39,7 +40,7 @@ pub trait OrderValidating: Send + Sync {
     /// This is the full order validation performed at the time of order placement
     /// (i.e. once all the required fields on an Order are provided). Specifically, verifying that
     ///     - buy & sell amounts are non-zero,
-    ///     - order's owner matches the from field (if specified),
+    ///     - order's signature recovers correctly
     ///     - fee is sufficient,
     ///     - buy & sell tokens passed "bad token" detection,
     ///     - user has sufficient (transferable) funds to execute the order.
@@ -48,8 +49,7 @@ pub trait OrderValidating: Send + Sync {
     /// other aspects of the order are not malformed.
     async fn validate_and_construct_order(
         &self,
-        order_creation: OrderCreation,
-        sender: Option<H160>,
+        order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError>;
@@ -152,6 +152,15 @@ pub enum ValidationError {
     Other(anyhow::Error),
 }
 
+impl From<VerificationError> for ValidationError {
+    fn from(err: VerificationError) -> Self {
+        match err {
+            VerificationError::UnableToRecoverSigner => Self::InvalidSignature,
+            VerificationError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
+        }
+    }
+}
+
 impl IntoWarpReply for ValidationError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
@@ -248,7 +257,7 @@ pub struct PreOrderData {
     pub is_liquidity_order: bool,
 }
 
-fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
+fn actual_receiver(owner: H160, order: &OrderData) -> H160 {
     let receiver = order.receiver.unwrap_or_default();
     if receiver == H160::zero() {
         owner
@@ -260,7 +269,8 @@ fn actual_receiver(owner: H160, order: &OrderCreation) -> H160 {
 impl PreOrderData {
     pub fn from_order_creation(
         owner: H160,
-        order: &OrderCreation,
+        order: &OrderData,
+        signing_scheme: SigningScheme,
         is_liquidity_order: bool,
     ) -> Self {
         Self {
@@ -272,7 +282,7 @@ impl PreOrderData {
             partially_fillable: order.partially_fillable,
             buy_token_balance: order.buy_token_balance,
             sell_token_balance: order.sell_token_balance,
-            signing_scheme: order.signature.scheme(),
+            signing_scheme,
             is_liquidity_order,
         }
     }
@@ -372,23 +382,17 @@ impl OrderValidating for OrderValidator {
 
     async fn validate_and_construct_order(
         &self,
-        order_creation: OrderCreation,
-        sender: Option<H160>,
+        order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
     ) -> Result<(Order, FeeParameters), ValidationError> {
-        let owner = order_creation
-            .signature
-            .validate(domain_separator, &order_creation.hash_struct())
-            .ok_or(ValidationError::InvalidSignature)?;
+        let owner = order.verify_owner(domain_separator)?;
+        let signing_scheme = order.signature.scheme();
 
-        if order_creation.buy_amount.is_zero() || order_creation.sell_amount.is_zero() {
+        if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        if matches!(sender, Some(from) if from != owner) {
-            return Err(ValidationError::WrongOwner(owner));
-        }
-        for &token in &[order_creation.sell_token, order_creation.buy_token] {
+        for &token in &[order.data.sell_token, order.data.buy_token] {
             if !self
                 .bad_token_detector
                 .detect(token)
@@ -403,7 +407,8 @@ impl OrderValidating for OrderValidator {
         let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
         self.partial_validate(PreOrderData::from_order_creation(
             owner,
-            &order_creation,
+            &order.data,
+            signing_scheme,
             is_liquidity_order,
         ))
         .await
@@ -413,16 +418,16 @@ impl OrderValidating for OrderValidator {
             .fee_validator
             .get_unsubsidized_min_fee(
                 FeeData {
-                    sell_token: order_creation.sell_token,
-                    buy_token: order_creation.buy_token,
-                    amount: match order_creation.kind {
-                        OrderKind::Buy => order_creation.buy_amount,
-                        OrderKind::Sell => order_creation.sell_amount,
+                    sell_token: order.data.sell_token,
+                    buy_token: order.data.buy_token,
+                    amount: match order.data.kind {
+                        OrderKind::Buy => order.data.buy_amount,
+                        OrderKind::Sell => order.data.sell_amount,
                     },
-                    kind: order_creation.kind,
+                    kind: order.data.kind,
                 },
-                order_creation.app_data,
-                order_creation.fee_amount,
+                order.data.app_data,
+                order.data.fee_amount,
                 owner,
             )
             .await
@@ -441,7 +446,7 @@ impl OrderValidating for OrderValidator {
                 }
             })?;
 
-        let min_balance = match minimum_balance(&order_creation) {
+        let min_balance = match minimum_balance(&order.data) {
             Some(amount) => amount,
             None => return Err(ValidationError::SellAmountOverflow),
         };
@@ -451,10 +456,10 @@ impl OrderValidating for OrderValidator {
         match self
             .balance_fetcher
             .can_transfer(
-                order_creation.sell_token,
+                order.data.sell_token,
                 owner,
                 min_balance,
-                order_creation.sell_token_balance,
+                order.data.sell_token_balance,
             )
             .await
         {
@@ -462,7 +467,7 @@ impl OrderValidating for OrderValidator {
             Err(
                 TransferSimulationError::InsufficientAllowance
                 | TransferSimulationError::InsufficientBalance,
-            ) if order_creation.signature.scheme() == SigningScheme::PreSign => {
+            ) if signing_scheme == SigningScheme::PreSign => {
                 // We have an exception for pre-sign orders where they do not
                 // require sufficient balance or allowance. The idea, is that
                 // this allows smart contracts to place orders bundled with
@@ -489,13 +494,12 @@ impl OrderValidating for OrderValidator {
         }
 
         let order = Order::from_order_creation(
-            &order_creation,
+            &order,
             domain_separator,
             settlement_contract,
             unsubsidized_fee.amount_in_sell_token(),
-            owner,
             is_liquidity_order,
-        );
+        )?;
         Ok((order, unsubsidized_fee))
     }
 }
@@ -511,7 +515,7 @@ fn has_same_buy_and_sell_token(order: &PreOrderData, native_token: &WETH9) -> bo
 /// Min balance user must have in sell token for order to be accepted.
 ///
 /// None when addition overflows.
-fn minimum_balance(order: &OrderCreation) -> Option<U256> {
+fn minimum_balance(order: &OrderData) -> Option<U256> {
     // TODO: Note that we are pessimistic here for partially fillable orders,
     // since they don't need the full balance in order for the order to be
     // tradable. However, since they are currently only used for PMMs for
@@ -540,13 +544,13 @@ mod tests {
 
     #[test]
     fn minimum_balance_() {
-        let order = OrderCreation {
+        let order = OrderData {
             sell_amount: U256::MAX,
             fee_amount: U256::from(1),
             ..Default::default()
         };
         assert_eq!(minimum_balance(&order), None);
-        let order = OrderCreation {
+        let order = OrderData {
             sell_amount: U256::from(1),
             fee_amount: U256::from(1),
             ..Default::default()
@@ -824,18 +828,21 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let (order, _) = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await
             .unwrap();
-        assert_eq!(order.metadata.full_fee_amount, order.creation.fee_amount);
+        assert_eq!(order.metadata.full_fee_amount, order.data.fee_amount);
     }
 
     #[tokio::test]
@@ -865,15 +872,18 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(0),
-            sell_amount: U256::from(0),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(0),
+                sell_amount: U256::from(0),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::ZeroAmount)));
@@ -906,20 +916,19 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            from: Some(Default::default()),
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(
-                order,
-                Some(Default::default()),
-                &Default::default(),
-                Default::default(),
-            )
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         assert!(matches!(result, Err(ValidationError::WrongOwner(_))));
     }
@@ -951,15 +960,18 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientFee)));
@@ -994,15 +1006,18 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::UnsupportedToken(_))));
@@ -1035,16 +1050,19 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::MAX,
-            fee_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::MAX,
+                fee_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::SellAmountOverflow)));
@@ -1077,15 +1095,18 @@ mod tests {
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
-            valid_to: model::time::now_in_epoch_seconds() + 2,
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            buy_amount: U256::from(1),
-            sell_amount: U256::from(1),
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
             ..Default::default()
         };
         let result = validator
-            .validate_and_construct_order(order, None, &Default::default(), Default::default())
+            .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
@@ -1139,8 +1160,7 @@ mod tests {
                                         SecretKeyRef::new(&ONE_KEY)
                                     )
                                     .build()
-                                    .creation,
-                                None,
+                                    .into(),
                                 &Default::default(),
                                 Default::default()
                             )
@@ -1152,8 +1172,7 @@ mod tests {
                 assert!(matches!(
                     validator
                         .validate_and_construct_order(
-                            order.with_presign(Default::default()).build().creation,
-                            None,
+                            order.with_presign(Default::default()).build().into(),
                             &Default::default(),
                             Default::default()
                         )

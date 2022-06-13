@@ -3,13 +3,13 @@ use crate::{
     orderbook::{AddOrderError, Orderbook},
 };
 use anyhow::Result;
-use model::order::{OrderCreationPayload, OrderUid};
+use model::order::{OrderCreation, OrderUid};
 use std::{convert::Infallible, sync::Arc};
 use warp::reply::with_status;
 use warp::{hyper::StatusCode, Filter, Rejection};
 
-pub fn create_order_request(
-) -> impl Filter<Extract = (OrderCreationPayload,), Error = Rejection> + Clone {
+pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
+{
     warp::path!("orders")
         .and(warp::post())
         .and(extract_payload())
@@ -41,7 +41,7 @@ pub fn create_order_response(result: Result<OrderUid, AddOrderError>) -> super::
 pub fn create_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    create_order_request().and_then(move |order_payload: OrderCreationPayload| {
+    create_order_request().and_then(move |order_payload: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
             let quote_id = order_payload.quote_id;
@@ -58,14 +58,14 @@ pub fn create_order(
 mod tests {
     use super::*;
     use crate::api::response_body;
-    use model::order::{OrderCreationPayload, OrderUid};
+    use model::order::{OrderCreation, OrderUid};
     use serde_json::json;
     use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn create_order_request_ok() {
         let filter = create_order_request();
-        let order_payload = OrderCreationPayload::default();
+        let order_payload = OrderCreation::default();
         let request = request()
             .path("/orders")
             .method("POST")

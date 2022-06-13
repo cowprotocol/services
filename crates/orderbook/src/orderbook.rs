@@ -8,7 +8,7 @@ use chrono::Utc;
 use ethcontract::H256;
 use model::{
     auction::Auction,
-    order::{Order, OrderCancellation, OrderCreationPayload, OrderStatus, OrderUid},
+    order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
     DomainSeparator,
 };
 use primitive_types::H160;
@@ -148,18 +148,10 @@ impl Orderbook {
         }
     }
 
-    pub async fn add_order(
-        &self,
-        payload: OrderCreationPayload,
-    ) -> Result<OrderUid, AddOrderError> {
+    pub async fn add_order(&self, payload: OrderCreation) -> Result<OrderUid, AddOrderError> {
         let (order, fee) = self
             .order_validator
-            .validate_and_construct_order(
-                payload.order_creation,
-                payload.from,
-                &self.domain_separator,
-                self.settlement_contract,
-            )
+            .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
             .await?;
 
         self.database.insert_order(&order, fee).await?;
@@ -185,7 +177,7 @@ impl Orderbook {
 
         match order.metadata.status {
             OrderStatus::PresignaturePending => return Err(OrderCancellationError::OnChainOrder),
-            OrderStatus::Open if !order.creation.signature.scheme().is_ecdsa_scheme() => {
+            OrderStatus::Open if !order.signature.scheme().is_ecdsa_scheme() => {
                 return Err(OrderCancellationError::OnChainOrder);
             }
             OrderStatus::Fulfilled => return Err(OrderCancellationError::OrderFullyExecuted),
@@ -228,13 +220,12 @@ impl Orderbook {
     pub async fn replace_order(
         &self,
         old_order: OrderUid,
-        new_order: OrderCreationPayload,
+        new_order: OrderCreation,
     ) -> Result<OrderUid, ReplaceOrderError> {
         // Replacement order signatures need to be validated meaning we cannot
         // accept `PreSign` orders, otherwise anyone can cancel a user order by
         // submitting a `PreSign` order on someone's behalf.
         new_order
-            .order_creation
             .signature
             .scheme()
             .try_to_ecdsa_scheme()
@@ -244,8 +235,7 @@ impl Orderbook {
         let (new_order, new_fee) = self
             .order_validator
             .validate_and_construct_order(
-                new_order.order_creation,
-                new_order.from,
+                new_order,
                 &self.domain_separator,
                 self.settlement_contract,
             )
@@ -258,7 +248,7 @@ impl Orderbook {
             order_uid: old_order.metadata.uid,
             ..Default::default()
         };
-        if new_order.creation.app_data != cancellation.hash_struct()
+        if new_order.data.app_data != cancellation.hash_struct()
             || new_order.metadata.owner != old_order.metadata.owner
         {
             return Err(ReplaceOrderError::InvalidReplacement);
@@ -361,7 +351,7 @@ pub async fn filter_unsupported_tokens(
     // this manual iteration or conversion to stream.
     let mut index = 0;
     'outer: while index < orders.len() {
-        for token in orders[index].creation.token_pair().unwrap() {
+        for token in orders[index].data.token_pair().unwrap() {
             if !bad_token.detect(token).await?.is_good() {
                 orders.swap_remove(index);
                 continue 'outer;
@@ -391,7 +381,7 @@ mod tests {
     use mockall::predicate::eq;
     use model::{
         app_id::AppId,
-        order::{OrderBuilder, OrderCreation, OrderMetadata},
+        order::{OrderBuilder, OrderData, OrderMetadata},
         signature::Signature,
     };
     use shared::{
@@ -477,15 +467,16 @@ mod tests {
         let mut order_validator = MockOrderValidating::new();
         order_validator
             .expect_validate_and_construct_order()
-            .returning(move |creation, from, _, _| {
+            .returning(move |creation, _, _| {
                 Ok((
                     Order {
                         metadata: OrderMetadata {
-                            owner: from.unwrap(),
+                            owner: creation.from.unwrap(),
                             uid: new_order_uid,
                             ..Default::default()
                         },
-                        creation,
+                        data: creation.data,
+                        signature: creation.signature,
                     },
                     Default::default(),
                 ))
@@ -502,8 +493,9 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         from: Some(old_order.metadata.owner),
+                        signature: Signature::Eip712(Default::default()),
                         ..Default::default()
                     },
                 )
@@ -516,9 +508,10 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         from: Some(H160([2; 20])),
-                        order_creation: OrderCreation {
+                        signature: Signature::Eip712(Default::default()),
+                        data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
                         },
@@ -534,11 +527,11 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         from: Some(old_order.metadata.owner),
-                        order_creation: OrderCreation {
+                        signature: Signature::PreSign(old_order.metadata.owner),
+                        data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
-                            signature: Signature::PreSign(old_order.metadata.owner),
                             ..Default::default()
                         },
                         ..Default::default()
@@ -553,9 +546,10 @@ mod tests {
             orderbook
                 .replace_order(
                     old_order.metadata.uid,
-                    OrderCreationPayload {
+                    OrderCreation {
                         from: Some(old_order.metadata.owner),
-                        order_creation: OrderCreation {
+                        signature: Signature::Eip712(Default::default()),
+                        data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
                         },

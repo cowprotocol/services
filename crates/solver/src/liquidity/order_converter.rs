@@ -25,10 +25,10 @@ impl OrderConverter {
     /// Converts a GPv2 order into a `LimitOrder` type liquidity for solvers.
     pub fn normalize_limit_order(&self, order: Order) -> Result<LimitOrder> {
         let native_token = self.native_token.clone();
-        let buy_token = if order.creation.buy_token == BUY_ETH_ADDRESS {
+        let buy_token = if order.data.buy_token == BUY_ETH_ADDRESS {
             native_token.address()
         } else {
-            order.creation.buy_token
+            order.data.buy_token
         };
 
         let remaining = order.remaining_amounts()?;
@@ -41,12 +41,12 @@ impl OrderConverter {
         let is_liquidity_order = order.metadata.is_liquidity_order;
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
-            sell_token: order.creation.sell_token,
+            sell_token: order.data.sell_token,
             buy_token,
             sell_amount: remaining.sell_amount,
             buy_amount: remaining.buy_amount,
-            kind: order.creation.kind,
-            partially_fillable: order.creation.partially_fillable,
+            kind: order.data.kind,
+            partially_fillable: order.data.partially_fillable,
             unscaled_subsidized_fee: remaining.fee_amount,
             scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
@@ -70,7 +70,7 @@ struct OrderSettlementHandler {
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
     fn encode(&self, executed_amount: U256, encoder: &mut SettlementEncoder) -> Result<()> {
-        let is_native_token_buy_order = self.order.creation.buy_token == BUY_ETH_ADDRESS;
+        let is_native_token_buy_order = self.order.data.buy_token == BUY_ETH_ADDRESS;
 
         if !self.is_liquidity_order && is_native_token_buy_order {
             // liquidity orders don't need an additional token equivalency, as the buy tokens
@@ -109,7 +109,7 @@ pub mod tests {
     use crate::settlement::tests::assert_settlement_encoded_with;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{OrderCreation, OrderKind, OrderMetadata};
+    use model::order::{OrderData, OrderKind, OrderMetadata};
     use shared::dummy_contract;
 
     #[test]
@@ -117,7 +117,7 @@ pub mod tests {
         let native_token = H160([0x42; 20]);
         let converter = OrderConverter::test(native_token);
         let order = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
                 ..Default::default()
             },
@@ -135,7 +135,7 @@ pub mod tests {
         let buy_token = H160([0x21; 20]);
         let converter = OrderConverter::test(H160([0x42; 20]));
         let order = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_token,
                 ..Default::default()
             },
@@ -158,14 +158,15 @@ pub mod tests {
         assert_eq!(
             converter
                 .normalize_limit_order(Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         fee_amount: 10.into(),
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
                         full_fee_amount: 20.into(),
                         ..Default::default()
-                    }
+                    },
+                    ..Default::default()
                 })
                 .unwrap()
                 .scaled_unsubsidized_fee,
@@ -175,7 +176,7 @@ pub mod tests {
         assert_eq!(
             converter
                 .normalize_limit_order(Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         fee_amount: 10.into(),
                         ..Default::default()
                     },
@@ -183,6 +184,7 @@ pub mod tests {
                         full_fee_amount: 50.into(),
                         ..Default::default()
                     },
+                    ..Default::default()
                 })
                 .unwrap()
                 .scaled_unsubsidized_fee,
@@ -205,7 +207,7 @@ pub mod tests {
             sell_token => U256::from(200),
         };
         let order = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
                 sell_token,
                 sell_amount: 1337.into(),
@@ -214,7 +216,7 @@ pub mod tests {
             },
             ..Default::default()
         };
-        println!("{}", order.creation.buy_token);
+        println!("{}", order.data.buy_token);
 
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
@@ -253,7 +255,7 @@ pub mod tests {
             sell_token => U256::from(2),
         };
         let order = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_token: BUY_ETH_ADDRESS,
                 buy_amount: 1337.into(),
                 sell_token,
@@ -262,7 +264,7 @@ pub mod tests {
             },
             ..Default::default()
         };
-        println!("{}", order.creation.buy_token);
+        println!("{}", order.data.buy_token);
 
         let order_settlement_handler = OrderSettlementHandler {
             order: order.clone(),
@@ -302,7 +304,7 @@ pub mod tests {
             sell_token => U256::from(200),
         };
         let order = Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_token: not_buy_eth_address,
                 buy_amount: 1337.into(),
                 sell_token,
@@ -337,7 +339,7 @@ pub mod tests {
         };
         let order = converter
             .normalize_limit_order(Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 10.into(),
                     buy_amount: 20.into(),
                     fee_amount: 30.into(),
@@ -350,6 +352,7 @@ pub mod tests {
                     full_fee_amount: 40.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             })
             .unwrap();
 
