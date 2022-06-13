@@ -12,7 +12,6 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use serde_json::json;
 use shared::{maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -157,7 +156,7 @@ async fn eth_integration(web3: Web3) {
         .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_buy_eth_a).to_string())
+        .json(&order_buy_eth_a)
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
@@ -178,7 +177,7 @@ async fn eth_integration(web3: Web3) {
         .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order_buy_eth_b).to_string())
+        .json(&order_buy_eth_b)
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);

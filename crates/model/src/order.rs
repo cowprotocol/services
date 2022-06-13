@@ -76,12 +76,7 @@ impl Order {
     }
 
     pub fn into_order_creation(self) -> OrderCreation {
-        OrderCreation {
-            data: self.data,
-            from: Some(self.metadata.owner),
-            signature: self.signature,
-            quote_id: None,
-        }
+        self.into()
     }
 
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
@@ -378,6 +373,17 @@ impl Default for OrderCreation {
             },
             from: None,
             signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            quote_id: None,
+        }
+    }
+}
+
+impl From<Order> for OrderCreation {
+    fn from(order: Order) -> Self {
+        OrderCreation {
+            data: order.data,
+            from: Some(order.metadata.owner),
+            signature: order.signature,
             quote_id: None,
         }
     }

@@ -10,7 +10,6 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use serde_json::json;
 use shared::maintenance::Maintaining;
 use shared::{
     sources::uniswap_v2::pool_fetching::PoolFetcher,
@@ -164,7 +163,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order).to_string())
+        .json(&order)
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);

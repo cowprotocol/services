@@ -1160,7 +1160,7 @@ mod tests {
                                         SecretKeyRef::new(&ONE_KEY)
                                     )
                                     .build()
-                                    .into_order_creation(),
+                                    .into(),
                                 &Default::default(),
                                 Default::default()
                             )
@@ -1172,10 +1172,7 @@ mod tests {
                 assert!(matches!(
                     validator
                         .validate_and_construct_order(
-                            order
-                                .with_presign(Default::default())
-                                .build()
-                                .into_order_creation(),
+                            order.with_presign(Default::default()).build().into(),
                             &Default::default(),
                             Default::default()
                         )
