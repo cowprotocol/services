@@ -35,7 +35,7 @@ use std::{
     time::Duration,
 };
 
-pub struct QuasimodoPriceEstimator {
+pub struct HttpPriceEstimator {
     api: Arc<dyn HttpSolverApi>,
     sharing: RequestSharing<
         Query,
@@ -50,7 +50,7 @@ pub struct QuasimodoPriceEstimator {
     network_name: String,
 }
 
-impl QuasimodoPriceEstimator {
+impl HttpPriceEstimator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: Arc<dyn HttpSolverApi>,
@@ -312,7 +312,7 @@ impl QuasimodoPriceEstimator {
     }
 }
 
-impl PriceEstimating for QuasimodoPriceEstimator {
+impl PriceEstimating for HttpPriceEstimator {
     fn estimates<'a>(
         &'a self,
         queries: &'a [Query],
@@ -435,7 +435,7 @@ mod tests {
         );
         let gas_info = Arc::new(web3);
 
-        let estimator = QuasimodoPriceEstimator {
+        let estimator = HttpPriceEstimator {
             api: Arc::new(DefaultHttpSolverApi {
                 name: "test".to_string(),
                 network_name: "1".to_string(),
