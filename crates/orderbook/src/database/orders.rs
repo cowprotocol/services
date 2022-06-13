@@ -1914,7 +1914,7 @@ mod tests {
         };
         let orders = [
             Order {
-                data: data.clone(),
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(3),
                     owner: owners[0],
@@ -1924,7 +1924,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
-                data: data.clone(),
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(1),
                     owner: owners[1],
@@ -1934,7 +1934,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
-                data: data.clone(),
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(0),
                     owner: owners[0],
@@ -1944,7 +1944,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
-                data: data.clone(),
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(2),
                     owner: owners[1],
