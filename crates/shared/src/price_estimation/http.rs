@@ -3,9 +3,9 @@ use crate::{
     http_solver::{
         gas_model::GasModel,
         model::{
-            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters, OrderModel,
-            SettledBatchAuctionModel, StablePoolParameters, TokenAmount, TokenInfoModel,
-            WeightedPoolTokenData, WeightedProductPoolParameters,
+            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters,
+            MetadataModel, OrderModel, SettledBatchAuctionModel, StablePoolParameters, TokenAmount,
+            TokenInfoModel, WeightedPoolTokenData, WeightedProductPoolParameters,
         },
         HttpSolverApi,
     },
@@ -35,7 +35,7 @@ use std::{
     time::Duration,
 };
 
-pub struct QuasimodoPriceEstimator {
+pub struct HttpPriceEstimator {
     api: Arc<dyn HttpSolverApi>,
     sharing: RequestSharing<
         Query,
@@ -47,9 +47,11 @@ pub struct QuasimodoPriceEstimator {
     gas_info: Arc<dyn GasPriceEstimating>,
     native_token: H160,
     base_tokens: Arc<BaseTokens>,
+    network_name: String,
 }
 
-impl QuasimodoPriceEstimator {
+impl HttpPriceEstimator {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: Arc<dyn HttpSolverApi>,
         pools: Arc<PoolCache>,
@@ -58,6 +60,7 @@ impl QuasimodoPriceEstimator {
         gas_info: Arc<dyn GasPriceEstimating>,
         native_token: H160,
         base_tokens: Arc<BaseTokens>,
+        network_name: String,
     ) -> Self {
         Self {
             api,
@@ -68,6 +71,7 @@ impl QuasimodoPriceEstimator {
             gas_info,
             native_token,
             base_tokens,
+            network_name,
         }
     }
 
@@ -151,7 +155,12 @@ impl QuasimodoPriceEstimator {
             tokens,
             orders,
             amms,
-            metadata: None,
+            metadata: Some(MetadataModel {
+                environment: Some(self.network_name.clone()),
+                auction_id: None,
+                gas_price: Some(gas_price.to_f64_lossy()),
+                native_token: Some(self.native_token),
+            }),
         };
 
         let api = self.api.clone();
@@ -303,7 +312,7 @@ impl QuasimodoPriceEstimator {
     }
 }
 
-impl PriceEstimating for QuasimodoPriceEstimator {
+impl PriceEstimating for HttpPriceEstimator {
     fn estimates<'a>(
         &'a self,
         queries: &'a [Query],
@@ -426,7 +435,7 @@ mod tests {
         );
         let gas_info = Arc::new(web3);
 
-        let estimator = QuasimodoPriceEstimator {
+        let estimator = HttpPriceEstimator {
             api: Arc::new(DefaultHttpSolverApi {
                 name: "test".to_string(),
                 network_name: "1".to_string(),
@@ -448,6 +457,7 @@ mod tests {
                 testlib::tokens::WETH,
                 &[testlib::tokens::WETH, t1.1, t2.1],
             )),
+            network_name: "Ethereum / Mainnet".to_string(),
         };
 
         let result = estimator

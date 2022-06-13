@@ -227,6 +227,18 @@ impl Alerter {
         self.update_open_orders().await?;
         if self.last_observed_trade.elapsed() <= self.config.time_without_trade {
             self.no_trades_but_matchable_order.set(0);
+            // Delete all matchable timestamps.
+            //
+            // If we didn't do this what could happen is that first we mark an order as matchable
+            // at t0. Then a trade happens so we skip the matchable update loop below because if
+            // there was a recent trade we don't want to alert anyway. Then no trade happens for
+            // long enough that we want to alert and the order is again matchable.
+            // In this case we would alert immediately even though it could be the case that the
+            // order wasn't matchable and just now became matchable again. We would wrongly assume
+            // it has been matchable since t0 but we did not check this between now and then.
+            for (_, instant) in self.open_orders.iter_mut() {
+                *instant = None;
+            }
             return Ok(());
         }
         for i in 0..self.open_orders.len() {

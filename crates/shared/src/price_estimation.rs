@@ -1,12 +1,12 @@
 pub mod baseline;
 pub mod competition;
 pub mod gas;
+pub mod http;
 pub mod instrumented;
 pub mod native;
 pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
-pub mod quasimodo;
 pub mod sanitized;
 pub mod zeroex;
 
@@ -31,6 +31,7 @@ pub enum PriceEstimatorType {
     ZeroEx,
     Quasimodo,
     OneInch,
+    Yearn,
 }
 
 impl PriceEstimatorType {

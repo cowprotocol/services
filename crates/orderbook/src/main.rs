@@ -47,12 +47,12 @@ use shared::{
     price_estimation::{
         baseline::BaselinePriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
+        http::HttpPriceEstimator,
         instrumented::InstrumentedPriceEstimator,
         native::NativePriceEstimator,
         native_price_cache::CachingNativePriceEstimator,
         oneinch::OneInchPriceEstimator,
         paraswap::ParaswapPriceEstimator,
-        quasimodo::QuasimodoPriceEstimator,
         sanitized::SanitizedPriceEstimator,
         zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
@@ -204,6 +204,10 @@ struct Arguments {
     /// The API endpoint to call the mip v2 solver for price estimation
     #[clap(long, env)]
     quasimodo_solver_url: Option<Url>,
+
+    /// The API endpoint to call the yearn solver for price estimation
+    #[clap(long, env)]
+    yearn_solver_url: Option<Url>,
 
     /// How long cached native prices stay valid.
     #[clap(
@@ -529,6 +533,29 @@ async fn main() {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
     let create_base_estimator = |estimator| -> (String, Arc<dyn PriceEstimating>) {
+        let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
+            Box::new(HttpPriceEstimator::new(
+                Arc::new(DefaultHttpSolverApi {
+                    name,
+                    network_name: network_name.to_string(),
+                    chain_id,
+                    base,
+                    client: client.clone(),
+                    config: SolverConfig {
+                        use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
+                        objective: Some(Objective::SurplusFeesCosts),
+                        ..Default::default()
+                    },
+                }),
+                pool_fetcher.clone(),
+                balancer_pool_fetcher.clone(),
+                token_info_fetcher.clone(),
+                gas_price_estimator.clone(),
+                native_token.address(),
+                base_tokens.clone(),
+                network_name.to_string(),
+            ))
+        };
         let instance: Box<dyn PriceEstimating> = match estimator {
             PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
                 pool_fetcher.clone(),
@@ -550,32 +577,22 @@ async fn main() {
                 zeroex_api.clone(),
                 args.shared.disabled_zeroex_sources.clone(),
             )),
-            PriceEstimatorType::Quasimodo => Box::new(QuasimodoPriceEstimator::new(
-                Arc::new(DefaultHttpSolverApi {
-                    name: "quasimodo-price-estimator".to_string(),
-                    network_name: network_name.to_string(),
-                    chain_id,
-                    base: args.quasimodo_solver_url.clone().expect(
-                        "quasimodo solver url is required when using quasimodo price estimation",
-                    ),
-                    client: client.clone(),
-                    config: SolverConfig {
-                        use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
-                        objective: Some(Objective::SurplusFeesCosts),
-                        ..Default::default()
-                    },
-                }),
-                pool_fetcher.clone(),
-                balancer_pool_fetcher.clone(),
-                token_info_fetcher.clone(),
-                gas_price_estimator.clone(),
-                native_token.address(),
-                base_tokens.clone(),
-            )),
+            PriceEstimatorType::Quasimodo => create_http_estimator(
+                "quasimodo-price-estimator".to_string(),
+                args.quasimodo_solver_url.clone().expect(
+                    "quasimodo solver url is required when using quasimodo price estimation",
+                ),
+            ),
             PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
                 one_inch_api.as_ref().unwrap().clone(),
                 args.shared.disabled_one_inch_protocols.clone(),
             )),
+            PriceEstimatorType::Yearn => create_http_estimator(
+                "yearn-price-estimator".to_string(),
+                args.yearn_solver_url
+                    .clone()
+                    .expect("yearn solver url is required when using yearn price estimation"),
+            ),
         };
 
         (
