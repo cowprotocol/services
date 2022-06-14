@@ -8,6 +8,7 @@ pub mod fee;
 pub mod gas_price;
 pub mod metrics;
 pub mod orderbook;
+pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 
