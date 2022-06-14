@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use ethcontract::Bytes;
+use hex_literal::hex;
 use primitive_types::H160;
 use shared::Web3;
 
@@ -21,7 +22,7 @@ pub struct Web3SignatureValidator {
 
 impl Web3SignatureValidator {
     /// The Magical value as defined by EIP-1271
-    pub const MAGICAL_VALUE: [u8; 4] = 0x1626ba7e_u32.to_le_bytes();
+    pub const MAGICAL_VALUE: [u8; 4] = hex!("1626ba7e");
 
     pub fn new(web3: Web3) -> Self {
         Self { web3 }
@@ -36,7 +37,7 @@ impl SignatureValidator for Web3SignatureValidator {
         hash: [u8; 32],
         signature: &[u8],
     ) -> Result<bool> {
-        let instance = contracts::EIP1271SignatureValidator::at(&self.web3, contract_address);
+        let instance = contracts::ERC1271SignatureValidator::at(&self.web3, contract_address);
 
         let is_valid_signature = instance
             .is_valid_signature(Bytes(hash), Bytes(signature.to_vec()))
