@@ -65,7 +65,11 @@ pub fn to_wei(base: u32) -> U256 {
 
 #[allow(dead_code)]
 pub fn create_orderbook_api() -> OrderBookApi {
-    OrderBookApi::new(reqwest::Url::from_str(API_HOST).unwrap(), Client::new())
+    OrderBookApi::new(
+        reqwest::Url::from_str(API_HOST).unwrap(),
+        Client::new(),
+        None,
+    )
 }
 
 pub fn create_order_converter(web3: &Web3, weth_address: H160) -> OrderConverter {
@@ -206,6 +210,7 @@ impl OrderbookServices {
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
             Default::default(),
+            None,
         );
 
         Self {

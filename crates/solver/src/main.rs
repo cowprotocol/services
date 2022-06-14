@@ -635,7 +635,11 @@ async fn main() {
         transaction_strategies,
         access_list_estimator,
     };
-    let api = OrderBookApi::new(args.orderbook_url, client.clone());
+    let api = OrderBookApi::new(
+        args.orderbook_url,
+        client.clone(),
+        args.shared.solver_competition_auth,
+    );
     let order_converter = OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,

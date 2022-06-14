@@ -42,6 +42,7 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     quoter: Arc<OrderQuoter>,
     solver_competition: Arc<SolverCompetition>,
+    solver_competition_auth: Option<String>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -97,9 +98,10 @@ pub fn handle_all_routes(
     let get_solver_competition = get_solver_competition::get(solver_competition.clone())
         .map(|result| (result, "v1/solver_competition"))
         .boxed();
-    let post_solver_competition = post_solver_competition::post(solver_competition)
-        .map(|result| (result, "v1/solver_competition"))
-        .boxed();
+    let post_solver_competition =
+        post_solver_competition::post(solver_competition, solver_competition_auth)
+            .map(|result| (result, "v1/solver_competition"))
+            .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(

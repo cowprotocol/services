@@ -762,6 +762,7 @@ async fn main() {
             let _ = shutdown_receiver.await;
         },
         solver_competition,
+        args.shared.solver_competition_auth,
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
