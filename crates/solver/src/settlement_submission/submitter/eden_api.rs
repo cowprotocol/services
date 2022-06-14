@@ -119,6 +119,9 @@ impl EdenApi {
             Err(e) => {
                 let error = e.to_string();
 
+                // The eden mempool also contains tx from the public mempool. If our in-memory
+                // tx pool already knows that we successfully submitted this or a more recent tx
+                // to the public mempool we discard those "already known" errors as false positives.
                 let supposedly_already_known = ALREADY_KNOWN_TRANSACTION
                     .iter()
                     .any(|message| error.contains(message));
