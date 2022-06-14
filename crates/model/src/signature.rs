@@ -1,5 +1,5 @@
 use super::DomainSeparator;
-use anyhow::{Context as _, Result};
+use anyhow::{ensure, Context as _, Result};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
 use std::{convert::TryInto as _, fmt};
@@ -106,9 +106,7 @@ impl Signature {
                 )
             }
             SigningScheme::Eip1271 => {
-                if bytes.len() < 20 {
-                    return Err(anyhow::anyhow!("The provided bytes are less than 20"));
-                }
+                ensure!(bytes.len() >= 20, "The provided bytes are less than 20");
 
                 let (from, signature) = bytes.split_at(20);
                 let from = H160::from_slice(from);
