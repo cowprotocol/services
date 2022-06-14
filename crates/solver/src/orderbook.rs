@@ -5,12 +5,17 @@ use reqwest::{Client, Url};
 pub struct OrderBookApi {
     base: Url,
     client: Client,
+    competition_auth: Option<String>,
 }
 
 impl OrderBookApi {
     /// base: protocol and host of the url. example: `https://example.com`
-    pub fn new(base: Url, client: Client) -> Self {
-        Self { base, client }
+    pub fn new(base: Url, client: Client, competition_auth: Option<String>) -> Self {
+        Self {
+            base,
+            client,
+            competition_auth,
+        }
     }
 
     pub async fn get_auction(&self) -> Result<Auction> {
@@ -27,12 +32,11 @@ impl OrderBookApi {
         let url = self
             .base
             .join(&format!("api/v1/solver_competition/{}", auction_id))?;
-        self.client
-            .post(url)
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?;
+        let mut request = self.client.post(url);
+        if let Some(auth) = &self.competition_auth {
+            request = request.header("Authorization", auth)
+        };
+        request.json(&body).send().await?.error_for_status()?;
         Ok(())
     }
 }
@@ -45,7 +49,11 @@ pub mod test_util {
     #[tokio::test]
     #[ignore]
     async fn local_orderbook() {
-        let api = OrderBookApi::new(Url::parse("http://localhost:8080").unwrap(), Client::new());
+        let api = OrderBookApi::new(
+            Url::parse("http://localhost:8080").unwrap(),
+            Client::new(),
+            None,
+        );
         let auction = api.get_auction().await.unwrap();
         println!("{:#?}", auction);
     }
@@ -57,6 +65,7 @@ pub mod test_util {
         let api = OrderBookApi::new(
             Url::parse("https://barn.api.cow.fi/mainnet/").unwrap(),
             Client::new(),
+            None,
         );
         let auction = api.get_auction().await.unwrap();
         println!("{:#?}", auction);

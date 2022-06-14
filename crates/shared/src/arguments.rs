@@ -148,6 +148,10 @@ pub struct Arguments {
     /// Deny list of balancer pool ids.
     #[clap(long, env, use_value_delimiter = true)]
     pub balancer_pool_deny_list: Vec<H256>,
+
+    /// Value of the authorization header for the solver competition post api.
+    #[clap(long, env)]
+    pub solver_competition_auth: Option<String>,
 }
 
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
