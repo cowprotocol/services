@@ -9,18 +9,15 @@ mod get_orders;
 mod get_orders_by_tx;
 mod get_solvable_orders;
 mod get_solvable_orders_v2;
-pub mod get_solver_competition;
+mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
-pub mod order_validation;
-pub mod post_quote;
-pub mod post_solver_competition;
+mod post_quote;
+mod post_solver_competition;
 mod replace_order;
 
 use crate::solver_competition::SolverCompetition;
-use crate::{
-    api::post_quote::OrderQuoter, database::trades::TradeRetrieving, orderbook::Orderbook,
-};
+use crate::{database::trades::TradeRetrieving, order_quoting::OrderQuoter, orderbook::Orderbook};
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};

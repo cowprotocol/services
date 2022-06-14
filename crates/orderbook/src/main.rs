@@ -12,13 +12,14 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    api::{order_validation::OrderValidator, post_quote::OrderQuoter},
     cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy, SubsidyTiers},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
+    order_quoting::OrderQuoter,
+    order_validation::OrderValidator,
     orderbook::Orderbook,
     serve_api,
     solvable_orders::SolvableOrdersCache,

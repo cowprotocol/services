@@ -1,6 +1,6 @@
 use crate::{
-    api::order_validation::{OrderValidating, ValidationError},
     database::orders::{InsertionError, OrderFilter, OrderStoring},
+    order_validation::{OrderValidating, ValidationError},
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
 use anyhow::{ensure, Context, Result};
@@ -373,8 +373,8 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
 mod tests {
     use super::*;
     use crate::{
-        account_balances::MockBalanceFetching, api::order_validation::MockOrderValidating,
-        database::orders::MockOrderStoring, metrics::NoopMetrics,
+        account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
+        metrics::NoopMetrics, order_validation::MockOrderValidating,
     };
     use ethcontract::H160;
     use futures::FutureExt;
