@@ -42,21 +42,14 @@ struct EdenSuccess {
 }
 
 fn biggest_public_nonce(global_tx_pool: &GlobalTxPool, address: H160) -> Option<U256> {
-    let mut biggest_nonce = None;
-
-    for sub_pool in global_tx_pool.pools.lock().unwrap().iter() {
-        if !matches!(sub_pool.strategy, Strategy::CustomNodes) {
-            // we are only interested in transactions from the public mempool
-            continue;
-        }
-
-        for (sender, nonce) in sub_pool.pools.keys() {
-            if sender == &address && nonce > &biggest_nonce.unwrap_or_default() {
-                biggest_nonce = Some(*nonce);
-            }
-        }
-    }
-    biggest_nonce
+    let pools = global_tx_pool.pools.lock().unwrap();
+    pools
+        .iter()
+        .filter(|sub_pool| matches!(sub_pool.strategy, Strategy::CustomNodes))
+        .flat_map(|sub_pool| sub_pool.pools.keys())
+        .filter(|(sender, _)| *sender == address)
+        .map(|(_, nonce)| *nonce)
+        .max()
 }
 
 impl EdenApi {
