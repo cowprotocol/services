@@ -13,6 +13,7 @@ use web3::{
 pub enum SigningScheme {
     Eip712,
     EthSign,
+    Eip1271,
     PreSign,
 }
 
@@ -22,12 +23,13 @@ impl Default for SigningScheme {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
     EthSign(EcdsaSignature),
+    Eip1271 { from: H160, signature: Vec<u8> },
     PreSign(H160),
 }
 
@@ -42,6 +44,10 @@ impl Signature {
         match scheme {
             SigningScheme::Eip712 => Signature::Eip712(Default::default()),
             SigningScheme::EthSign => Signature::EthSign(Default::default()),
+            SigningScheme::Eip1271 => Signature::Eip1271 {
+                from: Default::default(),
+                signature: Default::default(),
+            },
             SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
     }
@@ -59,6 +65,7 @@ impl Signature {
             Self::EthSign(signature) => {
                 signature.recover(EcdsaSigningScheme::EthSign, domain_separator, struct_hash)
             }
+            Self::Eip1271 { from, .. } => Some(*from),
             Self::PreSign(from) => Some(*from),
         }
     }
@@ -98,6 +105,19 @@ impl Signature {
                         .expect("scheme is an ecdsa scheme"),
                 )
             }
+            SigningScheme::Eip1271 => {
+                if bytes.len() < 20 {
+                    return Err(anyhow::anyhow!("The provided bytes are less than 20"));
+                }
+
+                let (from, signature) = bytes.split_at(20);
+                let from = H160::from_slice(from);
+
+                Signature::Eip1271 {
+                    from,
+                    signature: signature.to_vec(),
+                }
+            }
             SigningScheme::PreSign => Signature::PreSign(H160(
                 bytes
                     .try_into()
@@ -110,6 +130,11 @@ impl Signature {
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::Eip1271 { from, signature } => {
+                let mut bytes = from.as_bytes().to_vec();
+                bytes.extend(signature);
+                bytes
+            }
             Signature::PreSign(account) => account.0.to_vec(),
         }
     }
@@ -118,6 +143,7 @@ impl Signature {
         match self {
             Signature::Eip712(_) => SigningScheme::Eip712,
             Signature::EthSign(_) => SigningScheme::EthSign,
+            Signature::Eip1271 { .. } => SigningScheme::Eip1271,
             Signature::PreSign(_) => SigningScheme::PreSign,
         }
     }
@@ -154,7 +180,7 @@ impl SigningScheme {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
-            Self::PreSign => None,
+            Self::Eip1271 | Self::PreSign => None,
         }
     }
 }
