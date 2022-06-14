@@ -618,16 +618,19 @@ async fn main() {
             ),
         };
 
-        (
-            estimator.name(),
-            Arc::new(instrumented(instance, estimator.name()).rate_limited(
+        let instrumented_instance = instrumented(instance, estimator.name());
+        let instance: Arc<dyn PriceEstimating> = match estimator {
+            PriceEstimatorType::Baseline => Arc::new(instrumented_instance),
+            _ => Arc::new(instrumented_instance.rate_limited(
                 RateLimiter::from_strategy(
                     args.price_estimation_rate_limiter.clone(),
                     estimator.name(),
                 ),
                 args.price_estimation_healthy_response_time,
             )),
-        )
+        };
+
+        (estimator.name(), instance)
     };
 
     let mut base_estimators_instances: HashMap<_, _> = Default::default();
