@@ -1,4 +1,4 @@
-use crate::api::{convert_json_response, post_quote::OrderQuoter};
+use crate::{api::convert_json_response, order_quoting::OrderQuoter};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};

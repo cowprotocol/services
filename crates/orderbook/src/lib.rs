@@ -7,12 +7,14 @@ pub mod event_updater;
 pub mod fee;
 pub mod gas_price;
 pub mod metrics;
+pub mod order_quoting;
+pub mod order_validation;
 pub mod orderbook;
 pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 
-use crate::{api::post_quote::OrderQuoter, orderbook::Orderbook};
+use crate::{order_quoting::OrderQuoter, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;

@@ -3,13 +3,13 @@ use contracts::{ERC20Mintable, WETH9};
 use ethcontract::{prelude::U256, H160};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    api::order_validation::OrderValidator,
-    api::post_quote::OrderQuoter,
     cow_subsidy::FixedCowSubsidy,
     database::Postgres,
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     metrics::NoopMetrics,
+    order_quoting::OrderQuoter,
+    order_validation::OrderValidator,
     orderbook::Orderbook,
     solvable_orders::SolvableOrdersCache,
 };
