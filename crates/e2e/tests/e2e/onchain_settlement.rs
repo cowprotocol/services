@@ -21,7 +21,8 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::custom_nodes_api::CustomNodesApi, GlobalTxPool, SolutionSubmitter, StrategyArgs,
+        submitter::{custom_nodes_api::CustomNodesApi, Strategy},
+        GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
 use std::{sync::Arc, time::Duration};
@@ -234,7 +235,7 @@ async fn onchain_settlement(web3: Web3) {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
                 }),
             ],
             access_list_estimator: Arc::new(

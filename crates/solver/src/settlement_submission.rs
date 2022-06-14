@@ -21,29 +21,35 @@ use std::{
     time::{Duration, Instant},
 };
 use submitter::{
-    DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionHandle,
-    TransactionSubmitting,
+    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
+    TransactionHandle, TransactionSubmitting,
 };
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
 
-// Key (Address, U256) represents pair (sender, nonce)
-type SubTxPool = HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>;
+pub struct SubTxPool {
+    pub strategy: Strategy,
+    // Key (Address, U256) represents pair (sender, nonce)
+    pub pools: HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>,
+}
 type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
 
 #[derive(Default, Clone)]
 pub struct GlobalTxPool {
-    pools: TxPool,
+    pub pools: TxPool,
 }
 
 impl GlobalTxPool {
-    pub fn add_sub_pool(&self) -> SubTxPoolRef {
+    pub fn add_sub_pool(&self, strategy: Strategy) -> SubTxPoolRef {
         let pools = self.pools.clone();
         let index = {
             let mut pools = pools.lock().unwrap();
             let index = pools.len();
-            pools.push(SubTxPool::default());
+            pools.push(SubTxPool {
+                strategy,
+                pools: Default::default(),
+            });
             index
         };
         SubTxPoolRef { pools, index }
@@ -65,13 +71,16 @@ impl SubTxPoolRef {
         nonce: U256,
     ) -> Option<Vec<(TransactionHandle, GasPrice1559)>> {
         self.pools.lock().unwrap()[self.index]
+            .pools
             .get(&(sender, nonce))
             .cloned()
     }
 
     /// Remove old transactions with too low nonce
     pub fn remove_older_than(&self, nonce: U256) {
-        self.pools.lock().unwrap()[self.index].retain(|key, _| key.1 >= nonce);
+        self.pools.lock().unwrap()[self.index]
+            .pools
+            .retain(|key, _| key.1 >= nonce);
     }
 
     pub fn update(
@@ -80,7 +89,9 @@ impl SubTxPoolRef {
         nonce: U256,
         transactions: Vec<(TransactionHandle, GasPrice1559)>,
     ) {
-        self.pools.lock().unwrap()[self.index].insert((sender, nonce), transactions);
+        self.pools.lock().unwrap()[self.index]
+            .pools
+            .insert((sender, nonce), transactions);
     }
 }
 
@@ -391,7 +402,7 @@ mod tests {
         let nonce = U256::zero();
         let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
 
-        let submitted_transactions = GlobalTxPool::default().add_sub_pool();
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::CustomNodes);
 
         submitted_transactions.update(sender, nonce, transactions);
         let entry = submitted_transactions.get(sender, nonce);
