@@ -1,4 +1,7 @@
-use crate::{debug_bytes, rate_limiter::RateLimiter};
+use crate::{
+    debug_bytes,
+    rate_limiter::{RateLimiter, RateLimiterError},
+};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
@@ -43,8 +46,8 @@ impl ParaswapApi for DefaultParaswapApi {
         let request = self.client.get(url).send();
 
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, requires_back_off).await?,
-            None => request.await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            _ => request.await?,
         };
         let status = response.status();
         let text = response.text().await?;
@@ -62,8 +65,8 @@ impl ParaswapApi for DefaultParaswapApi {
         };
         let request = query.into_request(&self.client).send();
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.execute(request, requires_back_off).await?,
-            None => request.await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            _ => request.await?,
         };
         let response_text = response.text().await?;
         parse_paraswap_response_text(&response_text)
@@ -96,6 +99,9 @@ pub enum ParaswapResponseError {
 
     #[error("other ParaSwap error: {0}")]
     Other(#[from] anyhow::Error),
+
+    #[error("rate limited")]
+    RateLimited(#[from] RateLimiterError),
 }
 
 impl ParaswapResponseError {
