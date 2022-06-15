@@ -11,8 +11,9 @@ use crate::{
     },
     price_estimation::{
         gas::{ERC20_TRANSFER, GAS_PER_ORDER, INITIALIZATION_COST, SETTLEMENT},
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
     },
+    rate_limiter::RateLimiter,
     recent_block_cache::Block,
     request_sharing::RequestSharing,
     sources::{
@@ -48,6 +49,7 @@ pub struct HttpPriceEstimator {
     native_token: H160,
     base_tokens: Arc<BaseTokens>,
     network_name: String,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl HttpPriceEstimator {
@@ -61,6 +63,7 @@ impl HttpPriceEstimator {
         native_token: H160,
         base_tokens: Arc<BaseTokens>,
         network_name: String,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             api,
@@ -72,6 +75,7 @@ impl HttpPriceEstimator {
             native_token,
             base_tokens,
             network_name,
+            rate_limiter,
         }
     }
 
@@ -175,6 +179,7 @@ impl HttpPriceEstimator {
             .await
             .map_err(PriceEstimationError::Other)
         };
+        let settlement_future = rate_limited(self.rate_limiter.clone(), settlement_future);
         let settlement = self
             .sharing
             .shared(*query, settlement_future.boxed())

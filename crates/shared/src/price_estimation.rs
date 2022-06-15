@@ -11,16 +11,22 @@ pub mod rate_limited;
 pub mod sanitized;
 pub mod zeroex;
 
-use crate::{bad_token::BadTokenDetecting, conversions::U256Ext};
+use crate::{
+    bad_token::BadTokenDetecting,
+    conversions::U256Ext,
+    rate_limiter::{RateLimiter, RateLimiterError},
+};
 use anyhow::Result;
 use ethcontract::{H160, U256};
 use futures::{stream::BoxStream, StreamExt};
 use model::order::OrderKind;
 use num::BigRational;
+use std::sync::Arc;
 use std::{
     cmp::{Eq, PartialEq},
     future::Future,
     hash::Hash,
+    time::{Duration, Instant},
 };
 use thiserror::Error;
 
@@ -58,6 +64,9 @@ pub enum PriceEstimationError {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+
+    #[error(transparent)]
+    RateLimited(#[from] RateLimiterError),
 }
 
 impl Clone for PriceEstimationError {
@@ -67,6 +76,8 @@ impl Clone for PriceEstimationError {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            // TODO fix that
+            Self::RateLimited(err) => Self::NoLiquidity,
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
@@ -201,6 +212,27 @@ pub fn amounts_to_price(sell_amount: U256, buy_amount: U256) -> Option<BigRation
         sell_amount.to_big_int(),
         buy_amount.to_big_int(),
     ))
+}
+
+const HEALTHY_PRICE_ESTIMATION_TIME: Duration = Duration::from_millis(5_000);
+
+pub async fn rate_limited<T>(
+    rate_limiter: Arc<RateLimiter>,
+    estimation: impl Future<Output = Result<T, PriceEstimationError>>,
+) -> Result<T, PriceEstimationError> {
+    let timed_estimation = async move {
+        let start = Instant::now();
+        let result = estimation.await;
+        (start.elapsed(), result)
+    };
+    let rate_limited_estimation = rate_limiter.execute(timed_estimation, |(estimation_time, _)| {
+        *estimation_time > HEALTHY_PRICE_ESTIMATION_TIME
+    });
+    match rate_limited_estimation.await {
+        Ok((_estimation_time, Ok(result))) => Ok(result),
+        Ok((_estimation_time, Err(err))) => Err(PriceEstimationError::from(err)),
+        Err(err) => Err(PriceEstimationError::from(err)),
+    }
 }
 
 pub mod mocks {

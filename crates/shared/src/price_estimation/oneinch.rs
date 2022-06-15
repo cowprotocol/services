@@ -3,8 +3,10 @@ use crate::{
         OneInchClient, ProtocolCache, RestResponse, SellOrderQuote, SellOrderQuoteQuery,
     },
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
 };
 use futures::{future::BoxFuture, FutureExt, StreamExt};
@@ -19,6 +21,7 @@ pub struct OneInchPriceEstimator {
     >,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl OneInchPriceEstimator {
@@ -44,6 +47,7 @@ impl OneInchPriceEstimator {
                 .await
                 .map_err(PriceEstimationError::Other)
         };
+        let quote_future = rate_limited(self.rate_limiter.clone(), quote_future);
         let quote = self.sharing.shared(*query, quote_future.boxed()).await?;
 
         match quote {
@@ -57,12 +61,17 @@ impl OneInchPriceEstimator {
         }
     }
 
-    pub fn new(api: Arc<dyn OneInchClient>, disabled_protocols: Vec<String>) -> Self {
+    pub fn new(
+        api: Arc<dyn OneInchClient>,
+        disabled_protocols: Vec<String>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         Self {
             api,
             disabled_protocols,
             protocol_cache: ProtocolCache::default(),
             sharing: Default::default(),
+            rate_limiter,
         }
     }
 }

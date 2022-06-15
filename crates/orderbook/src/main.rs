@@ -554,7 +554,11 @@ async fn main() {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
     let create_base_estimator = |estimator| -> (String, Arc<dyn PriceEstimating>) {
-        let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
+        let rate_limiter = Arc::new(RateLimiter::from_strategy(
+            args.price_estimation_rate_limiter,
+            format!("{estimator}_estimator"),
+        ));
+        let create_http_estimator = |name, base, rate_limiter| -> Box<dyn PriceEstimating> {
             Box::new(HttpPriceEstimator::new(
                 Arc::new(DefaultHttpSolverApi {
                     name,
@@ -575,6 +579,7 @@ async fn main() {
                 native_token.address(),
                 base_tokens.clone(),
                 network_name.to_string(),
+                rate_limiter,
             ))
         };
         let instance: Box<dyn PriceEstimating> = match estimator {
@@ -595,42 +600,38 @@ async fn main() {
                 }),
                 token_info_fetcher.clone(),
                 args.shared.disabled_paraswap_dexs.clone(),
+                rate_limiter,
             )),
             PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
                 zeroex_api.clone(),
                 args.shared.disabled_zeroex_sources.clone(),
+                rate_limiter,
             )),
             PriceEstimatorType::Quasimodo => create_http_estimator(
                 "quasimodo-price-estimator".to_string(),
                 args.quasimodo_solver_url.clone().expect(
                     "quasimodo solver url is required when using quasimodo price estimation",
                 ),
+                rate_limiter,
             ),
             PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
                 one_inch_api.as_ref().unwrap().clone(),
                 args.shared.disabled_one_inch_protocols.clone(),
+                rate_limiter,
             )),
             PriceEstimatorType::Yearn => create_http_estimator(
                 "yearn-price-estimator".to_string(),
                 args.yearn_solver_url
                     .clone()
                     .expect("yearn solver url is required when using yearn price estimation"),
+                rate_limiter,
             ),
         };
 
-        let instrumented_instance = instrumented(instance, estimator.name());
-        let instance: Arc<dyn PriceEstimating> = match estimator {
-            PriceEstimatorType::Baseline => Arc::new(instrumented_instance),
-            _ => Arc::new(instrumented_instance.rate_limited(
-                RateLimiter::from_strategy(
-                    args.price_estimation_rate_limiter.clone(),
-                    estimator.name(),
-                ),
-                args.price_estimation_healthy_response_time,
-            )),
-        };
-
-        (estimator.name(), instance)
+        (
+            estimator.name(),
+            Arc::new(instrumented(instance, estimator.name())),
+        )
     };
 
     let mut base_estimators_instances: HashMap<_, _> = Default::default();

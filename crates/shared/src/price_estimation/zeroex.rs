@@ -1,7 +1,9 @@
 use crate::{
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     zeroex_api::{SwapQuery, SwapResponse, ZeroExApi},
 };
@@ -13,14 +15,20 @@ pub struct ZeroExPriceEstimator {
     api: Arc<dyn ZeroExApi>,
     sharing: RequestSharing<Query, BoxFuture<'static, Result<SwapResponse, PriceEstimationError>>>,
     excluded_sources: Vec<String>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl ZeroExPriceEstimator {
-    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>) -> Self {
+    pub fn new(
+        api: Arc<dyn ZeroExApi>,
+        excluded_sources: Vec<String>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         Self {
             api,
             sharing: Default::default(),
             excluded_sources,
+            rate_limiter,
         }
     }
 
@@ -44,6 +52,7 @@ impl ZeroExPriceEstimator {
                 .await
                 .map_err(|err| PriceEstimationError::Other(err.into()))
         };
+        let swap_future = rate_limited(self.rate_limiter.clone(), swap_future);
         let swap = self.sharing.shared(*query, swap_future.boxed()).await?;
 
         Ok(Estimate {
