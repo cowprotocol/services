@@ -32,10 +32,11 @@ use shared::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
-        trace_call::{
-            BalancerVaultFinder, FeeValues, TokenOwnerFinding, TraceCallDetector,
-            UniswapLikePairProviderFinder, UniswapV3Finder,
+        token_owner_finder::{
+            BalancerVaultFinder, FeeValues, TokenOwnerFinding, UniswapLikePairProviderFinder,
+            UniswapV3Finder,
         },
+        trace_call::TraceCallDetector,
     },
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
