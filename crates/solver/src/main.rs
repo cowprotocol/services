@@ -5,6 +5,7 @@ use ethcontract::H160;
 use num::rational::Ratio;
 use reqwest::Url;
 use shared::{
+    arguments::{display_list, display_option},
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     maintenance::{Maintaining, ServiceMaintenance},
@@ -44,7 +45,7 @@ use solver::{
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 struct Arguments {
     #[clap(flatten)]
     shared: shared::arguments::Arguments,
@@ -312,6 +313,114 @@ struct Arguments {
     token_list_restriction_for_price_checks: Option<Vec<H160>>,
 }
 
+impl std::fmt::Display for Arguments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.shared)?;
+        writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
+        writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
+        writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
+        writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
+        writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
+        writeln!(f, "solver_account: {:?}", self.solver_account)?;
+        writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
+        writeln!(f, "settle_interval: {:?}", self.settle_interval)?;
+        writeln!(f, "solvers: {:?}", self.solvers)?;
+        writeln!(f, "solver_accounts: {:?}", self.solver_accounts)?;
+        writeln!(f, "external_solvers: {:?}", self.external_solvers)?;
+        writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
+        writeln!(f, "metrics_port: {}", self.metrics_port)?;
+        writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
+        writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
+        writeln!(
+            f,
+            "market_makable_token_list: {}",
+            self.market_makable_token_list
+        )?;
+        writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
+        writeln!(f, "paraswap_slippage_bps: {}", self.paraswap_slippage_bps)?;
+        writeln!(f, "zeroex_slippage_bps: {}", self.zeroex_slippage_bps)?;
+        writeln!(f, "oneinch_slippage_bps: {}", self.oneinch_slippage_bps)?;
+        writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
+        writeln!(
+            f,
+            "access_list_estimators: {:?}",
+            self.access_list_estimators
+        )?;
+        write!(f, "tenderly_url: ")?;
+        display_option(&self.tenderly_url, f)?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "tenderly_api_key: {}",
+            self.tenderly_api_key
+                .as_deref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
+        write!(f, "flashbots_api_url: ")?;
+        display_list(self.flashbots_api_url.iter(), f)?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "max_additional_eden_tip: {}",
+            self.max_additional_eden_tip
+        )?;
+        writeln!(
+            f,
+            "max_submission_seconds: {:?}",
+            self.max_submission_seconds
+        )?;
+        writeln!(
+            f,
+            "max_additional_flashbots_tip: {}",
+            self.max_additional_flashbot_tip
+        )?;
+        writeln!(
+            f,
+            "submission_retry_interval_seconds: {:?}",
+            self.submission_retry_interval_seconds
+        )?;
+        writeln!(
+            f,
+            "additional_tip_percentage: {}",
+            self.additional_tip_percentage
+        )?;
+        write!(f, "transaction_submission_nodes: ",)?;
+        display_list(self.transaction_submission_nodes.iter(), f)?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "fee_objective_scaling_factor: {}",
+            self.fee_objective_scaling_factor
+        )?;
+        writeln!(
+            f,
+            "max_settlements_per_solver: {}",
+            self.max_settlements_per_solver
+        )?;
+        writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
+        writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
+        write!(f, "max_settlement_price_deviation: ")?;
+        display_option(&self.max_settlement_price_deviation, f)?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "token_list_restriction_for_price_checks: {:?}",
+            self.token_list_restriction_for_price_checks
+        )?;
+        Ok(())
+    }
+}
+
+#[test]
+fn foo() {
+    let a = Arguments::parse_from(std::iter::empty::<std::ffi::OsString>());
+    // println!("{:#?}", a);
+    // println!();
+    println!("{}", a);
+}
+
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
 #[clap(rename_all = "verbatim")]
 enum TransactionStrategyArg {
@@ -329,7 +438,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
-    tracing::info!("running solver with validated {:#?}", args);
+    tracing::info!("running solver with validated {}", args);
 
     setup_metrics_registry(Some("gp_v2_solver".into()), None);
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
