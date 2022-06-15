@@ -342,6 +342,13 @@ impl IntoWarpReply for PriceEstimationError {
                 internal_error(anyhow::anyhow!("UnsupportedOrderType").context("price_estimation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+            Self::RateLimited(_) => with_status(
+                internal_error(
+                    anyhow::anyhow!("price estimators temporarily inactive")
+                        .context("price_estimation"),
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
             Self::Other(err) => with_status(
                 internal_error(err.context("price_estimation")),
                 StatusCode::INTERNAL_SERVER_ERROR,

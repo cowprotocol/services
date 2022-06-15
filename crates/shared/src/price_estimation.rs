@@ -7,7 +7,6 @@ pub mod native;
 pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
-pub mod rate_limited;
 pub mod sanitized;
 pub mod zeroex;
 
@@ -76,8 +75,7 @@ impl Clone for PriceEstimationError {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
-            // TODO fix that
-            Self::RateLimited(err) => Self::NoLiquidity,
+            err @ Self::RateLimited(_) => err.clone(),
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
@@ -230,7 +228,9 @@ pub async fn rate_limited<T>(
     });
     match rate_limited_estimation.await {
         Ok((_estimation_time, Ok(result))) => Ok(result),
-        Ok((_estimation_time, Err(err))) => Err(PriceEstimationError::from(err)),
+        // return original PriceEstimationError
+        Ok((_estimation_time, Err(err))) => Err(err),
+        // convert the RateLimiterError to a PriceEstimationError
         Err(err) => Err(PriceEstimationError::from(err)),
     }
 }
