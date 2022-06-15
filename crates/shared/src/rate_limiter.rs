@@ -5,6 +5,7 @@ use std::{
     sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
 };
+use thiserror::Error;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "rate_limiter")]
@@ -139,26 +140,29 @@ impl RateLimiter {
     }
 }
 
+#[derive(Error, Debug)]
+pub enum RateLimiterError {
+    #[error("rate limited")]
+    RateLimited,
+}
+
 impl RateLimiter {
     /// If a task produces a result which indicates rate limiting is required future requests
     /// will get dropped for some time. Every successive response like that increases that time exponentially.
     /// When a task eventually returns a normal result again future tasks will no longer get
     /// dropped until the next rate limiting response occurs.
-    pub async fn execute<T, E>(
+    pub async fn execute<T>(
         &self,
-        task: impl Future<Output = Result<T, E>>,
-        requires_back_off: impl Fn(&Result<T, E>) -> bool,
-    ) -> Result<T>
-    where
-        anyhow::Error: From<E>,
-    {
+        task: impl Future<Output = T>,
+        requires_back_off: impl Fn(&T) -> bool,
+    ) -> Result<T, RateLimiterError> {
         let times_rate_limited = match self
             .strategy()
             .times_rate_limited(Instant::now(), &self.name)
         {
             None => {
                 tracing::warn!(?self.name, "dropping task because API is currently rate limited");
-                anyhow::bail!("backing off rate limit");
+                return Err(RateLimiterError::RateLimited);
             }
             Some(times_rate_limited) => times_rate_limited,
         };
@@ -177,7 +181,7 @@ impl RateLimiter {
             tracing::debug!(?self.name, "reset rate limit");
         }
 
-        result.map_err(anyhow::Error::from)
+        Ok(result)
     }
 }
 
@@ -223,10 +227,8 @@ mod tests {
         .unwrap();
         let rate_limiter = RateLimiter::from_strategy(strategy, "test".into());
 
-        let result = rate_limiter
-            .execute(async { anyhow::Ok(()) }, |_| false)
-            .await;
-        assert!(matches!(result, Ok(())));
+        let result = rate_limiter.execute(async { 1 }, |_| false).await;
+        assert!(matches!(result, Ok(1)));
         assert_eq!(
             // get_current_back_off returns how much the back off should be extended if we
             // were to encounter an error now, therefore we start with 20
@@ -235,11 +237,9 @@ mod tests {
         );
 
         // generate first response requiring a rate limit
-        let result: Result<()> = rate_limiter
-            .execute(async { Err(anyhow::anyhow!("some error")) }, |_| true)
-            .await;
+        let result = rate_limiter.execute(async { 2 }, |_| true).await;
         // return actual result even if response suggest a rate limit
-        assert!(matches!(result, Err(err) if err.to_string() == "some error"));
+        assert!(matches!(result, Ok(2)));
         assert_eq!(
             Duration::from_millis(40),
             rate_limiter.strategy().get_current_back_off()
@@ -250,22 +250,20 @@ mod tests {
                 async {
                     unreachable!("don't evaluate closure when rate limited");
                     #[allow(unreachable_code)] // to help the type checker
-                    anyhow::Ok(())
+                    3
                 },
                 |_| unreachable!("don't evaluate closure when rate limited"),
             )
             .now_or_never()
             .expect("tasks return immediately during back off period");
-        assert!(matches!(result, Err(err) if err.to_string() == "backing off rate limit"));
+        assert!(matches!(result, Err(RateLimiterError::RateLimited)));
 
         // sleep until new requests are allowed
         sleep(Duration::from_millis(20)).await;
 
         // generate another response requiring a rate limit
-        let result: Result<()> = rate_limiter
-            .execute(async { Err(anyhow::anyhow!("some error")) }, |_| true)
-            .await;
-        assert!(matches!(result, Err(err) if err.to_string() == "some error"));
+        let result = rate_limiter.execute(async { 4 }, |_| true).await;
+        assert!(matches!(result, Ok(4)));
         assert_eq!(
             // back off got increased but doesn't exceed max_back_off
             Duration::from_millis(50),
