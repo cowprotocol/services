@@ -27,6 +27,7 @@ use orderbook::{
 };
 use primitive_types::{H160, U256};
 use shared::{
+    arguments::display_option,
     bad_token::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
@@ -73,7 +74,7 @@ use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, sync::Arc, t
 use tokio::task;
 use url::Url;
 
-#[derive(Debug, Parser)]
+#[derive(Parser)]
 struct Arguments {
     #[clap(flatten)]
     shared: shared::arguments::Arguments,
@@ -273,6 +274,90 @@ struct Arguments {
     pub liquidity_order_owners: Vec<H160>,
 }
 
+impl std::fmt::Display for Arguments {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.shared)?;
+        writeln!(f, "bind_address: {}", self.bind_address)?;
+        writeln!(f, "db_url: SECRET")?;
+        writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
+        writeln!(
+            f,
+            "min_order_validity_period: {:?}",
+            self.min_order_validity_period
+        )?;
+        writeln!(
+            f,
+            "max_order_validity_period: {:?}",
+            self.max_order_validity_period
+        )?;
+        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
+        writeln!(
+            f,
+            "token_quality_cache_expiry: {:?}",
+            self.token_quality_cache_expiry
+        )?;
+        writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
+        writeln!(f, "banned_users: {:?}", self.banned_users)?;
+        writeln!(f, "allowed_tokens: {:?}", self.allowed_tokens)?;
+        writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
+        writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
+        writeln!(
+            f,
+            "solvable_orders_max_update_age: {:?}",
+            self.solvable_orders_max_update_age
+        )?;
+        writeln!(f, "fee_discount: {}", self.fee_discount)?;
+        writeln!(f, "fee_factor: {}", self.fee_factor)?;
+        writeln!(
+            f,
+            "partner_additional_fee_factors: {:?}",
+            self.partner_additional_fee_factors
+        )?;
+        writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
+        write!(f, "quasimodo_solver_url: ")?;
+        display_option(&self.quasimodo_solver_url, f)?;
+        writeln!(f)?;
+        write!(f, "yearn_solver_url: ")?;
+        display_option(&self.yearn_solver_url, f)?;
+        writeln!(f)?;
+        writeln!(
+            f,
+            "native_price_cache_max_age_secs: {:?}",
+            self.native_price_cache_max_age_secs
+        )?;
+        writeln!(
+            f,
+            "native_price_cache_max_update_size: {}",
+            self.native_price_cache_max_update_size
+        )?;
+        writeln!(
+            f,
+            "native_price_estimators: {:?}",
+            self.native_price_estimators
+        )?;
+        write!(f, "amount_to_estimate_prices_with: ")?;
+        display_option(&self.amount_to_estimate_prices_with, f)?;
+        writeln!(f)?;
+        writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
+        writeln!(
+            f,
+            "fast_price_estimation_results_required: {}",
+            self.fast_price_estimation_results_required
+        )?;
+        writeln!(
+            f,
+            "token_detector_fee_values: {:?}",
+            self.token_detector_fee_values
+        )?;
+        writeln!(
+            f,
+            "liquidity_order_owners: {:?}",
+            self.liquidity_order_owners
+        )?;
+        Ok(())
+    }
+}
+
 pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
     loop {
         match database.count_rows_in_tables().await {
@@ -294,7 +379,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
-    tracing::info!("running order book with validated {:#?}", args);
+    tracing::info!("running order book with validated {}", args);
 
     setup_metrics_registry(Some("gp_v2_api".into()), None);
     let metrics = Arc::new(Metrics::new().unwrap());
