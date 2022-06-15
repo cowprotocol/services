@@ -90,6 +90,18 @@ mod tests {
     use crate::zeroex_api::{MockZeroExApi, SwapResponse};
     use reqwest::Client;
 
+    fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
+        ZeroExPriceEstimator {
+            api,
+            sharing: Default::default(),
+            excluded_sources: Default::default(),
+            rate_limiter: Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
+        }
+    }
+
     #[tokio::test]
     async fn estimate_sell() {
         let mut zeroex_api = MockZeroExApi::new();
@@ -117,11 +129,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(zeroex_api),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let est = estimator
             .estimate(&Query {
@@ -164,11 +172,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(zeroex_api),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let est = estimator
             .estimate(&Query {
@@ -190,11 +194,8 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let result = estimator
             .estimate(&Query {

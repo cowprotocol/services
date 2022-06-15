@@ -107,6 +107,17 @@ mod tests {
     };
     use reqwest::Client;
 
+    fn create_estimator<T: OneInchClient + 'static>(api: T) -> OneInchPriceEstimator {
+        OneInchPriceEstimator::new(
+            Arc::new(api),
+            Vec::default(),
+            Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
+        )
+    }
+
     #[tokio::test]
     async fn estimate_sell_order_succeeds() {
         // How much GNO can you buy for 1 WETH
@@ -133,7 +144,7 @@ mod tests {
             }))
         });
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -155,7 +166,7 @@ mod tests {
 
         one_inch.expect_get_sell_order_quote().times(0);
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -185,7 +196,7 @@ mod tests {
                 }))
             });
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -210,7 +221,7 @@ mod tests {
             .times(1)
             .return_once(|_| Err(anyhow::anyhow!("malformed JSON")));
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -233,12 +244,9 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = OneInchPriceEstimator::new(
-            Arc::new(
-                OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap(),
-            ),
-            Vec::default(),
-        );
+        let one_inch =
+            OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap();
+        let estimator = create_estimator(one_inch);
 
         let result = estimator
             .estimate(&Query {

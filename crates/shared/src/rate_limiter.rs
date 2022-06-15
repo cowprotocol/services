@@ -36,6 +36,12 @@ pub struct RateLimitingStrategy {
     max_back_off: Duration,
 }
 
+impl Default for RateLimitingStrategy {
+    fn default() -> Self {
+        Self::try_new(1.0, Duration::default(), Duration::default()).unwrap()
+    }
+}
+
 impl RateLimitingStrategy {
     pub fn try_new(
         back_off_growth_factor: f64,
@@ -140,7 +146,7 @@ impl RateLimiter {
     }
 }
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum RateLimiterError {
     #[error("rate limited")]
     RateLimited,

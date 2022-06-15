@@ -170,6 +170,10 @@ mod tests {
             sharing: Default::default(),
             token_info: Arc::new(token_info),
             disabled_paraswap_dexs: Vec::new(),
+            rate_limiter: Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
         };
 
         let weth = testlib::tokens::WETH;

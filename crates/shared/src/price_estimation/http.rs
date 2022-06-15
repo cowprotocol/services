@@ -463,6 +463,10 @@ mod tests {
                 &[testlib::tokens::WETH, t1.1, t2.1],
             )),
             network_name: "Ethereum / Mainnet".to_string(),
+            rate_limiter: Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
         };
 
         let result = estimator
