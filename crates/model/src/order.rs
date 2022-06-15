@@ -70,7 +70,7 @@ impl Order {
                 is_liquidity_order,
                 ..Default::default()
             },
-            signature: order.signature,
+            signature: order.signature.clone(),
             data: order.data,
         })
     }
