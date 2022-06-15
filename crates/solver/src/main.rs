@@ -35,6 +35,7 @@ use solver::{
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
@@ -570,17 +571,22 @@ async fn main() {
                     submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
                 }))
             }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
+                        EdenApi::new(
+                            client.clone(),
+                            args.eden_api_url.clone(),
+                            submitted_transactions.clone(),
+                        )
+                        .unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Eden),
                 }))
             }
             TransactionStrategyArg::Flashbots => {
@@ -591,7 +597,7 @@ async fn main() {
                         ),
                         max_additional_tip: args.max_additional_flashbot_tip,
                         additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-                        sub_tx_pool: submitted_transactions.add_sub_pool(),
+                        sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
                     }))
                 }
             }
@@ -604,7 +610,7 @@ async fn main() {
                     submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
                 }))
             }
             TransactionStrategyArg::DryRun => {
