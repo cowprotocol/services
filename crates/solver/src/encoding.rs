@@ -66,6 +66,7 @@ fn order_flags(order: &OrderData, signature: &Signature) -> U256 {
     result |= match signature.scheme() {
         SigningScheme::Eip712 => 0b00,
         SigningScheme::EthSign => 0b01,
+        SigningScheme::Eip1271 => 0b10,
         SigningScheme::PreSign => 0b11,
     } << 5;
     result.into()
