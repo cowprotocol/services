@@ -11,8 +11,8 @@ use warp::{Filter, Rejection};
 fn request(
 ) -> impl Filter<Extract = (u64, Option<String>, SolverCompetitionResponse), Error = Rejection> + Clone
 {
-    warp::post()
-        .and(warp::path!("solver_competition" / u64))
+    warp::path!("solver_competition" / u64)
+        .and(warp::post())
         .and(warp::header::optional::<String>("Authorization"))
         .and(crate::api::extract_payload())
 }
