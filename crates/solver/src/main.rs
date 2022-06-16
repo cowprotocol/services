@@ -556,10 +556,10 @@ async fn main() {
         })
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
-        let node_network_id = node.net().version().await.unwrap_or_else(|_| {
+        let node_network_id = node.net().version().await.unwrap_or_else(|err| {
             panic!(
-                "Unable to retrieve network id on startup using the submission node at {}",
-                url
+                "Unable to retrieve network id on startup using the submission node at {}. Error: {}",
+                url, err
             )
         });
         assert_eq!(
