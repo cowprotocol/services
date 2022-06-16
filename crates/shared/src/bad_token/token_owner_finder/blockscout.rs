@@ -13,7 +13,7 @@ pub struct BlockscoutTokenOwnerFinder {
 }
 
 impl BlockscoutTokenOwnerFinder {
-    pub fn try_for_network(client: Client, network_id: u64) -> Result<Self> {
+    pub fn try_new_for_network(client: Client, network_id: u64) -> Result<Self> {
         let network = match network_id {
             1 => "eth/",
             100 => "xdai/",
@@ -55,11 +55,14 @@ impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
         tracing::debug!("Response from Blockscout API: {}", response_text);
 
         let parsed = serde_json::from_str::<Response>(&response_text)?;
-        Ok(parsed
+        let mut addresses: Vec<_> = parsed
             .result
             .into_iter()
             .map(|owner| owner.address)
-            .collect())
+            .collect();
+        // We technically only need one candidate, returning the top 2 in case there is a race condition and tokens have just been transferred out
+        addresses.truncate(2);
+        Ok(addresses)
     }
 }
 
@@ -71,7 +74,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_mainnet() {
-        let finder = BlockscoutTokenOwnerFinder::try_for_network(Client::default(), 1).unwrap();
+        let finder = BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 1).unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -81,10 +84,22 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_xdai() {
-        let finder = BlockscoutTokenOwnerFinder::try_for_network(Client::default(), 100).unwrap();
+        let finder =
+            BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 100).unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
         assert!(!owners.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn test_blockscout_token_finding_no_owners() {
+        let finder =
+            BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 100).unwrap();
+        let owners = finder
+            .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
+            .await;
+        assert!(owners.unwrap().is_empty());
     }
 }
