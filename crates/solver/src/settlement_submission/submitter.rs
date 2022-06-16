@@ -325,7 +325,7 @@ impl<'a> Submitter<'a> {
                         .await
                 {
                     tracing::debug!("{} found mined transaction {:?}", name, receipt);
-                    track_mined_transactions(self.submit_api.name());
+                    track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
