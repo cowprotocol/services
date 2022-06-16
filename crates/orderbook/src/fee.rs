@@ -350,10 +350,6 @@ impl MinFeeCalculating for MinFeeCalculator {
                         tracing::warn!(?err, "error saving fee measurement");
                     }
                 } else {
-                    // Set an expired timeout to signal that this fee estimate is only indicative
-                    // and not supposed to be used to create actual orders with it.
-                    official_valid_until =
-                        DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
                     tracing::debug!("skip saving fee measurement");
                 }
 
@@ -371,6 +367,12 @@ impl MinFeeCalculating for MinFeeCalculator {
             "computed subsidized fee of {:?}",
             (subsidized_min_fee, fee_data.sell_token),
         );
+
+        if !self.store_computed_fees {
+            // Set an expired timeout to signal that this fee estimate is only indicative
+            // and not supposed to be used to create actual orders with it.
+            official_valid_until = DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
+        }
 
         Ok((subsidized_min_fee, official_valid_until))
     }
