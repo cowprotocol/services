@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
 use ethcontract::H160;
@@ -556,12 +557,14 @@ async fn main() {
         })
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
-        let node_network_id = node.net().version().await.unwrap_or_else(|err| {
-            panic!(
-                "Unable to retrieve network id on startup using the submission node at {}. Error: {}",
-                url, err
-            )
-        });
+        let node_network_id = node
+            .net()
+            .version()
+            .await
+            .context(format!(
+                "Unable to retrieve network id on startup using the submission node at {url}"
+            ))
+            .unwrap();
         assert_eq!(
             node_network_id, network_id,
             "network id of custom node doesn't match main node"
