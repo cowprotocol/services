@@ -561,9 +561,11 @@ async fn main() {
             .net()
             .version()
             .await
-            .context(format!(
-                "Unable to retrieve network id on startup using the submission node at {url}"
-            ))
+            .with_context(|| {
+                format!(
+                    "Unable to retrieve network id on startup using the submission node at {url}"
+                )
+            })
             .unwrap();
         assert_eq!(
             node_network_id, network_id,
