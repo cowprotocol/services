@@ -1,127 +1,16 @@
-use super::{BadTokenDetecting, TokenQuality};
-use crate::{
-    ethcontract_error::EthcontractErrorType,
-    event_handling::MAX_REORG_BLOCK_COUNT,
-    sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
-    trace_many, Web3,
-};
+use super::{token_owner_finder::TokenOwnerFinding, BadTokenDetecting, TokenQuality};
+use crate::{ethcontract_error::EthcontractErrorType, trace_many, Web3};
 use anyhow::{anyhow, bail, ensure, Context, Result};
-use contracts::{IUniswapV3Factory, ERC20};
+use contracts::ERC20;
 use ethcontract::{
-    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, BlockNumber, PrivateKey,
+    batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
 };
-use model::TokenPair;
 use primitive_types::{H160, U256};
 use std::{collections::HashSet, sync::Arc};
 use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
 };
-
-/// To detect bad tokens we need to find some address on the network that owns the token so that we
-/// can use it in our simulations.
-#[async_trait::async_trait]
-pub trait TokenOwnerFinding: Send + Sync {
-    /// Find candidate addresses that might own the token.
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
-}
-
-pub struct UniswapLikePairProviderFinder {
-    pub inner: PairProvider,
-    pub base_tokens: Vec<H160>,
-}
-
-#[async_trait::async_trait]
-impl TokenOwnerFinding for UniswapLikePairProviderFinder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        Ok(self
-            .base_tokens
-            .iter()
-            .filter_map(|&base_token| TokenPair::new(base_token, token))
-            .map(|pair| self.inner.pair_address(&pair))
-            .collect())
-    }
-}
-
-/// The balancer vault contract contains all the balances of all pools.
-pub struct BalancerVaultFinder(pub contracts::BalancerV2Vault);
-
-#[async_trait::async_trait]
-impl TokenOwnerFinding for BalancerVaultFinder {
-    async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
-        Ok(vec![self.0.address()])
-    }
-}
-
-pub struct UniswapV3Finder {
-    pub factory: IUniswapV3Factory,
-    pub base_tokens: Vec<H160>,
-    fee_values: Vec<u32>,
-}
-
-#[derive(Debug, Clone, Copy, clap::ArgEnum)]
-pub enum FeeValues {
-    /// Use hardcoded list
-    Static,
-    /// Fetch on creation based on events queried from node.
-    /// Some nodes struggle with the request and take a long time to respond leading to timeouts.
-    Dynamic,
-}
-
-impl UniswapV3Finder {
-    pub async fn new(
-        factory: IUniswapV3Factory,
-        base_tokens: Vec<H160>,
-        current_block: u64,
-        fee_values: FeeValues,
-    ) -> Result<Self> {
-        let fee_values = match fee_values {
-            FeeValues::Static => vec![500, 3000, 10000, 100],
-            // We fetch these once at start up because we don't expect them to change often.
-            // Alternatively could use a time based cache.
-            FeeValues::Dynamic => Self::fee_values(&factory, current_block).await?,
-        };
-        tracing::debug!(?fee_values);
-        Ok(Self {
-            factory,
-            base_tokens,
-            fee_values,
-        })
-    }
-
-    // Possible fee values as given by
-    // https://github.com/Uniswap/v3-core/blob/9161f9ae4aaa109f7efdff84f1df8d4bc8bfd042/contracts/UniswapV3Factory.sol#L26
-    async fn fee_values(factory: &IUniswapV3Factory, current_block: u64) -> Result<Vec<u32>> {
-        // We expect there to be few of these kind of events (currently there are 4) so fetching all
-        // of them is fine. Alternatively we could index these events in the database.
-        let events = factory
-            .events()
-            .fee_amount_enabled()
-            .from_block(BlockNumber::Earliest)
-            .to_block(BlockNumber::Number(
-                current_block.saturating_sub(MAX_REORG_BLOCK_COUNT).into(),
-            ))
-            .query()
-            .await?;
-        let fee_values = events.into_iter().map(|event| event.data.fee).collect();
-        Ok(fee_values)
-    }
-}
-
-#[async_trait::async_trait]
-impl TokenOwnerFinding for UniswapV3Finder {
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        Ok(self
-            .base_tokens
-            .iter()
-            .filter_map(|base_token| TokenPair::new(*base_token, token))
-            .flat_map(|pair| self.fee_values.iter().map(move |fee| (pair, *fee)))
-            .map(|(pair, fee)| {
-                uniswap_v3_pair_provider::pair_address(&self.factory.address(), &pair, fee)
-            })
-            .collect())
-    }
-}
 
 /// Detects whether a token is "bad" (works in unexpected ways that are problematic for solving) by
 /// simulating several transfers of a token. To find an initial address to transfer from we use
@@ -405,9 +294,13 @@ fn ensure_transaction_ok_and_get_gas(trace: &BlockTrace) -> Result<Result<U256, 
 mod tests {
     use super::*;
     use crate::{
+        bad_token::token_owner_finder::{
+            FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder,
+        },
         sources::{sushiswap, uniswap_v2},
         transport::create_env_test_transport,
     };
+    use contracts::IUniswapV3Factory;
     use hex_literal::hex;
     use web3::types::{
         Action, ActionType, Bytes, Call, CallResult, CallType, Res, TransactionTrace,
@@ -713,7 +606,7 @@ mod tests {
         let univ3 = UniswapV3Finder::new(factory, base_tokens, current_block, FeeValues::Dynamic)
             .await
             .unwrap();
-        let token_cache = TraceCallDetector {
+        let token_cache = super::TraceCallDetector {
             web3,
             settlement_contract: settlement.address(),
             finders: vec![Arc::new(univ3)],
