@@ -325,6 +325,7 @@ impl<'a> Submitter<'a> {
                         .await
                 {
                     tracing::debug!("{} found mined transaction {:?}", name, receipt);
+                    track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
                 if Instant::now() + MINED_TX_CHECK_INTERVAL > tx_to_propagate_deadline {
@@ -618,6 +619,9 @@ struct Metrics {
     /// Tracks how many transactions get successfully submitted with the different submission strategies.
     #[metric(labels("submitter", "result"))]
     submissions: prometheus::CounterVec,
+    /// Tracks how many transactions get successfully mined by the different submission strategies.
+    #[metric(labels("submitter"))]
+    mined_transactions: prometheus::CounterVec,
 }
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
@@ -626,6 +630,14 @@ pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
         .expect("unexpected error getting metrics instance")
         .submissions
         .with_label_values(&[submitter, result])
+        .inc();
+}
+
+fn track_mined_transactions(submitter: &str) {
+    Metrics::instance(shared::metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .mined_transactions
+        .with_label_values(&[submitter])
         .inc();
 }
 
