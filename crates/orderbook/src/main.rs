@@ -307,6 +307,7 @@ impl std::fmt::Display for Arguments {
             self.solvable_orders_max_update_age
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
+        writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
         writeln!(
             f,
