@@ -92,7 +92,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
-    tracing::info!("running order book with validated {}", args);
+    tracing::info!("running order book with validated arguments:\n{}", args);
 
     setup_metrics_registry(Some("gp_v2_api".into()), None);
     let metrics = Arc::new(Metrics::new().unwrap());

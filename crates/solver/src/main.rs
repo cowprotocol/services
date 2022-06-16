@@ -48,7 +48,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
-    tracing::info!("running solver with validated {}", args);
+    tracing::info!("running solver with validated arguments:\n{}", args);
 
     setup_metrics_registry(Some("gp_v2_solver".into()), None);
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
