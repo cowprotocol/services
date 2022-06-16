@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
 use model::{app_id::AppId, order::OrderKind};
@@ -319,7 +319,7 @@ impl MinFeeCalculating for MinFeeCalculator {
         ensure_token_supported(fee_data.buy_token, self.bad_token_detector.as_ref()).await?;
 
         let now = (self.now)();
-        let official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
+        let mut official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
         let internal_valid_until = now + Duration::seconds(PERSISTED_VALIDITY_FOR_FEE_IN_SEC);
 
         tracing::debug!(?fee_data, ?app_data, ?user, "computing subsidized fee",);
@@ -350,6 +350,10 @@ impl MinFeeCalculating for MinFeeCalculator {
                         tracing::warn!(?err, "error saving fee measurement");
                     }
                 } else {
+                    // Set an expired timeout to signal that this fee estimate is only indicative
+                    // and not supposed to be used to create actual orders with it.
+                    official_valid_until =
+                        DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
                     tracing::debug!("skip saving fee measurement");
                 }
 
