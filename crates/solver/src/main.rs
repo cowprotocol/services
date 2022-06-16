@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
 use ethcontract::H160;
@@ -543,25 +544,38 @@ async fn main() {
             .await
             .map_err(|err| tracing::error!("Couldn't fetch market makable token list: {}", err))
             .ok();
-    let submission_nodes = args
+    let submission_nodes_with_url = args
         .transaction_submission_nodes
         .into_iter()
         .enumerate()
         .map(|(index, url)| {
             let transport = create_instrumented_transport(
-                HttpTransport::new(client.clone(), url, index.to_string()),
+                HttpTransport::new(client.clone(), url.clone(), index.to_string()),
                 metrics.clone(),
             );
-            web3::Web3::new(transport)
+            (web3::Web3::new(transport), url)
         })
         .collect::<Vec<_>>();
-    for node in &submission_nodes {
-        let node_network_id = node.net().version().await.unwrap();
+    for (node, url) in &submission_nodes_with_url {
+        let node_network_id = node
+            .net()
+            .version()
+            .await
+            .with_context(|| {
+                format!(
+                    "Unable to retrieve network id on startup using the submission node at {url}"
+                )
+            })
+            .unwrap();
         assert_eq!(
             node_network_id, network_id,
             "network id of custom node doesn't match main node"
         );
     }
+    let submission_nodes = submission_nodes_with_url
+        .into_iter()
+        .map(|(node, _)| node)
+        .collect::<Vec<_>>();
     let submitted_transactions = GlobalTxPool::default();
     let mut transaction_strategies = vec![];
     for strategy in args.transaction_strategy {
