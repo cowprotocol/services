@@ -31,7 +31,7 @@ use shared::{
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
         token_owner_finder::{
-            blocksout::BlockscoutTokenOwnerFinder, BalancerVaultFinder, TokenOwnerFinding,
+            blockscout::BlockscoutTokenOwnerFinder, BalancerVaultFinder, TokenOwnerFinding,
             UniswapLikePairProviderFinder, UniswapV3Finder,
         },
         trace_call::TraceCallDetector,
@@ -242,7 +242,7 @@ async fn main() {
             .expect("create uniswapv3 finder"),
         ));
     }
-    if let Ok(finder) = BlockscoutTokenOwnerFinder::try_new_for_network(client.clone(), chain_id) {
+    if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
         finders.push(Arc::new(finder));
     }
     let trace_call_detector = TraceCallDetector {

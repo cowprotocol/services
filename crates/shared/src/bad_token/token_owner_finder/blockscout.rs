@@ -13,7 +13,7 @@ pub struct BlockscoutTokenOwnerFinder {
 }
 
 impl BlockscoutTokenOwnerFinder {
-    pub fn try_new_for_network(client: Client, network_id: u64) -> Result<Self> {
+    pub fn try_with_network(client: Client, network_id: u64) -> Result<Self> {
         let network = match network_id {
             1 => "eth/",
             100 => "xdai/",
@@ -74,7 +74,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_mainnet() {
-        let finder = BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 1).unwrap();
+        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 1).unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -84,8 +84,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_xdai() {
-        let finder =
-            BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 100).unwrap();
+        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 100).unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("1337BedC9D22ecbe766dF105c9623922A27963EC")))
             .await;
@@ -95,8 +94,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_blockscout_token_finding_no_owners() {
-        let finder =
-            BlockscoutTokenOwnerFinder::try_new_for_network(Client::default(), 100).unwrap();
+        let finder = BlockscoutTokenOwnerFinder::try_with_network(Client::default(), 100).unwrap();
         let owners = finder
             .find_candidate_owners(H160(hex!("000000000000000000000000000000000000def1")))
             .await;
