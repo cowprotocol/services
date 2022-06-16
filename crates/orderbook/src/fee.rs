@@ -371,6 +371,10 @@ impl MinFeeCalculating for MinFeeCalculator {
         if !self.store_computed_fees {
             // Set an expired timeout to signal that this fee estimate is only indicative
             // and not supposed to be used to create actual orders with it.
+            //
+            // Technically we could only set this sentinel when we had to compute a fee
+            // estimate from scratch but to make it more consistent for the user we'll always
+            // return this value when the fee estimate will not end up in the database.
             official_valid_until = DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
         }
 
