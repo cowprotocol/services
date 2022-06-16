@@ -1,15 +1,17 @@
 use crate::{
-    fee::{FeeData, MinFeeCalculating},
+    fee::{FeeData, FeeParameters, MinFeeCalculating},
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
 use chrono::{DateTime, Utc};
-use ethcontract::U256;
+use ethcontract::{H160, U256};
 use futures::try_join;
 use model::{
+    app_id::AppId,
     order::OrderKind,
     quote::{
-        OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount,
+        OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
+        SellAmount,
     },
     u256_decimal,
 };
@@ -59,7 +61,7 @@ pub enum OrderQuoteError {
 }
 
 #[derive(Debug, Serialize, PartialEq)]
-struct FeeParameters {
+struct QuoteFeeParameters {
     buy_amount: U256,
     sell_amount: U256,
     fee_amount: U256,
@@ -142,7 +144,7 @@ impl OrderQuoter {
     async fn calculate_fee_parameters(
         &self,
         quote_request: &OrderQuoteRequest,
-    ) -> Result<FeeParameters, FeeError> {
+    ) -> Result<QuoteFeeParameters, FeeError> {
         let (fee_calculator, price_estimator) = match quote_request.price_quality {
             PriceQuality::Fast => (&self.fast_fee_calculator, &self.fast_price_estimator),
             PriceQuality::Optimal => (&self.fee_calculator, &self.price_estimator),
@@ -195,7 +197,7 @@ impl OrderQuoter {
                             .checked_mul(sell_amount_after_fee)
                             .unwrap_or(U256::MAX),
                     };
-                FeeParameters {
+                QuoteFeeParameters {
                     buy_amount: buy_amount_after_fee,
                     sell_amount: sell_amount_after_fee,
                     fee_amount: fee,
@@ -235,7 +237,7 @@ impl OrderQuoter {
                     single_estimate(price_estimator.as_ref(), &price_estimation_query)
                 )
                 .map_err(FeeError::PriceEstimate)?;
-                FeeParameters {
+                QuoteFeeParameters {
                     buy_amount: estimate.out_amount,
                     sell_amount: sell_amount_after_fee,
                     fee_amount: fee,
@@ -273,7 +275,7 @@ impl OrderQuoter {
                 )
                 .map_err(FeeError::PriceEstimate)?;
                 let sell_amount_after_fee = estimate.out_amount;
-                FeeParameters {
+                QuoteFeeParameters {
                     buy_amount: buy_amount_after_fee,
                     sell_amount: sell_amount_after_fee,
                     fee_amount: fee,
@@ -284,6 +286,55 @@ impl OrderQuoter {
         })
     }
 }
+
+/// Order parameters for quoting.
+pub struct QuoteParameters {
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub side: OrderQuoteSide,
+    pub from: H160,
+    pub app_data: AppId,
+}
+
+/// Detailed information for a computed order quote.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Quote {
+    pub id: QuoteId,
+    pub expiry: DateTime<Utc>,
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee_amount: U256,
+    pub fee_parameters: FeeParameters,
+    pub kind: OrderKind,
+}
+
+/// Quote searching parameters.
+pub enum Search {
+    Id(QuoteId),
+    Parameters(QuoteParameters),
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait OrderQuoteCalculating: Send + Sync {
+    /// Computes a quote for the specified order paramters.
+    ///
+    /// Returns an error if there is some estimation error and `Ok(None)` if no
+    /// information about the given token exists
+    async fn calculate_quote(
+        &self,
+        parameters: QuoteParameters,
+    ) -> Result<Quote, CalculateQuoteError>;
+
+    /// Finds an existing quote.
+    async fn find_quote(&self, search: Search) -> Result<Quote, FindQuoteError>;
+}
+
+pub enum CalculateQuoteError {}
+
+pub enum FindQuoteError {}
 
 #[cfg(test)]
 mod tests {
@@ -330,7 +381,7 @@ mod tests {
         // Selling 10 units will buy us 14. Therefore, selling 7 should buy us 9.8 => 9 whole units
         assert_eq!(
             result,
-            FeeParameters {
+            QuoteFeeParameters {
                 buy_amount: 9.into(),
                 sell_amount: 7.into(),
                 fee_amount: 3.into(),
@@ -373,7 +424,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             result,
-            FeeParameters {
+            QuoteFeeParameters {
                 buy_amount: 14.into(),
                 sell_amount: 7.into(),
                 fee_amount: 3.into(),
@@ -417,7 +468,7 @@ mod tests {
         // units of sell_token must be sold.
         assert_eq!(
             result,
-            FeeParameters {
+            QuoteFeeParameters {
                 buy_amount: 10.into(),
                 sell_amount: 20.into(),
                 fee_amount: 3.into(),
