@@ -74,6 +74,7 @@ pub struct MinFeeCalculator {
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     cow_subsidy: Arc<dyn CowSubsidy>,
     liquidity_order_owners: HashSet<H160>,
+    store_computed_fees: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -245,6 +246,7 @@ impl MinFeeCalculator {
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         cow_subsidy: Arc<dyn CowSubsidy>,
         liquidity_order_owners: HashSet<H160>,
+        store_computed_fees: bool,
     ) -> Self {
         Self {
             price_estimator,
@@ -256,6 +258,7 @@ impl MinFeeCalculator {
             native_price_estimator,
             cow_subsidy,
             liquidity_order_owners,
+            store_computed_fees,
         }
     }
 
@@ -338,12 +341,16 @@ impl MinFeeCalculating for MinFeeCalculator {
             } else {
                 let current_fee = self.compute_unsubsidized_min_fee(fee_data).await?;
 
-                if let Err(err) = self
-                    .measurements
-                    .save_fee_measurement(fee_data, internal_valid_until, current_fee)
-                    .await
-                {
-                    tracing::warn!(?err, "error saving fee measurement");
+                if self.store_computed_fees {
+                    if let Err(err) = self
+                        .measurements
+                        .save_fee_measurement(fee_data, internal_valid_until, current_fee)
+                        .await
+                    {
+                        tracing::warn!(?err, "error saving fee measurement");
+                    }
+                } else {
+                    tracing::debug!("skip saving fee measurement");
                 }
 
                 tracing::debug!("using new fee measurement {:?}", current_fee);
@@ -524,6 +531,7 @@ mod tests {
                 native_price_estimator: create_default_native_token_estimator(price_estimator),
                 cow_subsidy: Arc::new(FixedCowSubsidy::default()),
                 liquidity_order_owners: Default::default(),
+                store_computed_fees: true,
             }
         }
     }
@@ -662,6 +670,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
 
         // Selling unsupported token
@@ -736,6 +745,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy(0.5)),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data, user)
@@ -838,6 +848,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
 
         let (fee, _) = fee_estimator
@@ -944,6 +955,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
