@@ -9,22 +9,91 @@ use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use ethcontract::{
     errors::{ExecutionError, MethodError},
-    Account, TransactionHash,
+    Account, Address, TransactionHash,
 };
 use futures::FutureExt;
-use gas_estimation::GasPriceEstimating;
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
-    sync::Arc,
+    collections::HashMap,
+    sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
 use submitter::{
-    DisabledReason, Submitter, SubmitterGasPriceEstimator, SubmitterParams, TransactionSubmitting,
+    DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
+    TransactionHandle, TransactionSubmitting,
 };
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
+
+pub struct SubTxPool {
+    pub strategy: Strategy,
+    // Key (Address, U256) represents pair (sender, nonce)
+    pub pools: HashMap<(Address, U256), Vec<(TransactionHandle, GasPrice1559)>>,
+}
+type TxPool = Arc<Mutex<Vec<SubTxPool>>>;
+
+#[derive(Default, Clone)]
+pub struct GlobalTxPool {
+    pub pools: TxPool,
+}
+
+impl GlobalTxPool {
+    pub fn add_sub_pool(&self, strategy: Strategy) -> SubTxPoolRef {
+        let pools = self.pools.clone();
+        let index = {
+            let mut pools = pools.lock().unwrap();
+            let index = pools.len();
+            pools.push(SubTxPool {
+                strategy,
+                pools: Default::default(),
+            });
+            index
+        };
+        SubTxPoolRef { pools, index }
+    }
+}
+
+/// Currently used to access only specific sub tx pool (indexed one) in the list of pools.
+/// Can be used to access other sub tx pools if needed.
+#[derive(Default, Clone)]
+pub struct SubTxPoolRef {
+    pools: TxPool,
+    index: usize,
+}
+
+impl SubTxPoolRef {
+    pub fn get(
+        &self,
+        sender: Address,
+        nonce: U256,
+    ) -> Option<Vec<(TransactionHandle, GasPrice1559)>> {
+        self.pools.lock().unwrap()[self.index]
+            .pools
+            .get(&(sender, nonce))
+            .cloned()
+    }
+
+    /// Remove old transactions with too low nonce
+    pub fn remove_older_than(&self, nonce: U256) {
+        self.pools.lock().unwrap()[self.index]
+            .pools
+            .retain(|key, _| key.1 >= nonce);
+    }
+
+    pub fn update(
+        &self,
+        sender: Address,
+        nonce: U256,
+        transactions: Vec<(TransactionHandle, GasPrice1559)>,
+    ) {
+        self.pools.lock().unwrap()[self.index]
+            .pools
+            .insert((sender, nonce), transactions);
+    }
+}
 
 pub struct SolutionSubmitter {
     pub web3: Web3,
@@ -43,6 +112,7 @@ pub struct StrategyArgs {
     pub submit_api: Box<dyn TransactionSubmitting>,
     pub max_additional_tip: f64,
     pub additional_tip_percentage_of_max_fee: f64,
+    pub sub_tx_pool: SubTxPoolRef,
 }
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
@@ -114,6 +184,7 @@ impl SolutionSubmitter {
                             gas_price_cap: self.gas_price_cap,
                             additional_tip_percentage_of_max_fee: Some(strategy_args.additional_tip_percentage_of_max_fee),
                             max_additional_tip: Some(strategy_args.max_additional_tip),
+                            pending_gas_price: None,
                         };
                         let submitter = Submitter::new(
                             &self.contract,
@@ -121,6 +192,7 @@ impl SolutionSubmitter {
                             strategy_args.submit_api.as_ref(),
                             &gas_price_estimator,
                             self.access_list_estimator.as_ref(),
+                            strategy_args.sub_tx_pool.clone(),
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }
@@ -271,6 +343,7 @@ mod tests {
                 submit_api: Box::new(MockTransactionSubmitting::new()),
                 max_additional_tip: Default::default(),
                 additional_tip_percentage_of_max_fee: Default::default(),
+                sub_tx_pool: Default::default(),
             }
         }
     }
@@ -321,5 +394,26 @@ mod tests {
 
         let strategy = TransactionStrategy::DryRun;
         assert!(strategy.strategy_args().is_none());
+    }
+
+    #[test]
+    fn global_tx_pool() {
+        let sender = Address::default();
+        let nonce = U256::zero();
+        let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
+
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::CustomNodes);
+
+        submitted_transactions.update(sender, nonce, transactions);
+        let entry = submitted_transactions.get(sender, nonce);
+        assert!(entry.is_some());
+
+        submitted_transactions.remove_older_than(0.into());
+        let entry = submitted_transactions.get(sender, nonce);
+        assert!(entry.is_some());
+
+        submitted_transactions.remove_older_than(1.into());
+        let entry = submitted_transactions.get(sender, nonce);
+        assert!(entry.is_none());
     }
 }

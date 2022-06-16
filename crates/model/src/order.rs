@@ -3,7 +3,7 @@
 use crate::{
     app_id::AppId,
     quote::QuoteId,
-    signature::{EcdsaSignature, EcdsaSigningScheme, Signature},
+    signature::{EcdsaSignature, EcdsaSigningScheme, Signature, VerificationError},
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
@@ -30,32 +30,15 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
     pub metadata: OrderMetadata,
     #[serde(flatten)]
-    pub creation: OrderCreation,
-}
-
-impl Default for Order {
-    fn default() -> Self {
-        let domain = &DomainSeparator::default();
-        let order = OrderCreation::default();
-        let owner = order
-            .signature
-            .validate(domain, &order.hash_struct())
-            .unwrap();
-        Self::from_order_creation(
-            &order,
-            domain,
-            H160::default(),
-            Default::default(),
-            owner,
-            false,
-        )
-    }
+    pub data: OrderData,
+    #[serde(flatten)]
+    pub signature: Signature,
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -70,30 +53,34 @@ pub enum OrderStatus {
 
 impl Order {
     pub fn from_order_creation(
-        order_creation: &OrderCreation,
+        order: &OrderCreation,
         domain: &DomainSeparator,
         settlement_contract: H160,
         full_fee_amount: U256,
-        owner: H160,
         is_liquidity_order: bool,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, VerificationError> {
+        let owner = order.verify_owner(domain)?;
+        Ok(Self {
             metadata: OrderMetadata {
-                creation_date: chrono::offset::Utc::now(),
                 owner,
-                uid: order_creation.uid(domain, &owner),
+                creation_date: chrono::offset::Utc::now(),
+                uid: order.data.uid(domain, &owner),
                 settlement_contract,
                 full_fee_amount,
                 is_liquidity_order,
                 ..Default::default()
             },
-            creation: *order_creation,
-        }
+            signature: order.signature.clone(),
+            data: order.data,
+        })
+    }
+
+    pub fn into_order_creation(self) -> OrderCreation {
+        self.into()
     }
 
     pub fn contains_token_from(&self, token_list: &HashSet<H160>) -> bool {
-        token_list.contains(&self.creation.buy_token)
-            || token_list.contains(&self.creation.sell_token)
+        token_list.contains(&self.data.buy_token) || token_list.contains(&self.data.sell_token)
     }
 
     /// Returns the remaining amounts for the order.
@@ -107,28 +94,28 @@ impl Order {
     ///
     /// Returns an error on overflows or malformed orders.
     pub fn remaining_amounts(&self) -> Result<RemainingOrderAmounts> {
-        if !self.creation.partially_fillable {
+        if !self.data.partially_fillable {
             // Note that we skip the "fill-ratio" computation for fill-or-kill
             // orders despite yielding the same results in most cases. This is
             // because this computation only happens for partially fillable
             // orders in the settlement contract, and therefore overflows that
             // may happen would incorrectly return `Err`.
             return Ok(RemainingOrderAmounts {
-                sell_amount: self.creation.sell_amount,
-                buy_amount: self.creation.buy_amount,
-                fee_amount: self.creation.fee_amount,
+                sell_amount: self.data.sell_amount,
+                buy_amount: self.data.buy_amount,
+                fee_amount: self.data.fee_amount,
                 full_fee_amount: self.metadata.full_fee_amount,
             });
         }
 
-        let (max_executable_amount, executed_amount) = match self.creation.kind {
+        let (max_executable_amount, executed_amount) = match self.data.kind {
             OrderKind::Buy => (
-                self.creation.buy_amount,
+                self.data.buy_amount,
                 biguint_to_u256(&self.metadata.executed_buy_amount)
                     .context("buy order executed amount overflows a u256")?,
             ),
             OrderKind::Sell => (
-                self.creation.sell_amount,
+                self.data.sell_amount,
                 self.metadata.executed_sell_amount_before_fees,
             ),
         };
@@ -144,9 +131,9 @@ impl Order {
         };
 
         Ok(RemainingOrderAmounts {
-            sell_amount: scale(self.creation.sell_amount)?,
-            buy_amount: scale(self.creation.buy_amount)?,
-            fee_amount: scale(self.creation.fee_amount)?,
+            sell_amount: scale(self.data.sell_amount)?,
+            buy_amount: scale(self.data.buy_amount)?,
+            fee_amount: scale(self.data.fee_amount)?,
             full_fee_amount: scale(self.metadata.full_fee_amount)?,
         })
     }
@@ -166,37 +153,37 @@ pub struct OrderBuilder(Order);
 
 impl OrderBuilder {
     pub fn with_sell_token(mut self, sell_token: H160) -> Self {
-        self.0.creation.sell_token = sell_token;
+        self.0.data.sell_token = sell_token;
         self
     }
 
     pub fn with_buy_token(mut self, buy_token: H160) -> Self {
-        self.0.creation.buy_token = buy_token;
+        self.0.data.buy_token = buy_token;
         self
     }
 
     pub fn with_sell_amount(mut self, sell_amount: U256) -> Self {
-        self.0.creation.sell_amount = sell_amount;
+        self.0.data.sell_amount = sell_amount;
         self
     }
 
     pub fn with_buy_amount(mut self, buy_amount: U256) -> Self {
-        self.0.creation.buy_amount = buy_amount;
+        self.0.data.buy_amount = buy_amount;
         self
     }
 
     pub fn with_valid_to(mut self, valid_to: u32) -> Self {
-        self.0.creation.valid_to = valid_to;
+        self.0.data.valid_to = valid_to;
         self
     }
 
     pub fn with_app_data(mut self, app_data: [u8; 32]) -> Self {
-        self.0.creation.app_data = AppId(app_data);
+        self.0.data.app_data = AppId(app_data);
         self
     }
 
     pub fn with_fee_amount(mut self, fee_amount: U256) -> Self {
-        self.0.creation.fee_amount = fee_amount;
+        self.0.data.fee_amount = fee_amount;
         self
     }
 
@@ -206,22 +193,22 @@ impl OrderBuilder {
     }
 
     pub fn with_kind(mut self, kind: OrderKind) -> Self {
-        self.0.creation.kind = kind;
+        self.0.data.kind = kind;
         self
     }
 
     pub fn with_partially_fillable(mut self, partially_fillable: bool) -> Self {
-        self.0.creation.partially_fillable = partially_fillable;
+        self.0.data.partially_fillable = partially_fillable;
         self
     }
 
     pub fn with_sell_token_balance(mut self, balance: SellTokenSource) -> Self {
-        self.0.creation.sell_token_balance = balance;
+        self.0.data.sell_token_balance = balance;
         self
     }
 
     pub fn with_buy_token_balance(mut self, balance: BuyTokenDestination) -> Self {
-        self.0.creation.buy_token_balance = balance;
+        self.0.data.buy_token_balance = balance;
         self
     }
 
@@ -238,16 +225,16 @@ impl OrderBuilder {
         key: SecretKeyRef,
     ) -> Self {
         self.0.metadata.owner = key.address();
-        self.0.metadata.uid = self.0.creation.uid(domain, &key.address());
-        self.0.creation.signature =
-            EcdsaSignature::sign(signing_scheme, domain, &self.0.creation.hash_struct(), key)
+        self.0.metadata.uid = self.0.data.uid(domain, &key.address());
+        self.0.signature =
+            EcdsaSignature::sign(signing_scheme, domain, &self.0.data.hash_struct(), key)
                 .to_signature(signing_scheme);
         self
     }
 
     pub fn with_presign(mut self, owner: H160) -> Self {
         self.0.metadata.owner = owner;
-        self.0.creation.signature = Signature::PreSign(owner);
+        self.0.signature = Signature::PreSign(owner);
         self
     }
 
@@ -256,11 +243,13 @@ impl OrderBuilder {
     }
 }
 
-/// An order as provided to the orderbook by the frontend.
-#[serde_as]
-#[derive(Eq, PartialEq, Copy, Clone, Deserialize, Debug, Serialize, Hash)]
+/// The complete order data.
+///
+/// These are the exact fields that get signed and verified by the settlement
+/// contract.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OrderCreation {
+pub struct OrderData {
     pub sell_token: H160,
     pub buy_token: H160,
     #[serde(default)]
@@ -275,72 +264,13 @@ pub struct OrderCreation {
     pub fee_amount: U256,
     pub kind: OrderKind,
     pub partially_fillable: bool,
-    #[serde(flatten)]
-    pub signature: Signature,
     #[serde(default)]
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OrderCreationPayload {
-    #[serde(flatten)]
-    pub order_creation: OrderCreation,
-    pub from: Option<H160>,
-    pub quote_id: Option<QuoteId>,
-}
-
-impl Default for OrderCreation {
-    // Custom implementation to make sure the default order is valid
-    fn default() -> Self {
-        let signing_scheme = EcdsaSigningScheme::Eip712;
-        let mut result = Self {
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            receiver: Default::default(),
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            valid_to: u32::MAX,
-            app_data: Default::default(),
-            fee_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: Default::default(),
-            signature: Default::default(),
-            sell_token_balance: Default::default(),
-            buy_token_balance: Default::default(),
-        };
-        result.signature = EcdsaSignature::sign(
-            signing_scheme,
-            &DomainSeparator::default(),
-            &result.hash_struct(),
-            SecretKeyRef::new(&ONE_KEY),
-        )
-        .to_signature(signing_scheme);
-        result
-    }
-}
-
-impl OrderCreation {
-    pub fn token_pair(&self) -> Option<TokenPair> {
-        TokenPair::new(self.buy_token, self.sell_token)
-    }
-
-    pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {
-        let mut uid = OrderUid([0u8; 56]);
-        uid.0[0..32].copy_from_slice(&super::signature::hashed_eip712_message(
-            domain,
-            &self.hash_struct(),
-        ));
-        uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
-        uid.0[52..56].copy_from_slice(&self.valid_to.to_be_bytes());
-        uid
-    }
-}
-
-// EIP-712
-impl OrderCreation {
+impl OrderData {
     // See <https://github.com/cowprotocol/contracts/blob/v1.1.2/src/contracts/libraries/GPv2Order.sol#L47>
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
@@ -391,6 +321,72 @@ impl OrderCreation {
         });
         signing::keccak256(&hash_data)
     }
+
+    pub fn token_pair(&self) -> Option<TokenPair> {
+        TokenPair::new(self.buy_token, self.sell_token)
+    }
+
+    pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {
+        let mut uid = OrderUid([0u8; 56]);
+        uid.0[0..32].copy_from_slice(&super::signature::hashed_eip712_message(
+            domain,
+            &self.hash_struct(),
+        ));
+        uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
+        uid.0[52..56].copy_from_slice(&self.valid_to.to_be_bytes());
+        uid
+    }
+}
+
+// An order as provided to the orderbook by the frontend.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OrderCreation {
+    #[serde(flatten)]
+    pub data: OrderData,
+    pub from: Option<H160>,
+    #[serde(flatten)]
+    pub signature: Signature,
+    pub quote_id: Option<QuoteId>,
+}
+
+impl OrderCreation {
+    /// Recovers the owner address for the specified domain, and then verifies
+    /// it matches the expected address.
+    ///
+    /// Returns the recovered address on success, or an error if there is an
+    /// issue performing the EC-recover or the recovered address does not match
+    /// the expected one.
+    pub fn verify_owner(&self, domain: &DomainSeparator) -> Result<H160, VerificationError> {
+        self.signature
+            .verify_owner(self.from, domain, &self.data.hash_struct())
+    }
+}
+
+impl Default for OrderCreation {
+    // Custom implementation to make sure the default order creation is valid.
+    fn default() -> Self {
+        Self {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            from: None,
+            signature: Signature::Eip712(EcdsaSignature::non_zero()),
+            quote_id: None,
+        }
+    }
+}
+
+impl From<Order> for OrderCreation {
+    fn from(order: Order) -> Self {
+        OrderCreation {
+            data: order.data,
+            from: Some(order.metadata.owner),
+            signature: order.signature,
+            quote_id: None,
+        }
+    }
 }
 
 /// An order cancellation as provided to the orderbook by the frontend.
@@ -434,7 +430,7 @@ impl OrderCancellation {
 
     pub fn validate(&self, domain_separator: &DomainSeparator) -> Option<H160> {
         self.signature
-            .validate(self.signing_scheme, domain_separator, &self.hash_struct())
+            .recover(self.signing_scheme, domain_separator, &self.hash_struct())
     }
 }
 
@@ -721,7 +717,7 @@ mod tests {
                 full_fee_amount: U256::MAX,
                 is_liquidity_order: false,
             },
-            creation: OrderCreation {
+            data: OrderData {
                 sell_token: H160::from_low_u64_be(10),
                 buy_token: H160::from_low_u64_be(9),
                 receiver: Some(H160::from_low_u64_be(11)),
@@ -734,26 +730,96 @@ mod tests {
                 fee_amount: U256::MAX,
                 kind: OrderKind::Buy,
                 partially_fillable: false,
-                signature: EcdsaSignature {
-                    v: 1,
-                    r: H256::from_str(
-                        "0200000000000000000000000000000000000000000000000000000000000003",
-                    )
-                    .unwrap(),
-                    s: H256::from_str(
-                        "0400000000000000000000000000000000000000000000000000000000000005",
-                    )
-                    .unwrap(),
-                }
-                .to_signature(signing_scheme),
                 sell_token_balance: SellTokenSource::External,
                 buy_token_balance: BuyTokenDestination::Internal,
             },
+            signature: EcdsaSignature {
+                v: 1,
+                r: H256::from_str(
+                    "0200000000000000000000000000000000000000000000000000000000000003",
+                )
+                .unwrap(),
+                s: H256::from_str(
+                    "0400000000000000000000000000000000000000000000000000000000000005",
+                )
+                .unwrap(),
+            }
+            .to_signature(signing_scheme),
         };
         let deserialized: Order = serde_json::from_value(value.clone()).unwrap();
         assert_eq!(deserialized, expected);
         let serialized = serde_json::to_value(expected).unwrap();
         assert_eq!(serialized, value);
+    }
+
+    #[test]
+    fn order_creation_serialization() {
+        let owner = H160([0xff; 20]);
+        for (signature, signing_scheme, from, signature_bytes) in [
+            (
+                Signature::default_with(SigningScheme::Eip712),
+                "eip712",
+                Some(owner),
+                "0x0000000000000000000000000000000000000000000000000000000000000000\
+                   0000000000000000000000000000000000000000000000000000000000000000\
+                   00",
+            ),
+            (
+                Signature::default_with(SigningScheme::EthSign),
+                "ethsign",
+                None,
+                "0x0000000000000000000000000000000000000000000000000000000000000000\
+                   0000000000000000000000000000000000000000000000000000000000000000\
+                   00",
+            ),
+            (
+                Signature::PreSign(owner),
+                "presign",
+                Some(owner),
+                "0xffffffffffffffffffffffffffffffffffffffff",
+            ),
+        ] {
+            let order = OrderCreation {
+                data: OrderData {
+                    sell_token: H160([0x11; 20]),
+                    buy_token: H160([0x22; 20]),
+                    receiver: Some(H160([0x33; 20])),
+                    sell_amount: 123.into(),
+                    buy_amount: 456.into(),
+                    valid_to: 1337,
+                    app_data: AppId([0x44; 32]),
+                    fee_amount: 789.into(),
+                    kind: OrderKind::Sell,
+                    partially_fillable: false,
+                    sell_token_balance: SellTokenSource::Erc20,
+                    buy_token_balance: BuyTokenDestination::Erc20,
+                },
+                from,
+                signature,
+                quote_id: Some(42),
+            };
+            let order_json = json!({
+                "sellToken": "0x1111111111111111111111111111111111111111",
+                "buyToken": "0x2222222222222222222222222222222222222222",
+                "receiver": "0x3333333333333333333333333333333333333333",
+                "sellAmount": "123",
+                "buyAmount": "456",
+                "validTo": 1337,
+                "appData": "0x4444444444444444444444444444444444444444444444444444444444444444",
+                "feeAmount": "789",
+                "kind": "sell",
+                "partiallyFillable": false,
+                "sellTokenBalance": "erc20",
+                "buyTokenBalance": "erc20",
+                "quoteId": 42,
+                "signingScheme": signing_scheme,
+                "signature": signature_bytes,
+                "from": from,
+            });
+
+            assert_eq!(json!(order), order_json);
+            assert_eq!(order, serde_json::from_value(order_json).unwrap());
+        }
     }
 
     // from the test `should recover signing address for all supported ECDSA-based schemes` in
@@ -783,7 +849,7 @@ mod tests {
                 ),
             ),
         ] {
-            let order = OrderCreation {
+            let order = OrderData {
                 sell_token: hex!("0101010101010101010101010101010101010101").into(),
                 buy_token: hex!("0202020202020202020202020202020202020202").into(),
                 receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
@@ -798,12 +864,11 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Erc20,
-                signature: Signature::from_bytes(*signing_scheme, signature).unwrap(),
             };
+            let signature = Signature::from_bytes(*signing_scheme, signature).unwrap();
 
-            let owner = order
-                .signature
-                .validate(&domain_separator, &order.hash_struct())
+            let owner = signature
+                .recover(&domain_separator, &order.hash_struct())
                 .unwrap();
             assert_eq!(owner, expected_owner);
         }
@@ -817,7 +882,7 @@ mod tests {
             "74e0b11bd18120612556bae4578cfd3a254d7e2495f543c569a92ff5794d9b09"
         ));
         let owner = hex!("70997970C51812dc3A010C7d01b50e0d17dc79C8").into();
-        let order = OrderCreation {
+        let order = OrderData {
             sell_token: hex!("0101010101010101010101010101010101010101").into(),
             buy_token: hex!("0202020202020202020202020202020202020202").into(),
             receiver: Some(hex!("0303030303030303030303030303030303030303").into()),
@@ -832,8 +897,6 @@ mod tests {
             partially_fillable: false,
             sell_token_balance: SellTokenSource::Erc20,
             buy_token_balance: BuyTokenDestination::Erc20,
-            // Other properties are not considered in the order UID.
-            ..Default::default()
         };
 
         assert_eq!(
@@ -889,12 +952,12 @@ mod tests {
     #[test]
     fn order_contains_token_from() {
         let order = Order::default();
-        assert!(order.contains_token_from(&hashset!(order.creation.sell_token)),);
-        assert!(order.contains_token_from(&hashset!(order.creation.buy_token)),);
+        assert!(order.contains_token_from(&hashset!(order.data.sell_token)),);
+        assert!(order.contains_token_from(&hashset!(order.data.buy_token)),);
         assert!(!order.contains_token_from(&HashSet::new()));
         let other_token = H160::from_low_u64_be(1);
-        assert_ne!(other_token, order.creation.sell_token);
-        assert_ne!(other_token, order.creation.buy_token);
+        assert_ne!(other_token, order.data.sell_token);
+        assert_ne!(other_token, order.data.buy_token);
         assert!(!order.contains_token_from(&hashset!(other_token)));
     }
 
@@ -934,9 +997,8 @@ mod tests {
             .build();
 
         let owner = order
-            .creation
             .signature
-            .validate(&DomainSeparator::default(), &order.creation.hash_struct())
+            .recover(&DomainSeparator::default(), &order.data.hash_struct())
             .unwrap();
 
         assert_eq!(owner, h160_from_public_key(public_key));
@@ -953,7 +1015,7 @@ mod tests {
         // orders (where `{sell,fee}_amount * buy_amount` would overflow).
         assert_eq!(
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 1000.into(),
                     buy_amount: U256::MAX,
                     fee_amount: 337.into(),
@@ -965,6 +1027,7 @@ mod tests {
                     full_fee_amount: 42.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             }
             .remaining_amounts()
             .unwrap(),
@@ -980,7 +1043,7 @@ mod tests {
         // order amounts.
         assert_eq!(
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 10.into(),
                     buy_amount: 11.into(),
                     fee_amount: 12.into(),
@@ -993,6 +1056,7 @@ mod tests {
                     full_fee_amount: 13.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             }
             .remaining_amounts()
             .unwrap(),
@@ -1008,7 +1072,7 @@ mod tests {
         // settlement contract.
         assert_eq!(
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 100.into(),
                     buy_amount: 100.into(),
                     fee_amount: 101.into(),
@@ -1021,6 +1085,7 @@ mod tests {
                     full_fee_amount: 200.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             }
             .remaining_amounts()
             .unwrap(),
@@ -1033,7 +1098,7 @@ mod tests {
         );
         assert_eq!(
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 100.into(),
                     buy_amount: 10.into(),
                     fee_amount: 101.into(),
@@ -1046,6 +1111,7 @@ mod tests {
                     full_fee_amount: 200.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             }
             .remaining_amounts()
             .unwrap(),
@@ -1062,7 +1128,7 @@ mod tests {
     fn remaining_amount_errors() {
         // Partially fillable order overflow when computing fill ratio.
         assert!(Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 1000.into(),
                 fee_amount: 337.into(),
                 buy_amount: U256::MAX,
@@ -1077,7 +1143,7 @@ mod tests {
 
         // Partially filled order overflowing executed amount.
         assert!(Order {
-            creation: OrderCreation {
+            data: OrderData {
                 buy_amount: U256::MAX,
                 kind: OrderKind::Sell,
                 partially_fillable: true,
@@ -1087,13 +1153,14 @@ mod tests {
                 executed_buy_amount: BigUint::from(1_u8) << 256,
                 ..Default::default()
             },
+            ..Default::default()
         }
         .remaining_amounts()
         .is_err());
 
         // Partially filled order that has executed more than its maximum.
         assert!(Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 1.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,
@@ -1103,13 +1170,14 @@ mod tests {
                 executed_sell_amount_before_fees: 2.into(),
                 ..Default::default()
             },
+            ..Default::default()
         }
         .remaining_amounts()
         .is_err());
 
         // Partially fillable order with zero amount.
         assert!(Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 0.into(),
                 kind: OrderKind::Sell,
                 partially_fillable: true,

@@ -5,7 +5,7 @@
 //! anomalies.
 
 use anyhow::Result;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use std::{sync::Arc, time::Duration};
 
 /// An instrumented gas price estimator that wraps an inner one.
@@ -32,13 +32,13 @@ where
         &self,
         gas_limit: f64,
         time_limit: Duration,
-    ) -> Result<EstimatedGasPrice> {
+    ) -> Result<GasPrice1559> {
         // Instrumenting gas estimates with limits is hard. Since we don't use
         // it in the orderbook, lets leave this out for now.
         self.inner.estimate_with_limits(gas_limit, time_limit).await
     }
 
-    async fn estimate(&self) -> Result<EstimatedGasPrice> {
+    async fn estimate(&self) -> Result<GasPrice1559> {
         let estimate = self.inner.estimate().await?;
         self.metrics.gas_price(estimate);
         Ok(estimate)
@@ -47,5 +47,5 @@ where
 
 /// Gas estimator metrics.
 pub trait Metrics: Send + Sync + 'static {
-    fn gas_price(&self, estimate: EstimatedGasPrice);
+    fn gas_price(&self, estimate: GasPrice1559);
 }

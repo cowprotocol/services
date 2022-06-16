@@ -3,13 +3,13 @@ use contracts::{ERC20Mintable, WETH9};
 use ethcontract::{prelude::U256, H160};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    api::order_validation::OrderValidator,
-    api::post_quote::OrderQuoter,
     cow_subsidy::FixedCowSubsidy,
     database::Postgres,
     event_updater::EventUpdater,
     fee::{FeeSubsidyConfiguration, MinFeeCalculator},
     metrics::NoopMetrics,
+    order_quoting::OrderQuoter,
+    order_validation::OrderValidator,
     orderbook::Orderbook,
     solvable_orders::SolvableOrdersCache,
 };
@@ -65,7 +65,11 @@ pub fn to_wei(base: u32) -> U256 {
 
 #[allow(dead_code)]
 pub fn create_orderbook_api() -> OrderBookApi {
-    OrderBookApi::new(reqwest::Url::from_str(API_HOST).unwrap(), Client::new())
+    OrderBookApi::new(
+        reqwest::Url::from_str(API_HOST).unwrap(),
+        Client::new(),
+        None,
+    )
 }
 
 pub fn create_order_converter(web3: &Web3, weth_address: H160) -> OrderConverter {
@@ -177,6 +181,7 @@ impl OrderbookServices {
             HashSet::default(),
             Duration::from_secs(120),
             Duration::MAX,
+            true,
             fee_calculator.clone(),
             bad_token_detector.clone(),
             balance_fetcher,
@@ -186,7 +191,6 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             db.clone(),
             bad_token_detector,
-            true,
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
             order_validator.clone(),
@@ -206,6 +210,7 @@ impl OrderbookServices {
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
             Default::default(),
+            None,
         );
 
         Self {

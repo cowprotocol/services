@@ -1,5 +1,5 @@
 use super::DomainSeparator;
-use anyhow::{Context as _, Result};
+use anyhow::{ensure, Context as _, Result};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
 use std::{convert::TryInto as _, fmt};
@@ -13,6 +13,7 @@ use web3::{
 pub enum SigningScheme {
     Eip712,
     EthSign,
+    Eip1271,
     PreSign,
 }
 
@@ -22,12 +23,13 @@ impl Default for SigningScheme {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 #[serde(tag = "signingScheme", content = "signature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
     EthSign(EcdsaSignature),
+    Eip1271 { from: H160, signature: Vec<u8> },
     PreSign(H160),
 }
 
@@ -42,27 +44,48 @@ impl Signature {
         match scheme {
             SigningScheme::Eip712 => Signature::Eip712(Default::default()),
             SigningScheme::EthSign => Signature::EthSign(Default::default()),
+            SigningScheme::Eip1271 => Signature::Eip1271 {
+                from: Default::default(),
+                signature: Default::default(),
+            },
             SigningScheme::PreSign => Signature::PreSign(Default::default()),
         }
     }
-}
 
-impl Signature {
-    pub fn validate(
+    /// Recovers the owner of the specified signature.
+    pub fn recover(
         &self,
         domain_separator: &DomainSeparator,
         struct_hash: &[u8; 32],
     ) -> Option<H160> {
         match self {
-            Signature::Eip712(sig) | Signature::EthSign(sig) => sig.validate(
-                self.scheme()
-                    .try_to_ecdsa_scheme()
-                    .expect("matches an ecdsa scheme"),
-                domain_separator,
-                struct_hash,
-            ),
-            Signature::PreSign(account) => Some(*account),
+            Self::Eip712(signature) => {
+                signature.recover(EcdsaSigningScheme::Eip712, domain_separator, struct_hash)
+            }
+            Self::EthSign(signature) => {
+                signature.recover(EcdsaSigningScheme::EthSign, domain_separator, struct_hash)
+            }
+            Self::Eip1271 { from, .. } => Some(*from),
+            Self::PreSign(from) => Some(*from),
         }
+    }
+
+    /// Verifies the owner for the specified creation signature.
+    pub fn verify_owner(
+        &self,
+        expected_owner: Option<H160>,
+        domain_separator: &DomainSeparator,
+        struct_hash: &[u8; 32],
+    ) -> Result<H160, VerificationError> {
+        let recovered_owner = self
+            .recover(domain_separator, struct_hash)
+            .ok_or(VerificationError::UnableToRecoverSigner)?;
+
+        if matches!(expected_owner, Some(expected_owner) if recovered_owner != expected_owner) {
+            return Err(VerificationError::UnexpectedSigner(recovered_owner));
+        }
+
+        Ok(recovered_owner)
     }
 
     pub fn from_bytes(scheme: SigningScheme, bytes: &[u8]) -> Result<Self> {
@@ -82,6 +105,17 @@ impl Signature {
                         .expect("scheme is an ecdsa scheme"),
                 )
             }
+            SigningScheme::Eip1271 => {
+                ensure!(bytes.len() >= 20, "The provided bytes are less than 20");
+
+                let (from, signature) = bytes.split_at(20);
+                let from = H160::from_slice(from);
+
+                Signature::Eip1271 {
+                    from,
+                    signature: signature.to_vec(),
+                }
+            }
             SigningScheme::PreSign => Signature::PreSign(H160(
                 bytes
                     .try_into()
@@ -94,6 +128,11 @@ impl Signature {
     pub fn to_bytes(&self) -> Vec<u8> {
         match self {
             Signature::Eip712(sig) | Signature::EthSign(sig) => sig.to_bytes().to_vec(),
+            Signature::Eip1271 { from, signature } => {
+                let mut bytes = from.as_bytes().to_vec();
+                bytes.extend(signature);
+                bytes
+            }
             Signature::PreSign(account) => account.0.to_vec(),
         }
     }
@@ -102,9 +141,16 @@ impl Signature {
         match self {
             Signature::Eip712(_) => SigningScheme::Eip712,
             Signature::EthSign(_) => SigningScheme::EthSign,
+            Signature::Eip1271 { .. } => SigningScheme::Eip1271,
             Signature::PreSign(_) => SigningScheme::PreSign,
         }
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationError {
+    UnableToRecoverSigner,
+    UnexpectedSigner(H160),
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
@@ -132,7 +178,7 @@ impl SigningScheme {
         match self {
             Self::Eip712 => Some(EcdsaSigningScheme::Eip712),
             Self::EthSign => Some(EcdsaSigningScheme::EthSign),
-            Self::PreSign => None,
+            Self::Eip1271 | Self::PreSign => None,
         }
     }
 }
@@ -198,7 +244,7 @@ impl EcdsaSignature {
         }
     }
 
-    pub fn validate(
+    pub fn recover(
         &self,
         signing_scheme: EcdsaSigningScheme,
         domain_separator: &DomainSeparator,
@@ -223,6 +269,16 @@ impl EcdsaSignature {
             v: signature.v as u8,
             r: signature.r,
             s: signature.s,
+        }
+    }
+
+    /// Returns an arbitrary non-zero signature that can be used for recovery
+    /// when you don't actually care about the owner.
+    pub fn non_zero() -> Self {
+        Self {
+            r: H256([1; 32]),
+            s: H256([2; 32]),
+            v: 27,
         }
     }
 }
@@ -289,9 +345,9 @@ mod tests {
     use serde_json::json;
 
     #[test]
-    fn presign_validates_to_account() {
+    fn presign_recovers_to_account() {
         assert_eq!(
-            Signature::PreSign(H160([0x42; 20])).validate(&Default::default(), &Default::default()),
+            Signature::PreSign(H160([0x42; 20])).recover(&Default::default(), &Default::default()),
             Some(H160([0x42; 20])),
         );
     }

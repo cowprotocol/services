@@ -7,11 +7,14 @@ pub mod event_updater;
 pub mod fee;
 pub mod gas_price;
 pub mod metrics;
+pub mod order_quoting;
+pub mod order_validation;
 pub mod orderbook;
+pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 
-use crate::{api::post_quote::OrderQuoter, orderbook::Orderbook};
+use crate::{order_quoting::OrderQuoter, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
@@ -29,8 +32,16 @@ pub fn serve_api(
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition: Arc<SolverCompetition>,
+    solver_competition_auth: Option<String>,
 ) -> JoinHandle<()> {
-    let filter = api::handle_all_routes(database, orderbook, quoter, solver_competition).boxed();
+    let filter = api::handle_all_routes(
+        database,
+        orderbook,
+        quoter,
+        solver_competition,
+        solver_competition_auth,
+    )
+    .boxed();
     tracing::info!(%address, "serving order book");
     let (_, server) = warp::serve(filter).bind_with_graceful_shutdown(address, shutdown_receiver);
     task::spawn(server)
@@ -58,7 +69,7 @@ pub async fn verify_deployed_contract_constants(
         return Err(anyhow!("Bytecode did not contain domain separator"));
     }
 
-    if !bytecode.contains(&hex::encode(model::order::OrderCreation::TYPE_HASH)) {
+    if !bytecode.contains(&hex::encode(model::order::OrderData::TYPE_HASH)) {
         return Err(anyhow!("Bytecode did not contain order type hash"));
     }
     Ok(())

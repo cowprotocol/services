@@ -322,7 +322,7 @@ mod tests {
         price_estimation::single_estimate,
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     };
-    use gas_estimation::gas_price::EstimatedGasPrice;
+    use gas_estimation::gas_price::GasPrice1559;
     use std::{collections::HashSet, sync::Mutex};
 
     #[derive(Default)]
@@ -604,12 +604,11 @@ mod tests {
         ];
 
         let pool_fetcher = Arc::new(FakePoolFetcher(pools.clone()));
-        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
-            EstimatedGasPrice {
-                legacy: 10000.0,
-                eip1559: None,
-            },
-        ))));
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+            base_fee_per_gas: 0.0,
+            max_fee_per_gas: 10000.0,
+            max_priority_fee_per_gas: 10000.0,
+        }))));
         let base_tokens = Arc::new(BaseTokens::new(native, &[intermediate]));
         let estimator = BaselinePriceEstimator::new(
             pool_fetcher,
@@ -639,9 +638,10 @@ mod tests {
         }
 
         // Reduce gas price.
-        *gas_estimator.0.lock().unwrap() = EstimatedGasPrice {
-            legacy: 1.0,
-            eip1559: None,
+        *gas_estimator.0.lock().unwrap() = GasPrice1559 {
+            base_fee_per_gas: 0.0,
+            max_fee_per_gas: 1.0,
+            max_priority_fee_per_gas: 1.0,
         };
 
         // Lower gas price does make the intermediate hop worth it.

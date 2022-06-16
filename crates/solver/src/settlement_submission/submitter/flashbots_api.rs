@@ -3,11 +3,10 @@ use crate::settlement::{Revertable, Settlement};
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
     common::PrivateNetwork,
-    AdditionalTip, CancelHandle, SubmissionLoopStatus,
+    AdditionalTip, Strategy, SubmissionLoopStatus,
 };
 use anyhow::{Context, Result};
-use ethcontract::{transaction::TransactionBuilder, H160, U256};
-use gas_estimation::EstimatedGasPrice;
+use ethcontract::transaction::TransactionBuilder;
 use reqwest::{Client, IntoUrl};
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
 
@@ -47,20 +46,14 @@ impl TransactionSubmitting for FlashbotsApi {
     }
 
     // https://docs.flashbots.net/flashbots-protect/rpc/cancellations
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
+    async fn cancel_transaction(
+        &self,
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle> {
         self.rpc
             .api::<PrivateNetwork>()
-            .submit_raw_transaction(id.noop_transaction.clone())
+            .submit_raw_transaction(tx)
             .await
-    }
-
-    async fn recover_pending_transaction(
-        &self,
-        _web3: &Web3,
-        _address: &H160,
-        _nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>> {
-        Ok(None)
     }
 
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
@@ -73,7 +66,7 @@ impl TransactionSubmitting for FlashbotsApi {
         SubmissionLoopStatus::Enabled(AdditionalTip::On)
     }
 
-    fn name(&self) -> &'static str {
-        "Flashbots"
+    fn name(&self) -> Strategy {
+        Strategy::Flashbots
     }
 }

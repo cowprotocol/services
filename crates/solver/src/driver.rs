@@ -17,7 +17,7 @@ use crate::{
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use itertools::{Either, Itertools};
 use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
@@ -178,7 +178,7 @@ impl Driver {
         {
             let mut group = group.into_iter().peekable();
             let order = &group.peek().unwrap().order;
-            let was_already_filled = match order.creation.kind {
+            let was_already_filled = match order.data.kind {
                 OrderKind::Buy => &order.metadata.executed_buy_amount,
                 OrderKind::Sell => &order.metadata.executed_sell_amount,
             } > &0u8.into();
@@ -278,7 +278,7 @@ impl Driver {
         &self,
         solver: Arc<dyn Solver>,
         settlement: &RatedSettlement,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
         access_list: Option<AccessList>,
     ) -> Result<bool> {
         // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
@@ -315,7 +315,7 @@ impl Driver {
         &self,
         errors: Vec<SettlementWithError>,
         current_block_during_liquidity_fetch: u64,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
     ) {
         let contract = self.settlement_contract.clone();
         let web3 = self.web3.clone();
@@ -384,7 +384,7 @@ impl Driver {
         &self,
         settlements: Vec<SettlementWithSolver>,
         prices: &ExternalPrices,
-        gas_price: EstimatedGasPrice,
+        gas_price: GasPrice1559,
     ) -> Result<(
         Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
         Vec<SettlementWithError>,
@@ -648,6 +648,14 @@ impl Driver {
         let (mut rated_settlements, errors) = self
             .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
+        // We don't know the exact block because simulation can happen over multiple blocks but
+        // this is a good approximation.
+        let block_during_simulation = self
+            .block_stream
+            .borrow()
+            .number
+            .unwrap_or_default()
+            .as_u64();
         tracing::info!(
             "{} settlements passed simulation and {} failed for auction id {}",
             rated_settlements.len(),
@@ -669,8 +677,7 @@ impl Driver {
         let mut solver_competition_response = SolverCompetitionResponse {
             gas_price: gas_price.effective_gas_price(),
             liquidity_collected_block: current_block_during_liquidity_fetch,
-            // TODO: we don't have access to this and there is no guarantee there is one such block
-            competition_simulation_block: 0,
+            competition_simulation_block: block_during_simulation,
             transaction_hash: None,
             solutions: rated_settlements
                 .iter()
@@ -699,8 +706,9 @@ impl Driver {
                             executed_amount: trade.executed_amount,
                         })
                         .collect(),
-                    // TODO: need some refactoring to make this easier to access
-                    call_data: Default::default(),
+                    call_data: settlement_simulation::call_data(
+                        rated_settlement.settlement.clone().into(),
+                    ),
                 })
                 .collect(),
         };
@@ -809,7 +817,7 @@ impl Driver {
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
     !settlement
         .traded_orders()
-        .any(|order| token_list.get(&order.creation.sell_token).is_none())
+        .any(|order| token_list.get(&order.data.sell_token).is_none())
 }
 
 fn print_settlements(
@@ -860,7 +868,7 @@ mod tests {
         solver::dummy_arc_solver,
     };
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation};
+    use model::order::{Order, OrderData};
     use shared::token_list::Token;
     use std::collections::HashMap;
 
@@ -888,7 +896,7 @@ mod tests {
         let trade = |token| OrderTrade {
             trade: Trade {
                 order: Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: token,
                         ..Default::default()
                     },

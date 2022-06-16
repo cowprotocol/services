@@ -107,7 +107,7 @@ mod tests {
     use crate::liquidity::tests::CapturingSettlementHandler;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderCreation, OrderKind};
+    use model::order::{Order, OrderData, OrderKind};
     use num::rational::Ratio;
     use shared::addr;
 
@@ -167,7 +167,7 @@ mod tests {
 
         let orders = vec![
             LimitOrder::from(Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
                     buy_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                     sell_amount: 995952859647034749952_u128.into(),
@@ -180,7 +180,7 @@ mod tests {
             LimitOrder {
                 is_liquidity_order: true,
                 ..LimitOrder::from(Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: addr!("a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"),
                         buy_token: addr!("d533a949740bb3306d119cc777fa900ba034cd52"),
                         sell_amount: 2469904889_u128.into(),

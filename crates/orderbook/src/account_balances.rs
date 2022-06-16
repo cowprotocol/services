@@ -19,8 +19,8 @@ impl Query {
     pub fn from_order(o: &Order) -> Self {
         Self {
             owner: o.metadata.owner,
-            token: o.creation.sell_token,
-            source: o.creation.sell_token_balance,
+            token: o.data.sell_token,
+            source: o.data.sell_token_balance,
         }
     }
 }

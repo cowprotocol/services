@@ -5,11 +5,11 @@ use crate::{
 };
 use anyhow::{Context as _, Result};
 use futures::StreamExt;
-use model::{auction::Auction, order::Order};
+use model::{auction::Auction, order::Order, time::now_in_epoch_seconds};
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
-    price_estimation::native::NativePriceEstimating, time::now_in_epoch_seconds,
+    price_estimation::native::NativePriceEstimating,
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -353,7 +353,7 @@ async fn get_orders_with_native_prices(
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
-        .flat_map(|order| [order.creation.sell_token, order.creation.buy_token])
+        .flat_map(|order| [order.data.sell_token, order.data.buy_token])
         .collect::<HashSet<_>>()
         .into_iter()
         .collect::<Vec<_>>();
@@ -395,7 +395,7 @@ async fn get_orders_with_native_prices(
     // have orders.
     let mut used_prices = BTreeMap::new();
     orders.retain(|order| {
-        let (t0, t1) = (&order.creation.sell_token, &order.creation.buy_token);
+        let (t0, t1) = (&order.data.sell_token, &order.data.buy_token);
         match (prices.get(t0), prices.get(t1)) {
             (Some(p0), Some(p1)) => {
                 used_prices.insert(*t0, *p0);
@@ -440,7 +440,7 @@ mod tests {
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::StreamExt;
     use maplit::{btreemap, hashmap, hashset};
-    use model::order::{OrderBuilder, OrderCreation, OrderKind, OrderMetadata, SellTokenSource};
+    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, SellTokenSource};
     use primitive_types::H160;
     use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
 
@@ -448,7 +448,7 @@ mod tests {
     async fn filters_insufficient_balances() {
         let mut orders = vec![
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 3.into(),
                     fee_amount: 3.into(),
                     ..Default::default()
@@ -457,9 +457,10 @@ mod tests {
                     creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 2.into(),
                     fee_amount: 2.into(),
                     ..Default::default()
@@ -468,6 +469,7 @@ mod tests {
                     creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
                     ..Default::default()
                 },
+                ..Default::default()
             },
         ];
 
@@ -495,7 +497,7 @@ mod tests {
 
         let orders = [
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: sell_token_0,
                     sell_token_balance: SellTokenSource::Erc20,
                     sell_amount: 1.into(),
@@ -506,9 +508,10 @@ mod tests {
                     owner,
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: sell_token_1,
                     sell_token_balance: SellTokenSource::Erc20,
                     sell_amount: 1.into(),
@@ -519,6 +522,7 @@ mod tests {
                     owner,
                     ..Default::default()
                 },
+                ..Default::default()
             },
         ];
 
@@ -732,7 +736,7 @@ mod tests {
         // orders (where `{sell,fee}_amount * buy_amount` would overflow).
         assert_eq!(
             max_transfer_out_amount(&Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 1000.into(),
                     fee_amount: 337.into(),
                     buy_amount: U256::MAX,
@@ -749,7 +753,7 @@ mod tests {
         // Partially filled order scales amount.
         assert_eq!(
             max_transfer_out_amount(&Order {
-                creation: OrderCreation {
+                data: OrderData {
                     sell_amount: 100.into(),
                     buy_amount: 10.into(),
                     fee_amount: 101.into(),
@@ -761,6 +765,7 @@ mod tests {
                     executed_buy_amount: 9_u32.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             })
             .unwrap(),
             U256::from(20),
@@ -773,7 +778,7 @@ mod tests {
         // overflows a uint. This kind of order cannot be filled by the
         // settlement contract anyway.
         assert!(max_transfer_out_amount(&Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: U256::MAX,
                 fee_amount: 1.into(),
                 partially_fillable: false,
@@ -785,7 +790,7 @@ mod tests {
 
         // Handles overflow when computing fill ratio.
         assert!(max_transfer_out_amount(&Order {
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 1000.into(),
                 fee_amount: 337.into(),
                 buy_amount: U256::MAX,
@@ -842,8 +847,8 @@ mod tests {
         // for the tokens.
         assert!(orders_[0] == orders[0] || orders_[0] == orders[1]);
         assert_eq!(prices.len(), 2);
-        assert!(prices.contains_key(&orders_[0].creation.sell_token));
-        assert!(prices.contains_key(&orders_[0].creation.buy_token));
+        assert!(prices.contains_key(&orders_[0].data.sell_token));
+        assert!(prices.contains_key(&orders_[0].data.buy_token));
     }
 
     #[test]
@@ -864,11 +869,12 @@ mod tests {
                 owner,
                 ..Default::default()
             },
-            creation: OrderCreation {
+            data: OrderData {
                 buy_amount: 1.into(),
                 sell_amount: 1.into(),
                 ..Default::default()
             },
+            ..Default::default()
         })
         .collect();
 
@@ -888,7 +894,7 @@ mod tests {
         let orders = vec![
             // normal order with non zero amounts
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     buy_amount: 1u8.into(),
                     sell_amount: 1u8.into(),
                     ..Default::default()
@@ -897,7 +903,7 @@ mod tests {
             },
             // partially fillable order with remaining liquidity
             Order {
-                creation: OrderCreation {
+                data: OrderData {
                     partially_fillable: true,
                     buy_amount: 1u8.into(),
                     sell_amount: 1u8.into(),
@@ -914,12 +920,13 @@ mod tests {
                     executed_sell_amount: 1u8.into(),
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     partially_fillable: true,
                     buy_amount: 1u8.into(),
                     sell_amount: 1u8.into(),
                     ..Default::default()
                 },
+                ..Default::default()
             },
         ];
 

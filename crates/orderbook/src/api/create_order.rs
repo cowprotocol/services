@@ -1,28 +1,157 @@
 use crate::{
     api::{extract_payload, IntoWarpReply},
+    order_validation::{PartialValidationError, ValidationError},
     orderbook::{AddOrderError, Orderbook},
 };
 use anyhow::Result;
-use model::order::{OrderCreationPayload, OrderUid};
+use model::order::{OrderCreation, OrderUid};
 use std::{convert::Infallible, sync::Arc};
 use warp::reply::with_status;
 use warp::{hyper::StatusCode, Filter, Rejection};
 
-pub fn create_order_request(
-) -> impl Filter<Extract = (OrderCreationPayload,), Error = Rejection> + Clone {
+pub fn create_order_request() -> impl Filter<Extract = (OrderCreation,), Error = Rejection> + Clone
+{
     warp::path!("orders")
         .and(warp::post())
         .and(extract_payload())
+}
+
+impl IntoWarpReply for PartialValidationError {
+    fn into_warp_reply(self) -> super::ApiReply {
+        match self {
+            Self::UnsupportedBuyTokenDestination(dest) => with_status(
+                super::error("UnsupportedBuyTokenDestination", format!("Type {:?}", dest)),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedSellTokenSource(src) => with_status(
+                super::error("UnsupportedSellTokenSource", format!("Type {:?}", src)),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedOrderType => with_status(
+                super::error(
+                    "UnsupportedOrderType",
+                    "This order type is currently not supported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Forbidden => with_status(
+                super::error("Forbidden", "Forbidden, your account is deny-listed"),
+                StatusCode::FORBIDDEN,
+            ),
+            Self::InsufficientValidTo => with_status(
+                super::error(
+                    "InsufficientValidTo",
+                    "validTo is not far enough in the future",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ExcessiveValidTo => with_status(
+                super::error("ExcessiveValidTo", "validTo is too far into the future"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::TransferEthToContract => with_status(
+                super::error(
+                    "TransferEthToContract",
+                    "Sending Ether to smart contract wallets is currently not supported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidNativeSellToken => with_status(
+                super::error(
+                    "InvalidNativeSellToken",
+                    "The chain's native token (Ether/xDai) cannot be used as the sell token",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::SameBuyAndSellToken => with_status(
+                super::error(
+                    "SameBuyAndSellToken",
+                    "Buy token is the same as the sell token.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedSignature => with_status(
+                super::error("UnsupportedSignature", "signing scheme is not supported"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => with_status(
+                super::internal_error(err.context("partial_validation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    }
+}
+
+impl IntoWarpReply for ValidationError {
+    fn into_warp_reply(self) -> super::ApiReply {
+        match self {
+            Self::Partial(pre) => pre.into_warp_reply(),
+            Self::UnsupportedToken(token) => with_status(
+                super::error("UnsupportedToken", format!("Token address {}", token)),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::WrongOwner(owner) => with_status(
+                super::error(
+                    "WrongOwner",
+                    format!(
+                        "Address recovered from signature {} does not match from address",
+                        owner
+                    ),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientBalance => with_status(
+                super::error(
+                    "InsufficientBalance",
+                    "order owner must have funds worth at least x in his account",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientAllowance => with_status(
+                super::error(
+                    "InsufficientAllowance",
+                    "order owner must give allowance to VaultRelayer",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidSignature => with_status(
+                super::error("InvalidSignature", "invalid signature"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientFee => with_status(
+                super::error("InsufficientFee", "Order does not include sufficient fee"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::SellAmountOverflow => with_status(
+                super::error(
+                    "SellAmountOverflow",
+                    "Sell amount + fee amount must fit in U256",
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Self::TransferSimulationFailed => with_status(
+                super::error(
+                    "TransferSimulationFailed",
+                    "sell token cannot be transferred",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ZeroAmount => with_status(
+                super::error("ZeroAmount", "Buy or sell amount is zero."),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => with_status(
+                super::internal_error(err.context("order_validation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    }
 }
 
 impl IntoWarpReply for AddOrderError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::OrderValidation(err) => err.into_warp_reply(),
-            Self::UnsupportedSignature => with_status(
-                super::error("UnsupportedSignature", "signing scheme is not supported"),
-                StatusCode::BAD_REQUEST,
-            ),
             Self::DuplicatedOrder => with_status(
                 super::error("DuplicatedOrder", "order already exists"),
                 StatusCode::BAD_REQUEST,
@@ -45,7 +174,7 @@ pub fn create_order_response(result: Result<OrderUid, AddOrderError>) -> super::
 pub fn create_order(
     orderbook: Arc<Orderbook>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
-    create_order_request().and_then(move |order_payload: OrderCreationPayload| {
+    create_order_request().and_then(move |order_payload: OrderCreation| {
         let orderbook = orderbook.clone();
         async move {
             let quote_id = order_payload.quote_id;
@@ -62,14 +191,14 @@ pub fn create_order(
 mod tests {
     use super::*;
     use crate::api::response_body;
-    use model::order::{OrderCreationPayload, OrderUid};
+    use model::order::{OrderCreation, OrderUid};
     use serde_json::json;
     use warp::{test::request, Reply};
 
     #[tokio::test]
     async fn create_order_request_ok() {
         let filter = create_order_request();
-        let order_payload = OrderCreationPayload::default();
+        let order_payload = OrderCreation::default();
         let request = request()
             .path("/orders")
             .method("POST")

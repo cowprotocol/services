@@ -18,22 +18,26 @@ pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
 
-use super::{SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
+use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
     settlement::Settlement, settlement_access_list::AccessListEstimating,
     settlement_simulation::settle_method_builder,
 };
 use anyhow::{anyhow, ensure, Context, Result};
 use contracts::GPv2Settlement;
-use ethcontract::{
-    contract::MethodBuilder, dyns::DynTransport, transaction::TransactionBuilder, Account, H160,
-};
+use ethcontract::{contract::MethodBuilder, transaction::TransactionBuilder, Account};
 use futures::FutureExt;
-use gas_estimation::{EstimatedGasPrice, GasPriceEstimating};
+use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use primitive_types::{H256, U256};
-use shared::Web3;
-use std::time::{Duration, Instant};
+use shared::{Web3, Web3Transport};
+use std::{
+    fmt,
+    time::{Duration, Instant},
+};
 use web3::types::{AccessList, TransactionReceipt, U64};
+
+/// Minimal gas price replacement factor
+const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -56,6 +60,19 @@ pub enum SubmissionLoopStatus {
     Disabled(DisabledReason),
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Strategy {
+    Eden,
+    Flashbots,
+    CustomNodes,
+}
+
+impl fmt::Display for Strategy {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
 #[derive(Debug)]
 pub enum AdditionalTip {
     Off,
@@ -73,14 +90,6 @@ pub struct TransactionHandle {
     pub tx_hash: H256,
 }
 
-#[derive(Debug, Clone)]
-pub struct CancelHandle {
-    /// transaction previosly submitted using TransactionSubmitting::submit_transaction()
-    pub submitted_transaction: TransactionHandle,
-    /// empty transaction with the same nonce used for cancelling the previously submitted transaction
-    pub noop_transaction: TransactionBuilder<DynTransport>,
-}
-
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait TransactionSubmitting: Send + Sync {
@@ -88,21 +97,17 @@ pub trait TransactionSubmitting: Send + Sync {
     /// Returns transaction handle
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle>;
-    /// Cancels already submitted transaction using the cancel handle
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle>;
-    /// Try to find submitted transaction from previous submission loop (in this case we don't have a TransactionHandle)
-    async fn recover_pending_transaction(
+    /// Cancels already submitted transaction using the noop transaction
+    async fn cancel_transaction(
         &self,
-        web3: &Web3,
-        address: &H160,
-        nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>>;
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle>;
     /// Checks if transaction submitting is enabled at the moment
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus;
-    /// Returns displayable name of the submitter. Used for logging and metrics collection.
-    fn name(&self) -> &'static str;
+    /// Returns type of the submitter.
+    fn name(&self) -> Strategy;
 }
 
 /// Gas price estimator specialized for sending transactions to the network
@@ -115,12 +120,20 @@ pub struct SubmitterGasPriceEstimator<'a> {
     pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
+    /// Gas price from pending transaction from previous submission loop
+    pub pending_gas_price: Option<GasPrice1559>,
 }
 
 impl SubmitterGasPriceEstimator<'_> {
-    pub fn with_no_additional_tip(&self) -> Self {
+    pub fn with_additional_tip(&self, max_additional_tip: Option<f64>) -> Self {
         Self {
-            max_additional_tip: None,
+            max_additional_tip,
+            ..*self
+        }
+    }
+    pub fn with_pending_gas_price(&self, pending_gas_price: Option<GasPrice1559>) -> Self {
+        Self {
+            pending_gas_price,
             ..*self
         }
     }
@@ -132,28 +145,43 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         &self,
         gas_limit: f64,
         time_limit: Duration,
-    ) -> Result<EstimatedGasPrice> {
-        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
-            Ok(mut gas_price) if gas_price.cap() <= self.gas_price_cap => {
+    ) -> Result<GasPrice1559> {
+        let gas_price = match self.inner.estimate_with_limits(gas_limit, time_limit).await {
+            Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
-                if let Some(ref mut eip1559) = gas_price.eip1559 {
-                    eip1559.max_priority_fee_per_gas +=
-                        self.max_additional_tip.unwrap_or_default().min(
-                            eip1559.max_fee_per_gas
-                                * self
-                                    .additional_tip_percentage_of_max_fee
-                                    .unwrap_or_default(),
-                        );
-                }
+                gas_price.max_priority_fee_per_gas +=
+                    self.max_additional_tip.unwrap_or_default().min(
+                        gas_price.max_fee_per_gas
+                            * self
+                                .additional_tip_percentage_of_max_fee
+                                .unwrap_or_default(),
+                    );
                 Ok(gas_price)
             }
             Ok(gas_price) => Err(anyhow!(
                 "gas station gas price {} is larger than cap {}",
-                gas_price.cap(),
+                gas_price.max_fee_per_gas,
                 self.gas_price_cap
             )),
             Err(err) => Err(err),
-        }
+        };
+
+        // If pending gas price exist, return max(gas_price, pending_gas_price*1.125)
+        gas_price.map(|gas_price| match self.pending_gas_price {
+            Some(pending_gas_price) => {
+                tracing::debug!("found pending transaction: {:?}", pending_gas_price);
+                let pending_gas_price = pending_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                if gas_price.max_fee_per_gas >= pending_gas_price.max_fee_per_gas
+                    && gas_price.max_priority_fee_per_gas
+                        >= pending_gas_price.max_priority_fee_per_gas
+                {
+                    gas_price
+                } else {
+                    pending_gas_price
+                }
+            }
+            None => gas_price,
+        })
     }
 }
 
@@ -163,6 +191,7 @@ pub struct Submitter<'a> {
     submit_api: &'a dyn TransactionSubmitting,
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
+    submitted_transactions: SubTxPoolRef,
 }
 
 impl<'a> Submitter<'a> {
@@ -172,6 +201,7 @@ impl<'a> Submitter<'a> {
         submit_api: &'a dyn TransactionSubmitting,
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
+        submitted_transactions: SubTxPoolRef,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -179,6 +209,7 @@ impl<'a> Submitter<'a> {
             submit_api,
             gas_price_estimator,
             access_list_estimator,
+            submitted_transactions,
         })
     }
 }
@@ -201,8 +232,18 @@ impl<'a> Submitter<'a> {
             name
         );
 
+        self.submitted_transactions.remove_older_than(nonce);
+
+        // Take pending transactions from previous submission loops with the same nonce
+        // Those exist if
+        // 1. Previous loop timed out and no transaction was mined
+        // 2. Previous loop ended with simulation revert, and cancellation tx was sent but not mined
+        let mut transactions = self
+            .submitted_transactions
+            .get(self.account.address(), nonce)
+            .unwrap_or_default();
+
         // Continually simulate and submit transactions
-        let mut transactions = Vec::new();
         let submit_future = self.submit_with_increasing_gas_prices_until_simulation_fails(
             settlement,
             nonce,
@@ -231,10 +272,10 @@ impl<'a> Submitter<'a> {
             _ = deadline_future.fuse() => {
                 tracing::debug!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
 
-                if let Some((transaction, gas_price)) = transactions.last() {
-                    let gas_price = gas_price.bump(1.125).ceil();
+                if let Some((_, gas_price)) = transactions.last() {
+                    let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self
-                        .cancel_transaction(transaction, &gas_price, nonce)
+                        .cancel_transaction(&gas_price, nonce)
                         .await
                     {
                         Ok(handle) => transactions.push((handle, gas_price)),
@@ -257,6 +298,12 @@ impl<'a> Submitter<'a> {
         // 6. If we don't wait another 20s to receive block B, we wont see mined tx.
 
         if !transactions.is_empty() {
+            // Update (overwrite) the submitted transaction list with `transactions` variable that,
+            // at this point, contains both transactions from previous submission loop and
+            // transactions from current submission loop
+            self.submitted_transactions
+                .update(self.account.address(), nonce, transactions.clone());
+
             const MINED_TX_PROPAGATE_TIME: Duration = Duration::from_secs(20);
             const MINED_TX_CHECK_INTERVAL: Duration = Duration::from_secs(5);
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
@@ -329,7 +376,7 @@ impl<'a> Submitter<'a> {
         settlement: Settlement,
         nonce: U256,
         params: &SubmitterParams,
-        transactions: &mut Vec<(TransactionHandle, EstimatedGasPrice)>,
+        transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
@@ -340,15 +387,7 @@ impl<'a> Submitter<'a> {
         );
 
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-        let pending_gas_price = self
-            .submit_api
-            .recover_pending_transaction(
-                &self.contract.raw_instance().web3(),
-                &self.account.address(),
-                nonce,
-            )
-            .await
-            .unwrap_or(None);
+        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
         let mut access_list: Option<AccessList> = None;
 
@@ -367,13 +406,15 @@ impl<'a> Submitter<'a> {
                     );
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
-                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
-                    self.gas_price_estimator.with_no_additional_tip()
-                }
-                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
-                    self.gas_price_estimator.clone()
-                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => self
+                    .gas_price_estimator
+                    .with_additional_tip(None)
+                    .with_pending_gas_price(pending_gas_price),
+                SubmissionLoopStatus::Enabled(AdditionalTip::On) => self
+                    .gas_price_estimator
+                    .with_pending_gas_price(pending_gas_price),
             };
+            pending_gas_price = None;
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
@@ -411,11 +452,9 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
-                if let Some((previous_tx, _)) = transactions.last() {
-                    match self
-                        .cancel_transaction(previous_tx, &gas_price, nonce)
-                        .await
-                    {
+                if let Some((_, previous_gas_price)) = transactions.last() {
+                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                    match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
@@ -424,19 +463,13 @@ impl<'a> Submitter<'a> {
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
-
-            // Doing `.or(pending_gas_price.as_ref())` is a warning on Rust 1.58 but doing or_else
-            // is a warning on 1.59. So silence the warning on the older compiler until everyone has
-            // upgraded.
-            #[allow(clippy::or_fun_call)]
             if let Some(previous_gas_price) = transactions
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
-                .or(pending_gas_price.as_ref())
             {
-                let previous_gas_price = previous_gas_price.bump(1.125).ceil();
-                if gas_price.tip() < previous_gas_price.tip()
-                    || gas_price.cap() < previous_gas_price.cap()
+                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
+                    || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
@@ -445,9 +478,9 @@ impl<'a> Submitter<'a> {
 
             tracing::debug!(
                 "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
-                gas_price.base_fee(),
-                gas_price.cap(),
-                gas_price.tip(),
+                gas_price.base_fee_per_gas,
+                gas_price.max_fee_per_gas,
+                gas_price.max_priority_fee_per_gas,
                 params.gas_estimate,
                 submitter_name,
             );
@@ -477,10 +510,10 @@ impl<'a> Submitter<'a> {
     async fn build_method(
         &self,
         settlement: Settlement,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
         gas_limit: f64,
-    ) -> MethodBuilder<DynTransport, ()> {
+    ) -> MethodBuilder<Web3Transport, ()> {
         settle_method_builder(self.contract, settlement.into(), self.account.clone())
             .nonce(nonce)
             .gas(U256::from_f64_lossy(gas_limit))
@@ -490,7 +523,7 @@ impl<'a> Submitter<'a> {
     /// Estimate access list and validate
     async fn estimate_access_list(
         &self,
-        tx: &TransactionBuilder<DynTransport>,
+        tx: &TransactionBuilder<Web3Transport>,
     ) -> Result<AccessList> {
         let access_list = self.access_list_estimator.estimate_access_list(tx).await?;
         let (gas_before_access_list, gas_after_access_list) = futures::try_join!(
@@ -519,9 +552,9 @@ impl<'a> Submitter<'a> {
     /// Prepare noop transaction. This transaction does transfer of 0 value to self and always spends 21000 gas.
     fn build_noop_transaction(
         &self,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
-    ) -> TransactionBuilder<DynTransport> {
+    ) -> TransactionBuilder<Web3Transport> {
         TransactionBuilder::new(self.contract.raw_instance().web3())
             .from(self.account.clone())
             .to(self.account.address())
@@ -533,15 +566,11 @@ impl<'a> Submitter<'a> {
     /// Prepare all data needed for cancellation of previously submitted transaction and execute cancellation
     async fn cancel_transaction(
         &self,
-        transaction: &TransactionHandle,
-        gas_price: &EstimatedGasPrice,
+        gas_price: &GasPrice1559,
         nonce: U256,
     ) -> Result<TransactionHandle> {
-        let cancel_handle = CancelHandle {
-            submitted_transaction: *transaction,
-            noop_transaction: self.build_noop_transaction(&gas_price.bump(3.), nonce),
-        };
-        self.submit_api.cancel_transaction(&cancel_handle).await
+        let noop_transaction = self.build_noop_transaction(gas_price, nonce);
+        self.submit_api.cancel_transaction(noop_transaction).await
     }
 }
 
@@ -660,6 +689,7 @@ mod tests {
             max_additional_tip: Some(3.0),
             gas_price_cap: 100e9,
             additional_tip_percentage_of_max_fee: Some(0.05),
+            pending_gas_price: None,
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
@@ -689,12 +719,15 @@ mod tests {
             .unwrap()
             .unwrap();
 
+        let submitted_transactions = Default::default();
+
         let submitter = Submitter::new(
             &contract,
             &account,
             &flashbots_api,
             &gas_price_estimator,
             access_list_estimator.as_ref(),
+            submitted_transactions,
         )
         .unwrap();
 
@@ -716,9 +749,10 @@ mod tests {
             additional_tip_percentage_of_max_fee: Some(5.),
             max_additional_tip: Some(10.),
             gas_price_cap: 0.,
+            pending_gas_price: None,
         };
 
-        let gas_price_estimator = gas_price_estimator.with_no_additional_tip();
+        let gas_price_estimator = gas_price_estimator.with_additional_tip(None);
         assert_eq!(gas_price_estimator.max_additional_tip, None);
     }
 }

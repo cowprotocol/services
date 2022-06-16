@@ -122,7 +122,7 @@ mod tests {
     };
     use ethcontract::H256;
     use model::{
-        order::{Order, OrderCreation, OrderMetadata},
+        order::{Order, OrderData, OrderMetadata},
         trade::Trade,
     };
     use shared::event_handling::EventIndex;
@@ -178,9 +178,10 @@ mod tests {
                 uid: order_uid,
                 ..Default::default()
             },
-            creation: OrderCreation {
+            data: OrderData {
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
         add_trade(db, owner, order_uid, event_index, tx_hash).await

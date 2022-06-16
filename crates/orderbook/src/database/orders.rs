@@ -8,7 +8,7 @@ use futures::{stream::TryStreamExt, FutureExt};
 use model::{
     app_id::AppId,
     order::{
-        BuyTokenDestination, Order, OrderCreation, OrderKind, OrderMetadata, OrderStatus, OrderUid,
+        BuyTokenDestination, Order, OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid,
         SellTokenSource,
     },
     signature::{Signature, SigningScheme},
@@ -23,6 +23,12 @@ use std::{borrow::Cow, convert::TryInto};
 pub trait OrderStoring: Send + Sync {
     async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError>;
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()>;
+    async fn replace_order(
+        &self,
+        old_order: &OrderUid,
+        new_order: &Order,
+        new_fee: FeeParameters,
+    ) -> Result<(), InsertionError>;
     // Legacy generic orders route that we are phasing out.
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
@@ -144,6 +150,7 @@ impl DbBuyTokenDestination {
 pub enum DbSigningScheme {
     Eip712,
     EthSign,
+    Eip1271,
     PreSign,
 }
 
@@ -152,6 +159,7 @@ impl DbSigningScheme {
         match signing_scheme {
             SigningScheme::Eip712 => Self::Eip712,
             SigningScheme::EthSign => Self::EthSign,
+            SigningScheme::Eip1271 => Self::Eip1271,
             SigningScheme::PreSign => Self::PreSign,
         }
     }
@@ -160,6 +168,7 @@ impl DbSigningScheme {
         match self {
             Self::Eip712 => SigningScheme::Eip712,
             Self::EthSign => SigningScheme::EthSign,
+            Self::Eip1271 => SigningScheme::Eip1271,
             Self::PreSign => SigningScheme::PreSign,
         }
     }
@@ -232,30 +241,28 @@ async fn insert_order(
                 settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount, is_liquidity_order) \
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);";
     let receiver = order
-        .creation
+        .data
         .receiver
         .map(|address| address.as_bytes().to_vec());
     sqlx::query(QUERY)
         .bind(order.metadata.uid.0.as_ref())
         .bind(order.metadata.owner.as_bytes())
         .bind(order.metadata.creation_date)
-        .bind(order.creation.sell_token.as_bytes())
-        .bind(order.creation.buy_token.as_bytes())
+        .bind(order.data.sell_token.as_bytes())
+        .bind(order.data.buy_token.as_bytes())
         .bind(receiver)
-        .bind(u256_to_big_decimal(&order.creation.sell_amount))
-        .bind(u256_to_big_decimal(&order.creation.buy_amount))
-        .bind(order.creation.valid_to)
-        .bind(&order.creation.app_data.0[..])
-        .bind(u256_to_big_decimal(&order.creation.fee_amount))
-        .bind(DbOrderKind::from(order.creation.kind))
-        .bind(order.creation.partially_fillable)
-        .bind(&*order.creation.signature.to_bytes())
-        .bind(DbSigningScheme::from(order.creation.signature.scheme()))
+        .bind(u256_to_big_decimal(&order.data.sell_amount))
+        .bind(u256_to_big_decimal(&order.data.buy_amount))
+        .bind(order.data.valid_to)
+        .bind(&order.data.app_data.0[..])
+        .bind(u256_to_big_decimal(&order.data.fee_amount))
+        .bind(DbOrderKind::from(order.data.kind))
+        .bind(order.data.partially_fillable)
+        .bind(&*order.signature.to_bytes())
+        .bind(DbSigningScheme::from(order.signature.scheme()))
         .bind(order.metadata.settlement_contract.as_bytes())
-        .bind(DbSellTokenSource::from(order.creation.sell_token_balance))
-        .bind(DbBuyTokenDestination::from(
-            order.creation.buy_token_balance,
-        ))
+        .bind(DbSellTokenSource::from(order.data.sell_token_balance))
+        .bind(DbBuyTokenDestination::from(order.data.buy_token_balance))
         .bind(u256_to_big_decimal(&order.metadata.full_fee_amount))
         .bind(order.metadata.is_liquidity_order)
         .execute(transaction)
@@ -292,6 +299,27 @@ async fn insert_fee(
         .map_err(InsertionError::DbError)
 }
 
+async fn cancel_order(
+    order_uid: &OrderUid,
+    timestamp: DateTime<Utc>,
+    transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<(), sqlx::Error> {
+    // We do not overwrite previously cancelled orders,
+    // but this query does allow the user to soft cancel
+    // an order that has already been invalidated on-chain.
+    const QUERY: &str = "\
+            UPDATE orders
+            SET cancellation_timestamp = $1 \
+            WHERE uid = $2\
+            AND cancellation_timestamp IS NULL;";
+    sqlx::query(QUERY)
+        .bind(timestamp)
+        .bind(order_uid.0.as_ref())
+        .execute(transaction)
+        .await
+        .map(|_| ())
+}
+
 #[async_trait::async_trait]
 impl OrderStoring for Postgres {
     async fn insert_order(&self, order: &Order, fee: FeeParameters) -> Result<(), InsertionError> {
@@ -310,21 +338,36 @@ impl OrderStoring for Postgres {
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
-        // We do not overwrite previously cancelled orders,
-        // but this query does allow the user to soft cancel
-        // an order that has already been invalidated on-chain.
-        const QUERY: &str = "\
-            UPDATE orders
-            SET cancellation_timestamp = $1 \
-            WHERE uid = $2\
-            AND cancellation_timestamp IS NULL;";
-        sqlx::query(QUERY)
-            .bind(now)
-            .bind(order_uid.0.as_ref())
-            .execute(&self.pool)
+        let order_uid = *order_uid;
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move { cancel_order(&order_uid, now, transaction).await }.boxed()
+            })
             .await
             .context("cancel_order failed")
-            .map(|_| ())
+    }
+
+    async fn replace_order(
+        &self,
+        old_order: &model::order::OrderUid,
+        new_order: &model::order::Order,
+        new_fee: FeeParameters,
+    ) -> anyhow::Result<(), super::orders::InsertionError> {
+        let old_order = *old_order;
+        let new_order = new_order.clone();
+        let mut connection = self.pool.acquire().await?;
+        connection
+            .transaction(move |transaction| {
+                async move {
+                    cancel_order(&old_order, new_order.metadata.creation_date, transaction).await?;
+                    insert_order(&new_order, transaction).await?;
+                    insert_fee(&new_order.metadata.uid, &new_fee, transaction).await?;
+                    Ok(())
+                }
+                .boxed()
+            })
+            .await
     }
 
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
@@ -559,7 +602,7 @@ impl OrdersQueryRow {
 
     fn into_order(self) -> Result<Order> {
         let status = self.calculate_status();
-        let order_metadata = OrderMetadata {
+        let metadata = OrderMetadata {
             creation_date: self.creation_timestamp,
             owner: h160_from_vec(self.owner)?,
             uid: OrderUid(
@@ -587,7 +630,7 @@ impl OrdersQueryRow {
             is_liquidity_order: self.is_liquidity_order,
         };
         let signing_scheme = self.signing_scheme.into();
-        let order_creation = OrderCreation {
+        let data = OrderData {
             sell_token: h160_from_vec(self.sell_token)?,
             buy_token: h160_from_vec(self.buy_token)?,
             receiver: self.receiver.map(h160_from_vec).transpose()?,
@@ -605,13 +648,14 @@ impl OrdersQueryRow {
                 .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
             kind: self.kind.into(),
             partially_fillable: self.partially_fillable,
-            signature: Signature::from_bytes(signing_scheme, &self.signature)?,
             sell_token_balance: self.sell_token_balance.into(),
             buy_token_balance: self.buy_token_balance.into(),
         };
+        let signature = Signature::from_bytes(signing_scheme, &self.signature)?;
         Ok(Order {
-            metadata: order_metadata,
-            creation: order_creation,
+            metadata,
+            data,
+            signature,
         })
     }
 }
@@ -866,7 +910,7 @@ mod tests {
         db.insert_order(&order, Default::default()).await.unwrap();
 
         // Note that order UIDs do not care about the signing scheme.
-        order.creation.signature = Signature::default_with(SigningScheme::PreSign);
+        order.signature = Signature::default_with(SigningScheme::PreSign);
         assert!(matches!(
             db.insert_order(&order, Default::default()).await,
             Err(InsertionError::DuplicatedRecord)
@@ -924,7 +968,7 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(2),
                     receiver: Some(H160::from_low_u64_be(6)),
@@ -935,10 +979,10 @@ mod tests {
                     fee_amount: 5.into(),
                     kind: OrderKind::Sell,
                     partially_fillable: true,
-                    signature: Signature::default_with(*signing_scheme),
                     sell_token_balance: SellTokenSource::Erc20,
                     buy_token_balance: BuyTokenDestination::Internal,
                 },
+                signature: Signature::default_with(*signing_scheme),
             };
             db.insert_order(&order, Default::default()).await.unwrap();
             assert_eq!(db.orders(&filter).await.unwrap(), vec![order]);
@@ -997,6 +1041,124 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
+    async fn postgres_replace_order() {
+        let owner = H160([0x77; 20]);
+
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let old_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&old_order, Default::default())
+            .await
+            .unwrap();
+
+        let new_order = Order {
+            data: OrderData {
+                valid_to: u32::MAX,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([2; 56]),
+                creation_date: Utc::now(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.replace_order(&old_order.metadata.uid, &new_order, Default::default())
+            .await
+            .unwrap();
+
+        let order_statuses = db
+            .user_orders(&owner, 0, None)
+            .await
+            .unwrap()
+            .iter()
+            .map(|order| (order.metadata.uid, order.metadata.status))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            order_statuses,
+            vec![
+                (new_order.metadata.uid, OrderStatus::Open),
+                (old_order.metadata.uid, OrderStatus::Cancelled),
+            ]
+        );
+
+        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                .bind(old_order.metadata.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(
+            old_order_cancellation.unwrap().timestamp_millis(),
+            new_order.metadata.creation_date.timestamp_millis(),
+        );
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_replace_order_no_cancellation_on_error() {
+        let owner = H160([0x77; 20]);
+
+        let db = Postgres::new("postgresql://").unwrap();
+        db.clear().await.unwrap();
+
+        let old_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([1; 56]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&old_order, Default::default())
+            .await
+            .unwrap();
+
+        let new_order = Order {
+            metadata: OrderMetadata {
+                owner,
+                uid: OrderUid([2; 56]),
+                creation_date: Utc::now(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        db.insert_order(&new_order, Default::default())
+            .await
+            .unwrap();
+
+        // Attempt to replace an old order with one that already exists should fail.
+        let err = db
+            .replace_order(&old_order.metadata.uid, &new_order, Default::default())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, InsertionError::DuplicatedRecord));
+
+        // Old order cancellation status should remain unchanged.
+        let (old_order_cancellation,): (Option<DateTime<Utc>>,) =
+            sqlx::query_as("SELECT cancellation_timestamp FROM orders;")
+                .bind(old_order.metadata.uid.0.as_ref())
+                .fetch_one(&db.pool)
+                .await
+                .unwrap();
+        assert_eq!(old_order_cancellation, None);
+    }
+
+    #[tokio::test]
+    #[ignore]
     async fn postgres_filter_orders_by_address() {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
@@ -1009,12 +1171,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(2),
                     valid_to: 10,
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
@@ -1023,12 +1186,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(3),
                     valid_to: 11,
                     ..Default::default()
                 },
+                ..Default::default()
             },
             Order {
                 metadata: OrderMetadata {
@@ -1037,12 +1201,13 @@ mod tests {
                     status: OrderStatus::Expired,
                     ..Default::default()
                 },
-                creation: OrderCreation {
+                data: OrderData {
                     sell_token: H160::from_low_u64_be(1),
                     buy_token: H160::from_low_u64_be(3),
                     valid_to: 12,
                     ..Default::default()
                 },
+                ..Default::default()
             },
         ];
         for order in orders.iter() {
@@ -1131,13 +1296,13 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1230,11 +1395,11 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1356,13 +1521,13 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 sell_amount: 1.into(),
                 buy_amount: 1.into(),
-                signature: Signature::default_with(SigningScheme::PreSign),
                 ..Default::default()
             },
+            signature: Signature::default_with(SigningScheme::PreSign),
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1452,8 +1617,7 @@ mod tests {
         db.clear().await.unwrap();
 
         let order = Order {
-            metadata: Default::default(),
-            creation: OrderCreation {
+            data: OrderData {
                 kind: OrderKind::Sell,
                 sell_amount: 10.into(),
                 buy_amount: 100.into(),
@@ -1461,6 +1625,7 @@ mod tests {
                 partially_fillable: true,
                 ..Default::default()
             },
+            ..Default::default()
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1568,14 +1733,15 @@ mod tests {
         db.clear().await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
-            creation: OrderCreation {
-                signature: Signature::default_with(SigningScheme::PreSign),
+            data: OrderData {
+                valid_to: u32::MAX,
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid,
                 ..Default::default()
             },
+            signature: Signature::default_with(SigningScheme::PreSign),
         };
         db.insert_order(&order, Default::default()).await.unwrap();
 
@@ -1643,14 +1809,14 @@ mod tests {
         db.clear().await.unwrap();
         let order_uid = |uid: u8| OrderUid([uid; 56]);
         let order = |uid: u8, scheme: SigningScheme| Order {
-            creation: OrderCreation {
-                signature: Signature::default_with(scheme),
+            data: OrderData {
                 ..Default::default()
             },
             metadata: OrderMetadata {
                 uid: order_uid(uid),
                 ..Default::default()
             },
+            signature: Signature::default_with(scheme),
         };
 
         db.insert_order(&order(0, SigningScheme::Eip712), Default::default())
@@ -1745,8 +1911,13 @@ mod tests {
 
         let owners: Vec<H160> = (0u64..2).map(H160::from_low_u64_le).collect();
 
+        let data = OrderData {
+            valid_to: u32::MAX,
+            ..Default::default()
+        };
         let orders = [
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(3),
                     owner: owners[0],
@@ -1756,6 +1927,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(1),
                     owner: owners[1],
@@ -1765,6 +1937,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(0),
                     owner: owners[0],
@@ -1774,6 +1947,7 @@ mod tests {
                 ..Default::default()
             },
             Order {
+                data,
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(2),
                     owner: owners[1],
@@ -1812,11 +1986,15 @@ mod tests {
 
         let orders: Vec<Order> = (0..=3)
             .map(|i| Order {
+                data: OrderData {
+                    valid_to: u32::MAX,
+                    ..Default::default()
+                },
                 metadata: OrderMetadata {
                     uid: OrderUid::from_integer(i),
                     ..Default::default()
                 },
-                creation: Default::default(),
+                ..Default::default()
             })
             .collect();
 

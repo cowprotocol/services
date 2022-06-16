@@ -34,11 +34,10 @@ use solver::{
     settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::{CustomNodesApi, PendingTransactionConfig},
-            eden_api::EdenApi,
-            flashbots_api::FlashbotsApi,
+            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            Strategy,
         },
-        SolutionSubmitter, StrategyArgs, TransactionStrategy,
+        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
     },
     solver::{ExternalSolverArg, SolverAccountArg, SolverType},
 };
@@ -216,8 +215,14 @@ struct Arguments {
     eden_api_url: Url,
 
     /// The API endpoint of the Flashbots network for transaction submission.
-    #[clap(long, env, default_value = "https://rpc.flashbots.net")]
-    flashbots_api_url: Url,
+    /// Multiple values could be defined for different Flashbots endpoints (Flashbots Protect and Flashbots fast).
+    #[clap(
+        long,
+        env,
+        use_value_delimiter = true,
+        default_value = "https://rpc.flashbots.net"
+    )]
+    flashbots_api_url: Vec<Url>,
 
     /// Maximum additional tip in gwei that we are willing to give to eden above regular gas price estimation
     #[clap(
@@ -304,10 +309,6 @@ struct Arguments {
     /// in the settlement are checked for price deviation.
     #[clap(long, env, use_value_delimiter = true)]
     token_list_restriction_for_price_checks: Option<Vec<H160>>,
-
-    /// How pending transactions should be fetched.
-    #[clap(long, env, arg_enum, default_value = "ignore")]
-    pending_transaction_config: PendingTransactionConfig,
 }
 
 #[derive(Copy, Clone, Debug, clap::ArgEnum)]
@@ -428,6 +429,7 @@ async fn main() {
                     metrics.clone(),
                     client.clone(),
                     &contracts,
+                    args.shared.balancer_pool_deny_list,
                 )
                 .await
                 .expect("failed to create Balancer pool fetcher"),
@@ -511,6 +513,7 @@ async fn main() {
         metrics.clone(),
         zeroex_api.clone(),
         args.zeroex_slippage_bps,
+        args.shared.disabled_zeroex_sources,
         args.oneinch_slippage_bps,
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
@@ -559,51 +562,62 @@ async fn main() {
             "network id of custom node doesn't match main node"
         );
     }
-    let transaction_strategies = args
-        .transaction_strategy
-        .iter()
-        .map(|strategy| match strategy {
+    let submitted_transactions = GlobalTxPool::default();
+    let mut transaction_strategies = vec![];
+    for strategy in args.transaction_strategy {
+        match strategy {
             TransactionStrategyArg::PublicMempool => {
-                TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        vec![web3.clone()],
-                        args.pending_transaction_config,
-                    )),
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                })
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                }))
             }
-            TransactionStrategyArg::Eden => TransactionStrategy::Eden(StrategyArgs {
-                submit_api: Box::new(
-                    EdenApi::new(client.clone(), args.eden_api_url.clone()).unwrap(),
-                ),
-                max_additional_tip: args.max_additional_eden_tip,
-                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-            }),
-            TransactionStrategyArg::Flashbots => TransactionStrategy::Flashbots(StrategyArgs {
-                submit_api: Box::new(
-                    FlashbotsApi::new(client.clone(), args.flashbots_api_url.clone()).unwrap(),
-                ),
-                max_additional_tip: args.max_additional_flashbot_tip,
-                additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
-            }),
+            TransactionStrategyArg::Eden => {
+                transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
+                    submit_api: Box::new(
+                        EdenApi::new(
+                            client.clone(),
+                            args.eden_api_url.clone(),
+                            submitted_transactions.clone(),
+                        )
+                        .unwrap(),
+                    ),
+                    max_additional_tip: args.max_additional_eden_tip,
+                    additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Eden),
+                }))
+            }
+            TransactionStrategyArg::Flashbots => {
+                for flashbots_url in args.flashbots_api_url.clone() {
+                    transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
+                        submit_api: Box::new(
+                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
+                        ),
+                        max_additional_tip: args.max_additional_flashbot_tip,
+                        additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                        sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
+                    }))
+                }
+            }
             TransactionStrategyArg::CustomNodes => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        submission_nodes.clone(),
-                        args.pending_transaction_config,
-                    )),
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                })
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                }))
             }
-            TransactionStrategyArg::DryRun => TransactionStrategy::DryRun,
-        })
-        .collect::<Vec<_>>();
+            TransactionStrategyArg::DryRun => {
+                transaction_strategies.push(TransactionStrategy::DryRun)
+            }
+        }
+    }
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
             &client,
@@ -627,7 +641,11 @@ async fn main() {
         transaction_strategies,
         access_list_estimator,
     };
-    let api = OrderBookApi::new(args.orderbook_url, client.clone());
+    let api = OrderBookApi::new(
+        args.orderbook_url,
+        client.clone(),
+        args.shared.solver_competition_auth,
+    );
     let order_converter = OrderConverter {
         native_token: native_token_contract.clone(),
         fee_objective_scaling_factor: args.fee_objective_scaling_factor,

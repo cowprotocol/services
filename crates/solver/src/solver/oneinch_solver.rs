@@ -114,6 +114,10 @@ impl OneInchSolver {
         tracing::debug!("querying 1Inch swap api with {:?}", query);
         let swap = match self.client.get_swap(query).await? {
             RestResponse::Ok(swap) => swap,
+            RestResponse::Err(error) if error.description == "insufficient liquidity" => {
+                // This means the order cannot get matched which shouldn't be treated as an error.
+                return Ok(None);
+            }
             RestResponse::Err(error) => return Err((error).into()),
         };
 
@@ -184,7 +188,7 @@ mod tests {
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
     use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderCreation, OrderKind};
+    use model::order::{Order, OrderData, OrderKind};
     use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
     use shared::{dummy_contract, transport::create_env_test_transport};
 
@@ -437,7 +441,7 @@ mod tests {
         let settlement = solver
             .settle_order_with_protocols(
                 Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),

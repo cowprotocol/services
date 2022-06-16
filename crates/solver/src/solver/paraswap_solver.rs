@@ -210,7 +210,7 @@ mod tests {
     use contracts::WETH9;
     use ethcontract::U256;
     use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderCreation, OrderKind};
+    use model::order::{Order, OrderData, OrderKind};
     use reqwest::Client;
     use shared::{
         dummy_contract,
@@ -548,7 +548,7 @@ mod tests {
         let settlement = solver
             .try_settle_order(
                 Order {
-                    creation: OrderCreation {
+                    data: OrderData {
                         sell_token: weth.address(),
                         buy_token: gno,
                         sell_amount: 1_000_000_000_000_000_000u128.into(),

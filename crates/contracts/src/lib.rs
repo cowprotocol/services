@@ -39,6 +39,7 @@ include!(concat!(env!("OUT_DIR"), "/HoneyswapFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/HoneyswapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/IUniswapLikePair.rs"));
 include!(concat!(env!("OUT_DIR"), "/IUniswapLikeRouter.rs"));
+include!(concat!(env!("OUT_DIR"), "/ERC1271SignatureValidator.rs"));
 include!(concat!(env!("OUT_DIR"), "/SushiSwapFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/SushiSwapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/SwaprFactory.rs"));

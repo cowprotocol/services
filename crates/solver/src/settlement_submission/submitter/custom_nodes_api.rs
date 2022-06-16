@@ -1,21 +1,13 @@
-use crate::{
-    pending_transactions::Fee,
-    settlement::{Revertable, Settlement},
-};
+use crate::settlement::{Revertable, Settlement};
 
 use super::{
     super::submitter::{TransactionHandle, TransactionSubmitting},
-    AdditionalTip, CancelHandle, DisabledReason, SubmissionLoopStatus,
+    AdditionalTip, DisabledReason, Strategy, SubmissionLoopStatus,
 };
-use anyhow::{Context, Result};
-use ethcontract::{
-    dyns::DynTransport,
-    transaction::{Transaction, TransactionBuilder},
-    H160, U256,
-};
+use anyhow::Result;
+use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
-use gas_estimation::{EstimatedGasPrice, GasPrice1559};
-use shared::Web3;
+use shared::{Web3, Web3Transport};
 
 const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "Transaction gas price supplied is too low", //openethereum
@@ -26,27 +18,14 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "INTERNAL_ERROR: nonce too low",             //erigon
 ];
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
-pub enum PendingTransactionConfig {
-    /// Attempt to fetch pending transactions using txpool_content call. This can cause problems
-    /// when nodes return a large amount of data or are slow to respond.
-    TxPool,
-    /// Do not attempt to fetch pending transactions.
-    Ignore,
-}
-
 #[derive(Clone)]
 pub struct CustomNodesApi {
     nodes: Vec<Web3>,
-    pending_transaction_config: PendingTransactionConfig,
 }
 
 impl CustomNodesApi {
-    pub fn new(nodes: Vec<Web3>, pending_transaction_config: PendingTransactionConfig) -> Self {
-        Self {
-            nodes,
-            pending_transaction_config,
-        }
+    pub fn new(nodes: Vec<Web3>) -> Self {
+        Self { nodes }
     }
 }
 
@@ -54,7 +33,7 @@ impl CustomNodesApi {
 impl TransactionSubmitting for CustomNodesApi {
     async fn submit_transaction(
         &self,
-        tx: TransactionBuilder<DynTransport>,
+        tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
         tracing::debug!("Custom nodes submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
@@ -118,51 +97,11 @@ impl TransactionSubmitting for CustomNodesApi {
         }
     }
 
-    async fn cancel_transaction(&self, id: &CancelHandle) -> Result<TransactionHandle> {
-        self.submit_transaction(id.noop_transaction.clone()).await
-    }
-
-    async fn recover_pending_transaction(
+    async fn cancel_transaction(
         &self,
-        web3: &Web3,
-        address: &H160,
-        nonce: U256,
-    ) -> Result<Option<EstimatedGasPrice>> {
-        match self.pending_transaction_config {
-            PendingTransactionConfig::Ignore => return Ok(None),
-            PendingTransactionConfig::TxPool => (),
-        }
-        let transactions = crate::pending_transactions::pending_transactions(web3.transport())
-            .await
-            .context("pending_transactions failed")?;
-        let transaction = match transactions
-            .iter()
-            .find(|transaction| transaction.from == *address && transaction.nonce == nonce)
-        {
-            Some(transaction) => transaction,
-            None => return Ok(None),
-        };
-        match transaction.fee {
-            Fee::Legacy { gas_price } => Ok(Some(EstimatedGasPrice {
-                legacy: gas_price.to_f64_lossy(),
-                ..Default::default()
-            })),
-            Fee::Eip1559 {
-                max_priority_fee_per_gas,
-                max_fee_per_gas,
-            } => Ok(Some(EstimatedGasPrice {
-                eip1559: Some(GasPrice1559 {
-                    max_fee_per_gas: max_fee_per_gas.to_f64_lossy(),
-                    max_priority_fee_per_gas: max_priority_fee_per_gas.to_f64_lossy(),
-                    base_fee_per_gas: crate::pending_transactions::base_fee_per_gas(
-                        web3.transport(),
-                    )
-                    .await?
-                    .to_f64_lossy(),
-                }),
-                ..Default::default()
-            })),
-        }
+        tx: TransactionBuilder<Web3Transport>,
+    ) -> Result<TransactionHandle> {
+        self.submit_transaction(tx).await
     }
 
     fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
@@ -176,7 +115,7 @@ impl TransactionSubmitting for CustomNodesApi {
         SubmissionLoopStatus::Enabled(AdditionalTip::Off)
     }
 
-    fn name(&self) -> &'static str {
-        "CustomNodes"
+    fn name(&self) -> Strategy {
+        Strategy::CustomNodes
     }
 }

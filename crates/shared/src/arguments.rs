@@ -5,7 +5,7 @@ use crate::{
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use anyhow::{ensure, Context, Result};
-use ethcontract::{H160, U256};
+use ethcontract::{H160, H256, U256};
 use std::{
     num::{NonZeroU64, ParseFloatError},
     str::FromStr,
@@ -140,6 +140,18 @@ pub struct Arguments {
     /// The 1Inch REST API URL to use.
     #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
     pub one_inch_url: Url,
+
+    /// The list of disabled 0x sources.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub disabled_zeroex_sources: Vec<String>,
+
+    /// Deny list of balancer pool ids.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub balancer_pool_deny_list: Vec<H256>,
+
+    /// Value of the authorization header for the solver competition post api.
+    #[clap(long, env)]
+    pub solver_competition_auth: Option<String>,
 }
 
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {

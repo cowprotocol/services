@@ -9,7 +9,6 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use serde_json::json;
 use shared::{sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -17,8 +16,8 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::custom_nodes_api::{CustomNodesApi, PendingTransactionConfig},
-        SolutionSubmitter, StrategyArgs,
+        submitter::{custom_nodes_api::CustomNodesApi, Strategy},
+        GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
 use std::{sync::Arc, time::Duration};
@@ -113,17 +112,17 @@ async fn vault_balances(web3: Web3) {
         .with_fee_amount(to_wei(1))
         .with_buy_token(contracts.weth.address())
         .with_buy_amount(to_wei(8))
-        .with_valid_to(shared::time::now_in_epoch_seconds() + 300)
+        .with_valid_to(model::time::now_in_epoch_seconds() + 300)
         .sign_with(
             EcdsaSigningScheme::Eip712,
             &contracts.domain_separator,
             SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
         )
         .build()
-        .creation;
+        .into_order_creation();
     let placement = client
         .post(&format!("{}{}", API_HOST, ORDER_PLACEMENT_ENDPOINT))
-        .body(json!(order).to_string())
+        .json(&order)
         .send()
         .await;
     assert_eq!(placement.unwrap().status(), 201);
@@ -146,6 +145,7 @@ async fn vault_balances(web3: Web3) {
         zeroex_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
+    let submitted_transactions = GlobalTxPool::default();
     let mut driver = solver::driver::Driver::new(
         contracts.gp_settlement.clone(),
         liquidity_collector,
@@ -171,12 +171,10 @@ async fn vault_balances(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        vec![web3.clone()],
-                        PendingTransactionConfig::Ignore,
-                    )),
+                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
                 }),
             ],
             access_list_estimator: Arc::new(

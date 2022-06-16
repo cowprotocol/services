@@ -9,17 +9,15 @@ mod get_orders;
 mod get_orders_by_tx;
 mod get_solvable_orders;
 mod get_solvable_orders_v2;
-pub mod get_solver_competition;
+mod get_solver_competition;
 mod get_trades;
 mod get_user_orders;
-pub mod order_validation;
-pub mod post_quote;
-pub mod post_solver_competition;
+mod post_quote;
+mod post_solver_competition;
+mod replace_order;
 
 use crate::solver_competition::SolverCompetition;
-use crate::{
-    api::post_quote::OrderQuoter, database::trades::TradeRetrieving, orderbook::Orderbook,
-};
+use crate::{database::trades::TradeRetrieving, order_quoting::OrderQuoter, orderbook::Orderbook};
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
@@ -41,6 +39,7 @@ pub fn handle_all_routes(
     orderbook: Arc<Orderbook>,
     quoter: Arc<OrderQuoter>,
     solver_competition: Arc<SolverCompetition>,
+    solver_competition_auth: Option<String>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -69,6 +68,9 @@ pub fn handle_all_routes(
     let cancel_order = cancel_order::cancel_order(orderbook.clone())
         .map(|result| (result, "v1/cancel_order"))
         .boxed();
+    let replace_order = replace_order::filter(orderbook.clone())
+        .map(|result| (result, "v1/replace_order"))
+        .boxed();
     let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone())
         .map(|result| (result, "v1/get_amount_estimate"))
         .boxed();
@@ -93,9 +95,10 @@ pub fn handle_all_routes(
     let get_solver_competition = get_solver_competition::get(solver_competition.clone())
         .map(|result| (result, "v1/solver_competition"))
         .boxed();
-    let post_solver_competition = post_solver_competition::post(solver_competition)
-        .map(|result| (result, "v1/solver_competition"))
-        .boxed();
+    let post_solver_competition =
+        post_solver_competition::post(solver_competition, solver_competition_auth)
+            .map(|result| (result, "v1/solver_competition"))
+            .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -111,6 +114,8 @@ pub fn handle_all_routes(
                 .or(get_trades)
                 .unify()
                 .or(cancel_order)
+                .unify()
+                .or(replace_order)
                 .unify()
                 .or(get_amount_estimate)
                 .unify()

@@ -10,6 +10,7 @@ use model::{
     u256_decimal,
 };
 use primitive_types::{H160, U256};
+use prometheus::IntGauge;
 use reqwest::Client;
 use std::time::{Duration, Instant};
 use url::Url;
@@ -27,6 +28,8 @@ struct Order {
     uid: OrderUid,
     status: OrderStatus,
     creation_date: DateTime<Utc>,
+    partially_fillable: bool,
+    is_liquidity_order: bool,
 }
 
 struct OrderBookApi {
@@ -43,14 +46,20 @@ impl OrderBookApi {
     }
 
     pub async fn solvable_orders(&self) -> reqwest::Result<Vec<Order>> {
-        let url = self.base.join("api/v1/solvable_orders").unwrap();
-        self.client
+        #[derive(serde::Deserialize)]
+        struct Auction {
+            orders: Vec<Order>,
+        }
+        let url = self.base.join("api/v1/auction").unwrap();
+        let auction: Auction = self
+            .client
             .get(url)
             .send()
             .await?
             .error_for_status()?
             .json()
-            .await
+            .await?;
+        Ok(auction.orders)
     }
 
     pub async fn order(&self, uid: &OrderUid) -> reqwest::Result<Order> {
@@ -122,10 +131,7 @@ impl ZeroExApi {
 
         tracing::debug!(url = url.as_str(), ?response, "0x");
 
-        Ok(match order.kind {
-            OrderKind::Buy => order.sell_amount >= response.sell_amount,
-            OrderKind::Sell => order.buy_amount <= response.buy_amount,
-        })
+        Ok(response.sell_amount <= order.sell_amount && response.buy_amount >= order.buy_amount)
     }
 }
 
@@ -137,6 +143,12 @@ struct Alerter {
     last_alert: Option<Instant>,
     // order and for how long it has been matchable
     open_orders: Vec<(Order, Option<Instant>)>,
+    // Expose a prometheus metric so that we can use our Grafana alert infrastructure.
+    //
+    // Set to 0 or 1 depending on whether our alert condition is satisfied which is that there
+    // hasn't been a trade for some time and that there is an order that has been matchable for some
+    // time.
+    no_trades_but_matchable_order: IntGauge,
 }
 
 struct AlertConfig {
@@ -150,6 +162,12 @@ struct AlertConfig {
 
 impl Alerter {
     pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
+        let registry = shared::metrics::get_metrics_registry();
+        let no_trades_but_matchable_order =
+            IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
+        registry
+            .register(Box::new(no_trades_but_matchable_order.clone()))
+            .unwrap();
         Self {
             orderbook_api,
             zeroex_api,
@@ -157,6 +175,7 @@ impl Alerter {
             last_observed_trade: Instant::now(),
             last_alert: None,
             open_orders: Vec::new(),
+            no_trades_but_matchable_order,
         }
     }
 
@@ -167,6 +186,7 @@ impl Alerter {
             .await
             .context("solvable_orders")?
             .into_iter()
+            .filter(|order| !order.is_liquidity_order && !order.partially_fillable)
             .map(|order| {
                 let existing_time = self
                     .open_orders
@@ -206,12 +226,19 @@ impl Alerter {
     pub async fn update(&mut self) -> Result<()> {
         self.update_open_orders().await?;
         if self.last_observed_trade.elapsed() <= self.config.time_without_trade {
-            return Ok(());
-        }
-        if matches!(
-            self.last_alert,
-            Some(instant) if instant.elapsed() < self.config.min_alert_interval
-        ) {
+            self.no_trades_but_matchable_order.set(0);
+            // Delete all matchable timestamps.
+            //
+            // If we didn't do this what could happen is that first we mark an order as matchable
+            // at t0. Then a trade happens so we skip the matchable update loop below because if
+            // there was a recent trade we don't want to alert anyway. Then no trade happens for
+            // long enough that we want to alert and the order is again matchable.
+            // In this case we would alert immediately even though it could be the case that the
+            // order wasn't matchable and just now became matchable again. We would wrongly assume
+            // it has been matchable since t0 but we did not check this between now and then.
+            for (_, instant) in self.open_orders.iter_mut() {
+                *instant = None;
+            }
             return Ok(());
         }
         for i in 0..self.open_orders.len() {
@@ -224,14 +251,22 @@ impl Alerter {
             if can_be_settled {
                 let solvable_since = *self.open_orders[i].1.get_or_insert(now);
                 if now.duration_since(solvable_since) > self.config.min_order_solvable_time {
-                    self.last_alert = Some(now);
-                    self.alert(&self.open_orders[i].0);
+                    let should_alert = match self.last_alert {
+                        None => true,
+                        Some(instant) => instant.elapsed() >= self.config.min_alert_interval,
+                    };
+                    if should_alert {
+                        self.last_alert = Some(now);
+                        self.alert(&self.open_orders[i].0);
+                    }
+                    self.no_trades_but_matchable_order.set(1);
                 }
-                break;
+                return Ok(());
             } else {
                 self.open_orders[i].1 = None;
             }
         }
+        self.no_trades_but_matchable_order.set(0);
         Ok(())
     }
 }
@@ -272,6 +307,9 @@ struct Arguments {
 
     #[clap(long, env, default_value = "https://api.cow.fi/mainnet/")]
     orderbook_api: String,
+
+    #[clap(long, env, default_value = "9588")]
+    metrics_port: u16,
 }
 
 #[tokio::main]
@@ -279,6 +317,10 @@ async fn main() {
     let args = Arguments::parse();
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     tracing::info!("running alerter with {:#?}", args);
+
+    shared::metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);
+    let filter = shared::metrics::handle_metrics();
+    tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
 
     let client = Client::builder()
         .timeout(Duration::from_secs(10))
