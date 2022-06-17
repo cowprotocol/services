@@ -368,7 +368,7 @@ pub trait OrderQuoting: Send + Sync {
 #[derive(Error, Debug)]
 pub enum CalculateQuoteError {
     #[error("sell amount does not cover fee")]
-    SellAmountDoesNotCoverFee(U256),
+    SellAmountDoesNotCoverFee { fee_amount: U256 },
 
     #[error("failed to estimate price")]
     Price(#[from] PriceEstimationError),
@@ -472,17 +472,15 @@ impl OrderQuoter2 {
                 let sell_amount = sell_amount_before_fee.saturating_sub(fee_amount);
                 if sell_amount == U256::zero() {
                     // We want a sell_amount of at least 1!
-                    return Err(CalculateQuoteError::SellAmountDoesNotCoverFee(fee_amount));
+                    return Err(CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount });
                 }
 
-                let buy_amount = match trade_estimate.out_amount.checked_mul(sell_amount) {
-                    Some(product) => product / sell_amount_before_fee,
-                    // If we overflow when computing the product, use a different
-                    // less precise method that avoids overflows.
-                    None => (trade_estimate.out_amount / sell_amount_before_fee)
-                        .checked_mul(sell_amount)
-                        .unwrap_or(U256::MAX),
-                };
+                // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
+                // errors computing the initial product.
+                let buy_amount = (trade_estimate.out_amount.full_mul(sell_amount)
+                    / sell_amount_before_fee)
+                    .try_into()
+                    .unwrap_or(U256::MAX);
 
                 (sell_amount, buy_amount)
             }
@@ -1049,7 +1047,7 @@ mod tests {
 
         assert!(matches!(
             quoter.compute_quote_data(&parameters).await.unwrap_err(),
-            CalculateQuoteError::SellAmountDoesNotCoverFee(fee) if fee == U256::from(200),
+            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
         ));
     }
 }
