@@ -6,7 +6,10 @@ use std::sync::Mutex;
 
 type AuctionId = u64;
 
-const CACHE_SIZE: usize = 1000;
+// The size controls
+// - how long we store competition info depending on how often the driver run loop completes
+// - how much memory the cache takes up depending on how big the average response is
+const CACHE_SIZE: usize = 500;
 
 pub struct SolverCompetition {
     cache: Mutex<SizedCache<AuctionId, SolverCompetitionResponse>>,
