@@ -1,5 +1,3 @@
-use std::{sync::Mutex, time::Duration};
-
 use anyhow::{Context, Result};
 use cached::{Cached, TimedSizedCache};
 use contracts::{CowProtocolToken, CowProtocolVirtualToken};
@@ -7,32 +5,14 @@ use ethcontract::Web3;
 use primitive_types::{H160, U256};
 use shared::transport::buffered::{Buffered, Configuration};
 use std::collections::BTreeMap;
+use std::{sync::Mutex, time::Duration};
+
+use crate::order_quoting::QuoteParameters;
+
+use super::{FeeSubsidizing, Subsidy};
 
 const CACHE_SIZE: usize = 10_000;
 const CACHE_LIFESPAN: Duration = Duration::from_secs(60 * 60);
-
-/// Check whether a user qualifies for an extra fee subsidy because they own enough cow token.
-#[async_trait::async_trait]
-pub trait CowSubsidy: Send + Sync + 'static {
-    async fn cow_subsidy_factor(&self, user: H160) -> Result<f64>;
-}
-
-pub struct FixedCowSubsidy(pub f64);
-
-impl Default for FixedCowSubsidy {
-    fn default() -> Self {
-        Self(1.0)
-    }
-}
-
-#[async_trait::async_trait]
-impl CowSubsidy for FixedCowSubsidy {
-    /// On success returns a factor of how much of the usual fee an account has to pay based on the
-    /// amount of COW tokens it owns.
-    async fn cow_subsidy_factor(&self, _: H160) -> Result<f64> {
-        Ok(self.0)
-    }
-}
 
 /// Maps how many base units of COW someone must own at least in order to qualify for a given
 /// fee subsidy factor.
@@ -74,26 +54,14 @@ impl std::str::FromStr for SubsidyTiers {
     }
 }
 
-pub struct CowSubsidyImpl {
+pub struct CowSubsidy {
     token: CowProtocolToken,
     vtoken: CowProtocolVirtualToken,
     subsidy_tiers: SubsidyTiers,
     cache: Mutex<TimedSizedCache<H160, f64>>,
 }
 
-#[async_trait::async_trait]
-impl CowSubsidy for CowSubsidyImpl {
-    async fn cow_subsidy_factor(&self, user: H160) -> Result<f64> {
-        if let Some(subsidy_factor) = self.cache.lock().unwrap().cache_get(&user).copied() {
-            return Ok(subsidy_factor);
-        }
-        let subsidy_factor = self.subsidy_factor_uncached(user).await?;
-        self.cache.lock().unwrap().cache_set(user, subsidy_factor);
-        Ok(subsidy_factor)
-    }
-}
-
-impl CowSubsidyImpl {
+impl CowSubsidy {
     pub fn new(
         token: CowProtocolToken,
         vtoken: CowProtocolVirtualToken,
@@ -142,6 +110,25 @@ impl CowSubsidyImpl {
         tracing::debug!(?user, ?balance, ?vbalance, ?combined, ?factor);
         Ok(factor)
     }
+
+    async fn cow_subsidy_factor(&self, user: H160) -> Result<f64> {
+        if let Some(subsidy_factor) = self.cache.lock().unwrap().cache_get(&user).copied() {
+            return Ok(subsidy_factor);
+        }
+        let subsidy_factor = self.subsidy_factor_uncached(user).await?;
+        self.cache.lock().unwrap().cache_set(user, subsidy_factor);
+        Ok(subsidy_factor)
+    }
+}
+
+#[async_trait::async_trait]
+impl FeeSubsidizing for CowSubsidy {
+    async fn subsidy(&self, parameters: QuoteParameters) -> Result<Subsidy> {
+        Ok(Subsidy {
+            factor: self.cow_subsidy_factor(parameters.from).await?,
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -158,7 +145,7 @@ mod tests {
         let web3 = Web3::new(transport);
         let token = CowProtocolToken::deployed(&web3).await.unwrap();
         let vtoken = CowProtocolVirtualToken::deployed(&web3).await.unwrap();
-        let subsidy = CowSubsidyImpl::new(
+        let subsidy = CowSubsidy::new(
             token,
             vtoken,
             SubsidyTiers([(U256::from_f64_lossy(1e18), 0.5)].into_iter().collect()),

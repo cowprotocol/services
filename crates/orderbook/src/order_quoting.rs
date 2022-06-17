@@ -1,5 +1,6 @@
 use crate::{
-    fee::{FeeData, FeeParameters, MinFeeCalculating},
+    fee::{FeeData, MinFeeCalculating},
+    fee_subsidy::FeeParameters,
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
@@ -460,7 +461,7 @@ impl OrderQuoter2 {
             sell_token_price,
         };
         // TODO(nlordell): Apply subsidies!
-        let fee_amount = fee_parameters.amount_in_sell_token();
+        let fee_amount = fee_parameters.unsubsidized();
 
         let (sell_amount, buy_amount) = match &parameters.side {
             OrderQuoteSide::Sell {

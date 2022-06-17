@@ -2,16 +2,9 @@ use crate::deploy::Contracts;
 use contracts::{ERC20Mintable, WETH9};
 use ethcontract::{prelude::U256, H160};
 use orderbook::{
-    account_balances::Web3BalanceFetcher,
-    cow_subsidy::FixedCowSubsidy,
-    database::Postgres,
-    event_updater::EventUpdater,
-    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
-    metrics::NoopMetrics,
-    order_quoting::OrderQuoter,
-    order_validation::OrderValidator,
-    orderbook::Orderbook,
-    solvable_orders::SolvableOrdersCache,
+    account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
+    fee::MinFeeCalculator, fee_subsidy::Subsidy, metrics::NoopMetrics, order_quoting::OrderQuoter,
+    order_validation::OrderValidator, orderbook::Orderbook, solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
 use shared::{
@@ -150,12 +143,11 @@ impl OrderbookServices {
             gas_estimator,
             db.clone(),
             bad_token_detector.clone(),
-            FeeSubsidyConfiguration {
-                fee_factor: 0.,
+            Arc::new(Subsidy {
+                factor: 0.,
                 ..Default::default()
-            },
+            }),
             native_price_estimator.clone(),
-            Arc::new(FixedCowSubsidy(1.0)),
             Default::default(),
             true,
         ));
