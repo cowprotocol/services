@@ -82,6 +82,7 @@ impl TraceCallDetector {
                 }
             });
         }
+        tracing::debug!("Candidates: {:?}", &candidates);
 
         const BATCH_SIZE: usize = 100;
         let instance = ERC20::at(&self.web3, token);
