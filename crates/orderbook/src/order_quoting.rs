@@ -1,6 +1,6 @@
 use crate::{
     fee::{FeeData, MinFeeCalculating},
-    fee_subsidy::FeeParameters,
+    fee_subsidy::{FeeParameters, FeeSubsidizing},
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
@@ -427,6 +427,12 @@ where
     }
 }
 
+impl Now for DateTime<Utc> {
+    fn now(&self) -> DateTime<Utc> {
+        *self
+    }
+}
+
 /// How long a quote remains valid for.
 const QUOTE_VALIDITY_SECONDS: i64 = 60;
 
@@ -435,6 +441,7 @@ pub struct OrderQuoter2 {
     price_estimator: Arc<dyn PriceEstimating>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
+    fee_subsidy: Arc<dyn FeeSubsidizing>,
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
 }
@@ -447,12 +454,15 @@ impl OrderQuoter2 {
         let expiration = self.now.now() + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS);
 
         let trade_query = parameters.to_price_query();
-        let (gas_estimate, trade_estimate, sell_token_price) = futures::try_join!(
+        let (gas_estimate, trade_estimate, sell_token_price, subsidy) = futures::try_join!(
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::from),
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
+            self.fee_subsidy
+                .subsidy(parameters.clone())
+                .map_err(PriceEstimationError::from),
         )?;
 
         let fee_parameters = FeeParameters {
@@ -460,8 +470,7 @@ impl OrderQuoter2 {
             gas_price: gas_estimate.effective_gas_price(),
             sell_token_price,
         };
-        // TODO(nlordell): Apply subsidies!
-        let fee_amount = fee_parameters.unsubsidized();
+        let fee_amount = fee_parameters.subsidized(&subsidy);
 
         let (sell_amount, buy_amount) = match &parameters.side {
             OrderQuoteSide::Sell {
@@ -504,7 +513,7 @@ impl OrderQuoter2 {
             expiration,
         };
 
-        tracing::debug!(?quote, "computed quote");
+        tracing::debug!(?quote, ?subsidy, "computed quote");
         Ok(quote)
     }
 }
@@ -547,7 +556,9 @@ impl OrderQuoting for OrderQuoter2 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fee::MockMinFeeCalculating, order_validation::MockOrderValidating};
+    use crate::{
+        fee::MockMinFeeCalculating, fee_subsidy::Subsidy, order_validation::MockOrderValidating,
+    };
     use chrono::Utc;
     use ethcontract::H160;
     use futures::{FutureExt as _, StreamExt as _};
@@ -768,7 +779,7 @@ mod tests {
 
     #[tokio::test]
     async fn compute_sell_before_fee_quote() {
-        let start = Utc::now();
+        let now = Utc::now();
         let parameters = QuoteParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
@@ -814,13 +825,12 @@ mod tests {
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
-        let mut now = MockNow::new();
-        now.expect_now().returning(move || start);
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(now),
         };
@@ -839,7 +849,7 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }
         );
     }
@@ -899,6 +909,10 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.5,
+                ..Default::default()
+            }),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(now),
         };
@@ -910,7 +924,7 @@ mod tests {
                 buy_token: H160([2; 20]),
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 30.into(),
+                fee_amount: 15.into(),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -977,6 +991,11 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy {
+                discount: 5.,
+                min_discounted: 2.,
+                factor: 0.9,
+            }),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(now),
         };
@@ -988,7 +1007,7 @@ mod tests {
                 buy_token: H160([2; 20]),
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
-                fee_amount: 30.into(),
+                fee_amount: 9.into(),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -1042,6 +1061,7 @@ mod tests {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
         };
