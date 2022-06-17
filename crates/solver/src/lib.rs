@@ -1,4 +1,5 @@
 mod analytics;
+pub mod arguments;
 mod auction_preprocessing;
 pub mod driver;
 pub mod encoding;
