@@ -547,8 +547,6 @@ impl OrderQuoting for OrderQuoter2 {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
     use crate::{fee::MockMinFeeCalculating, order_validation::MockOrderValidating};
     use chrono::Utc;
@@ -562,6 +560,7 @@ mod tests {
             mocks::FakePriceEstimator, native::MockNativePriceEstimating, MockPriceEstimating,
         },
     };
+    use std::sync::Mutex;
 
     #[test]
     fn calculate_fee_sell_before_fees_quote_request() {
