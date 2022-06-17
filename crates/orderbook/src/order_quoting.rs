@@ -295,7 +295,7 @@ impl OrderQuoter {
 }
 
 /// Order parameters for quoting.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,

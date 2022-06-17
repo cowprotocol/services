@@ -7,7 +7,7 @@ use ethcontract::U256;
 use futures::future;
 use std::sync::Arc;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Subsidy {
     /// A flat discount nominated in the native token to discount from fees.
     ///
@@ -179,6 +179,35 @@ mod tests {
             fee.subsidized(&subsidy),
             // Note that the fee factor is applied to the minimum discounted fee!
             500_000.into(),
+        );
+    }
+
+    #[tokio::test]
+    async fn combine_multiple_subsidies() {
+        let fee_subsidies = FeeSubsidies(vec![
+            Arc::new(Subsidy {
+                discount: 1e16,
+                min_discounted: 1e15,
+                factor: 0.9,
+            }),
+            Arc::new(Subsidy {
+                discount: 1e16,
+                min_discounted: 1.,
+                ..Default::default()
+            }),
+            Arc::new(Subsidy {
+                factor: 0.5,
+                ..Default::default()
+            }),
+        ]);
+
+        assert_eq!(
+            fee_subsidies.subsidy(Default::default()).await.unwrap(),
+            Subsidy {
+                discount: 2e16,
+                min_discounted: 1e15,
+                factor: 0.45,
+            }
         );
     }
 }
