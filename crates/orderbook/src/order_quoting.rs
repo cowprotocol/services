@@ -5,7 +5,8 @@ use crate::{
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
-use futures::try_join;
+use futures::{try_join, TryFutureExt as _};
+use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
     order::OrderKind,
@@ -16,11 +17,16 @@ use model::{
     u256_decimal,
 };
 use serde::Serialize;
-use shared::price_estimation::{self, single_estimate, PriceEstimating, PriceEstimationError};
+use shared::price_estimation::{
+    self,
+    native::{native_single_estimate, NativePriceEstimating},
+    single_estimate, PriceEstimating, PriceEstimationError,
+};
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+use thiserror::Error;
 
 impl From<&OrderQuoteRequest> for PreOrderData {
     fn from(quote_request: &OrderQuoteRequest) -> Self {
@@ -288,6 +294,7 @@ impl OrderQuoter {
 }
 
 /// Order parameters for quoting.
+#[derive(Clone, Debug)]
 pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -296,11 +303,39 @@ pub struct QuoteParameters {
     pub app_data: AppId,
 }
 
-/// Detailed information for a computed order quote.
+impl QuoteParameters {
+    fn to_price_query(&self) -> price_estimation::Query {
+        let (kind, in_amount) = match self.side {
+            OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
+            }
+            | OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee { value: sell_amount },
+            } => (OrderKind::Sell, sell_amount),
+            OrderQuoteSide::Buy {
+                buy_amount_after_fee,
+            } => (OrderKind::Buy, buy_amount_after_fee),
+        };
+
+        price_estimation::Query {
+            sell_token: self.sell_token,
+            buy_token: self.buy_token,
+            in_amount,
+            kind,
+        }
+    }
+}
+
+/// A calculated order quote.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Quote {
     pub id: QuoteId,
-    pub expiry: DateTime<Utc>,
+    pub data: QuoteData,
+}
+
+/// Detailed data for a computed order quote.
+#[derive(Debug, Clone, PartialEq)]
+pub struct QuoteData {
     pub sell_token: H160,
     pub buy_token: H160,
     pub sell_amount: U256,
@@ -308,12 +343,13 @@ pub struct Quote {
     pub fee_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
+    pub expiration: DateTime<Utc>,
 }
 
 /// Quote searching parameters.
 pub enum Search {
     Id(QuoteId),
-    Parameters(QuoteParameters),
+    Parameters(QuoteSearchParameters),
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -329,19 +365,203 @@ pub trait OrderQuoting: Send + Sync {
     async fn find_quote(&self, search: Search) -> Result<Quote, FindQuoteError>;
 }
 
-pub enum CalculateQuoteError {}
+#[derive(Error, Debug)]
+pub enum CalculateQuoteError {
+    #[error("sell amount does not cover fee")]
+    SellAmountDoesNotCoverFee(U256),
 
-pub enum FindQuoteError {}
+    #[error("failed to estimate price")]
+    Price(#[from] PriceEstimationError),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+#[derive(Error, Debug)]
+pub enum FindQuoteError {
+    #[error("quote not found")]
+    NotFound(Option<QuoteId>),
+
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+/// Fields for searching stored quotes.
+pub struct QuoteSearchParameters {
+    pub sell_token: H160,
+    pub buy_token: H160,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub kind: OrderKind,
+}
+
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait QuoteStoring: Send + Sync {
+    /// Saves a quote and returns its ID.
+    async fn save(&self, data: QuoteData) -> Result<QuoteId>;
+
+    /// Retrieves an existing quote by ID.
+    async fn get(&self, id: QuoteId, expiration: DateTime<Utc>) -> Result<Option<QuoteData>>;
+
+    /// Retrieves an existing quote by ID.
+    async fn find(
+        &self,
+        parameters: QuoteSearchParameters,
+        expiration: DateTime<Utc>,
+    ) -> Result<Option<(QuoteId, QuoteData)>>;
+}
+
+#[cfg_attr(test, mockall::automock)]
+pub trait Now: Send + Sync {
+    fn now(&self) -> DateTime<Utc>;
+}
+
+impl<F> Now for F
+where
+    F: Fn() -> DateTime<Utc> + Send + Sync,
+{
+    fn now(&self) -> DateTime<Utc> {
+        (self)()
+    }
+}
+
+/// How long a quote remains valid for.
+const QUOTE_VALIDITY_SECONDS: i64 = 60;
+
+/// An order quoter implementation that relies
+pub struct OrderQuoter2 {
+    price_estimator: Arc<dyn PriceEstimating>,
+    native_price_estimator: Arc<dyn NativePriceEstimating>,
+    gas_estimator: Arc<dyn GasPriceEstimating>,
+    storage: Arc<dyn QuoteStoring>,
+    now: Arc<dyn Now>,
+}
+
+impl OrderQuoter2 {
+    async fn compute_quote_data(
+        &self,
+        parameters: &QuoteParameters,
+    ) -> Result<QuoteData, CalculateQuoteError> {
+        let expiration = self.now.now() + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS);
+
+        let trade_query = parameters.to_price_query();
+        let (gas_estimate, trade_estimate, sell_token_price) = futures::try_join!(
+            self.gas_estimator
+                .estimate()
+                .map_err(PriceEstimationError::from),
+            single_estimate(self.price_estimator.as_ref(), &trade_query),
+            native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
+        )?;
+
+        let fee_parameters = FeeParameters {
+            gas_amount: trade_estimate.gas as _,
+            gas_price: gas_estimate.effective_gas_price(),
+            sell_token_price,
+        };
+        // TODO(nlordell): Apply subsidies!
+        let fee_amount = fee_parameters.amount_in_sell_token();
+
+        let (sell_amount, buy_amount) = match &parameters.side {
+            OrderQuoteSide::Sell {
+                sell_amount:
+                    SellAmount::BeforeFee {
+                        value: sell_amount_before_fee,
+                    },
+            } => {
+                let sell_amount = sell_amount_before_fee.saturating_sub(fee_amount);
+                if sell_amount == U256::zero() {
+                    // We want a sell_amount of at least 1!
+                    return Err(CalculateQuoteError::SellAmountDoesNotCoverFee(fee_amount));
+                }
+
+                let buy_amount = match trade_estimate.out_amount.checked_mul(sell_amount) {
+                    Some(product) => product / sell_amount_before_fee,
+                    // If we overflow when computing the product, use a different
+                    // less precise method that avoids overflows.
+                    None => (trade_estimate.out_amount / sell_amount_before_fee)
+                        .checked_mul(sell_amount)
+                        .unwrap_or(U256::MAX),
+                };
+
+                (sell_amount, buy_amount)
+            }
+            OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee { value: sell_amount },
+            } => (*sell_amount, trade_estimate.out_amount),
+            OrderQuoteSide::Buy {
+                buy_amount_after_fee: buy_amount,
+            } => (trade_estimate.out_amount, *buy_amount),
+        };
+
+        let quote = QuoteData {
+            sell_token: parameters.sell_token,
+            buy_token: parameters.buy_token,
+            sell_amount,
+            buy_amount,
+            fee_amount,
+            fee_parameters,
+            kind: trade_query.kind,
+            expiration,
+        };
+
+        tracing::debug!(?quote, "computed quote");
+        Ok(quote)
+    }
+}
+
+#[async_trait::async_trait]
+impl OrderQuoting for OrderQuoter2 {
+    async fn calculate_quote(
+        &self,
+        parameters: QuoteParameters,
+    ) -> Result<Quote, CalculateQuoteError> {
+        let data = self.compute_quote_data(&parameters).await?;
+        let id = self.storage.save(data.clone()).await?;
+        Ok(Quote { id, data })
+    }
+
+    async fn find_quote(&self, search: Search) -> Result<Quote, FindQuoteError> {
+        let now = self.now.now();
+        let quote = match search {
+            Search::Id(id) => {
+                let data = self
+                    .storage
+                    .get(id, now)
+                    .await?
+                    .ok_or(FindQuoteError::NotFound(Some(id)))?;
+                Quote { id, data }
+            }
+            Search::Parameters(parameters) => {
+                let (id, data) = self
+                    .storage
+                    .find(parameters, now)
+                    .await?
+                    .ok_or(FindQuoteError::NotFound(None))?;
+                Quote { id, data }
+            }
+        };
+        Ok(quote)
+    }
+}
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use super::*;
     use crate::{fee::MockMinFeeCalculating, order_validation::MockOrderValidating};
     use chrono::Utc;
     use ethcontract::H160;
-    use futures::FutureExt;
+    use futures::{FutureExt as _, StreamExt as _};
+    use gas_estimation::GasPrice1559;
     use model::{quote::Validity, time};
-    use shared::price_estimation::mocks::FakePriceEstimator;
+    use shared::{
+        gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::{
+            mocks::FakePriceEstimator, native::MockNativePriceEstimating, MockPriceEstimating,
+        },
+    };
 
     #[test]
     fn calculate_fee_sell_before_fees_quote_request() {
@@ -546,5 +766,291 @@ mod tests {
             buy_token_balance: Default::default(),
         };
         assert_eq!(result.quote, expected);
+    }
+
+    #[tokio::test]
+    async fn compute_sell_before_fee_quote() {
+        let start = Utc::now();
+        let parameters = QuoteParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: 100.into() },
+            },
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.5,
+            max_fee_per_gas: 3.0,
+            max_priority_fee_per_gas: 0.5,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator
+            .expect_estimates()
+            .withf(|q| {
+                q == [price_estimation::Query {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    in_amount: 100.into(),
+                    kind: OrderKind::Sell,
+                }]
+            })
+            .returning(|_| {
+                futures::stream::iter([Ok(price_estimation::Estimate {
+                    out_amount: 42.into(),
+                    gas: 3,
+                })])
+                .enumerate()
+                .boxed()
+            });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let sell_token = parameters.sell_token;
+                move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+
+        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let mut now = MockNow::new();
+        now.expect_now().returning(move || start);
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.compute_quote_data(&parameters).await.unwrap(),
+            QuoteData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                sell_amount: 70.into(),
+                buy_amount: 29.into(),
+                fee_amount: 30.into(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 3.,
+                    gas_price: 2.,
+                    sell_token_price: 0.2,
+                },
+                kind: OrderKind::Sell,
+                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn compute_sell_after_fee_quote() {
+        let start = Utc::now();
+        let parameters = QuoteParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::AfterFee { value: 100.into() },
+            },
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.5,
+            max_fee_per_gas: 3.0,
+            max_priority_fee_per_gas: 0.5,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator
+            .expect_estimates()
+            .withf(|q| {
+                q == [price_estimation::Query {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    in_amount: 100.into(),
+                    kind: OrderKind::Sell,
+                }]
+            })
+            .returning(|_| {
+                futures::stream::iter([Ok(price_estimation::Estimate {
+                    out_amount: 42.into(),
+                    gas: 3,
+                })])
+                .enumerate()
+                .boxed()
+            });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let sell_token = parameters.sell_token;
+                move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+
+        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let mut now = MockNow::new();
+        now.expect_now().returning(move || start);
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.compute_quote_data(&parameters).await.unwrap(),
+            QuoteData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                sell_amount: 100.into(),
+                buy_amount: 42.into(),
+                fee_amount: 30.into(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 3.,
+                    gas_price: 2.,
+                    sell_token_price: 0.2,
+                },
+                kind: OrderKind::Sell,
+                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn compute_buy_quote() {
+        let start = Utc::now();
+        let parameters = QuoteParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            side: OrderQuoteSide::Buy {
+                buy_amount_after_fee: 42.into(),
+            },
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.5,
+            max_fee_per_gas: 3.0,
+            max_priority_fee_per_gas: 0.5,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator
+            .expect_estimates()
+            .withf(|q| {
+                q == [price_estimation::Query {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    in_amount: 42.into(),
+                    kind: OrderKind::Buy,
+                }]
+            })
+            .returning(|_| {
+                futures::stream::iter([Ok(price_estimation::Estimate {
+                    out_amount: 100.into(),
+                    gas: 3,
+                })])
+                .enumerate()
+                .boxed()
+            });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let sell_token = parameters.sell_token;
+                move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+
+        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+        let mut now = MockNow::new();
+        now.expect_now().returning(move || start);
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.compute_quote_data(&parameters).await.unwrap(),
+            QuoteData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                sell_amount: 100.into(),
+                buy_amount: 42.into(),
+                fee_amount: 30.into(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 3.,
+                    gas_price: 2.,
+                    sell_token_price: 0.2,
+                },
+                kind: OrderKind::Buy,
+                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn compute_sell_before_fee_quote_insufficient_amount_error() {
+        let parameters = QuoteParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee { value: 100.into() },
+            },
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.,
+            max_fee_per_gas: 2.,
+            max_priority_fee_per_gas: 0.,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|_| {
+            futures::stream::iter([Ok(price_estimation::Estimate {
+                out_amount: 100.into(),
+                gas: 200,
+            })])
+            .enumerate()
+            .boxed()
+        });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let sell_token = parameters.sell_token;
+                move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
+
+        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(Utc::now),
+        };
+
+        assert!(matches!(
+            quoter.compute_quote_data(&parameters).await.unwrap_err(),
+            CalculateQuoteError::SellAmountDoesNotCoverFee(fee) if fee == U256::from(200),
+        ));
     }
 }
