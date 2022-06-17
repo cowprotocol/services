@@ -88,7 +88,6 @@ pub struct FeeData {
 /// Everything required to compute the fee amount in sell token
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FeeParameters {
-    /// The actual, subsidized fee amount for the quote.
     /// The estimated gas units required to execute the quoted trade.
     pub gas_amount: f64,
     /// The estimated gas price at the time of quoting.

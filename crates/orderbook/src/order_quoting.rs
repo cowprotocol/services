@@ -318,11 +318,8 @@ pub enum Search {
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-pub trait OrderQuoteCalculating: Send + Sync {
+pub trait OrderQuoting: Send + Sync {
     /// Computes a quote for the specified order paramters.
-    ///
-    /// Returns an error if there is some estimation error and `Ok(None)` if no
-    /// information about the given token exists
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
