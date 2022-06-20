@@ -105,7 +105,7 @@ pub struct Arguments {
     /// Configures the back off strategy for the paraswap API when our requests get rate limited.
     /// Requests issued while back off is active get dropped entirely.
     /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
-    /// back_off_growth_factor: f64 > 1.0
+    /// back_off_growth_factor: f64 >= 1.0
     /// min_back_off: f64 in seconds
     /// max_back_off: f64 in seconds
     #[clap(long, env, verbatim_doc_comment)]

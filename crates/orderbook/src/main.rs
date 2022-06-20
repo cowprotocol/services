@@ -214,11 +214,11 @@ struct Arguments {
     /// Configures the back off strategy for price estimators when requests take too long.
     /// Requests issued while back off is active get dropped entirely.
     /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
-    /// back_off_growth_factor: f64 > 1.0
+    /// back_off_growth_factor: f64 >= 1.0
     /// min_back_off: f64 in seconds
     /// max_back_off: f64 in seconds
-    #[clap(long, env, verbatim_doc_comment, default_value = "1,0,0")]
-    pub price_estimation_rate_limiter: RateLimitingStrategy,
+    #[clap(long, env, verbatim_doc_comment)]
+    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
 
     #[clap(
         long,
@@ -555,7 +555,9 @@ async fn main() {
     let create_base_estimator =
         |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
             let rate_limiter = Arc::new(RateLimiter::from_strategy(
-                args.price_estimation_rate_limiter.clone(),
+                args.price_estimation_rate_limiter
+                    .clone()
+                    .unwrap_or_default(),
                 format!("{}_estimator", estimator.name()),
             ));
             let create_http_estimator = |name, base, rate_limiter| -> Box<dyn PriceEstimating> {
