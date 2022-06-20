@@ -1,3 +1,30 @@
+//! This module contains a `FeeSubsidy` component used for computing fee subsidy
+//! parameters for order creation and quoting.
+//!
+//! Note that this component is designed to return some `Subsidy` parameters
+//! instead of a slightly more natural interface:
+//! ```text
+//! trait FeeSubsidizing {
+//!     async fn apply_subsidy(fee_in_eth: f64) -> Result<f64>;
+//! }
+//! ```
+//!
+//! While the aforementioned design is more natural and less confusing, it has a
+//! downside where it requires the final fee denomincated in native token to be
+//! already computed before subsidies can be applied. This means that for
+//! quoting, for example, you need to fetch the gas and price estimates *before*
+//! you can compute the subsidy.
+//!
+//! The current design works around this by instead of applying a subsidy on a
+//! value directly, it returns some parameters that represent some lower-bounded
+//! linear "subsidy function" that can be applied to any value. This allows us
+//! to fetch subsidy parameters in parallel with the gas and price estimates,
+//! speeding up the overall time required to compute a price quote. The downside
+//! is that, if we decide to express subsidies as more complex functions, then
+//! the `Subsidy` parameters struct will become more complex, and combining two
+//! of them even tricker. In that case, we could change `Subsidy` to be a
+//! `Box<dyn Fn(f64) -> f64>` to allow for arbitrary subsidy functions.
+
 pub mod config;
 pub mod cow_token;
 
@@ -58,6 +85,9 @@ impl FeeSubsidizing for FeeSubsidies {
             .into_iter()
             .fold(Subsidy::default(), |a, b| Subsidy {
                 discount: a.discount + b.discount,
+                // Make sure to take the `max` of the folded min dicounted fee
+                // values. This is so we make sure we always respect the "worst"
+                // minimum when combining `Subsidy`-ies.
                 min_discounted: a.min_discounted.max(b.min_discounted),
                 factor: a.factor * b.factor,
             }))
