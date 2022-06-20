@@ -481,7 +481,8 @@ async fn main() {
         }
     };
 
-    let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>| {
+    let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>,
+                                 store_computed_fees: bool| {
         Arc::new(MinFeeCalculator::new(
             price_estimator.clone(),
             gas_price_estimator.clone(),
@@ -496,10 +497,11 @@ async fn main() {
             native_price_estimator.clone(),
             cow_subsidy.clone(),
             args.liquidity_order_owners.iter().copied().collect(),
+            store_computed_fees,
         ))
     };
-    let fee_calculator = create_fee_calculator(price_estimator.clone());
-    let fast_fee_calculator = create_fee_calculator(fast_price_estimator.clone());
+    let fee_calculator = create_fee_calculator(price_estimator.clone(), true);
+    let fast_fee_calculator = create_fee_calculator(fast_price_estimator.clone(), false);
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
