@@ -1,6 +1,7 @@
 use crate::metrics;
 use anyhow::{ensure, Result};
 use std::{
+    fmt::{Display, Formatter},
     future::Future,
     sync::{Mutex, MutexGuard},
     time::{Duration, Instant},
@@ -39,6 +40,16 @@ pub struct RateLimitingStrategy {
 impl Default for RateLimitingStrategy {
     fn default() -> Self {
         Self::try_new(1.0, Duration::default(), Duration::default()).unwrap()
+    }
+}
+
+impl Display for RateLimitingStrategy {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "RateLimitingStrategy{{ min_back_off: {:?}, max_back_off: {:?}, growth_factor: {:?} }}",
+            self.min_back_off, self.max_back_off, self.back_off_growth_factor
+        )
     }
 }
 

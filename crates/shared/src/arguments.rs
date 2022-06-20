@@ -7,6 +7,7 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use ethcontract::{H160, H256, U256};
 use std::{
+    fmt::{Display, Formatter},
     num::{NonZeroU64, ParseFloatError},
     str::FromStr,
     time::Duration,
@@ -14,7 +15,7 @@ use std::{
 use tracing::level_filters::LevelFilter;
 use url::Url;
 
-#[derive(Debug, clap::Parser)]
+#[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(
         long,
@@ -152,6 +153,131 @@ pub struct Arguments {
     /// Value of the authorization header for the solver competition post api.
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
+}
+
+pub fn display_option(option: &Option<impl Display>, f: &mut Formatter<'_>) -> std::fmt::Result {
+    match option {
+        Some(display) => write!(f, "{}", display),
+        None => write!(f, "None"),
+    }
+}
+
+pub fn display_list<T>(iter: impl Iterator<Item = T>, f: &mut Formatter<'_>) -> std::fmt::Result
+where
+    T: Display,
+{
+    write!(f, "[")?;
+    for t in iter {
+        write!(f, "{}, ", t)?;
+    }
+    write!(f, "]")?;
+    Ok(())
+}
+
+// We have a custom Display implementation so that we can log the arguments on start up without
+// leaking any potentially secret values.
+impl Display for Arguments {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "log_filter: {}", self.log_filter)?;
+        writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
+        writeln!(f, "node_url: {}", self.node_url)?;
+        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
+        writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
+        writeln!(
+            f,
+            "blocknative_api_key: {}",
+            self.blocknative_api_key
+                .as_ref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
+        writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
+        writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
+        writeln!(
+            f,
+            "pool_cache_maximum_recent_block_age: {}",
+            self.pool_cache_maximum_recent_block_age
+        )?;
+        writeln!(
+            f,
+            "pool_cache_maximum_retries: {}",
+            self.pool_cache_maximum_retries
+        )?;
+        writeln!(
+            f,
+            "pool_cache_delay_between_retries_seconds: {:?}",
+            self.pool_cache_delay_between_retries_seconds
+        )?;
+        writeln!(
+            f,
+            "block_stream_poll_interval_seconds: {:?}",
+            self.block_stream_poll_interval_seconds
+        )?;
+        writeln!(
+            f,
+            "paraswap_partner: {}",
+            self.paraswap_partner
+                .as_ref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        writeln!(
+            f,
+            "disabled_paraswap_dexs: {:?}",
+            self.disabled_paraswap_dexs
+        )?;
+        writeln!(f, "paraswap_rate_limiter: {:?}", self.paraswap_rate_limiter)?;
+        writeln!(
+            f,
+            "zeroex_url: {}",
+            self.zeroex_url.as_deref().unwrap_or("None")
+        )?;
+        writeln!(
+            f,
+            "zeroex_api_key: {}",
+            self.zeroex_api_key
+                .as_ref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        writeln!(
+            f,
+            "quasimodo_uses_internal_buffers: {}",
+            self.quasimodo_uses_internal_buffers
+        )?;
+        writeln!(
+            f,
+            "mip_uses_internal_buffers: {}",
+            self.mip_uses_internal_buffers
+        )?;
+        writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
+        writeln!(
+            f,
+            "disabled_one_inch_protocols: {:?}",
+            self.disabled_one_inch_protocols
+        )?;
+        writeln!(f, "one_inch_url: {}", self.one_inch_url)?;
+        writeln!(
+            f,
+            "disabled_zeroex_sources: {:?}",
+            self.disabled_zeroex_sources
+        )?;
+        writeln!(
+            f,
+            "balancer_pool_deny_list: {:?}",
+            self.balancer_pool_deny_list
+        )?;
+        writeln!(
+            f,
+            "solver_competition_auth: {}",
+            self.solver_competition_auth
+                .as_ref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        Ok(())
+    }
 }
 
 pub fn parse_unbounded_factor(s: &str) -> Result<f64> {

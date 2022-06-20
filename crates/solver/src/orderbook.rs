@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use model::{auction::Auction, solver_competition::SolverCompetitionResponse};
 use reqwest::{Client, Url};
 
@@ -36,8 +36,14 @@ impl OrderBookApi {
         if let Some(auth) = &self.competition_auth {
             request = request.header("Authorization", auth)
         };
-        request.json(&body).send().await?.error_for_status()?;
-        Ok(())
+        let response = request.json(&body).send().await.context("send")?;
+        match response.error_for_status_ref() {
+            Ok(_) => Ok(()),
+            Err(err) => {
+                let body = response.text().await;
+                Err(anyhow::Error::new(err).context(format!("body: {:?}", body)))
+            }
+        }
     }
 }
 

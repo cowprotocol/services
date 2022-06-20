@@ -149,32 +149,9 @@ pub fn handle_all_routes(
         .and(get_solvable_orders_v2)
         .untuple_one();
 
-    // Fallback route that handles all 404s.
-
-    // Since we `.map()` all requests to collect metrics, we need to report
-    // all 404s as `Ok(ApiReply)`, and not `Err(Rejection)`.
-
-    let routes_fallback = warp::any()
-        .and_then(|| async move {
-            Result::<(ApiReply, &str), Infallible>::Ok((
-                with_status(
-                    error("NotFound", "You've passed an invalid URL"),
-                    StatusCode::NOT_FOUND,
-                ),
-                "unknown_method",
-            ))
-        })
-        .untuple_one()
-        .boxed();
-
     // Routes combined
 
-    let routes = routes_v1
-        .or(routes_v2)
-        .unify()
-        .or(routes_fallback)
-        .unify()
-        .boxed();
+    let routes = routes_v1.or(routes_v2).unify().boxed();
 
     // Metrics
 
