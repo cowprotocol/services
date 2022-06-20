@@ -1,6 +1,6 @@
 use crate::{
     fee::{FeeData, MinFeeCalculating},
-    fee_subsidy::{FeeParameters, FeeSubsidizing},
+    fee_subsidy::{FeeParameters, FeeSubsidizing, SubsidyParameters},
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
@@ -461,7 +461,10 @@ impl OrderQuoter2 {
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
             self.fee_subsidy
-                .subsidy(parameters.clone())
+                .subsidy(SubsidyParameters {
+                    from: parameters.from,
+                    app_data: parameters.app_data,
+                })
                 .map_err(PriceEstimationError::from),
         )?;
 

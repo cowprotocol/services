@@ -1,5 +1,4 @@
-use super::{FeeSubsidizing, Subsidy};
-use crate::order_quoting::QuoteParameters;
+use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
 use anyhow::Result;
 use ethcontract::H160;
 use model::app_id::AppId;
@@ -54,7 +53,7 @@ impl Default for FeeSubsidyConfiguration {
 
 #[async_trait::async_trait]
 impl FeeSubsidizing for FeeSubsidyConfiguration {
-    async fn subsidy(&self, parameters: QuoteParameters) -> Result<Subsidy> {
+    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy> {
         let liquidity_factor = if self.liquidity_order_owners.contains(&parameters.from) {
             0.
         } else {

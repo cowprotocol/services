@@ -1,12 +1,9 @@
+use crate::fee_subsidy::{FeeParameters, FeeSubsidizing, SubsidyParameters};
 use anyhow::Result;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
-use model::{
-    app_id::AppId,
-    order::OrderKind,
-    quote::{OrderQuoteSide, SellAmount},
-};
+use model::{app_id::AppId, order::OrderKind};
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting,
@@ -19,11 +16,6 @@ use shared::{
 use std::{
     collections::HashSet,
     sync::{Arc, Mutex},
-};
-
-use crate::{
-    fee_subsidy::{FeeParameters, FeeSubsidizing},
-    order_quoting::QuoteParameters,
 };
 
 pub type Measurement = (U256, DateTime<Utc>);
@@ -214,7 +206,10 @@ impl MinFeeCalculating for MinFeeCalculator {
 
         let subsidy = async {
             self.fee_subsidy
-                .subsidy(quote_parameters(&fee_data, user, app_data))
+                .subsidy(SubsidyParameters {
+                    from: user,
+                    app_data,
+                })
                 .await
                 .map_err(PriceEstimationError::Other)
         };
@@ -279,9 +274,10 @@ impl MinFeeCalculating for MinFeeCalculator {
             return Ok(FeeParameters::default());
         }
 
-        let subsidy = self
-            .fee_subsidy
-            .subsidy(quote_parameters(&fee_data, user, app_data));
+        let subsidy = self.fee_subsidy.subsidy(SubsidyParameters {
+            from: user,
+            app_data,
+        });
         let past_fee = self
             .measurements
             .find_measurement_including_larger_amount(fee_data, (self.now)());
@@ -381,25 +377,6 @@ impl MinFeeStoring for InMemoryFeeStore {
             })
             .map(|measurement| measurement.estimate)
             .min_by_key(|estimate| estimate.unsubsidized()))
-    }
-}
-
-fn quote_parameters(fee_data: &FeeData, from: H160, app_data: AppId) -> QuoteParameters {
-    QuoteParameters {
-        sell_token: fee_data.sell_token,
-        buy_token: fee_data.buy_token,
-        side: match fee_data.kind {
-            OrderKind::Buy => OrderQuoteSide::Buy {
-                buy_amount_after_fee: fee_data.amount,
-            },
-            OrderKind::Sell => OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee {
-                    value: fee_data.amount,
-                },
-            },
-        },
-        from,
-        app_data,
     }
 }
 

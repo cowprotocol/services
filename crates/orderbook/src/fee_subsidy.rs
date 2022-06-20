@@ -28,11 +28,20 @@
 pub mod config;
 pub mod cow_token;
 
-use crate::order_quoting::QuoteParameters;
 use anyhow::Result;
-use ethcontract::U256;
+use ethcontract::{H160, U256};
 use futures::future;
+use model::app_id::AppId;
 use std::sync::Arc;
+
+#[derive(Clone, Debug, Default)]
+pub struct SubsidyParameters {
+    /// The trader address.
+    pub from: H160,
+
+    /// The app data.
+    pub app_data: AppId,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Subsidy {
@@ -65,7 +74,7 @@ impl Default for Subsidy {
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait FeeSubsidizing: Send + Sync {
-    async fn subsidy(&self, parameters: QuoteParameters) -> Result<Subsidy>;
+    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy>;
 }
 
 /// Combine multiple fee subsidy strategies into one!
@@ -73,7 +82,7 @@ pub struct FeeSubsidies(pub Vec<Arc<dyn FeeSubsidizing>>);
 
 #[async_trait::async_trait]
 impl FeeSubsidizing for FeeSubsidies {
-    async fn subsidy(&self, parameters: QuoteParameters) -> Result<Subsidy> {
+    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy> {
         let subsidies = future::try_join_all(
             self.0
                 .iter()
@@ -97,7 +106,7 @@ impl FeeSubsidizing for FeeSubsidies {
 // Convenience to allow static subsidies.
 #[async_trait::async_trait]
 impl FeeSubsidizing for Subsidy {
-    async fn subsidy(&self, _: QuoteParameters) -> Result<Subsidy> {
+    async fn subsidy(&self, _: SubsidyParameters) -> Result<Subsidy> {
         Ok(self.clone())
     }
 }

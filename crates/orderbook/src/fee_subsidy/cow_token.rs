@@ -1,3 +1,4 @@
+use super::{FeeSubsidizing, Subsidy, SubsidyParameters};
 use anyhow::{Context, Result};
 use cached::{Cached, TimedSizedCache};
 use contracts::{CowProtocolToken, CowProtocolVirtualToken};
@@ -6,10 +7,6 @@ use primitive_types::{H160, U256};
 use shared::transport::buffered::{Buffered, Configuration};
 use std::collections::BTreeMap;
 use std::{sync::Mutex, time::Duration};
-
-use crate::order_quoting::QuoteParameters;
-
-use super::{FeeSubsidizing, Subsidy};
 
 const CACHE_SIZE: usize = 10_000;
 const CACHE_LIFESPAN: Duration = Duration::from_secs(60 * 60);
@@ -123,7 +120,7 @@ impl CowSubsidy {
 
 #[async_trait::async_trait]
 impl FeeSubsidizing for CowSubsidy {
-    async fn subsidy(&self, parameters: QuoteParameters) -> Result<Subsidy> {
+    async fn subsidy(&self, parameters: SubsidyParameters) -> Result<Subsidy> {
         Ok(Subsidy {
             factor: self.cow_subsidy_factor(parameters.from).await?,
             ..Default::default()
