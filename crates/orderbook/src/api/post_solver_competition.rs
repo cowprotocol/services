@@ -11,10 +11,13 @@ use warp::{Filter, Rejection};
 fn request(
 ) -> impl Filter<Extract = (u64, Option<String>, SolverCompetitionResponse), Error = Rejection> + Clone
 {
-    warp::post()
-        .and(warp::path!("solver_competition" / u64))
+    warp::path!("solver_competition" / u64)
+        .and(warp::post())
         .and(warp::header::optional::<String>("Authorization"))
-        .and(crate::api::extract_payload())
+        // While this is an authenticated endpoint we still want to protect against very large
+        // that might originate from bugs.
+        .and(warp::body::content_length_limit(1e6 as u64))
+        .and(warp::body::json())
 }
 
 pub fn post(
