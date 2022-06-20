@@ -3,8 +3,10 @@ use crate::{
         OneInchClient, ProtocolCache, RestResponse, SellOrderQuote, SellOrderQuoteQuery,
     },
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
 };
 use futures::{future::BoxFuture, FutureExt, StreamExt};
@@ -19,6 +21,7 @@ pub struct OneInchPriceEstimator {
     >,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl OneInchPriceEstimator {
@@ -44,6 +47,7 @@ impl OneInchPriceEstimator {
                 .await
                 .map_err(PriceEstimationError::Other)
         };
+        let quote_future = rate_limited(self.rate_limiter.clone(), quote_future);
         let quote = self.sharing.shared(*query, quote_future.boxed()).await?;
 
         match quote {
@@ -57,12 +61,17 @@ impl OneInchPriceEstimator {
         }
     }
 
-    pub fn new(api: Arc<dyn OneInchClient>, disabled_protocols: Vec<String>) -> Self {
+    pub fn new(
+        api: Arc<dyn OneInchClient>,
+        disabled_protocols: Vec<String>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         Self {
             api,
             disabled_protocols,
             protocol_cache: ProtocolCache::default(),
             sharing: Default::default(),
+            rate_limiter,
         }
     }
 }
@@ -98,6 +107,17 @@ mod tests {
     };
     use reqwest::Client;
 
+    fn create_estimator<T: OneInchClient + 'static>(api: T) -> OneInchPriceEstimator {
+        OneInchPriceEstimator::new(
+            Arc::new(api),
+            Vec::default(),
+            Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
+        )
+    }
+
     #[tokio::test]
     async fn estimate_sell_order_succeeds() {
         // How much GNO can you buy for 1 WETH
@@ -124,7 +144,7 @@ mod tests {
             }))
         });
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -146,7 +166,7 @@ mod tests {
 
         one_inch.expect_get_sell_order_quote().times(0);
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -176,7 +196,7 @@ mod tests {
                 }))
             });
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -201,7 +221,7 @@ mod tests {
             .times(1)
             .return_once(|_| Err(anyhow::anyhow!("malformed JSON")));
 
-        let estimator = OneInchPriceEstimator::new(Arc::new(one_inch), Vec::default());
+        let estimator = create_estimator(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -224,12 +244,9 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = OneInchPriceEstimator::new(
-            Arc::new(
-                OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap(),
-            ),
-            Vec::default(),
-        );
+        let one_inch =
+            OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap();
+        let estimator = create_estimator(one_inch);
 
         let result = estimator
             .estimate(&Query {

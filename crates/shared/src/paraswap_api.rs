@@ -1,9 +1,12 @@
-use crate::{debug_bytes, http_client::RateLimiter};
+use crate::{
+    debug_bytes,
+    rate_limiter::{RateLimiter, RateLimiterError},
+};
 use anyhow::Result;
 use derivative::Derivative;
 use ethcontract::{H160, U256};
 use model::u256_decimal;
-use reqwest::{Client, RequestBuilder, Url};
+use reqwest::{Client, RequestBuilder, Response, Url};
 use serde::{
     de::{DeserializeOwned, Error},
     Deserialize, Deserializer, Serialize,
@@ -12,6 +15,11 @@ use serde_json::Value;
 use thiserror::Error;
 
 const BASE_URL: &str = "https://apiv5.paraswap.io";
+
+/// Determines if the HTTP response indicates that the API should back off for a while.
+fn requires_back_off(response: &Result<Response, reqwest::Error>) -> bool {
+    matches!(response, Ok(response) if response.status() == 429)
+}
 
 /// Mockable implementation of the API for unit test
 #[mockall::automock]
@@ -35,16 +43,18 @@ impl ParaswapApi for DefaultParaswapApi {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError> {
         let url = query.into_url(&self.partner);
         tracing::debug!("Querying Paraswap price API: {}", url);
-        let request = self.client.get(url);
+        let request = self.client.get(url).send();
+
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.request(request).await?,
-            None => request.send().await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            _ => request.await?,
         };
         let status = response.status();
         let text = response.text().await?;
         tracing::debug!(%status, %text, "Response from Paraswap price API");
         parse_paraswap_response_text(&text)
     }
+
     async fn transaction(
         &self,
         query: TransactionBuilderQuery,
@@ -53,10 +63,10 @@ impl ParaswapApi for DefaultParaswapApi {
             query,
             partner: &self.partner,
         };
-        let request = query.into_request(&self.client);
+        let request = query.into_request(&self.client).send();
         let response = match &self.rate_limiter {
-            Some(limiter) => limiter.request(request).await?,
-            None => request.send().await?,
+            Some(limiter) => limiter.execute(request, requires_back_off).await??,
+            _ => request.await?,
         };
         let response_text = response.text().await?;
         parse_paraswap_response_text(&response_text)
@@ -89,6 +99,9 @@ pub enum ParaswapResponseError {
 
     #[error("other ParaSwap error: {0}")]
     Other(#[from] anyhow::Error),
+
+    #[error("rate limited")]
+    RateLimited(#[from] RateLimiterError),
 }
 
 impl ParaswapResponseError {

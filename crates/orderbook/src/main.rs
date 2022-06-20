@@ -57,6 +57,7 @@ use shared::{
         zeroex::ZeroExPriceEstimator,
         PriceEstimating, PriceEstimatorType,
     },
+    rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{
@@ -334,74 +335,89 @@ async fn main() {
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
-    let create_base_estimator = |estimator| -> (String, Arc<dyn PriceEstimating>) {
-        let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
-            Box::new(HttpPriceEstimator::new(
-                Arc::new(DefaultHttpSolverApi {
-                    name,
-                    network_name: network_name.to_string(),
-                    chain_id,
-                    base,
-                    client: client.clone(),
-                    config: SolverConfig {
-                        use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
-                        objective: Some(Objective::SurplusFeesCosts),
-                        ..Default::default()
-                    },
-                }),
-                pool_fetcher.clone(),
-                balancer_pool_fetcher.clone(),
-                token_info_fetcher.clone(),
-                gas_price_estimator.clone(),
-                native_token.address(),
-                base_tokens.clone(),
-                network_name.to_string(),
-            ))
-        };
-        let instance: Box<dyn PriceEstimating> = match estimator {
-            PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
-                pool_fetcher.clone(),
-                gas_price_estimator.clone(),
-                base_tokens.clone(),
-                native_token.address(),
-                native_token_price_estimation_amount,
-            )),
-            PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
-                Arc::new(DefaultParaswapApi {
-                    client: client.clone(),
-                    partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
-                    rate_limiter: args.shared.paraswap_rate_limiter.clone().map(Into::into),
-                }),
-                token_info_fetcher.clone(),
-                args.shared.disabled_paraswap_dexs.clone(),
-            )),
-            PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
-                zeroex_api.clone(),
-                args.shared.disabled_zeroex_sources.clone(),
-            )),
-            PriceEstimatorType::Quasimodo => create_http_estimator(
-                "quasimodo-price-estimator".to_string(),
-                args.quasimodo_solver_url.clone().expect(
-                    "quasimodo solver url is required when using quasimodo price estimation",
-                ),
-            ),
-            PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
-                one_inch_api.as_ref().unwrap().clone(),
-                args.shared.disabled_one_inch_protocols.clone(),
-            )),
-            PriceEstimatorType::Yearn => create_http_estimator(
-                "yearn-price-estimator".to_string(),
-                args.yearn_solver_url
+    let create_base_estimator =
+        |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
+            let rate_limiter = Arc::new(RateLimiter::from_strategy(
+                args.price_estimation_rate_limiter
                     .clone()
-                    .expect("yearn solver url is required when using yearn price estimation"),
-            ),
-        };
+                    .unwrap_or_default(),
+                format!("{}_estimator", estimator.name()),
+            ));
+            let create_http_estimator = |name, base, rate_limiter| -> Box<dyn PriceEstimating> {
+                Box::new(HttpPriceEstimator::new(
+                    Arc::new(DefaultHttpSolverApi {
+                        name,
+                        network_name: network_name.to_string(),
+                        chain_id,
+                        base,
+                        client: client.clone(),
+                        config: SolverConfig {
+                            use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
+                            objective: Some(Objective::SurplusFeesCosts),
+                            ..Default::default()
+                        },
+                    }),
+                    pool_fetcher.clone(),
+                    balancer_pool_fetcher.clone(),
+                    token_info_fetcher.clone(),
+                    gas_price_estimator.clone(),
+                    native_token.address(),
+                    base_tokens.clone(),
+                    network_name.to_string(),
+                    rate_limiter,
+                ))
+            };
+            let instance: Box<dyn PriceEstimating> = match estimator {
+                PriceEstimatorType::Baseline => Box::new(BaselinePriceEstimator::new(
+                    pool_fetcher.clone(),
+                    gas_price_estimator.clone(),
+                    base_tokens.clone(),
+                    native_token.address(),
+                    native_token_price_estimation_amount,
+                )),
+                PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
+                    Arc::new(DefaultParaswapApi {
+                        client: client.clone(),
+                        partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
+                        rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
+                            RateLimiter::from_strategy(strategy, "paraswap_api".into())
+                        }),
+                    }),
+                    token_info_fetcher.clone(),
+                    args.shared.disabled_paraswap_dexs.clone(),
+                    rate_limiter,
+                )),
+                PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
+                    zeroex_api.clone(),
+                    args.shared.disabled_zeroex_sources.clone(),
+                    rate_limiter,
+                )),
+                PriceEstimatorType::Quasimodo => create_http_estimator(
+                    "quasimodo-price-estimator".to_string(),
+                    args.quasimodo_solver_url.clone().expect(
+                        "quasimodo solver url is required when using quasimodo price estimation",
+                    ),
+                    rate_limiter,
+                ),
+                PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
+                    one_inch_api.as_ref().unwrap().clone(),
+                    args.shared.disabled_one_inch_protocols.clone(),
+                    rate_limiter,
+                )),
+                PriceEstimatorType::Yearn => create_http_estimator(
+                    "yearn-price-estimator".to_string(),
+                    args.yearn_solver_url
+                        .clone()
+                        .expect("yearn solver url is required when using yearn price estimation"),
+                    rate_limiter,
+                ),
+            };
 
-        (
-            estimator.name(),
-            Arc::new(instrumented(instance, estimator.name())),
-        )
-    };
+            (
+                estimator.name(),
+                Arc::new(instrumented(instance, estimator.name())),
+            )
+        };
 
     let mut base_estimators_instances: HashMap<_, _> = Default::default();
     let mut get_or_create_base_estimator = move |estimator| {
