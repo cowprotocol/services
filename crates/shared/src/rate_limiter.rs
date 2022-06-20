@@ -45,7 +45,7 @@ impl Default for RateLimitingStrategy {
 
 impl Display for RateLimitingStrategy {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        writeln!(
+        write!(
             f,
             "RateLimitingStrategy{{ min_back_off: {:?}, max_back_off: {:?}, growth_factor: {:?} }}",
             self.min_back_off, self.max_back_off, self.back_off_growth_factor

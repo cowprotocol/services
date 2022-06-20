@@ -291,6 +291,7 @@ impl std::fmt::Display for Arguments {
         )?;
         write!(f, "price_estimation_rate_limiter: ")?;
         display_option(&self.price_estimation_rate_limiter, f)?;
+        writeln!(f)?;
         writeln!(
             f,
             "token_detector_fee_values: {:?}",
