@@ -789,6 +789,48 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn storing_fees_can_be_disabled() {
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+            max_fee_per_gas: 100.0,
+            max_priority_fee_per_gas: 50.0,
+            base_fee_per_gas: 30.0,
+        }))));
+        let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
+            out_amount: 1.into(),
+            gas: 1000,
+        }));
+        let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
+        let db = Arc::new(InMemoryFeeStore::default());
+        let fee_estimator = MinFeeCalculator {
+            price_estimator,
+            gas_estimator,
+            measurements: db.clone(),
+            now: Box::new(Utc::now),
+            bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
+            fee_subsidy: Default::default(),
+            native_price_estimator,
+            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+            liquidity_order_owners: Default::default(),
+            store_computed_fees: false,
+        };
+
+        let fee_data = FeeData {
+            sell_token: H160::from_low_u64_be(1),
+            ..Default::default()
+        };
+        let (_, valid_to) = fee_estimator
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            valid_to,
+            DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc)
+        );
+        assert!(db.0.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn applies_fee_factor_to_past_and_new_fees() {
         let sell_token = H160::from_low_u64_be(1);
         let fee_data = FeeData {
