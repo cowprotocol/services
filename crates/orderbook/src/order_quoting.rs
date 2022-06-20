@@ -1,6 +1,6 @@
 use crate::{
     fee::{FeeData, MinFeeCalculating},
-    fee_subsidy::{FeeParameters, FeeSubsidizing, SubsidyParameters},
+    fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
@@ -332,6 +332,45 @@ impl QuoteParameters {
 pub struct Quote {
     pub id: QuoteId,
     pub data: QuoteData,
+    pub sell_amount: U256,
+    pub buy_amount: U256,
+    pub fee_amount: U256,
+}
+
+impl Quote {
+    /// Creates a new `Quote`.
+    pub fn new(id: QuoteId, data: QuoteData) -> Self {
+        Self {
+            id,
+            sell_amount: data.quoted_sell_amount,
+            buy_amount: data.quoted_buy_amount,
+            fee_amount: data.fee_parameters.unsubsidized(),
+            data,
+        }
+    }
+
+    /// Applies a subsidy to the quote.
+    pub fn with_subsidy(mut self, subsidy: &Subsidy) -> Self {
+        self.fee_amount = self.data.fee_parameters.subsidized(subsidy);
+        self
+    }
+
+    /// Scales order buy amount to the specified sell amount.
+    ///
+    /// This allows scaling the quoted amounts to some lower sell amount
+    /// accounting for fees (for quotes with sell amounts **before** fees for
+    /// example).
+    pub fn with_scaled_sell_amount(mut self, sell_amount: U256) -> Self {
+        self.sell_amount = sell_amount;
+        // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
+        // errors computing the initial product.
+        self.buy_amount = (self.data.quoted_buy_amount.full_mul(sell_amount)
+            / self.data.quoted_sell_amount)
+            .try_into()
+            .unwrap_or(U256::MAX);
+
+        self
+    }
 }
 
 /// Detailed data for a computed order quote.
@@ -339,9 +378,8 @@ pub struct Quote {
 pub struct QuoteData {
     pub sell_token: H160,
     pub buy_token: H160,
-    pub sell_amount: U256,
-    pub buy_amount: U256,
-    pub fee_amount: U256,
+    pub quoted_sell_amount: U256,
+    pub quoted_buy_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
@@ -349,7 +387,7 @@ pub struct QuoteData {
 
 /// Quote searching parameters.
 pub enum Search {
-    Id(QuoteId),
+    Id { id: QuoteId, sell_amount: U256 },
     Parameters(QuoteSearchParameters),
 }
 
@@ -363,7 +401,11 @@ pub trait OrderQuoting: Send + Sync {
     ) -> Result<Quote, CalculateQuoteError>;
 
     /// Finds an existing quote.
-    async fn find_quote(&self, search: Search) -> Result<Quote, FindQuoteError>;
+    async fn find_quote(
+        &self,
+        search: Search,
+        subsidy: SubsidyParameters,
+    ) -> Result<Quote, FindQuoteError>;
 }
 
 #[derive(Error, Debug)]
@@ -393,6 +435,7 @@ pub struct QuoteSearchParameters {
     pub buy_token: H160,
     pub sell_amount: U256,
     pub buy_amount: U256,
+    pub fee_amount: U256,
     pub kind: OrderKind,
 }
 
@@ -454,69 +497,41 @@ impl OrderQuoter2 {
         let expiration = self.now.now() + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS);
 
         let trade_query = parameters.to_price_query();
-        let (gas_estimate, trade_estimate, sell_token_price, subsidy) = futures::try_join!(
+        let (gas_estimate, trade_estimate, sell_token_price) = futures::try_join!(
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::from),
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
-            self.fee_subsidy
-                .subsidy(SubsidyParameters {
-                    from: parameters.from,
-                    app_data: parameters.app_data,
-                })
-                .map_err(PriceEstimationError::from),
         )?;
 
-        let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as _,
-            gas_price: gas_estimate.effective_gas_price(),
-            sell_token_price,
-        };
-        let fee_amount = fee_parameters.subsidized(&subsidy);
-
-        let (sell_amount, buy_amount) = match &parameters.side {
+        let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
             OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::BeforeFee {
-                        value: sell_amount_before_fee,
-                    },
-            } => {
-                let sell_amount = sell_amount_before_fee.saturating_sub(fee_amount);
-                if sell_amount == U256::zero() {
-                    // We want a sell_amount of at least 1!
-                    return Err(CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount });
-                }
-
-                // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
-                // errors computing the initial product.
-                let buy_amount = (trade_estimate.out_amount.full_mul(sell_amount)
-                    / sell_amount_before_fee)
-                    .try_into()
-                    .unwrap_or(U256::MAX);
-
-                (sell_amount, buy_amount)
+                sell_amount: SellAmount::BeforeFee { value: sell_amount },
             }
-            OrderQuoteSide::Sell {
+            | OrderQuoteSide::Sell {
                 sell_amount: SellAmount::AfterFee { value: sell_amount },
             } => (*sell_amount, trade_estimate.out_amount),
             OrderQuoteSide::Buy {
                 buy_amount_after_fee: buy_amount,
             } => (trade_estimate.out_amount, *buy_amount),
         };
+        let fee_parameters = FeeParameters {
+            gas_amount: trade_estimate.gas as _,
+            gas_price: gas_estimate.effective_gas_price(),
+            sell_token_price,
+        };
 
         let quote = QuoteData {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
-            sell_amount,
-            buy_amount,
-            fee_amount,
+            quoted_sell_amount,
+            quoted_buy_amount,
             fee_parameters,
             kind: trade_query.kind,
             expiration,
         };
 
-        tracing::debug!(?quote, ?subsidy, "computed quote");
         Ok(quote)
     }
 }
@@ -527,31 +542,83 @@ impl OrderQuoting for OrderQuoter2 {
         &self,
         parameters: QuoteParameters,
     ) -> Result<Quote, CalculateQuoteError> {
-        let data = self.compute_quote_data(&parameters).await?;
-        let id = self.storage.save(data.clone()).await?;
-        Ok(Quote { id, data })
+        let (data, subsidy) = futures::try_join!(
+            self.compute_quote_data(&parameters),
+            self.fee_subsidy
+                .subsidy(SubsidyParameters {
+                    from: parameters.from,
+                    app_data: parameters.app_data,
+                })
+                .map_err(From::from),
+        )?;
+
+        let mut quote = Quote::new(Default::default(), data).with_subsidy(&subsidy);
+
+        // Make sure to scale the sell and buy amounts for quotes for sell
+        // amounts before fees.
+        if let OrderQuoteSide::Sell {
+            sell_amount:
+                SellAmount::BeforeFee {
+                    value: sell_amount_before_fee,
+                },
+        } = &parameters.side
+        {
+            let sell_amount = sell_amount_before_fee.saturating_sub(quote.fee_amount);
+            if sell_amount == U256::zero() {
+                // We want a sell_amount of at least 1!
+                return Err(CalculateQuoteError::SellAmountDoesNotCoverFee {
+                    fee_amount: quote.fee_amount,
+                });
+            }
+
+            quote = quote.with_scaled_sell_amount(sell_amount);
+        }
+
+        // Only save after we know the quote is valid.
+        quote.id = self.storage.save(quote.data.clone()).await?;
+
+        tracing::debug!(?quote, ?subsidy, "computed quote");
+        Ok(quote)
     }
 
-    async fn find_quote(&self, search: Search) -> Result<Quote, FindQuoteError> {
+    async fn find_quote(
+        &self,
+        search: Search,
+        subsidy: SubsidyParameters,
+    ) -> Result<Quote, FindQuoteError> {
         let now = self.now.now();
-        let quote = match search {
-            Search::Id(id) => {
-                let data = self
-                    .storage
-                    .get(id, now)
-                    .await?
-                    .ok_or(FindQuoteError::NotFound(Some(id)))?;
-                Quote { id, data }
-            }
-            Search::Parameters(parameters) => {
-                let (id, data) = self
-                    .storage
-                    .find(parameters, now)
-                    .await?
-                    .ok_or(FindQuoteError::NotFound(None))?;
-                Quote { id, data }
-            }
+        let quote = async {
+            let (id, data, sell_amount) = match search {
+                Search::Id { id, sell_amount } => {
+                    let data = self
+                        .storage
+                        .get(id, now)
+                        .await?
+                        .ok_or(FindQuoteError::NotFound(Some(id)))?;
+                    (id, data, sell_amount)
+                }
+                Search::Parameters(parameters) => {
+                    let sell_amount = parameters.sell_amount;
+                    let (id, data) = self
+                        .storage
+                        .find(parameters, now)
+                        .await?
+                        .ok_or(FindQuoteError::NotFound(None))?;
+                    (id, data, sell_amount)
+                }
+            };
+            Ok(Quote::new(id, data).with_scaled_sell_amount(sell_amount))
         };
+
+        let (quote, subsidy) = futures::try_join!(
+            quote,
+            self.fee_subsidy
+                .subsidy(subsidy)
+                .map_err(FindQuoteError::from)
+        )?;
+        let quote = quote.with_subsidy(&subsidy);
+
+        tracing::debug!(?quote, ?subsidy, "found quote");
         Ok(quote)
     }
 }
@@ -566,6 +633,7 @@ mod tests {
     use ethcontract::H160;
     use futures::{FutureExt as _, StreamExt as _};
     use gas_estimation::GasPrice1559;
+    use mockall::predicate::eq;
     use model::{quote::Validity, time};
     use shared::{
         gas_price_estimation::FakeGasPriceEstimator,
@@ -829,23 +897,14 @@ mod tests {
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
-        let quoter = OrderQuoter2 {
-            price_estimator: Arc::new(price_estimator),
-            native_price_estimator: Arc::new(native_price_estimator),
-            gas_estimator: Arc::new(gas_estimator),
-            fee_subsidy: Arc::new(Subsidy::default()),
-            storage: Arc::new(MockQuoteStoring::new()),
-            now: Arc::new(now),
-        };
-
-        assert_eq!(
-            quoter.compute_quote_data(&parameters).await.unwrap(),
-            QuoteData {
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_save()
+            .with(eq(QuoteData {
                 sell_token: H160([1; 20]),
                 buy_token: H160([2; 20]),
-                sell_amount: 70.into(),
-                buy_amount: 29.into(),
-                fee_amount: 30.into(),
+                quoted_sell_amount: 100.into(),
+                quoted_buy_amount: 42.into(),
                 fee_parameters: FeeParameters {
                     gas_amount: 3.,
                     gas_price: 2.,
@@ -853,13 +912,45 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }))
+            .returning(|_| Ok(1337));
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(storage),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.calculate_quote(parameters).await.unwrap(),
+            Quote {
+                id: 1337,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                },
+                sell_amount: 70.into(),
+                buy_amount: 29.into(),
+                fee_amount: 30.into(),
             }
         );
     }
 
     #[tokio::test]
     async fn compute_sell_after_fee_quote() {
-        let start = Utc::now();
+        let now = Utc::now();
         let parameters = QuoteParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
@@ -905,8 +996,24 @@ mod tests {
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
-        let mut now = MockNow::new();
-        now.expect_now().returning(move || start);
+
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_save()
+            .with(eq(QuoteData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                quoted_sell_amount: 100.into(),
+                quoted_buy_amount: 42.into(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 3.,
+                    gas_price: 2.,
+                    sell_token_price: 0.2,
+                },
+                kind: OrderKind::Sell,
+                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }))
+            .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
@@ -916,32 +1023,37 @@ mod tests {
                 factor: 0.5,
                 ..Default::default()
             }),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage),
             now: Arc::new(now),
         };
 
         assert_eq!(
-            quoter.compute_quote_data(&parameters).await.unwrap(),
-            QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
+            quoter.calculate_quote(parameters).await.unwrap(),
+            Quote {
+                id: 1337,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 15.into(),
-                fee_parameters: FeeParameters {
-                    gas_amount: 3.,
-                    gas_price: 2.,
-                    sell_token_price: 0.2,
-                },
-                kind: OrderKind::Sell,
-                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }
         );
     }
 
     #[tokio::test]
     async fn compute_buy_quote() {
-        let start = Utc::now();
+        let now = Utc::now();
         let parameters = QuoteParameters {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
@@ -987,8 +1099,24 @@ mod tests {
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
-        let mut now = MockNow::new();
-        now.expect_now().returning(move || start);
+
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_save()
+            .with(eq(QuoteData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                quoted_sell_amount: 100.into(),
+                quoted_buy_amount: 42.into(),
+                fee_parameters: FeeParameters {
+                    gas_amount: 3.,
+                    gas_price: 2.,
+                    sell_token_price: 0.2,
+                },
+                kind: OrderKind::Buy,
+                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+            }))
+            .returning(|_| Ok(1337));
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
@@ -999,25 +1127,30 @@ mod tests {
                 min_discounted: 2.,
                 factor: 0.9,
             }),
-            storage: Arc::new(MockQuoteStoring::new()),
+            storage: Arc::new(storage),
             now: Arc::new(now),
         };
 
         assert_eq!(
-            quoter.compute_quote_data(&parameters).await.unwrap(),
-            QuoteData {
-                sell_token: H160([1; 20]),
-                buy_token: H160([2; 20]),
+            quoter.calculate_quote(parameters).await.unwrap(),
+            Quote {
+                id: 1337,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Buy,
+                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
                 fee_amount: 9.into(),
-                fee_parameters: FeeParameters {
-                    gas_amount: 3.,
-                    gas_price: 2.,
-                    sell_token_price: 0.2,
-                },
-                kind: OrderKind::Buy,
-                expiration: start + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }
         );
     }
