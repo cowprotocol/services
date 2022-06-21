@@ -17,10 +17,10 @@ const ALL_TABLES: [&str; 7] = [
     "orders",
     "trades",
     "invalidations",
-    "min_fee_measurements",
+    "quotes",
     "settlements",
     "presignature_events",
-    "order_fee_parameters",
+    "order_quotes",
 ];
 
 // The pool uses an Arc internally.

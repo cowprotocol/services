@@ -4,9 +4,9 @@ use crate::{
     fee::{FeeData, MinFeeStoring},
     fee_subsidy::FeeParameters,
 };
-
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use model::order::OrderKind;
 use shared::maintenance::Maintaining;
 
 #[derive(sqlx::FromRow)]
@@ -35,11 +35,16 @@ impl MinFeeStoring for Postgres {
         estimate: FeeParameters,
     ) -> Result<()> {
         const QUERY: &str =
-            "INSERT INTO min_fee_measurements (sell_token, buy_token, amount, order_kind, expiration_timestamp, gas_amount, gas_price, sell_token_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);";
+            "INSERT INTO quotes (sell_token, buy_token, sell_amount, buy_amount, order_kind, expiration_timestamp, gas_amount, gas_price, sell_token_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);";
+        let (sell_amount, buy_amount) = match fee_data.kind {
+            OrderKind::Buy => (0.into(), fee_data.amount),
+            OrderKind::Sell => (fee_data.amount, 0.into()),
+        };
         sqlx::query(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
-            .bind(u256_to_big_decimal(&fee_data.amount))
+            .bind(u256_to_big_decimal(&sell_amount))
+            .bind(u256_to_big_decimal(&buy_amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(expiry)
             .bind(&estimate.gas_amount)
@@ -58,21 +63,27 @@ impl MinFeeStoring for Postgres {
     ) -> Result<Option<FeeParameters>> {
         // Fetches the lowest fee estimate we may have for the user
         const QUERY: &str = "\
-            SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
+            SELECT gas_amount, gas_price, sell_token_price FROM quotes \
             WHERE
                 sell_token = $1 AND \
                 buy_token = $2 AND \
-                amount = $3 AND \
-                order_kind = $4 AND \
-                expiration_timestamp >= $5 \
+                sell_amount = $3 AND \
+                buy_amount = $4 AND \
+                order_kind = $5 AND \
+                expiration_timestamp >= $6 \
             ORDER BY gas_amount * gas_price * sell_token_price ASC \
             LIMIT 1 \
             ;";
 
+        let (sell_amount, buy_amount) = match fee_data.kind {
+            OrderKind::Buy => (0.into(), fee_data.amount),
+            OrderKind::Sell => (fee_data.amount, 0.into()),
+        };
         let result: Option<FeeRow> = sqlx::query_as(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
-            .bind(u256_to_big_decimal(&fee_data.amount))
+            .bind(u256_to_big_decimal(&sell_amount))
+            .bind(u256_to_big_decimal(&buy_amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(min_expiry)
             .fetch_optional(&self.pool)
@@ -88,21 +99,27 @@ impl MinFeeStoring for Postgres {
     ) -> Result<Option<FeeParameters>> {
         // Same as above but with `amount >=` instead of `=`.
         const QUERY: &str = "\
-            SELECT gas_amount, gas_price, sell_token_price FROM min_fee_measurements \
+            SELECT gas_amount, gas_price, sell_token_price FROM quotes \
             WHERE
                 sell_token = $1 AND \
                 buy_token = $2 AND \
-                amount >= $3 AND \
-                order_kind = $4 AND \
-                expiration_timestamp >= $5 \
+                sell_amount >= $3 AND \
+                buy_amount = $4 AND \
+                order_kind = $5 AND \
+                expiration_timestamp >= $6 \
             ORDER BY gas_amount * gas_price * sell_token_price ASC \
             LIMIT 1 \
             ;";
 
+        let (sell_amount, buy_amount) = match fee_data.kind {
+            OrderKind::Buy => (0.into(), fee_data.amount),
+            OrderKind::Sell => (fee_data.amount, 0.into()),
+        };
         let result: Option<FeeRow> = sqlx::query_as(QUERY)
             .bind(fee_data.sell_token.as_bytes())
             .bind(fee_data.buy_token.as_bytes())
-            .bind(u256_to_big_decimal(&fee_data.amount))
+            .bind(u256_to_big_decimal(&sell_amount))
+            .bind(u256_to_big_decimal(&buy_amount))
             .bind(DbOrderKind::from(fee_data.kind))
             .bind(min_expiry)
             .fetch_optional(&self.pool)
@@ -113,8 +130,8 @@ impl MinFeeStoring for Postgres {
 }
 
 impl Postgres {
-    pub async fn remove_expired_fee_measurements(&self, max_expiry: DateTime<Utc>) -> Result<()> {
-        const QUERY: &str = "DELETE FROM min_fee_measurements WHERE expiration_timestamp < $1;";
+    pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {
+        const QUERY: &str = "DELETE FROM quotes WHERE expiration_timestamp < $1;";
         sqlx::query(QUERY)
             .bind(max_expiry)
             .execute(&self.pool)
@@ -127,7 +144,7 @@ impl Postgres {
 #[async_trait::async_trait]
 impl Maintaining for Postgres {
     async fn run_maintenance(&self) -> Result<()> {
-        self.remove_expired_fee_measurements(Utc::now())
+        self.remove_expired_quotes(Utc::now())
             .await
             .context("fee measurement maintenance error")
     }
@@ -221,7 +238,7 @@ mod tests {
         );
 
         // Query that previously succeeded after cleaning up expired measurements.
-        db.remove_expired_fee_measurements(now + Duration::seconds(120))
+        db.remove_expired_quotes(now + Duration::seconds(120))
             .await
             .unwrap();
         assert_eq!(
