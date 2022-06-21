@@ -182,7 +182,7 @@ struct Metrics {
     /// total metrics. Additionally, this allows us to see how different
     /// estimators behave for buy vs sell orders.
     #[metric(labels("estimator_type", "order_kind"))]
-    queries_won: prometheus::CounterVec,
+    queries_won: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {

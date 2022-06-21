@@ -230,7 +230,7 @@ struct TransportMetrics {
 
     /// Number of completed RPC requests for ethereum node.
     #[metric(labels("method"))]
-    requests_complete: prometheus::CounterVec,
+    requests_complete: prometheus::IntCounterVec,
 
     /// Execution time for each RPC request (batches are counted as one request).
     #[metric(labels("method"))]

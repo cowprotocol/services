@@ -225,11 +225,11 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
 struct ApiMetrics {
     /// Number of completed API requests.
     #[metric(labels("method", "status_code"))]
-    requests_complete: prometheus::CounterVec,
+    requests_complete: prometheus::IntCounterVec,
 
     /// Number of rejected API requests.
     #[metric(labels("status_code"))]
-    requests_rejected: prometheus::CounterVec,
+    requests_rejected: prometheus::IntCounterVec,
 
     /// Execution time for each API request.
     #[metric(labels("method"))]

@@ -13,13 +13,13 @@ use thiserror::Error;
 struct Metrics {
     /// Number of requests dropped while being rate limited.
     #[metric(labels("endpoint"))]
-    requests_dropped: prometheus::CounterVec,
+    requests_dropped: prometheus::IntCounterVec,
     /// Number of responses indicating a rate limiting error.
     #[metric(labels("endpoint"))]
-    rate_limited_requests: prometheus::CounterVec,
+    rate_limited_requests: prometheus::IntCounterVec,
     /// Number of successful requests.
     #[metric(labels("endpoint"))]
-    successful_requests: prometheus::CounterVec,
+    successful_requests: prometheus::IntCounterVec,
 }
 
 fn metrics() -> &'static Metrics {
