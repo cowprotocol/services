@@ -1,5 +1,7 @@
 use anyhow::{bail, Result};
 use ethcontract::H160;
+use prometheus::IntCounterVec;
+use prometheus_metric_storage::MetricStorage;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 
@@ -41,6 +43,14 @@ struct TokenOwner {
     address: H160,
 }
 
+#[derive(MetricStorage, Clone, Debug)]
+#[metric(subsystem = "blockscout_token_owner_finding")]
+struct Metrics {
+    /// Tracks number of "ok" or "err" responses from blockscout.
+    #[metric(labels("result"))]
+    results: IntCounterVec,
+}
+
 #[async_trait::async_trait]
 impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
@@ -50,8 +60,20 @@ impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
             .append_pair("action", "getTokenHolders")
             .append_pair("contractaddress", &format!("{token:#x}"));
 
+        let metric = &Metrics::instance(crate::metrics::get_metric_storage_registry())
+            .unwrap()
+            .results;
         tracing::debug!("Querying Blockscout API: {}", url);
-        let response_text = self.client.get(url).send().await?.text().await?;
+        let response_text = match async { self.client.get(url).send().await?.text().await }.await {
+            Ok(response) => {
+                metric.with_label_values(&["ok"]).inc();
+                response
+            }
+            Err(err) => {
+                metric.with_label_values(&["err"]).inc();
+                return Err(err.into());
+            }
+        };
         tracing::debug!("Response from Blockscout API: {}", response_text);
 
         let parsed = serde_json::from_str::<Response>(&response_text)?;
