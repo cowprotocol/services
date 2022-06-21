@@ -164,10 +164,17 @@ impl Maintaining for Postgres {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
+    use chrono::{Duration, TimeZone as _};
     use ethcontract::U256;
     use model::order::OrderKind;
     use primitive_types::H160;
+
+    /// The postgres database in our CI has different datetime precision than
+    /// the `DateTime` uses. This leads to issues comparing round-tripped data.
+    /// Work around the issue by created `DateTime`s with lower precision.
+    fn low_precision_now() -> DateTime<Utc> {
+        Utc.timestamp(Utc::now().timestamp(), 0)
+    }
 
     #[tokio::test]
     #[ignore]
@@ -175,7 +182,7 @@ mod tests {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
-        let now = Utc::now();
+        let now = low_precision_now();
         let quote = QuoteData {
             sell_token: H160([1; 20]),
             buy_token: H160([2; 20]),
@@ -202,7 +209,7 @@ mod tests {
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
 
-        let now = Utc::now();
+        let now = low_precision_now();
         let token_a = H160::from_low_u64_be(1);
         let quote_a = QuoteData {
             sell_token: token_a,
