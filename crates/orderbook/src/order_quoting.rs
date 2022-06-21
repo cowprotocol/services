@@ -4,7 +4,7 @@ use crate::{
     order_validation::{OrderValidating, PreOrderData, ValidationError},
 };
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, TimeZone as _, Utc};
 use ethcontract::{H160, U256};
 use futures::{try_join, TryFutureExt as _};
 use gas_estimation::GasPriceEstimating;
@@ -328,7 +328,7 @@ impl QuoteParameters {
 }
 
 /// A calculated order quote.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Quote {
     pub id: QuoteId,
     pub data: QuoteData,
@@ -391,7 +391,7 @@ impl Quote {
 }
 
 /// Detailed data for a computed order quote.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct QuoteData {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -416,10 +416,18 @@ pub struct QuoteData {
     pub expiration: DateTime<Utc>,
 }
 
-/// Quote searching parameters.
-pub enum Search {
-    Id { id: QuoteId, sell_amount: U256 },
-    Parameters(QuoteSearchParameters),
+impl Default for QuoteData {
+    fn default() -> Self {
+        Self {
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            quoted_sell_amount: Default::default(),
+            quoted_buy_amount: Default::default(),
+            fee_parameters: Default::default(),
+            kind: Default::default(),
+            expiration: Utc.timestamp(0, 0),
+        }
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -434,8 +442,8 @@ pub trait OrderQuoting: Send + Sync {
     /// Finds an existing quote.
     async fn find_quote(
         &self,
-        search: Search,
-        subsidy: SubsidyParameters,
+        id: Option<QuoteId>,
+        parameters: QuoteSearchParameters,
     ) -> Result<Quote, FindQuoteError>;
 }
 
@@ -456,11 +464,15 @@ pub enum FindQuoteError {
     #[error("quote not found")]
     NotFound(Option<QuoteId>),
 
+    #[error("quote does not match parameters")]
+    ParameterMismatch(QuoteData),
+
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
 
 /// Fields for searching stored quotes.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteSearchParameters {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -468,6 +480,26 @@ pub struct QuoteSearchParameters {
     pub buy_amount: U256,
     pub fee_amount: U256,
     pub kind: OrderKind,
+    pub from: H160,
+    pub app_data: AppId,
+}
+
+impl QuoteSearchParameters {
+    /// Returns true if the search parameter instance matches the specified
+    /// quote data.
+    fn matches(&self, data: &QuoteData) -> bool {
+        let amounts_match = match self.kind {
+            OrderKind::Buy => self.buy_amount == data.quoted_buy_amount,
+            OrderKind::Sell => {
+                self.sell_amount == data.quoted_sell_amount
+                    || self.sell_amount + self.fee_amount == data.quoted_sell_amount
+            }
+        };
+
+        amounts_match
+            && (self.sell_token, self.buy_token, self.kind)
+                == (data.sell_token, data.buy_token, data.kind)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -614,31 +646,42 @@ impl OrderQuoting for OrderQuoter2 {
 
     async fn find_quote(
         &self,
-        search: Search,
-        subsidy: SubsidyParameters,
+        id: Option<QuoteId>,
+        parameters: QuoteSearchParameters,
     ) -> Result<Quote, FindQuoteError> {
+        let scaled_sell_amount = match parameters.kind {
+            OrderKind::Sell => Some(parameters.sell_amount),
+            OrderKind::Buy => None,
+        };
+
+        let subsidy = SubsidyParameters {
+            from: parameters.from,
+            app_data: parameters.app_data,
+        };
+
         let now = self.now.now();
         let quote = async {
-            let (id, data, sell_amount) = match search {
-                Search::Id { id, sell_amount } => {
+            let (id, data) = match id {
+                Some(id) => {
                     let data = self
                         .storage
                         .get(id, now)
                         .await?
                         .ok_or(FindQuoteError::NotFound(Some(id)))?;
-                    (id, data, sell_amount)
+
+                    if !parameters.matches(&data) {
+                        return Err(FindQuoteError::ParameterMismatch(data));
+                    }
+
+                    (id, data)
                 }
-                Search::Parameters(parameters) => {
-                    let sell_amount = parameters.sell_amount;
-                    let (id, data) = self
-                        .storage
-                        .find(parameters, now)
-                        .await?
-                        .ok_or(FindQuoteError::NotFound(None))?;
-                    (id, data, sell_amount)
-                }
+                None => self
+                    .storage
+                    .find(parameters, now)
+                    .await?
+                    .ok_or(FindQuoteError::NotFound(None))?,
             };
-            Ok(Quote::new(id, data).with_scaled_sell_amount(sell_amount))
+            Ok(Quote::new(id, data))
         };
 
         let (quote, subsidy) = futures::try_join!(
@@ -647,7 +690,12 @@ impl OrderQuoting for OrderQuoter2 {
                 .subsidy(subsidy)
                 .map_err(FindQuoteError::from)
         )?;
+
         let quote = quote.with_subsidy(&subsidy);
+        let quote = match scaled_sell_amount {
+            Some(sell_amount) => quote.with_scaled_sell_amount(sell_amount),
+            None => quote,
+        };
 
         tracing::debug!(?quote, ?subsidy, "found quote");
         Ok(quote)
@@ -1236,6 +1284,283 @@ mod tests {
         assert!(matches!(
             quoter.calculate_quote(parameters).await.unwrap_err(),
             CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
+        ));
+    }
+
+    #[tokio::test]
+    async fn finds_quote_by_id() {
+        let now = Utc::now();
+        let quote_id = 42;
+        let parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 85.into(),
+            buy_amount: 40.into(),
+            fee_amount: 15.into(),
+            kind: OrderKind::Sell,
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_get()
+            .with(eq(42), eq(now))
+            .returning(move |_, _| {
+                Ok(Some(QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(10),
+                }))
+            });
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.25,
+                ..Default::default()
+            }),
+            storage: Arc::new(storage),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
+            Quote {
+                id: 42,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(10),
+                },
+                sell_amount: 85.into(),
+                // Allows for "out-of-price" buy amounts. This means that order
+                // be used for providing liquidity at a premium over current
+                // market price.
+                buy_amount: 35.into(),
+                // Allows for different subsidized fee amounts. This means that
+                // order created with legacy APIs or incomplete quote data (for
+                // example `from` is specified as a random address) can still
+                // create orders with fees that aren't fully subsidized.
+                fee_amount: 8.into(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn finds_quote_with_sell_amount_after_fee() {
+        let now = Utc::now();
+        let quote_id = 42;
+        let parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 100.into(),
+            buy_amount: 40.into(),
+            fee_amount: 30.into(),
+            kind: OrderKind::Sell,
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_get()
+            .with(eq(42), eq(now))
+            .returning(move |_, _| {
+                Ok(Some(QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(10),
+                }))
+            });
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(storage),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
+            Quote {
+                id: 42,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Sell,
+                    expiration: now + chrono::Duration::seconds(10),
+                },
+                sell_amount: 100.into(),
+                buy_amount: 42.into(),
+                fee_amount: 30.into(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn finds_quote_by_parameters() {
+        let now = Utc::now();
+        let parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            sell_amount: 110.into(),
+            buy_amount: 42.into(),
+            fee_amount: 30.into(),
+            kind: OrderKind::Buy,
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+
+        let mut storage = MockQuoteStoring::new();
+        storage
+            .expect_find()
+            .with(eq(parameters.clone()), eq(now))
+            .returning(move |_, _| {
+                Ok(Some((
+                    42,
+                    QuoteData {
+                        sell_token: H160([1; 20]),
+                        buy_token: H160([2; 20]),
+                        quoted_sell_amount: 100.into(),
+                        quoted_buy_amount: 42.into(),
+                        fee_parameters: FeeParameters {
+                            gas_amount: 3.,
+                            gas_price: 2.,
+                            sell_token_price: 0.2,
+                        },
+                        kind: OrderKind::Buy,
+                        expiration: now + chrono::Duration::seconds(10),
+                    },
+                )))
+            });
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(storage),
+            now: Arc::new(now),
+        };
+
+        assert_eq!(
+            quoter.find_quote(None, parameters).await.unwrap(),
+            Quote {
+                id: 42,
+                data: QuoteData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    quoted_sell_amount: 100.into(),
+                    quoted_buy_amount: 42.into(),
+                    fee_parameters: FeeParameters {
+                        gas_amount: 3.,
+                        gas_price: 2.,
+                        sell_token_price: 0.2,
+                    },
+                    kind: OrderKind::Buy,
+                    expiration: now + chrono::Duration::seconds(10),
+                },
+                sell_amount: 100.into(),
+                buy_amount: 42.into(),
+                fee_amount: 30.into(),
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn find_quote_error_on_mismatch() {
+        let parameters = QuoteSearchParameters {
+            sell_token: H160([1; 20]),
+            ..Default::default()
+        };
+
+        let mut storage = MockQuoteStoring::new();
+        storage.expect_get().returning(move |_, _| {
+            Ok(Some(QuoteData {
+                sell_token: H160([2; 20]),
+                ..Default::default()
+            }))
+        });
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(storage),
+            now: Arc::new(Utc::now),
+        };
+
+        assert!(matches!(
+            quoter.find_quote(Some(0), parameters).await.unwrap_err(),
+            FindQuoteError::ParameterMismatch(_),
+        ));
+    }
+
+    #[tokio::test]
+    async fn find_quote_error_when_not_found() {
+        let mut storage = MockQuoteStoring::new();
+        storage.expect_get().returning(move |_, _| Ok(None));
+        storage.expect_find().returning(move |_, _| Ok(None));
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(MockPriceEstimating::new()),
+            native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
+            gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(storage),
+            now: Arc::new(Utc::now),
+        };
+
+        assert!(matches!(
+            quoter
+                .find_quote(Some(0), Default::default())
+                .await
+                .unwrap_err(),
+            FindQuoteError::NotFound(Some(0)),
+        ));
+        assert!(matches!(
+            quoter
+                .find_quote(None, Default::default())
+                .await
+                .unwrap_err(),
+            FindQuoteError::NotFound(None),
         ));
     }
 }
