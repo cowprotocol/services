@@ -216,6 +216,10 @@ pub struct Arguments {
     /// allowed to place partially fillable orders.
     #[clap(long, env, use_value_delimiter = true)]
     pub liquidity_order_owners: Vec<H160>,
+
+    /// Use Blockscout as a TokenOwnerFinding implementation.
+    #[clap(long, env, default_value = "true")]
+    pub enable_blockscout: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -302,6 +306,7 @@ impl std::fmt::Display for Arguments {
             "liquidity_order_owners: {:?}",
             self.liquidity_order_owners
         )?;
+        writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
         Ok(())
     }
 }
