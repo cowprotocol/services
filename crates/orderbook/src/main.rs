@@ -243,8 +243,10 @@ async fn main() {
             .expect("create uniswapv3 finder"),
         ));
     }
-    if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
-        finders.push(Arc::new(finder));
+    if args.enable_blockscout {
+        if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
+            finders.push(Arc::new(finder));
+        }
     }
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
