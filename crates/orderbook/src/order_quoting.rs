@@ -330,7 +330,7 @@ impl QuoteParameters {
 /// A calculated order quote.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Quote {
-    pub id: QuoteId,
+    pub id: Option<QuoteId>,
     pub data: QuoteData,
     /// The final computed sell amount for the quote.
     ///
@@ -351,7 +351,7 @@ pub struct Quote {
 
 impl Quote {
     /// Creates a new `Quote`.
-    pub fn new(id: QuoteId, data: QuoteData) -> Self {
+    pub fn new(id: Option<QuoteId>, data: QuoteData) -> Self {
         Self {
             id,
             sell_amount: data.quoted_sell_amount,
@@ -506,7 +506,10 @@ impl QuoteSearchParameters {
 #[async_trait::async_trait]
 pub trait QuoteStoring: Send + Sync {
     /// Saves a quote and returns its ID.
-    async fn save(&self, data: QuoteData) -> Result<QuoteId>;
+    ///
+    /// This storage implementation should return `None` to indicate that it
+    /// will not store the quote.
+    async fn save(&self, data: QuoteData) -> Result<Option<QuoteId>>;
 
     /// Retrieves an existing quote by ID.
     async fn get(&self, id: QuoteId, expiration: DateTime<Utc>) -> Result<Option<QuoteData>>;
@@ -517,6 +520,31 @@ pub trait QuoteStoring: Send + Sync {
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
     ) -> Result<Option<(QuoteId, QuoteData)>>;
+}
+
+/// A quote storing strategy that always forgets quotes.
+///
+/// This is used for the "fast" quoter, since those quotes cannot be used for
+/// determining minimum fee amounts.
+pub struct Forget;
+
+#[async_trait::async_trait]
+impl QuoteStoring for Forget {
+    async fn save(&self, _: QuoteData) -> Result<Option<QuoteId>> {
+        Ok(None)
+    }
+
+    async fn get(&self, _: QuoteId, _: DateTime<Utc>) -> Result<Option<QuoteData>> {
+        Ok(None)
+    }
+
+    async fn find(
+        &self,
+        _: QuoteSearchParameters,
+        _: DateTime<Utc>,
+    ) -> Result<Option<(QuoteId, QuoteData)>> {
+        Ok(None)
+    }
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -639,6 +667,12 @@ impl OrderQuoting for OrderQuoter2 {
 
         // Only save after we know the quote is valid.
         quote.id = self.storage.save(quote.data.clone()).await?;
+        if quote.id.is_none() {
+            // Quote was not stored! Clear the expiration to signal to the
+            // caller that the quote is purely indicative and isn't valid for
+            // any period of time.
+            quote.data.expiration = Utc.timestamp(0, 0);
+        }
 
         tracing::debug!(?quote, ?subsidy, "computed quote");
         Ok(quote)
@@ -681,7 +715,7 @@ impl OrderQuoting for OrderQuoter2 {
                     .await?
                     .ok_or(FindQuoteError::NotFound(None))?,
             };
-            Ok(Quote::new(id, data))
+            Ok(Quote::new(Some(id), data))
         };
 
         let (quote, subsidy) = futures::try_join!(
@@ -992,7 +1026,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }))
-            .returning(|_| Ok(1337));
+            .returning(|_| Ok(Some(1337)));
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
@@ -1006,7 +1040,7 @@ mod tests {
         assert_eq!(
             quoter.calculate_quote(parameters).await.unwrap(),
             Quote {
-                id: 1337,
+                id: Some(1337),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
@@ -1092,7 +1126,7 @@ mod tests {
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }))
-            .returning(|_| Ok(1337));
+            .returning(|_| Ok(Some(1337)));
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
@@ -1109,7 +1143,7 @@ mod tests {
         assert_eq!(
             quoter.calculate_quote(parameters).await.unwrap(),
             Quote {
-                id: 1337,
+                id: Some(1337),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
@@ -1195,7 +1229,7 @@ mod tests {
                 kind: OrderKind::Buy,
                 expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
             }))
-            .returning(|_| Ok(1337));
+            .returning(|_| Ok(Some(1337)));
 
         let quoter = OrderQuoter2 {
             price_estimator: Arc::new(price_estimator),
@@ -1213,7 +1247,7 @@ mod tests {
         assert_eq!(
             quoter.calculate_quote(parameters).await.unwrap(),
             Quote {
-                id: 1337,
+                id: Some(1337),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
@@ -1288,6 +1322,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn forgotten_quotes_are_expired() {
+        let now = Utc::now();
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|_| {
+            futures::stream::iter([Ok(price_estimation::Estimate {
+                out_amount: 1.into(),
+                gas: 1,
+            })])
+            .enumerate()
+            .boxed()
+        });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
+
+        let quoter = OrderQuoter2 {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
+                Default::default(),
+            )))),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(Forget),
+            now: Arc::new(now),
+        };
+
+        let quote = quoter.calculate_quote(Default::default()).await.unwrap();
+        assert_eq!((quote.id, quote.data.expiration.timestamp()), (None, 0));
+    }
+
+    #[tokio::test]
     async fn finds_quote_by_id() {
         let now = Utc::now();
         let quote_id = 42;
@@ -1337,7 +1404,7 @@ mod tests {
         assert_eq!(
             quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
-                id: 42,
+                id: Some(42),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
@@ -1412,7 +1479,7 @@ mod tests {
         assert_eq!(
             quoter.find_quote(Some(quote_id), parameters).await.unwrap(),
             Quote {
-                id: 42,
+                id: Some(42),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
@@ -1482,7 +1549,7 @@ mod tests {
         assert_eq!(
             quoter.find_quote(None, parameters).await.unwrap(),
             Quote {
-                id: 42,
+                id: Some(42),
                 data: QuoteData {
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
