@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::{fee::MinFeeStoring, fee_subsidy::FeeParameters};
+use crate::{fee::MinFeeStoring, fee_subsidy::FeeParameters, order_quoting::QuoteStoring};
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -100,6 +100,43 @@ impl MinFeeStoring for Instrumented {
         self.inner
             .find_measurement_including_larger_amount(fee_data, min_expiry)
             .await
+    }
+}
+
+#[async_trait::async_trait]
+impl QuoteStoring for Instrumented {
+    async fn save(
+        &self,
+        data: crate::order_quoting::QuoteData,
+    ) -> anyhow::Result<Option<model::quote::QuoteId>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("save_quote")
+            .start_timer();
+        self.inner.save(data).await
+    }
+
+    async fn get(
+        &self,
+        id: model::quote::QuoteId,
+    ) -> anyhow::Result<Option<crate::order_quoting::QuoteData>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("get_quote")
+            .start_timer();
+        self.inner.get(id).await
+    }
+
+    async fn find(
+        &self,
+        parameters: crate::order_quoting::QuoteSearchParameters,
+        expiration: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Option<(model::quote::QuoteId, crate::order_quoting::QuoteData)>> {
+        let _timer = self
+            .metrics
+            .database_query_histogram("find_quote")
+            .start_timer();
+        self.inner.find(parameters, expiration).await
     }
 }
 

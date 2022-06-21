@@ -82,7 +82,7 @@ impl QuoteStoring for Postgres {
         Ok(Some(id))
     }
 
-    async fn get(&self, id: QuoteId, _: DateTime<Utc>) -> Result<Option<QuoteData>> {
+    async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
         const QUERY: &str = r#"
             SELECT *
             FROM quotes
@@ -187,19 +187,13 @@ mod tests {
         };
         let id = db.save(quote.clone()).await.unwrap().unwrap();
 
-        assert_eq!(db.get(id, now).await.unwrap().unwrap(), quote);
-        assert_eq!(
-            db.get(id, now + Duration::seconds(30))
-                .await
-                .unwrap()
-                .unwrap(),
-            quote
-        );
+        assert_eq!(db.get(id).await.unwrap().unwrap(), quote);
 
         db.remove_expired_quotes(now + Duration::seconds(30))
             .await
             .unwrap();
-        assert_eq!(db.get(id, now).await.unwrap(), None);
+
+        assert_eq!(db.get(id).await.unwrap(), None);
     }
 
     #[tokio::test]
