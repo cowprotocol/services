@@ -72,18 +72,20 @@ pub enum DbOrderKind {
     Sell,
 }
 
-impl DbOrderKind {
-    pub fn from(order_kind: OrderKind) -> Self {
-        match order_kind {
+impl From<OrderKind> for DbOrderKind {
+    fn from(kind: OrderKind) -> Self {
+        match kind {
             OrderKind::Buy => Self::Buy,
             OrderKind::Sell => Self::Sell,
         }
     }
+}
 
-    fn into(self) -> OrderKind {
-        match self {
-            Self::Buy => OrderKind::Buy,
-            Self::Sell => OrderKind::Sell,
+impl From<DbOrderKind> for OrderKind {
+    fn from(kind: DbOrderKind) -> Self {
+        match kind {
+            DbOrderKind::Buy => Self::Buy,
+            DbOrderKind::Sell => Self::Sell,
         }
     }
 }

@@ -170,7 +170,7 @@ pub struct OrderQuote {
     pub buy_token_balance: BuyTokenDestination,
 }
 
-pub type QuoteId = u64;
+pub type QuoteId = i64;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

@@ -24,7 +24,7 @@ use shared::price_estimation::{
     single_estimate, PriceEstimating, PriceEstimationError,
 };
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicI64, Ordering},
     Arc,
 };
 use thiserror::Error;
@@ -83,7 +83,7 @@ pub struct OrderQuoter {
     pub order_validator: Arc<dyn OrderValidating>,
     pub fast_fee_calculator: Arc<dyn MinFeeCalculating>,
     pub fast_price_estimator: Arc<dyn PriceEstimating>,
-    pub current_id: Arc<AtomicU64>,
+    pub current_id: Arc<AtomicI64>,
 }
 
 impl OrderQuoter {
