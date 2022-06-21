@@ -1,9 +1,11 @@
-use crate::api::convert_json_response;
+use crate::{api::convert_json_response, order_quoting::QuoteHandler};
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
-use model::order::OrderKind;
+use model::{
+    order::OrderKind,
+    quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
+};
 use serde::{Deserialize, Serialize};
-use shared::price_estimation::{self, single_estimate, PriceEstimating};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -66,31 +68,46 @@ fn get_amount_estimate_request(
 }
 
 pub fn get_amount_estimate(
-    price_estimator: Arc<dyn PriceEstimating>,
+    quotes: Arc<QuoteHandler>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_amount_estimate_request().and_then(move |query: AmountEstimateQuery| {
-        let price_estimator = price_estimator.clone();
+        let quotes = quotes.clone();
         async move {
             let market = &query.market;
-            let (buy_token, sell_token) = match query.kind {
+            let (buy_token, sell_token, side) = match query.kind {
                 // Buy in WETH/DAI means buying ETH (selling DAI)
-                OrderKind::Buy => (market.base_token, market.quote_token),
+                OrderKind::Buy => (
+                    market.base_token,
+                    market.quote_token,
+                    OrderQuoteSide::Buy {
+                        buy_amount_after_fee: query.amount,
+                    },
+                ),
                 // Sell in WETH/DAI means selling ETH (buying DAI)
-                OrderKind::Sell => (market.quote_token, market.base_token),
+                OrderKind::Sell => (
+                    market.quote_token,
+                    market.base_token,
+                    OrderQuoteSide::Sell {
+                        sell_amount: SellAmount::AfterFee {
+                            value: query.amount,
+                        },
+                    },
+                ),
             };
-            let result = single_estimate(
-                price_estimator.as_ref(),
-                &price_estimation::Query {
+            let response = quotes
+                .calculate_quote(&OrderQuoteRequest {
                     sell_token,
                     buy_token,
-                    in_amount: query.amount,
-                    kind: query.kind,
-                },
-            )
-            .await;
-            Result::<_, Infallible>::Ok(convert_json_response(result.map(|estimate| {
+                    side,
+                    ..Default::default()
+                })
+                .await;
+            Result::<_, Infallible>::Ok(convert_json_response(response.map(|response| {
                 AmountEstimateResult {
-                    amount: estimate.out_amount,
+                    amount: match query.kind {
+                        OrderKind::Buy => response.quote.sell_amount,
+                        OrderKind::Sell => response.quote.buy_amount,
+                    },
                     token: query.market.quote_token,
                 }
             })))

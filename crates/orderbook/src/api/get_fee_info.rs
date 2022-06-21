@@ -1,13 +1,9 @@
-use crate::{
-    api::{convert_json_response, IntoWarpReply},
-    fee::FeeData,
-    fee::MinFeeCalculating,
-    order_validation::PartialValidationError,
-};
+use crate::{api::convert_json_response, order_quoting::QuoteHandler};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{
-    order::{OrderKind, BUY_ETH_ADDRESS},
+    order::OrderKind,
+    quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
     u256_decimal,
 };
 use primitive_types::{H160, U256};
@@ -40,35 +36,32 @@ fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> 
 }
 
 pub fn get_fee_info(
-    fee_calculator: Arc<dyn MinFeeCalculating>,
+    quotes: Arc<QuoteHandler>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
-        let fee_calculator = fee_calculator.clone();
+        let quotes = quotes.clone();
         async move {
-            if query.sell_token == BUY_ETH_ADDRESS {
-                return Result::<_, Infallible>::Ok(
-                    PartialValidationError::InvalidNativeSellToken.into_warp_reply(),
-                );
-            }
-
-            let result = fee_calculator
-                .compute_subsidized_min_fee(
-                    FeeData {
-                        sell_token: query.sell_token,
-                        buy_token: query.buy_token,
-                        amount: query.amount,
-                        kind: query.kind,
+            let response = quotes
+                .calculate_quote(&OrderQuoteRequest {
+                    sell_token: query.sell_token,
+                    buy_token: query.buy_token,
+                    side: match query.kind {
+                        OrderKind::Buy => OrderQuoteSide::Buy {
+                            buy_amount_after_fee: query.amount,
+                        },
+                        OrderKind::Sell => OrderQuoteSide::Sell {
+                            sell_amount: SellAmount::AfterFee {
+                                value: query.amount,
+                            },
+                        },
                     },
-                    Default::default(),
-                    Default::default(),
-                )
+                    ..Default::default()
+                })
                 .await;
-            Result::<_, Infallible>::Ok(convert_json_response(result.map(
-                |(amount, expiration_date)| FeeInfo {
-                    expiration_date,
-                    amount,
-                },
-            )))
+            Result::<_, Infallible>::Ok(convert_json_response(response.map(|response| FeeInfo {
+                expiration_date: response.expiration,
+                amount: response.quote.fee_amount,
+            })))
         }
     })
 }

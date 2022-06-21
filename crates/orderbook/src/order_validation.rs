@@ -1,7 +1,10 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
-    fee::{FeeData, GetUnsubsidizedMinFeeError, MinFeeCalculating},
     fee_subsidy::FeeParameters,
+    order_quoting::{
+        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
+        QuoteSearchParameters,
+    },
 };
 use contracts::WETH9;
 use ethcontract::{H160, U256};
@@ -10,6 +13,7 @@ use model::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
+    quote::{OrderQuoteSide, SellAmount},
     signature::{SigningScheme, VerificationError},
     DomainSeparator,
 };
@@ -66,20 +70,32 @@ pub enum PartialValidationError {
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
     UnsupportedSignature,
+    UnsupportedToken(H160),
     Other(anyhow::Error),
 }
 
 #[derive(Debug)]
 pub enum ValidationError {
     Partial(PartialValidationError),
+    /// The quote ID specifed with the order could not be found.
+    QuoteNotFound,
+    /// The quote specified by ID is invalid. Either it doesn't match the order
+    /// or it has already expired.
+    InvalidQuote,
+    /// Unable to compute quote because of insufficient liquidity.
+    ///
+    /// This can happen when attempting to validate an error for which there are
+    /// no previously made quotes and there is insufficient liquidity for the
+    /// amount that is being traded to compute a new quote for determining the
+    /// minimum fee amount.
+    NoLiquidityForQuote,
     InsufficientFee,
     InsufficientBalance,
     InsufficientAllowance,
     InvalidSignature,
-    // If fee and sell amount overflow u256
+    /// If fee and sell amount overflow u256
     SellAmountOverflow,
     TransferSimulationFailed,
-    UnsupportedToken(H160),
     WrongOwner(H160),
     ZeroAmount,
     Other(anyhow::Error),
@@ -94,6 +110,40 @@ impl From<VerificationError> for ValidationError {
     }
 }
 
+impl From<FindQuoteError> for ValidationError {
+    fn from(err: FindQuoteError) -> Self {
+        match err {
+            FindQuoteError::NotFound(_) => Self::QuoteNotFound,
+            FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
+            FindQuoteError::Other(err) => Self::Other(err),
+        }
+    }
+}
+
+impl From<CalculateQuoteError> for ValidationError {
+    fn from(err: CalculateQuoteError) -> Self {
+        match err {
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(token)) => {
+                ValidationError::Partial(PartialValidationError::UnsupportedToken(token))
+            }
+            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity) => {
+                ValidationError::NoLiquidityForQuote
+            }
+            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
+                ValidationError::ZeroAmount
+            }
+            CalculateQuoteError::Other(err)
+            | CalculateQuoteError::Price(PriceEstimationError::Other(err)) => {
+                ValidationError::Other(err)
+            }
+            err => {
+                // We don't bubble other errors as they shouldn't really happen.
+                ValidationError::Other(err.into())
+            }
+        }
+    }
+}
+
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
@@ -104,9 +154,9 @@ pub struct OrderValidator {
     min_order_validity_period: Duration,
     max_order_validity_period: Duration,
     enable_presign_orders: bool,
-    /// For Full-Validation: performed time of order placement
-    fee_validator: Arc<dyn MinFeeCalculating>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
+    /// For Full-Validation: performed time of order placement
+    quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
@@ -165,8 +215,8 @@ impl OrderValidator {
         min_order_validity_period: Duration,
         max_order_validity_period: Duration,
         enable_presign_orders: bool,
-        fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         Self {
@@ -177,8 +227,8 @@ impl OrderValidator {
             min_order_validity_period,
             max_order_validity_period,
             enable_presign_orders,
-            fee_validator,
             bad_token_detector,
+            quoter,
             balance_fetcher,
         }
     }
@@ -244,6 +294,19 @@ impl OrderValidating for OrderValidator {
                 return Err(PartialValidationError::TransferEthToContract);
             }
         }
+
+        for &token in &[order.sell_token, order.buy_token] {
+            if !self
+                .bad_token_detector
+                .detect(token)
+                .await
+                .map_err(PartialValidationError::Other)?
+                .is_good()
+            {
+                return Err(PartialValidationError::UnsupportedToken(token));
+            }
+        }
+
         Ok(())
     }
 
@@ -259,17 +322,6 @@ impl OrderValidating for OrderValidator {
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
         }
-        for &token in &[order.data.sell_token, order.data.buy_token] {
-            if !self
-                .bad_token_detector
-                .detect(token)
-                .await
-                .map_err(ValidationError::Other)?
-                .is_good()
-            {
-                return Err(ValidationError::UnsupportedToken(token));
-            }
-        }
 
         let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
         self.partial_validate(PreOrderData::from_order_creation(
@@ -281,37 +333,13 @@ impl OrderValidating for OrderValidator {
         .await
         .map_err(ValidationError::Partial)?;
 
-        let unsubsidized_fee = self
-            .fee_validator
-            .get_unsubsidized_min_fee(
-                FeeData {
-                    sell_token: order.data.sell_token,
-                    buy_token: order.data.buy_token,
-                    amount: match order.data.kind {
-                        OrderKind::Buy => order.data.buy_amount,
-                        OrderKind::Sell => order.data.sell_amount,
-                    },
-                    kind: order.data.kind,
-                },
-                order.data.app_data,
-                order.data.fee_amount,
-                owner,
-            )
-            .await
-            .map_err(|err| match err {
-                GetUnsubsidizedMinFeeError::Other(err) => ValidationError::Other(err),
-                GetUnsubsidizedMinFeeError::PriceEstimationError(PriceEstimationError::Other(
-                    err,
-                )) => ValidationError::Other(err),
-                GetUnsubsidizedMinFeeError::InsufficientFee => ValidationError::InsufficientFee,
-                // Some of the possible errors here have been already checked in this function or
-                // should have been checked when the order was pre-validated. There is no good way
-                // and not much need to bubble them up and we don't want to error log for them so
-                // treat them as insufficient fee.
-                GetUnsubsidizedMinFeeError::PriceEstimationError(_) => {
-                    ValidationError::InsufficientFee
-                }
-            })?;
+        let quote = match is_liquidity_order {
+            false => Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?),
+            true => None,
+        };
+        let fee_parameters = quote
+            .map(|quote| quote.data.fee_parameters)
+            .unwrap_or_default();
 
         let min_balance = match minimum_balance(&order.data) {
             Some(amount) => amount,
@@ -364,10 +392,10 @@ impl OrderValidating for OrderValidator {
             &order,
             domain_separator,
             settlement_contract,
-            unsubsidized_fee.unsubsidized(),
+            fee_parameters.unsubsidized(),
             is_liquidity_order,
         )?;
-        Ok((order, unsubsidized_fee))
+        Ok((order, fee_parameters))
     }
 }
 
@@ -391,6 +419,63 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
     order.sell_amount.checked_add(order.fee_amount)
 }
 
+/// Retrieves the quote for an order that is being created and verify that its
+/// fee is
+///
+/// This works by first trying to find an existing quote, and then falling back
+/// to calculating a brand new one if none can be found and a quote ID was not
+/// specified.
+async fn get_quote_and_check_fee(
+    quoter: &dyn OrderQuoting,
+    order: &OrderCreation,
+    owner: H160,
+) -> Result<Quote, ValidationError> {
+    let parameters = QuoteSearchParameters {
+        sell_token: order.data.sell_token,
+        buy_token: order.data.buy_token,
+        sell_amount: order.data.sell_amount,
+        buy_amount: order.data.buy_amount,
+        fee_amount: order.data.fee_amount,
+        kind: order.data.kind,
+        from: owner,
+        app_data: order.data.app_data,
+    };
+
+    let quote = match quoter.find_quote(order.quote_id, parameters).await {
+        Ok(quote) => quote,
+        Err(FindQuoteError::NotFound(None)) => {
+            // We couldn't find a quote, and none was specified. Try computing
+            // a new quote.
+
+            let parameters = QuoteParameters {
+                sell_token: order.data.sell_token,
+                buy_token: order.data.buy_token,
+                side: match order.data.kind {
+                    OrderKind::Buy => OrderQuoteSide::Buy {
+                        buy_amount_after_fee: order.data.buy_amount,
+                    },
+                    OrderKind::Sell => OrderQuoteSide::Sell {
+                        sell_amount: SellAmount::AfterFee {
+                            value: order.data.sell_amount,
+                        },
+                    },
+                },
+                from: owner,
+                app_data: order.data.app_data,
+            };
+            quoter.calculate_quote(parameters).await?
+        }
+        Err(err) => return Err(err.into()),
+    };
+
+    if order.data.fee_amount < quote.fee_amount {
+        return Err(ValidationError::InsufficientFee);
+    }
+
+    Ok(quote)
+}
+
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1053,3 +1138,4 @@ mod tests {
         assert_allows_failed_transfer!(InsufficientBalance);
     }
 }
+*/

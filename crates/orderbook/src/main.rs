@@ -12,13 +12,12 @@ use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::MinFeeCalculator,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
-    order_quoting::OrderQuoter,
+    order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::OrderValidator,
     orderbook::Orderbook,
     serve_api,
@@ -507,21 +506,17 @@ async fn main() {
         None => fee_subsidy_config,
     };
 
-    let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>,
-                                 store_computed_fees: bool| {
-        Arc::new(MinFeeCalculator::new(
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
+        Arc::new(OrderQuoter::new(
             price_estimator.clone(),
-            gas_price_estimator.clone(),
-            database.clone(),
-            bad_token_detector.clone(),
-            fee_subsidy.clone(),
             native_price_estimator.clone(),
-            args.liquidity_order_owners.iter().copied().collect(),
-            store_computed_fees,
+            gas_price_estimator.clone(),
+            fee_subsidy.clone(),
+            database.clone(),
         ))
     };
-    let fee_calculator = create_fee_calculator(price_estimator.clone(), true);
-    let fast_fee_calculator = create_fee_calculator(fast_price_estimator.clone(), false);
+    let optimal_quoter = create_quoter(price_estimator.clone());
+    let fast_quoter = create_quoter(fast_price_estimator.clone());
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -546,8 +541,8 @@ async fn main() {
         args.min_order_validity_period,
         args.max_order_validity_period,
         args.enable_presign_orders,
-        fee_calculator.clone(),
         bad_token_detector.clone(),
+        optimal_quoter.clone(),
         balance_fetcher,
     ));
     let orderbook = Arc::new(Orderbook::new(
@@ -571,16 +566,14 @@ async fn main() {
         service_maintainer.maintainers.push(balancer);
     }
     check_database_connection(orderbook.as_ref()).await;
-    let quoter = Arc::new(
-        OrderQuoter::new(fee_calculator, price_estimator, order_validator)
-            .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
-    );
+    let quotes =
+        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
-        quoter,
+        quotes,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;

@@ -178,7 +178,7 @@ pub struct OrderQuoteResponse {
     pub quote: OrderQuote,
     pub from: H160,
     pub expiration: DateTime<Utc>,
-    pub id: QuoteId,
+    pub id: Option<QuoteId>,
 }
 
 impl OrderQuoteRequest {
