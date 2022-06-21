@@ -90,27 +90,6 @@ impl IntoWarpReply for ValidationError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::Partial(pre) => pre.into_warp_reply(),
-            Self::QuoteNotFound => with_status(
-                super::error(
-                    "QuoteNotFound",
-                    "could not find quote with the specified ID",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::InvalidQuote => with_status(
-                super::error(
-                    "InvalidQuote",
-                    "the quote with the specified ID does not match the order",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::NoLiquidityForQuote => with_status(
-                super::error(
-                    "NoLiquidityForQuote",
-                    "unable to compute a minimum fee amount because of insufficient liquidity",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
             Self::WrongOwner(owner) => with_status(
                 super::error(
                     "WrongOwner",
