@@ -320,17 +320,17 @@ impl OrderValidating for OrderValidator {
             return Err(ValidationError::ZeroAmount);
         }
 
-        let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
+        let liquidity_owner = self.liquidity_order_owners.contains(&owner);
         self.partial_validate(PreOrderData::from_order_creation(
             owner,
             &order.data,
             signing_scheme,
-            is_liquidity_order,
+            liquidity_owner,
         ))
         .await
         .map_err(ValidationError::Partial)?;
 
-        let quote = if !is_liquidity_order {
+        let quote = if !liquidity_owner {
             Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?)
         } else {
             // We don't try to get quotes for orders created by liqudity order
@@ -346,6 +346,16 @@ impl OrderValidating for OrderValidator {
             .as_ref()
             .map(|quote| quote.data.fee_parameters.unsubsidized())
             .unwrap_or_default();
+
+        // Orders that are placed and priced outside the market (i.e. buying
+        // more than the market can pay or selling less than the market wants)
+        // get flagged as liquidity orders. The reasoning is that these orders
+        // are not intended to be filled immediately and so need to be treated
+        // slightly differently by the protocol.
+        let is_liquidity_order = quote
+            .as_ref()
+            .map(|quote| !is_market_priced_order(&order.data, quote))
+            .unwrap_or(true);
 
         let min_balance = match minimum_balance(&order.data) {
             Some(amount) => amount,
@@ -484,6 +494,16 @@ async fn get_quote_and_check_fee(
     }
 
     Ok(quote)
+}
+
+/// Checks whether or not an order is a market order.
+///
+/// A market order is defined as an order whose price is equal or worse to the
+/// best on-chain price that can be found at the time. This allows the protocol
+/// to detect orders that place orders that aren't intended to be traded right
+/// away and flag them as liquidity orders.
+fn is_market_priced_order(order: &OrderData, quote: &Quote) -> bool {
+    order.sell_amount.full_mul(quote.buy_amount) >= quote.sell_amount.full_mul(order.buy_amount)
 }
 
 #[cfg(test)]
@@ -1390,5 +1410,78 @@ mod tests {
             )),
             ValidationError::PriceForQuote(_)
         );
+    }
+
+    #[test]
+    fn detects_market_orders() {
+        let quote = Quote {
+            sell_amount: 100.into(),
+            buy_amount: 100.into(),
+            ..Default::default()
+        };
+
+        // *** SELL ORDERS ***
+        // at market price
+        assert!(is_market_priced_order(
+            &OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 100.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote,
+        ));
+        // willing to buy less than market price
+        assert!(is_market_priced_order(
+            &OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 99.into(), // 1% slippage
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote,
+        ));
+        // wanting to buy more than market price
+        assert!(!is_market_priced_order(
+            &OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 1000.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote
+        ));
+
+        // *** BUY ORDERS ***
+        // at market price
+        assert!(is_market_priced_order(
+            &OrderData {
+                sell_amount: 100.into(),
+                buy_amount: 100.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote,
+        ));
+        // willing to sell more than market price
+        assert!(is_market_priced_order(
+            &OrderData {
+                sell_amount: 101.into(), // 1% slippage
+                buy_amount: 100.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote,
+        ));
+        // wanting to sell less than market price
+        assert!(!is_market_priced_order(
+            &OrderData {
+                sell_amount: 1.into(),
+                buy_amount: 100.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            &quote
+        ));
     }
 }
