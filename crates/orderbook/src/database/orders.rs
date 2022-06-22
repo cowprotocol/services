@@ -284,9 +284,9 @@ async fn insert_fee(
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), InsertionError> {
     const QUERY: &str = "\
-                INSERT INTO order_fee_parameters (\
-                    order_uid, gas_amount, gas_price, sell_token_price) \
-                VALUES($1, $2, $3, $4)\
+                INSERT INTO order_quotes (\
+                    order_uid, gas_amount, gas_price, sell_token_price, sell_amount, buy_amount) \
+                VALUES($1, $2, $3, $4, 0, 0)\
             ;";
     sqlx::query(QUERY)
         .bind(uid.0.as_ref())
@@ -931,17 +931,25 @@ mod tests {
             sell_token_price: 3.,
         };
         db.insert_order(&order, fee).await.unwrap();
-        let query = "SELECT * FROM order_fee_parameters;";
-        let (uid, gas_amount, gas_price, sell_token_price): (Vec<u8>, f64, f64, f64) =
-            sqlx::query_as(query)
-                .bind(order.metadata.uid.0.as_ref())
-                .fetch_one(&db.pool)
-                .await
-                .unwrap();
+        let query = "SELECT * FROM order_quotes;";
+        let (uid, gas_amount, gas_price, sell_token_price, sell_amount, buy_amount): (
+            Vec<u8>,
+            f64,
+            f64,
+            f64,
+            BigDecimal,
+            BigDecimal,
+        ) = sqlx::query_as(query)
+            .bind(order.metadata.uid.0.as_ref())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
         assert_eq!(uid, order.metadata.uid.0.as_ref());
         assert_eq!(gas_amount, 1.);
         assert_eq!(gas_price, 2.);
         assert_eq!(sell_token_price, 3.);
+        assert!(sell_amount.is_zero());
+        assert!(buy_amount.is_zero());
     }
 
     #[tokio::test]
