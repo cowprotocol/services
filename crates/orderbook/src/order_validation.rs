@@ -83,20 +83,8 @@ pub enum ValidationError {
     /// The quote specified by ID is invalid. Either it doesn't match the order
     /// or it has already expired.
     InvalidQuote,
-    /// Unable to compute quote because of insufficient liquidity.
-    ///
-    /// This can happen when attempting to validate an error for which there are
-    /// no previously made quotes and there is insufficient liquidity for the
-    /// amount that is being traded to compute a new quote for determining the
-    /// minimum fee amount.
-    NoLiquidityForQuote,
-    /// Unable to compute quote because the order type is not supported.
-    ///
-    /// This can happen in the validator is configured with a quoter whose price
-    /// estimators don't support an order kind (for example, if the validator
-    /// was configured with just the 1Inch price estimator, then buy orders
-    /// would not be supported).
-    UnsupportedOrderTypeForQuote,
+    /// Unable to compute quote because of a price estimation error.
+    PriceForQuote(PriceEstimationError),
     InsufficientFee,
     InsufficientBalance,
     InsufficientAllowance,
@@ -134,9 +122,6 @@ impl From<CalculateQuoteError> for ValidationError {
             CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(token)) => {
                 ValidationError::Partial(PartialValidationError::UnsupportedToken(token))
             }
-            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity) => {
-                ValidationError::NoLiquidityForQuote
-            }
             CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
                 ValidationError::ZeroAmount
             }
@@ -144,15 +129,13 @@ impl From<CalculateQuoteError> for ValidationError {
             | CalculateQuoteError::Price(PriceEstimationError::Other(err)) => {
                 ValidationError::Other(err)
             }
-            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType) => {
-                ValidationError::UnsupportedOrderTypeForQuote
-            }
+            CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
 
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up
             // and handle these errors in a general way.
-            err @ CalculateQuoteError::SellAmountDoesNotCoverFee(_) => {
+            err @ CalculateQuoteError::SellAmountDoesNotCoverFee { .. } => {
                 ValidationError::Other(anyhow!(err).context("unexpected quote calculation error"))
             }
         }
@@ -511,6 +494,7 @@ mod tests {
     use shared::{
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,
+        rate_limiter::RateLimiterError,
         web3_traits::MockCodeFetching,
     };
 
@@ -1373,7 +1357,9 @@ mod tests {
         }
 
         assert_calc_error_matches!(
-            CalculateQuoteError::SellAmountDoesNotCoverFee(Default::default()),
+            CalculateQuoteError::SellAmountDoesNotCoverFee {
+                fee_amount: Default::default()
+            },
             ValidationError::Other(_)
         );
         assert_calc_error_matches!(
@@ -1381,16 +1367,22 @@ mod tests {
             ValidationError::Partial(PartialValidationError::UnsupportedToken(_))
         );
         assert_calc_error_matches!(
-            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
-            ValidationError::NoLiquidityForQuote
-        );
-        assert_calc_error_matches!(
             CalculateQuoteError::Price(PriceEstimationError::ZeroAmount),
             ValidationError::ZeroAmount
         );
         assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
+            ValidationError::PriceForQuote(_)
+        );
+        assert_calc_error_matches!(
             CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType),
-            ValidationError::UnsupportedOrderTypeForQuote
+            ValidationError::PriceForQuote(_)
+        );
+        assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::RateLimited(
+                RateLimiterError::RateLimited
+            )),
+            ValidationError::PriceForQuote(_)
         );
     }
 }

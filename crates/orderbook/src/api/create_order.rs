@@ -104,20 +104,7 @@ impl IntoWarpReply for ValidationError {
                 ),
                 StatusCode::BAD_REQUEST,
             ),
-            Self::NoLiquidityForQuote => with_status(
-                super::error(
-                    "NoLiquidityForQuote",
-                    "unable to compute a minimum fee amount because of insufficient liquidity",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::UnsupportedOrderTypeForQuote => with_status(
-                super::error(
-                    "UnsupportedOrderTypeForQuote",
-                    "unable to compute a minimum fee amount for this order kind",
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
+            Self::PriceForQuote(err) => err.into_warp_reply(),
             Self::WrongOwner(owner) => with_status(
                 super::error(
                     "WrongOwner",
