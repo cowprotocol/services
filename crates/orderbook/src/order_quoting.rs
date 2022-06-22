@@ -332,8 +332,20 @@ impl QuoteParameters {
 pub struct Quote {
     pub id: QuoteId,
     pub data: QuoteData,
+    /// The final computed sell amount for the quote.
+    ///
+    /// Note that this is different than the `QuoteData::quoted_sell_amount` for
+    /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
+    /// `quoted_sell_amount - fee_amount` in those cases).
     pub sell_amount: U256,
+    /// The final computed buy amount for the quote.
+    ///
+    /// Note that this is different than the `QuoteData::quoted_buy_amount` for
+    /// quotes computed with `SellAmount::BeforeFee` (specifically, it will be
+    /// scaled down to account for the computed `fee_amount`).
     pub buy_amount: U256,
+    /// The final minimum subsidized fee amount for any order created for this
+    /// quote.
     pub fee_amount: U256,
 }
 
@@ -360,6 +372,11 @@ impl Quote {
     /// This allows scaling the quoted amounts to some lower sell amount
     /// accounting for fees (for quotes with sell amounts **before** fees for
     /// example).
+    ///
+    /// Since this method is indented for **scaling down** buy and sell amounts,
+    /// it assumes that the final buy amount will never overflow a `U256` and
+    /// _will saturate_ to `U256::MAX` if this is used to scale up past the
+    /// maximum value.
     pub fn with_scaled_sell_amount(mut self, sell_amount: U256) -> Self {
         self.sell_amount = sell_amount;
         // Use `full_mul: (U256, U256) -> U512` to avoid any overflow
@@ -378,7 +395,21 @@ impl Quote {
 pub struct QuoteData {
     pub sell_token: H160,
     pub buy_token: H160,
+    /// The sell amount used when computing the exchange rate for this quote.
+    ///
+    /// For buy orders, this will be the expected return amount for some fixed
+    /// buy amount. For sell order of the `SellAmount::BeforeFee` variant, this
+    /// will be the total `sell_amount + fee_amount`. For sell orders of the
+    /// `SellAmount::AfterFee` variant, this will be the fixed sell amount of
+    /// the order used for price estimates.
     pub quoted_sell_amount: U256,
+    /// The buy amount used when computing the exchange rate for this quote.
+    ///
+    /// For buy orders, this will be the fixed buy amount. For sell order of the
+    /// `SellAmount::BeforeFee` variant, this will be the expected buy amount if
+    /// `sell_amount + fee_amount` were traded. For sell orders of the
+    /// `SellAmount::AfterFee` variant, this will be the expected sell amount if
+    /// exactly `sell_amount` were traded.
     pub quoted_buy_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
