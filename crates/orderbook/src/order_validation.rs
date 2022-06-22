@@ -348,10 +348,18 @@ impl OrderValidating for OrderValidator {
         .await
         .map_err(ValidationError::Partial)?;
 
-        let quote = match is_liquidity_order {
-            false => Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?),
-            true => None,
+        let quote = if !is_liquidity_order {
+            Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?)
+        } else {
+            // We don't try to get quotes for orders created by liqudity order
+            // owners for two reasons:
+            // 1. They don't pay fees, meaning we don't need to know what the
+            //    min fee amount is.
+            // 2. We don't really care about the equivalent quote since they
+            //    aren't expected to follow regular order creation flow.
+            None
         };
+
         let fee_parameters = quote
             .map(|quote| quote.data.fee_parameters)
             .unwrap_or_default();
