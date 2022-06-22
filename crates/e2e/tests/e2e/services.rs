@@ -5,7 +5,6 @@ use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::Postgres,
     event_updater::EventUpdater,
-    fee::MinFeeCalculator,
     fee_subsidy::Subsidy,
     metrics::NoopMetrics,
     order_quoting::{OrderQuoter, QuoteHandler},
@@ -145,15 +144,14 @@ impl OrderbookServices {
             contracts.weth.address(),
             1_000_000_000_000_000_000_u128.into(),
         ));
-        let fee_subsidy = Arc::new(Subsidy {
-            factor: 0.,
-            ..Default::default()
-        });
         let quoter = Arc::new(OrderQuoter::new(
             price_estimator.clone(),
             native_price_estimator.clone(),
-            gas_estimator.clone(),
-            fee_subsidy.clone(),
+            gas_estimator,
+            Arc::new(Subsidy {
+                factor: 0.,
+                ..Default::default()
+            }),
             db.clone(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
@@ -169,7 +167,7 @@ impl OrderbookServices {
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
-            native_price_estimator.clone(),
+            native_price_estimator,
             Arc::new(NoopMetrics),
         );
         let order_validator = Arc::new(OrderValidator::new(
@@ -181,16 +179,7 @@ impl OrderbookServices {
             Duration::MAX,
             true,
             bad_token_detector.clone(),
-            Arc::new(MinFeeCalculator::new(
-                price_estimator.clone(),
-                gas_estimator,
-                db.clone(),
-                bad_token_detector.clone(),
-                fee_subsidy,
-                native_price_estimator,
-                Default::default(),
-                true,
-            )),
+            quoter.clone(),
             balance_fetcher,
         ));
         let orderbook = Arc::new(Orderbook::new(

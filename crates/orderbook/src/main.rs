@@ -12,7 +12,6 @@ use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::MinFeeCalculator,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -544,16 +543,7 @@ async fn main() {
         args.max_order_validity_period,
         args.enable_presign_orders,
         bad_token_detector.clone(),
-        Arc::new(MinFeeCalculator::new(
-            price_estimator.clone(),
-            gas_price_estimator.clone(),
-            database.clone(),
-            bad_token_detector.clone(),
-            fee_subsidy.clone(),
-            native_price_estimator,
-            args.liquidity_order_owners.iter().copied().collect(),
-            true,
-        )),
+        optimal_quoter.clone(),
         balance_fetcher,
     ));
     let orderbook = Arc::new(Orderbook::new(
