@@ -3,11 +3,11 @@ use crate::{
     conversions::*,
     fee::{FeeData, MinFeeStoring},
     fee_subsidy::FeeParameters,
+    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring as _},
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use model::order::OrderKind;
-use shared::maintenance::Maintaining;
 
 #[derive(sqlx::FromRow)]
 struct FeeRow {
@@ -34,26 +34,22 @@ impl MinFeeStoring for Postgres {
         expiry: DateTime<Utc>,
         estimate: FeeParameters,
     ) -> Result<()> {
-        const QUERY: &str =
-            "INSERT INTO quotes (sell_token, buy_token, sell_amount, buy_amount, order_kind, expiration_timestamp, gas_amount, gas_price, sell_token_price) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);";
         let (sell_amount, buy_amount) = match fee_data.kind {
             OrderKind::Buy => (0.into(), fee_data.amount),
             OrderKind::Sell => (fee_data.amount, 0.into()),
         };
-        sqlx::query(QUERY)
-            .bind(fee_data.sell_token.as_bytes())
-            .bind(fee_data.buy_token.as_bytes())
-            .bind(u256_to_big_decimal(&sell_amount))
-            .bind(u256_to_big_decimal(&buy_amount))
-            .bind(DbOrderKind::from(fee_data.kind))
-            .bind(expiry)
-            .bind(&estimate.gas_amount)
-            .bind(&estimate.gas_price)
-            .bind(&estimate.sell_token_price)
-            .execute(&self.pool)
-            .await
-            .context("insert MinFeeMeasurement failed")
-            .map(|_| ())
+        let quote = QuoteData {
+            sell_token: fee_data.sell_token,
+            buy_token: fee_data.buy_token,
+            quoted_sell_amount: sell_amount,
+            quoted_buy_amount: buy_amount,
+            fee_parameters: estimate,
+            kind: fee_data.kind,
+            expiration: expiry,
+        };
+
+        self.save(quote).await?;
+        Ok(())
     }
 
     async fn find_measurement_exact(
@@ -61,35 +57,21 @@ impl MinFeeStoring for Postgres {
         fee_data: FeeData,
         min_expiry: DateTime<Utc>,
     ) -> Result<Option<FeeParameters>> {
-        // Fetches the lowest fee estimate we may have for the user
-        const QUERY: &str = "\
-            SELECT gas_amount, gas_price, sell_token_price FROM quotes \
-            WHERE
-                sell_token = $1 AND \
-                buy_token = $2 AND \
-                sell_amount = $3 AND \
-                buy_amount = $4 AND \
-                order_kind = $5 AND \
-                expiration_timestamp >= $6 \
-            ORDER BY gas_amount * gas_price * sell_token_price ASC \
-            LIMIT 1 \
-            ;";
-
         let (sell_amount, buy_amount) = match fee_data.kind {
             OrderKind::Buy => (0.into(), fee_data.amount),
             OrderKind::Sell => (fee_data.amount, 0.into()),
         };
-        let result: Option<FeeRow> = sqlx::query_as(QUERY)
-            .bind(fee_data.sell_token.as_bytes())
-            .bind(fee_data.buy_token.as_bytes())
-            .bind(u256_to_big_decimal(&sell_amount))
-            .bind(u256_to_big_decimal(&buy_amount))
-            .bind(DbOrderKind::from(fee_data.kind))
-            .bind(min_expiry)
-            .fetch_optional(&self.pool)
-            .await
-            .context("find_measurement_exact")?;
-        Ok(result.map(FeeRow::into_fee))
+        let search = QuoteSearchParameters {
+            sell_token: fee_data.sell_token,
+            buy_token: fee_data.buy_token,
+            sell_amount,
+            buy_amount,
+            kind: fee_data.kind,
+            ..Default::default()
+        };
+
+        let quote = self.find(search, min_expiry).await?;
+        Ok(quote.map(|(_, quote)| quote.fee_parameters))
     }
 
     async fn find_measurement_including_larger_amount(
@@ -126,27 +108,6 @@ impl MinFeeStoring for Postgres {
             .await
             .context("find_measurement_including_larger_amount")?;
         Ok(result.map(FeeRow::into_fee))
-    }
-}
-
-impl Postgres {
-    pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {
-        const QUERY: &str = "DELETE FROM quotes WHERE expiration_timestamp < $1;";
-        sqlx::query(QUERY)
-            .bind(max_expiry)
-            .execute(&self.pool)
-            .await
-            .context("remove_expired_fee_measurements failed")
-            .map(|_| ())
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for Postgres {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.remove_expired_quotes(Utc::now())
-            .await
-            .context("fee measurement maintenance error")
     }
 }
 
