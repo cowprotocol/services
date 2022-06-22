@@ -1,12 +1,11 @@
 use crate::{
-    fee::{FeeData, MinFeeCalculating},
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
-    order_validation::{OrderValidating, PartialValidationError, PreOrderData, ValidationError},
+    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone as _, Utc};
 use ethcontract::{H160, U256};
-use futures::{try_join, TryFutureExt as _};
+use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
 use model::{
     app_id::AppId,
@@ -15,297 +14,16 @@ use model::{
         OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
         SellAmount,
     },
-    u256_decimal,
 };
-use serde::Serialize;
 use shared::price_estimation::{
     self,
     native::{native_single_estimate, NativePriceEstimating},
     single_estimate, PriceEstimating, PriceEstimationError,
 };
-use std::sync::{
-    atomic::{AtomicI64, Ordering},
-    Arc,
-};
+use std::sync::Arc;
 use thiserror::Error;
 
-impl From<&OrderQuoteRequest> for PreOrderData {
-    fn from(quote_request: &OrderQuoteRequest) -> Self {
-        let owner = quote_request.from;
-        Self {
-            owner,
-            sell_token: quote_request.sell_token,
-            buy_token: quote_request.buy_token,
-            receiver: quote_request.receiver.unwrap_or(owner),
-            valid_to: quote_request.validity.actual_valid_to(),
-            partially_fillable: quote_request.partially_fillable,
-            buy_token_balance: quote_request.buy_token_balance,
-            sell_token_balance: quote_request.sell_token_balance,
-            signing_scheme: quote_request.signing_scheme,
-            is_liquidity_order: quote_request.partially_fillable,
-        }
-    }
-}
-
-impl From<&OrderQuoteRequest> for QuoteParameters {
-    fn from(request: &OrderQuoteRequest) -> Self {
-        Self {
-            sell_token: request.sell_token,
-            buy_token: request.buy_token,
-            side: request.side,
-            from: request.from,
-            app_data: request.app_data,
-        }
-    }
-}
-
-#[derive(Debug)]
-pub enum FeeError {
-    SellAmountDoesNotCoverFee(FeeInfo),
-    PriceEstimate(PriceEstimationError),
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FeeInfo {
-    #[serde(with = "u256_decimal")]
-    pub fee_amount: U256,
-    pub expiration: DateTime<Utc>,
-}
-
-#[derive(Debug)]
-pub enum OrderQuoteErrorLegacy {
-    Fee(FeeError),
-    Order(ValidationError),
-}
-
-#[derive(Debug, Serialize, PartialEq)]
-struct QuoteFeeParameters {
-    buy_amount: U256,
-    sell_amount: U256,
-    fee_amount: U256,
-    expiration: DateTime<Utc>,
-    kind: OrderKind,
-}
-
-#[derive(Clone)]
-pub struct OrderQuoterLegacy {
-    pub fee_calculator: Arc<dyn MinFeeCalculating>,
-    pub price_estimator: Arc<dyn PriceEstimating>,
-    pub order_validator: Arc<dyn OrderValidating>,
-    pub fast_fee_calculator: Arc<dyn MinFeeCalculating>,
-    pub fast_price_estimator: Arc<dyn PriceEstimating>,
-    pub current_id: Arc<AtomicI64>,
-}
-
-impl OrderQuoterLegacy {
-    pub fn new(
-        fee_calculator: Arc<dyn MinFeeCalculating>,
-        price_estimator: Arc<dyn PriceEstimating>,
-        order_validator: Arc<dyn OrderValidating>,
-    ) -> Self {
-        Self {
-            fast_fee_calculator: fee_calculator.clone(),
-            fast_price_estimator: price_estimator.clone(),
-            fee_calculator,
-            price_estimator,
-            order_validator,
-            current_id: Default::default(),
-        }
-    }
-
-    pub fn with_fast_quotes(
-        mut self,
-        fee_calculator: Arc<dyn MinFeeCalculating>,
-        price_estimator: Arc<dyn PriceEstimating>,
-    ) -> Self {
-        self.fast_fee_calculator = fee_calculator;
-        self.fast_price_estimator = price_estimator;
-        self
-    }
-
-    pub async fn calculate_quote(
-        &self,
-        quote_request: &OrderQuoteRequest,
-    ) -> Result<OrderQuoteResponse, OrderQuoteErrorLegacy> {
-        tracing::debug!("Received quote request {:?}", quote_request);
-        let pre_order = PreOrderData::from(quote_request);
-        let valid_to = pre_order.valid_to;
-        self.order_validator
-            .partial_validate(pre_order)
-            .await
-            .map_err(|err| OrderQuoteErrorLegacy::Order(ValidationError::Partial(err)))?;
-        let fee_parameters = self
-            .calculate_fee_parameters(quote_request)
-            .await
-            .map_err(OrderQuoteErrorLegacy::Fee)?;
-        Ok(OrderQuoteResponse {
-            quote: OrderQuote {
-                sell_token: quote_request.sell_token,
-                buy_token: quote_request.buy_token,
-                receiver: quote_request.receiver,
-                sell_amount: fee_parameters.sell_amount,
-                buy_amount: fee_parameters.buy_amount,
-                valid_to,
-                app_data: quote_request.app_data,
-                fee_amount: fee_parameters.fee_amount,
-                kind: fee_parameters.kind,
-                partially_fillable: quote_request.partially_fillable,
-                sell_token_balance: quote_request.sell_token_balance,
-                buy_token_balance: quote_request.buy_token_balance,
-            },
-            from: quote_request.from,
-            expiration: fee_parameters.expiration,
-            id: Some(self.current_id.fetch_add(1, Ordering::SeqCst)),
-        })
-    }
-
-    async fn calculate_fee_parameters(
-        &self,
-        quote_request: &OrderQuoteRequest,
-    ) -> Result<QuoteFeeParameters, FeeError> {
-        let (fee_calculator, price_estimator) = match quote_request.price_quality {
-            PriceQuality::Fast => (&self.fast_fee_calculator, &self.fast_price_estimator),
-            PriceQuality::Optimal => (&self.fee_calculator, &self.price_estimator),
-        };
-
-        Ok(match quote_request.side {
-            OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::BeforeFee {
-                        value: sell_amount_before_fee,
-                    },
-            } => {
-                if sell_amount_before_fee.is_zero() {
-                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
-                }
-                let query = price_estimation::Query {
-                    // It would be more correct to use sell_amount_after_fee here, however this makes the two long-running fee and price estimation queries dependent and causes very long roundtrip times
-                    // We therefore compute the exchange rate for the sell_amount_before_fee and assume that the price for selling a smaller amount (after fee) will be close to but at least as good
-                    sell_token: quote_request.sell_token,
-                    buy_token: quote_request.buy_token,
-                    in_amount: sell_amount_before_fee,
-                    kind: OrderKind::Sell,
-                };
-                let ((fee, expiration), estimate) = try_join!(
-                    fee_calculator.compute_subsidized_min_fee(
-                        FeeData {
-                            sell_token: quote_request.sell_token,
-                            buy_token: quote_request.buy_token,
-                            amount: sell_amount_before_fee,
-                            kind: OrderKind::Sell,
-                        },
-                        quote_request.app_data,
-                        quote_request.from,
-                    ),
-                    single_estimate(price_estimator.as_ref(), &query)
-                )
-                .map_err(FeeError::PriceEstimate)?;
-                let sell_amount_after_fee = sell_amount_before_fee
-                    .checked_sub(fee)
-                    .ok_or(FeeError::SellAmountDoesNotCoverFee(FeeInfo {
-                        fee_amount: fee,
-                        expiration,
-                    }))?
-                    .max(U256::one());
-                let buy_amount_after_fee =
-                    match estimate.out_amount.checked_mul(sell_amount_after_fee) {
-                        // sell_amount_before_fee is at least 1 (cf. above)
-                        Some(product) => product / sell_amount_before_fee,
-                        None => (estimate.out_amount / sell_amount_before_fee)
-                            .checked_mul(sell_amount_after_fee)
-                            .unwrap_or(U256::MAX),
-                    };
-                QuoteFeeParameters {
-                    buy_amount: buy_amount_after_fee,
-                    sell_amount: sell_amount_after_fee,
-                    fee_amount: fee,
-                    expiration,
-                    kind: OrderKind::Sell,
-                }
-            }
-            OrderQuoteSide::Sell {
-                sell_amount:
-                    SellAmount::AfterFee {
-                        value: sell_amount_after_fee,
-                    },
-            } => {
-                if sell_amount_after_fee.is_zero() {
-                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
-                }
-
-                let price_estimation_query = price_estimation::Query {
-                    sell_token: quote_request.sell_token,
-                    buy_token: quote_request.buy_token,
-                    in_amount: sell_amount_after_fee,
-                    kind: OrderKind::Sell,
-                };
-
-                // Since both futures are long running and independent, run concurrently
-                let ((fee, expiration), estimate) = try_join!(
-                    fee_calculator.compute_subsidized_min_fee(
-                        FeeData {
-                            sell_token: quote_request.sell_token,
-                            buy_token: quote_request.buy_token,
-                            amount: sell_amount_after_fee,
-                            kind: OrderKind::Sell,
-                        },
-                        quote_request.app_data,
-                        quote_request.from,
-                    ),
-                    single_estimate(price_estimator.as_ref(), &price_estimation_query)
-                )
-                .map_err(FeeError::PriceEstimate)?;
-                QuoteFeeParameters {
-                    buy_amount: estimate.out_amount,
-                    sell_amount: sell_amount_after_fee,
-                    fee_amount: fee,
-                    expiration,
-                    kind: OrderKind::Sell,
-                }
-            }
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee,
-            } => {
-                if buy_amount_after_fee.is_zero() {
-                    return Err(FeeError::PriceEstimate(PriceEstimationError::ZeroAmount));
-                }
-
-                let price_estimation_query = price_estimation::Query {
-                    sell_token: quote_request.sell_token,
-                    buy_token: quote_request.buy_token,
-                    in_amount: buy_amount_after_fee,
-                    kind: OrderKind::Buy,
-                };
-
-                // Since both futures are long running and independent, run concurrently
-                let ((fee, expiration), estimate) = try_join!(
-                    fee_calculator.compute_subsidized_min_fee(
-                        FeeData {
-                            sell_token: quote_request.sell_token,
-                            buy_token: quote_request.buy_token,
-                            amount: buy_amount_after_fee,
-                            kind: OrderKind::Buy,
-                        },
-                        quote_request.app_data,
-                        quote_request.from,
-                    ),
-                    single_estimate(price_estimator.as_ref(), &price_estimation_query)
-                )
-                .map_err(FeeError::PriceEstimate)?;
-                let sell_amount_after_fee = estimate.out_amount;
-                QuoteFeeParameters {
-                    buy_amount: buy_amount_after_fee,
-                    sell_amount: sell_amount_after_fee,
-                    fee_amount: fee,
-                    expiration,
-                    kind: OrderKind::Buy,
-                }
-            }
-        })
-    }
-}
-
+/// A high-level interface for handling API quote requests.
 pub struct QuoteHandler {
     order_validator: Arc<dyn OrderValidating>,
     optimal_quoter: Arc<dyn OrderQuoting>,
@@ -850,157 +568,51 @@ impl OrderQuoting for OrderQuoter {
     }
 }
 
+impl From<&OrderQuoteRequest> for PreOrderData {
+    fn from(quote_request: &OrderQuoteRequest) -> Self {
+        let owner = quote_request.from;
+        Self {
+            owner,
+            sell_token: quote_request.sell_token,
+            buy_token: quote_request.buy_token,
+            receiver: quote_request.receiver.unwrap_or(owner),
+            valid_to: quote_request.validity.actual_valid_to(),
+            partially_fillable: quote_request.partially_fillable,
+            buy_token_balance: quote_request.buy_token_balance,
+            sell_token_balance: quote_request.sell_token_balance,
+            signing_scheme: quote_request.signing_scheme,
+            is_liquidity_order: quote_request.partially_fillable,
+        }
+    }
+}
+
+impl From<&OrderQuoteRequest> for QuoteParameters {
+    fn from(request: &OrderQuoteRequest) -> Self {
+        Self {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            side: request.side,
+            from: request.from,
+            app_data: request.app_data,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        fee::MockMinFeeCalculating, fee_subsidy::Subsidy, order_validation::MockOrderValidating,
-    };
+    use crate::fee_subsidy::Subsidy;
     use chrono::Utc;
     use ethcontract::H160;
-    use futures::{FutureExt as _, StreamExt as _};
+    use futures::StreamExt as _;
     use gas_estimation::GasPrice1559;
     use mockall::{predicate::eq, Sequence};
     use model::{quote::Validity, time};
     use shared::{
         gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::{
-            mocks::FakePriceEstimator, native::MockNativePriceEstimating, MockPriceEstimating,
-        },
+        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
     };
     use std::sync::Mutex;
-
-    #[test]
-    fn calculate_fee_sell_before_fees_quote_request() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
-
-        let expiration = Utc::now();
-        fee_calculator
-            .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
-
-        let fee_calculator = Arc::new(fee_calculator);
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 14.into(),
-            gas: 1000,
-        });
-        let sell_query = OrderQuoteRequest::new(
-            H160::from_low_u64_ne(0),
-            H160::from_low_u64_ne(1),
-            OrderQuoteSide::Sell {
-                sell_amount: SellAmount::BeforeFee { value: 10.into() },
-            },
-        );
-        let quoter = Arc::new(OrderQuoterLegacy::new(
-            fee_calculator,
-            Arc::new(price_estimator),
-            Arc::new(MockOrderValidating::new()),
-        ));
-        let result = quoter
-            .calculate_fee_parameters(&sell_query)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        // After the deducting the fee 10 - 3 = 7 units of sell token are being sold.
-        // Selling 10 units will buy us 14. Therefore, selling 7 should buy us 9.8 => 9 whole units
-        assert_eq!(
-            result,
-            QuoteFeeParameters {
-                buy_amount: 9.into(),
-                sell_amount: 7.into(),
-                fee_amount: 3.into(),
-                expiration,
-                kind: OrderKind::Sell
-            }
-        );
-    }
-
-    #[test]
-    fn calculate_fee_sell_after_fees_quote_request() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
-        let expiration = Utc::now();
-        fee_calculator
-            .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
-
-        let fee_calculator = Arc::new(fee_calculator);
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 14.into(),
-            gas: 1000,
-        });
-        let sell_query = OrderQuoteRequest::new(
-            H160::from_low_u64_ne(0),
-            H160::from_low_u64_ne(1),
-            OrderQuoteSide::Sell {
-                sell_amount: SellAmount::AfterFee { value: 7.into() },
-            },
-        );
-
-        let quoter = Arc::new(OrderQuoterLegacy::new(
-            fee_calculator,
-            Arc::new(price_estimator),
-            Arc::new(MockOrderValidating::new()),
-        ));
-        let result = quoter
-            .calculate_fee_parameters(&sell_query)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        assert_eq!(
-            result,
-            QuoteFeeParameters {
-                buy_amount: 14.into(),
-                sell_amount: 7.into(),
-                fee_amount: 3.into(),
-                expiration,
-                kind: OrderKind::Sell
-            }
-        );
-    }
-
-    #[test]
-    fn calculate_fee_buy_quote_request() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
-        let expiration = Utc::now();
-        fee_calculator
-            .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), expiration)));
-
-        let fee_calculator = Arc::new(fee_calculator);
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 20.into(),
-            gas: 1000,
-        });
-        let buy_query = OrderQuoteRequest::new(
-            H160::from_low_u64_ne(0),
-            H160::from_low_u64_ne(1),
-            OrderQuoteSide::Buy {
-                buy_amount_after_fee: 10.into(),
-            },
-        );
-        let quoter = Arc::new(OrderQuoterLegacy::new(
-            fee_calculator,
-            Arc::new(price_estimator),
-            Arc::new(MockOrderValidating::new()),
-        ));
-        let result = quoter
-            .calculate_fee_parameters(&buy_query)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        // To buy 10 units of buy_token the fee in sell_token must be at least 3 and at least 20
-        // units of sell_token must be sold.
-        assert_eq!(
-            result,
-            QuoteFeeParameters {
-                buy_amount: 10.into(),
-                sell_amount: 20.into(),
-                fee_amount: 3.into(),
-                expiration,
-                kind: OrderKind::Buy
-            }
-        );
-    }
 
     #[test]
     fn pre_order_data_from_quote_request() {
@@ -1025,54 +637,6 @@ mod tests {
 
         // use time-range to make sure test isn't flaky.
         assert!((95..=105).contains(&valid_duration));
-    }
-
-    #[tokio::test]
-    async fn calculate_quote() {
-        let buy_request = OrderQuoteRequest {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            side: OrderQuoteSide::Buy {
-                buy_amount_after_fee: 2.into(),
-            },
-            validity: Validity::To(0),
-            ..Default::default()
-        };
-
-        let mut fee_calculator = MockMinFeeCalculating::new();
-        fee_calculator
-            .expect_compute_subsidized_min_fee()
-            .returning(move |_, _, _| Ok((3.into(), Utc::now())));
-        let price_estimator = FakePriceEstimator(price_estimation::Estimate {
-            out_amount: 14.into(),
-            gas: 1000,
-        });
-        let mut order_validator = MockOrderValidating::new();
-        order_validator
-            .expect_partial_validate()
-            .returning(|_| Ok(()));
-        let quoter = Arc::new(OrderQuoterLegacy::new(
-            Arc::new(fee_calculator),
-            Arc::new(price_estimator),
-            Arc::new(order_validator),
-        ));
-        let result = quoter.calculate_quote(&buy_request).await.unwrap();
-
-        let expected = OrderQuote {
-            sell_token: H160::from_low_u64_be(1),
-            buy_token: H160::from_low_u64_be(2),
-            receiver: None,
-            sell_amount: 14.into(),
-            kind: OrderKind::Buy,
-            partially_fillable: false,
-            sell_token_balance: Default::default(),
-            buy_amount: 2.into(),
-            valid_to: 0,
-            app_data: Default::default(),
-            fee_amount: 3.into(),
-            buy_token_balance: Default::default(),
-        };
-        assert_eq!(result.quote, expected);
     }
 
     #[tokio::test]
