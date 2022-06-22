@@ -1,8 +1,12 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
-    fee::{FeeData, GetUnsubsidizedMinFeeError, MinFeeCalculating},
     fee_subsidy::FeeParameters,
+    order_quoting::{
+        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
+        QuoteSearchParameters,
+    },
 };
+use anyhow::anyhow;
 use contracts::WETH9;
 use ethcontract::{H160, U256};
 use model::{
@@ -10,6 +14,7 @@ use model::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
+    quote::{OrderQuoteSide, SellAmount},
     signature::{SigningScheme, VerificationError},
     DomainSeparator,
 };
@@ -34,6 +39,7 @@ pub trait OrderValidating: Send + Sync {
     ///     - the order validity is appropriate,
     ///     - buy_token is not the same as sell_token,
     ///     - buy and sell token destination and source are supported.
+    ///     - buy & sell tokens passed "bad token" detection,
     async fn partial_validate(&self, order: PreOrderData) -> Result<(), PartialValidationError>;
 
     /// This is the full order validation performed at the time of order placement
@@ -41,7 +47,6 @@ pub trait OrderValidating: Send + Sync {
     ///     - buy & sell amounts are non-zero,
     ///     - order's signature recovers correctly
     ///     - fee is sufficient,
-    ///     - buy & sell tokens passed "bad token" detection,
     ///     - user has sufficient (transferable) funds to execute the order.
     ///
     /// Furthermore, full order validation also calls partial_validate to ensure that
@@ -73,11 +78,30 @@ pub enum PartialValidationError {
 #[derive(Debug)]
 pub enum ValidationError {
     Partial(PartialValidationError),
+    /// The quote ID specifed with the order could not be found.
+    QuoteNotFound,
+    /// The quote specified by ID is invalid. Either it doesn't match the order
+    /// or it has already expired.
+    InvalidQuote,
+    /// Unable to compute quote because of insufficient liquidity.
+    ///
+    /// This can happen when attempting to validate an error for which there are
+    /// no previously made quotes and there is insufficient liquidity for the
+    /// amount that is being traded to compute a new quote for determining the
+    /// minimum fee amount.
+    NoLiquidityForQuote,
+    /// Unable to compute quote because the order type is not supported.
+    ///
+    /// This can happen in the validator is configured with a quoter whose price
+    /// estimators don't support an order kind (for example, if the validator
+    /// was configured with just the 1Inch price estimator, then buy orders
+    /// would not be supported).
+    UnsupportedOrderTypeForQuote,
     InsufficientFee,
     InsufficientBalance,
     InsufficientAllowance,
     InvalidSignature,
-    // If fee and sell amount overflow u256
+    /// If fee and sell amount overflow u256
     SellAmountOverflow,
     TransferSimulationFailed,
     WrongOwner(H160),
@@ -94,6 +118,47 @@ impl From<VerificationError> for ValidationError {
     }
 }
 
+impl From<FindQuoteError> for ValidationError {
+    fn from(err: FindQuoteError) -> Self {
+        match err {
+            FindQuoteError::NotFound(_) => Self::QuoteNotFound,
+            FindQuoteError::ParameterMismatch(_) | FindQuoteError::Expired(_) => Self::InvalidQuote,
+            FindQuoteError::Other(err) => Self::Other(err),
+        }
+    }
+}
+
+impl From<CalculateQuoteError> for ValidationError {
+    fn from(err: CalculateQuoteError) -> Self {
+        match err {
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(token)) => {
+                ValidationError::Partial(PartialValidationError::UnsupportedToken(token))
+            }
+            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity) => {
+                ValidationError::NoLiquidityForQuote
+            }
+            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount) => {
+                ValidationError::ZeroAmount
+            }
+            CalculateQuoteError::Other(err)
+            | CalculateQuoteError::Price(PriceEstimationError::Other(err)) => {
+                ValidationError::Other(err)
+            }
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType) => {
+                ValidationError::UnsupportedOrderTypeForQuote
+            }
+
+            // This should never happen because we only calculate quotes with
+            // `SellAmount::AfterFee`, meaning that the sell amount does not
+            // need to be higher than the computed fee amount. Don't bubble up
+            // and handle these errors in a general way.
+            err @ CalculateQuoteError::SellAmountDoesNotCoverFee(_) => {
+                ValidationError::Other(anyhow!(err).context("unexpected quote calculation error"))
+            }
+        }
+    }
+}
+
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
@@ -106,7 +171,7 @@ pub struct OrderValidator {
     enable_presign_orders: bool,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
-    fee_validator: Arc<dyn MinFeeCalculating>,
+    quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
@@ -166,7 +231,7 @@ impl OrderValidator {
         max_order_validity_period: Duration,
         enable_presign_orders: bool,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        fee_validator: Arc<dyn MinFeeCalculating>,
+        quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         Self {
@@ -178,7 +243,7 @@ impl OrderValidator {
             max_order_validity_period,
             enable_presign_orders,
             bad_token_detector,
-            fee_validator,
+            quoter,
             balance_fetcher,
         }
     }
@@ -256,6 +321,7 @@ impl OrderValidating for OrderValidator {
                 return Err(PartialValidationError::UnsupportedToken(token));
             }
         }
+
         Ok(())
     }
 
@@ -282,37 +348,13 @@ impl OrderValidating for OrderValidator {
         .await
         .map_err(ValidationError::Partial)?;
 
-        let unsubsidized_fee = self
-            .fee_validator
-            .get_unsubsidized_min_fee(
-                FeeData {
-                    sell_token: order.data.sell_token,
-                    buy_token: order.data.buy_token,
-                    amount: match order.data.kind {
-                        OrderKind::Buy => order.data.buy_amount,
-                        OrderKind::Sell => order.data.sell_amount,
-                    },
-                    kind: order.data.kind,
-                },
-                order.data.app_data,
-                order.data.fee_amount,
-                owner,
-            )
-            .await
-            .map_err(|err| match err {
-                GetUnsubsidizedMinFeeError::Other(err) => ValidationError::Other(err),
-                GetUnsubsidizedMinFeeError::PriceEstimationError(PriceEstimationError::Other(
-                    err,
-                )) => ValidationError::Other(err),
-                GetUnsubsidizedMinFeeError::InsufficientFee => ValidationError::InsufficientFee,
-                // Some of the possible errors here have been already checked in this function or
-                // should have been checked when the order was pre-validated. There is no good way
-                // and not much need to bubble them up and we don't want to error log for them so
-                // treat them as insufficient fee.
-                GetUnsubsidizedMinFeeError::PriceEstimationError(_) => {
-                    ValidationError::InsufficientFee
-                }
-            })?;
+        let quote = match is_liquidity_order {
+            false => Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?),
+            true => None,
+        };
+        let fee_parameters = quote
+            .map(|quote| quote.data.fee_parameters)
+            .unwrap_or_default();
 
         let min_balance = match minimum_balance(&order.data) {
             Some(amount) => amount,
@@ -365,10 +407,10 @@ impl OrderValidating for OrderValidator {
             &order,
             domain_separator,
             settlement_contract,
-            unsubsidized_fee.unsubsidized(),
+            fee_parameters.unsubsidized(),
             is_liquidity_order,
         )?;
-        Ok((order, unsubsidized_fee))
+        Ok((order, fee_parameters))
     }
 }
 
@@ -392,18 +434,71 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
     order.sell_amount.checked_add(order.fee_amount)
 }
 
+/// Retrieves the quote for an order that is being created and verify that its
+/// fee is
+///
+/// This works by first trying to find an existing quote, and then falling back
+/// to calculating a brand new one if none can be found and a quote ID was not
+/// specified.
+async fn get_quote_and_check_fee(
+    quoter: &dyn OrderQuoting,
+    order: &OrderCreation,
+    owner: H160,
+) -> Result<Quote, ValidationError> {
+    let parameters = QuoteSearchParameters {
+        sell_token: order.data.sell_token,
+        buy_token: order.data.buy_token,
+        sell_amount: order.data.sell_amount,
+        buy_amount: order.data.buy_amount,
+        fee_amount: order.data.fee_amount,
+        kind: order.data.kind,
+        from: owner,
+        app_data: order.data.app_data,
+    };
+
+    let quote = match quoter.find_quote(order.quote_id, parameters).await {
+        Ok(quote) => quote,
+        // We couldn't find a quote, and no ID was specified. Try computing a
+        // fresh quote to use instead.
+        Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
+            let parameters = QuoteParameters {
+                sell_token: order.data.sell_token,
+                buy_token: order.data.buy_token,
+                side: match order.data.kind {
+                    OrderKind::Buy => OrderQuoteSide::Buy {
+                        buy_amount_after_fee: order.data.buy_amount,
+                    },
+                    OrderKind::Sell => OrderQuoteSide::Sell {
+                        sell_amount: SellAmount::AfterFee {
+                            value: order.data.sell_amount,
+                        },
+                    },
+                },
+                from: owner,
+                app_data: order.data.app_data,
+            };
+            quoter.calculate_quote(parameters).await?
+        }
+        Err(err) => return Err(err.into()),
+    };
+
+    if order.data.fee_amount < quote.fee_amount {
+        return Err(ValidationError::InsufficientFee);
+    }
+
+    Ok(quote)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        account_balances::MockBalanceFetching,
-        fee::{GetUnsubsidizedMinFeeError, MockMinFeeCalculating},
-    };
+    use crate::{account_balances::MockBalanceFetching, order_quoting::MockOrderQuoting};
     use anyhow::anyhow;
+    use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
-    use mockall::predicate::eq;
-    use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
+    use mockall::predicate::{always, eq};
+    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
         bad_token::{MockBadTokenDetecting, TokenQuality},
@@ -489,7 +584,7 @@ mod tests {
             max_order_validity_period,
             false,
             Arc::new(MockBadTokenDetecting::new()),
-            Arc::new(MockMinFeeCalculating::new()),
+            Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         assert!(matches!(
@@ -607,7 +702,7 @@ mod tests {
             Duration::from_secs(100),
             false,
             Arc::new(MockBadTokenDetecting::new()),
-            Arc::new(MockMinFeeCalculating::new()),
+            Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
 
@@ -648,7 +743,7 @@ mod tests {
             max_order_validity_period,
             true,
             Arc::new(bad_token_detector),
-            Arc::new(MockMinFeeCalculating::new()),
+            Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         let order = || PreOrderData {
@@ -683,12 +778,12 @@ mod tests {
 
     #[tokio::test]
     async fn post_validate_ok() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -704,7 +799,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -727,12 +822,12 @@ mod tests {
 
     #[tokio::test]
     async fn post_validate_err_zero_amount() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -748,7 +843,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -771,12 +866,12 @@ mod tests {
 
     #[tokio::test]
     async fn post_validate_err_wrong_owner() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -792,7 +887,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -814,13 +909,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn post_validate_err_insufficient_fee() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+    async fn post_validate_err_getting_quote() {
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Err(GetUnsubsidizedMinFeeError::InsufficientFee));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Err(FindQuoteError::Other(anyhow!("err"))));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -836,7 +931,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -854,17 +949,17 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
-        assert!(matches!(result, Err(ValidationError::InsufficientFee)));
+        assert!(matches!(result, Err(ValidationError::Other(_))));
     }
 
     #[tokio::test]
     async fn post_validate_err_unsupported_token() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector.expect_detect().returning(|_| {
             Ok(TokenQuality::Bad {
                 reason: Default::default(),
@@ -882,7 +977,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -910,12 +1005,12 @@ mod tests {
 
     #[tokio::test]
     async fn post_validate_err_sell_amount_overflow() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -931,7 +1026,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -955,12 +1050,12 @@ mod tests {
 
     #[tokio::test]
     async fn post_validate_err_insufficient_balance() {
-        let mut fee_calculator = MockMinFeeCalculating::new();
+        let mut order_quoter = MockOrderQuoting::new();
         let mut bad_token_detector = MockBadTokenDetecting::new();
         let mut balance_fetcher = MockBalanceFetching::new();
-        fee_calculator
-            .expect_get_unsubsidized_min_fee()
-            .returning(|_, _, _, _| Ok(Default::default()));
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
         bad_token_detector
             .expect_detect()
             .returning(|_| Ok(TokenQuality::Good));
@@ -976,7 +1071,7 @@ mod tests {
             Duration::from_secs(100),
             true,
             Arc::new(bad_token_detector),
-            Arc::new(fee_calculator),
+            Arc::new(order_quoter),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -1001,12 +1096,12 @@ mod tests {
     async fn allows_insufficient_allowance_and_balance_for_presign_orders() {
         macro_rules! assert_allows_failed_transfer {
             ($err:ident) => {
-                let mut fee_calculator = MockMinFeeCalculating::new();
+                let mut order_quoter = MockOrderQuoting::new();
                 let mut bad_token_detector = MockBadTokenDetecting::new();
                 let mut balance_fetcher = MockBalanceFetching::new();
-                fee_calculator
-                    .expect_get_unsubsidized_min_fee()
-                    .returning(|_, _, _, _| Ok(Default::default()));
+                order_quoter
+                    .expect_find_quote()
+                    .returning(|_, _| Ok(Default::default()));
                 bad_token_detector
                     .expect_detect()
                     .returning(|_| Ok(TokenQuality::Good));
@@ -1022,7 +1117,7 @@ mod tests {
                     Duration::MAX,
                     true,
                     Arc::new(bad_token_detector),
-                    Arc::new(fee_calculator),
+                    Arc::new(order_quoter),
                     Arc::new(balance_fetcher),
                 );
 
@@ -1069,5 +1164,225 @@ mod tests {
 
         assert_allows_failed_transfer!(InsufficientAllowance);
         assert_allows_failed_transfer!(InsufficientBalance);
+    }
+
+    #[tokio::test]
+    async fn get_quote_find_by_id() {
+        let order = OrderCreation {
+            data: OrderData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                sell_amount: 3.into(),
+                buy_amount: 4.into(),
+                app_data: AppId([5; 32]),
+                fee_amount: 6.into(),
+                kind: OrderKind::Buy,
+                ..Default::default()
+            },
+            quote_id: Some(42),
+            ..Default::default()
+        };
+        let from = H160([0xf0; 20]);
+
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .with(
+                eq(Some(42)),
+                eq(QuoteSearchParameters {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    sell_amount: 3.into(),
+                    buy_amount: 4.into(),
+                    fee_amount: 6.into(),
+                    kind: OrderKind::Buy,
+                    from: H160([0xf0; 20]),
+                    app_data: AppId([5; 32]),
+                }),
+            )
+            .returning(|_, _| {
+                Ok(Quote {
+                    fee_amount: 6.into(),
+                    ..Default::default()
+                })
+            });
+
+        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            quote,
+            Quote {
+                fee_amount: 6.into(),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn get_quote_calculates_fresh_quote_when_not_found() {
+        let order = OrderCreation {
+            data: OrderData {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                sell_amount: 3.into(),
+                buy_amount: 4.into(),
+                app_data: AppId([5; 32]),
+                fee_amount: 6.into(),
+                kind: OrderKind::Sell,
+                ..Default::default()
+            },
+            quote_id: None,
+            ..Default::default()
+        };
+        let from = H160([0xf0; 20]);
+
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .with(eq(None), always())
+            .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+        order_quoter
+            .expect_calculate_quote()
+            .with(eq(QuoteParameters {
+                sell_token: H160([1; 20]),
+                buy_token: H160([2; 20]),
+                side: OrderQuoteSide::Sell {
+                    sell_amount: SellAmount::AfterFee { value: 3.into() },
+                },
+                from,
+                app_data: AppId([5; 32]),
+            }))
+            .returning(|_| {
+                Ok(Quote {
+                    fee_amount: 6.into(),
+                    ..Default::default()
+                })
+            });
+
+        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+            .await
+            .unwrap();
+
+        assert_eq!(
+            quote,
+            Quote {
+                fee_amount: 6.into(),
+                ..Default::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn get_quote_errors_when_not_found_by_id() {
+        let order = OrderCreation {
+            quote_id: Some(0),
+            ..Default::default()
+        };
+
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
+
+        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ValidationError::QuoteNotFound));
+    }
+
+    #[tokio::test]
+    async fn get_quote_errors_on_insufficient_fees() {
+        let order = OrderCreation {
+            data: OrderData {
+                fee_amount: 1.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter.expect_find_quote().returning(|_, _| {
+            Ok(Quote {
+                fee_amount: 2.into(),
+                ..Default::default()
+            })
+        });
+
+        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ValidationError::InsufficientFee));
+    }
+
+    #[tokio::test]
+    async fn get_quote_bubbles_errors() {
+        macro_rules! assert_find_error_matches {
+            ($find_err:expr, $validation_err:pat) => {{
+                let mut order_quoter = MockOrderQuoting::new();
+                order_quoter
+                    .expect_find_quote()
+                    .returning(|_, _| Err($find_err));
+
+                let err =
+                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
+                        .await
+                        .unwrap_err();
+
+                assert!(matches!(err, $validation_err));
+            }};
+        }
+
+        assert_find_error_matches!(
+            FindQuoteError::Expired(Utc::now()),
+            ValidationError::InvalidQuote
+        );
+        assert_find_error_matches!(
+            FindQuoteError::ParameterMismatch(Default::default()),
+            ValidationError::InvalidQuote
+        );
+
+        macro_rules! assert_calc_error_matches {
+            ($calc_err:expr, $validation_err:pat) => {{
+                let mut order_quoter = MockOrderQuoting::new();
+                order_quoter
+                    .expect_find_quote()
+                    .returning(|_, _| Err(FindQuoteError::NotFound(None)));
+                order_quoter
+                    .expect_calculate_quote()
+                    .returning(|_| Err($calc_err));
+
+                let err =
+                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
+                        .await
+                        .unwrap_err();
+
+                assert!(matches!(err, $validation_err));
+            }};
+        }
+
+        assert_calc_error_matches!(
+            CalculateQuoteError::SellAmountDoesNotCoverFee(Default::default()),
+            ValidationError::Other(_)
+        );
+        assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedToken(Default::default())),
+            ValidationError::Partial(PartialValidationError::UnsupportedToken(_))
+        );
+        assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
+            ValidationError::NoLiquidityForQuote
+        );
+        assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::ZeroAmount),
+            ValidationError::ZeroAmount
+        );
+        assert_calc_error_matches!(
+            CalculateQuoteError::Price(PriceEstimationError::UnsupportedOrderType),
+            ValidationError::UnsupportedOrderTypeForQuote
+        );
     }
 }

@@ -386,7 +386,7 @@ impl From<PartialValidationError> for OrderQuoteError {
 }
 
 /// Order parameters for quoting.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
