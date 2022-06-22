@@ -18,7 +18,7 @@ use orderbook::{
     },
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
-    order_quoting::{OrderQuoter, QuoteHandler},
+    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::OrderValidator,
     orderbook::Orderbook,
     serve_api,
@@ -507,17 +507,18 @@ async fn main() {
         None => fee_subsidy_config,
     };
 
-    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>| {
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
+                         storage: Arc<dyn QuoteStoring>| {
         Arc::new(OrderQuoter::new(
-            price_estimator.clone(),
+            price_estimator,
             native_price_estimator.clone(),
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
-            database.clone(),
+            storage,
         ))
     };
-    let optimal_quoter = create_quoter(price_estimator.clone());
-    let fast_quoter = create_quoter(fast_price_estimator.clone());
+    let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
+    let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
