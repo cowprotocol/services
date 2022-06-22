@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteStoring};
+use crate::order_quoting::QuoteStoring;
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -99,13 +99,13 @@ impl OrderStoring for Instrumented {
     async fn insert_order(
         &self,
         order: &model::order::Order,
-        fee: FeeParameters,
+        quote: Option<crate::order_quoting::Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = self
             .metrics
             .database_query_histogram("insert_order")
             .start_timer();
-        self.inner.insert_order(order, fee).await
+        self.inner.insert_order(order, quote).await
     }
 
     async fn cancel_order(
@@ -124,14 +124,14 @@ impl OrderStoring for Instrumented {
         &self,
         old_order: &model::order::OrderUid,
         new_order: &model::order::Order,
-        new_fee: FeeParameters,
+        new_quote: Option<crate::order_quoting::Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = self
             .metrics
             .database_query_histogram("replace_order")
             .start_timer();
         self.inner
-            .replace_order(old_order, new_order, new_fee)
+            .replace_order(old_order, new_order, new_quote)
             .await
     }
 
