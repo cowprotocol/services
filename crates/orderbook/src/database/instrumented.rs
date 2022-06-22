@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::{fee::MinFeeStoring, fee_subsidy::FeeParameters, order_quoting::QuoteStoring};
+use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteStoring};
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -54,52 +54,6 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Instrumented {
             .database_query_histogram("last_event_block")
             .start_timer();
         self.inner.last_event_block().await
-    }
-}
-
-#[async_trait::async_trait]
-impl MinFeeStoring for Instrumented {
-    async fn save_fee_measurement(
-        &self,
-        fee_data: crate::fee::FeeData,
-        expiry: chrono::DateTime<chrono::Utc>,
-        estimate: FeeParameters,
-    ) -> anyhow::Result<()> {
-        let _timer = self
-            .metrics
-            .database_query_histogram("save_fee_measurement")
-            .start_timer();
-        self.inner
-            .save_fee_measurement(fee_data, expiry, estimate)
-            .await
-    }
-
-    async fn find_measurement_exact(
-        &self,
-        fee_data: crate::fee::FeeData,
-        min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<FeeParameters>> {
-        let _timer = self
-            .metrics
-            .database_query_histogram("find_measurement_exact")
-            .start_timer();
-        self.inner
-            .find_measurement_exact(fee_data, min_expiry)
-            .await
-    }
-
-    async fn find_measurement_including_larger_amount(
-        &self,
-        fee_data: crate::fee::FeeData,
-        min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<FeeParameters>> {
-        let _timer = self
-            .metrics
-            .database_query_histogram("find_measurement_including_larger_amount")
-            .start_timer();
-        self.inner
-            .find_measurement_including_larger_amount(fee_data, min_expiry)
-            .await
     }
 }
 

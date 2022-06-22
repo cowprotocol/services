@@ -4,7 +4,6 @@ pub mod arguments;
 pub mod conversions;
 pub mod database;
 pub mod event_updater;
-pub mod fee;
 pub mod fee_subsidy;
 pub mod gas_price;
 pub mod metrics;
