@@ -496,12 +496,11 @@ async fn get_quote_and_check_fee(
     Ok(quote)
 }
 
-/// Checks whether or not an order is a market order.
+/// Checks whether or not an order's limit price is within the market price
+/// specified by the quote.
 ///
-/// A market order is defined as an order whose price is equal or worse to the
-/// best on-chain price that can be found at the time. This allows the protocol
-/// to detect orders that place orders that aren't intended to be traded right
-/// away and flag them as liquidity orders.
+/// Note that this check only looks at the order's limit price and the market
+/// price and is independent of amounts or trade direction.
 fn is_market_priced_order(order: &OrderData, quote: &Quote) -> bool {
     order.sell_amount.full_mul(quote.buy_amount) >= quote.sell_amount.full_mul(order.buy_amount)
 }
