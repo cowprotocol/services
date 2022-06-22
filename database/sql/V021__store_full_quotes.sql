@@ -7,7 +7,7 @@
 -- generating unique quote IDs for each order.
 
 ALTER TABLE min_fee_measurements RENAME TO quotes;
-ALTER INDEX min_fee_measurements_token_expiration RENAME TO quotes_token_expiration;
+DROP INDEX min_fee_measurements_token_expiration;
 DELETE FROM quotes;
 ALTER TABLE quotes
     DROP COLUMN amount,
@@ -16,6 +16,8 @@ ALTER TABLE quotes
     ADD COLUMN id bigserial PRIMARY KEY,
     ADD COLUMN sell_amount numeric(78,0) NOT NULL,
     ADD COLUMN buy_amount numeric(78,0) NOT NULL;
+CREATE INDEX quotes_token_expiration ON quotes USING BTREE
+    (sell_token, buy_token, expiration_timestamp DESC);
 
 ALTER TABLE order_fee_parameters RENAME TO order_quotes;
 ALTER INDEX order_fee_parameters_pkey RENAME TO order_quotes_pkey;
