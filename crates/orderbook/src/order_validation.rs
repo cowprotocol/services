@@ -443,7 +443,7 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 }
 
 /// Retrieves the quote for an order that is being created and verify that its
-/// fee is
+/// fee is sufficient.
 ///
 /// This works by first trying to find an existing quote, and then falling back
 /// to calculating a brand new one if none can be found and a quote ID was not
