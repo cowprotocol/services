@@ -1,6 +1,7 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
-    fee::{FeeData, FeeParameters, GetUnsubsidizedMinFeeError, MinFeeCalculating},
+    fee::{FeeData, GetUnsubsidizedMinFeeError, MinFeeCalculating},
+    fee_subsidy::FeeParameters,
 };
 use contracts::WETH9;
 use ethcontract::{H160, U256};
@@ -363,7 +364,7 @@ impl OrderValidating for OrderValidator {
             &order,
             domain_separator,
             settlement_contract,
-            unsubsidized_fee.amount_in_sell_token(),
+            unsubsidized_fee.unsubsidized(),
             is_liquidity_order,
         )?;
         Ok((order, unsubsidized_fee))

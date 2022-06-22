@@ -1,3 +1,4 @@
+use crate::fee_subsidy::{FeeParameters, FeeSubsidizing, SubsidyParameters};
 use anyhow::Result;
 use chrono::{DateTime, Duration, NaiveDateTime, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
@@ -13,56 +14,11 @@ use shared::{
     price_estimation::{native::NativePriceEstimating, single_estimate},
 };
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     sync::{Arc, Mutex},
 };
 
-use crate::cow_subsidy::CowSubsidy;
-
 pub type Measurement = (U256, DateTime<Utc>);
-
-/// Fee subsidy configuration.
-///
-/// Given an estimated fee for a trade, the mimimum fee required for an order is
-/// computed using the following formula:
-/// ```text
-/// (estimated_fee_in_eth - fee_discount) * fee_factor * (partner_additional_fee_factor || 1.0)
-/// ```
-pub struct FeeSubsidyConfiguration {
-    /// A flat discount nominated in the native token to discount from fees.
-    ///
-    /// Flat fee discounts are applied **before** any multiplicative discounts.
-    pub fee_discount: f64,
-
-    /// Minimum fee amount after applying the flat subsidy. This prevents flat
-    /// fee discounts putting the fee amount below 0.
-    ///
-    /// Flat fee discounts are applied **before** any multiplicative discounts.
-    pub min_discounted_fee: f64,
-
-    /// A factor to multiply the estimated trading fee with in order to compute
-    /// subsidized minimum fee.
-    ///
-    /// Fee factors are applied **after** flat fee discounts.
-    pub fee_factor: f64,
-
-    /// Additional factors per order app ID for computing the subsidized minimum
-    /// fee.
-    ///
-    /// Fee factors are applied **after** flat fee discounts.
-    pub partner_additional_fee_factors: HashMap<AppId, f64>,
-}
-
-impl Default for FeeSubsidyConfiguration {
-    fn default() -> Self {
-        Self {
-            fee_discount: 0.,
-            fee_factor: 1.,
-            min_discounted_fee: 0.,
-            partner_additional_fee_factors: HashMap::new(),
-        }
-    }
-}
 
 pub struct MinFeeCalculator {
     price_estimator: Arc<dyn PriceEstimating>,
@@ -70,9 +26,8 @@ pub struct MinFeeCalculator {
     measurements: Arc<dyn MinFeeStoring>,
     now: Box<dyn Fn() -> DateTime<Utc> + Send + Sync>,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
-    fee_subsidy: FeeSubsidyConfiguration,
+    fee_subsidy: Arc<dyn FeeSubsidizing>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
-    cow_subsidy: Arc<dyn CowSubsidy>,
     liquidity_order_owners: HashSet<H160>,
     store_computed_fees: bool,
 }
@@ -84,84 +39,6 @@ pub struct FeeData {
     // For sell orders this is the sell amount before fees.
     pub amount: U256,
     pub kind: OrderKind,
-}
-
-/// Everything required to compute the fee amount in sell token
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FeeParameters {
-    /// The estimated gas units required to execute the quoted trade.
-    pub gas_amount: f64,
-    /// The estimated gas price at the time of quoting.
-    pub gas_price: f64,
-    /// The Ether-denominated price of token at the time of quoting.
-    ///
-    /// The Ether value of `x` sell tokens is `x * sell_token_price`.
-    pub sell_token_price: f64,
-}
-
-impl Default for FeeParameters {
-    fn default() -> Self {
-        Self {
-            gas_amount: 0.,
-            gas_price: 0.,
-            // We can't use `derive(Default)` because then this field would have
-            // a value of `0.` and it is used in division. The actual value we
-            // use here doesn't really matter as long as its non-zero (since the
-            // resulting amount in native token or sell token will be 0
-            // regardless), but the multiplicative identity seemed like a
-            // natural default value to use.
-            sell_token_price: 1.,
-        }
-    }
-}
-
-// We want the conversion from f64 to U256 to use ceil because:
-// 1. For final amounts that end up close to 0 atoms we always take a fee so we are not attackable
-//    through low decimal tokens.
-// 2. When validating fees this consistently picks the same amount.
-impl FeeParameters {
-    pub fn amount_in_sell_token(&self) -> U256 {
-        U256::from_f64_lossy((self.gas_amount * self.gas_price / self.sell_token_price).ceil())
-    }
-
-    fn apply_fee_factor(
-        &self,
-        config: &FeeSubsidyConfiguration,
-        app_data: AppId,
-        cow_factor: f64,
-    ) -> U256 {
-        let fee_in_eth = self.gas_amount * self.gas_price;
-        let mut discounted_fee_in_eth = fee_in_eth - config.fee_discount;
-        if discounted_fee_in_eth < config.min_discounted_fee {
-            tracing::warn!(
-                "fee after applying fee discount below minimum: {}, capping at {}",
-                discounted_fee_in_eth,
-                config.min_discounted_fee,
-            );
-            discounted_fee_in_eth = config.min_discounted_fee;
-        }
-
-        let factor = config
-            .partner_additional_fee_factors
-            .get(&app_data)
-            .copied()
-            .unwrap_or(1.0)
-            * config.fee_factor
-            * cow_factor;
-        U256::from_f64_lossy((discounted_fee_in_eth * factor / self.sell_token_price).ceil())
-    }
-}
-
-// Convenience to allow using u32 in tests instead of the struct
-#[cfg(test)]
-impl From<u32> for FeeParameters {
-    fn from(v: u32) -> Self {
-        FeeParameters {
-            gas_amount: v as f64,
-            gas_price: 1.0,
-            sell_token_price: 1.0,
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -247,9 +124,8 @@ impl MinFeeCalculator {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         measurements: Arc<dyn MinFeeStoring>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
-        fee_subsidy: FeeSubsidyConfiguration,
+        fee_subsidy: Arc<dyn FeeSubsidizing>,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
-        cow_subsidy: Arc<dyn CowSubsidy>,
         liquidity_order_owners: HashSet<H160>,
         store_computed_fees: bool,
     ) -> Self {
@@ -261,7 +137,6 @@ impl MinFeeCalculator {
             bad_token_detector,
             fee_subsidy,
             native_price_estimator,
-            cow_subsidy,
             liquidity_order_owners,
             store_computed_fees,
         }
@@ -294,7 +169,7 @@ impl MinFeeCalculator {
         };
 
         let fee_in_eth = gas_price * gas_amount;
-        let fee_in_sell_token = fee_parameters.amount_in_sell_token();
+        let fee_in_sell_token = fee_parameters.unsubsidized();
         tracing::debug!(
             ?fee_data, %gas_price, %gas_amount, %sell_token_price,
             %fee_in_eth, %fee_in_sell_token,
@@ -329,9 +204,12 @@ impl MinFeeCalculating for MinFeeCalculator {
 
         tracing::debug!(?fee_data, ?app_data, ?user, "computing subsidized fee",);
 
-        let cow_factor = async {
-            self.cow_subsidy
-                .cow_subsidy_factor(user)
+        let subsidy = async {
+            self.fee_subsidy
+                .subsidy(SubsidyParameters {
+                    from: user,
+                    app_data,
+                })
                 .await
                 .map_err(PriceEstimationError::Other)
         };
@@ -363,11 +241,10 @@ impl MinFeeCalculating for MinFeeCalculator {
             }
         };
 
-        let (cow_factor, unsubsidized_min_fee) =
-            futures::future::try_join(cow_factor, unsubsidized_min_fee).await?;
+        let (subsidy, unsubsidized_min_fee) =
+            futures::future::try_join(subsidy, unsubsidized_min_fee).await?;
 
-        let subsidized_min_fee =
-            unsubsidized_min_fee.apply_fee_factor(&self.fee_subsidy, app_data, cow_factor);
+        let subsidized_min_fee = unsubsidized_min_fee.subsidized(&subsidy);
         tracing::debug!(
             "computed subsidized fee of {:?}",
             (subsidized_min_fee, fee_data.sell_token),
@@ -397,11 +274,14 @@ impl MinFeeCalculating for MinFeeCalculator {
             return Ok(FeeParameters::default());
         }
 
-        let cow_factor = self.cow_subsidy.cow_subsidy_factor(user);
+        let subsidy = self.fee_subsidy.subsidy(SubsidyParameters {
+            from: user,
+            app_data,
+        });
         let past_fee = self
             .measurements
             .find_measurement_including_larger_amount(fee_data, (self.now)());
-        let (cow_factor, past_fee) = futures::future::try_join(cow_factor, past_fee).await?;
+        let (subsidy, past_fee) = futures::future::try_join(subsidy, past_fee).await?;
         // When validating we allow fees taken for larger amounts because as the amount increases
         // the fee increases too because it is worth to trade off more gas use for a slightly better
         // price. Thus it is acceptable if the new order has an amount <= an existing fee
@@ -414,8 +294,7 @@ impl MinFeeCalculating for MinFeeCalculator {
         // have been picked.
         if let Some(past_fee) = past_fee {
             tracing::debug!("found past fee {:?}", past_fee);
-            if subsidized_fee >= past_fee.apply_fee_factor(&self.fee_subsidy, app_data, cow_factor)
-            {
+            if subsidized_fee >= past_fee.subsidized(&subsidy) {
                 tracing::debug!("given fee matches past fee");
                 return Ok(past_fee);
             } else {
@@ -428,7 +307,7 @@ impl MinFeeCalculating for MinFeeCalculator {
             .await
             .map_err(GetUnsubsidizedMinFeeError::PriceEstimationError)?;
         tracing::debug!("estimated new fee {:?}", current_fee);
-        if subsidized_fee >= current_fee.apply_fee_factor(&self.fee_subsidy, app_data, cow_factor) {
+        if subsidized_fee >= current_fee.subsidized(&subsidy) {
             tracing::debug!("given fee matches new fee");
             Ok(current_fee)
         } else {
@@ -478,7 +357,7 @@ impl MinFeeStoring for InMemoryFeeStore {
                 measurement.expiry >= min_expiry && measurement.fee_data == fee_data
             })
             .map(|measurement| measurement.estimate)
-            .min_by_key(|estimate| estimate.amount_in_sell_token()))
+            .min_by_key(|estimate| estimate.unsubsidized()))
     }
 
     async fn find_measurement_including_larger_amount(
@@ -497,17 +376,19 @@ impl MinFeeStoring for InMemoryFeeStore {
                     && measurement.fee_data.amount >= fee_data.amount
             })
             .map(|measurement| measurement.estimate)
-            .min_by_key(|estimate| estimate.amount_in_sell_token()))
+            .min_by_key(|estimate| estimate.unsubsidized()))
     }
 }
 
 #[cfg(test)]
 #[allow(clippy::float_cmp)]
 mod tests {
+    use super::*;
+    use crate::fee_subsidy::Subsidy;
     use chrono::Duration;
     use futures::FutureExt;
     use gas_estimation::GasPrice1559;
-    use maplit::{hashmap, hashset};
+    use maplit::hashset;
     use mockall::{predicate::*, Sequence};
     use shared::{
         bad_token::list_based::ListBasedDetector, gas_price_estimation::FakeGasPriceEstimator,
@@ -515,10 +396,6 @@ mod tests {
         price_estimation::native::NativePriceEstimator,
     };
     use std::sync::Arc;
-
-    use crate::cow_subsidy::FixedCowSubsidy;
-
-    use super::*;
 
     fn create_default_native_token_estimator(
         price_estimator: Arc<dyn PriceEstimating>,
@@ -542,9 +419,8 @@ mod tests {
                 measurements: Arc::new(InMemoryFeeStore::default()),
                 now,
                 bad_token_detector: Arc::new(ListBasedDetector::deny_list(Vec::new())),
-                fee_subsidy: Default::default(),
+                fee_subsidy: Arc::new(Subsidy::default()),
                 native_price_estimator: create_default_native_token_estimator(price_estimator),
-                cow_subsidy: Arc::new(FixedCowSubsidy::default()),
                 liquidity_order_owners: Default::default(),
                 store_computed_fees: true,
             }
@@ -681,9 +557,8 @@ mod tests {
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![unsupported_token])),
-            fee_subsidy: Default::default(),
+            fee_subsidy: Arc::new(Subsidy::default()),
             native_price_estimator,
-            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
             store_computed_fees: true,
         };
@@ -747,21 +622,21 @@ mod tests {
         let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
         let app_data = AppId([1u8; 32]);
         let user = H160::zero();
-        let mut fee_estimator = MinFeeCalculator {
+        let fee_estimator = MinFeeCalculator {
             price_estimator,
             gas_estimator: gas_price_estimator,
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            fee_subsidy: FeeSubsidyConfiguration {
-                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.5,
                 ..Default::default()
-            },
+            }),
             native_price_estimator,
-            cow_subsidy: Arc::new(FixedCowSubsidy(0.5)),
             liquidity_order_owners: Default::default(),
             store_computed_fees: true,
         };
+
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data, user)
             .await
@@ -771,26 +646,15 @@ mod tests {
                 .get_unsubsidized_min_fee(fee_data, app_data, fee, user)
                 .await
                 .unwrap()
-                .amount_in_sell_token(),
-            fee * 4
+                .unsubsidized(),
+            fee * 2,
         );
-        assert!(fee_estimator
-            .get_unsubsidized_min_fee(fee_data, Default::default(), fee, user)
-            .await
-            .is_err());
+
         let lower_fee = fee - 1;
         assert!(fee_estimator
             .get_unsubsidized_min_fee(fee_data, app_data, lower_fee, user)
             .await
             .is_err());
-
-        // repeat without user so no extra cow subsidy
-        fee_estimator.cow_subsidy = Arc::new(FixedCowSubsidy(1.0));
-        let (fee_2, _) = fee_estimator
-            .compute_subsidized_min_fee(fee_data, app_data, user)
-            .await
-            .unwrap();
-        assert_eq!(fee_2, fee * 2);
     }
 
     #[tokio::test]
@@ -812,9 +676,8 @@ mod tests {
             measurements: db.clone(),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            fee_subsidy: Default::default(),
+            fee_subsidy: Arc::new(Subsidy::default()),
             native_price_estimator,
-            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
             store_computed_fees: false,
         };
@@ -897,13 +760,11 @@ mod tests {
             measurements: Arc::new(measurements),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            fee_subsidy: FeeSubsidyConfiguration {
-                fee_factor: 0.8,
-                partner_additional_fee_factors: hashmap! { app_data => 0.5 },
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.8,
                 ..Default::default()
-            },
+            }),
             native_price_estimator,
-            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
             store_computed_fees: true,
         };
@@ -914,10 +775,16 @@ mod tests {
             .unwrap();
         assert_eq!(
             fee,
-            U256::from_f64_lossy(
-                unsubsidized_min_fee.amount_in_sell_token().to_f64_lossy() * 0.8 * 0.5
-            )
+            U256::from_f64_lossy(unsubsidized_min_fee.unsubsidized().to_f64_lossy() * 0.8)
         );
+
+        let fee_estimator = MinFeeCalculator {
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.4,
+                ..Default::default()
+            }),
+            ..fee_estimator
+        };
 
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
@@ -925,59 +792,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             fee,
-            U256::from_f64_lossy(unsubsidized_min_fee.amount_in_sell_token().to_f64_lossy() * 0.8)
-        );
-    }
-
-    #[test]
-    fn test_apply_fee_factor_capped_at_minimum() {
-        let unsubsidized = FeeParameters {
-            gas_amount: 100_000.,
-            gas_price: 1_000_000_000.,
-            sell_token_price: 1.,
-        };
-
-        let fee_configuration = FeeSubsidyConfiguration {
-            fee_discount: 500_000_000_000_000.,
-            min_discounted_fee: 1_000_000.,
-            fee_factor: 0.5,
-            ..Default::default()
-        };
-
-        assert_eq!(
-            unsubsidized.apply_fee_factor(&fee_configuration, Default::default(), 1.0),
-            // Note that the fee factor is applied to the minimum discounted fee!
-            500_000.into(),
-        );
-    }
-
-    #[test]
-    fn test_apply_fee_factor_order() {
-        let unsubsidized = FeeParameters {
-            gas_amount: 100_000.,
-            gas_price: 1_000_000_000.,
-            sell_token_price: 1.,
-        };
-
-        let app_id = AppId([1u8; 32]);
-        let fee_configuration = FeeSubsidyConfiguration {
-            fee_discount: 50_000_000_000_000.,
-            fee_factor: 0.5,
-            min_discounted_fee: 0.,
-            partner_additional_fee_factors: maplit::hashmap! {
-                app_id => 0.1,
-            },
-        };
-
-        // (100G - 50G) * 0.5
-        assert_eq!(
-            unsubsidized.apply_fee_factor(&fee_configuration, Default::default(), 1.0),
-            25_000_000_000_000u64.into()
-        );
-        // Additionally multiply with 0.1 if partner app id is used
-        assert_eq!(
-            unsubsidized.apply_fee_factor(&fee_configuration, app_id, 1.0),
-            2_500_000_000_000u64.into()
+            U256::from_f64_lossy(unsubsidized_min_fee.unsubsidized().to_f64_lossy() * 0.4)
         );
     }
 
@@ -1005,12 +820,11 @@ mod tests {
             measurements: Arc::new(InMemoryFeeStore::default()),
             now: Box::new(Utc::now),
             bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
-            fee_subsidy: FeeSubsidyConfiguration {
-                fee_factor: 0.5,
+            fee_subsidy: Arc::new(Subsidy {
+                factor: 0.5,
                 ..Default::default()
-            },
+            }),
             native_price_estimator,
-            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
             store_computed_fees: true,
         };

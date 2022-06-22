@@ -1,7 +1,8 @@
 use super::{orders::DbOrderKind, Postgres};
 use crate::{
     conversions::*,
-    fee::{FeeData, FeeParameters, MinFeeStoring},
+    fee::{FeeData, MinFeeStoring},
+    fee_subsidy::FeeParameters,
 };
 
 use anyhow::{Context, Result};

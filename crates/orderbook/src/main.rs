@@ -10,10 +10,12 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
+    fee::MinFeeCalculator,
+    fee_subsidy::{
+        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
+    },
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     order_quoting::OrderQuoter,
@@ -484,19 +486,25 @@ async fn main() {
         (Some(token), Some(vtoken)) => Some((token, vtoken)),
         _ => panic!("should either have both cow token contracts or none"),
     };
-    let cow_subsidy = match cow_tokens {
-        Some((token, vtoken)) => {
-            tracing::debug!("using cow token contracts for subsidy");
-            Arc::new(CowSubsidyImpl::new(
-                token,
-                vtoken,
-                args.cow_fee_factors.unwrap_or_default(),
-            )) as Arc<dyn CowSubsidy>
-        }
-        None => {
-            tracing::debug!("disabling cow subsidy because contracts not found on network");
-            Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>
-        }
+    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
+        tracing::debug!("using cow token contracts for subsidy");
+        CowSubsidy::new(token, vtoken, args.cow_fee_factors.unwrap_or_default())
+    });
+
+    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+        fee_discount: args.fee_discount,
+        min_discounted_fee: args.min_discounted_fee,
+        fee_factor: args.fee_factor,
+        liquidity_order_owners: args.liquidity_order_owners.iter().copied().collect(),
+        partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
+    }) as Arc<dyn FeeSubsidizing>;
+
+    let fee_subsidy = match cow_subsidy {
+        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
+            fee_subsidy_config,
+            Arc::new(cow_subsidy),
+        ])),
+        None => fee_subsidy_config,
     };
 
     let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>,
@@ -506,14 +514,8 @@ async fn main() {
             gas_price_estimator.clone(),
             database.clone(),
             bad_token_detector.clone(),
-            FeeSubsidyConfiguration {
-                fee_discount: args.fee_discount,
-                min_discounted_fee: args.min_discounted_fee,
-                fee_factor: args.fee_factor,
-                partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
-            },
+            fee_subsidy.clone(),
             native_price_estimator.clone(),
-            cow_subsidy.clone(),
             args.liquidity_order_owners.iter().copied().collect(),
             store_computed_fees,
         ))

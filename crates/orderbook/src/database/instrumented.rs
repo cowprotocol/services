@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::fee::{FeeParameters, MinFeeStoring};
+use crate::{fee::MinFeeStoring, fee_subsidy::FeeParameters};
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
