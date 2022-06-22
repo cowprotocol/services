@@ -552,6 +552,7 @@ async fn main() {
             fee_subsidy.clone(),
             native_price_estimator,
             args.liquidity_order_owners.iter().copied().collect(),
+            true,
         )),
         balance_fetcher,
     ));

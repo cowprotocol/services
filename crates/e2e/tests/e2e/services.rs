@@ -189,6 +189,7 @@ impl OrderbookServices {
                 fee_subsidy,
                 native_price_estimator,
                 Default::default(),
+                true,
             )),
             balance_fetcher,
         ));
