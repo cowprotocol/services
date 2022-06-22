@@ -1,6 +1,5 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
-    fee_subsidy::FeeParameters,
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
         QuoteSearchParameters,
@@ -56,7 +55,7 @@ pub trait OrderValidating: Send + Sync {
         order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
-    ) -> Result<(Order, FeeParameters), ValidationError>;
+    ) -> Result<(Order, Option<Quote>), ValidationError>;
 }
 
 #[derive(Debug)]
@@ -313,7 +312,7 @@ impl OrderValidating for OrderValidator {
         order: OrderCreation,
         domain_separator: &DomainSeparator,
         settlement_contract: H160,
-    ) -> Result<(Order, FeeParameters), ValidationError> {
+    ) -> Result<(Order, Option<Quote>), ValidationError> {
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
@@ -343,8 +342,9 @@ impl OrderValidating for OrderValidator {
             None
         };
 
-        let fee_parameters = quote
-            .map(|quote| quote.data.fee_parameters)
+        let full_fee_amount = quote
+            .as_ref()
+            .map(|quote| quote.data.fee_parameters.unsubsidized())
             .unwrap_or_default();
 
         let min_balance = match minimum_balance(&order.data) {
@@ -398,10 +398,10 @@ impl OrderValidating for OrderValidator {
             &order,
             domain_separator,
             settlement_contract,
-            fee_parameters.unsubsidized(),
+            full_fee_amount,
             is_liquidity_order,
         )?;
-        Ok((order, fee_parameters))
+        Ok((order, quote))
     }
 }
 
@@ -448,7 +448,10 @@ async fn get_quote_and_check_fee(
     };
 
     let quote = match quoter.find_quote(order.quote_id, parameters).await {
-        Ok(quote) => quote,
+        Ok(quote) => {
+            tracing::debug!(quote_id =? order.quote_id, "found quote for order creation");
+            quote
+        }
         // We couldn't find a quote, and no ID was specified. Try computing a
         // fresh quote to use instead.
         Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
@@ -468,7 +471,10 @@ async fn get_quote_and_check_fee(
                 from: owner,
                 app_data: order.data.app_data,
             };
-            quoter.calculate_quote(parameters).await?
+            let quote = quoter.calculate_quote(parameters).await?;
+
+            tracing::debug!("computed fresh quote for order creation");
+            quote
         }
         Err(err) => return Err(err.into()),
     };

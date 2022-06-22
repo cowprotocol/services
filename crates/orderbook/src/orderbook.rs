@@ -149,12 +149,12 @@ impl Orderbook {
     }
 
     pub async fn add_order(&self, payload: OrderCreation) -> Result<OrderUid, AddOrderError> {
-        let (order, fee) = self
+        let (order, quote) = self
             .order_validator
             .validate_and_construct_order(payload, &self.domain_separator, self.settlement_contract)
             .await?;
 
-        self.database.insert_order(&order, fee).await?;
+        self.database.insert_order(&order, quote).await?;
         Metrics::on_order_operation(&order, OrderOperation::Created);
 
         self.solvable_orders.request_update();
@@ -232,7 +232,7 @@ impl Orderbook {
             .ok_or(ReplaceOrderError::InvalidReplacement)?;
 
         let old_order = self.find_order_for_cancellation(&old_order).await?;
-        let (new_order, new_fee) = self
+        let (new_order, new_quote) = self
             .order_validator
             .validate_and_construct_order(
                 new_order,
@@ -255,7 +255,7 @@ impl Orderbook {
         }
 
         self.database
-            .replace_order(&old_order.metadata.uid, &new_order, new_fee)
+            .replace_order(&old_order.metadata.uid, &new_order, new_quote)
             .await?;
         Metrics::on_order_operation(&old_order, OrderOperation::Cancelled);
         Metrics::on_order_operation(&new_order, OrderOperation::Created);
