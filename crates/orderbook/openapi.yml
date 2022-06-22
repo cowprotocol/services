@@ -616,7 +616,9 @@ components:
       type: string
       enum: [erc20, internal]
     PriceQuality:
-      description: How good should the price estimate be?
+      description: |
+        How good should the price estimate be?
+        Note that orders are supposed to be created from "optimal" price estimates.
       type: string
       enum: [fast, optimal]
     OrderStatus:

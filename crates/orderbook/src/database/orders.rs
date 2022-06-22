@@ -253,7 +253,7 @@ async fn insert_order(
         .bind(receiver)
         .bind(u256_to_big_decimal(&order.data.sell_amount))
         .bind(u256_to_big_decimal(&order.data.buy_amount))
-        .bind(order.data.valid_to)
+        .bind(order.data.valid_to as i64)
         .bind(&order.data.app_data.0[..])
         .bind(u256_to_big_decimal(&order.data.fee_amount))
         .bind(DbOrderKind::from(order.data.kind))

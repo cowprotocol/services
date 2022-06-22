@@ -15,11 +15,11 @@ use ethcontract::{Account, Bytes, H160, U256};
 use maplit::hashmap;
 use model::order::OrderKind;
 use reqwest::Client;
-use shared::http_client::RateLimiter;
 use shared::paraswap_api::{
     DefaultParaswapApi, ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side,
     TradeAmount, TransactionBuilderQuery, TransactionBuilderResponse,
 };
+use shared::rate_limiter::RateLimiter;
 use shared::token_info::TokenInfo;
 use shared::{token_info::TokenInfoFetching, Web3};
 use std::collections::HashMap;

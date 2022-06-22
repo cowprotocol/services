@@ -618,10 +618,10 @@ async fn find_mined_transaction(web3: &Web3, hashes: &[H256]) -> Option<Transact
 struct Metrics {
     /// Tracks how many transactions get successfully submitted with the different submission strategies.
     #[metric(labels("submitter", "result"))]
-    submissions: prometheus::CounterVec,
+    submissions: prometheus::IntCounterVec,
     /// Tracks how many transactions get successfully mined by the different submission strategies.
     #[metric(labels("submitter"))]
-    mined_transactions: prometheus::CounterVec,
+    mined_transactions: prometheus::IntCounterVec,
 }
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {

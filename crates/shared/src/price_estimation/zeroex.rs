@@ -1,7 +1,9 @@
 use crate::{
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     zeroex_api::{SwapQuery, SwapResponse, ZeroExApi},
 };
@@ -13,14 +15,20 @@ pub struct ZeroExPriceEstimator {
     api: Arc<dyn ZeroExApi>,
     sharing: RequestSharing<Query, BoxFuture<'static, Result<SwapResponse, PriceEstimationError>>>,
     excluded_sources: Vec<String>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl ZeroExPriceEstimator {
-    pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>) -> Self {
+    pub fn new(
+        api: Arc<dyn ZeroExApi>,
+        excluded_sources: Vec<String>,
+        rate_limiter: Arc<RateLimiter>,
+    ) -> Self {
         Self {
             api,
             sharing: Default::default(),
             excluded_sources,
+            rate_limiter,
         }
     }
 
@@ -44,6 +52,7 @@ impl ZeroExPriceEstimator {
                 .await
                 .map_err(|err| PriceEstimationError::Other(err.into()))
         };
+        let swap_future = rate_limited(self.rate_limiter.clone(), swap_future);
         let swap = self.sharing.shared(*query, swap_future.boxed()).await?;
 
         Ok(Estimate {
@@ -81,6 +90,18 @@ mod tests {
     use crate::zeroex_api::{MockZeroExApi, SwapResponse};
     use reqwest::Client;
 
+    fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
+        ZeroExPriceEstimator {
+            api,
+            sharing: Default::default(),
+            excluded_sources: Default::default(),
+            rate_limiter: Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
+        }
+    }
+
     #[tokio::test]
     async fn estimate_sell() {
         let mut zeroex_api = MockZeroExApi::new();
@@ -108,11 +129,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(zeroex_api),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let est = estimator
             .estimate(&Query {
@@ -155,11 +172,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(zeroex_api),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let est = estimator
             .estimate(&Query {
@@ -181,11 +194,8 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
 
-        let estimator = ZeroExPriceEstimator {
-            api: Arc::new(DefaultZeroExApi::with_default_url(Client::new())),
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-        };
+        let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
+        let estimator = create_estimator(Arc::new(zeroex_api));
 
         let result = estimator
             .estimate(&Query {

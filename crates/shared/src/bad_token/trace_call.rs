@@ -77,7 +77,7 @@ impl TraceCallDetector {
             candidates.extend(match result {
                 Ok(candidates) => candidates,
                 Err(err) => {
-                    tracing::error!("token owner finding failed: {:?}", err);
+                    tracing::warn!("token owner finding failed: {:?}", err);
                     continue;
                 }
             });

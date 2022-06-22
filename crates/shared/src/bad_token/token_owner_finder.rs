@@ -8,6 +8,8 @@ use ethcontract::BlockNumber;
 use model::TokenPair;
 use primitive_types::H160;
 
+pub mod blockscout;
+
 /// To detect bad tokens we need to find some address on the network that owns the token so that we
 /// can use it in our simulations.
 #[async_trait::async_trait]

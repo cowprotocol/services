@@ -1,8 +1,10 @@
 use crate::{
     paraswap_api::{ParaswapApi, ParaswapResponseError, PriceQuery, PriceResponse, Side},
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     token_info::{TokenInfo, TokenInfoFetching},
 };
@@ -20,6 +22,7 @@ pub struct ParaswapPriceEstimator {
     sharing: RequestSharing<Query, BoxFuture<'static, Result<PriceResponse, PriceEstimationError>>>,
     token_info: Arc<dyn TokenInfoFetching>,
     disabled_paraswap_dexs: Vec<String>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl ParaswapPriceEstimator {
@@ -27,12 +30,14 @@ impl ParaswapPriceEstimator {
         api: Arc<dyn ParaswapApi>,
         token_info: Arc<dyn TokenInfoFetching>,
         disabled_paraswap_dexs: Vec<String>,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             paraswap: api,
             sharing: Default::default(),
             token_info,
             disabled_paraswap_dexs,
+            rate_limiter,
         }
     }
 
@@ -63,6 +68,8 @@ impl ParaswapPriceEstimator {
                 _ => PriceEstimationError::Other(err.into()),
             })
         };
+        let response_future = rate_limited(self.rate_limiter.clone(), response_future);
+
         let response = self
             .sharing
             .shared(*query, response_future.boxed())
@@ -163,6 +170,10 @@ mod tests {
             sharing: Default::default(),
             token_info: Arc::new(token_info),
             disabled_paraswap_dexs: Vec::new(),
+            rate_limiter: Arc::new(RateLimiter::from_strategy(
+                Default::default(),
+                "test".into(),
+            )),
         };
 
         let weth = testlib::tokens::WETH;

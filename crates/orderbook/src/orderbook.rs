@@ -21,7 +21,7 @@ use thiserror::Error;
 struct Metrics {
     /// Counter for measuring order statistics.
     #[metric(labels("kind", "operation"))]
-    orders: prometheus::CounterVec,
+    orders: prometheus::IntCounterVec,
 }
 
 enum OrderOperation {

@@ -149,32 +149,9 @@ pub fn handle_all_routes(
         .and(get_solvable_orders_v2)
         .untuple_one();
 
-    // Fallback route that handles all 404s.
-
-    // Since we `.map()` all requests to collect metrics, we need to report
-    // all 404s as `Ok(ApiReply)`, and not `Err(Rejection)`.
-
-    let routes_fallback = warp::any()
-        .and_then(|| async move {
-            Result::<(ApiReply, &str), Infallible>::Ok((
-                with_status(
-                    error("NotFound", "You've passed an invalid URL"),
-                    StatusCode::NOT_FOUND,
-                ),
-                "unknown_method",
-            ))
-        })
-        .untuple_one()
-        .boxed();
-
     // Routes combined
 
-    let routes = routes_v1
-        .or(routes_v2)
-        .unify()
-        .or(routes_fallback)
-        .unify()
-        .boxed();
+    let routes = routes_v1.or(routes_v2).unify().boxed();
 
     // Metrics
 
@@ -248,11 +225,11 @@ async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
 struct ApiMetrics {
     /// Number of completed API requests.
     #[metric(labels("method", "status_code"))]
-    requests_complete: prometheus::CounterVec,
+    requests_complete: prometheus::IntCounterVec,
 
     /// Number of rejected API requests.
     #[metric(labels("status_code"))]
-    requests_rejected: prometheus::CounterVec,
+    requests_rejected: prometheus::IntCounterVec,
 
     /// Execution time for each API request.
     #[metric(labels("method"))]
@@ -340,6 +317,13 @@ impl IntoWarpReply for PriceEstimationError {
             ),
             Self::UnsupportedOrderType => with_status(
                 internal_error(anyhow::anyhow!("UnsupportedOrderType").context("price_estimation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Self::RateLimited(_) => with_status(
+                internal_error(
+                    anyhow::anyhow!("price estimators temporarily inactive")
+                        .context("price_estimation"),
+                ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
             Self::Other(err) => with_status(

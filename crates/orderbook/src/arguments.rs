@@ -5,7 +5,7 @@ use primitive_types::{H160, U256};
 use reqwest::Url;
 use shared::{
     arguments::display_option, bad_token::token_owner_finder::FeeValues,
-    price_estimation::PriceEstimatorType,
+    price_estimation::PriceEstimatorType, rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -196,6 +196,15 @@ pub struct Arguments {
     #[clap(long, env, default_value = "2")]
     pub fast_price_estimation_results_required: NonZeroUsize,
 
+    /// Configures the back off strategy for price estimators when requests take too long.
+    /// Requests issued while back off is active get dropped entirely.
+    /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
+    /// back_off_growth_factor: f64 >= 1.0
+    /// min_back_off: f64 in seconds
+    /// max_back_off: f64 in seconds
+    #[clap(long, env, verbatim_doc_comment)]
+    pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
+
     #[clap(long, env, default_value = "static", arg_enum)]
     pub token_detector_fee_values: FeeValues,
 
@@ -207,6 +216,10 @@ pub struct Arguments {
     /// allowed to place partially fillable orders.
     #[clap(long, env, use_value_delimiter = true)]
     pub liquidity_order_owners: Vec<H160>,
+
+    /// Use Blockscout as a TokenOwnerFinding implementation.
+    #[clap(long, env, default_value = "true")]
+    pub enable_blockscout: bool,
 }
 
 impl std::fmt::Display for Arguments {
@@ -280,6 +293,9 @@ impl std::fmt::Display for Arguments {
             "fast_price_estimation_results_required: {}",
             self.fast_price_estimation_results_required
         )?;
+        write!(f, "price_estimation_rate_limiter: ")?;
+        display_option(&self.price_estimation_rate_limiter, f)?;
+        writeln!(f)?;
         writeln!(
             f,
             "token_detector_fee_values: {:?}",
@@ -290,6 +306,7 @@ impl std::fmt::Display for Arguments {
             "liquidity_order_owners: {:?}",
             self.liquidity_order_owners
         )?;
+        writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
         Ok(())
     }
 }

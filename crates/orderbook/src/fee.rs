@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Duration, Utc, MAX_DATETIME};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc, MAX_DATETIME};
 use futures::future::TryFutureExt;
 use gas_estimation::GasPriceEstimating;
 use model::{app_id::AppId, order::OrderKind};
@@ -74,6 +74,7 @@ pub struct MinFeeCalculator {
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     cow_subsidy: Arc<dyn CowSubsidy>,
     liquidity_order_owners: HashSet<H160>,
+    store_computed_fees: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, Eq, PartialEq)]
@@ -250,6 +251,7 @@ impl MinFeeCalculator {
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         cow_subsidy: Arc<dyn CowSubsidy>,
         liquidity_order_owners: HashSet<H160>,
+        store_computed_fees: bool,
     ) -> Self {
         Self {
             price_estimator,
@@ -261,6 +263,7 @@ impl MinFeeCalculator {
             native_price_estimator,
             cow_subsidy,
             liquidity_order_owners,
+            store_computed_fees,
         }
     }
 
@@ -321,7 +324,7 @@ impl MinFeeCalculating for MinFeeCalculator {
         ensure_token_supported(fee_data.buy_token, self.bad_token_detector.as_ref()).await?;
 
         let now = (self.now)();
-        let official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
+        let mut official_valid_until = now + Duration::seconds(STANDARD_VALIDITY_FOR_FEE_IN_SEC);
         let internal_valid_until = now + Duration::seconds(PERSISTED_VALIDITY_FOR_FEE_IN_SEC);
 
         tracing::debug!(?fee_data, ?app_data, ?user, "computing subsidized fee",);
@@ -343,12 +346,16 @@ impl MinFeeCalculating for MinFeeCalculator {
             } else {
                 let current_fee = self.compute_unsubsidized_min_fee(fee_data).await?;
 
-                if let Err(err) = self
-                    .measurements
-                    .save_fee_measurement(fee_data, internal_valid_until, current_fee)
-                    .await
-                {
-                    tracing::warn!(?err, "error saving fee measurement");
+                if self.store_computed_fees {
+                    if let Err(err) = self
+                        .measurements
+                        .save_fee_measurement(fee_data, internal_valid_until, current_fee)
+                        .await
+                    {
+                        tracing::warn!(?err, "error saving fee measurement");
+                    }
+                } else {
+                    tracing::debug!("skip saving fee measurement");
                 }
 
                 tracing::debug!("using new fee measurement {:?}", current_fee);
@@ -365,6 +372,16 @@ impl MinFeeCalculating for MinFeeCalculator {
             "computed subsidized fee of {:?}",
             (subsidized_min_fee, fee_data.sell_token),
         );
+
+        if !self.store_computed_fees {
+            // Set an expired timeout to signal that this fee estimate is only indicative
+            // and not supposed to be used to create actual orders with it.
+            //
+            // Technically we could only set this sentinel when we had to compute a fee
+            // estimate from scratch but to make it more consistent for the user we'll always
+            // return this value when the fee estimate will not end up in the database.
+            official_valid_until = DateTime::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc);
+        }
 
         Ok((subsidized_min_fee, official_valid_until))
     }
@@ -529,6 +546,7 @@ mod tests {
                 native_price_estimator: create_default_native_token_estimator(price_estimator),
                 cow_subsidy: Arc::new(FixedCowSubsidy::default()),
                 liquidity_order_owners: Default::default(),
+                store_computed_fees: true,
             }
         }
     }
@@ -667,6 +685,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
 
         // Selling unsupported token
@@ -741,6 +760,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy(0.5)),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, app_data, user)
@@ -771,6 +791,48 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fee_2, fee * 2);
+    }
+
+    #[tokio::test]
+    async fn storing_fees_can_be_disabled() {
+        let gas_estimator = Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(GasPrice1559 {
+            max_fee_per_gas: 100.0,
+            max_priority_fee_per_gas: 50.0,
+            base_fee_per_gas: 30.0,
+        }))));
+        let price_estimator = Arc::new(FakePriceEstimator(price_estimation::Estimate {
+            out_amount: 1.into(),
+            gas: 1000,
+        }));
+        let native_price_estimator = create_default_native_token_estimator(price_estimator.clone());
+        let db = Arc::new(InMemoryFeeStore::default());
+        let fee_estimator = MinFeeCalculator {
+            price_estimator,
+            gas_estimator,
+            measurements: db.clone(),
+            now: Box::new(Utc::now),
+            bad_token_detector: Arc::new(ListBasedDetector::deny_list(vec![])),
+            fee_subsidy: Default::default(),
+            native_price_estimator,
+            cow_subsidy: Arc::new(FixedCowSubsidy::default()),
+            liquidity_order_owners: Default::default(),
+            store_computed_fees: false,
+        };
+
+        let fee_data = FeeData {
+            sell_token: H160::from_low_u64_be(1),
+            ..Default::default()
+        };
+        let (_, valid_to) = fee_estimator
+            .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())
+            .await
+            .unwrap();
+
+        assert_eq!(
+            valid_to,
+            DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc)
+        );
+        assert!(db.0.lock().unwrap().is_empty());
     }
 
     #[tokio::test]
@@ -843,6 +905,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
 
         let (fee, _) = fee_estimator
@@ -949,6 +1012,7 @@ mod tests {
             native_price_estimator,
             cow_subsidy: Arc::new(FixedCowSubsidy::default()),
             liquidity_order_owners: Default::default(),
+            store_computed_fees: true,
         };
         let (fee, _) = fee_estimator
             .compute_subsidized_min_fee(fee_data, Default::default(), Default::default())

@@ -712,9 +712,13 @@ impl Driver {
                 })
                 .collect(),
         };
-        // This will happen again after transaction submission with the tx hash.
-        self.send_solver_competition(auction_id, &solver_competition_response)
-            .await;
+        // Don't bother sending if there were no solutions so we don't take up space in the
+        // competition info cache in the orderbook.
+        if !solver_competition_response.solutions.is_empty() {
+            // This will happen again after transaction submission with the tx hash.
+            self.send_solver_competition(auction_id, &solver_competition_response)
+                .await;
+        }
 
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {

@@ -1,7 +1,7 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
     gas_price_estimation::GasEstimatorType,
-    http_client::RateLimitingStrategy,
+    rate_limiter::RateLimitingStrategy,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use anyhow::{ensure, Context, Result};
@@ -106,7 +106,7 @@ pub struct Arguments {
     /// Configures the back off strategy for the paraswap API when our requests get rate limited.
     /// Requests issued while back off is active get dropped entirely.
     /// Needs to be passed as "<back_off_growth_factor>,<min_back_off>,<max_back_off>".
-    /// back_off_growth_factor: f64 > 1.0
+    /// back_off_growth_factor: f64 >= 1.0
     /// min_back_off: f64 in seconds
     /// max_back_off: f64 in seconds
     #[clap(long, env, verbatim_doc_comment)]
@@ -328,11 +328,6 @@ impl FromStr for RateLimitingStrategy {
             .context("parsing back_off_growth_factor")?;
         let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
         let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
-        Self::try_new(
-            back_off_growth_factor,
-            min_back_off,
-            max_back_off,
-            "paraswap".into(),
-        )
+        Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
     }
 }

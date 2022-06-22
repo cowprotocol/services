@@ -1,7 +1,7 @@
 use super::{BadTokenDetecting, TokenQuality};
 use crate::metrics::get_metric_storage_registry;
 use anyhow::Result;
-use prometheus::CounterVec;
+use prometheus::IntCounterVec;
 use prometheus_metric_storage::MetricStorage;
 
 pub trait InstrumentedBadTokenDetectorExt {
@@ -21,7 +21,7 @@ impl<T: BadTokenDetecting + 'static> InstrumentedBadTokenDetectorExt for T {
 struct Metrics {
     /// Tracks how many token detections result in good or bad token quality or an error.
     #[metric(labels("quality"))]
-    results: CounterVec,
+    results: IntCounterVec,
 }
 
 pub struct InstrumentedBadTokenDetector {
