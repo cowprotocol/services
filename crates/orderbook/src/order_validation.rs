@@ -1458,7 +1458,7 @@ mod tests {
             &OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 100.into(),
-                kind: OrderKind::Sell,
+                kind: OrderKind::Buy,
                 ..Default::default()
             },
             &quote,
@@ -1468,7 +1468,7 @@ mod tests {
             &OrderData {
                 sell_amount: 101.into(), // 1% slippage
                 buy_amount: 100.into(),
-                kind: OrderKind::Sell,
+                kind: OrderKind::Buy,
                 ..Default::default()
             },
             &quote,
@@ -1478,7 +1478,7 @@ mod tests {
             &OrderData {
                 sell_amount: 1.into(),
                 buy_amount: 100.into(),
-                kind: OrderKind::Sell,
+                kind: OrderKind::Buy,
                 ..Default::default()
             },
             &quote
