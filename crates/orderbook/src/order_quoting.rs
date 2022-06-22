@@ -397,7 +397,7 @@ pub struct QuoteData {
     pub buy_token: H160,
     /// The sell amount used when computing the exchange rate for this quote.
     ///
-    /// For buy orders, this will be the expected return amount for some fixed
+    /// For buy orders, this will be the expected sell amount for some fixed
     /// buy amount. For sell order of the `SellAmount::BeforeFee` variant, this
     /// will be the total `sell_amount + fee_amount`. For sell orders of the
     /// `SellAmount::AfterFee` variant, this will be the fixed sell amount of
@@ -1234,7 +1234,7 @@ mod tests {
         };
 
         assert!(matches!(
-            quoter.compute_quote_data(&parameters).await.unwrap_err(),
+            quoter.calculate_quote(parameters).await.unwrap_err(),
             CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
         ));
     }
