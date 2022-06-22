@@ -110,9 +110,9 @@ impl QuoteStoring for Postgres {
                 sell_token = $1 AND
                 buy_token = $2 AND
                 (
-                    order_kind = 'sell' AND sell_amount = $3 OR
-                    order_kind = 'sell' AND sell_amount = $4 OR
-                    order_kind = 'buy' AND buy_amount = $5
+                    (order_kind = 'sell' AND sell_amount = $3) OR
+                    (order_kind = 'sell' AND sell_amount = $4) OR
+                    (order_kind = 'buy' AND buy_amount = $5)
                 ) AND
                 order_kind = $6 AND
                 expiration_timestamp >= $7
