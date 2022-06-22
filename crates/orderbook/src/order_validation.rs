@@ -448,7 +448,10 @@ async fn get_quote_and_check_fee(
     };
 
     let quote = match quoter.find_quote(order.quote_id, parameters).await {
-        Ok(quote) => quote,
+        Ok(quote) => {
+            tracing::debug!(quote_id =? order.quote_id, "found quote for order creation");
+            quote
+        }
         // We couldn't find a quote, and no ID was specified. Try computing a
         // fresh quote to use instead.
         Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
@@ -468,7 +471,10 @@ async fn get_quote_and_check_fee(
                 from: owner,
                 app_data: order.data.app_data,
             };
-            quoter.calculate_quote(parameters).await?
+            let quote = quoter.calculate_quote(parameters).await?;
+
+            tracing::debug!("computed fresh quote for order creation");
+            quote
         }
         Err(err) => return Err(err.into()),
     };
