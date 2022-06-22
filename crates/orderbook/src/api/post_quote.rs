@@ -1,9 +1,10 @@
 use crate::{
     api::{self, convert_json_response, IntoWarpReply},
-    order_quoting::{FeeError, OrderQuoteError, OrderQuoter},
+    order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
 };
 use anyhow::Result;
 use model::quote::OrderQuoteRequest;
+use serde_json::json;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection};
 
@@ -14,12 +15,12 @@ fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = R
 }
 
 pub fn post_quote(
-    quoter: Arc<OrderQuoter>,
+    quotes: Arc<QuoteHandler>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     post_quote_request().and_then(move |request: OrderQuoteRequest| {
-        let quoter = quoter.clone();
+        let quotes = quotes.clone();
         async move {
-            let result = quoter.calculate_quote(&request).await;
+            let result = quotes.calculate_quote(&request).await;
             if let Err(err) = &result {
                 tracing::warn!(?err, ?request, "post_quote error");
             }
@@ -28,18 +29,19 @@ pub fn post_quote(
     })
 }
 
-impl IntoWarpReply for FeeError {
+impl IntoWarpReply for CalculateQuoteError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
-            FeeError::PriceEstimate(err) => err.into_warp_reply(),
-            FeeError::SellAmountDoesNotCoverFee(fee) => warp::reply::with_status(
+            Self::Price(err) => err.into_warp_reply(),
+            Self::SellAmountDoesNotCoverFee { fee_amount } => warp::reply::with_status(
                 super::rich_error(
                     "SellAmountDoesNotCoverFee",
                     "The sell amount for the sell order is lower than the fee.",
-                    fee,
+                    json!({ "fee_amount": fee_amount }),
                 ),
                 StatusCode::BAD_REQUEST,
             ),
+            Self::Other(err) => err.into_warp_reply(),
         }
     }
 }
@@ -47,8 +49,8 @@ impl IntoWarpReply for FeeError {
 impl IntoWarpReply for OrderQuoteError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
-            OrderQuoteError::Fee(err) => err.into_warp_reply(),
-            OrderQuoteError::Order(err) => err.into_warp_reply(),
+            Self::Validation(err) => err.into_warp_reply(),
+            Self::CalculateQuote(err) => err.into_warp_reply(),
         }
     }
 }
@@ -56,7 +58,7 @@ impl IntoWarpReply for OrderQuoteError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{api::response_body, order_validation::ValidationError};
+    use crate::api::response_body;
     use anyhow::anyhow;
     use chrono::{DateTime, NaiveDateTime, Utc};
     use ethcontract::{H160, U256};
@@ -241,7 +243,7 @@ mod tests {
             quote,
             from: H160::zero(),
             expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-            id: 0,
+            id: Some(0),
         };
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
             order_quote_response.clone(),
@@ -257,7 +259,7 @@ mod tests {
     #[tokio::test]
     async fn post_quote_response_err() {
         let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Err(
-            OrderQuoteError::Order(ValidationError::Other(anyhow!("Uh oh - error"))),
+            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error"))),
         ))
         .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);

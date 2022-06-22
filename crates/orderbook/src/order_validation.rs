@@ -66,6 +66,7 @@ pub enum PartialValidationError {
     UnsupportedSellTokenSource(SellTokenSource),
     UnsupportedOrderType,
     UnsupportedSignature,
+    UnsupportedToken(H160),
     Other(anyhow::Error),
 }
 
@@ -79,7 +80,6 @@ pub enum ValidationError {
     // If fee and sell amount overflow u256
     SellAmountOverflow,
     TransferSimulationFailed,
-    UnsupportedToken(H160),
     WrongOwner(H160),
     ZeroAmount,
     Other(anyhow::Error),
@@ -104,9 +104,9 @@ pub struct OrderValidator {
     min_order_validity_period: Duration,
     max_order_validity_period: Duration,
     enable_presign_orders: bool,
+    bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
     fee_validator: Arc<dyn MinFeeCalculating>,
-    bad_token_detector: Arc<dyn BadTokenDetecting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
 }
 
@@ -165,8 +165,8 @@ impl OrderValidator {
         min_order_validity_period: Duration,
         max_order_validity_period: Duration,
         enable_presign_orders: bool,
-        fee_validator: Arc<dyn MinFeeCalculating>,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
+        fee_validator: Arc<dyn MinFeeCalculating>,
         balance_fetcher: Arc<dyn BalanceFetching>,
     ) -> Self {
         Self {
@@ -177,8 +177,8 @@ impl OrderValidator {
             min_order_validity_period,
             max_order_validity_period,
             enable_presign_orders,
-            fee_validator,
             bad_token_detector,
+            fee_validator,
             balance_fetcher,
         }
     }
@@ -244,6 +244,18 @@ impl OrderValidating for OrderValidator {
                 return Err(PartialValidationError::TransferEthToContract);
             }
         }
+
+        for &token in &[order.sell_token, order.buy_token] {
+            if !self
+                .bad_token_detector
+                .detect(token)
+                .await
+                .map_err(PartialValidationError::Other)?
+                .is_good()
+            {
+                return Err(PartialValidationError::UnsupportedToken(token));
+            }
+        }
         Ok(())
     }
 
@@ -258,17 +270,6 @@ impl OrderValidating for OrderValidator {
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
-        }
-        for &token in &[order.data.sell_token, order.data.buy_token] {
-            if !self
-                .bad_token_detector
-                .detect(token)
-                .await
-                .map_err(ValidationError::Other)?
-                .is_good()
-            {
-                return Err(ValidationError::UnsupportedToken(token));
-            }
         }
 
         let is_liquidity_order = self.liquidity_order_owners.contains(&owner);
@@ -401,6 +402,7 @@ mod tests {
     use anyhow::anyhow;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
+    use mockall::predicate::eq;
     use model::{order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
@@ -486,8 +488,8 @@ mod tests {
             min_order_validity_period,
             max_order_validity_period,
             false,
-            Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
+            Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         assert!(matches!(
@@ -604,8 +606,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             false,
-            Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBadTokenDetecting::new()),
+            Arc::new(MockMinFeeCalculating::new()),
             Arc::new(MockBalanceFetching::new()),
         );
 
@@ -626,6 +628,17 @@ mod tests {
         let liquidity_order_owner = H160::from_low_u64_be(0x42);
         let min_order_validity_period = Duration::from_secs(1);
         let max_order_validity_period = Duration::from_secs(100);
+
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        bad_token_detector
+            .expect_detect()
+            .with(eq(H160::from_low_u64_be(1)))
+            .returning(|_| Ok(TokenQuality::Good));
+        bad_token_detector
+            .expect_detect()
+            .with(eq(H160::from_low_u64_be(2)))
+            .returning(|_| Ok(TokenQuality::Good));
+
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -634,8 +647,8 @@ mod tests {
             min_order_validity_period,
             max_order_validity_period,
             true,
+            Arc::new(bad_token_detector),
             Arc::new(MockMinFeeCalculating::new()),
-            Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockBalanceFetching::new()),
         );
         let order = || PreOrderData {
@@ -690,8 +703,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -734,8 +747,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -778,8 +791,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -822,8 +835,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -868,8 +881,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -887,7 +900,12 @@ mod tests {
             .validate_and_construct_order(order, &Default::default(), Default::default())
             .await;
         dbg!(&result);
-        assert!(matches!(result, Err(ValidationError::UnsupportedToken(_))));
+        assert!(matches!(
+            result,
+            Err(ValidationError::Partial(
+                PartialValidationError::UnsupportedToken(_)
+            ))
+        ));
     }
 
     #[tokio::test]
@@ -912,8 +930,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -957,8 +975,8 @@ mod tests {
             Duration::from_secs(1),
             Duration::from_secs(100),
             true,
-            Arc::new(fee_calculator),
             Arc::new(bad_token_detector),
+            Arc::new(fee_calculator),
             Arc::new(balance_fetcher),
         );
         let order = OrderCreation {
@@ -1003,8 +1021,8 @@ mod tests {
                     Duration::from_secs(1),
                     Duration::MAX,
                     true,
-                    Arc::new(fee_calculator),
                     Arc::new(bad_token_detector),
+                    Arc::new(fee_calculator),
                     Arc::new(balance_fetcher),
                 );
 

@@ -255,7 +255,7 @@ impl Maintaining for Instrumented {
     async fn run_maintenance(&self) -> anyhow::Result<()> {
         let _timer = self
             .metrics
-            .database_query_histogram("remove_expired_fee_measurements")
+            .database_query_histogram("remove_expired_quotes")
             .start_timer();
         self.inner.run_maintenance().await
     }

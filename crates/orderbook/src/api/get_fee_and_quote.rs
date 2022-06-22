@@ -1,4 +1,4 @@
-use crate::{api::convert_json_response, order_quoting::OrderQuoter};
+use crate::{api::convert_json_response, order_quoting::QuoteHandler};
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
@@ -116,13 +116,13 @@ fn buy_request() -> impl Filter<Extract = (BuyQuery,), Error = Rejection> + Clon
 }
 
 pub fn get_fee_and_quote_sell(
-    quoter: Arc<OrderQuoter>,
+    quotes: Arc<QuoteHandler>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     sell_request().and_then(move |query: SellQuery| {
-        let quoter = quoter.clone();
+        let quotes = quotes.clone();
         async move {
             Result::<_, Infallible>::Ok(convert_json_response(
-                quoter
+                quotes
                     .calculate_quote(&query.into())
                     .await
                     .map(SellResponse::from),
@@ -132,13 +132,13 @@ pub fn get_fee_and_quote_sell(
 }
 
 pub fn get_fee_and_quote_buy(
-    quoter: Arc<OrderQuoter>,
+    quotes: Arc<QuoteHandler>,
 ) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
     buy_request().and_then(move |query: BuyQuery| {
-        let quoter = quoter.clone();
+        let quotes = quotes.clone();
         async move {
             Result::<_, Infallible>::Ok(convert_json_response(
-                quoter
+                quotes
                     .calculate_quote(&query.into())
                     .await
                     .map(BuyResponse::from),

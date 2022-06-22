@@ -1,7 +1,7 @@
 use crate::{
     fee::{FeeData, MinFeeCalculating},
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
-    order_validation::{OrderValidating, PreOrderData, ValidationError},
+    order_validation::{OrderValidating, PartialValidationError, PreOrderData, ValidationError},
 };
 use anyhow::Result;
 use chrono::{DateTime, TimeZone as _, Utc};
@@ -47,6 +47,18 @@ impl From<&OrderQuoteRequest> for PreOrderData {
     }
 }
 
+impl From<&OrderQuoteRequest> for QuoteParameters {
+    fn from(request: &OrderQuoteRequest) -> Self {
+        Self {
+            sell_token: request.sell_token,
+            buy_token: request.buy_token,
+            side: request.side,
+            from: request.from,
+            app_data: request.app_data,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum FeeError {
     SellAmountDoesNotCoverFee(FeeInfo),
@@ -62,7 +74,7 @@ pub struct FeeInfo {
 }
 
 #[derive(Debug)]
-pub enum OrderQuoteError {
+pub enum OrderQuoteErrorLegacy {
     Fee(FeeError),
     Order(ValidationError),
 }
@@ -77,7 +89,7 @@ struct QuoteFeeParameters {
 }
 
 #[derive(Clone)]
-pub struct OrderQuoter {
+pub struct OrderQuoterLegacy {
     pub fee_calculator: Arc<dyn MinFeeCalculating>,
     pub price_estimator: Arc<dyn PriceEstimating>,
     pub order_validator: Arc<dyn OrderValidating>,
@@ -86,7 +98,7 @@ pub struct OrderQuoter {
     pub current_id: Arc<AtomicI64>,
 }
 
-impl OrderQuoter {
+impl OrderQuoterLegacy {
     pub fn new(
         fee_calculator: Arc<dyn MinFeeCalculating>,
         price_estimator: Arc<dyn PriceEstimating>,
@@ -115,18 +127,18 @@ impl OrderQuoter {
     pub async fn calculate_quote(
         &self,
         quote_request: &OrderQuoteRequest,
-    ) -> Result<OrderQuoteResponse, OrderQuoteError> {
+    ) -> Result<OrderQuoteResponse, OrderQuoteErrorLegacy> {
         tracing::debug!("Received quote request {:?}", quote_request);
         let pre_order = PreOrderData::from(quote_request);
         let valid_to = pre_order.valid_to;
         self.order_validator
             .partial_validate(pre_order)
             .await
-            .map_err(|err| OrderQuoteError::Order(ValidationError::Partial(err)))?;
+            .map_err(|err| OrderQuoteErrorLegacy::Order(ValidationError::Partial(err)))?;
         let fee_parameters = self
             .calculate_fee_parameters(quote_request)
             .await
-            .map_err(OrderQuoteError::Fee)?;
+            .map_err(OrderQuoteErrorLegacy::Fee)?;
         Ok(OrderQuoteResponse {
             quote: OrderQuote {
                 sell_token: quote_request.sell_token,
@@ -144,7 +156,7 @@ impl OrderQuoter {
             },
             from: quote_request.from,
             expiration: fee_parameters.expiration,
-            id: self.current_id.fetch_add(1, Ordering::SeqCst),
+            id: Some(self.current_id.fetch_add(1, Ordering::SeqCst)),
         })
     }
 
@@ -291,6 +303,85 @@ impl OrderQuoter {
                 }
             }
         })
+    }
+}
+
+pub struct QuoteHandler {
+    order_validator: Arc<dyn OrderValidating>,
+    optimal_quoter: Arc<dyn OrderQuoting>,
+    fast_quoter: Arc<dyn OrderQuoting>,
+}
+
+impl QuoteHandler {
+    pub fn new(order_validator: Arc<dyn OrderValidating>, quoter: Arc<dyn OrderQuoting>) -> Self {
+        Self {
+            order_validator,
+            optimal_quoter: quoter.clone(),
+            fast_quoter: quoter,
+        }
+    }
+
+    pub fn with_fast_quoter(mut self, fast_quoter: Arc<dyn OrderQuoting>) -> Self {
+        self.fast_quoter = fast_quoter;
+        self
+    }
+}
+
+impl QuoteHandler {
+    pub async fn calculate_quote(
+        &self,
+        request: &OrderQuoteRequest,
+    ) -> Result<OrderQuoteResponse, OrderQuoteError> {
+        tracing::debug!(?request, "calculating quote");
+
+        let order = PreOrderData::from(request);
+        let valid_to = order.valid_to;
+        self.order_validator.partial_validate(order).await?;
+
+        let quoter = match request.price_quality {
+            PriceQuality::Optimal => &self.optimal_quoter,
+            PriceQuality::Fast => &self.fast_quoter,
+        };
+        let quote = quoter.calculate_quote(request.into()).await?;
+
+        let response = OrderQuoteResponse {
+            quote: OrderQuote {
+                sell_token: request.sell_token,
+                buy_token: request.buy_token,
+                receiver: request.receiver,
+                sell_amount: quote.sell_amount,
+                buy_amount: quote.buy_amount,
+                valid_to,
+                app_data: request.app_data,
+                fee_amount: quote.fee_amount,
+                kind: quote.data.kind,
+                partially_fillable: request.partially_fillable,
+                sell_token_balance: request.sell_token_balance,
+                buy_token_balance: request.buy_token_balance,
+            },
+            from: request.from,
+            expiration: quote.data.expiration,
+            id: quote.id,
+        };
+
+        tracing::debug!(?response, "finished computing quote");
+        Ok(response)
+    }
+}
+
+/// Result from handling a quote request.
+#[derive(Debug, Error)]
+pub enum OrderQuoteError {
+    #[error("error validating quote order data: {0:?}")]
+    Validation(PartialValidationError),
+
+    #[error("error calculating quote: {0}")]
+    CalculateQuote(#[from] CalculateQuoteError),
+}
+
+impl From<PartialValidationError> for OrderQuoteError {
+    fn from(err: PartialValidationError) -> Self {
+        Self::Validation(err)
     }
 }
 
@@ -574,7 +665,7 @@ impl Now for DateTime<Utc> {
 const QUOTE_VALIDITY_SECONDS: i64 = 60;
 
 /// An order quoter implementation that relies
-pub struct OrderQuoter2 {
+pub struct OrderQuoter {
     price_estimator: Arc<dyn PriceEstimating>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
@@ -583,7 +674,24 @@ pub struct OrderQuoter2 {
     now: Arc<dyn Now>,
 }
 
-impl OrderQuoter2 {
+impl OrderQuoter {
+    pub fn new(
+        price_estimator: Arc<dyn PriceEstimating>,
+        native_price_estimator: Arc<dyn NativePriceEstimating>,
+        gas_estimator: Arc<dyn GasPriceEstimating>,
+        fee_subsidy: Arc<dyn FeeSubsidizing>,
+        storage: Arc<dyn QuoteStoring>,
+    ) -> Self {
+        Self {
+            price_estimator,
+            native_price_estimator,
+            gas_estimator,
+            fee_subsidy,
+            storage,
+            now: Arc::new(Utc::now),
+        }
+    }
+
     async fn compute_quote_data(
         &self,
         parameters: &QuoteParameters,
@@ -631,7 +739,7 @@ impl OrderQuoter2 {
 }
 
 #[async_trait::async_trait]
-impl OrderQuoting for OrderQuoter2 {
+impl OrderQuoting for OrderQuoter {
     async fn calculate_quote(
         &self,
         parameters: QuoteParameters,
@@ -783,7 +891,7 @@ mod tests {
                 sell_amount: SellAmount::BeforeFee { value: 10.into() },
             },
         );
-        let quoter = Arc::new(OrderQuoter::new(
+        let quoter = Arc::new(OrderQuoterLegacy::new(
             fee_calculator,
             Arc::new(price_estimator),
             Arc::new(MockOrderValidating::new()),
@@ -828,7 +936,7 @@ mod tests {
             },
         );
 
-        let quoter = Arc::new(OrderQuoter::new(
+        let quoter = Arc::new(OrderQuoterLegacy::new(
             fee_calculator,
             Arc::new(price_estimator),
             Arc::new(MockOrderValidating::new()),
@@ -870,7 +978,7 @@ mod tests {
                 buy_amount_after_fee: 10.into(),
             },
         );
-        let quoter = Arc::new(OrderQuoter::new(
+        let quoter = Arc::new(OrderQuoterLegacy::new(
             fee_calculator,
             Arc::new(price_estimator),
             Arc::new(MockOrderValidating::new()),
@@ -943,7 +1051,7 @@ mod tests {
         order_validator
             .expect_partial_validate()
             .returning(|_| Ok(()));
-        let quoter = Arc::new(OrderQuoter::new(
+        let quoter = Arc::new(OrderQuoterLegacy::new(
             Arc::new(fee_calculator),
             Arc::new(price_estimator),
             Arc::new(order_validator),
@@ -1034,7 +1142,7 @@ mod tests {
             }))
             .returning(|_| Ok(Some(1337)));
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
@@ -1134,7 +1242,7 @@ mod tests {
             }))
             .returning(|_| Ok(Some(1337)));
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
@@ -1237,7 +1345,7 @@ mod tests {
             }))
             .returning(|_| Ok(Some(1337)));
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
@@ -1312,7 +1420,7 @@ mod tests {
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(gas_estimator),
@@ -1345,7 +1453,7 @@ mod tests {
             .expect_estimate_native_prices()
             .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(price_estimator),
             native_price_estimator: Arc::new(native_price_estimator),
             gas_estimator: Arc::new(FakeGasPriceEstimator(Arc::new(Mutex::new(
@@ -1392,7 +1500,7 @@ mod tests {
             }))
         });
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
@@ -1467,7 +1575,7 @@ mod tests {
             }))
         });
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
@@ -1537,7 +1645,7 @@ mod tests {
                 )))
             });
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
@@ -1603,7 +1711,7 @@ mod tests {
                 }))
             });
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),
@@ -1631,7 +1739,7 @@ mod tests {
         storage.expect_get().returning(move |_| Ok(None));
         storage.expect_find().returning(move |_, _| Ok(None));
 
-        let quoter = OrderQuoter2 {
+        let quoter = OrderQuoter {
             price_estimator: Arc::new(MockPriceEstimating::new()),
             native_price_estimator: Arc::new(MockNativePriceEstimating::new()),
             gas_estimator: Arc::new(FakeGasPriceEstimator::default()),

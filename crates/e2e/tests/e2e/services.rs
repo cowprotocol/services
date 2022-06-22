@@ -2,9 +2,16 @@ use crate::deploy::Contracts;
 use contracts::{ERC20Mintable, WETH9};
 use ethcontract::{prelude::U256, H160};
 use orderbook::{
-    account_balances::Web3BalanceFetcher, database::Postgres, event_updater::EventUpdater,
-    fee::MinFeeCalculator, fee_subsidy::Subsidy, metrics::NoopMetrics, order_quoting::OrderQuoter,
-    order_validation::OrderValidator, orderbook::Orderbook, solvable_orders::SolvableOrdersCache,
+    account_balances::Web3BalanceFetcher,
+    database::Postgres,
+    event_updater::EventUpdater,
+    fee::MinFeeCalculator,
+    fee_subsidy::Subsidy,
+    metrics::NoopMetrics,
+    order_quoting::{OrderQuoter, QuoteHandler},
+    order_validation::OrderValidator,
+    orderbook::Orderbook,
+    solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
 use shared::{
@@ -138,18 +145,16 @@ impl OrderbookServices {
             contracts.weth.address(),
             1_000_000_000_000_000_000_u128.into(),
         ));
-        let fee_calculator = Arc::new(MinFeeCalculator::new(
+        let fee_subsidy = Arc::new(Subsidy {
+            factor: 0.,
+            ..Default::default()
+        });
+        let quoter = Arc::new(OrderQuoter::new(
             price_estimator.clone(),
-            gas_estimator,
-            db.clone(),
-            bad_token_detector.clone(),
-            Arc::new(Subsidy {
-                factor: 0.,
-                ..Default::default()
-            }),
             native_price_estimator.clone(),
-            Default::default(),
-            true,
+            gas_estimator.clone(),
+            fee_subsidy.clone(),
+            db.clone(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),
@@ -164,7 +169,7 @@ impl OrderbookServices {
             balance_fetcher.clone(),
             bad_token_detector.clone(),
             current_block_stream.clone(),
-            native_price_estimator,
+            native_price_estimator.clone(),
             Arc::new(NoopMetrics),
         );
         let order_validator = Arc::new(OrderValidator::new(
@@ -175,8 +180,17 @@ impl OrderbookServices {
             Duration::from_secs(120),
             Duration::MAX,
             true,
-            fee_calculator.clone(),
             bad_token_detector.clone(),
+            Arc::new(MinFeeCalculator::new(
+                price_estimator.clone(),
+                gas_estimator,
+                db.clone(),
+                bad_token_detector.clone(),
+                fee_subsidy,
+                native_price_estimator,
+                Default::default(),
+                true,
+            )),
             balance_fetcher,
         ));
         let orderbook = Arc::new(Orderbook::new(
@@ -191,15 +205,11 @@ impl OrderbookServices {
         let maintenance = ServiceMaintenance {
             maintainers: vec![db.clone(), event_updater],
         };
-        let quoter = Arc::new(OrderQuoter::new(
-            fee_calculator,
-            price_estimator.clone(),
-            order_validator,
-        ));
+        let quotes = Arc::new(QuoteHandler::new(order_validator, quoter));
         orderbook::serve_api(
             db.clone(),
             orderbook,
-            quoter,
+            quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
             Default::default(),
