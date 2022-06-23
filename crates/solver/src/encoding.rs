@@ -23,6 +23,7 @@ pub type EncodedTrade = (
 pub fn encode_trade(
     order: &OrderData,
     signature: &Signature,
+    owner: H160,
     sell_token_index: usize,
     buy_token_index: usize,
     executed_amount: &U256,
@@ -38,7 +39,7 @@ pub fn encode_trade(
         order.fee_amount,
         order_flags(order, signature),
         *executed_amount,
-        Bytes(signature.to_bytes().to_vec()),
+        Bytes(signature.encode_for_settlement(owner).to_vec()),
     )
 }
 
@@ -89,10 +90,13 @@ pub struct EncodedSettlement {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ethcontract::H256;
+    use hex_literal::hex;
+    use model::signature::EcdsaSignature;
 
     #[test]
     fn order_flag_permutations() {
-        for (order, signature, flags) in &[
+        for (order, scheme, flags) in [
             (
                 OrderData {
                     kind: OrderKind::Sell,
@@ -101,7 +105,7 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Erc20,
                     ..Default::default()
                 },
-                Signature::default_with(SigningScheme::Eip712),
+                SigningScheme::Eip712,
                 // ......0 - sell order
                 // .....0. - fill-or-kill order
                 // ...00.. - ERC20 sell token balance
@@ -117,13 +121,13 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Internal,
                     ..Default::default()
                 },
-                Signature::default_with(SigningScheme::Eip712),
+                SigningScheme::Eip1271,
                 // ......0 - sell order
                 // .....1. - partially fillable order
                 // ...00.. - ERC20 sell token balance
                 // ..1.... - Vault-internal buy token balance
-                // 00..... - EIP-712 signing scheme
-                0b0010010,
+                // 10..... - EIP-712 signing scheme
+                0b1010010,
             ),
             (
                 OrderData {
@@ -133,7 +137,7 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Erc20,
                     ..Default::default()
                 },
-                Signature::default_with(SigningScheme::PreSign),
+                SigningScheme::PreSign,
                 // ......1 - buy order
                 // .....0. - fill-or-kill order
                 // ...10.. - Vault-external sell token balance
@@ -149,7 +153,7 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Erc20,
                     ..Default::default()
                 },
-                Signature::default_with(SigningScheme::EthSign),
+                SigningScheme::EthSign,
                 // ......0 - sell order
                 // .....0. - fill-or-kill order
                 // ...11.. - Vault-internal sell token balance
@@ -165,7 +169,7 @@ mod tests {
                     buy_token_balance: BuyTokenDestination::Internal,
                     ..Default::default()
                 },
-                Signature::default_with(SigningScheme::PreSign),
+                SigningScheme::PreSign,
                 // ......1 - buy order
                 // .....1. - partially fillable order
                 // ...11.. - Vault-internal sell token balance
@@ -174,7 +178,45 @@ mod tests {
                 0b1111111,
             ),
         ] {
-            assert_eq!(order_flags(order, signature), U256::from(*flags));
+            assert_eq!(
+                order_flags(&order, &Signature::default_with(scheme)),
+                U256::from(flags)
+            );
+        }
+    }
+
+    #[test]
+    fn trade_signature_encoding() {
+        let owner = H160([1; 20]);
+        for (signature, bytes) in [
+            (Signature::Eip712(Default::default()), vec![0; 65]),
+            (
+                Signature::EthSign(EcdsaSignature {
+                    r: H256([1; 32]),
+                    s: H256([1; 32]),
+                    v: 1,
+                }),
+                vec![1; 65],
+            ),
+            (
+                Signature::Eip1271(vec![1, 2, 3, 4]),
+                hex!(
+                    "0101010101010101010101010101010101010101"
+                    "01020304"
+                )
+                .to_vec(),
+            ),
+            (Signature::PreSign, vec![1; 20]),
+        ] {
+            let (.., encoded_signature) = encode_trade(
+                &Default::default(),
+                &signature,
+                owner,
+                Default::default(),
+                Default::default(),
+                &Default::default(),
+            );
+            assert_eq!(encoded_signature.0, bytes);
         }
     }
 }

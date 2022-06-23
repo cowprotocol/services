@@ -812,9 +812,9 @@ components:
       properties:
         signature:
           description: "OrderCancellation signed by owner"
-          $ref: "#/components/schemas/Signature"
+          $ref: "#/components/schemas/EcdsaSignature"
         signingScheme:
-          $ref: "#/components/schemas/SigningScheme"
+          $ref: "#/components/schemas/EcdsaSigningScheme"
       required:
         - signature
         - signingScheme
@@ -882,13 +882,27 @@ components:
         Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
         and bytes 52..56 valid to,
       type: string
-    Signature:
-      description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
-      example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
     SigningScheme:
       description: How was the order signed?
       type: string
+      enum: [eip712, ethsign, presign]
+    EcdsaSigningScheme:
+      description: How was the order signed?
+      type: string
       enum: [eip712, ethsign]
+    Signature:
+      description: A signature.
+      oneOf:
+        - $ref: "#/components/schemas/EcdsaSignature"
+        - $ref: "#/components/schemas/PreSignature"
+    EcdsaSignature:
+      description: 65 bytes encoded as hex with `0x` prefix. r + s + v from the spec.
+      type: string
+      example: "0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    PreSignature:
+      description: Empty signature bytes. Used for "presign" signatures.
+      type: string
+      example: "0x"
     OrderPostError:
       type: object
       properties:
@@ -907,6 +921,7 @@ components:
               TransferSimulationFailed,
               UnsupportedToken,
               WrongOwner,
+              MissingFrom,
               SameBuyAndSellToken,
               ZeroAmount,
               UnsupportedBuyTokenDestination,

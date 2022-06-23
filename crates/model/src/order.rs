@@ -234,7 +234,7 @@ impl OrderBuilder {
 
     pub fn with_presign(mut self, owner: H160) -> Self {
         self.0.metadata.owner = owner;
-        self.0.signature = Signature::PreSign(owner);
+        self.0.signature = Signature::PreSign;
         self
     }
 
@@ -428,7 +428,7 @@ impl OrderCancellation {
         signing::keccak256(&hash_data)
     }
 
-    pub fn validate(&self, domain_separator: &DomainSeparator) -> Option<H160> {
+    pub fn validate(&self, domain_separator: &DomainSeparator) -> Result<H160> {
         self.signature
             .recover(self.signing_scheme, domain_separator, &self.hash_struct())
     }
@@ -772,12 +772,7 @@ mod tests {
                    0000000000000000000000000000000000000000000000000000000000000000\
                    00",
             ),
-            (
-                Signature::PreSign(owner),
-                "presign",
-                Some(owner),
-                "0xffffffffffffffffffffffffffffffffffffffff",
-            ),
+            (Signature::PreSign, "presign", Some(owner), "0x"),
         ] {
             let order = OrderCreation {
                 data: OrderData {
@@ -869,6 +864,7 @@ mod tests {
 
             let owner = signature
                 .recover(&domain_separator, &order.hash_struct())
+                .unwrap()
                 .unwrap();
             assert_eq!(owner, expected_owner);
         }
@@ -999,6 +995,7 @@ mod tests {
         let owner = order
             .signature
             .recover(&DomainSeparator::default(), &order.data.hash_struct())
+            .unwrap()
             .unwrap();
 
         assert_eq!(owner, h160_from_public_key(public_key));

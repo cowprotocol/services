@@ -200,7 +200,7 @@ impl Orderbook {
         // Verify the cancellation signer is the same as the order signer.
         let signer = cancellation
             .validate(&self.domain_separator)
-            .ok_or(OrderCancellationError::InvalidSignature)?;
+            .map_err(|_| OrderCancellationError::InvalidSignature)?;
         if signer != order.metadata.owner {
             return Err(OrderCancellationError::WrongOwner);
         };
@@ -529,7 +529,7 @@ mod tests {
                     old_order.metadata.uid,
                     OrderCreation {
                         from: Some(old_order.metadata.owner),
-                        signature: Signature::PreSign(old_order.metadata.owner),
+                        signature: Signature::PreSign,
                         data: OrderData {
                             app_data: AppId(cancellation.hash_struct()),
                             ..Default::default()
