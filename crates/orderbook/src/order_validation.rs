@@ -400,7 +400,7 @@ impl OrderValidating for OrderValidator {
         // are not intended to be filled immediately and so need to be treated
         // slightly differently by the protocol.
         let is_liquidity_order = match &quote {
-            Some(quote) if !is_market_priced_order(&order.data, quote) => {
+            Some(quote) if is_order_outside_market_price(&order.data, quote) => {
                 let order_uid = order.data.uid(domain_separator, &owner);
                 tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
                 true
@@ -501,13 +501,13 @@ async fn get_quote_and_check_fee(
     Ok(quote)
 }
 
-/// Checks whether or not an order's limit price is within the market price
+/// Checks whether or not an order's limit price is outside the market price
 /// specified by the quote.
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_market_priced_order(order: &OrderData, quote: &Quote) -> bool {
-    order.sell_amount.full_mul(quote.buy_amount) >= quote.sell_amount.full_mul(order.buy_amount)
+fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
+    order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
 }
 
 #[cfg(test)]
@@ -1426,7 +1426,7 @@ mod tests {
 
         // *** SELL ORDERS ***
         // at market price
-        assert!(is_market_priced_order(
+        assert!(!is_order_outside_market_price(
             &OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 100.into(),
@@ -1436,7 +1436,7 @@ mod tests {
             &quote,
         ));
         // willing to buy less than market price
-        assert!(is_market_priced_order(
+        assert!(!is_order_outside_market_price(
             &OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 99.into(), // 1% slippage
@@ -1446,7 +1446,7 @@ mod tests {
             &quote,
         ));
         // wanting to buy more than market price
-        assert!(!is_market_priced_order(
+        assert!(is_order_outside_market_price(
             &OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 1000.into(),
@@ -1458,7 +1458,7 @@ mod tests {
 
         // *** BUY ORDERS ***
         // at market price
-        assert!(is_market_priced_order(
+        assert!(!is_order_outside_market_price(
             &OrderData {
                 sell_amount: 100.into(),
                 buy_amount: 100.into(),
@@ -1468,7 +1468,7 @@ mod tests {
             &quote,
         ));
         // willing to sell more than market price
-        assert!(is_market_priced_order(
+        assert!(!is_order_outside_market_price(
             &OrderData {
                 sell_amount: 101.into(), // 1% slippage
                 buy_amount: 100.into(),
@@ -1478,7 +1478,7 @@ mod tests {
             &quote,
         ));
         // wanting to sell less than market price
-        assert!(!is_market_priced_order(
+        assert!(is_order_outside_market_price(
             &OrderData {
                 sell_amount: 1.into(),
                 buy_amount: 100.into(),
