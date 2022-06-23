@@ -17,7 +17,7 @@ mod post_solver_competition;
 mod replace_order;
 
 use crate::solver_competition::SolverCompetition;
-use crate::{database::trades::TradeRetrieving, order_quoting::OrderQuoter, orderbook::Orderbook};
+use crate::{database::trades::TradeRetrieving, order_quoting::QuoteHandler, orderbook::Orderbook};
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use shared::{metrics::get_metric_storage_registry, price_estimation::PriceEstimationError};
@@ -37,7 +37,7 @@ use warp::{
 pub fn handle_all_routes(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
-    quoter: Arc<OrderQuoter>,
+    quotes: Arc<QuoteHandler>,
     solver_competition: Arc<SolverCompetition>,
     solver_competition_auth: Option<String>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
@@ -53,7 +53,7 @@ pub fn handle_all_routes(
     let get_orders = get_orders::get_orders(orderbook.clone())
         .map(|result| (result, "v1/get_orders"))
         .boxed();
-    let fee_info = get_fee_info::get_fee_info(quoter.fee_calculator.clone())
+    let fee_info = get_fee_info::get_fee_info(quotes.clone())
         .map(|result| (result, "v1/fee_info"))
         .boxed();
     let get_order = get_order_by_uid::get_order_by_uid(orderbook.clone())
@@ -71,13 +71,13 @@ pub fn handle_all_routes(
     let replace_order = replace_order::filter(orderbook.clone())
         .map(|result| (result, "v1/replace_order"))
         .boxed();
-    let get_amount_estimate = get_markets::get_amount_estimate(quoter.price_estimator.clone())
+    let get_amount_estimate = get_markets::get_amount_estimate(quotes.clone())
         .map(|result| (result, "v1/get_amount_estimate"))
         .boxed();
-    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quoter.clone())
+    let get_fee_and_quote_sell = get_fee_and_quote::get_fee_and_quote_sell(quotes.clone())
         .map(|result| (result, "v1/get_fee_and_quote_sell"))
         .boxed();
-    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quoter.clone())
+    let get_fee_and_quote_buy = get_fee_and_quote::get_fee_and_quote_buy(quotes.clone())
         .map(|result| (result, "v1/get_fee_and_quote_buy"))
         .boxed();
     let get_user_orders = get_user_orders::get_user_orders(orderbook.clone())
@@ -86,7 +86,7 @@ pub fn handle_all_routes(
     let get_orders_by_tx = get_orders_by_tx::get_orders_by_tx(orderbook.clone())
         .map(|result| (result, "v1/get_orders_by_tx"))
         .boxed();
-    let post_quote = post_quote::post_quote(quoter)
+    let post_quote = post_quote::post_quote(quotes)
         .map(|result| (result, "v1/post_quote"))
         .boxed();
     let get_auction = get_auction::get_auction(orderbook.clone())

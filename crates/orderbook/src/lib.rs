@@ -2,10 +2,9 @@ pub mod account_balances;
 pub mod api;
 pub mod arguments;
 pub mod conversions;
-pub mod cow_subsidy;
 pub mod database;
 pub mod event_updater;
-pub mod fee;
+pub mod fee_subsidy;
 pub mod gas_price;
 pub mod metrics;
 pub mod order_quoting;
@@ -15,7 +14,7 @@ pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 
-use crate::{order_quoting::OrderQuoter, orderbook::Orderbook};
+use crate::{order_quoting::QuoteHandler, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use database::trades::TradeRetrieving;
@@ -29,7 +28,7 @@ use warp::Filter;
 pub fn serve_api(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
-    quoter: Arc<OrderQuoter>,
+    quotes: Arc<QuoteHandler>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition: Arc<SolverCompetition>,
@@ -38,7 +37,7 @@ pub fn serve_api(
     let filter = api::handle_all_routes(
         database,
         orderbook,
-        quoter,
+        quotes,
         solver_competition,
         solver_competition_auth,
     )

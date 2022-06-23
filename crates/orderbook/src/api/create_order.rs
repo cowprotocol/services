@@ -74,6 +74,10 @@ impl IntoWarpReply for PartialValidationError {
                 super::error("UnsupportedSignature", "signing scheme is not supported"),
                 StatusCode::BAD_REQUEST,
             ),
+            Self::UnsupportedToken(token) => with_status(
+                super::error("UnsupportedToken", format!("Token address {}", token)),
+                StatusCode::BAD_REQUEST,
+            ),
             Self::Other(err) => with_status(
                 super::internal_error(err.context("partial_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -86,10 +90,21 @@ impl IntoWarpReply for ValidationError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::Partial(pre) => pre.into_warp_reply(),
-            Self::UnsupportedToken(token) => with_status(
-                super::error("UnsupportedToken", format!("Token address {}", token)),
+            Self::QuoteNotFound => with_status(
+                super::error(
+                    "QuoteNotFound",
+                    "could not find quote with the specified ID",
+                ),
                 StatusCode::BAD_REQUEST,
             ),
+            Self::InvalidQuote => with_status(
+                super::error(
+                    "InvalidQuote",
+                    "the quote with the specified ID does not match the order",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::PriceForQuote(err) => err.into_warp_reply(),
             Self::WrongOwner(owner) => with_status(
                 super::error(
                     "WrongOwner",

@@ -5,8 +5,9 @@ use contracts::ERC20;
 use ethcontract::{
     batch::CallBatch, dyns::DynTransport, transaction::TransactionBuilder, PrivateKey,
 };
+use futures::{Stream, StreamExt};
 use primitive_types::{H160, U256};
-use std::{collections::HashSet, sync::Arc};
+use std::sync::Arc;
 use web3::{
     signing::keccak256,
     types::{BlockTrace, CallRequest, Res},
@@ -36,7 +37,12 @@ impl BadTokenDetecting for TraceCallDetector {
 
 impl TraceCallDetector {
     pub async fn detect_impl(&self, token: H160) -> Result<TokenQuality> {
-        let (take_from, amount) = match self.find_largest_pool_owning_token(token).await? {
+        // Arbitrary amount that is large enough that small relative fees should be visible.
+        const MIN_AMOUNT: u64 = 100_000;
+        let (take_from, amount) = match self
+            .find_pool_owning_token(token, MIN_AMOUNT.into())
+            .await?
+        {
             Some((address, balance)) => {
                 tracing::debug!(
                     "testing token {:?} with pool {:?} amount {}",
@@ -61,59 +67,67 @@ impl TraceCallDetector {
         Self::handle_response(&traces, amount)
     }
 
-    // Based on amm pools find the address with the largest amount of the token.
+    /// Stream of addresses that might own the token.
+    fn candidate_owners(&self, token: H160) -> impl Stream<Item = H160> + '_ {
+        // Combine the results of all finders into a single stream.
+        let streams = self.finders.iter().map(|finder| {
+            futures::stream::once(finder.find_candidate_owners(token))
+                .filter_map(|result| async {
+                    match result {
+                        Ok(inner) => Some(futures::stream::iter(inner)),
+                        Err(err) => {
+                            tracing::warn!("token owner finding failed: {:?}", err);
+                            None
+                        }
+                    }
+                })
+                .flatten()
+                .boxed()
+        });
+        futures::stream::select_all(streams)
+    }
+
     // Err if communication with the node failed.
     // Ok(None) if there is no pool or getting the balance fails.
     // Ok(address, balance) for an address that has this amount of balance of the token.
-    async fn find_largest_pool_owning_token(&self, token: H160) -> Result<Option<(H160, U256)>> {
-        let mut candidates = HashSet::new();
-        for result in futures::future::join_all(
-            self.finders
-                .iter()
-                .map(|finder| finder.find_candidate_owners(token)),
-        )
-        .await
-        {
-            candidates.extend(match result {
-                Ok(candidates) => candidates,
-                Err(err) => {
-                    tracing::warn!("token owner finding failed: {:?}", err);
-                    continue;
-                }
-            });
-        }
-
+    async fn find_pool_owning_token(
+        &self,
+        token: H160,
+        min_amount: U256,
+    ) -> Result<Option<(H160, U256)>> {
         const BATCH_SIZE: usize = 100;
         let instance = ERC20::at(&self.web3, token);
-        let mut batch = CallBatch::new(self.web3.transport());
-        let futures = candidates
-            .iter()
-            .map(|&address| {
-                let fut = instance.balance_of(address).batch_call(&mut batch);
-                async move { (address, fut.await) }
-            })
-            .collect::<Vec<_>>();
-        batch.execute_all(BATCH_SIZE).await;
-
-        let mut biggest_balance = None;
-        for future in futures {
-            let (address, result) = future.await;
-            let balance = match result {
-                Ok(balance) if balance.is_zero() => continue,
-                Ok(balance) => balance,
-                Err(err) => {
-                    return match EthcontractErrorType::classify(&err) {
-                        EthcontractErrorType::Node => Err(err.into()),
-                        EthcontractErrorType::Contract => Ok(None),
+        // We use a stream with ready_chunks so that we can start with the addresses of fast
+        // TokenOwnerFinding implementations first without having to wait for slow ones.
+        let stream = self.candidate_owners(token).ready_chunks(BATCH_SIZE);
+        futures::pin_mut!(stream);
+        while let Some(chunk) = stream.next().await {
+            let mut batch = CallBatch::new(self.web3.transport());
+            let futures = chunk
+                .iter()
+                .map(|&address| {
+                    let fut = instance.balance_of(address).batch_call(&mut batch);
+                    async move { (address, fut.await) }
+                })
+                .collect::<Vec<_>>();
+            batch.execute_all(BATCH_SIZE).await;
+            for future in futures {
+                let (address, result) = future.await;
+                match result {
+                    Ok(balance) if balance >= min_amount => {
+                        return Ok(Some((address, balance)));
                     }
+                    Err(err) => {
+                        return match EthcontractErrorType::classify(&err) {
+                            EthcontractErrorType::Node => Err(err.into()),
+                            EthcontractErrorType::Contract => Ok(None),
+                        }
+                    }
+                    _ => (),
                 }
-            };
-            match biggest_balance {
-                Some((_, current_biggest)) if current_biggest > balance => (),
-                _ => biggest_balance = Some((address, balance)),
             }
         }
-        Ok(biggest_balance)
+        Ok(None)
     }
 
     // For the out transfer we use an arbitrary address without balance to detect tokens that
