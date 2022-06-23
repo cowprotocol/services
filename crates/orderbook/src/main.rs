@@ -377,6 +377,7 @@ async fn main() {
                     base_tokens.clone(),
                     native_token.address(),
                     native_token_price_estimation_amount,
+                    rate_limiter,
                 )),
                 PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
                     Arc::new(DefaultParaswapApi {
