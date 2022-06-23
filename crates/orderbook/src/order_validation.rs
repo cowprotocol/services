@@ -347,16 +347,6 @@ impl OrderValidating for OrderValidator {
             .map(|quote| quote.data.fee_parameters.unsubsidized())
             .unwrap_or_default();
 
-        // Orders that are placed and priced outside the market (i.e. buying
-        // more than the market can pay or selling less than the market wants)
-        // get flagged as liquidity orders. The reasoning is that these orders
-        // are not intended to be filled immediately and so need to be treated
-        // slightly differently by the protocol.
-        let is_liquidity_order = quote
-            .as_ref()
-            .map(|quote| !is_market_priced_order(&order.data, quote))
-            .unwrap_or(true);
-
         let min_balance = match minimum_balance(&order.data) {
             Some(amount) => amount,
             None => return Err(ValidationError::SellAmountOverflow),
@@ -403,6 +393,21 @@ impl OrderValidating for OrderValidator {
                 }
             },
         }
+
+        // Orders that are placed and priced outside the market (i.e. buying
+        // more than the market can pay or selling less than the market wants)
+        // get flagged as liquidity orders. The reasoning is that these orders
+        // are not intended to be filled immediately and so need to be treated
+        // slightly differently by the protocol.
+        let is_liquidity_order = match &quote {
+            Some(quote) if !is_market_priced_order(&order.data, quote) => {
+                let order_uid = order.data.uid(domain_separator, &owner);
+                tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
+                true
+            }
+            Some(_) => false,
+            None => true,
+        };
 
         let order = Order::from_order_creation(
             &order,
