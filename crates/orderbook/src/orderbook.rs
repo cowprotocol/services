@@ -375,6 +375,7 @@ mod tests {
     use crate::{
         account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
         metrics::NoopMetrics, order_validation::MockOrderValidating,
+        signature_validator::MockSignatureValidating,
     };
     use ethcontract::H160;
     use futures::FutureExt;
@@ -405,6 +406,7 @@ mod tests {
                 current_block::mock_single_block(Default::default()),
                 Arc::new(MockNativePriceEstimating::new()),
                 Arc::new(NoopMetrics),
+                Arc::new(MockSignatureValidating::new()),
             ),
             solvable_orders_max_update_age: Default::default(),
             order_validator: Arc::new(MockOrderValidating::new()),

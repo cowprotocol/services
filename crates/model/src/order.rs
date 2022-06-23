@@ -494,6 +494,15 @@ impl OrderUid {
         uid.0[0..4].copy_from_slice(&i.to_le_bytes());
         uid
     }
+
+    /// Splits an order UID into its parts.
+    pub fn parts(&self) -> (H256, H160, u32) {
+        (
+            H256::from_slice(&self.0[0..32]),
+            H160::from_slice(&self.0[32..52]),
+            u32::from_le_bytes(self.0[52..].try_into().unwrap()),
+        )
+    }
 }
 
 impl FromStr for OrderUid {

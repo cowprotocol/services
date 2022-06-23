@@ -18,9 +18,10 @@ use orderbook::{
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
-    order_validation::OrderValidator,
+    order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
     serve_api,
+    signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
     solver_competition::SolverCompetition,
     verify_deployed_contract_constants,
@@ -136,6 +137,8 @@ async fn main() {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = network_name(&network, chain_id);
+
+    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
     let native_token_price_estimation_amount = args
         .amount_to_estimate_prices_with
@@ -529,6 +532,7 @@ async fn main() {
         current_block_stream.clone(),
         native_price_estimator.clone(),
         metrics.clone(),
+        signature_validator.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -542,10 +546,14 @@ async fn main() {
         args.liquidity_order_owners.iter().copied().collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
-        args.enable_presign_orders,
+        SignatureConfiguration {
+            eip1271: args.enable_eip1271_orders,
+            presign: args.enable_presign_orders,
+        },
         bad_token_detector.clone(),
         optimal_quoter.clone(),
         balance_fetcher,
+        signature_validator,
     ));
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,

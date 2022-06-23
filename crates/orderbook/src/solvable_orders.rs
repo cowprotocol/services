@@ -2,10 +2,12 @@ use crate::{
     account_balances::{BalanceFetching, Query},
     database::orders::OrderStoring,
     orderbook::filter_unsupported_tokens,
+    signature_validator::{SignatureCheck, SignatureValidating},
 };
 use anyhow::{Context as _, Result};
+use ethcontract::H256;
 use futures::StreamExt;
-use model::{auction::Auction, order::Order, time::now_in_epoch_seconds};
+use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
 use primitive_types::{H160, U256};
 use shared::{
     bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
@@ -50,6 +52,7 @@ pub struct SolvableOrdersCache {
     cache: Mutex<Inner>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     auction_metrics: Arc<dyn AuctionMetrics>,
+    signature_validator: Arc<dyn SignatureValidating>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -79,6 +82,7 @@ impl SolvableOrdersCache {
         current_block: CurrentBlockStream,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         auction_metrics: Arc<dyn AuctionMetrics>,
+        signature_validator: Arc<dyn SignatureValidating>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -104,6 +108,7 @@ impl SolvableOrdersCache {
             }),
             native_price_estimator,
             auction_metrics,
+            signature_validator,
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
         self_
@@ -136,6 +141,8 @@ impl SolvableOrdersCache {
         let db_solvable_orders = self.database.solvable_orders(min_valid_to).await?;
         let orders = filter_banned_user_orders(db_solvable_orders.orders, &self.banned_users);
         let orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
+        let orders =
+            filter_invalid_signature_orders(orders, self.signature_validator.as_ref()).await;
 
         // If we update due to an explicit notification we can reuse existing balances as they
         // cannot have changed.
@@ -206,6 +213,44 @@ impl SolvableOrdersCache {
 fn filter_banned_user_orders(mut orders: Vec<Order>, banned_users: &HashSet<H160>) -> Vec<Order> {
     orders.retain(|order| !banned_users.contains(&order.metadata.owner));
     orders
+}
+
+/// Filters EIP-1271 orders whose signatures are no longer validating.
+async fn filter_invalid_signature_orders(
+    orders: Vec<Order>,
+    signature_validator: &dyn SignatureValidating,
+) -> Vec<Order> {
+    let checks = orders
+        .iter()
+        .filter_map(|order| match &order.signature {
+            Signature::Eip1271(signature) => {
+                let (H256(hash), signer, _) = order.metadata.uid.parts();
+                Some(SignatureCheck {
+                    signer,
+                    hash,
+                    signature: signature.clone(),
+                })
+            }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    if checks.is_empty() {
+        return orders;
+    }
+
+    let validations = signature_validator.validate_signatures(checks).await;
+    orders
+        .into_iter()
+        .zip(validations)
+        .filter_map(|(order, validation)| match validation {
+            Ok(()) => Some(order),
+            // Note that we just treat all signature validation errors the same
+            // and skip the order. This allows us to keep updating the solvable
+            // orders list even when facing intermittent errors.
+            Err(_) => None,
+        })
+        .collect()
 }
 
 /// Returns existing balances and Vec of queries that need to be peformed.
@@ -436,6 +481,7 @@ mod tests {
     use crate::{
         account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
         database::orders::SolvableOrders as DbOrders, metrics::NoopMetrics,
+        signature_validator::MockSignatureValidating,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::StreamExt;
@@ -587,6 +633,7 @@ mod tests {
             receiver,
             Arc::new(native),
             Arc::new(NoopMetrics),
+            Arc::new(MockSignatureValidating::new()),
         );
 
         cache.update(0).await.unwrap();

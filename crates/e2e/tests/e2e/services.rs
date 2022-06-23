@@ -8,8 +8,9 @@ use orderbook::{
     fee_subsidy::Subsidy,
     metrics::NoopMetrics,
     order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::OrderValidator,
+    order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
+    signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
@@ -165,6 +166,7 @@ impl OrderbookServices {
             contracts.allowance,
             contracts.gp_settlement.address(),
         ));
+        let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
             db.clone(),
@@ -174,6 +176,7 @@ impl OrderbookServices {
             current_block_stream.clone(),
             native_price_estimator,
             Arc::new(NoopMetrics),
+            signature_validator.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -182,10 +185,11 @@ impl OrderbookServices {
             HashSet::default(),
             Duration::from_secs(120),
             Duration::MAX,
-            true,
+            SignatureConfiguration::all(),
             bad_token_detector.clone(),
             quoter.clone(),
             balance_fetcher,
+            signature_validator,
         ));
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
