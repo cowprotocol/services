@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y ca-certificates tini && apt-get clean
 COPY --from=cargo-build /src/target/release/orderbook /usr/local/bin/orderbook
 COPY --from=cargo-build /src/target/release/solver /usr/local/bin/solver
 COPY --from=cargo-build /src/target/release/alerter /usr/local/bin/alerter
+COPY --from=cargo-build /src/target/release/autopilot /usr/local/bin/autopilot
 
 CMD echo "Specify binary - either solver or orderbook"
 ENTRYPOINT ["/usr/bin/tini"]
