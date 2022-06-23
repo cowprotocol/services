@@ -4,10 +4,15 @@ use prometheus::IntCounterVec;
 use prometheus_metric_storage::MetricStorage;
 use reqwest::{Client, Url};
 use serde::Deserialize;
+use std::time::Duration;
 
 use super::TokenOwnerFinding;
 
 const BASE: &str = "https://blockscout.com/";
+// Blockscout uses a custom timeout because their api is often slow. We would like those requests
+// to finish even if slow as bad token detection results are cached for a while and faster
+// TokenOwnerFinding implementations are not slowed down by slower ones.
+const TIMEOUT: Duration = Duration::from_secs(45);
 
 pub struct BlockscoutTokenOwnerFinder {
     client: Client,
@@ -64,7 +69,8 @@ impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
             .unwrap()
             .results;
         tracing::debug!("Querying Blockscout API: {}", url);
-        let response_text = match async { self.client.get(url).send().await?.text().await }.await {
+        let request = self.client.get(url).timeout(TIMEOUT).send();
+        let response_text = match async { request.await?.text().await }.await {
             Ok(response) => {
                 metric.with_label_values(&["ok"]).inc();
                 response
