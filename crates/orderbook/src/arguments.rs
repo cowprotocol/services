@@ -1,4 +1,4 @@
-use crate::cow_subsidy::SubsidyTiers;
+use crate::fee_subsidy::cow_token::SubsidyTiers;
 use anyhow::{anyhow, Context, Result};
 use model::app_id::AppId;
 use primitive_types::{H160, U256};

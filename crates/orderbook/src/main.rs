@@ -10,13 +10,14 @@ use model::{
 };
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    cow_subsidy::{CowSubsidy, CowSubsidyImpl, FixedCowSubsidy},
     database::{self, orders::OrderFilter, Postgres},
     event_updater::EventUpdater,
-    fee::{FeeSubsidyConfiguration, MinFeeCalculator},
+    fee_subsidy::{
+        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
+    },
     gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
-    order_quoting::OrderQuoter,
+    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::OrderValidator,
     orderbook::Orderbook,
     serve_api,
@@ -484,42 +485,39 @@ async fn main() {
         (Some(token), Some(vtoken)) => Some((token, vtoken)),
         _ => panic!("should either have both cow token contracts or none"),
     };
-    let cow_subsidy = match cow_tokens {
-        Some((token, vtoken)) => {
-            tracing::debug!("using cow token contracts for subsidy");
-            Arc::new(CowSubsidyImpl::new(
-                token,
-                vtoken,
-                args.cow_fee_factors.unwrap_or_default(),
-            )) as Arc<dyn CowSubsidy>
-        }
-        None => {
-            tracing::debug!("disabling cow subsidy because contracts not found on network");
-            Arc::new(FixedCowSubsidy(1.0)) as Arc<dyn CowSubsidy>
-        }
+    let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
+        tracing::debug!("using cow token contracts for subsidy");
+        CowSubsidy::new(token, vtoken, args.cow_fee_factors.unwrap_or_default())
+    });
+
+    let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
+        fee_discount: args.fee_discount,
+        min_discounted_fee: args.min_discounted_fee,
+        fee_factor: args.fee_factor,
+        liquidity_order_owners: args.liquidity_order_owners.iter().copied().collect(),
+        partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
+    }) as Arc<dyn FeeSubsidizing>;
+
+    let fee_subsidy = match cow_subsidy {
+        Some(cow_subsidy) => Arc::new(FeeSubsidies(vec![
+            fee_subsidy_config,
+            Arc::new(cow_subsidy),
+        ])),
+        None => fee_subsidy_config,
     };
 
-    let create_fee_calculator = |price_estimator: Arc<dyn PriceEstimating>,
-                                 store_computed_fees: bool| {
-        Arc::new(MinFeeCalculator::new(
-            price_estimator.clone(),
-            gas_price_estimator.clone(),
-            database.clone(),
-            bad_token_detector.clone(),
-            FeeSubsidyConfiguration {
-                fee_discount: args.fee_discount,
-                min_discounted_fee: args.min_discounted_fee,
-                fee_factor: args.fee_factor,
-                partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
-            },
+    let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
+                         storage: Arc<dyn QuoteStoring>| {
+        Arc::new(OrderQuoter::new(
+            price_estimator,
             native_price_estimator.clone(),
-            cow_subsidy.clone(),
-            args.liquidity_order_owners.iter().copied().collect(),
-            store_computed_fees,
+            gas_price_estimator.clone(),
+            fee_subsidy.clone(),
+            storage,
         ))
     };
-    let fee_calculator = create_fee_calculator(price_estimator.clone(), true);
-    let fast_fee_calculator = create_fee_calculator(fast_price_estimator.clone(), false);
+    let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
+    let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
@@ -528,7 +526,7 @@ async fn main() {
         balance_fetcher.clone(),
         bad_token_detector.clone(),
         current_block_stream.clone(),
-        native_price_estimator,
+        native_price_estimator.clone(),
         metrics.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
@@ -544,8 +542,8 @@ async fn main() {
         args.min_order_validity_period,
         args.max_order_validity_period,
         args.enable_presign_orders,
-        fee_calculator.clone(),
         bad_token_detector.clone(),
+        optimal_quoter.clone(),
         balance_fetcher,
     ));
     let orderbook = Arc::new(Orderbook::new(
@@ -569,16 +567,14 @@ async fn main() {
         service_maintainer.maintainers.push(balancer);
     }
     check_database_connection(orderbook.as_ref()).await;
-    let quoter = Arc::new(
-        OrderQuoter::new(fee_calculator, price_estimator, order_validator)
-            .with_fast_quotes(fast_fee_calculator, fast_price_estimator),
-    );
+    let quotes =
+        Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
-        quoter,
+        quotes,
         args.bind_address,
         async {
             let _ = shutdown_receiver.await;

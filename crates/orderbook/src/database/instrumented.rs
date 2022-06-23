@@ -1,5 +1,5 @@
 use super::{orders::OrderStoring, trades::TradeRetrieving, Postgres};
-use crate::fee::{FeeParameters, MinFeeStoring};
+use crate::order_quoting::QuoteStoring;
 use ethcontract::H256;
 use model::order::Order;
 use prometheus::Histogram;
@@ -58,48 +58,39 @@ impl EventStoring<contracts::gpv2_settlement::Event> for Instrumented {
 }
 
 #[async_trait::async_trait]
-impl MinFeeStoring for Instrumented {
-    async fn save_fee_measurement(
+impl QuoteStoring for Instrumented {
+    async fn save(
         &self,
-        fee_data: crate::fee::FeeData,
-        expiry: chrono::DateTime<chrono::Utc>,
-        estimate: FeeParameters,
-    ) -> anyhow::Result<()> {
+        data: crate::order_quoting::QuoteData,
+    ) -> anyhow::Result<Option<model::quote::QuoteId>> {
         let _timer = self
             .metrics
-            .database_query_histogram("save_fee_measurement")
+            .database_query_histogram("save_quote")
             .start_timer();
-        self.inner
-            .save_fee_measurement(fee_data, expiry, estimate)
-            .await
+        self.inner.save(data).await
     }
 
-    async fn find_measurement_exact(
+    async fn get(
         &self,
-        fee_data: crate::fee::FeeData,
-        min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<FeeParameters>> {
+        id: model::quote::QuoteId,
+    ) -> anyhow::Result<Option<crate::order_quoting::QuoteData>> {
         let _timer = self
             .metrics
-            .database_query_histogram("find_measurement_exact")
+            .database_query_histogram("get_quote")
             .start_timer();
-        self.inner
-            .find_measurement_exact(fee_data, min_expiry)
-            .await
+        self.inner.get(id).await
     }
 
-    async fn find_measurement_including_larger_amount(
+    async fn find(
         &self,
-        fee_data: crate::fee::FeeData,
-        min_expiry: chrono::DateTime<chrono::Utc>,
-    ) -> anyhow::Result<Option<FeeParameters>> {
+        parameters: crate::order_quoting::QuoteSearchParameters,
+        expiration: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<Option<(model::quote::QuoteId, crate::order_quoting::QuoteData)>> {
         let _timer = self
             .metrics
-            .database_query_histogram("find_measurement_including_larger_amount")
+            .database_query_histogram("find_quote")
             .start_timer();
-        self.inner
-            .find_measurement_including_larger_amount(fee_data, min_expiry)
-            .await
+        self.inner.find(parameters, expiration).await
     }
 }
 
@@ -108,13 +99,13 @@ impl OrderStoring for Instrumented {
     async fn insert_order(
         &self,
         order: &model::order::Order,
-        fee: FeeParameters,
+        quote: Option<crate::order_quoting::Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = self
             .metrics
             .database_query_histogram("insert_order")
             .start_timer();
-        self.inner.insert_order(order, fee).await
+        self.inner.insert_order(order, quote).await
     }
 
     async fn cancel_order(
@@ -133,14 +124,14 @@ impl OrderStoring for Instrumented {
         &self,
         old_order: &model::order::OrderUid,
         new_order: &model::order::Order,
-        new_fee: FeeParameters,
+        new_quote: Option<crate::order_quoting::Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
         let _timer = self
             .metrics
             .database_query_histogram("replace_order")
             .start_timer();
         self.inner
-            .replace_order(old_order, new_order, new_fee)
+            .replace_order(old_order, new_order, new_quote)
             .await
     }
 
@@ -218,7 +209,7 @@ impl Maintaining for Instrumented {
     async fn run_maintenance(&self) -> anyhow::Result<()> {
         let _timer = self
             .metrics
-            .database_query_histogram("remove_expired_fee_measurements")
+            .database_query_histogram("remove_expired_quotes")
             .start_timer();
         self.inner.run_maintenance().await
     }
