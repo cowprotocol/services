@@ -150,6 +150,16 @@ impl RateLimiter {
     }
 
     pub fn from_strategy(strategy: RateLimitingStrategy, name: String) -> Self {
+        let metrics = metrics();
+        metrics.requests_dropped.with_label_values(&[&name]).reset();
+        metrics
+            .rate_limited_requests
+            .with_label_values(&[&name])
+            .reset();
+        metrics
+            .successful_requests
+            .with_label_values(&[&name])
+            .reset();
         Self {
             strategy: Mutex::new(strategy),
             name,
