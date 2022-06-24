@@ -2,8 +2,13 @@ use crate::services::{
     create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
     uniswap_pair_provider, OrderbookServices, API_HOST,
 };
-use contracts::IUniswapLikeRouter;
-use ethcontract::prelude::{Account, Address, Bytes, PrivateKey, U256};
+use contracts::{
+    GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, IUniswapLikeRouter,
+};
+use ethcontract::{
+    prelude::{Account, Address, Bytes, PrivateKey, U256},
+    H160,
+};
 use model::order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid};
 use shared::{maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
@@ -35,12 +40,32 @@ async fn smart_contract_orders(web3: Web3) {
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
     let solver_account = Account::Local(accounts[0], None);
 
-    // Note that this account is technically not a SC order. However, we allow
-    // presign orders from EOAs as well, and it is easier to setup an order
-    // for an EOA then SC wallet. In the future, once we add EIP-1271 support,
-    // where we would **need** an SC wallet, we can also change this trader to
-    // use one.
-    let trader = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
+    let user = Account::Offline(PrivateKey::from_raw(TRADER).unwrap(), None);
+
+    // Deploy and setup a Gnosis Safe.
+    let safe_singleton = GnosisSafe::builder(&web3).deploy().await.unwrap();
+    let safe_fallback = GnosisSafeCompatibilityFallbackHandler::builder(&web3)
+        .deploy()
+        .await
+        .unwrap();
+    let safe_proxy = GnosisSafeProxy::builder(&web3, safe_singleton.address())
+        .deploy()
+        .await
+        .unwrap();
+    let safe = GnosisSafe::at(&web3, safe_proxy.address());
+    safe.setup(
+        vec![user.address()],
+        1.into(),         // threshold
+        H160::default(),  // delegate call
+        Bytes::default(), // delegate call bytes
+        safe_fallback.address(),
+        H160::default(), // relayer payment token
+        0.into(),        // relayer payment amount
+        H160::default(), // relayer address
+    )
+    .send()
+    .await
+    .unwrap();
 
     // Create & Mint tokens to trade
     let token = deploy_mintable_token(&web3).await;
@@ -48,7 +73,7 @@ async fn smart_contract_orders(web3: Web3) {
         solver_account,
         token.mint(solver_account.address(), to_wei(100_000))
     );
-    tx!(solver_account, token.mint(trader.address(), to_wei(10)));
+    tx!(solver_account, token.mint(safe.address(), to_wei(10)));
 
     tx_value!(solver_account, to_wei(100_000), contracts.weth.deposit());
 
@@ -84,7 +109,7 @@ async fn smart_contract_orders(web3: Web3) {
     );
 
     // Approve GPv2 for trading
-    tx!(trader, token.approve(contracts.allowance, to_wei(10)));
+    tx_safe!(user, safe, token.approve(contracts.allowance, to_wei(10)));
 
     let OrderbookServices {
         block_stream,
@@ -105,7 +130,7 @@ async fn smart_contract_orders(web3: Web3) {
         .with_buy_token(contracts.weth.address())
         .with_buy_amount(to_wei(8))
         .with_valid_to(model::time::now_in_epoch_seconds() + 300)
-        .with_presign(trader.address())
+        .with_presign(safe.address())
         .build()
         .into_order_creation();
     let placement = client
@@ -137,8 +162,9 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Execute pre-sign transaction.
     assert_eq!(order_status().await, OrderStatus::PresignaturePending);
-    tx!(
-        trader,
+    tx_safe!(
+        user,
+        safe,
         contracts
             .gp_settlement
             .set_pre_signature(Bytes(order_uid.0.to_vec()), true)
@@ -224,7 +250,7 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Check matching
     let balance = token
-        .balance_of(trader.address())
+        .balance_of(safe.address())
         .call()
         .await
         .expect("Couldn't fetch token balance");
@@ -232,7 +258,7 @@ async fn smart_contract_orders(web3: Web3) {
 
     let balance = contracts
         .weth
-        .balance_of(trader.address())
+        .balance_of(safe.address())
         .call()
         .await
         .expect("Couldn't fetch native token balance");
