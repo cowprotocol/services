@@ -3,7 +3,7 @@ use ethcontract::{batch::CallBatch, errors::MethodError, Bytes};
 use futures::future;
 use hex_literal::hex;
 use primitive_types::H160;
-use shared::{ethcontract_error::EthcontractErrorType, Web3};
+use shared::{ethcontract_error::EthcontractErrorType, transport::MAX_BATCH_SIZE, Web3};
 use thiserror::Error;
 
 /// Structure used to represent a signature.
@@ -83,6 +83,7 @@ impl SignatureValidating for Web3SignatureValidator {
             })
             .collect::<Vec<_>>();
 
+        batch.execute_all(MAX_BATCH_SIZE).await;
         future::join_all(calls).await
     }
 }
