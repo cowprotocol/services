@@ -350,7 +350,11 @@ impl Driver {
                         error_at_earlier_block,
                     );
                     // split warning into separate logs so that the messages aren't too long.
-                    tracing::warn!("settlement failure for: \n{:#?}", settlement);
+                    tracing::warn!(
+                        "{} settlement failure for: \n{:#?}",
+                        solver.name(),
+                        settlement,
+                    );
 
                     metrics.settlement_simulation_failed(solver.name());
                 }
