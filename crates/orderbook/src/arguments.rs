@@ -252,6 +252,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         writeln!(f, "allowed_tokens: {:?}", self.allowed_tokens)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
+        writeln!(f, "enable_eip1271_orders: {}", self.enable_eip1271_orders)?;
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
         writeln!(
             f,
