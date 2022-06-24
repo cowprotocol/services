@@ -20,11 +20,11 @@ impl IntoWarpReply for PartialValidationError {
     fn into_warp_reply(self) -> super::ApiReply {
         match self {
             Self::UnsupportedBuyTokenDestination(dest) => with_status(
-                super::error("UnsupportedBuyTokenDestination", format!("Type {:?}", dest)),
+                super::error("UnsupportedBuyTokenDestination", format!("Type {dest:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             Self::UnsupportedSellTokenSource(src) => with_status(
-                super::error("UnsupportedSellTokenSource", format!("Type {:?}", src)),
+                super::error("UnsupportedSellTokenSource", format!("Type {src:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             Self::UnsupportedOrderType => with_status(
@@ -75,7 +75,7 @@ impl IntoWarpReply for PartialValidationError {
                 StatusCode::BAD_REQUEST,
             ),
             Self::UnsupportedToken(token) => with_status(
-                super::error("UnsupportedToken", format!("Token address {}", token)),
+                super::error("UnsupportedToken", format!("Token address {token:?}")),
                 StatusCode::BAD_REQUEST,
             ),
             Self::Other(err) => with_status(
@@ -105,13 +105,17 @@ impl IntoWarpReply for ValidationError {
                 StatusCode::BAD_REQUEST,
             ),
             Self::PriceForQuote(err) => err.into_warp_reply(),
+            Self::MissingFrom => with_status(
+                super::error(
+                    "MissingFrom",
+                    "From address must be specified for on-chain signature",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             Self::WrongOwner(owner) => with_status(
                 super::error(
                     "WrongOwner",
-                    format!(
-                        "Address recovered from signature {} does not match from address",
-                        owner
-                    ),
+                    format!("Address recovered from signature {owner} does not match from address"),
                 ),
                 StatusCode::BAD_REQUEST,
             ),

@@ -149,6 +149,7 @@ impl OrderTrade {
         encoding::encode_trade(
             &self.trade.order.data,
             &self.trade.order.signature,
+            self.trade.order.metadata.owner,
             self.trade.sell_token_index,
             self.buy_token_index,
             &self.trade.executed_amount,
@@ -164,6 +165,7 @@ impl LiquidityOrderTrade {
         encoding::encode_trade(
             &self.trade.order.data,
             &self.trade.order.signature,
+            self.trade.order.metadata.owner,
             self.trade.sell_token_index,
             buy_token_index,
             &self.trade.executed_amount,

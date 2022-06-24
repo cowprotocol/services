@@ -91,6 +91,9 @@ pub enum ValidationError {
     /// If fee and sell amount overflow u256
     SellAmountOverflow,
     TransferSimulationFailed,
+    /// The specified on-chain signature requires the from address of the
+    /// order signer.
+    MissingFrom,
     WrongOwner(H160),
     ZeroAmount,
     Other(anyhow::Error),
@@ -99,8 +102,9 @@ pub enum ValidationError {
 impl From<VerificationError> for ValidationError {
     fn from(err: VerificationError) -> Self {
         match err {
-            VerificationError::UnableToRecoverSigner => Self::InvalidSignature,
+            VerificationError::UnableToRecoverSigner(_) => Self::InvalidSignature,
             VerificationError::UnexpectedSigner(signer) => Self::WrongOwner(signer),
+            VerificationError::MissingFrom => Self::MissingFrom,
         }
     }
 }
