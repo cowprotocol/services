@@ -227,7 +227,9 @@ impl Display for Arguments {
             "disabled_paraswap_dexs: {:?}",
             self.disabled_paraswap_dexs
         )?;
-        writeln!(f, "paraswap_rate_limiter: {:?}", self.paraswap_rate_limiter)?;
+        write!(f, "paraswap_rate_limiter: ")?;
+        display_option(&self.paraswap_rate_limiter, f)?;
+        writeln!(f)?;
         writeln!(
             f,
             "zeroex_url: {}",

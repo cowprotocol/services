@@ -2,8 +2,10 @@ use crate::{
     baseline_solver::{self, estimate_buy_amount, estimate_sell_amount, BaseTokens},
     conversions::U256Ext,
     price_estimation::{
-        gas, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
+        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
+        Query,
     },
+    rate_limiter::RateLimiter,
     recent_block_cache::Block,
     sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
@@ -21,6 +23,7 @@ pub struct BaselinePriceEstimator {
     base_tokens: Arc<BaseTokens>,
     native_token: H160,
     native_token_price_estimation_amount: U256,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl BaselinePriceEstimator {
@@ -30,6 +33,7 @@ impl BaselinePriceEstimator {
         base_tokens: Arc<BaseTokens>,
         native_token: H160,
         native_token_price_estimation_amount: U256,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             pool_fetcher,
@@ -37,6 +41,7 @@ impl BaselinePriceEstimator {
             base_tokens,
             native_token,
             native_token_price_estimation_amount,
+            rate_limiter,
         }
     }
 }
@@ -67,8 +72,10 @@ impl PriceEstimating for BaselinePriceEstimator {
                 .await
                 .map_err(PriceEstimationError::Other)
         };
+
         type Init = Result<(f64, Pools), PriceEstimationError>;
         let init = futures::future::try_join(gas_price, pools);
+        let init = rate_limited(self.rate_limiter.clone(), init);
 
         let estimate_single = |init: &Init, query: &Query| -> PriceEstimateResult {
             let (gas_price, pools) = init.as_ref().map_err(Clone::clone)?;
@@ -320,6 +327,7 @@ mod tests {
         baseline_solver::BaselineSolvable,
         gas_price_estimation::FakeGasPriceEstimator,
         price_estimation::single_estimate,
+        rate_limiter::RateLimiter,
         sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
     };
     use gas_estimation::gas_price::GasPrice1559;
@@ -339,6 +347,13 @@ mod tests {
         }
     }
 
+    fn default_rate_limiter() -> Arc<RateLimiter> {
+        Arc::new(RateLimiter::from_strategy(
+            Default::default(),
+            "test".into(),
+        ))
+    }
+
     #[tokio::test]
     async fn return_error_if_no_token_found() {
         let token_a = H160::from_low_u64_be(1);
@@ -354,6 +369,7 @@ mod tests {
             base_tokens,
             token_a,
             1.into(),
+            default_rate_limiter(),
         );
 
         assert!(single_estimate(
@@ -386,6 +402,7 @@ mod tests {
             base_tokens,
             token_a,
             1.into(),
+            default_rate_limiter(),
         );
 
         assert!(single_estimate(
@@ -425,6 +442,7 @@ mod tests {
             base_tokens,
             token_b,
             1.into(),
+            default_rate_limiter(),
         );
 
         assert!(single_estimate(
@@ -491,6 +509,7 @@ mod tests {
             base_tokens,
             token_a,
             10.into(),
+            default_rate_limiter(),
         );
 
         let query = Query {
@@ -544,6 +563,7 @@ mod tests {
             base_tokens,
             intermediate,
             10.into(),
+            default_rate_limiter(),
         );
 
         for kind in &[OrderKind::Sell, OrderKind::Buy] {
@@ -616,6 +636,7 @@ mod tests {
             base_tokens,
             native,
             1_000_000_000.into(),
+            default_rate_limiter(),
         );
 
         // Uses 1 hop because high gas price doesn't make the intermediate hop worth it.
@@ -694,6 +715,7 @@ mod tests {
             base_tokens,
             token_a,
             10u128.pow(18).into(),
+            default_rate_limiter(),
         );
 
         let gas_price = 1000000000000000.0;

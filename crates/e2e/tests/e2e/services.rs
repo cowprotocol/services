@@ -21,6 +21,7 @@ use shared::{
     price_estimation::baseline::BaselinePriceEstimator,
     price_estimation::native::NativePriceEstimator,
     price_estimation::sanitized::SanitizedPriceEstimator,
+    rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
     sources::uniswap_v2::{
         self,
@@ -135,6 +136,10 @@ impl OrderbookServices {
                 base_tokens.clone(),
                 contracts.weth.address(),
                 1_000_000_000_000_000_000_u128.into(),
+                Arc::new(RateLimiter::from_strategy(
+                    Default::default(),
+                    "baseline_estimator".into(),
+                )),
             )),
             contracts.weth.address(),
             bad_token_detector.clone(),
