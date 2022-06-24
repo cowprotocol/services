@@ -327,14 +327,14 @@ impl OrderData {
     }
 
     pub fn uid(&self, domain: &DomainSeparator, owner: &H160) -> OrderUid {
-        let mut uid = OrderUid([0u8; 56]);
-        uid.0[0..32].copy_from_slice(&super::signature::hashed_eip712_message(
-            domain,
-            &self.hash_struct(),
-        ));
-        uid.0[32..52].copy_from_slice(owner.as_fixed_bytes());
-        uid.0[52..56].copy_from_slice(&self.valid_to.to_be_bytes());
-        uid
+        OrderUid::from_parts(
+            H256(super::signature::hashed_eip712_message(
+                domain,
+                &self.hash_struct(),
+            )),
+            *owner,
+            self.valid_to,
+        )
     }
 }
 
@@ -493,6 +493,15 @@ impl OrderUid {
         let mut uid = OrderUid::default();
         uid.0[0..4].copy_from_slice(&i.to_le_bytes());
         uid
+    }
+
+    /// Create a UID from its parts.
+    pub fn from_parts(hash: H256, owner: H160, valid_to: u32) -> Self {
+        let mut uid = [0; 56];
+        uid[0..32].copy_from_slice(hash.as_bytes());
+        uid[32..52].copy_from_slice(owner.as_bytes());
+        uid[52..56].copy_from_slice(&valid_to.to_be_bytes());
+        Self(uid)
     }
 
     /// Splits an order UID into its parts.

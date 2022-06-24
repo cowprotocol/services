@@ -880,6 +880,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -893,7 +894,8 @@ mod tests {
             Arc::new(balance_fetcher),
             Arc::new(MockSignatureValidating::new()),
         );
-        let order = OrderCreation {
+
+        let creation = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -905,10 +907,38 @@ mod tests {
             ..Default::default()
         };
         let (order, _) = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
             .await
             .unwrap();
         assert_eq!(order.metadata.full_fee_amount, order.data.fee_amount);
+
+        let domain_separator = DomainSeparator::default();
+        let creation = OrderCreation {
+            from: Some(H160([1; 20])),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..creation
+        };
+        let order_hash = hashed_eip712_message(&domain_separator, &creation.data.hash_struct());
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: creation.from.unwrap(),
+                hash: order_hash,
+                signature: vec![1, 2, 3],
+            }))
+            .returning(|_| Ok(()));
+
+        let validator = OrderValidator {
+            signature_validator: Arc::new(signature_validator),
+            ..validator
+        };
+
+        assert!(validator
+            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -1187,6 +1217,62 @@ mod tests {
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_invalid_eip1271_signature() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        let mut signature_validator = MockSignatureValidating::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        signature_validator
+            .expect_validate_signature()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validator),
+        );
+
+        let creation = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            from: Some(H160([1; 20])),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(creation, &Default::default(), Default::default())
+                .await
+                .unwrap_err(),
+            ValidationError::InvalidSignature,
+        ));
     }
 
     #[tokio::test]

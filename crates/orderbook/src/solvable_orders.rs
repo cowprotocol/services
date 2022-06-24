@@ -246,7 +246,7 @@ async fn filter_invalid_signature_orders(
     orders
         .into_iter()
         .filter(|order| {
-            if let Signature::Eip712 { .. } = &order.signature {
+            if let Signature::Eip1271(_) = &order.signature {
                 if let Err(err) = validations.next().unwrap() {
                     tracing::warn!(
                         order_uid =% order.metadata.uid, ?err,
@@ -487,14 +487,19 @@ fn to_normalized_price(price: f64) -> Option<U256> {
 mod tests {
     use super::*;
     use crate::{
-        account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
-        database::orders::SolvableOrders as DbOrders, metrics::NoopMetrics,
-        signature_validator::MockSignatureValidating,
+        account_balances::MockBalanceFetching,
+        database::orders::MockOrderStoring,
+        database::orders::SolvableOrders as DbOrders,
+        metrics::NoopMetrics,
+        signature_validator::{MockSignatureValidating, SignatureValidationError},
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::StreamExt;
     use maplit::{btreemap, hashmap, hashset};
-    use model::order::{OrderBuilder, OrderData, OrderKind, OrderMetadata, SellTokenSource};
+    use mockall::predicate::eq;
+    use model::order::{
+        OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid, SellTokenSource,
+    };
     use primitive_types::H160;
     use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
 
@@ -991,5 +996,87 @@ mod tests {
         // Deal with `solvable_orders()` sorting the orders.
         filtered_orders.sort_by_key(|order| order.metadata.creation_date);
         assert_eq!(expected_result, filtered_orders);
+    }
+
+    #[tokio::test]
+    async fn filters_invalidated_eip1271_signatures() {
+        let orders = vec![
+            Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid::from_parts(H256([1; 32]), H160([11; 20]), 1),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid::from_parts(H256([2; 32]), H160([22; 20]), 2),
+                    ..Default::default()
+                },
+                signature: Signature::Eip1271(vec![2, 2]),
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid::from_parts(H256([3; 32]), H160([33; 20]), 3),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid::from_parts(H256([4; 32]), H160([44; 20]), 4),
+                    ..Default::default()
+                },
+                signature: Signature::Eip1271(vec![4, 4, 4, 4]),
+                ..Default::default()
+            },
+            Order {
+                metadata: OrderMetadata {
+                    uid: OrderUid::from_parts(H256([5; 32]), H160([55; 20]), 5),
+                    ..Default::default()
+                },
+                signature: Signature::Eip1271(vec![5, 5, 5, 5, 5]),
+                ..Default::default()
+            },
+        ];
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signatures()
+            .with(eq(vec![
+                SignatureCheck {
+                    signer: H160([22; 20]),
+                    hash: [2; 32],
+                    signature: vec![2, 2],
+                },
+                SignatureCheck {
+                    signer: H160([44; 20]),
+                    hash: [4; 32],
+                    signature: vec![4, 4, 4, 4],
+                },
+                SignatureCheck {
+                    signer: H160([55; 20]),
+                    hash: [5; 32],
+                    signature: vec![5, 5, 5, 5, 5],
+                },
+            ]))
+            .returning(|_| vec![Ok(()), Err(SignatureValidationError::Invalid), Ok(())]);
+
+        let filtered = filter_invalid_signature_orders(orders, &signature_validator).await;
+        let remaining_uids = filtered
+            .iter()
+            .map(|order| order.metadata.uid)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            remaining_uids,
+            vec![
+                OrderUid::from_parts(H256([1; 32]), H160([11; 20]), 1),
+                OrderUid::from_parts(H256([2; 32]), H160([22; 20]), 2),
+                OrderUid::from_parts(H256([3; 32]), H160([33; 20]), 3),
+                OrderUid::from_parts(H256([5; 32]), H160([55; 20]), 5),
+            ]
+        );
     }
 }
