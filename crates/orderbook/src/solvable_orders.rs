@@ -239,16 +239,24 @@ async fn filter_invalid_signature_orders(
         return orders;
     }
 
-    let validations = signature_validator.validate_signatures(checks).await;
+    let mut validations = signature_validator
+        .validate_signatures(checks)
+        .await
+        .into_iter();
     orders
         .into_iter()
-        .zip(validations)
-        .filter_map(|(order, validation)| match validation {
-            Ok(()) => Some(order),
-            // Note that we just treat all signature validation errors the same
-            // and skip the order. This allows us to keep updating the solvable
-            // orders list even when facing intermittent errors.
-            Err(_) => None,
+        .filter(|order| {
+            if let Signature::Eip712 { .. } = &order.signature {
+                if let Err(err) = validations.next().unwrap() {
+                    tracing::warn!(
+                        order_uid =% order.metadata.uid, ?err,
+                        "filtering EIP-1271 order as signature became invalid"
+                    );
+                    return false;
+                }
+            }
+
+            true
         })
         .collect()
 }
