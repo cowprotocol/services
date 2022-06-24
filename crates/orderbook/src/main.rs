@@ -340,13 +340,15 @@ async fn main() {
     };
     let create_base_estimator =
         |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
-            let rate_limiter = Arc::new(RateLimiter::from_strategy(
-                args.price_estimation_rate_limiter
-                    .clone()
-                    .unwrap_or_default(),
-                format!("{}_estimator", estimator.name()),
-            ));
-            let create_http_estimator = |name, base, rate_limiter| -> Box<dyn PriceEstimating> {
+            let rate_limiter = |name| {
+                Arc::new(RateLimiter::from_strategy(
+                    args.price_estimation_rate_limiter
+                        .clone()
+                        .unwrap_or_default(),
+                    format!("{}_estimator", &name),
+                ))
+            };
+            let create_http_estimator = |name, base| -> Box<dyn PriceEstimating> {
                 Box::new(HttpPriceEstimator::new(
                     Arc::new(DefaultHttpSolverApi {
                         name,
@@ -367,7 +369,7 @@ async fn main() {
                     native_token.address(),
                     base_tokens.clone(),
                     network_name.to_string(),
-                    rate_limiter,
+                    rate_limiter(estimator.name()),
                 ))
             };
             let instance: Box<dyn PriceEstimating> = match estimator {
@@ -377,7 +379,7 @@ async fn main() {
                     base_tokens.clone(),
                     native_token.address(),
                     native_token_price_estimation_amount,
-                    rate_limiter,
+                    rate_limiter(estimator.name()),
                 )),
                 PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
                     Arc::new(DefaultParaswapApi {
@@ -389,31 +391,29 @@ async fn main() {
                     }),
                     token_info_fetcher.clone(),
                     args.shared.disabled_paraswap_dexs.clone(),
-                    rate_limiter,
+                    rate_limiter(estimator.name()),
                 )),
                 PriceEstimatorType::ZeroEx => Box::new(ZeroExPriceEstimator::new(
                     zeroex_api.clone(),
                     args.shared.disabled_zeroex_sources.clone(),
-                    rate_limiter,
+                    rate_limiter(estimator.name()),
                 )),
                 PriceEstimatorType::Quasimodo => create_http_estimator(
                     "quasimodo-price-estimator".to_string(),
                     args.quasimodo_solver_url.clone().expect(
                         "quasimodo solver url is required when using quasimodo price estimation",
                     ),
-                    rate_limiter,
                 ),
                 PriceEstimatorType::OneInch => Box::new(OneInchPriceEstimator::new(
                     one_inch_api.as_ref().unwrap().clone(),
                     args.shared.disabled_one_inch_protocols.clone(),
-                    rate_limiter,
+                    rate_limiter(estimator.name()),
                 )),
                 PriceEstimatorType::Yearn => create_http_estimator(
                     "yearn-price-estimator".to_string(),
                     args.yearn_solver_url
                         .clone()
                         .expect("yearn solver url is required when using yearn price estimation"),
-                    rate_limiter,
                 ),
             };
 
