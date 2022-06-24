@@ -4,6 +4,7 @@ use crate::{
         CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
         QuoteSearchParameters,
     },
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
 };
 use anyhow::anyhow;
 use contracts::WETH9;
@@ -14,7 +15,7 @@ use model::{
         BUY_ETH_ADDRESS,
     },
     quote::{OrderQuoteSide, SellAmount},
-    signature::{SigningScheme, VerificationError},
+    signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
     DomainSeparator,
 };
 use shared::{
@@ -145,6 +146,15 @@ impl From<CalculateQuoteError> for ValidationError {
     }
 }
 
+impl From<SignatureValidationError> for ValidationError {
+    fn from(err: SignatureValidationError) -> Self {
+        match err {
+            SignatureValidationError::Invalid => Self::InvalidSignature,
+            SignatureValidationError::Other(err) => Self::Other(err.into()),
+        }
+    }
+}
+
 pub struct OrderValidator {
     /// For Pre/Partial-Validation: performed during fee & quote phase
     /// when only part of the order data is available
@@ -154,11 +164,12 @@ pub struct OrderValidator {
     liquidity_order_owners: HashSet<H160>,
     min_order_validity_period: Duration,
     max_order_validity_period: Duration,
-    enable_presign_orders: bool,
+    signature_configuration: SignatureConfiguration,
     bad_token_detector: Arc<dyn BadTokenDetecting>,
     /// For Full-Validation: performed time of order placement
     quoter: Arc<dyn OrderQuoting>,
     balance_fetcher: Arc<dyn BalanceFetching>,
+    signature_validator: Arc<dyn SignatureValidating>,
 }
 
 #[derive(Debug, PartialEq, Default)]
@@ -215,10 +226,11 @@ impl OrderValidator {
         liquidity_order_owners: HashSet<H160>,
         min_order_validity_period: Duration,
         max_order_validity_period: Duration,
-        enable_presign_orders: bool,
+        signature_configuration: SignatureConfiguration,
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         quoter: Arc<dyn OrderQuoting>,
         balance_fetcher: Arc<dyn BalanceFetching>,
+        signature_validator: Arc<dyn SignatureValidating>,
     ) -> Self {
         Self {
             code_fetcher,
@@ -227,10 +239,11 @@ impl OrderValidator {
             liquidity_order_owners,
             min_order_validity_period,
             max_order_validity_period,
-            enable_presign_orders,
+            signature_configuration,
             bad_token_detector,
             quoter,
             balance_fetcher,
+            signature_validator,
         }
     }
 }
@@ -261,10 +274,10 @@ impl OrderValidating for OrderValidator {
         }
 
         // Eventually we will support all Signature types and can remove this.
-        if !matches!(
-            (order.signing_scheme, self.enable_presign_orders),
-            (SigningScheme::Eip712 | SigningScheme::EthSign, _) | (SigningScheme::PreSign, true)
-        ) {
+        if !self
+            .signature_configuration
+            .is_signing_scheme_supported(order.signing_scheme)
+        {
             return Err(PartialValidationError::UnsupportedSignature);
         }
 
@@ -319,6 +332,16 @@ impl OrderValidating for OrderValidator {
     ) -> Result<(Order, Option<Quote>), ValidationError> {
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
+
+        if let Signature::Eip1271(signature) = &order.signature {
+            self.signature_validator
+                .validate_signature(SignatureCheck {
+                    signer: owner,
+                    hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                    signature: signature.to_owned(),
+                })
+                .await?;
+        }
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -424,6 +447,41 @@ impl OrderValidating for OrderValidator {
     }
 }
 
+/// Signature configuration that is accepted by the orderbook.
+#[derive(Debug, PartialEq, Default)]
+pub struct SignatureConfiguration {
+    pub eip1271: bool,
+    pub presign: bool,
+}
+
+impl SignatureConfiguration {
+    /// Returns a configuration where only off-chain signing schemes are
+    /// supported.
+    pub fn off_chain() -> Self {
+        Self {
+            eip1271: false,
+            presign: false,
+        }
+    }
+
+    /// Returns a configuration where all signing schemes are enabled.
+    pub fn all() -> Self {
+        Self {
+            eip1271: true,
+            presign: true,
+        }
+    }
+
+    /// returns whether the supplied signature scheme is supported.
+    pub fn is_signing_scheme_supported(&self, signing_scheme: SigningScheme) -> bool {
+        match signing_scheme {
+            SigningScheme::Eip712 | SigningScheme::EthSign => true,
+            SigningScheme::Eip1271 => self.eip1271,
+            SigningScheme::PreSign => self.presign,
+        }
+    }
+}
+
 /// Returns true if the orders have same buy and sell tokens.
 ///
 /// This also checks for orders selling wrapped native token for native token.
@@ -517,7 +575,10 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{account_balances::MockBalanceFetching, order_quoting::MockOrderQuoting};
+    use crate::{
+        account_balances::MockBalanceFetching, order_quoting::MockOrderQuoting,
+        signature_validator::MockSignatureValidating,
+    };
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
@@ -608,10 +669,11 @@ mod tests {
             hashset!(),
             min_order_validity_period,
             max_order_validity_period,
-            false,
+            SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
         );
         assert!(matches!(
             validator
@@ -726,10 +788,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            false,
+            SignatureConfiguration::off_chain(),
             Arc::new(MockBadTokenDetecting::new()),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
         );
 
         assert!(matches!(
@@ -767,10 +830,11 @@ mod tests {
             hashset!(liquidity_order_owner),
             min_order_validity_period,
             max_order_validity_period,
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(MockOrderQuoting::new()),
             Arc::new(MockBalanceFetching::new()),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = || PreOrderData {
             valid_to: model::time::now_in_epoch_seconds()
@@ -816,6 +880,7 @@ mod tests {
         balance_fetcher
             .expect_can_transfer()
             .returning(|_, _, _, _| Ok(()));
+
         let validator = OrderValidator::new(
             Box::new(MockCodeFetching::new()),
             dummy_contract!(WETH9, [0xef; 20]),
@@ -823,12 +888,14 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
-        let order = OrderCreation {
+
+        let creation = OrderCreation {
             data: OrderData {
                 valid_to: model::time::now_in_epoch_seconds() + 2,
                 sell_token: H160::from_low_u64_be(1),
@@ -840,10 +907,38 @@ mod tests {
             ..Default::default()
         };
         let (order, _) = validator
-            .validate_and_construct_order(order, &Default::default(), Default::default())
+            .validate_and_construct_order(creation.clone(), &Default::default(), Default::default())
             .await
             .unwrap();
         assert_eq!(order.metadata.full_fee_amount, order.data.fee_amount);
+
+        let domain_separator = DomainSeparator::default();
+        let creation = OrderCreation {
+            from: Some(H160([1; 20])),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..creation
+        };
+        let order_hash = hashed_eip712_message(&domain_separator, &creation.data.hash_struct());
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: creation.from.unwrap(),
+                hash: order_hash,
+                signature: vec![1, 2, 3],
+            }))
+            .returning(|_| Ok(()));
+
+        let validator = OrderValidator {
+            signature_validator: Arc::new(signature_validator),
+            ..validator
+        };
+
+        assert!(validator
+            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .await
+            .is_ok());
     }
 
     #[tokio::test]
@@ -867,10 +962,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -911,10 +1007,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -955,10 +1052,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1001,10 +1099,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1050,10 +1149,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1095,10 +1195,11 @@ mod tests {
             hashset!(),
             Duration::from_secs(1),
             Duration::from_secs(100),
-            true,
+            SignatureConfiguration::all(),
             Arc::new(bad_token_detector),
             Arc::new(order_quoter),
             Arc::new(balance_fetcher),
+            Arc::new(MockSignatureValidating::new()),
         );
         let order = OrderCreation {
             data: OrderData {
@@ -1116,6 +1217,62 @@ mod tests {
             .await;
         dbg!(&result);
         assert!(matches!(result, Err(ValidationError::InsufficientBalance)));
+    }
+
+    #[tokio::test]
+    async fn post_validate_err_invalid_eip1271_signature() {
+        let mut order_quoter = MockOrderQuoting::new();
+        let mut bad_token_detector = MockBadTokenDetecting::new();
+        let mut balance_fetcher = MockBalanceFetching::new();
+        let mut signature_validator = MockSignatureValidating::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        bad_token_detector
+            .expect_detect()
+            .returning(|_| Ok(TokenQuality::Good));
+        balance_fetcher
+            .expect_can_transfer()
+            .returning(|_, _, _, _| Ok(()));
+        signature_validator
+            .expect_validate_signature()
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let validator = OrderValidator::new(
+            Box::new(MockCodeFetching::new()),
+            dummy_contract!(WETH9, [0xef; 20]),
+            hashset!(),
+            hashset!(),
+            Duration::from_secs(1),
+            Duration::from_secs(100),
+            SignatureConfiguration::all(),
+            Arc::new(bad_token_detector),
+            Arc::new(order_quoter),
+            Arc::new(balance_fetcher),
+            Arc::new(signature_validator),
+        );
+
+        let creation = OrderCreation {
+            data: OrderData {
+                valid_to: model::time::now_in_epoch_seconds() + 2,
+                sell_token: H160::from_low_u64_be(1),
+                buy_token: H160::from_low_u64_be(2),
+                buy_amount: U256::from(1),
+                sell_amount: U256::from(1),
+                ..Default::default()
+            },
+            from: Some(H160([1; 20])),
+            signature: Signature::Eip1271(vec![1, 2, 3]),
+            ..Default::default()
+        };
+
+        assert!(matches!(
+            validator
+                .validate_and_construct_order(creation, &Default::default(), Default::default())
+                .await
+                .unwrap_err(),
+            ValidationError::InvalidSignature,
+        ));
     }
 
     #[tokio::test]
@@ -1141,10 +1298,11 @@ mod tests {
                     hashset!(),
                     Duration::from_secs(1),
                     Duration::MAX,
-                    true,
+                    SignatureConfiguration::all(),
                     Arc::new(bad_token_detector),
                     Arc::new(order_quoter),
                     Arc::new(balance_fetcher),
+                    Arc::new(MockSignatureValidating::new()),
                 );
 
                 let order = OrderBuilder::default()

@@ -2,7 +2,10 @@ use crate::{bytes_hex, DomainSeparator};
 use anyhow::{ensure, Context as _, Result};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
-use std::{convert::TryInto as _, fmt};
+use std::{
+    convert::TryInto as _,
+    fmt::{self, Debug, Formatter},
+};
 use web3::{
     signing::{self, Key, SecretKeyRef},
     types::Recovery,
@@ -23,7 +26,7 @@ impl Default for SigningScheme {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]
 #[serde(into = "JsonSignature", try_from = "JsonSignature")]
 pub enum Signature {
     Eip712(EcdsaSignature),
@@ -35,6 +38,18 @@ pub enum Signature {
 impl Default for Signature {
     fn default() -> Self {
         Self::default_with(SigningScheme::default())
+    }
+}
+
+impl Debug for Signature {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if let Signature::PreSign = self {
+            return f.write_str("PreSign");
+        }
+
+        let scheme = format!("{:?}", self.scheme());
+        let bytes = format!("0x{}", hex::encode(self.to_bytes()));
+        f.debug_tuple(&scheme).field(&bytes).finish()
     }
 }
 
