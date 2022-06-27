@@ -98,6 +98,7 @@ impl SingleOrderSolving for ZeroExSolver {
             slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
                 .unwrap(),
             excluded_sources: self.excluded_sources.clone(),
+            enable_slippage_protection: false,
         };
         let swap = self.api.get_swap(query).await?;
 

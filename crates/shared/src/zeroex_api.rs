@@ -47,6 +47,8 @@ pub struct SwapQuery {
     pub slippage_percentage: Slippage,
     /// List of sources to exclude.
     pub excluded_sources: Vec<String>,
+    /// Requests trade routes which aim to protect against high slippage and MEV attacks.
+    pub enable_slippage_protection: bool,
 }
 
 impl SwapQuery {
@@ -479,6 +481,7 @@ mod tests {
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
             excluded_sources: Vec::new(),
+            enable_slippage_protection: false,
         };
 
         let price_response = zeroex_client.get_swap(swap_query).await;
@@ -499,6 +502,7 @@ mod tests {
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
             excluded_sources: Vec::new(),
+            enable_slippage_protection: false,
         };
 
         let price_response = zeroex_client.get_price(swap_query.clone()).await;
@@ -520,6 +524,7 @@ mod tests {
             buy_amount: None,
             slippage_percentage: Slippage(0.1_f64),
             excluded_sources: Vec::new(),
+            enable_slippage_protection: false,
         };
 
         let swap = zeroex.get_swap(query.clone()).await;
