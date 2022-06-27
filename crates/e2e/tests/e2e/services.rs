@@ -1,6 +1,6 @@
 use crate::deploy::Contracts;
-use contracts::{ERC20Mintable, WETH9};
-use ethcontract::{prelude::U256, Bytes, H160};
+use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
+use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::Postgres,
@@ -36,6 +36,7 @@ use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi
 use std::{
     collections::HashSet, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
 };
+use web3::signing::{Key as _, SecretKeyRef};
 
 pub const API_HOST: &str = "http://127.0.0.1:8080";
 
@@ -76,7 +77,7 @@ macro_rules! tx_safe {
                 Default::default(),
                 Default::default(),
                 Default::default(),
-                $crate::services::safe_prevalidated_signature($acc.address()),
+                $crate::services::gnosis_safe_prevalidated_signature($acc.address()),
             )
         );
     }};
@@ -96,11 +97,44 @@ pub fn to_wei(base: u32) -> U256 {
 /// See:
 /// - Documentation: <https://docs.gnosis-safe.io/contracts/signatures#pre-validated-signatures>
 /// - Code: <https://github.com/safe-global/safe-contracts/blob/c36bcab46578a442862d043e12a83fec41143dec/contracts/GnosisSafe.sol#L287-L291>
-pub fn safe_prevalidated_signature(owner: H160) -> Bytes<Vec<u8>> {
+pub fn gnosis_safe_prevalidated_signature(owner: H160) -> Bytes<Vec<u8>> {
     let mut signature = vec![0; 65];
     signature[12..32].copy_from_slice(owner.as_bytes());
     signature[64] = 1;
     Bytes(signature)
+}
+
+/// Generate an owner signature for EIP-1271.
+///
+/// The Gnosis Safe uses off-chain ECDSA signatures from its owners as the
+/// signature bytes when validating EIP-1271 signatures. Specifically, it
+/// expects a signed EIP-712 `SafeMessage(bytes message)` (where `message` is
+/// the 32-byte hash of the data being verified).
+///
+/// See:
+/// - Code: <https://github.com/safe-global/safe-contracts/blob/c36bcab46578a442862d043e12a83fec41143dec/contracts/handler/CompatibilityFallbackHandler.sol#L66-L70>
+pub async fn gnosis_safe_eip1271_signature(
+    key: SecretKeyRef<'_>,
+    safe: &GnosisSafe,
+    message_hash: H256,
+) -> Vec<u8> {
+    let handler =
+        GnosisSafeCompatibilityFallbackHandler::at(&safe.raw_instance().web3(), safe.address());
+
+    let signing_hash = handler
+        .get_message_hash(Bytes(message_hash.as_bytes().to_vec()))
+        .call()
+        .await
+        .unwrap();
+
+    let signature = key.sign(&signing_hash.0, None).unwrap();
+
+    let mut bytes = vec![0u8; 65];
+    bytes[0..32].copy_from_slice(signature.r.as_bytes());
+    bytes[32..64].copy_from_slice(signature.s.as_bytes());
+    bytes[64] = signature.v as _;
+
+    bytes
 }
 
 #[allow(dead_code)]

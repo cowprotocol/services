@@ -232,6 +232,12 @@ impl OrderBuilder {
         self
     }
 
+    pub fn with_eip1271(mut self, owner: H160, signature: Vec<u8>) -> Self {
+        self.0.metadata.owner = owner;
+        self.0.signature = Signature::Eip1271(signature);
+        self
+    }
+
     pub fn with_presign(mut self, owner: H160) -> Self {
         self.0.metadata.owner = owner;
         self.0.signature = Signature::PreSign;
