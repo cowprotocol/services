@@ -45,6 +45,7 @@ impl ZeroExPriceEstimator {
             buy_amount,
             slippage_percentage: Default::default(),
             excluded_sources: self.excluded_sources.clone(),
+            enable_slippage_protection: false,
         };
         let api = self.api.clone();
         let swap_future = async move {
