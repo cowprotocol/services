@@ -1,6 +1,6 @@
 use crate::deploy::Contracts;
 use contracts::{ERC20Mintable, WETH9};
-use ethcontract::{prelude::U256, H160};
+use ethcontract::{prelude::U256, Bytes, H160};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::Postgres,
@@ -60,8 +60,47 @@ macro_rules! tx {
     };
 }
 
+#[macro_export]
+macro_rules! tx_safe {
+    ($acc:ident, $safe:ident, $call:expr) => {{
+        let call = $call;
+        $crate::tx!(
+            $acc,
+            $safe.exec_transaction(
+                call.tx.to.unwrap(),
+                call.tx.value.unwrap_or_default(),
+                ::ethcontract::Bytes(call.tx.data.unwrap_or_default().0),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                Default::default(),
+                $crate::services::safe_prevalidated_signature($acc.address()),
+            )
+        );
+    }};
+}
+
 pub fn to_wei(base: u32) -> U256 {
     U256::from(base) * U256::from(10).pow(18.into())
+}
+
+/// Generate a Safe "pre-validated" signature.
+///
+/// This is a special "marker" signature that can be used if the account that
+/// is executing the transaction is an owner. For single owner safes, this is
+/// the easiest way to execute a transaction as it does not involve any ECDSA
+/// signing.
+///
+/// See:
+/// - Documentation: <https://docs.gnosis-safe.io/contracts/signatures#pre-validated-signatures>
+/// - Code: <https://github.com/safe-global/safe-contracts/blob/c36bcab46578a442862d043e12a83fec41143dec/contracts/GnosisSafe.sol#L287-L291>
+pub fn safe_prevalidated_signature(owner: H160) -> Bytes<Vec<u8>> {
+    let mut signature = vec![0; 65];
+    signature[12..32].copy_from_slice(owner.as_bytes());
+    signature[64] = 1;
+    Bytes(signature)
 }
 
 #[allow(dead_code)]

@@ -67,6 +67,21 @@ fn run() -> Result<()> {
             "@cowprotocol/contracts@1.1.2/deployments/mainnet/GPv2Settlement.json",
         )?
         .npm(
+            "GnosisSafe",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
+             GnosisSafe.sol/GnosisSafe.json",
+        )?
+        .npm(
+            "GnosisSafeCompatibilityFallbackHandler",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
+             handler/CompatibilityFallbackHandler.sol/CompatibilityFallbackHandler.json",
+        )?
+        .npm(
+            "GnosisSafeProxy",
+            "@gnosis.pm/safe-contracts@1.3.0/build/artifacts/contracts/\
+             proxies/GnosisSafeProxy.sol/GnosisSafeProxy.json",
+        )?
+        .npm(
             "UniswapV2Factory",
             "@uniswap/v2-core@1.0.1/build/UniswapV2Factory.json",
         )?
@@ -102,6 +117,10 @@ fn run() -> Result<()> {
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",
         )?
+        .manual(
+            "ERC1271SignatureValidator",
+            "Manually vendored ABI for ERC-1271 signature validation",
+        )
         .npm(
             "IUniswapLikeFactory",
             "@uniswap/v2-periphery@1.1.0-beta.0/build/IUniswapV2Factory.json",

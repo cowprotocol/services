@@ -35,6 +35,12 @@ include!(concat!(env!("OUT_DIR"), "/ERC20.rs"));
 include!(concat!(env!("OUT_DIR"), "/ERC20Mintable.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2AllowListAuthentication.rs"));
 include!(concat!(env!("OUT_DIR"), "/GPv2Settlement.rs"));
+include!(concat!(env!("OUT_DIR"), "/GnosisSafe.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/GnosisSafeCompatibilityFallbackHandler.rs"
+));
+include!(concat!(env!("OUT_DIR"), "/GnosisSafeProxy.rs"));
 include!(concat!(env!("OUT_DIR"), "/HoneyswapFactory.rs"));
 include!(concat!(env!("OUT_DIR"), "/HoneyswapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/IUniswapLikePair.rs"));
