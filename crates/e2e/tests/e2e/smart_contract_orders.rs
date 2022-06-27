@@ -1,18 +1,14 @@
 use crate::services::{
-    create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-    uniswap_pair_provider, OrderbookServices, API_HOST,
+    create_order_converter, create_orderbook_api, deploy_mintable_token,
+    gnosis_safe_eip1271_signature, to_wei, uniswap_pair_provider, OrderbookServices, API_HOST,
 };
 use contracts::{
     GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, IUniswapLikeRouter,
 };
-use ethcontract::{
-    prelude::{Account, Address, Bytes, PrivateKey, U256},
-    H160,
-};
+use ethcontract::{Account, Address, Bytes, PrivateKey, H160, H256, U256};
 use model::{
     order::{Order, OrderBuilder, OrderKind, OrderStatus, OrderUid},
     signature::hashed_eip712_message,
-    DomainSeparator,
 };
 use secp256k1::SecretKey;
 use shared::{maintenance::Maintaining, sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
@@ -27,7 +23,7 @@ use solver::{
     },
 };
 use std::{sync::Arc, time::Duration};
-use web3::signing::{Key as _, SecretKeyRef};
+use web3::signing::SecretKeyRef;
 
 const TRADER: [u8; 32] = [1; 32];
 
@@ -145,8 +141,10 @@ async fn smart_contract_orders(web3: Web3) {
                 gnosis_safe_eip1271_signature(
                     SecretKeyRef::from(&SecretKey::from_slice(&TRADER).unwrap()),
                     &safe,
-                    &contracts.domain_separator,
-                    order_template(),
+                    H256(hashed_eip712_message(
+                        &contracts.domain_separator,
+                        &order_template().build().data.hash_struct(),
+                    )),
                 )
                 .await,
             )
@@ -306,30 +304,4 @@ async fn smart_contract_orders(web3: Web3) {
         .await
         .expect("Couldn't fetch native token balance");
     assert_eq!(balance, U256::from(7_975_363_884_976_534_272_u128));
-}
-
-async fn gnosis_safe_eip1271_signature(
-    key: SecretKeyRef<'_>,
-    safe: &GnosisSafe,
-    domain: &DomainSeparator,
-    order: OrderBuilder,
-) -> Vec<u8> {
-    let handler =
-        GnosisSafeCompatibilityFallbackHandler::at(&safe.raw_instance().web3(), safe.address());
-
-    let order_hash = hashed_eip712_message(domain, &order.build().data.hash_struct());
-    let message_hash = handler
-        .get_message_hash(Bytes(order_hash.to_vec()))
-        .call()
-        .await
-        .unwrap();
-
-    let signature = key.sign(&message_hash.0, None).unwrap();
-
-    let mut bytes = vec![0u8; 65];
-    bytes[0..32].copy_from_slice(signature.r.as_bytes());
-    bytes[32..64].copy_from_slice(signature.s.as_bytes());
-    bytes[64] = signature.v as _;
-
-    bytes
 }
