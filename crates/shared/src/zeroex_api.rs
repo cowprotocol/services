@@ -62,7 +62,11 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
-            .append_pair("slippagePercentage", &self.slippage_percentage.to_string());
+            .append_pair("slippagePercentage", &self.slippage_percentage.to_string())
+            .append_pair(
+                "enableSlippageProtection",
+                &self.enable_slippage_protection.to_string(),
+            );
         if let Some(amount) = self.sell_amount {
             url.query_pairs_mut()
                 .append_pair("sellAmount", &amount.to_string());
