@@ -1,13 +1,11 @@
-use crate::{
-    api::{convert_json_response, extract_payload, IntoWarpReply},
-    orderbook::{OrderCancellationError, Orderbook},
-};
+use crate::orderbook::{OrderCancellationError, Orderbook};
 use anyhow::Result;
 use model::{
     order::{OrderCancellation, OrderUid},
     signature::{EcdsaSignature, EcdsaSigningScheme},
 };
 use serde::{Deserialize, Serialize};
+use shared::api::{convert_json_response, extract_payload, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 

@@ -1,4 +1,4 @@
-use crate::{api::convert_json_response, order_quoting::QuoteHandler};
+use crate::order_quoting::QuoteHandler;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
@@ -7,6 +7,7 @@ use model::{
     u256_decimal,
 };
 use serde::{Deserialize, Serialize};
+use shared::api::{convert_json_response, ApiReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -117,7 +118,7 @@ fn buy_request() -> impl Filter<Extract = (BuyQuery,), Error = Rejection> + Clon
 
 pub fn get_fee_and_quote_sell(
     quotes: Arc<QuoteHandler>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     sell_request().and_then(move |query: SellQuery| {
         let quotes = quotes.clone();
         async move {
@@ -133,7 +134,7 @@ pub fn get_fee_and_quote_sell(
 
 pub fn get_fee_and_quote_buy(
     quotes: Arc<QuoteHandler>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     buy_request().and_then(move |query: BuyQuery| {
         let quotes = quotes.clone();
         async move {
