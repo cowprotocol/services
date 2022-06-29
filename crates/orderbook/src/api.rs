@@ -17,12 +17,8 @@ mod replace_order;
 
 use crate::solver_competition::SolverCompetition;
 use crate::{database::trades::TradeRetrieving, order_quoting::QuoteHandler, orderbook::Orderbook};
-use shared::api::{error, handle_rejection, internal_error, ApiMetrics, ApiReply};
-use std::{
-    sync::atomic::{AtomicUsize, Ordering},
-    sync::Arc,
-    time::Instant,
-};
+use shared::api::{error, finalize_router, internal_error, ApiReply};
+use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
 
 pub fn handle_all_routes(
@@ -138,55 +134,5 @@ pub fn handle_all_routes(
     // Routes combined
 
     let routes = routes_v1.or(routes_v2).unify().boxed();
-
-    // Metrics
-
-    let metrics = ApiMetrics::pub_instance();
-    let routes_with_metrics = warp::any()
-        .map(Instant::now) // Start a timer at the beginning of response processing
-        .and(routes) // Parse requests
-        .map(|timer: Instant, reply: ApiReply, method: &str| {
-            let response = reply.into_response();
-
-            metrics
-                .requests_complete
-                .with_label_values(&[method, response.status().as_str()])
-                .inc();
-            metrics
-                .requests_duration_seconds
-                .with_label_values(&[method])
-                .observe(timer.elapsed().as_secs_f64());
-
-            response
-        })
-        .boxed();
-
-    // Final setup
-
-    let cors = warp::cors()
-        .allow_any_origin()
-        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
-        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
-
-    // Give each request a unique tracing span.
-    // This allows us to match log statements across concurrent API requests. We
-    // first try to read the request ID from our reverse proxy (this way we can
-    // line up API request logs with Nginx requests) but fall back to an
-    // internal counter.
-    let internal_request_id = Arc::new(AtomicUsize::new(0));
-    let tracing_span = warp::trace(move |info| {
-        if let Some(header) = info.request_headers().get("X-Request-ID") {
-            let request_id = String::from_utf8_lossy(header.as_bytes());
-            tracing::info_span!("request", id = &*request_id)
-        } else {
-            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
-            tracing::info_span!("request", id = request_id)
-        }
-    });
-
-    routes_with_metrics
-        .recover(handle_rejection)
-        .with(cors)
-        .with(warp::log::log("orderbook::api::request_summary"))
-        .with(tracing_span)
+    finalize_router(routes)
 }

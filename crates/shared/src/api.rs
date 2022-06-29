@@ -2,8 +2,17 @@ use crate::metrics::get_metric_storage_registry;
 use crate::price_estimation::PriceEstimationError;
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
-use std::{convert::Infallible, fmt::Debug};
+use std::{
+    convert::Infallible,
+    fmt::Debug,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
 use warp::{
+    filters::BoxedFilter,
     hyper::StatusCode,
     reply::{json, with_status, Json, WithStatus},
     Filter, Rejection, Reply,
@@ -12,10 +21,11 @@ use warp::{
 pub type ApiReply = WithStatus<Json>;
 
 // We turn Rejection into Reply to workaround warp not setting CORS headers on rejections.
-pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
+async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let response = err.default_response();
 
-    ApiMetrics::pub_instance()
+    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    metrics
         .requests_rejected
         .with_label_values(&[response.status().as_str()])
         .inc();
@@ -25,25 +35,18 @@ pub async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> 
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
 #[metric(subsystem = "api")]
-pub struct ApiMetrics {
+struct ApiMetrics {
     /// Number of completed API requests.
     #[metric(labels("method", "status_code"))]
-    pub requests_complete: prometheus::IntCounterVec,
+    requests_complete: prometheus::IntCounterVec,
 
     /// Number of rejected API requests.
     #[metric(labels("status_code"))]
-    pub requests_rejected: prometheus::IntCounterVec,
+    requests_rejected: prometheus::IntCounterVec,
 
     /// Execution time for each API request.
     #[metric(labels("method"))]
-    pub requests_duration_seconds: prometheus::HistogramVec,
-}
-
-impl ApiMetrics {
-    /// We need this helper function to make `ApiMetrics` usable in crates using `shared`.
-    pub fn pub_instance() -> &'static ApiMetrics {
-        ApiMetrics::instance(get_metric_storage_registry()).unwrap()
-    }
+    requests_duration_seconds: prometheus::HistogramVec,
 }
 
 #[derive(Serialize)]
@@ -125,6 +128,60 @@ pub fn extract_payload<T: DeserializeOwned + Send>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
     // (rejecting huge payloads)...
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
+}
+
+/// Sets up basic metrics, cors and proper log tracing for all routes.
+pub fn finalize_router(
+    routes: BoxedFilter<(ApiReply, &'static str)>,
+) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
+    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    let routes_with_metrics = warp::any()
+        .map(Instant::now) // Start a timer at the beginning of response processing
+        .and(routes) // Parse requests
+        .map(|timer: Instant, reply: ApiReply, method: &'static str| {
+            let response = reply.into_response();
+
+            metrics
+                .requests_complete
+                .with_label_values(&[method, response.status().as_str()])
+                .inc();
+            metrics
+                .requests_duration_seconds
+                .with_label_values(&[method])
+                .observe(timer.elapsed().as_secs_f64());
+
+            response
+        })
+        .boxed();
+
+    // Final setup
+
+    let cors = warp::cors()
+        .allow_any_origin()
+        .allow_methods(vec!["GET", "POST", "DELETE", "OPTIONS", "PUT", "PATCH"])
+        .allow_headers(vec!["Origin", "Content-Type", "X-Auth-Token", "X-AppId"]);
+
+    // Give each request a unique tracing span.
+    // This allows us to match log statements across concurrent API requests. We
+    // first try to read the request ID from our reverse proxy (this way we can
+    // line up API request logs with Nginx requests) but fall back to an
+    // internal counter.
+    let internal_request_id = Arc::new(AtomicUsize::new(0));
+    let tracing_span = warp::trace(move |info| {
+        if let Some(header) = info.request_headers().get("X-Request-ID") {
+            let request_id = String::from_utf8_lossy(header.as_bytes());
+            tracing::info_span!("request", id = &*request_id)
+        } else {
+            let request_id = internal_request_id.fetch_add(1, Ordering::SeqCst);
+            tracing::info_span!("request", id = request_id)
+        }
+    });
+
+    routes_with_metrics
+        .recover(handle_rejection)
+        .with(cors)
+        .with(warp::log::log("orderbook::api::request_summary"))
+        .with(tracing_span)
 }
 
 impl IntoWarpReply for PriceEstimationError {
