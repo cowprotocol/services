@@ -133,6 +133,7 @@ pub fn extract_payload<T: DeserializeOwned + Send>(
 /// Sets up basic metrics, cors and proper log tracing for all routes.
 pub fn finalize_router(
     routes: BoxedFilter<(ApiReply, &'static str)>,
+    log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
     let routes_with_metrics = warp::any()
@@ -180,7 +181,7 @@ pub fn finalize_router(
     routes_with_metrics
         .recover(handle_rejection)
         .with(cors)
-        .with(warp::log::log("orderbook::api::request_summary"))
+        .with(warp::log::log(log_prefix))
         .with(tracing_span)
 }
 

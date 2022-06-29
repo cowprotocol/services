@@ -134,5 +134,5 @@ pub fn handle_all_routes(
     // Routes combined
 
     let routes = routes_v1.or(routes_v2).unify().boxed();
-    finalize_router(routes)
+    finalize_router(routes, "orderbook::api::request_summary")
 }
