@@ -99,8 +99,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             .checked_sub(Duration::from_secs(1))
             .ok_or_else(|| anyhow!("no time left to send request"))?;
 
-        let mut url = self.base.clone();
-        url.set_path("/solve");
+        let mut url = self.base.join("solve")?;
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
         let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0u64));
