@@ -4,13 +4,10 @@ use contracts::{
     WETH9,
 };
 use ethcontract::errors::DeployError;
-use model::{
-    order::{OrderUid, BUY_ETH_ADDRESS},
-    DomainSeparator,
-};
+use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    database::{self, orders::OrderFilter, Postgres},
+    database::Postgres,
     event_updater::EventUpdater,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -75,16 +72,11 @@ use shared::{
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
 
-pub async fn database_metrics(metrics: Arc<Metrics>, database: Postgres) -> ! {
+pub async fn database_metrics(database: Postgres) -> ! {
     loop {
-        match database.count_rows_in_tables().await {
-            Ok(counts) => {
-                for (table, count) in counts {
-                    metrics.set_table_row_count(table, count);
-                }
-            }
-            Err(err) => tracing::error!(?err, "failed to update db metrics"),
-        };
+        if let Err(err) = database.update_table_rows_metric().await {
+            tracing::error!(?err, "failed to update table rows metric");
+        }
         tokio::time::sleep(Duration::from_secs(10)).await;
     }
 }
@@ -159,10 +151,7 @@ async fn main() {
         .expect("Deployed contract constants don't match the ones in this binary");
     let domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
-    let database = Arc::new(database::instrumented::Instrumented::new(
-        postgres.clone(),
-        metrics.clone(),
-    ));
+    let database = Arc::new(postgres.clone());
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
@@ -559,7 +548,6 @@ async fn main() {
         domain_separator,
         settlement_contract.address(),
         database.clone(),
-        bad_token_detector,
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
@@ -593,7 +581,7 @@ async fn main() {
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(metrics, postgres));
+    let db_metrics_task = task::spawn(database_metrics(postgres));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -646,10 +634,7 @@ async fn shutdown_signal() {
 
 async fn check_database_connection(orderbook: &Orderbook) {
     orderbook
-        .get_orders(&OrderFilter {
-            uid: Some(OrderUid::default()),
-            ..Default::default()
-        })
+        .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
 }

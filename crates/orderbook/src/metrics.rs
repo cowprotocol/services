@@ -1,9 +1,6 @@
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
-use prometheus::{
-    Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge,
-    IntGaugeVec, Opts,
-};
+use prometheus::{Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts};
 use shared::{
     metrics::get_metrics_registry,
     sources::{
@@ -15,12 +12,10 @@ use shared::{
 use std::time::Duration;
 
 pub struct Metrics {
-    db_table_row_count: IntGaugeVec,
     /// Outgoing RPC request metrics
     rpc_requests: HistogramVec,
     pool_cache_hits: IntCounter,
     pool_cache_misses: IntCounter,
-    database_queries: HistogramVec,
     /// Gas estimate metrics
     gas_price: Gauge,
     price_estimates: IntCounterVec,
@@ -37,12 +32,6 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Result<Self> {
         let registry = get_metrics_registry();
-
-        let db_table_row_count = IntGaugeVec::new(
-            Opts::new("table_rows", "Number of rows in db tables."),
-            &["table"],
-        )?;
-        registry.register(Box::new(db_table_row_count.clone()))?;
 
         let opts = HistogramOpts::new(
             "transport_requests",
@@ -61,13 +50,6 @@ impl Metrics {
             "Number of cache misses in the pool fetcher cache.",
         )?;
         registry.register(Box::new(pool_cache_misses.clone()))?;
-
-        let opts = HistogramOpts::new(
-            "database_queries",
-            "Sql queries to our postgresql database.",
-        );
-        let database_queries = HistogramVec::new(opts, &["type"]).unwrap();
-        registry.register(Box::new(database_queries.clone()))?;
 
         let opts = Opts::new("gas_price", "Gas price estimate over time.");
         let gas_price = Gauge::with_opts(opts).unwrap();
@@ -123,11 +105,9 @@ impl Metrics {
         registry.register(Box::new(auction_price_estimate_timeouts.clone()))?;
 
         Ok(Self {
-            db_table_row_count,
             rpc_requests,
             pool_cache_hits,
             pool_cache_misses,
-            database_queries,
             gas_price,
             price_estimates,
             native_price_cache,
@@ -138,12 +118,6 @@ impl Metrics {
             auction_errored_price_estimates,
             auction_price_estimate_timeouts,
         })
-    }
-
-    pub fn set_table_row_count(&self, table: &str, count: i64) {
-        self.db_table_row_count
-            .with_label_values(&[table])
-            .set(count);
     }
 }
 
@@ -178,12 +152,6 @@ impl crate::solvable_orders::AuctionMetrics for Metrics {
         self.auction_filtered_orders.set(filtered_orders as i64);
         self.auction_errored_price_estimates
             .inc_by(errored_estimates);
-    }
-}
-
-impl crate::database::instrumented::Metrics for Metrics {
-    fn database_query_histogram(&self, label: &str) -> Histogram {
-        self.database_queries.with_label_values(&[label])
     }
 }
 
