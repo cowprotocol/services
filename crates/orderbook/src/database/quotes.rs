@@ -49,6 +49,11 @@ impl TryFrom<QuoteRow> for QuoteData {
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
     async fn save(&self, data: QuoteData) -> Result<Option<QuoteId>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["save_quote"])
+            .start_timer();
+
         const QUERY: &str = r#"
             INSERT INTO quotes (
                 sell_token,
@@ -83,6 +88,11 @@ impl QuoteStoring for Postgres {
     }
 
     async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["get_quote"])
+            .start_timer();
+
         const QUERY: &str = r#"
             SELECT *
             FROM quotes
@@ -103,6 +113,11 @@ impl QuoteStoring for Postgres {
         parameters: QuoteSearchParameters,
         expiration: DateTime<Utc>,
     ) -> Result<Option<(QuoteId, QuoteData)>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["find_quote"])
+            .start_timer();
+
         const QUERY: &str = r#"
             SELECT *
             FROM quotes
@@ -142,6 +157,11 @@ impl QuoteStoring for Postgres {
 
 impl Postgres {
     pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["remove_expired_quotes"])
+            .start_timer();
+
         const QUERY: &str = "DELETE FROM quotes WHERE expiration_timestamp < $1;";
         sqlx::query(QUERY)
             .bind(max_expiry)

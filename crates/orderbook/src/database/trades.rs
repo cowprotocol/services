@@ -22,6 +22,11 @@ pub struct TradeFilter {
 #[async_trait::async_trait]
 impl TradeRetrieving for Postgres {
     async fn trades(&self, filter: &TradeFilter) -> Result<Vec<Trade>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["trades"])
+            .start_timer();
+
         const QUERY: &str = "\
             SELECT \
                 t.block_number, \

@@ -340,6 +340,11 @@ impl OrderStoring for Postgres {
         order: &Order,
         quote: Option<Quote>,
     ) -> Result<(), InsertionError> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["insert_order"])
+            .start_timer();
+
         let order = order.clone();
         let mut connection = self.pool.acquire().await?;
         connection
@@ -357,6 +362,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["cancel_order"])
+            .start_timer();
+
         let order_uid = *order_uid;
         let mut connection = self.pool.acquire().await?;
         connection
@@ -373,6 +383,11 @@ impl OrderStoring for Postgres {
         new_order: &model::order::Order,
         new_quote: Option<Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["replace_order"])
+            .start_timer();
+
         let old_order = *old_order;
         let new_order = new_order.clone();
         let mut connection = self.pool.acquire().await?;
@@ -392,6 +407,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["orders"])
+            .start_timer();
+
         // The `or`s in the `where` clause are there so that each filter is ignored when not set.
         // We use a subquery instead of a `having` clause in the inner query because we would not be
         // able to use the `sum_*` columns there.
@@ -432,6 +452,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["orders_for_tx"])
+            .start_timer();
+
         // TODO - This query assumes there is only one settlement per block.
         //  when there are two, we would want all trades for which the log index is between
         //  that of the correct settlement and the next. For this we would have to
@@ -476,6 +501,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["single_order"])
+            .start_timer();
+
         #[rustfmt::skip]
         const QUERY: &str = concatcp!(
             "SELECT ", ORDERS_SELECT,
@@ -490,6 +520,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["solvable_orders"])
+            .start_timer();
+
         #[rustfmt::skip]
         const QUERY: &str = concatcp!(
             "SELECT * FROM ( ",
@@ -538,6 +573,11 @@ impl OrderStoring for Postgres {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["user_orders"])
+            .start_timer();
+
         // As a future consideration for this query we could move from offset to an approach called
         // keyset pagination where the offset is identified by "key" of the previous query. In our
         // case that would be the lowest creation_timestamp. This way the database can start
