@@ -1,5 +1,5 @@
 use crate::{
-    database::orders::{InsertionError, OrderFilter, OrderStoring},
+    database::orders::{InsertionError, OrderStoring},
     order_validation::{OrderValidating, ValidationError},
     solvable_orders::{SolvableOrders, SolvableOrdersCache},
 };
@@ -12,8 +12,8 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::H160;
-use shared::{bad_token::BadTokenDetecting, metrics, metrics::LivenessChecking};
-use std::{collections::HashSet, sync::Arc, time::Duration};
+use shared::{metrics, metrics::LivenessChecking};
+use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 
 #[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
@@ -120,7 +120,6 @@ pub struct Orderbook {
     domain_separator: DomainSeparator,
     settlement_contract: H160,
     database: Arc<dyn OrderStoring>,
-    bad_token_detector: Arc<dyn BadTokenDetecting>,
     solvable_orders: Arc<SolvableOrdersCache>,
     solvable_orders_max_update_age: Duration,
     order_validator: Arc<dyn OrderValidating>,
@@ -132,7 +131,6 @@ impl Orderbook {
         domain_separator: DomainSeparator,
         settlement_contract: H160,
         database: Arc<dyn OrderStoring>,
-        bad_token_detector: Arc<dyn BadTokenDetecting>,
         solvable_orders: Arc<SolvableOrdersCache>,
         solvable_orders_max_update_age: Duration,
         order_validator: Arc<dyn OrderValidating>,
@@ -141,7 +139,6 @@ impl Orderbook {
             domain_separator,
             settlement_contract,
             database,
-            bad_token_detector,
             solvable_orders,
             solvable_orders_max_update_age,
             order_validator,
@@ -265,28 +262,6 @@ impl Orderbook {
         Ok(new_order.metadata.uid)
     }
 
-    pub async fn get_orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
-        let mut orders = self.database.orders(filter).await?;
-        // This filter is deprecated so filtering solvable orders is a bit awkward but we'll support
-        // for a little bit.
-        if filter.exclude_insufficient_balance {
-            use crate::account_balances::Query;
-            let solvable_orders = self
-                .solvable_orders
-                .cached_solvable_orders()
-                .orders
-                .iter()
-                .map(Query::from_order)
-                .collect::<HashSet<_>>();
-            orders.retain(|order| solvable_orders.contains(&Query::from_order(order)));
-        }
-        set_available_balances(orders.as_mut_slice(), &self.solvable_orders);
-        if filter.exclude_unsupported_tokens {
-            orders = filter_unsupported_tokens(orders, self.bad_token_detector.as_ref()).await?;
-        }
-        Ok(orders)
-    }
-
     pub async fn get_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
         let mut order = match self.database.single_order(uid).await? {
             Some(order) => order,
@@ -343,25 +318,6 @@ impl LivenessChecking for Orderbook {
     }
 }
 
-pub async fn filter_unsupported_tokens(
-    mut orders: Vec<Order>,
-    bad_token: &dyn BadTokenDetecting,
-) -> Result<Vec<Order>> {
-    // Can't use normal `retain` or `filter` because the bad token detection is async. So either
-    // this manual iteration or conversion to stream.
-    let mut index = 0;
-    'outer: while index < orders.len() {
-        for token in orders[index].data.token_pair().unwrap() {
-            if !bad_token.detect(token).await?.is_good() {
-                orders.swap_remove(index);
-                continue 'outer;
-            }
-        }
-        index += 1;
-    }
-    Ok(orders)
-}
-
 fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     for order in orders.iter_mut() {
         order.metadata.available_balance =
@@ -378,16 +334,14 @@ mod tests {
         signature_validator::MockSignatureValidating,
     };
     use ethcontract::H160;
-    use futures::FutureExt;
     use mockall::predicate::eq;
     use model::{
         app_id::AppId,
-        order::{OrderBuilder, OrderData, OrderMetadata},
+        order::{OrderData, OrderMetadata},
         signature::Signature,
     };
     use shared::{
-        bad_token::{list_based::ListBasedDetector, MockBadTokenDetecting},
-        current_block,
+        bad_token::MockBadTokenDetecting, current_block,
         price_estimation::native::MockNativePriceEstimating,
     };
 
@@ -396,7 +350,6 @@ mod tests {
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
             database: Arc::new(MockOrderStoring::new()),
-            bad_token_detector: Arc::new(MockBadTokenDetecting::new()),
             solvable_orders: SolvableOrdersCache::new(
                 Duration::default(),
                 Arc::new(MockOrderStoring::new()),
@@ -411,33 +364,6 @@ mod tests {
             solvable_orders_max_update_age: Default::default(),
             order_validator: Arc::new(MockOrderValidating::new()),
         }
-    }
-
-    #[test]
-    fn filter_unsupported_tokens_() {
-        let token0 = H160::from_low_u64_le(0);
-        let token1 = H160::from_low_u64_le(1);
-        let token2 = H160::from_low_u64_le(2);
-        let bad_token = ListBasedDetector::deny_list(vec![token0]);
-        let orders = vec![
-            OrderBuilder::default()
-                .with_sell_token(token0)
-                .with_buy_token(token1)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token1)
-                .with_buy_token(token2)
-                .build(),
-            OrderBuilder::default()
-                .with_sell_token(token0)
-                .with_buy_token(token2)
-                .build(),
-        ];
-        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
-            .now_or_never()
-            .unwrap()
-            .unwrap();
-        assert_eq!(result, &orders[1..2]);
     }
 
     #[tokio::test]

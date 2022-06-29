@@ -4,13 +4,10 @@ use contracts::{
     WETH9,
 };
 use ethcontract::errors::DeployError;
-use model::{
-    order::{OrderUid, BUY_ETH_ADDRESS},
-    DomainSeparator,
-};
+use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
-    database::{orders::OrderFilter, Postgres},
+    database::Postgres,
     event_updater::EventUpdater,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -551,7 +548,6 @@ async fn main() {
         domain_separator,
         settlement_contract.address(),
         database.clone(),
-        bad_token_detector,
         solvable_orders_cache.clone(),
         args.solvable_orders_max_update_age,
         order_validator.clone(),
@@ -638,10 +634,7 @@ async fn shutdown_signal() {
 
 async fn check_database_connection(orderbook: &Orderbook) {
     orderbook
-        .get_orders(&OrderFilter {
-            uid: Some(OrderUid::default()),
-            ..Default::default()
-        })
+        .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
 }

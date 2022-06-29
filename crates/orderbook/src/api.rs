@@ -5,7 +5,6 @@ mod get_fee_and_quote;
 mod get_fee_info;
 mod get_markets;
 mod get_order_by_uid;
-mod get_orders;
 mod get_orders_by_tx;
 mod get_solvable_orders;
 mod get_solvable_orders_v2;
@@ -49,9 +48,6 @@ pub fn handle_all_routes(
 
     let create_order = create_order::create_order(orderbook.clone())
         .map(|result| (result, "v1/create_order"))
-        .boxed();
-    let get_orders = get_orders::get_orders(orderbook.clone())
-        .map(|result| (result, "v1/get_orders"))
         .boxed();
     let fee_info = get_fee_info::get_fee_info(quotes.clone())
         .map(|result| (result, "v1/fee_info"))
@@ -103,8 +99,6 @@ pub fn handle_all_routes(
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
             create_order
-                .or(get_orders)
-                .unify()
                 .or(fee_info)
                 .unify()
                 .or(get_order)
