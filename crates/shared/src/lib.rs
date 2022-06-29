@@ -1,6 +1,7 @@
 #[macro_use]
 pub mod macros;
 
+pub mod api;
 pub mod arguments;
 pub mod bad_token;
 pub mod balancer_sor_api;
