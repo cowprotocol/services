@@ -24,14 +24,12 @@ fn handle_all_routes() -> impl Filter<Extract = (impl Reply,), Error = Rejection
     // This string will be used later to report metrics.
     // It is not used to form the actual server response.
 
-    let solve = solve::post_solve()
-        .map(|result| (result, "v1/solve"))
-        .boxed();
+    let solve = solve::post_solve().map(|result| (result, "solve")).boxed();
     let execute = execute::post_execute()
-        .map(|result| (result, "v1/execute"))
+        .map(|result| (result, "execute"))
         .boxed();
 
-    let routes = warp::path!("api" / "v1" / ..)
+    let routes = warp::path!("api" / ..)
         .and(solve.or(execute).unify())
         .untuple_one()
         .boxed();
