@@ -116,6 +116,7 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/Order"
+      deprecated: true
   /api/v1/orders/{UID}:
     get:
       summary: Get existing order from UID.
