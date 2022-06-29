@@ -208,7 +208,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_without_filter() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
         let event_index_a = EventIndex {
@@ -230,7 +230,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_with_owner_filter() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(3, 2).await;
 
         let event_index_0 = EventIndex {
@@ -280,7 +280,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_with_order_uid_filter() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let (owners, order_ids) = generate_owners_and_order_ids(2, 3).await;
 
@@ -331,7 +331,7 @@ mod tests {
     #[ignore]
     async fn postgres_trade_without_matching_order() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let (owners, order_ids) = generate_owners_and_order_ids(1, 1).await;
 
@@ -388,7 +388,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_having_same_settlement_with_and_without_orders() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
 
@@ -434,7 +434,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_with_same_settlement_no_orders() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
 
@@ -480,7 +480,7 @@ mod tests {
     #[ignore]
     async fn postgres_trades_with_two_settlements_in_same_block() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let (owners, order_ids) = generate_owners_and_order_ids(2, 2).await;
         assert_trades(&db, &TradeFilter::default(), &[]).await;
 
