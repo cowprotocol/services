@@ -143,7 +143,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         }
         let query = url.query().map(ToString::to_string).unwrap_or_default();
         let body = serde_json::to_string(&model).context("failed to encode body")?;
-
         tracing::trace!(%url, %body, "request");
         let mut request = self
             .client
