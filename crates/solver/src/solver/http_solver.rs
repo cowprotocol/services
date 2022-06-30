@@ -408,6 +408,13 @@ impl Solver for HttpSolver {
                 }
             }
         };
+
+        tracing::debug!(
+            "Problem sent to http solver {} (json):\n{}",
+            self.solver.name,
+            serde_json::to_string_pretty(&model).unwrap()
+        );
+
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .ok_or_else(|| anyhow!("no time left to send request"))?;
@@ -420,6 +427,18 @@ impl Solver for HttpSolver {
             );
             return Ok(Vec::new());
         }
+
+        tracing::debug!(
+            "Solution received from http solver {} (json):\n{:}",
+            self.solver.name,
+
+            serde_json::to_string_pretty(&settled).unwrap()
+            /*serde_json::to_string_pretty::<serde_json::Value>(
+                &serde_json::from_str(text)
+                    .unwrap_or_else(|_| serde_json::from_str(r#""<Invalid json>""#).unwrap())
+            )
+            .unwrap()*/
+        );
 
         match settlement::convert_settlement(
             settled.clone(),

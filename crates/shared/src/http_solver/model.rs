@@ -107,7 +107,7 @@ pub struct TokenAmount {
     pub token: H160,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct ApprovalModel {
     pub token: H160,
     pub spender: H160,
@@ -115,7 +115,7 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Derivative, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Derivative, Deserialize, PartialEq, Serialize)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
@@ -169,7 +169,7 @@ mod bytes_hex_or_array {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
@@ -209,13 +209,13 @@ pub struct MetadataModel {
     pub native_token: Option<H160>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct SettledBatchAuctionMetadataModel {
     pub has_solution: Option<bool>,
     pub result: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ExecutedOrderModel {
     #[serde(with = "u256_decimal")]
     pub exec_sell_amount: U256,
@@ -227,14 +227,14 @@ pub struct ExecutedOrderModel {
     pub exec_plan: Option<ExecutionPlan>,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct UpdatedAmmModel {
     /// We ignore additional incoming amm fields we don't need.
     pub execution: Vec<ExecutedAmmModel>,
     pub cost: Option<TokenAmount>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct ExecutedAmmModel {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -260,7 +260,7 @@ impl UpdatedAmmModel {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum ExecutionPlan {
     /// The coordinates at which the interaction should be included within a
@@ -296,7 +296,7 @@ mod execution_plan_internal {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct ExecutionPlanCoordinatesModel {
     pub sequence: u32,
     pub position: u32,
