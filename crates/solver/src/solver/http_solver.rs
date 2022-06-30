@@ -399,6 +399,10 @@ impl Solver for HttpSolver {
                     let (model, context) = self
                         .prepare_model(id, orders, liquidity, gas_price, external_prices)
                         .await?;
+                    tracing::debug!(
+                        "Problem sent to http solvers (json):\n{}",
+                        serde_json::to_string_pretty(&model).unwrap()
+                    );
                     *guard = Some(InstanceData {
                         solve_id: id,
                         model: model.clone(),
@@ -408,12 +412,6 @@ impl Solver for HttpSolver {
                 }
             }
         };
-
-        tracing::debug!(
-            "Problem sent to http solver {} (json):\n{}",
-            self.solver.name,
-            serde_json::to_string_pretty(&model).unwrap()
-        );
 
         let timeout = deadline
             .checked_duration_since(Instant::now())
