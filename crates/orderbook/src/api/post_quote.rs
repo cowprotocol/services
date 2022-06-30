@@ -1,10 +1,8 @@
-use crate::{
-    api::{self, convert_json_response, IntoWarpReply},
-    order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
-};
+use crate::order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler};
 use anyhow::Result;
 use model::quote::OrderQuoteRequest;
 use serde_json::json;
+use shared::api::{self, convert_json_response, rich_error, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection};
 
@@ -34,7 +32,7 @@ impl IntoWarpReply for CalculateQuoteError {
         match self {
             Self::Price(err) => err.into_warp_reply(),
             Self::SellAmountDoesNotCoverFee { fee_amount } => warp::reply::with_status(
-                super::rich_error(
+                rich_error(
                     "SellAmountDoesNotCoverFee",
                     "The sell amount for the sell order is lower than the fee.",
                     json!({ "fee_amount": fee_amount }),
@@ -58,7 +56,6 @@ impl IntoWarpReply for OrderQuoteError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
     use anyhow::anyhow;
     use chrono::{DateTime, NaiveDateTime, Utc};
     use ethcontract::{H160, U256};
@@ -71,6 +68,7 @@ mod tests {
         signature::SigningScheme,
     };
     use serde_json::json;
+    use shared::api::response_body;
     use warp::{test::request, Reply};
 
     #[test]

@@ -1,5 +1,6 @@
-use crate::{api::convert_json_response, orderbook::Orderbook};
+use crate::orderbook::Orderbook;
 use anyhow::Result;
+use shared::api::{convert_json_response, ApiReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -9,7 +10,7 @@ fn get_auction_request() -> impl Filter<Extract = (), Error = Rejection> + Clone
 
 pub fn get_auction(
     orderbook: Arc<Orderbook>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_auction_request().and_then(move || {
         let orderbook = orderbook.clone();
         async move {

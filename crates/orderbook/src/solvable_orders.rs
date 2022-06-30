@@ -1,7 +1,6 @@
 use crate::{
     account_balances::{BalanceFetching, Query},
     database::orders::OrderStoring,
-    orderbook::filter_unsupported_tokens,
     signature_validator::{SignatureCheck, SignatureValidating},
 };
 use anyhow::{Context as _, Result};
@@ -483,6 +482,25 @@ fn to_normalized_price(price: f64) -> Option<U256> {
     }
 }
 
+async fn filter_unsupported_tokens(
+    mut orders: Vec<Order>,
+    bad_token: &dyn BadTokenDetecting,
+) -> Result<Vec<Order>> {
+    // Can't use normal `retain` or `filter` because the bad token detection is async. So either
+    // this manual iteration or conversion to stream.
+    let mut index = 0;
+    'outer: while index < orders.len() {
+        for token in orders[index].data.token_pair().unwrap() {
+            if !bad_token.detect(token).await?.is_good() {
+                orders.swap_remove(index);
+                continue 'outer;
+            }
+        }
+        index += 1;
+    }
+    Ok(orders)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -494,14 +512,17 @@ mod tests {
         signature_validator::{MockSignatureValidating, SignatureValidationError},
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
-    use futures::StreamExt;
+    use futures::{FutureExt, StreamExt};
     use maplit::{btreemap, hashmap, hashset};
     use mockall::predicate::eq;
     use model::order::{
         OrderBuilder, OrderData, OrderKind, OrderMetadata, OrderUid, SellTokenSource,
     };
     use primitive_types::H160;
-    use shared::price_estimation::{native::MockNativePriceEstimating, PriceEstimationError};
+    use shared::{
+        bad_token::list_based::ListBasedDetector,
+        price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+    };
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
@@ -1078,5 +1099,32 @@ mod tests {
                 OrderUid::from_parts(H256([5; 32]), H160([55; 20]), 5),
             ]
         );
+    }
+
+    #[test]
+    fn filter_unsupported_tokens_() {
+        let token0 = H160::from_low_u64_le(0);
+        let token1 = H160::from_low_u64_le(1);
+        let token2 = H160::from_low_u64_le(2);
+        let bad_token = ListBasedDetector::deny_list(vec![token0]);
+        let orders = vec![
+            OrderBuilder::default()
+                .with_sell_token(token0)
+                .with_buy_token(token1)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token1)
+                .with_buy_token(token2)
+                .build(),
+            OrderBuilder::default()
+                .with_sell_token(token0)
+                .with_buy_token(token2)
+                .build(),
+        ];
+        let result = filter_unsupported_tokens(orders.clone(), &bad_token)
+            .now_or_never()
+            .unwrap()
+            .unwrap();
+        assert_eq!(result, &orders[1..2]);
     }
 }

@@ -1,4 +1,4 @@
-use crate::{api::convert_json_response, order_quoting::QuoteHandler};
+use crate::order_quoting::QuoteHandler;
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{
@@ -6,6 +6,7 @@ use model::{
     quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
 };
 use serde::{Deserialize, Serialize};
+use shared::api::{convert_json_response, ApiReply};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -69,7 +70,7 @@ fn get_amount_estimate_request(
 
 pub fn get_amount_estimate(
     quotes: Arc<QuoteHandler>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_amount_estimate_request().and_then(move |query: AmountEstimateQuery| {
         let quotes = quotes.clone();
         async move {
@@ -118,7 +119,7 @@ pub fn get_amount_estimate(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
+    use shared::api::response_body;
     use shared::price_estimation::PriceEstimationError;
     use warp::hyper::StatusCode;
     use warp::{test::request, Reply};

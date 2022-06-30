@@ -1,10 +1,8 @@
-use crate::{
-    api::{extract_payload, IntoWarpReply},
-    orderbook::{Orderbook, ReplaceOrderError},
-};
+use crate::orderbook::{Orderbook, ReplaceOrderError};
 use anyhow::Result;
 use model::order::{OrderCreation, OrderUid};
 use reqwest::StatusCode;
+use shared::api::{extract_payload, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply, Filter, Rejection};
 

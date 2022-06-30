@@ -30,8 +30,6 @@ pub trait OrderStoring: Send + Sync {
         new_order: &Order,
         new_quote: Option<Quote>,
     ) -> Result<(), InsertionError>;
-    // Legacy generic orders route that we are phasing out.
-    async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
     /// Orders that are solvable: minimum valid to, not fully executed, not invalidated.
@@ -48,21 +46,6 @@ pub trait OrderStoring: Send + Sync {
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
-}
-
-/// Any default value means that this field is unfiltered.
-#[derive(Clone, Copy, Default)]
-pub struct OrderFilter {
-    pub min_valid_to: u32,
-    pub owner: Option<H160>,
-    pub sell_token: Option<H160>,
-    pub buy_token: Option<H160>,
-    pub exclude_fully_executed: bool,
-    pub exclude_invalidated: bool,
-    pub exclude_insufficient_balance: bool,
-    pub exclude_unsupported_tokens: bool,
-    pub exclude_presignature_pending: bool,
-    pub uid: Option<OrderUid>,
 }
 
 #[derive(sqlx::Type)]
@@ -340,6 +323,11 @@ impl OrderStoring for Postgres {
         order: &Order,
         quote: Option<Quote>,
     ) -> Result<(), InsertionError> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["insert_order"])
+            .start_timer();
+
         let order = order.clone();
         let mut connection = self.pool.acquire().await?;
         connection
@@ -357,6 +345,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn cancel_order(&self, order_uid: &OrderUid, now: DateTime<Utc>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["cancel_order"])
+            .start_timer();
+
         let order_uid = *order_uid;
         let mut connection = self.pool.acquire().await?;
         connection
@@ -373,6 +366,11 @@ impl OrderStoring for Postgres {
         new_order: &model::order::Order,
         new_quote: Option<Quote>,
     ) -> anyhow::Result<(), super::orders::InsertionError> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["replace_order"])
+            .start_timer();
+
         let old_order = *old_order;
         let new_order = new_order.clone();
         let mut connection = self.pool.acquire().await?;
@@ -391,47 +389,12 @@ impl OrderStoring for Postgres {
             .await
     }
 
-    async fn orders(&self, filter: &OrderFilter) -> Result<Vec<Order>> {
-        // The `or`s in the `where` clause are there so that each filter is ignored when not set.
-        // We use a subquery instead of a `having` clause in the inner query because we would not be
-        // able to use the `sum_*` columns there.
-        #[rustfmt::skip]
-        const QUERY: &str = concatcp!(
-            "SELECT * FROM ( ",
-                "SELECT ", ORDERS_SELECT,
-                "FROM ", ORDERS_FROM,
-                "WHERE \
-                    o.valid_to >= $1 AND \
-                    ($2 IS NULL OR o.owner = $2) AND \
-                    ($3 IS NULL OR o.sell_token = $3) AND \
-                    ($4 IS NULL OR o.buy_token = $4) AND \
-                    ($5 IS NULL OR o.uid = $5) ",
-            ") AS unfiltered \
-            WHERE \
-                ($6 OR CASE kind \
-                    WHEN 'sell' THEN sum_sell < sell_amount \
-                    WHEN 'buy' THEN sum_buy < buy_amount \
-                END) AND \
-                ($7 OR NOT invalidated) AND \
-                ($8 OR NOT presignature_pending);"
-        );
-        sqlx::query_as(QUERY)
-            .bind(filter.min_valid_to as i64)
-            .bind(filter.owner.as_ref().map(|h160| h160.as_bytes()))
-            .bind(filter.sell_token.as_ref().map(|h160| h160.as_bytes()))
-            .bind(filter.buy_token.as_ref().map(|h160| h160.as_bytes()))
-            .bind(filter.uid.as_ref().map(|uid| uid.0.as_ref()))
-            .bind(!filter.exclude_fully_executed)
-            .bind(!filter.exclude_invalidated)
-            .bind(!filter.exclude_presignature_pending)
-            .fetch(&self.pool)
-            .err_into()
-            .and_then(|row: OrdersQueryRow| async move { row.into_order() })
-            .try_collect()
-            .await
-    }
-
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["orders_for_tx"])
+            .start_timer();
+
         // TODO - This query assumes there is only one settlement per block.
         //  when there are two, we would want all trades for which the log index is between
         //  that of the correct settlement and the next. For this we would have to
@@ -476,6 +439,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["single_order"])
+            .start_timer();
+
         #[rustfmt::skip]
         const QUERY: &str = concatcp!(
             "SELECT ", ORDERS_SELECT,
@@ -490,6 +458,11 @@ impl OrderStoring for Postgres {
     }
 
     async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["solvable_orders"])
+            .start_timer();
+
         #[rustfmt::skip]
         const QUERY: &str = concatcp!(
             "SELECT * FROM ( ",
@@ -538,6 +511,11 @@ impl OrderStoring for Postgres {
         offset: u64,
         limit: Option<u64>,
     ) -> Result<Vec<Order>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["user_orders"])
+            .start_timer();
+
         // As a future consideration for this query we could move from offset to an approach called
         // keyset pagination where the offset is identified by "key" of the previous query. In our
         // case that would be the lowest creation_timestamp. This way the database can start
@@ -705,11 +683,7 @@ mod tests {
     use num::BigUint;
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
-    use sqlx::Executor;
-    use std::{
-        collections::HashSet,
-        sync::atomic::{AtomicI64, Ordering},
-    };
+    use std::sync::atomic::{AtomicI64, Ordering};
 
     #[test]
     fn order_status() {
@@ -1003,51 +977,6 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_order_roundtrip() {
-        let db = Postgres::new("postgresql://").unwrap();
-        for signing_scheme in &[
-            SigningScheme::Eip712,
-            SigningScheme::EthSign,
-            SigningScheme::PreSign,
-        ] {
-            db.clear().await.unwrap();
-            let filter = OrderFilter::default();
-            assert!(db.orders(&filter).await.unwrap().is_empty());
-            let order = Order {
-                metadata: OrderMetadata {
-                    creation_date: DateTime::<Utc>::from_utc(
-                        NaiveDateTime::from_timestamp(1234567890, 0),
-                        Utc,
-                    ),
-                    status: match signing_scheme {
-                        SigningScheme::PreSign => OrderStatus::PresignaturePending,
-                        _ => OrderStatus::Open,
-                    },
-                    ..Default::default()
-                },
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(1),
-                    buy_token: H160::from_low_u64_be(2),
-                    receiver: Some(H160::from_low_u64_be(6)),
-                    sell_amount: 3.into(),
-                    buy_amount: U256::MAX,
-                    valid_to: u32::MAX,
-                    app_data: AppId([4; 32]),
-                    fee_amount: 5.into(),
-                    kind: OrderKind::Sell,
-                    partially_fillable: true,
-                    sell_token_balance: SellTokenSource::Erc20,
-                    buy_token_balance: BuyTokenDestination::Internal,
-                },
-                signature: Signature::default_with(*signing_scheme),
-            };
-            db.insert_order(&order, None).await.unwrap();
-            assert_eq!(db.orders(&filter).await.unwrap(), vec![order]);
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn postgres_cancel_order() {
         #[derive(sqlx::FromRow, Debug, PartialEq)]
         struct CancellationQueryRow {
@@ -1056,21 +985,19 @@ mod tests {
 
         let db = Postgres::new("postgresql://").unwrap();
         db.clear().await.unwrap();
-        let filter = OrderFilter::default();
-        assert!(db.orders(&filter).await.unwrap().is_empty());
 
         let order = Order::default();
         db.insert_order(&order, None).await.unwrap();
-        let db_orders = db.orders(&filter).await.unwrap();
-        assert!(!db_orders[0].metadata.invalidated);
+        let order = db.single_order(&order.metadata.uid).await.unwrap().unwrap();
+        assert!(!order.metadata.invalidated);
 
         let cancellation_time =
             DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
         db.cancel_order(&order.metadata.uid, cancellation_time)
             .await
             .unwrap();
-        let db_orders = db.orders(&filter).await.unwrap();
-        assert!(db_orders[0].metadata.invalidated);
+        let order = db.single_order(&order.metadata.uid).await.unwrap().unwrap();
+        assert!(order.metadata.invalidated);
 
         let query = "SELECT cancellation_timestamp FROM orders;";
         let first_cancellation: CancellationQueryRow =
@@ -1208,230 +1135,6 @@ mod tests {
         assert_eq!(old_order_cancellation, None);
     }
 
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_filter_orders_by_address() {
-        let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
-
-        let orders = vec![
-            Order {
-                metadata: OrderMetadata {
-                    owner: H160::from_low_u64_be(0),
-                    uid: OrderUid([0u8; 56]),
-                    status: OrderStatus::Expired,
-                    ..Default::default()
-                },
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(1),
-                    buy_token: H160::from_low_u64_be(2),
-                    valid_to: 10,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    owner: H160::from_low_u64_be(0),
-                    uid: OrderUid([1; 56]),
-                    status: OrderStatus::Expired,
-                    ..Default::default()
-                },
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(1),
-                    buy_token: H160::from_low_u64_be(3),
-                    valid_to: 11,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            Order {
-                metadata: OrderMetadata {
-                    owner: H160::from_low_u64_be(2),
-                    uid: OrderUid([2u8; 56]),
-                    status: OrderStatus::Expired,
-                    ..Default::default()
-                },
-                data: OrderData {
-                    sell_token: H160::from_low_u64_be(1),
-                    buy_token: H160::from_low_u64_be(3),
-                    valid_to: 12,
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-        ];
-        for order in orders.iter() {
-            db.insert_order(order, None).await.unwrap();
-        }
-
-        async fn assert_orders(db: &Postgres, filter: &OrderFilter, expected: &[Order]) {
-            let filtered = db
-                .orders(filter)
-                .await
-                .unwrap()
-                .into_iter()
-                .collect::<HashSet<_>>();
-            let expected = expected.iter().cloned().collect::<HashSet<_>>();
-            assert_eq!(filtered, expected);
-        }
-
-        let owner = H160::from_low_u64_be(0);
-        assert_orders(
-            &db,
-            &OrderFilter {
-                owner: Some(owner),
-                ..Default::default()
-            },
-            &orders[0..2],
-        )
-        .await;
-
-        let sell_token = H160::from_low_u64_be(1);
-        assert_orders(
-            &db,
-            &OrderFilter {
-                sell_token: Some(sell_token),
-                ..Default::default()
-            },
-            &orders[0..3],
-        )
-        .await;
-
-        let buy_token = H160::from_low_u64_be(3);
-        assert_orders(
-            &db,
-            &OrderFilter {
-                buy_token: Some(buy_token),
-                ..Default::default()
-            },
-            &orders[1..3],
-        )
-        .await;
-
-        assert_orders(
-            &db,
-            &OrderFilter {
-                min_valid_to: 10,
-                ..Default::default()
-            },
-            &orders[0..3],
-        )
-        .await;
-
-        assert_orders(
-            &db,
-            &OrderFilter {
-                min_valid_to: 11,
-                ..Default::default()
-            },
-            &orders[1..3],
-        )
-        .await;
-
-        assert_orders(
-            &db,
-            &OrderFilter {
-                uid: Some(orders[0].metadata.uid),
-                ..Default::default()
-            },
-            &orders[0..1],
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_filter_orders_by_fully_executed() {
-        let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
-
-        let order = Order {
-            data: OrderData {
-                kind: OrderKind::Sell,
-                sell_amount: 10.into(),
-                buy_amount: 100.into(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.insert_order(&order, None).await.unwrap();
-
-        let get_order = |exclude_fully_executed| {
-            let db = db.clone();
-            async move {
-                db.orders(&OrderFilter {
-                    exclude_fully_executed,
-                    ..Default::default()
-                })
-                .await
-                .unwrap()
-                .into_iter()
-                .next()
-            }
-        };
-
-        let order = get_order(true).await.unwrap();
-        assert_eq!(order.metadata.executed_sell_amount, BigUint::from(0u8));
-
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Event::Trade(Trade {
-                order_uid: order.metadata.uid,
-                sell_amount_including_fee: 3.into(),
-                ..Default::default()
-            }),
-        )])
-        .await
-        .unwrap();
-        let order = get_order(true).await.unwrap();
-        assert_eq!(order.metadata.executed_sell_amount, BigUint::from(3u8));
-
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 1,
-                log_index: 0,
-            },
-            Event::Trade(Trade {
-                order_uid: order.metadata.uid,
-                sell_amount_including_fee: 6.into(),
-                ..Default::default()
-            }),
-        )])
-        .await
-        .unwrap();
-        let order = get_order(true).await.unwrap();
-        assert_eq!(order.metadata.executed_sell_amount, BigUint::from(9u8),);
-
-        // The order disappears because it is fully executed.
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 2,
-                log_index: 0,
-            },
-            Event::Trade(Trade {
-                order_uid: order.metadata.uid,
-                sell_amount_including_fee: 1.into(),
-                ..Default::default()
-            }),
-        )])
-        .await
-        .unwrap();
-        assert!(get_order(true).await.is_none());
-
-        // If we include fully executed orders it is there.
-        let order = get_order(false).await.unwrap();
-        assert_eq!(order.metadata.executed_sell_amount, BigUint::from(10u8));
-
-        // Change order type and see that is returned as not fully executed again.
-        let query = "UPDATE orders SET kind = 'buy';";
-        db.pool.execute(query).await.unwrap();
-        assert!(get_order(true).await.is_some());
-    }
-
     // In the schema we set the type of executed amounts in individual events to a 78 decimal digit
     // number. Summing over multiple events could overflow this because the smart contract only
     // guarantees that the filled amount (which amount that is depends on order type) does not
@@ -1473,13 +1176,7 @@ mod tests {
             .unwrap();
         }
 
-        let order = db
-            .orders(&OrderFilter::default())
-            .await
-            .unwrap()
-            .into_iter()
-            .next()
-            .unwrap();
+        let order = db.single_order(&order.metadata.uid).await.unwrap().unwrap();
 
         let expected_sell_amount_including_fees =
             u256_to_big_uint(&(sell_amount_before_fees + fee_amount)) * BigUint::from(16_u8);
@@ -1499,70 +1196,6 @@ mod tests {
         assert!(expected_buy_amount.to_string().len() > 78);
         assert_eq!(order.metadata.executed_buy_amount, expected_buy_amount);
         assert_eq!(order.metadata.executed_fee_amount, expected_fee_amount);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_filter_orders_by_invalidated() {
-        let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
-        let uid = OrderUid([0u8; 56]);
-        let order = Order {
-            metadata: OrderMetadata {
-                uid,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        db.insert_order(&order, None).await.unwrap();
-
-        let is_order_valid = || async {
-            !db.orders(&OrderFilter {
-                exclude_invalidated: true,
-                ..Default::default()
-            })
-            .await
-            .unwrap()
-            .is_empty()
-        };
-
-        assert!(is_order_valid().await);
-
-        // Invalidating a different order doesn't affect first order.
-        sqlx::query(
-            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
-        )
-        .bind(0i64)
-        .bind(0i64)
-        .bind([1u8; 56].as_ref())
-        .execute(&db.pool)
-        .await
-        .unwrap();
-        assert!(is_order_valid().await);
-
-        // But invalidating it does work
-        sqlx::query(
-            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
-        )
-        .bind(1i64)
-        .bind(0i64)
-        .bind([0u8; 56].as_ref())
-        .execute(&db.pool)
-        .await
-        .unwrap();
-        assert!(!is_order_valid().await);
-
-        // And we can invalidate it several times.
-        sqlx::query(
-            "INSERT INTO invalidations (block_number, log_index, order_uid) VALUES ($1, $2, $3)",
-        )
-        .bind(2i64)
-        .bind(0i64)
-        .bind([0u8; 56].as_ref())
-        .execute(&db.pool)
-        .await
-        .unwrap();
-        assert!(!is_order_valid().await);
     }
 
     #[tokio::test]
@@ -1797,12 +1430,10 @@ mod tests {
         db.insert_order(&order, None).await.unwrap();
 
         let order_status = || async {
-            db.orders(&OrderFilter {
-                uid: Some(uid),
-                ..Default::default()
-            })
-            .await
-            .unwrap()[0]
+            db.single_order(&order.metadata.uid)
+                .await
+                .unwrap()
+                .unwrap()
                 .metadata
                 .status
         };
@@ -1851,103 +1482,6 @@ mod tests {
         // Re-signing sets the status back to open.
         insert_presignature(true).await;
         assert_eq!(order_status().await, OrderStatus::Open);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_filter_presignature_pending() {
-        let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
-        let order_uid = |uid: u8| OrderUid([uid; 56]);
-        let order = |uid: u8, scheme: SigningScheme| Order {
-            data: OrderData {
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                uid: order_uid(uid),
-                ..Default::default()
-            },
-            signature: Signature::default_with(scheme),
-        };
-
-        db.insert_order(&order(0, SigningScheme::Eip712), None)
-            .await
-            .unwrap();
-        for i in 1..=4 {
-            db.insert_order(&order(i, SigningScheme::PreSign), None)
-                .await
-                .unwrap();
-        }
-
-        // Insert:
-        // - No presignature events for order 0 (but its a ECDSA signed order)
-        // - A signed event for order 1.
-        // - No presignature events for order 2
-        // - A signed and unsigned event for order 3
-        // - A signed, unsigned and a final signed event for order 4
-        sqlx::query(
-            "INSERT INTO presignature_events \
-                 (block_number, log_index, owner, order_uid, signed) \
-             VALUES \
-                 (0, 0, $1, $2, true), \
-                 \
-                 (1, 0, $1, $3, true), \
-                 (2, 0, $1, $3, false),
-                 \
-                 (3, 0, $1, $4, true), \
-                 (4, 0, $1, $4, false), \
-                 (5, 0, $1, $4, true);",
-        )
-        .bind(&[0u8; 20][..])
-        .bind(&order_uid(1).0[..])
-        .bind(&order_uid(3).0[..])
-        .bind(&order_uid(4).0[..])
-        .execute(&db.pool)
-        .await
-        .unwrap();
-
-        let query_order_uids = |filter: OrderFilter| {
-            let db = db.clone();
-            async move {
-                let mut order_uids = db
-                    .orders(&filter)
-                    .await
-                    .unwrap()
-                    .into_iter()
-                    .map(|order| order.metadata.uid)
-                    .collect::<Vec<_>>();
-                // Make sure the list is sorted, this makes assertions easier.
-                order_uids.sort_by_key(|uid| uid.0);
-                order_uids
-            }
-        };
-
-        // With presignature pending filter, only orders that aren't waiting for
-        // a presignature event are returned.
-        let filtered_orders = query_order_uids(OrderFilter {
-            exclude_presignature_pending: true,
-            ..Default::default()
-        })
-        .await;
-        assert_eq!(
-            filtered_orders,
-            [
-                order_uid(0), // No presignature event, but its an ECDSA signed order
-                order_uid(1), // Pre-sign order with pre-sign event
-                order_uid(4), // Pre-sign order where the last event was a "signed" presignature
-            ]
-        );
-
-        // Without presignature pending filter, all orders are returned.
-        let unfiltered_orders = query_order_uids(OrderFilter {
-            exclude_presignature_pending: false,
-            ..Default::default()
-        })
-        .await;
-        assert_eq!(
-            unfiltered_orders,
-            (0..=4).map(order_uid).collect::<Vec<_>>(),
-        );
     }
 
     fn datetime(offset: u32) -> DateTime<Utc> {

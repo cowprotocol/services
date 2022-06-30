@@ -1,6 +1,7 @@
-use crate::{api::IntoWarpReply, orderbook::Orderbook};
+use crate::orderbook::Orderbook;
 use anyhow::Result;
 use model::order::{Order, OrderUid};
+use shared::api::IntoWarpReply;
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, reply, Filter, Rejection};
 
@@ -39,7 +40,7 @@ pub fn get_order_by_uid(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
+    use shared::api::response_body;
     use warp::{test::request, Reply};
 
     #[tokio::test]

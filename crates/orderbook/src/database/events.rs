@@ -115,6 +115,11 @@ pub fn contract_to_db_events(
 #[async_trait::async_trait]
 impl EventStoring<ContractEvent> for Postgres {
     async fn last_event_block(&self) -> Result<u64> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["last_event_block"])
+            .start_timer();
+
         const QUERY: &str = "\
             SELECT GREATEST( \
                 (SELECT COALESCE(MAX(block_number), 0) FROM trades), \
@@ -129,6 +134,11 @@ impl EventStoring<ContractEvent> for Postgres {
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["append_events"])
+            .start_timer();
+
         self.append_events_(contract_to_db_events(events)?).await
     }
 
@@ -137,6 +147,11 @@ impl EventStoring<ContractEvent> for Postgres {
         events: Vec<EthContractEvent<ContractEvent>>,
         range: std::ops::RangeInclusive<shared::event_handling::BlockNumber>,
     ) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["replace_events"])
+            .start_timer();
+
         self.replace_events_(range.start().to_u64(), contract_to_db_events(events)?)
             .await
     }

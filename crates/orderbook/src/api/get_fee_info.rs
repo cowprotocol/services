@@ -1,4 +1,4 @@
-use crate::{api::convert_json_response, order_quoting::QuoteHandler};
+use crate::order_quoting::QuoteHandler;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{
@@ -8,6 +8,7 @@ use model::{
 };
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
+use shared::api::{convert_json_response, ApiReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -37,7 +38,7 @@ fn get_fee_info_request() -> impl Filter<Extract = (Query,), Error = Rejection> 
 
 pub fn get_fee_info(
     quotes: Arc<QuoteHandler>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_fee_info_request().and_then(move |query: Query| {
         let quotes = quotes.clone();
         async move {
@@ -69,8 +70,8 @@ pub fn get_fee_info(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::response_body;
     use chrono::FixedOffset;
+    use shared::api::response_body;
     use shared::price_estimation::PriceEstimationError;
     use warp::hyper::StatusCode;
     use warp::{test::request, Reply};

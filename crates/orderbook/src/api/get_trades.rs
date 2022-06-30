@@ -1,11 +1,9 @@
-use crate::{
-    api::convert_json_response,
-    database::trades::{TradeFilter, TradeRetrieving},
-};
+use crate::database::trades::{TradeFilter, TradeRetrieving};
 use anyhow::{Context, Result};
 use model::order::OrderUid;
 use primitive_types::H160;
 use serde::Deserialize;
+use shared::api::{convert_json_response, error, ApiReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{hyper::StatusCode, Filter, Rejection};
 
@@ -49,7 +47,7 @@ fn get_trades_request(
 
 pub fn get_trades(
     db: Arc<dyn TradeRetrieving>,
-) -> impl Filter<Extract = (super::ApiReply,), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     get_trades_request().and_then(move |request_result| {
         let database = db.clone();
         async move {
@@ -59,7 +57,7 @@ pub fn get_trades(
                     Result::<_, Infallible>::Ok(convert_json_response(result))
                 }
                 Err(TradeFilterError::InvalidFilter(msg)) => {
-                    let err = super::error("InvalidTradeFilter", msg);
+                    let err = error("InvalidTradeFilter", msg);
                     Ok(warp::reply::with_status(err, StatusCode::BAD_REQUEST))
                 }
             }
