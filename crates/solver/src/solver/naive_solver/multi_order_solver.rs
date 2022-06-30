@@ -3,10 +3,9 @@ use anyhow::Result;
 use liquidity::{AmmOrderExecution, ConstantProductOrder, LimitOrder};
 use model::order::OrderKind;
 use num::{rational::Ratio, BigInt, BigRational, CheckedDiv};
+use number_conversions::{big_int_to_u256, big_rational_to_u256, u256_to_big_int};
 use primitive_types::U256;
-use shared::conversions::{
-    big_int_to_u256, big_rational_to_u256, u256_to_big_int, RatioExt, U256Ext,
-};
+use shared::conversions::{RatioExt, U256Ext};
 use std::collections::HashMap;
 use web3::types::Address;
 

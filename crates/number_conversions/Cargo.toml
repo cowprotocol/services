@@ -1,0 +1,9 @@
+[package]
+name = "number_conversions"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+num = "0.4"
+primitive-types = { version = "0.10" }

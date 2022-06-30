@@ -1839,6 +1839,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "number_conversions"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "num",
+ "primitive-types",
+]
+
+[[package]]
 name = "object"
 version = "0.28.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1932,6 +1941,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number_conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -2681,6 +2691,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number_conversions",
  "once_cell",
  "primitive-types",
  "prometheus",
@@ -2758,6 +2769,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
+ "number_conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
