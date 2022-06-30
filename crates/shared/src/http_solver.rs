@@ -175,7 +175,6 @@ impl HttpSolverApi for DefaultHttpSolverApi {
             status,
             context()
         );
-
         serde_json::from_str(text)
             .with_context(|| format!("failed to decode response json, {}", context()))
     }
