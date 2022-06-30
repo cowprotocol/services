@@ -431,13 +431,11 @@ impl Solver for HttpSolver {
         tracing::debug!(
             "Solution received from http solver {} (json):\n{:}",
             self.solver.name,
-
-            serde_json::to_string_pretty(&settled).unwrap()
-            /*serde_json::to_string_pretty::<serde_json::Value>(
-                &serde_json::from_str(text)
-                    .unwrap_or_else(|_| serde_json::from_str(r#""<Invalid json>""#).unwrap())
-            )
-            .unwrap()*/
+            serde_json::to_string_pretty(&settled).unwrap() /*serde_json::to_string_pretty::<serde_json::Value>(
+                                                                &serde_json::from_str(text)
+                                                                    .unwrap_or_else(|_| serde_json::from_str(r#""<Invalid json>""#).unwrap())
+                                                            )
+                                                            .unwrap()*/
         );
 
         match settlement::convert_settlement(

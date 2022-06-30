@@ -120,7 +120,8 @@ pub struct InteractionData {
     pub target: H160,
     pub value: U256,
     #[derivative(Debug(format_with = "debug_bytes"))]
-    #[serde(with = "bytes_hex_or_array")]
+    #[serde(deserialize_with = "bytes_hex_or_array::deserialize")]
+    #[serde(serialize_with = "model::bytes_hex::serialize")]
     pub call_data: Vec<u8>,
     /// The input amounts into the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the settlement contract into the AMM
@@ -293,6 +294,13 @@ mod execution_plan_internal {
     {
         Kind::deserialize(deserializer)?;
         Ok(())
+    }
+
+    pub fn serialize<S>(serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Kind::Internal.serialize(serializer)
     }
 }
 
