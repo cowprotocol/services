@@ -58,6 +58,10 @@ fn settle_pair(
     orders: Vec<LimitOrder>,
     uniswaps: &HashMap<TokenPair, ConstantProductOrder>,
 ) -> Option<Settlement> {
+    if orders.iter().all(|order| order.is_liquidity_order) {
+        tracing::debug!("No user orders fo: {:?}", pair);
+        return None;
+    }
     let uniswap = match uniswaps.get(&pair) {
         Some(uniswap) => uniswap,
         None => {
@@ -107,7 +111,7 @@ mod tests {
     use crate::liquidity::tests::CapturingSettlementHandler;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind};
+    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
     use num::rational::Ratio;
     use shared::addr;
 
@@ -202,6 +206,56 @@ mod tests {
             tokens => ConstantProductOrder {
                 tokens,
                 reserves: (58360914, 17856367410307570970),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+        };
+
+        assert!(settle(orders, liquidity).is_empty());
+    }
+
+    #[test]
+    fn requires_at_least_one_non_liquidity_order() {
+        let orders = vec![
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    sell_amount: 1_000_000_000_u128.into(),
+                    buy_amount: 900_000_000_u128.into(),
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                metadata: OrderMetadata {
+                    is_liquidity_order: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
+            LimitOrder {
+                ..LimitOrder::from(Order {
+                    data: OrderData {
+                        sell_token: H160([1; 20]),
+                        buy_token: H160([2; 20]),
+                        sell_amount: 1_000_000_000_u128.into(),
+                        buy_amount: 900_000_000_u128.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        is_liquidity_order: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+            },
+        ];
+
+        let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                tokens,
+                reserves: (1_000_000_000_000_000_000, 1_000_000_000_000_000_000),
                 fee: Ratio::new(3, 1000),
                 settlement_handling: CapturingSettlementHandler::arc(),
             },
