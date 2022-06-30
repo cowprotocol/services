@@ -59,13 +59,13 @@ fn settle_pair(
     uniswaps: &HashMap<TokenPair, ConstantProductOrder>,
 ) -> Option<Settlement> {
     if orders.iter().all(|order| order.is_liquidity_order) {
-        tracing::debug!("No user orders fo: {:?}", pair);
+        tracing::debug!(?pair, "no user orders");
         return None;
     }
     let uniswap = match uniswaps.get(&pair) {
         Some(uniswap) => uniswap,
         None => {
-            tracing::debug!("No AMM for: {:?}", pair);
+            tracing::debug!(?pair, "no AMM");
             return None;
         }
     };
