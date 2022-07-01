@@ -108,10 +108,10 @@ fn extract_deepest_amm_liquidity(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::liquidity::tests::CapturingSettlementHandler;
+    use crate::liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler};
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
+    use model::order::{Order, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
     use num::rational::Ratio;
     use shared::addr;
 
@@ -232,23 +232,21 @@ mod tests {
                 },
                 ..Default::default()
             }),
-            LimitOrder {
-                ..LimitOrder::from(Order {
-                    data: OrderData {
-                        sell_token: H160([1; 20]),
-                        buy_token: H160([2; 20]),
-                        sell_amount: 1_000_000_000_u128.into(),
-                        buy_amount: 900_000_000_u128.into(),
-                        kind: OrderKind::Sell,
-                        ..Default::default()
-                    },
-                    metadata: OrderMetadata {
-                        is_liquidity_order: true,
-                        ..Default::default()
-                    },
+            LimitOrder::from(Order {
+                data: OrderData {
+                    sell_token: H160([1; 20]),
+                    buy_token: H160([2; 20]),
+                    sell_amount: 1_000_000_000_u128.into(),
+                    buy_amount: 900_000_000_u128.into(),
+                    kind: OrderKind::Sell,
                     ..Default::default()
-                })
-            },
+                },
+                metadata: OrderMetadata {
+                    is_liquidity_order: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            }),
         ];
 
         let tokens = TokenPair::new(H160([1; 20]), H160([2; 20])).unwrap();
@@ -262,5 +260,56 @@ mod tests {
         };
 
         assert!(settle(orders, liquidity).is_empty());
+    }
+
+    #[test]
+    fn works_with_eth_liquidity_orders() {
+        let native_token = H160([1; 20]);
+        let converter = OrderConverter::test(native_token);
+
+        let orders = vec![
+            converter
+                .normalize_limit_order(Order {
+                    data: OrderData {
+                        sell_token: native_token,
+                        buy_token: H160([2; 20]),
+                        sell_amount: 1_000_000_000_u128.into(),
+                        buy_amount: 900_000_000_u128.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .unwrap(),
+            converter
+                .normalize_limit_order(Order {
+                    data: OrderData {
+                        sell_token: H160([2; 20]),
+                        buy_token: BUY_ETH_ADDRESS,
+                        sell_amount: 1_000_000_000_u128.into(),
+                        buy_amount: 900_000_000_u128.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        is_liquidity_order: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                })
+                .unwrap(),
+        ];
+
+        let tokens = TokenPair::new(native_token, H160([2; 20])).unwrap();
+        let liquidity = hashmap! {
+            tokens => ConstantProductOrder {
+                tokens,
+                reserves: (1_000_000_000_000_000_000, 1_000_000_000_000_000_000),
+                fee: Ratio::new(3, 1000),
+                settlement_handling: CapturingSettlementHandler::arc(),
+            },
+        };
+
+        assert_eq!(settle(orders, liquidity).len(), 1);
     }
 }
