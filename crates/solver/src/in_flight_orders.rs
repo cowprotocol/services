@@ -4,7 +4,7 @@ use model::{
     auction::Auction,
     order::{Order, OrderUid},
 };
-use shared::conversions::u256_to_big_uint;
+use number_conversions::u256_to_big_uint;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone)]

@@ -6,8 +6,9 @@ use crate::{
 use anyhow::{bail, ensure, Context as _, Result};
 use model::order::{Order, OrderKind};
 use num::{BigRational, One, Zero};
+use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
-use shared::conversions::{big_rational_to_u256, U256Ext};
+use shared::conversions::U256Ext;
 use std::{
     collections::{hash_map::Entry, HashMap, HashSet},
     iter,

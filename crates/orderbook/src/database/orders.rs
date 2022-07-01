@@ -1,5 +1,10 @@
 use super::*;
-use crate::{conversions::*, order_quoting::Quote};
+use crate::{
+    conversions::{
+        big_decimal_to_big_uint, big_decimal_to_u256, h160_from_vec, u256_to_big_decimal,
+    },
+    order_quoting::Quote,
+};
 use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
@@ -681,6 +686,7 @@ mod tests {
     use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteData};
     use chrono::{Duration, NaiveDateTime};
     use num::BigUint;
+    use number_conversions::u256_to_big_uint;
     use primitive_types::U256;
     use shared::event_handling::EventIndex;
     use std::sync::atomic::{AtomicI64, Ordering};
