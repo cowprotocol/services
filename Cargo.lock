@@ -1152,7 +1152,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.6.0#fe6661eadcabea9868766b8c34b9a32333965e91"
+source = "git+https://github.com/cowprotocol/gas-estimation.git?branch=main#51f72a39219689ce6f34ce389dee4aa316739aa8"
 dependencies = [
  "anyhow",
  "async-trait",
