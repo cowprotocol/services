@@ -61,7 +61,7 @@ fn deployment(contract: &Contract, chain_id: u64) -> Result<&Network> {
         .get(&chain_id.to_string())
         // Note that we are conflating network IDs with chain IDs. In general
         // they cannot be considered the same, but for the networks that we
-        // support (xDAI, Rinkeby and Mainnet) they are.
+        // support (xDAI, Rinkeby, Görli and Mainnet) they are.
         .ok_or_else(|| anyhow!("missing {} deployment for {}", contract.name, chain_id))
 }
 

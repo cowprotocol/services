@@ -27,6 +27,10 @@ fn main() {
     generate_contract_with_config("BalancerV2BasePoolFactory", |builder| {
         builder.contract_mod_override("balancer_v2_base_pool_factory")
     });
+    // Balancer addresses can be obtained from:
+    // Mainnet: https://github.com/balancer-labs/balancer-subgraph-v2/blob/master/subgraph.yaml
+    // Rinkeby: https://github.com/balancer-labs/balancer-subgraph-v2/blob/master/subgraph.rinkeby.yaml
+    // Görli: https://github.com/balancer-labs/balancer-subgraph-v2/blob/master/subgraph.goerli.yaml
     generate_contract_with_config("BalancerV2Vault", |builder| {
         builder
             .contract_mod_override("balancer_v2_vault")
@@ -44,6 +48,14 @@ fn main() {
                     address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
                     // <https://rinkeby.etherscan.io/tx/0x5fe65a242760f7f32b582dc402a081791d57ea561474617fcd0e763c995cfec7>
                     deployment_information: Some(DeploymentInformation::BlockNumber(8441702)),
+                },
+            )
+            .add_network(
+                "5",
+                Network {
+                    address: addr("0xBA12222222228d8Ba445958a75a0704d566BF2C8"),
+                    // <https://goerli.etherscan.io/tx/0x116a2c379d6e496f7848d5704ed3fe0c6e1caa841dd1cac10f631b7bc71b0ec5>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(4648099)),
                 },
             )
     });
@@ -66,6 +78,14 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(8441703)),
                 },
             )
+            .add_network(
+                "5",
+                Network {
+                    address: addr("0x8E9aa87E45e92bad84D5F8DD1bff34Fb92637dE9"),
+                    // <https://goerli.etherscan.io/tx/0x0ce1710e896fb090a2387e94a31e1ac40f3005de30388a63c44381f2c900d732>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(4648101)),
+                },
+            )
     });
     generate_contract_with_config("BalancerV2WeightedPool2TokensFactory", |builder| {
         builder
@@ -84,6 +104,14 @@ fn main() {
                     address: addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
                     // <https://rinkeby.etherscan.io/tx/0xbe28062b575c2743b3b4525c3a175b9acad36695c15dba1c69af5f3fc3ceca37>
                     deployment_information: Some(DeploymentInformation::BlockNumber(8510540)),
+                },
+            )
+            .add_network(
+                "5",
+                Network {
+                    address: addr("0xa5bf2ddf098bb0ef6d120c98217dd6b141c74ee0"),
+                    // <https://goerli.etherscan.io/tx/0x5d5aa13cce6f81c36c69ad5aae6f5cb9cc6f8605a5eb1dc99815b5d74ae0796a>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(4716924)),
                 },
             )
     });
@@ -106,6 +134,7 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(8822477)),
                 },
             )
+        // Not deployed on Görli
     });
     generate_contract_with_config("BalancerV2LiquidityBootstrappingPoolFactory", |builder| {
         builder
@@ -126,6 +155,7 @@ fn main() {
                     deployment_information: Some(DeploymentInformation::BlockNumber(8976588)),
                 },
             )
+        // Not deployed on Görli
     });
     generate_contract_with_config(
         "BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory",
@@ -147,9 +177,10 @@ fn main() {
                     Network {
                         address: addr("0x41B953164995c11C81DA73D212ED8Af25741b7Ac"),
                         // <https://rinkeby.etherscan.io/tx/0x69211f2b510d5d18b49e226822f4b920979b75ba87f5041034dc53d38a79a7c3>
-                        deployment_information: Some(DeploymentInformation::BlockNumber(13730248)),
+                        deployment_information: Some(DeploymentInformation::BlockNumber(9746969)),
                     },
                 )
+            // Not deployed on Görli
         },
     );
     generate_contract("BalancerV2WeightedPool");
@@ -189,6 +220,14 @@ fn main() {
                 },
             )
             .add_network(
+                "5",
+                Network {
+                    address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
+                    // <https://goerli.etherscan.io/tx/0x982f089060ff66e19d0683ef1cc6a637297331a9ba95b65d8eb84b9f8dc64b04>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(7020473)),
+                },
+            )
+            .add_network(
                 "100",
                 Network {
                     address: addr("0x9008D19f58AAbD9eD0D60971565AA8510560ab41"),
@@ -216,12 +255,14 @@ fn main() {
         builder
             .add_network_str("1", "0xC0AEe478e3658e2610c5F7A4A2E1777cE9e4f2Ac")
             .add_network_str("4", "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
+            .add_network_str("5", "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
             .add_network_str("100", "0xc35DADB65012eC5796536bD9864eD8773aBc74C4")
     });
     generate_contract_with_config("SushiSwapRouter", |builder| {
         builder
             .add_network_str("1", "0xd9e1cE17f2641f24aE83637ab66a2cca9C378B9F")
             .add_network_str("4", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
+            .add_network_str("5", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
             .add_network_str("100", "0x1b02dA8Cb0d097eB8D57A175b88c7D8b47997506")
     });
     generate_contract_with_config("SwaprFactory", |builder| {
@@ -235,22 +276,26 @@ fn main() {
         builder
             .add_network_str("1", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
             .add_network_str("4", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
+            .add_network_str("5", "0x5C69bEe701ef814a2B6a3EDD4B1652CB9cc5aA6f")
     });
     generate_contract_with_config("UniswapV2Router02", |builder| {
         builder
             .add_network_str("1", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
             .add_network_str("4", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
+            .add_network_str("5", "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D")
     });
     generate_contract_with_config("WETH9", |builder| {
         builder
             .add_network_str("1", "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2")
             .add_network_str("4", "0xc778417E063141139Fce010982780140Aa0cD5Ab")
+            .add_network_str("5", "0xB4FBF271143F4FBf7B91A5ded31805e42b2208d6")
             .add_network_str("100", "0xe91D153E0b41518A2Ce8Dd3D7944Fa863463a97d")
     });
     generate_contract_with_config("IUniswapV3Factory", |builder| {
         builder
             .add_network_str("1", "0x1F98431c8aD98523631AE4a59f267346ea31F984")
             .add_network_str("4", "0x1F98431c8aD98523631AE4a59f267346ea31F984")
+            .add_network_str("5", "0x1F98431c8aD98523631AE4a59f267346ea31F984")
     });
     generate_contract_with_config("IZeroEx", |builder| {
         builder
@@ -277,11 +322,13 @@ fn main() {
     generate_contract_with_config("CowProtocolToken", |builder| {
         builder
             .add_network_str("1", "0xDEf1CA1fb7FBcDC777520aa7f396b4E015F497aB")
+            .add_network_str("5", "0x3430d04E42a722c5Ae52C5Bffbf1F230C2677600")
             .add_network_str("100", "0x177127622c4A00F3d409B75571e12cB3c8973d3c")
     });
     generate_contract_with_config("CowProtocolVirtualToken", |builder| {
         builder
             .add_network_str("1", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
+            .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 }

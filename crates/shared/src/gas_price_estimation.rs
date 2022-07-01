@@ -54,6 +54,7 @@ pub async fn create_priority_estimator(
     let mut estimators = Vec::<Box<dyn GasPriceEstimating>>::new();
 
     for estimator_type in estimator_types {
+        tracing::info!("estimator {estimator_type:?}, networkid {network_id}");
         match estimator_type {
             GasEstimatorType::BlockNative => {
                 ensure!(is_mainnet(&network_id), "BlockNative only supports mainnet");
