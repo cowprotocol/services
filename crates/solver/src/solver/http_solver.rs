@@ -399,6 +399,10 @@ impl Solver for HttpSolver {
                     let (model, context) = self
                         .prepare_model(id, orders, liquidity, gas_price, external_prices)
                         .await?;
+                    tracing::debug!(
+                        "Problem sent to http solvers (json):\n{}",
+                        serde_json::to_string_pretty(&model).unwrap()
+                    );
                     *guard = Some(InstanceData {
                         solve_id: id,
                         model: model.clone(),
@@ -408,6 +412,7 @@ impl Solver for HttpSolver {
                 }
             }
         };
+
         let timeout = deadline
             .checked_duration_since(Instant::now())
             .ok_or_else(|| anyhow!("no time left to send request"))?;
@@ -420,6 +425,12 @@ impl Solver for HttpSolver {
             );
             return Ok(Vec::new());
         }
+
+        tracing::debug!(
+            "Solution received from http solver {} (json):\n{:}",
+            self.solver.name,
+            serde_json::to_string_pretty(&settled).unwrap()
+        );
 
         match settlement::convert_settlement(
             settled.clone(),
