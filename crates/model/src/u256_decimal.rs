@@ -14,7 +14,7 @@ impl<'de> DeserializeAs<'de, U256> for DecimalU256 {
     }
 }
 
-impl<'de> SerializeAs<U256> for DecimalU256 {
+impl SerializeAs<U256> for DecimalU256 {
     fn serialize_as<S>(source: &U256, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
