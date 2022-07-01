@@ -15,7 +15,7 @@ impl<'de> DeserializeAs<'de, BigRational> for DecimalBigRational {
     }
 }
 
-impl<'de> SerializeAs<BigRational> for DecimalBigRational {
+impl SerializeAs<BigRational> for DecimalBigRational {
     fn serialize_as<S>(source: &BigRational, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,

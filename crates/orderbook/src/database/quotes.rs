@@ -200,7 +200,7 @@ mod tests {
     #[ignore]
     async fn postgres_save_and_get_quote_by_id() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let now = low_precision_now();
         let quote = QuoteData {
@@ -227,7 +227,7 @@ mod tests {
     #[ignore]
     async fn postgres_save_and_find_quote() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let now = low_precision_now();
         let token_a = H160::from_low_u64_be(1);

@@ -641,8 +641,8 @@ async fn check_database_connection(orderbook: &Orderbook) {
 
 fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
     match network_id {
-        // Mainnet, Rinkeby
-        "1" | "4" => Some(10u128.pow(18).into()),
+        // Mainnet, Rinkeby, Göŕli
+        "1" | "4" | "5" => Some(10u128.pow(18).into()),
         // Xdai
         "100" => Some(10u128.pow(21).into()),
         _ => None,

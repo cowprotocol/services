@@ -50,7 +50,7 @@ pub struct SubmitterParams {
     pub deadline: Option<Instant>,
     /// Resimulate and resend transaction on every retry_interval seconds
     pub retry_interval: Duration,
-    /// Network id (mainnet, rinkeby, gnosis chain)
+    /// Network id (mainnet, rinkeby, goerli, gnosis chain)
     pub network_id: String,
 }
 

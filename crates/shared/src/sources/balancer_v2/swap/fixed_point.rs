@@ -4,11 +4,11 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/6c9e24e22d0c46cca6dd15861d3d33da61a60b98/pkg/solidity-utils/contracts/math/FixedPoint.sol
 
 use super::error::Error;
-use crate::conversions::{big_int_to_u256, u256_to_big_int};
 use anyhow::{anyhow, bail, ensure, Result};
 use ethcontract::U256;
 use lazy_static::lazy_static;
 use num::{BigInt, BigRational};
+use number_conversions::{big_int_to_u256, u256_to_big_int};
 use std::{
     convert::TryFrom,
     fmt::{self, Debug, Formatter},
