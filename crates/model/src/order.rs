@@ -598,10 +598,13 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[derive(
+    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
+)]
 #[enumeration(case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
+    #[default]
     Buy,
     Sell,
 }
@@ -616,18 +619,15 @@ impl OrderKind {
     }
 }
 
-impl Default for OrderKind {
-    fn default() -> Self {
-        Self::Buy
-    }
-}
-
 /// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[derive(
+    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
+)]
 #[enumeration(case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
+    #[default]
     Erc20,
     /// ERC20 allowances to the Vault with GPv2 relayer approval
     Internal,
@@ -635,27 +635,18 @@ pub enum SellTokenSource {
     External,
 }
 
-impl Default for SellTokenSource {
-    fn default() -> Self {
-        Self::Erc20
-    }
-}
-
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash, enum_utils::FromStr)]
+#[derive(
+    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
+)]
 #[enumeration(case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer
+    #[default]
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
-}
-
-impl Default for BuyTokenDestination {
-    fn default() -> Self {
-        Self::Erc20
-    }
 }
 
 pub fn debug_app_data(
