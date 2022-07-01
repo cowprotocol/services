@@ -9,7 +9,6 @@ use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
 use shared::{
-    metrics::get_metrics_registry,
     metrics::LivenessChecking,
     sources::{
         balancer_v2::pool_fetching::BalancerPoolCacheMetrics,
@@ -105,7 +104,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn new() -> Result<Self> {
-        let registry = get_metrics_registry();
+        let registry = global_metrics::get_metrics_registry();
 
         let trade_counter = IntCounterVec::new(
             Opts::new("trade_counter", "Number of trades settled"),

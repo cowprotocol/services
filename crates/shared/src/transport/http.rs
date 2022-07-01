@@ -1,4 +1,3 @@
-use crate::metrics::get_metric_storage_registry;
 use ethcontract::jsonrpc as jsonrpc_core;
 use futures::{future::BoxFuture, FutureExt};
 use jsonrpc_core::types::{Call, Output, Request, Value};
@@ -36,7 +35,8 @@ impl HttpTransport {
             inner: Arc::new(Inner {
                 url,
                 id: AtomicUsize::new(0),
-                metrics: TransportMetrics::instance(get_metric_storage_registry()).unwrap(),
+                metrics: TransportMetrics::instance(global_metrics::get_metric_storage_registry())
+                    .unwrap(),
                 name,
             }),
         }

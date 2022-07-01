@@ -1,8 +1,5 @@
-use crate::{
-    metrics,
-    price_estimation::{
-        Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
-    },
+use crate::price_estimation::{
+    Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
 };
 use futures::stream::StreamExt;
 use model::order::OrderKind;
@@ -186,7 +183,7 @@ struct Metrics {
 }
 
 fn metrics() -> &'static Metrics {
-    Metrics::instance(metrics::get_metric_storage_registry())
+    Metrics::instance(global_metrics::get_metric_storage_registry())
         .expect("unexpected error getting metrics instance")
 }
 

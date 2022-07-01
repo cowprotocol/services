@@ -1,5 +1,4 @@
 use super::{BadTokenDetecting, TokenQuality};
-use crate::metrics::get_metric_storage_registry;
 use anyhow::Result;
 use prometheus::IntCounterVec;
 use prometheus_metric_storage::MetricStorage;
@@ -51,7 +50,7 @@ impl BadTokenDetecting for InstrumentedBadTokenDetector {
             }
         };
 
-        Metrics::instance(get_metric_storage_registry())
+        Metrics::instance(global_metrics::get_metric_storage_registry())
             .expect("unexpected error getting metrics instance")
             .results
             .with_label_values(&[label])

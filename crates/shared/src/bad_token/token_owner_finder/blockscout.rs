@@ -65,7 +65,7 @@ impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
             .append_pair("action", "getTokenHolders")
             .append_pair("contractaddress", &format!("{token:#x}"));
 
-        let metric = &Metrics::instance(crate::metrics::get_metric_storage_registry())
+        let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
             .results;
         tracing::debug!("Querying Blockscout API: {}", url);

@@ -12,7 +12,7 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::H160;
-use shared::{metrics, metrics::LivenessChecking};
+use shared::metrics::LivenessChecking;
 use std::{sync::Arc, time::Duration};
 use thiserror::Error;
 
@@ -31,7 +31,7 @@ enum OrderOperation {
 
 impl Metrics {
     fn on_order_operation(order: &Order, operation: OrderOperation) {
-        let metrics = Self::instance(metrics::get_metric_storage_registry())
+        let metrics = Self::instance(global_metrics::get_metric_storage_registry())
             .expect("unexpected error getting metrics instance");
 
         let kind = match order.metadata.is_liquidity_order {
