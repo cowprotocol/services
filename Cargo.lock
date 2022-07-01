@@ -633,6 +633,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "database"
+version = "0.1.0"
+dependencies = [
+ "sqlx",
+ "tokio",
+]
+
+[[package]]
 name = "derivative"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -735,6 +743,7 @@ dependencies = [
  "anyhow",
  "contracts",
  "criterion",
+ "database",
  "ethcontract",
  "hex-literal",
  "lazy_static",
@@ -1923,6 +1932,7 @@ dependencies = [
  "clap 3.2.5",
  "const_format",
  "contracts",
+ "database",
  "ethcontract",
  "futures",
  "gas-estimation",

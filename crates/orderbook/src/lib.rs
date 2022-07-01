@@ -14,10 +14,10 @@ pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 
+use crate::database::trades::TradeRetrieving;
 use crate::{order_quoting::QuoteHandler, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
-use database::trades::TradeRetrieving;
 use futures::Future;
 use model::DomainSeparator;
 use solver_competition::SolverCompetition;

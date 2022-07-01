@@ -360,7 +360,7 @@ mod tests {
     #[ignore]
     async fn postgres_events() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         assert_eq!(db.last_event_block().await.unwrap(), 0);
 
@@ -437,7 +437,7 @@ mod tests {
     #[ignore]
     async fn postgres_repeated_event_insert_ignored() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         for _ in 0..2 {
             db.append_events_(vec![(
                 EventIndex {
