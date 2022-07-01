@@ -905,7 +905,7 @@ mod tests {
     #[ignore]
     async fn postgres_insert_same_order_twice_fails() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let mut order = Order::default();
         db.insert_order(&order, None).await.unwrap();
@@ -923,7 +923,7 @@ mod tests {
     #[allow(clippy::float_cmp)]
     async fn postgres_insert_order_without_quote() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order::default();
         db.insert_order(&order, None).await.unwrap();
@@ -943,7 +943,7 @@ mod tests {
     #[allow(clippy::float_cmp)]
     async fn postgres_insert_order_with_quote() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order::default();
         let quote = Quote {
@@ -990,7 +990,7 @@ mod tests {
         }
 
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order::default();
         db.insert_order(&order, None).await.unwrap();
@@ -1035,7 +1035,7 @@ mod tests {
         let owner = H160([0x77; 20]);
 
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
             data: OrderData {
@@ -1101,7 +1101,7 @@ mod tests {
         let owner = H160([0x77; 20]);
 
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let old_order = Order {
             metadata: OrderMetadata {
@@ -1152,7 +1152,7 @@ mod tests {
     #[ignore]
     async fn postgres_summed_executed_amount_does_not_overflow() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order {
             data: OrderData {
@@ -1208,7 +1208,7 @@ mod tests {
     #[ignore]
     async fn postgres_solvable_presign_orders() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order {
             data: OrderData {
@@ -1266,7 +1266,7 @@ mod tests {
     #[ignore]
     async fn postgres_solvable_orders_settlement_block() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         assert_eq!(
             db.solvable_orders(0).await.unwrap().latest_settlement_block,
@@ -1304,7 +1304,7 @@ mod tests {
     #[ignore]
     async fn postgres_solvable_orders() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order = Order {
             data: OrderData {
@@ -1386,7 +1386,7 @@ mod tests {
     #[ignore]
     async fn postgres_single_order() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let order0 = Order {
             metadata: OrderMetadata {
@@ -1420,7 +1420,7 @@ mod tests {
     #[ignore]
     async fn postgres_presignature_status() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let uid = OrderUid([0u8; 56]);
         let order = Order {
             data: OrderData {
@@ -1498,7 +1498,7 @@ mod tests {
     #[ignore]
     async fn postgres_user_orders() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let owners: Vec<H160> = (0u64..2).map(H160::from_low_u64_le).collect();
 
@@ -1573,7 +1573,7 @@ mod tests {
     #[ignore]
     async fn postgres_returns_expected_orders_for_tx_hash_request() {
         let db = Postgres::new("postgresql://").unwrap();
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
 
         let orders: Vec<Order> = (0..=3)
             .map(|i| Order {

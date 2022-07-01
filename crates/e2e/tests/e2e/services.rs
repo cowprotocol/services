@@ -178,7 +178,7 @@ pub struct OrderbookServices {
 impl OrderbookServices {
     pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
         let db = Arc::new(Postgres::new("postgresql://").unwrap());
-        db.clear().await.unwrap();
+        database::clear_DANGER(&db.pool).await.unwrap();
         let event_updater = Arc::new(EventUpdater::new(
             contracts.gp_settlement.clone(),
             db.as_ref().clone(),
