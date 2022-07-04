@@ -1,5 +1,5 @@
-mod execute;
-mod solve;
+pub mod execute;
+pub mod solve;
 
 use futures::Future;
 use shared::api::finalize_router;
