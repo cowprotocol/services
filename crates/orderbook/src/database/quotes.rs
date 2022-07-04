@@ -8,13 +8,14 @@ use anyhow::{Context, Result};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
 use model::quote::QuoteId;
+use primitive_types::H160;
 use shared::maintenance::Maintaining;
 
 #[derive(sqlx::FromRow)]
 struct QuoteRow {
     id: QuoteId,
-    sell_token: Vec<u8>,
-    buy_token: Vec<u8>,
+    sell_token: database::Address,
+    buy_token: database::Address,
     sell_amount: BigDecimal,
     buy_amount: BigDecimal,
     gas_amount: f64,
@@ -29,8 +30,8 @@ impl TryFrom<QuoteRow> for QuoteData {
 
     fn try_from(row: QuoteRow) -> Result<QuoteData> {
         Ok(QuoteData {
-            sell_token: h160_from_vec(row.sell_token)?,
-            buy_token: h160_from_vec(row.buy_token)?,
+            sell_token: H160(row.sell_token.0),
+            buy_token: H160(row.buy_token.0),
             quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
                 .context("quoted sell amount is not a valid U256")?,
             quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
