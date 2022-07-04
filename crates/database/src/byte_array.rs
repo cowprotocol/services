@@ -26,9 +26,9 @@ impl<const N: usize> Decode<'_, Postgres> for ByteArray<N> {
         match value.format() {
             // prepared query
             PgValueFormat::Binary => {
-                bytes = value.as_bytes()?.try_into().unwrap();
+                bytes = value.as_bytes()?.try_into()?;
             }
-            // unpreprared raw query
+            // unprepared raw query
             PgValueFormat::Text => {
                 let text = value
                     .as_bytes()?
@@ -80,5 +80,16 @@ mod tests {
         // prepared query
         let data_: ByteArray<3> = sqlx::query_scalar(&query).fetch_one(&db).await.unwrap();
         assert_eq!(data.0, data_.0);
+
+        // wrong size error, raw query
+        let row = db.fetch_one(query.as_str()).await.unwrap();
+        let result = row.try_get::<ByteArray<0>, _>(0);
+        assert!(result.is_err());
+
+        // wrong size error, prepared
+        let result = sqlx::query_scalar::<_, ByteArray<4>>(&query)
+            .fetch_one(&db)
+            .await;
+        assert!(result.is_err());
     }
 }
