@@ -1,4 +1,3 @@
-use crate::metrics;
 use anyhow::{ensure, Result};
 use std::{
     fmt::{Display, Formatter},
@@ -23,7 +22,7 @@ struct Metrics {
 }
 
 fn metrics() -> &'static Metrics {
-    Metrics::instance(metrics::get_metric_storage_registry())
+    Metrics::instance(global_metrics::get_metric_storage_registry())
         .expect("unexpected error getting metrics instance")
 }
 

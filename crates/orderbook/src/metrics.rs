@@ -2,7 +2,6 @@ use anyhow::Result;
 use gas_estimation::GasPrice1559;
 use prometheus::{Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts};
 use shared::{
-    metrics::get_metrics_registry,
     sources::{
         balancer_v2::pool_fetching::BalancerPoolCacheMetrics,
         uniswap_v2::pool_cache::PoolCacheMetrics,
@@ -31,7 +30,7 @@ pub struct Metrics {
 
 impl Metrics {
     pub fn new() -> Result<Self> {
-        let registry = get_metrics_registry();
+        let registry = global_metrics::get_metrics_registry();
 
         let opts = HistogramOpts::new(
             "transport_requests",

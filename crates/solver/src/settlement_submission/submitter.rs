@@ -626,7 +626,7 @@ struct Metrics {
 
 pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
     let result = if was_successful { "success" } else { "error" };
-    Metrics::instance(shared::metrics::get_metric_storage_registry())
+    Metrics::instance(global_metrics::get_metric_storage_registry())
         .expect("unexpected error getting metrics instance")
         .submissions
         .with_label_values(&[submitter, result])
@@ -634,7 +634,7 @@ pub(crate) fn track_submission_success(submitter: &str, was_successful: bool) {
 }
 
 fn track_mined_transactions(submitter: &str) {
-    Metrics::instance(shared::metrics::get_metric_storage_registry())
+    Metrics::instance(global_metrics::get_metric_storage_registry())
         .expect("unexpected error getting metrics instance")
         .mined_transactions
         .with_label_values(&[submitter])
