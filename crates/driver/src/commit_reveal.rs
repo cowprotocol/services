@@ -1,6 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use solver::{settlement::Settlement, solver::Auction};
+use solver::{
+    settlement::Settlement,
+    solver::{Auction, Solver},
+};
 
 /// A `SolutionSummary` holds all information solvers are willing to disclose during settlement
 /// competition. It does **not** have to include the call data, yet.
@@ -24,7 +27,16 @@ pub trait CommitRevealSolving: Send + Sync {
 // RFQ orders, yet. A solver would have to support RFQ themselves.
 // For now this wrapper is only a compatibility layer to let us use the new driver with existing
 // solvers for faster development.
-pub struct CommitRevealSolver {}
+pub struct CommitRevealSolver {
+    #[allow(dead_code)]
+    solver: Box<dyn Solver>,
+}
+
+impl CommitRevealSolver {
+    pub fn new(solver: Box<dyn Solver>) -> Self {
+        Self { solver }
+    }
+}
 
 #[async_trait::async_trait]
 impl CommitRevealSolving for CommitRevealSolver {
