@@ -1,8 +1,10 @@
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use solver::{settlement::Settlement, solver::Auction};
 
 /// A `SolutionSummary` holds all information solvers are willing to disclose during settlement
 /// competition. It does **not** have to include the call data, yet.
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SettlementSummary {}
 
 #[cfg_attr(test, mockall::automock)]

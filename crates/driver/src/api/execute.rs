@@ -1,28 +1,38 @@
+use crate::{commit_reveal::SettlementSummary, driver::Driver};
 use anyhow::Result;
 use shared::api::{convert_json_response, error, extract_payload, ApiReply, IntoWarpReply};
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
+use tracing::Instrument;
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
-fn post_execute_request() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!("execute")
+fn post_execute_request(
+    prefix: &'static str,
+) -> impl Filter<Extract = (SettlementSummary,), Error = Rejection> + Clone {
+    warp::path(prefix)
+        .and(warp::path("execute"))
         .and(warp::post())
         .and(extract_payload())
 }
 
-pub fn post_execute() -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    post_execute_request().and_then(move |request| async move {
-        let result: Result<(), _> = Err(ExecuteError::NotImplemented);
-        if let Err(err) = &result {
-            tracing::warn!(?err, ?request, "post_execute error");
+pub fn post_execute(
+    prefix: &'static str,
+    driver: Arc<Driver>,
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
+    post_execute_request(prefix).and_then(move |summary: SettlementSummary| {
+        let driver = driver.clone();
+        async move {
+            let result = driver.on_auction_won(summary.clone()).await;
+            if let Err(err) = &result {
+                tracing::warn!(?err, ?summary, "post_execute error");
+            }
+            Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        Result::<_, Infallible>::Ok(convert_json_response(result))
+        .instrument(tracing::info_span!("solver", name = prefix))
     })
 }
 
 #[derive(thiserror::Error, Debug)]
 pub enum ExecuteError {
-    #[error("not implemented")]
-    NotImplemented,
     #[error("settlement execution rejected")]
     ExecutionRejected,
     #[error(transparent)]
@@ -32,10 +42,6 @@ pub enum ExecuteError {
 impl IntoWarpReply for ExecuteError {
     fn into_warp_reply(self) -> ApiReply {
         match self {
-            Self::NotImplemented => with_status(
-                error("Route not yet implemented", "try again later"),
-                StatusCode::INTERNAL_SERVER_ERROR,
-            ),
             Self::ExecutionRejected => with_status(
                 error(
                     "ExecutionRejected",
