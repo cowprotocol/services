@@ -17,9 +17,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "error")]
     pub log_stderr_threshold: LevelFilter,
 
-    /// List of external solvers in the form of `name|url|account`.
+    /// List of solvers in the form of `name|url|account`.
     #[clap(long, env, use_value_delimiter = true)]
-    pub external_solvers: Vec<ExternalSolverArg>,
+    pub solvers: Vec<ExternalSolverArg>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -27,7 +27,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
-        write!(f, "external_solvers: {:?}", self.external_solvers)?;
+        write!(f, "solvers: {:?}", self.solvers)?;
         Ok(())
     }
 }

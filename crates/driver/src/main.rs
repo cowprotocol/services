@@ -9,7 +9,7 @@ async fn main() {
     tracing::info!("running driver with validated arguments:\n{}", args);
 
     let drivers = args
-        .external_solvers
+        .solvers
         .into_iter()
         .map(|arg| {
             let driver = Arc::new(Driver {
