@@ -162,7 +162,7 @@ struct AlertConfig {
 
 impl Alerter {
     pub fn new(orderbook_api: OrderBookApi, zeroex_api: ZeroExApi, config: AlertConfig) -> Self {
-        let registry = shared::metrics::get_metrics_registry();
+        let registry = global_metrics::get_metrics_registry();
         let no_trades_but_matchable_order =
             IntGauge::new("no_trades_but_matchable_order", "0 or 1").unwrap();
         registry
@@ -318,7 +318,7 @@ async fn main() {
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
     tracing::info!("running alerter with {:#?}", args);
 
-    shared::metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);
+    global_metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);
     let filter = shared::metrics::handle_metrics();
     tokio::task::spawn(warp::serve(filter).bind(([0, 0, 0, 0], args.metrics_port)));
 

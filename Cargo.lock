@@ -54,6 +54,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap 3.2.5",
+ "global-metrics",
  "model",
  "primitive-types",
  "prometheus",
@@ -159,6 +160,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 3.2.5",
+ "global-metrics",
  "prometheus",
  "prometheus-metric-storage",
  "shared",
@@ -636,6 +638,7 @@ dependencies = [
 name = "database"
 version = "0.1.0"
 dependencies = [
+ "hex",
  "sqlx",
  "tokio",
 ]
@@ -1152,7 +1155,7 @@ dependencies = [
 [[package]]
 name = "gas-estimation"
 version = "0.1.0"
-source = "git+https://github.com/cowprotocol/gas-estimation.git?tag=v0.6.0#fe6661eadcabea9868766b8c34b9a32333965e91"
+source = "git+https://github.com/cowprotocol/gas-estimation?tag=v0.7.0#51f72a39219689ce6f34ce389dee4aa316739aa8"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1194,6 +1197,15 @@ name = "gimli"
 version = "0.26.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78cc372d058dcf6d5ecd98510e7fbc9e5aec4d21de70f65fea8fecebcd881bd4"
+
+[[package]]
+name = "global-metrics"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+ "prometheus",
+ "prometheus-metric-storage",
+]
 
 [[package]]
 name = "h2"
@@ -1945,6 +1957,7 @@ dependencies = [
  "ethcontract",
  "futures",
  "gas-estimation",
+ "global-metrics",
  "hex",
  "hex-literal",
  "maplit",
@@ -2691,6 +2704,7 @@ dependencies = [
  "ethcontract-mock",
  "futures",
  "gas-estimation",
+ "global-metrics",
  "hex",
  "hex-literal",
  "http",
@@ -2702,7 +2716,6 @@ dependencies = [
  "model",
  "num",
  "number_conversions",
- "once_cell",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -2770,6 +2783,7 @@ dependencies = [
  "ethcontract-mock",
  "futures",
  "gas-estimation",
+ "global-metrics",
  "hex",
  "hex-literal",
  "itertools",

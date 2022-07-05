@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hex = "0.4"
 sqlx = { version = "0.6", default-features = false, features = ["postgres"] }
 
 [dev-dependencies]

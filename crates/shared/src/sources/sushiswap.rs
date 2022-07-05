@@ -35,6 +35,18 @@ mod tests {
             addr!("7e22b2c7469789cf11e59fc8ddd56cf6109e0dd1")
         );
 
+        // Görli
+        let (goerli_pair_provider, _) = get_liquidity_source(&Mock::new(5).web3()).await.unwrap();
+        let goerli_pair = TokenPair::new(
+            addr!("D87Ba7A50B2E7E660f678A895E4B72E7CB4CCd9C"),
+            addr!("dc31Ee1784292379Fbb2964b3B9C4124D8F89C60"),
+        )
+        .unwrap();
+        assert_eq!(
+            goerli_pair_provider.pair_address(&goerli_pair),
+            addr!("11985F5AbD9Dbda8DA77de82A474201683E39555")
+        );
+
         // xDai
         let (xdai_pair_provider, _) = get_liquidity_source(&Mock::new(100).web3()).await.unwrap();
         let xdai_pair = TokenPair::new(

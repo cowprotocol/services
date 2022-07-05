@@ -1,8 +1,5 @@
-use super::*;
 use crate::{
-    conversions::{
-        big_decimal_to_big_uint, big_decimal_to_u256, h160_from_vec, u256_to_big_decimal,
-    },
+    conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     order_quoting::Quote,
 };
 use anyhow::{anyhow, Context as _, Result};
@@ -22,6 +19,8 @@ use num::Zero;
 use primitive_types::H160;
 use sqlx::{types::BigDecimal, Connection};
 use std::{borrow::Cow, convert::TryInto};
+
+use super::Postgres;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -551,15 +550,15 @@ impl OrderStoring for Postgres {
 
 #[derive(sqlx::FromRow)]
 struct OrdersQueryRow {
-    uid: Vec<u8>,
-    owner: Vec<u8>,
+    uid: database::OrderUid,
+    owner: database::Address,
     creation_timestamp: DateTime<Utc>,
-    sell_token: Vec<u8>,
-    buy_token: Vec<u8>,
+    sell_token: database::Address,
+    buy_token: database::Address,
     sell_amount: BigDecimal,
     buy_amount: BigDecimal,
     valid_to: i64,
-    app_data: Vec<u8>,
+    app_data: database::AppId,
     fee_amount: BigDecimal,
     full_fee_amount: BigDecimal,
     kind: DbOrderKind,
@@ -569,9 +568,9 @@ struct OrdersQueryRow {
     sum_buy: BigDecimal,
     sum_fee: BigDecimal,
     invalidated: bool,
-    receiver: Option<Vec<u8>>,
+    receiver: Option<database::Address>,
     signing_scheme: DbSigningScheme,
-    settlement_contract: Vec<u8>,
+    settlement_contract: database::Address,
     sell_token_balance: DbSellTokenSource,
     buy_token_balance: DbBuyTokenDestination,
     presignature_pending: bool,
@@ -608,12 +607,8 @@ impl OrdersQueryRow {
         let status = self.calculate_status();
         let metadata = OrderMetadata {
             creation_date: self.creation_timestamp,
-            owner: h160_from_vec(self.owner)?,
-            uid: OrderUid(
-                self.uid
-                    .try_into()
-                    .map_err(|_| anyhow!("order uid has wrong length"))?,
-            ),
+            owner: H160(self.owner.0),
+            uid: OrderUid(self.uid.0),
             available_balance: Default::default(),
             executed_buy_amount: big_decimal_to_big_uint(&self.sum_buy)
                 .context("executed buy amount is not an unsigned integer")?,
@@ -628,26 +623,22 @@ impl OrdersQueryRow {
                 .context("executed fee amount is not a valid u256")?,
             invalidated: self.invalidated,
             status,
-            settlement_contract: h160_from_vec(self.settlement_contract)?,
+            settlement_contract: H160(self.settlement_contract.0),
             full_fee_amount: big_decimal_to_u256(&self.full_fee_amount)
                 .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
             is_liquidity_order: self.is_liquidity_order,
         };
         let signing_scheme = self.signing_scheme.into();
         let data = OrderData {
-            sell_token: h160_from_vec(self.sell_token)?,
-            buy_token: h160_from_vec(self.buy_token)?,
-            receiver: self.receiver.map(h160_from_vec).transpose()?,
+            sell_token: H160(self.sell_token.0),
+            buy_token: H160(self.buy_token.0),
+            receiver: self.receiver.map(|address| H160(address.0)),
             sell_amount: big_decimal_to_u256(&self.sell_amount)
                 .ok_or_else(|| anyhow!("sell_amount is not U256"))?,
             buy_amount: big_decimal_to_u256(&self.buy_amount)
                 .ok_or_else(|| anyhow!("buy_amount is not U256"))?,
             valid_to: self.valid_to.try_into().context("valid_to is not u32")?,
-            app_data: AppId(
-                self.app_data
-                    .try_into()
-                    .map_err(|_| anyhow!("app_data is not [u8; 32]"))?,
-            ),
+            app_data: AppId(self.app_data.0),
             fee_amount: big_decimal_to_u256(&self.fee_amount)
                 .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
             kind: self.kind.into(),
@@ -682,9 +673,14 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 
 #[cfg(test)]
 mod tests {
-    use super::{events::*, *};
-    use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteData};
+    use super::*;
+    use crate::{
+        database::events::{Event, Invalidation, PreSignature, Settlement, Trade},
+        fee_subsidy::FeeParameters,
+        order_quoting::QuoteData,
+    };
     use chrono::{Duration, NaiveDateTime};
+    use database::byte_array::ByteArray;
     use num::BigUint;
     use number_conversions::u256_to_big_uint;
     use primitive_types::U256;
@@ -696,15 +692,15 @@ mod tests {
         let valid_to_timestamp = Utc::now() + Duration::days(1);
 
         let order_row = || OrdersQueryRow {
-            uid: vec![0; 56],
-            owner: vec![0; 20],
+            uid: ByteArray([0; 56]),
+            owner: ByteArray([0; 20]),
             creation_timestamp: Utc::now(),
-            sell_token: vec![1; 20],
-            buy_token: vec![2; 20],
+            sell_token: ByteArray([1; 20]),
+            buy_token: ByteArray([2; 20]),
             sell_amount: BigDecimal::from(1),
             buy_amount: BigDecimal::from(1),
             valid_to: valid_to_timestamp.timestamp(),
-            app_data: vec![0; 32],
+            app_data: ByteArray([0; 32]),
             fee_amount: BigDecimal::default(),
             full_fee_amount: BigDecimal::default(),
             kind: DbOrderKind::Sell,
@@ -716,7 +712,7 @@ mod tests {
             sum_fee: BigDecimal::default(),
             invalidated: false,
             signing_scheme: DbSigningScheme::Eip712,
-            settlement_contract: vec![0; 20],
+            settlement_contract: ByteArray([0; 20]),
             sell_token_balance: DbSellTokenSource::External,
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,

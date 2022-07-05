@@ -24,7 +24,7 @@ impl LivenessChecking for Liveness {
 pub async fn main(args: arguments::Arguments) {
     let update_metrics = async {
         let start = Instant::now();
-        let metrics = Metrics::instance(shared::metrics::get_metric_storage_registry()).unwrap();
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         loop {
             metrics.seconds_alive.set(start.elapsed().as_secs() as i64);
             tokio::time::sleep(Duration::from_secs(1)).await;

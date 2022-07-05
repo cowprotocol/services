@@ -1,3 +1,6 @@
+pub mod byte_array;
+
+use byte_array::ByteArray;
 use sqlx::PgExecutor;
 
 // The names of all tables we use in the db.
@@ -19,6 +22,11 @@ pub async fn clear_DANGER(ex: impl PgExecutor<'_> + Copy) -> sqlx::Result<()> {
     }
     Ok(())
 }
+
+pub type Address = ByteArray<20>;
+pub type AppId = ByteArray<32>;
+pub type TransactionHash = ByteArray<32>;
+pub type OrderUid = ByteArray<56>;
 
 #[cfg(test)]
 mod tests {

@@ -11,6 +11,10 @@ servers:
     url: https://barn.api.cow.fi/rinkeby
   - description: Rinkeby (Prod)
     url: https://api.cow.fi/rinkeby
+  - description: Görli (Staging)
+    url: https://barn.api.cow.fi/goerli
+  - description: Görli (Prod)
+    url: https://api.cow.fi/goerli
   - description: Gnosis Chain (Staging)
     url: https://barn.api.cow.fi/xdai
   - description: Gnosis Chain (Prod)

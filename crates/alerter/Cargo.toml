@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0"
 chrono = { version = "0.4", default-features = false }
 clap = { version = "3.1", features = ["derive", "env"] }
+global-metrics = { path = "../global-metrics" }
 model = { path = "../model" }
 primitive-types = { version = "0.10" }
 prometheus = "0.13"

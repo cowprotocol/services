@@ -39,7 +39,7 @@ use shared::{
     current_block::current_block_stream,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
-    metrics::{serve_metrics, setup_metrics_registry, DEFAULT_METRICS_PORT},
+    metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
     paraswap_api::DefaultParaswapApi,
@@ -90,7 +90,7 @@ async fn main() {
     );
     tracing::info!("running order book with validated arguments:\n{}", args);
 
-    setup_metrics_registry(Some("gp_v2_api".into()), None);
+    global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
     let metrics = Arc::new(Metrics::new().unwrap());
 
     let client = shared::http_client(args.shared.http_timeout);
@@ -641,8 +641,8 @@ async fn check_database_connection(orderbook: &Orderbook) {
 
 fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
     match network_id {
-        // Mainnet, Rinkeby
-        "1" | "4" => Some(10u128.pow(18).into()),
+        // Mainnet, Rinkeby, Göŕli
+        "1" | "4" | "5" => Some(10u128.pow(18).into()),
         // Xdai
         "100" => Some(10u128.pow(21).into()),
         _ => None,

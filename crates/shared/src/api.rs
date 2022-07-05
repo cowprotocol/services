@@ -1,4 +1,3 @@
-use crate::metrics::get_metric_storage_registry;
 use crate::price_estimation::PriceEstimationError;
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
@@ -24,7 +23,7 @@ pub type ApiReply = WithStatus<Json>;
 async fn handle_rejection(err: Rejection) -> Result<impl Reply, Infallible> {
     let response = err.default_response();
 
-    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
     metrics
         .requests_rejected
         .with_label_values(&[response.status().as_str()])
@@ -135,7 +134,7 @@ pub fn finalize_router(
     routes: BoxedFilter<(ApiReply, &'static str)>,
     log_prefix: &'static str,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
-    let metrics = ApiMetrics::instance(get_metric_storage_registry()).unwrap();
+    let metrics = ApiMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
     let routes_with_metrics = warp::any()
         .map(Instant::now) // Start a timer at the beginning of response processing
         .and(routes) // Parse requests

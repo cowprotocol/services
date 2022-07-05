@@ -6,7 +6,7 @@ use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     maintenance::{Maintaining, ServiceMaintenance},
-    metrics::{serve_metrics, setup_metrics_registry},
+    metrics::serve_metrics,
     network::network_name,
     recent_block_cache::CacheConfig,
     sources::{
@@ -50,7 +50,7 @@ async fn main() {
     );
     tracing::info!("running solver with validated arguments:\n{}", args);
 
-    setup_metrics_registry(Some("gp_v2_solver".into()), None);
+    global_metrics::setup_metrics_registry(Some("gp_v2_solver".into()), None);
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
 
     let client = shared::http_client(args.shared.http_timeout);

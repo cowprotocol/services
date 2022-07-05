@@ -160,7 +160,7 @@ mod tests {
 
     #[test]
     fn domain_separator_rinkeby() {
-        let contract_address: H160 = hex!("91D6387ffbB74621625F39200d91a50386C9Ab15").into();
+        let contract_address: H160 = hex!("91D6387ffbB74621625F39200d91a50386C9Ab15").into(); // old deployment
         let chain_id: u64 = 4;
         let domain_separator_rinkeby = DomainSeparator::new(chain_id, contract_address);
         // domain separator is taken from rinkeby deployment at address 91D6387ffbB74621625F39200d91a50386C9Ab15
@@ -168,6 +168,18 @@ mod tests {
             "9d7e07ef92761aa9453ae5ff25083a2b19764131b15295d3c7e89f1f1b8c67d9"
         ));
         assert_eq!(domain_separator_rinkeby, expected_domain_separator);
+    }
+
+    #[test]
+    fn domain_separator_goerli() {
+        let contract_address: H160 = hex!("9008D19f58AAbD9eD0D60971565AA8510560ab41").into(); // new deployment
+        let chain_id: u64 = 5;
+        let domain_separator_goerli = DomainSeparator::new(chain_id, contract_address);
+        // domain separator is taken from goerli deployment at address 0x9008D19f58AAbD9eD0D60971565AA8510560ab41
+        let expected_domain_separator = DomainSeparator(hex!(
+            "fb378b35457022ecc5709ae5dafad9393c1387ae6d8ce24913a0c969074c07fb"
+        ));
+        assert_eq!(domain_separator_goerli, expected_domain_separator);
     }
 
     #[test]
