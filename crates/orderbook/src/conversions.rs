@@ -1,7 +1,6 @@
-use anyhow::{anyhow, Result};
 use bigdecimal::num_bigint::ToBigInt;
 use num::bigint::{BigInt, BigUint};
-use primitive_types::{H160, H256, U256};
+use primitive_types::U256;
 use sqlx::types::BigDecimal;
 use std::convert::TryInto;
 
@@ -23,20 +22,6 @@ pub fn big_decimal_to_u256(big_decimal: &BigDecimal) -> Option<U256> {
     }
     let big_int = big_decimal.to_bigint()?;
     number_conversions::big_int_to_u256(&big_int).ok()
-}
-
-pub fn h160_from_vec(vec: Vec<u8>) -> Result<H160> {
-    let array: [u8; 20] = vec
-        .try_into()
-        .map_err(|_| anyhow!("h160 has wrong length"))?;
-    Ok(H160::from(array))
-}
-
-pub fn h256_from_vec(vec: Vec<u8>) -> Result<H256> {
-    let array: [u8; 32] = vec
-        .try_into()
-        .map_err(|_| anyhow!("h256 has wrong length"))?;
-    Ok(H256::from(array))
 }
 
 #[cfg(test)]
@@ -95,35 +80,5 @@ mod tests {
             Some(U256::MAX)
         );
         assert!(big_decimal_to_u256(&(max_u256_as_big_decimal + BigDecimal::one())).is_none());
-    }
-
-    #[test]
-    fn h160_from_vec_() {
-        let valid_input = [1u8; 20].to_vec();
-        assert_eq!(
-            h160_from_vec(valid_input).unwrap(),
-            H160::from_slice(&[1u8; 20])
-        );
-
-        let wrong_length = vec![0u8];
-        assert_eq!(
-            h160_from_vec(wrong_length).unwrap_err().to_string(),
-            "h160 has wrong length"
-        );
-    }
-
-    #[test]
-    fn h256_from_vec_() {
-        let valid_input = [1u8; 32].to_vec();
-        assert_eq!(
-            h256_from_vec(valid_input).unwrap(),
-            H256::from_slice(&[1u8; 32])
-        );
-
-        let wrong_length = vec![0u8];
-        assert_eq!(
-            h256_from_vec(wrong_length).unwrap_err().to_string(),
-            "h256 has wrong length"
-        );
     }
 }

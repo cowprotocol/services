@@ -1,9 +1,10 @@
-use crate::conversions::{big_decimal_to_big_uint, h160_from_vec, h256_from_vec};
+use crate::conversions::big_decimal_to_big_uint;
 use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
 use ethcontract::H160;
 use futures::stream::TryStreamExt;
 use model::{order::OrderUid, trade::Trade};
+use primitive_types::H256;
 use sqlx::types::BigDecimal;
 use std::convert::TryInto;
 
@@ -71,14 +72,14 @@ impl TradeRetrieving for Postgres {
 struct TradesQueryRow {
     block_number: i64,
     log_index: i64,
-    order_uid: Vec<u8>,
+    order_uid: database::OrderUid,
     buy_amount: BigDecimal,
     sell_amount: BigDecimal,
     sell_amount_before_fees: BigDecimal,
-    owner: Vec<u8>,
-    buy_token: Vec<u8>,
-    sell_token: Vec<u8>,
-    tx_hash: Option<Vec<u8>>,
+    owner: database::Address,
+    buy_token: database::Address,
+    sell_token: database::Address,
+    tx_hash: Option<database::TransactionHash>,
 }
 
 impl TradesQueryRow {
@@ -88,21 +89,17 @@ impl TradesQueryRow {
             .try_into()
             .context("block_number is not u32")?;
         let log_index = self.log_index.try_into().context("log_index is not u32")?;
-        let order_uid = OrderUid(
-            self.order_uid
-                .try_into()
-                .map_err(|_| anyhow!("order uid has wrong length"))?,
-        );
+        let order_uid = OrderUid(self.order_uid.0);
         let buy_amount = big_decimal_to_big_uint(&self.buy_amount)
             .ok_or_else(|| anyhow!("buy_amount is not an unsigned integer"))?;
         let sell_amount = big_decimal_to_big_uint(&self.sell_amount)
             .ok_or_else(|| anyhow!("sell_amount is not an unsigned integer"))?;
         let sell_amount_before_fees = big_decimal_to_big_uint(&self.sell_amount_before_fees)
             .ok_or_else(|| anyhow!("sell_amount_before_fees is not an unsigned integer"))?;
-        let owner = h160_from_vec(self.owner)?;
-        let buy_token = h160_from_vec(self.buy_token)?;
-        let sell_token = h160_from_vec(self.sell_token)?;
-        let tx_hash = self.tx_hash.map(h256_from_vec).transpose()?;
+        let owner = H160(self.owner.0);
+        let buy_token = H160(self.buy_token.0);
+        let sell_token = H160(self.sell_token.0);
+        let tx_hash = self.tx_hash.map(|hash| H256(hash.0));
         Ok(Trade {
             block_number,
             log_index,
