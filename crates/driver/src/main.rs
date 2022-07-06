@@ -1,6 +1,6 @@
 use clap::Parser;
-use driver::api::serve_api;
-use std::time::Duration;
+use driver::{api::serve_api, commit_reveal::CommitRevealSolver, driver::Driver};
+use std::{sync::Arc, time::Duration};
 
 #[tokio::main]
 async fn main() {
@@ -8,10 +8,25 @@ async fn main() {
     shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
     tracing::info!("running driver with validated arguments:\n{}", args);
 
+    let drivers = args
+        .solvers
+        .into_iter()
+        .map(|arg| {
+            let driver = Arc::new(Driver {
+                solver: Arc::new(CommitRevealSolver {}),
+            });
+            (driver, arg.name)
+        })
+        .collect();
+
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let serve_api = serve_api(args.bind_address, async {
-        let _ = shutdown_receiver.await;
-    });
+    let serve_api = serve_api(
+        args.bind_address,
+        async {
+            let _ = shutdown_receiver.await;
+        },
+        drivers,
+    );
 
     futures::pin_mut!(serve_api);
     tokio::select! {
