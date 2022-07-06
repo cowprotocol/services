@@ -4,11 +4,12 @@ use crate::{
 };
 use anyhow::Result;
 use model::auction::Auction;
-use solver::settlement::Settlement;
+use solver::{settlement::Settlement, settlement_submission::SolutionSubmitter};
 use std::sync::Arc;
 
 pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
+    pub submitter: Arc<SolutionSubmitter>,
 }
 
 impl Driver {
