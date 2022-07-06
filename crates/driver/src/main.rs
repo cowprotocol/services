@@ -28,7 +28,7 @@ struct CommonComponents {
     native_token_contract: WETH9,
 }
 
-async fn init_common_components(args: &Arguments) -> Arc<CommonComponents> {
+async fn init_common_components(args: &Arguments) -> CommonComponents {
     let client = shared::http_client(args.http_timeout);
     let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
     let transport = create_instrumented_transport(
@@ -54,14 +54,14 @@ async fn init_common_components(args: &Arguments) -> Arc<CommonComponents> {
         .await
         .expect("couldn't load deployed native token");
 
-    Arc::new(CommonComponents {
+    CommonComponents {
         client,
         web3,
         network_id,
         chain_id,
         settlement_contract,
         native_token_contract,
-    })
+    }
 }
 
 async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Box<dyn Solver>> {
