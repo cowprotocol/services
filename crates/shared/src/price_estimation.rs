@@ -1,3 +1,4 @@
+pub mod balancer_sor;
 pub mod baseline;
 pub mod competition;
 pub mod gas;
@@ -38,6 +39,7 @@ pub enum PriceEstimatorType {
     Quasimodo,
     OneInch,
     Yearn,
+    BalancerSor,
 }
 
 impl PriceEstimatorType {

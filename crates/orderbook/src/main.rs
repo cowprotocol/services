@@ -35,6 +35,7 @@ use shared::{
         },
         trace_call::TraceCallDetector,
     },
+    balancer_sor_api::{BalancerSorApi, DefaultBalancerSorApi},
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
@@ -44,6 +45,7 @@ use shared::{
     oneinch_api::OneInchClientImpl,
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
+        balancer_sor::BalancerSor,
         baseline::BaselinePriceEstimator,
         competition::{CompetitionPriceEstimator, RacingCompetitionPriceEstimator},
         http::HttpPriceEstimator,
@@ -330,6 +332,9 @@ async fn main() {
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
+    let balancer_sor_api: Arc<dyn BalancerSorApi> = Arc::new(
+        DefaultBalancerSorApi::new(client.clone(), args.balancer_sor_url, chain_id).unwrap(),
+    );
     let create_base_estimator =
         |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
             let rate_limiter = |name| {
@@ -407,6 +412,11 @@ async fn main() {
                         .clone()
                         .expect("yearn solver url is required when using yearn price estimation"),
                 ),
+                PriceEstimatorType::BalancerSor => Box::new(BalancerSor::new(
+                    balancer_sor_api.clone(),
+                    rate_limiter(estimator.name()),
+                    gas_price_estimator.clone(),
+                )),
             };
 
             (
