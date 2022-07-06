@@ -10,15 +10,16 @@ use crate::{
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
-    settlement_simulation::{self, settle_method, simulate_before_after_access_list, TenderlyApi},
+    settlement_rater::SettlementRater,
+    settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
     settlement_submission::SolutionSubmitter,
-    solver::{Auction, SettlementWithError, SettlementWithSolver, Solver, Solvers},
+    solver::{Auction, SettlementWithError, Solver, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
@@ -64,6 +65,7 @@ pub struct Driver {
     max_settlement_price_deviation: Option<Ratio<BigInt>>,
     token_list_restriction_for_price_checks: PriceCheckTokens,
     tenderly: Option<TenderlyApi>,
+    settlement_rater: SettlementRater,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -100,6 +102,12 @@ impl Driver {
             settlement_contract.clone(),
         );
 
+        let settlement_rater = SettlementRater {
+            access_list_estimator: solution_submitter.access_list_estimator.clone(),
+            settlement_contract: settlement_contract.clone(),
+            web3: web3.clone(),
+        };
+
         Self {
             settlement_contract,
             liquidity_collector,
@@ -128,6 +136,7 @@ impl Driver {
             max_settlement_price_deviation,
             token_list_restriction_for_price_checks,
             tenderly,
+            settlement_rater,
         }
     }
 
@@ -383,62 +392,6 @@ impl Driver {
         analytics::report_matched_but_not_settled(&*self.metrics, submitted, &other_settlements);
     }
 
-    // Rate settlements, ignoring those for which the rating procedure failed.
-    async fn rate_settlements(
-        &self,
-        settlements: Vec<SettlementWithSolver>,
-        prices: &ExternalPrices,
-        gas_price: GasPrice1559,
-    ) -> Result<(
-        Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
-        Vec<SettlementWithError>,
-    )> {
-        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
-            settlements.iter().map(|settlement| {
-                (
-                    settlement.0.account().clone(),
-                    settlement.1.clone(),
-                    settlement.2.clone(),
-                )
-            }),
-            &self.settlement_contract,
-            &self.web3,
-            gas_price,
-        )
-        .await
-        .context("failed to simulate settlements")?;
-
-        let gas_price =
-            BigRational::from_float(gas_price.effective_gas_price()).expect("Invalid gas price.");
-
-        let rate_settlement = |id, settlement: Settlement, gas_estimate| {
-            let surplus = settlement.total_surplus(prices);
-            let scaled_solver_fees = settlement.total_scaled_unsubsidized_fees(prices);
-            let unscaled_subsidized_fee = settlement.total_unscaled_subsidized_fees(prices);
-            RatedSettlement {
-                id,
-                settlement,
-                surplus,
-                unscaled_subsidized_fee,
-                scaled_unsubsidized_fee: scaled_solver_fees,
-                gas_estimate,
-                gas_price: gas_price.clone(),
-            }
-        };
-        Ok(
-            (settlements.into_iter().zip(simulations).enumerate()).partition_map(
-                |(i, ((solver, settlement, access_list), result))| match result {
-                    Ok(gas_estimate) => Either::Left((
-                        solver.clone(),
-                        rate_settlement(i, settlement, gas_estimate),
-                        access_list,
-                    )),
-                    Err(err) => Either::Right((solver, settlement, access_list, err)),
-                },
-            ),
-        )
-    }
-
     pub async fn single_run(&mut self) -> Result<()> {
         let id = self.next_auction_id();
         // extra function so that we can add span information
@@ -620,38 +573,11 @@ impl Driver {
             );
         }
 
-        // append access lists
-        let txs = solver_settlements
-            .iter()
-            .map(|(solver, settlement)| {
-                settle_method(
-                    gas_price,
-                    &self.settlement_contract,
-                    settlement.clone(),
-                    solver.account().clone(),
-                )
-                .tx
-            })
-            .collect::<Vec<_>>();
-        let mut access_lists = self
-            .solution_submitter
-            .access_list_estimator
-            .estimate_access_lists(&txs)
-            .await
-            .unwrap_or_default()
-            .into_iter();
-
-        let solver_settlements = solver_settlements
-            .into_iter()
-            .map(|(solver, settlement)| {
-                let access_list = access_lists.next().and_then(|access_list| access_list.ok());
-                (solver, settlement, access_list)
-            })
-            .collect();
-
         let (mut rated_settlements, errors) = self
+            .settlement_rater
             .rate_settlements(solver_settlements, &external_prices, gas_price)
             .await?;
+
         // We don't know the exact block because simulation can happen over multiple blocks but
         // this is a good approximation.
         let block_during_simulation = self
