@@ -35,7 +35,7 @@ use shared::{
         },
         trace_call::TraceCallDetector,
     },
-    balancer_sor_api::{BalancerSorApi, DefaultBalancerSorApi},
+    balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
@@ -332,9 +332,9 @@ async fn main() {
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name, metrics.clone())
     };
-    let balancer_sor_api: Arc<dyn BalancerSorApi> = Arc::new(
-        DefaultBalancerSorApi::new(client.clone(), args.balancer_sor_url, chain_id).unwrap(),
-    );
+    let balancer_sor_api = args
+        .balancer_sor_url
+        .map(|url| Arc::new(DefaultBalancerSorApi::new(client.clone(), url, chain_id).unwrap()));
     let create_base_estimator =
         |estimator: PriceEstimatorType| -> (String, Arc<dyn PriceEstimating>) {
             let rate_limiter = |name| {
@@ -413,7 +413,7 @@ async fn main() {
                         .expect("yearn solver url is required when using yearn price estimation"),
                 ),
                 PriceEstimatorType::BalancerSor => Box::new(BalancerSor::new(
-                    balancer_sor_api.clone(),
+                    balancer_sor_api.clone().expect("trying to create BalancerSor price estimator but didn't get balancer sor url"),
                     rate_limiter(estimator.name()),
                     gas_price_estimator.clone(),
                 )),
