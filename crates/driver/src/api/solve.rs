@@ -20,9 +20,11 @@ pub fn post_solve() -> impl Filter<Extract = (ApiReply,), Error = Rejection> + C
 }
 
 #[derive(thiserror::Error, Debug)]
-enum SolveError {
+pub enum SolveError {
     #[error("not implemented")]
     NotImplemented,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 impl IntoWarpReply for SolveError {
@@ -32,6 +34,7 @@ impl IntoWarpReply for SolveError {
                 error("Route not yet implemented", "try again later"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+            Self::Other(err) => err.into_warp_reply(),
         }
     }
 }

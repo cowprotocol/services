@@ -730,9 +730,14 @@ name = "driver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap 3.2.5",
  "futures",
+ "mockall",
+ "model",
+ "primitive-types",
  "shared",
+ "solver",
  "thiserror",
  "tokio",
  "tracing",

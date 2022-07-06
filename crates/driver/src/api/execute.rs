@@ -20,9 +20,13 @@ pub fn post_execute() -> impl Filter<Extract = (ApiReply,), Error = Rejection> +
 }
 
 #[derive(thiserror::Error, Debug)]
-enum ExecuteError {
+pub enum ExecuteError {
     #[error("not implemented")]
     NotImplemented,
+    #[error("settlement execution rejected")]
+    ExecutionRejected,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 impl IntoWarpReply for ExecuteError {
@@ -32,6 +36,14 @@ impl IntoWarpReply for ExecuteError {
                 error("Route not yet implemented", "try again later"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+            Self::ExecutionRejected => with_status(
+                error(
+                    "ExecutionRejected",
+                    "the solver no longer wants to execute the settlement",
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Self::Other(err) => err.into_warp_reply(),
         }
     }
 }
