@@ -29,10 +29,10 @@ pub struct Arguments {
 
     /// Timeout in seconds for all http requests.
     #[clap(
-            long,
-            default_value = "10",
-            parse(try_from_str = duration_from_seconds),
-        )]
+        long,
+        default_value = "10",
+        parse(try_from_str = duration_from_seconds),
+    )]
     pub http_timeout: Duration,
 
     /// If solvers should use internal buffers to improve solution quality.
