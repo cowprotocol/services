@@ -224,6 +224,10 @@ pub struct Arguments {
     /// Use Blockscout as a TokenOwnerFinding implementation.
     #[clap(long, env, default_value = "true")]
     pub enable_blockscout: bool,
+
+    /// The API endpoint for the Balancer SOR API for solving.
+    #[clap(long, env)]
+    pub balancer_sor_url: Option<Url>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -312,6 +316,9 @@ impl std::fmt::Display for Arguments {
             self.liquidity_order_owners
         )?;
         writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
+        write!(f, "balancer_sor_url: ")?;
+        display_option(&self.balancer_sor_url, f)?;
+        writeln!(f)?;
         Ok(())
     }
 }
