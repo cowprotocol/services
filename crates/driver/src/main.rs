@@ -1,3 +1,4 @@
+use anyhow::Context;
 use clap::Parser;
 use contracts::WETH9;
 use driver::{
@@ -10,8 +11,16 @@ use shared::{
     transport::{create_instrumented_transport, http::HttpTransport},
 };
 use solver::{
+    arguments::TransactionStrategyArg,
     interactions::allowances::AllowanceManager,
     metrics::Metrics,
+    settlement_submission::{
+        submitter::{
+            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            Strategy,
+        },
+        GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
+    },
     solver::{
         http_solver::{buffers::BufferRetriever, HttpSolver, InstanceCache},
         Solver,
@@ -21,6 +30,7 @@ use std::{sync::Arc, time::Duration};
 
 struct CommonComponents {
     client: Client,
+    metrics: Arc<Metrics>,
     web3: shared::Web3,
     network_id: String,
     chain_id: u64,
@@ -56,6 +66,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
 
     CommonComponents {
         client,
+        metrics,
         web3,
         network_id,
         chain_id,
@@ -105,6 +116,134 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Box<d
         .collect()
 }
 
+async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<SolutionSubmitter> {
+    let client = &common.client;
+    let web3 = &common.web3;
+
+    let submission_nodes_with_url = args
+        .transaction_submission_nodes
+        .iter()
+        .enumerate()
+        .map(|(index, url)| {
+            let transport = create_instrumented_transport(
+                HttpTransport::new(client.clone(), url.clone(), index.to_string()),
+                common.metrics.clone(),
+            );
+            (web3::Web3::new(transport), url)
+        })
+        .collect::<Vec<_>>();
+    for (node, url) in &submission_nodes_with_url {
+        let node_network_id = node
+            .net()
+            .version()
+            .await
+            .with_context(|| {
+                format!(
+                    "Unable to retrieve network id on startup using the submission node at {url}"
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            node_network_id, common.network_id,
+            "network id of custom node doesn't match main node"
+        );
+    }
+    let submission_nodes = submission_nodes_with_url
+        .into_iter()
+        .map(|(node, _)| node)
+        .collect::<Vec<_>>();
+    let submitted_transactions = GlobalTxPool::default();
+    let mut transaction_strategies = vec![];
+    for strategy in &args.transaction_strategy {
+        match strategy {
+            TransactionStrategyArg::PublicMempool => {
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                }))
+            }
+            TransactionStrategyArg::Eden => {
+                transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
+                    submit_api: Box::new(
+                        EdenApi::new(
+                            client.clone(),
+                            args.eden_api_url.clone(),
+                            submitted_transactions.clone(),
+                        )
+                        .unwrap(),
+                    ),
+                    max_additional_tip: args.max_additional_eden_tip,
+                    additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Eden),
+                }))
+            }
+            TransactionStrategyArg::Flashbots => {
+                for flashbots_url in args.flashbots_api_url.clone() {
+                    transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
+                        submit_api: Box::new(
+                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
+                        ),
+                        max_additional_tip: args.max_additional_flashbot_tip,
+                        additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
+                        sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
+                    }))
+                }
+            }
+            TransactionStrategyArg::CustomNodes => {
+                assert!(
+                    !submission_nodes.is_empty(),
+                    "missing transaction submission nodes"
+                );
+                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
+                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                    max_additional_tip: 0.,
+                    additional_tip_percentage_of_max_fee: 0.,
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                }))
+            }
+            TransactionStrategyArg::DryRun => {
+                transaction_strategies.push(TransactionStrategy::DryRun)
+            }
+        }
+    }
+    let access_list_estimator = Arc::new(
+        solver::settlement_access_list::create_priority_estimator(
+            client,
+            web3,
+            args.access_list_estimators.as_slice(),
+            args.tenderly_url.clone(),
+            args.tenderly_api_key.clone(),
+            common.network_id.clone(),
+        )
+        .await
+        .expect("failed to create access list estimator"),
+    );
+    let gas_price_estimator = Arc::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            client.clone(),
+            web3,
+            args.gas_estimators.as_slice(),
+            args.blocknative_api_key.clone(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    );
+
+    Arc::new(SolutionSubmitter {
+        web3: web3.clone(),
+        contract: common.settlement_contract.clone(),
+        gas_price_estimator,
+        target_confirm_time: args.target_confirm_time,
+        max_confirm_time: args.max_submission_seconds,
+        retry_interval: args.submission_retry_interval_seconds,
+        gas_price_cap: args.gas_price_cap,
+        transaction_strategies,
+        access_list_estimator,
+    })
+}
+
 #[tokio::main]
 async fn main() {
     let args = driver::arguments::Arguments::parse();
@@ -113,6 +252,7 @@ async fn main() {
     global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
     let common = init_common_components(&args).await;
     let solvers = build_solvers(&common, &args).await;
+    let submitter = build_submitter(&common, &args).await;
 
     let drivers = solvers
         .into_iter()
@@ -120,6 +260,7 @@ async fn main() {
             let name = solver.name().to_string();
             let driver = Arc::new(Driver {
                 solver: Arc::new(CommitRevealSolver::new(solver)),
+                submitter: submitter.clone(),
             });
             (driver, name)
         })
