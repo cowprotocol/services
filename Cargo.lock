@@ -732,10 +732,14 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 3.2.5",
+ "contracts",
+ "ethcontract",
  "futures",
+ "global-metrics",
  "mockall",
  "model",
  "primitive-types",
+ "reqwest",
  "serde",
  "serde_json",
  "serde_with",
@@ -745,6 +749,7 @@ dependencies = [
  "tokio",
  "tracing",
  "warp",
+ "web3",
 ]
 
 [[package]]
