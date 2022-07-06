@@ -1,6 +1,9 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use solver::{settlement::Settlement, solver::Auction};
+use solver::{
+    settlement::Settlement,
+    solver::{Auction, Solver},
+};
 
 /// A `SolutionSummary` holds all information solvers are willing to disclose during settlement
 /// competition. It does **not** have to include the call data, yet.
@@ -19,12 +22,21 @@ pub trait CommitRevealSolving: Send + Sync {
     async fn reveal(&self, summary: SettlementSummary) -> Result<Option<Settlement>>;
 }
 
-// Wraps an HttpSolver and makes it compatible with the commit reveal protocol. Because
-// RFQ support can not be solved generically the wrapped solver will not be able to opt into
+// Wraps a legacy `Solver` implementation and makes it compatible with the commit reveal protocol.
+// Because RFQ support can not be solved generically the wrapped `Solver` will not be able to opt into
 // RFQ orders, yet. A solver would have to support RFQ themselves.
 // For now this wrapper is only a compatibility layer to let us use the new driver with existing
 // solvers for faster development.
-pub struct CommitRevealSolver {}
+pub struct CommitRevealSolver {
+    #[allow(dead_code)]
+    solver: Box<dyn Solver>,
+}
+
+impl CommitRevealSolver {
+    pub fn new(solver: Box<dyn Solver>) -> Self {
+        Self { solver }
+    }
+}
 
 #[async_trait::async_trait]
 impl CommitRevealSolving for CommitRevealSolver {

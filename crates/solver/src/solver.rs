@@ -148,7 +148,7 @@ pub enum SolverType {
     BalancerSor,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SolverAccountArg {
     PrivateKey(PrivateKey),
     Address(H160),
