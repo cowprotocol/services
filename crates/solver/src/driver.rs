@@ -20,8 +20,11 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use itertools::Itertools;
-use model::order::{Order, OrderKind};
 use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
+use model::{
+    order::{Order, OrderKind},
+    solver_competition::CompetitionAuction,
+};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
@@ -419,6 +422,16 @@ impl Driver {
             );
         }
 
+        let auction_start_block = auction.block;
+        let competition_auction = CompetitionAuction {
+            orders: auction
+                .orders
+                .iter()
+                .map(|order| order.metadata.uid)
+                .collect(),
+            prices: auction.prices.clone(),
+        };
+
         let orders = auction
             .orders
             .into_iter()
@@ -606,9 +619,11 @@ impl Driver {
         // Report solver competition data to the api.
         let mut solver_competition_response = SolverCompetitionResponse {
             gas_price: gas_price.effective_gas_price(),
+            auction_start_block,
             liquidity_collected_block: current_block_during_liquidity_fetch,
             competition_simulation_block: block_during_simulation,
             transaction_hash: None,
+            auction: competition_auction,
             solutions: rated_settlements
                 .iter()
                 .map(|(solver, rated_settlement, _)| SolverSettlement {
@@ -627,7 +642,12 @@ impl Driver {
                             * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
                         gas: rated_settlement.gas_estimate.low_u64(),
                     },
-                    prices: rated_settlement.settlement.clearing_prices().clone(),
+                    clearing_prices: rated_settlement
+                        .settlement
+                        .clearing_prices()
+                        .iter()
+                        .map(|(address, price)| (*address, *price))
+                        .collect(),
                     orders: rated_settlement
                         .settlement
                         .executed_trades()
