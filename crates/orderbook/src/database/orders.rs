@@ -674,18 +674,30 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        database::events::{Event, Invalidation, PreSignature, Settlement, Trade},
-        fee_subsidy::FeeParameters,
-        order_quoting::QuoteData,
-    };
+    use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteData};
     use chrono::{Duration, NaiveDateTime};
-    use database::byte_array::ByteArray;
+    use database::{
+        byte_array::ByteArray,
+        events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
+    };
     use num::BigUint;
     use number_conversions::u256_to_big_uint;
     use primitive_types::U256;
-    use shared::event_handling::EventIndex;
     use std::sync::atomic::{AtomicI64, Ordering};
+
+    async fn append_events(db: &Postgres, events: &[(EventIndex, Event)]) -> Result<()> {
+        let mut transaction = db.pool.begin().await?;
+        database::events::append(&mut transaction, events).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    async fn delete_events(db: &Postgres) -> Result<()> {
+        let mut transaction = db.pool.begin().await?;
+        database::events::delete(&mut transaction, 0).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
 
     #[test]
     fn order_status() {
@@ -1162,18 +1174,23 @@ mod tests {
         let sell_amount_before_fees = U256::MAX / 16;
         let fee_amount = U256::MAX / 16;
         for i in 0..16 {
-            db.append_events_(vec![(
-                EventIndex {
-                    block_number: i,
-                    log_index: 0,
-                },
-                Event::Trade(Trade {
-                    order_uid: order.metadata.uid,
-                    sell_amount_including_fee: sell_amount_before_fees + fee_amount,
-                    buy_amount: U256::MAX,
-                    fee_amount,
-                }),
-            )])
+            append_events(
+                &db,
+                &[(
+                    EventIndex {
+                        block_number: i,
+                        log_index: 0,
+                    },
+                    Event::Trade(Trade {
+                        order_uid: ByteArray(order.metadata.uid.0),
+                        sell_amount_including_fee: u256_to_big_decimal(
+                            &(sell_amount_before_fees + fee_amount),
+                        ),
+                        buy_amount: u256_to_big_decimal(&U256::MAX),
+                        fee_amount: u256_to_big_decimal(&fee_amount),
+                    }),
+                )],
+            )
             .await
             .unwrap();
         }
@@ -1226,19 +1243,19 @@ mod tests {
         };
         let pre_signature_event = |block_number: u64, signed: bool| {
             let db = db.clone();
-            let events = vec![(
+            let events = [(
                 EventIndex {
-                    block_number,
+                    block_number: block_number as i64,
                     log_index: 0,
                 },
                 Event::PreSignature(PreSignature {
-                    owner: order.metadata.owner,
-                    order_uid: order.metadata.uid,
+                    owner: ByteArray(order.metadata.owner.0),
+                    order_uid: ByteArray(order.metadata.uid.0),
                     signed,
                 }),
             )];
             async move {
-                db.append_events_(events).await.unwrap();
+                append_events(&db, &events).await.unwrap();
             }
         };
 
@@ -1268,26 +1285,32 @@ mod tests {
             db.solvable_orders(0).await.unwrap().latest_settlement_block,
             0
         );
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 1,
-                log_index: 0,
-            },
-            Event::Settlement(Settlement::default()),
-        )])
+        append_events(
+            &db,
+            &[(
+                EventIndex {
+                    block_number: 1,
+                    log_index: 0,
+                },
+                Event::Settlement(Settlement::default()),
+            )],
+        )
         .await
         .unwrap();
         assert_eq!(
             db.solvable_orders(0).await.unwrap().latest_settlement_block,
             1
         );
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 5,
-                log_index: 3,
-            },
-            Event::Settlement(Settlement::default()),
-        )])
+        append_events(
+            &db,
+            &[(
+                EventIndex {
+                    block_number: 5,
+                    log_index: 3,
+                },
+                Event::Settlement(Settlement::default()),
+            )],
+        )
         .await
         .unwrap();
         assert_eq!(
@@ -1327,52 +1350,61 @@ mod tests {
         assert!(get_order(4).await.is_none());
 
         // not solvable because fully executed
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Event::Trade(Trade {
-                order_uid: order.metadata.uid,
-                sell_amount_including_fee: 10.into(),
-                ..Default::default()
-            }),
-        )])
+        append_events(
+            &db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Event::Trade(Trade {
+                    order_uid: ByteArray(order.metadata.uid.0),
+                    sell_amount_including_fee: 10.into(),
+                    ..Default::default()
+                }),
+            )],
+        )
         .await
         .unwrap();
         assert!(get_order(0).await.is_none());
-        db.replace_events_(0, Vec::new()).await.unwrap();
+        delete_events(&db).await.unwrap();
 
         // not solvable because invalidated
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Event::Invalidation(Invalidation {
-                order_uid: order.metadata.uid,
-            }),
-        )])
+        append_events(
+            &db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Event::Invalidation(Invalidation {
+                    order_uid: ByteArray(order.metadata.uid.0),
+                }),
+            )],
+        )
         .await
         .unwrap();
         assert!(get_order(0).await.is_none());
-        db.replace_events_(0, Vec::new()).await.unwrap();
+        delete_events(&db).await.unwrap();
 
         // solvable
         assert!(get_order(3).await.is_some());
 
         // still solvable because only partially filled
-        db.append_events_(vec![(
-            EventIndex {
-                block_number: 0,
-                log_index: 0,
-            },
-            Event::Trade(Trade {
-                order_uid: order.metadata.uid,
-                sell_amount_including_fee: 5.into(),
-                ..Default::default()
-            }),
-        )])
+        append_events(
+            &db,
+            &[(
+                EventIndex {
+                    block_number: 0,
+                    log_index: 0,
+                },
+                Event::Trade(Trade {
+                    order_uid: ByteArray(order.metadata.uid.0),
+                    sell_amount_including_fee: 5.into(),
+                    ..Default::default()
+                }),
+            )],
+        )
         .await
         .unwrap();
         assert!(get_order(3).await.is_some());
@@ -1588,30 +1620,33 @@ mod tests {
         // Each order was traded in the consecutive blocks.
         for (i, order) in orders.clone().iter().enumerate() {
             db.insert_order(order, None).await.unwrap();
-            db.append_events_(vec![
-                // Add settlement
-                (
-                    EventIndex {
-                        block_number: i as u64,
-                        log_index: 0,
-                    },
-                    Event::Settlement(Settlement {
-                        solver: Default::default(),
-                        transaction_hash: H256::from_low_u64_be(i as u64),
-                    }),
-                ),
-                // Add trade
-                (
-                    EventIndex {
-                        block_number: i as u64,
-                        log_index: 1,
-                    },
-                    Event::Trade(Trade {
-                        order_uid: order.metadata.uid,
-                        ..Default::default()
-                    }),
-                ),
-            ])
+            append_events(
+                &db,
+                &[
+                    // Add settlement
+                    (
+                        EventIndex {
+                            block_number: i as i64,
+                            log_index: 0,
+                        },
+                        Event::Settlement(Settlement {
+                            solver: Default::default(),
+                            transaction_hash: ByteArray(H256::from_low_u64_be(i as u64).0),
+                        }),
+                    ),
+                    // Add trade
+                    (
+                        EventIndex {
+                            block_number: i as i64,
+                            log_index: 1,
+                        },
+                        Event::Trade(Trade {
+                            order_uid: ByteArray(order.metadata.uid.0),
+                            ..Default::default()
+                        }),
+                    ),
+                ],
+            )
             .await
             .unwrap();
         }
