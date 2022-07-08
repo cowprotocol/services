@@ -20,7 +20,7 @@ use orderbook::{
     serve_api,
     signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
-    solver_competition, verify_deployed_contract_constants,
+    verify_deployed_contract_constants,
 };
 use primitive_types::U256;
 use shared::{
@@ -521,7 +521,6 @@ async fn main() {
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
-    let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         database.clone(),
@@ -532,7 +531,7 @@ async fn main() {
         native_price_estimator.clone(),
         metrics.clone(),
         signature_validator.clone(),
-        solver_competition.clone(),
+        database.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -586,7 +585,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
-        solver_competition,
+        database.clone(),
         args.shared.solver_competition_auth,
     );
     let maintenance_task =

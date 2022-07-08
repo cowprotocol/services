@@ -12,7 +12,6 @@ use orderbook::{
     orderbook::Orderbook,
     signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
-    solver_competition,
 };
 use reqwest::Client;
 use shared::{
@@ -241,7 +240,6 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
         ));
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
-        let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
             db.clone(),
@@ -252,7 +250,7 @@ impl OrderbookServices {
             native_price_estimator,
             Arc::new(NoopMetrics),
             signature_validator.clone(),
-            solver_competition.clone(),
+            db.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -285,7 +283,7 @@ impl OrderbookServices {
             quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
-            solver_competition,
+            db.clone(),
             None,
         );
 

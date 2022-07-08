@@ -12,6 +12,7 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{Account, PrivateKey, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
+use model::solver_competition::SolverCompetitionId;
 use naive_solver::NaiveSolver;
 use num::BigRational;
 use oneinch_solver::OneInchSolver;
@@ -73,7 +74,7 @@ pub struct Auction {
     ///
     /// Note that multiple consecutive driver runs may use the same ID if the
     /// previous run was unable to find a settlement.
-    pub id: u64,
+    pub id: SolverCompetitionId,
 
     /// An ID that identifies a driver run.
     ///

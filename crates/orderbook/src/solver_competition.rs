@@ -4,7 +4,7 @@ use anyhow::Result;
 use cached::{Cached, SizedCache};
 use model::solver_competition::{SolverCompetition, SolverCompetitionId};
 use std::sync::{
-    atomic::{AtomicU64, Ordering},
+    atomic::{AtomicI64, Ordering},
     Mutex,
 };
 use thiserror::Error;
@@ -45,7 +45,7 @@ pub enum LoadSolverCompetitionError {
 const CACHE_SIZE: usize = 500;
 
 pub struct InMemoryStorage {
-    last_id: AtomicU64,
+    last_id: AtomicI64,
     cache: Mutex<SizedCache<SolverCompetitionId, SolverCompetition>>,
 }
 

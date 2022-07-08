@@ -1,12 +1,13 @@
 use crate::solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::Result;
+use model::solver_competition::SolverCompetitionId;
 use reqwest::StatusCode;
 use shared::api::{convert_json_response, IntoWarpReply};
 use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
-fn request() -> impl Filter<Extract = (u64,), Error = Rejection> + Clone {
-    warp::path!("solver_competition" / u64).and(warp::get())
+fn request() -> impl Filter<Extract = (SolverCompetitionId,), Error = Rejection> + Clone {
+    warp::path!("solver_competition" / SolverCompetitionId).and(warp::get())
 }
 
 pub fn get(
