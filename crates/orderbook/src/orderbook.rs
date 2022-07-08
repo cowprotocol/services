@@ -332,6 +332,7 @@ mod tests {
         account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
         metrics::NoopMetrics, order_validation::MockOrderValidating,
         signature_validator::MockSignatureValidating,
+        solver_competition::MockSolverCompetitionStoring,
     };
     use ethcontract::H160;
     use mockall::predicate::eq;
@@ -360,6 +361,7 @@ mod tests {
                 Arc::new(MockNativePriceEstimating::new()),
                 Arc::new(NoopMetrics),
                 Arc::new(MockSignatureValidating::new()),
+                Arc::new(MockSolverCompetitionStoring::new()),
             ),
             solvable_orders_max_update_age: Default::default(),
             order_validator: Arc::new(MockOrderValidating::new()),

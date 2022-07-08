@@ -20,7 +20,9 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use itertools::Itertools;
-use model::solver_competition::{self, Objective, SolverCompetition, SolverSettlement};
+use model::solver_competition::{
+    self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
+};
 use model::{
     order::{Order, OrderKind},
     solver_competition::CompetitionAuction,
@@ -57,7 +59,7 @@ pub struct Driver {
     market_makable_token_list: Option<TokenList>,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
-    solve_id: u64,
+    run_id: u64,
     max_settlements_per_solver: usize,
     api: OrderBookApi,
     order_converter: OrderConverter,
@@ -127,7 +129,7 @@ impl Driver {
             market_makable_token_list,
             block_stream,
             solution_submitter,
-            solve_id: 0,
+            run_id: 0,
             max_settlements_per_solver,
             api,
             order_converter,
@@ -204,7 +206,6 @@ impl Driver {
 
     async fn submit_settlement(
         &self,
-        auction_id: u64,
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt> {
@@ -226,10 +227,9 @@ impl Driver {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
-                    "Successfully submitted settlement id {} for the auction id {} with tx hash {:?}",
-                    rated_settlement.id,
-                    auction_id,
-                    receipt.transaction_hash
+                    settlement_id =% rated_settlement.id,
+                    transaction_hash =? receipt.transaction_hash,
+                    "Successfully submitted settlement",
                 );
                 traded_orders
                     .iter()
@@ -242,7 +242,7 @@ impl Driver {
                     .metric_access_list_gas_saved(receipt.transaction_hash)
                     .await
                 {
-                    tracing::debug!("access list metric not saved: {}", err);
+                    tracing::debug!(?err, "access list metric not saved");
                 }
                 Ok(receipt)
             }
@@ -250,15 +250,14 @@ impl Driver {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
                 tracing::warn!(
-                    "Failed to submit settlement id {} settlement: {:?}",
-                    rated_settlement.id,
-                    err
+                    settlement_id =% rated_settlement.id, ?err,
+                    "Failed to submit settlement",
                 );
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
                 if let Some(transaction_hash) = err.transaction_hash() {
                     if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
-                        tracing::debug!("access list metric not saved: {}", err);
+                        tracing::debug!(?err, "access list metric not saved");
                     }
                 }
                 Err(err.into_anyhow())
@@ -396,21 +395,32 @@ impl Driver {
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
-        let id = self.next_auction_id();
+        let auction = self
+            .api
+            .get_auction()
+            .await
+            .context("error retrieving current auction")?;
+
+        let id = auction.next_solver_competition;
+        let run = self.next_run_id();
+
         // extra function so that we can add span information
-        self.single_run_(id)
-            .instrument(tracing::info_span!("auction", id))
+        self.single_auction(auction, run)
+            .instrument(tracing::info_span!("auction", id, run))
             .await
     }
 
-    async fn single_run_(&mut self, auction_id: u64) -> Result<()> {
+    async fn single_auction(
+        &mut self,
+        mut auction: model::auction::Auction,
+        run_id: u64,
+    ) -> Result<()> {
         let start = Instant::now();
         tracing::debug!("starting single run");
 
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
-        let mut auction = self.api.get_auction().await.context("get_auction")?;
         let before_count = auction.orders.len();
         self.in_flight_orders.update_and_filter(&mut auction);
         if before_count != auction.orders.len() {
@@ -447,12 +457,12 @@ impl Driver {
                 },
             )
             .collect::<Vec<_>>();
-        tracing::info!("got {} orders: {:?}", orders.len(), orders);
+        tracing::info!(?orders, "got {} orders", orders.len());
 
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
                 .context("malformed acution prices")?;
-        tracing::debug!("estimated prices: {:?}", external_prices);
+        tracing::debug!(?external_prices, "estimated prices");
 
         let liquidity = self
             .liquidity_collector
@@ -475,8 +485,10 @@ impl Driver {
 
         let mut solver_settlements = Vec::new();
 
+        let next_solver_competition = auction.next_solver_competition;
         let auction = Auction {
-            id: auction_id,
+            id: auction.next_solver_competition,
+            run: run_id,
             orders: orders.clone(),
             liquidity,
             gas_price: gas_price.effective_gas_price(),
@@ -484,7 +496,7 @@ impl Driver {
             external_prices: external_prices.clone(),
         };
 
-        tracing::debug!("solving auction id {}", auction.id);
+        tracing::debug!(deadline =? auction.deadline, "solving auction");
         let run_solver_results = self.run_solvers(auction).await;
         for (solver, settlements) in run_solver_results {
             let name = solver.name();
@@ -492,10 +504,7 @@ impl Driver {
             let mut settlements = match settlements {
                 Ok(mut settlement) => {
                     for settlement in &settlement {
-                        tracing::debug!(
-                            %auction_id, solver_name = %name, ?settlement,
-                            "found solution",
-                        );
+                        tracing::debug!(solver_name = %name, ?settlement, "found solution");
                     }
 
                     // Do not continue with settlements that are empty or only liquidity orders.
@@ -514,7 +523,6 @@ impl Driver {
                         let settlement_count = settlement.len();
                         settlement.retain(|settlement| {
                             settlement.satisfies_price_checks(
-                                auction_id,
                                 solver.name(),
                                 &external_prices,
                                 max_settlement_price_deviation,
@@ -581,7 +589,7 @@ impl Driver {
         // going to be simulated and considered for competition.
         for (solver, settlement) in &solver_settlements {
             tracing::debug!(
-                %auction_id, solver_name = %solver.name(), ?settlement,
+                solver_name = %solver.name(), ?settlement,
                 "considering solution for solver competition",
             );
         }
@@ -600,10 +608,9 @@ impl Driver {
             .unwrap_or_default()
             .as_u64();
         tracing::info!(
-            "{} settlements passed simulation and {} failed for auction id {}",
+            "{} settlements passed simulation and {} failed",
             rated_settlements.len(),
             errors.len(),
-            auction_id
         );
         for (solver, _, _) in &rated_settlements {
             self.metrics.settlement_simulation_succeeded(solver.name());
@@ -702,11 +709,7 @@ impl Driver {
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
             if let Ok(receipt) = self
-                .submit_settlement(
-                    auction_id,
-                    winning_solver.clone(),
-                    winning_settlement.clone(),
-                )
+                .submit_settlement(winning_solver.clone(), winning_settlement.clone())
                 .await
             {
                 let block = match receipt.block_number {
@@ -740,22 +743,33 @@ impl Driver {
                     .map(|(solver, settlement, _)| (solver, settlement))
                     .collect(),
             );
-            self.send_solver_competition(solver_competition).await;
+            self.send_solver_competition(next_solver_competition, solver_competition)
+                .await;
         }
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
         Ok(())
     }
 
-    fn next_auction_id(&mut self) -> u64 {
-        let id = self.solve_id;
-        self.solve_id += 1;
+    fn next_run_id(&mut self) -> u64 {
+        let id = self.run_id;
+        self.run_id += 1;
         id
     }
 
-    async fn send_solver_competition(&self, body: SolverCompetition) {
+    async fn send_solver_competition(
+        &self,
+        expected_id: SolverCompetitionId,
+        body: SolverCompetition,
+    ) {
         match self.api.send_solver_competition(&body).await {
-            Ok(id) => tracing::info!(?id, "stored solver competition"),
+            Ok(id) if id == expected_id => tracing::info!("stored solver competition"),
+            Ok(actual_id) => {
+                tracing::warn!(
+                    %expected_id, %actual_id,
+                    "stored solver competition with unexpected ID",
+                );
+            }
             Err(err) => tracing::warn!(?err, "failed to send solver competition"),
         }
     }

@@ -521,6 +521,7 @@ async fn main() {
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
+    let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
     let solvable_orders_cache = SolvableOrdersCache::new(
         args.min_order_validity_period,
         database.clone(),
@@ -531,6 +532,7 @@ async fn main() {
         native_price_estimator.clone(),
         metrics.clone(),
         signature_validator.clone(),
+        solver_competition.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -576,7 +578,6 @@ async fn main() {
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),

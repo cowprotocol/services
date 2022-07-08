@@ -13,11 +13,21 @@ use thiserror::Error;
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SolverCompetitionStoring: Send + Sync {
+    /// Saves a new solver competition entry and returns its ID.
     async fn save(&self, model: SolverCompetition) -> Result<SolverCompetitionId>;
+
+    /// Retrieves a solver competition entry by ID.
+    ///
+    /// Returns a `NotFound` error if no solver competition with that ID could
+    /// be found.
     async fn load(
         &self,
         id: SolverCompetitionId,
     ) -> Result<SolverCompetition, LoadSolverCompetitionError>;
+
+    /// Retrieves the ID that will be assigned to the next solver competition
+    /// entry to get saved.
+    async fn next_solver_competition(&self) -> Result<SolverCompetitionId>;
 }
 
 /// Possible errors when loading a solver competition by ID.
@@ -66,5 +76,9 @@ impl SolverCompetitionStoring for InMemoryStorage {
             .cache_get(&id)
             .cloned()
             .ok_or(LoadSolverCompetitionError::NotFound(id))
+    }
+
+    async fn next_solver_competition(&self) -> Result<SolverCompetitionId> {
+        Ok(self.last_id.load(Ordering::SeqCst))
     }
 }
