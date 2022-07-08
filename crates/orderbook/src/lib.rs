@@ -20,7 +20,7 @@ use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use futures::Future;
 use model::DomainSeparator;
-use solver_competition::SolverCompetition;
+use solver_competition::SolverCompetitionStoring;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};
 use warp::Filter;
@@ -31,7 +31,7 @@ pub fn serve_api(
     quotes: Arc<QuoteHandler>,
     address: SocketAddr,
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
-    solver_competition: Arc<SolverCompetition>,
+    solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(

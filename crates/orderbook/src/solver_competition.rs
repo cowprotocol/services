@@ -1,34 +1,70 @@
 //! Manage solver competition data received by the driver through a private spi.
 
+use anyhow::Result;
 use cached::{Cached, SizedCache};
-use model::solver_competition::SolverCompetitionResponse;
-use std::sync::Mutex;
+use model::solver_competition::{SolverCompetition, SolverCompetitionId};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Mutex,
+};
+use thiserror::Error;
 
-type AuctionId = u64;
+/// Component used for saving and loading past solver competitions.
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait SolverCompetitionStoring: Send + Sync {
+    async fn save(&self, model: SolverCompetition) -> Result<SolverCompetitionId>;
+    async fn load(
+        &self,
+        id: SolverCompetitionId,
+    ) -> Result<SolverCompetition, LoadSolverCompetitionError>;
+}
+
+/// Possible errors when loading a solver competition by ID.
+#[derive(Debug, Error)]
+pub enum LoadSolverCompetitionError {
+    #[error("solver competition {0} not found")]
+    NotFound(SolverCompetitionId),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
 
 // The size controls
 // - how long we store competition info depending on how often the driver run loop completes
 // - how much memory the cache takes up depending on how big the average response is
 const CACHE_SIZE: usize = 500;
 
-pub struct SolverCompetition {
-    cache: Mutex<SizedCache<AuctionId, SolverCompetitionResponse>>,
+pub struct InMemoryStorage {
+    last_id: AtomicU64,
+    cache: Mutex<SizedCache<SolverCompetitionId, SolverCompetition>>,
 }
 
-impl Default for SolverCompetition {
+impl Default for InMemoryStorage {
     fn default() -> Self {
         Self {
+            last_id: Default::default(),
             cache: Mutex::new(SizedCache::with_size(CACHE_SIZE)),
         }
     }
 }
 
-impl SolverCompetition {
-    pub fn get(&self, auction_id: AuctionId) -> Option<SolverCompetitionResponse> {
-        self.cache.lock().unwrap().cache_get(&auction_id).cloned()
+#[async_trait::async_trait]
+impl SolverCompetitionStoring for InMemoryStorage {
+    async fn save(&self, model: SolverCompetition) -> Result<SolverCompetitionId> {
+        let id = self.last_id.fetch_add(1, Ordering::SeqCst);
+        self.cache.lock().unwrap().cache_set(id, model);
+        Ok(id)
     }
 
-    pub fn set(&self, auction_id: AuctionId, model: SolverCompetitionResponse) {
-        self.cache.lock().unwrap().cache_set(auction_id, model);
+    async fn load(
+        &self,
+        id: SolverCompetitionId,
+    ) -> Result<SolverCompetition, LoadSolverCompetitionError> {
+        self.cache
+            .lock()
+            .unwrap()
+            .cache_get(&id)
+            .cloned()
+            .ok_or(LoadSolverCompetitionError::NotFound(id))
     }
 }
