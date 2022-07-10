@@ -507,6 +507,8 @@ async fn main() {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             storage,
+            args.eip1271_quote_validity_seconds,
+            args.presign_quote_validity_seconds,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
