@@ -44,11 +44,11 @@ pub struct Arguments {
     )]
     pub max_order_validity_period: Duration,
 
-    /// The time period an EIP1271-quote requests is valid.
+    /// The time period an EIP1271-quote request is valid.
     #[clap(long, env, default_value = "600")]
     pub eip1271_quote_validity_seconds: i64,
 
-    /// The time period an PRESIGN-quote requests is valid.
+    /// The time period an PRESIGN-quote request is valid.
     #[clap(long, env, default_value = "86400")]
     pub presign_quote_validity_seconds: i64,
 
