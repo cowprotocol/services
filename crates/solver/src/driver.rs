@@ -20,7 +20,7 @@ use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
 use itertools::Itertools;
-use model::solver_competition::{self, Objective, SolverCompetitionResponse, SolverSettlement};
+use model::solver_competition::{self, Objective, SolverCompetition, SolverSettlement};
 use model::{
     order::{Order, OrderKind},
     solver_competition::CompetitionAuction,
@@ -617,7 +617,7 @@ impl Driver {
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
-        let mut solver_competition_response = SolverCompetitionResponse {
+        let mut solver_competition = SolverCompetition {
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
             liquidity_collected_block: current_block_during_liquidity_fetch,
@@ -662,13 +662,6 @@ impl Driver {
                 })
                 .collect(),
         };
-        // Don't bother sending if there were no solutions so we don't take up space in the
-        // competition info cache in the orderbook.
-        if !solver_competition_response.solutions.is_empty() {
-            // This will happen again after transaction submission with the tx hash.
-            self.send_solver_competition(auction_id, &solver_competition_response)
-                .await;
-        }
 
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {
@@ -736,12 +729,10 @@ impl Driver {
                     }
                 }
 
-                solver_competition_response.transaction_hash = Some(receipt.transaction_hash);
-                self.send_solver_competition(auction_id, &solver_competition_response)
-                    .await;
+                solver_competition.transaction_hash = Some(receipt.transaction_hash);
             }
-            self.metrics.transaction_submission(start.elapsed());
 
+            self.metrics.transaction_submission(start.elapsed());
             self.report_on_batch(
                 &(winning_solver, winning_settlement),
                 rated_settlements
@@ -749,6 +740,7 @@ impl Driver {
                     .map(|(solver, settlement, _)| (solver, settlement))
                     .collect(),
             );
+            self.send_solver_competition(solver_competition).await;
         }
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
@@ -761,9 +753,10 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(&self, auction_id: u64, body: &SolverCompetitionResponse) {
-        if let Err(err) = self.api.send_solver_competition(auction_id, body).await {
-            tracing::warn!(?err, "failed to send solver competition");
+    async fn send_solver_competition(&self, body: SolverCompetition) {
+        match self.api.send_solver_competition(&body).await {
+            Ok(id) => tracing::info!(?id, "stored solver competition"),
+            Err(err) => tracing::warn!(?err, "failed to send solver competition"),
         }
     }
 }

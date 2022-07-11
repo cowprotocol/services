@@ -20,8 +20,7 @@ use orderbook::{
     serve_api,
     signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
-    solver_competition::SolverCompetition,
-    verify_deployed_contract_constants,
+    solver_competition, verify_deployed_contract_constants,
 };
 use primitive_types::U256;
 use shared::{
@@ -577,7 +576,7 @@ async fn main() {
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let solver_competition = Arc::new(SolverCompetition::default());
+    let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),

@@ -12,6 +12,7 @@ use orderbook::{
     orderbook::Orderbook,
     signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
+    solver_competition,
 };
 use reqwest::Client;
 use shared::{
@@ -282,7 +283,7 @@ impl OrderbookServices {
             quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
-            Default::default(),
+            Arc::new(solver_competition::InMemoryStorage::default()),
             None,
         );
 
