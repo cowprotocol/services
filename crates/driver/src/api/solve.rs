@@ -1,28 +1,43 @@
+use crate::driver::Driver;
 use anyhow::Result;
+use model::auction::Auction;
 use shared::api::{convert_json_response, error, extract_payload, ApiReply, IntoWarpReply};
-use std::convert::Infallible;
+use std::{convert::Infallible, sync::Arc};
+use tracing::Instrument;
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
 
-fn post_solve_request() -> impl Filter<Extract = (String,), Error = Rejection> + Clone {
-    warp::path!("solve")
+fn post_solve_request(
+    prefix: &'static str,
+) -> impl Filter<Extract = (Auction,), Error = Rejection> + Clone {
+    warp::path(prefix)
+        .and(warp::path("solve"))
         .and(warp::post())
         .and(extract_payload())
 }
 
-pub fn post_solve() -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
-    post_solve_request().and_then(move |request| async move {
-        let result: Result<(), _> = Err(SolveError::NotImplemented);
-        if let Err(err) = &result {
-            tracing::warn!(?err, ?request, "post_solve error");
+pub fn post_solve(
+    prefix: &'static str,
+    driver: Arc<Driver>,
+) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
+    post_solve_request(prefix).and_then(move |auction: Auction| {
+        let driver = driver.clone();
+        async move {
+            let result = driver.on_auction_started(auction.clone()).await;
+            if let Err(err) = &result {
+                tracing::warn!(?err, ?auction, "post_solve error");
+            }
+            Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        Result::<_, Infallible>::Ok(convert_json_response(result))
+        .instrument(tracing::info_span!("solver", name = prefix))
     })
 }
 
 #[derive(thiserror::Error, Debug)]
-enum SolveError {
+pub enum SolveError {
     #[error("not implemented")]
     NotImplemented,
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
 }
 
 impl IntoWarpReply for SolveError {
@@ -32,6 +47,7 @@ impl IntoWarpReply for SolveError {
                 error("Route not yet implemented", "try again later"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
+            Self::Other(err) => err.into_warp_reply(),
         }
     }
 }

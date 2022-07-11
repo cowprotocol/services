@@ -55,8 +55,7 @@ jobs:
       - uses: cowprotocol/autodeploy-action@v1
         if: ${{ github.ref == 'refs/heads/main' }}
         with:
-          # Todo: add Görli pods to autodeploy once ready
-          pods: dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet
+          pods: dfusion-v2-api-rinkeby,dfusion-v2-solver-rinkeby,dfusion-v2-api-goerli,dfusion-v2-solver-goerli,dfusion-v2-api-mainnet,dfusion-v2-solver-mainnet,dfusion-v2-api-xdai,dfusion-v2-solver-xdai,dfusion-v2-solver-shadow,dfusion-v2-alerter-mainnet
           tag: ${{ secrets.AUTODEPLOY_TAG }}
           url: ${{ secrets.AUTODEPLOY_URL }}
           token: ${{ secrets.AUTODEPLOY_TOKEN }}

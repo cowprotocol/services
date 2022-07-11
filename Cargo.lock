@@ -730,13 +730,26 @@ name = "driver"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap 3.2.5",
+ "contracts",
+ "ethcontract",
  "futures",
+ "global-metrics",
+ "mockall",
+ "model",
+ "primitive-types",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_with",
  "shared",
+ "solver",
  "thiserror",
  "tokio",
  "tracing",
  "warp",
+ "web3",
 ]
 
 [[package]]
