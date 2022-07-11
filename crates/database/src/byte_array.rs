@@ -6,7 +6,14 @@ use sqlx::{
 };
 
 /// Wrapper type for fixed size byte arrays compatible with sqlx's Postgres implementation.
+#[derive(Clone, Copy, Debug)]
 pub struct ByteArray<const N: usize>(pub [u8; N]);
+
+impl<const N: usize> Default for ByteArray<N> {
+    fn default() -> Self {
+        Self([0; N])
+    }
+}
 
 impl<const N: usize> Type<Postgres> for ByteArray<N> {
     fn type_info() -> PgTypeInfo {

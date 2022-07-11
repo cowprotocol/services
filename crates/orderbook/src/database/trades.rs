@@ -118,16 +118,24 @@ impl TradesQueryRow {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::database::{
-        events::{Event, Settlement as DbSettlement, Trade as DbTrade},
-        orders::OrderStoring,
+    use crate::database::orders::OrderStoring;
+    use database::{
+        byte_array::ByteArray,
+        events::{Event, EventIndex, Settlement as DbSettlement, Trade as DbTrade},
+        Address, TransactionHash,
     };
     use ethcontract::H256;
     use model::{
         order::{Order, OrderData, OrderMetadata},
         trade::Trade,
     };
-    use shared::event_handling::EventIndex;
+
+    async fn append_events(db: &Postgres, events: &[(EventIndex, Event)]) -> Result<()> {
+        let mut transaction = db.pool.begin().await?;
+        database::events::append(&mut transaction, events).await?;
+        transaction.commit().await?;
+        Ok(())
+    }
 
     async fn generate_owners_and_order_ids(
         num_owners: usize,
@@ -148,20 +156,23 @@ mod tests {
         tx_hash: Option<H256>,
     ) -> Trade {
         let trade = Trade {
-            block_number: event_index.block_number,
-            log_index: event_index.log_index,
+            block_number: event_index.block_number as u64,
+            log_index: event_index.log_index as u64,
             tx_hash,
             order_uid,
             owner,
             ..Default::default()
         };
-        db.append_events_(vec![(
-            event_index,
-            Event::Trade(DbTrade {
-                order_uid,
-                ..Default::default()
-            }),
-        )])
+        append_events(
+            db,
+            &[(
+                event_index,
+                Event::Trade(DbTrade {
+                    order_uid: ByteArray(order_uid.0),
+                    ..Default::default()
+                }),
+            )],
+        )
         .await
         .unwrap();
         trade
@@ -363,16 +374,19 @@ mod tests {
     async fn add_settlement(
         db: &Postgres,
         event_index: EventIndex,
-        solver: H160,
-        transaction_hash: H256,
+        solver: Address,
+        transaction_hash: TransactionHash,
     ) -> DbSettlement {
-        db.append_events_(vec![(
-            event_index,
-            Event::Settlement(DbSettlement {
-                solver,
-                transaction_hash,
-            }),
-        )])
+        append_events(
+            db,
+            &[(
+                event_index,
+                Event::Settlement(DbSettlement {
+                    solver,
+                    transaction_hash,
+                }),
+            )],
+        )
         .await
         .unwrap();
         DbSettlement {
@@ -395,8 +409,8 @@ mod tests {
                 block_number: 0,
                 log_index: 4,
             },
-            H160::default(),
-            H256::from_low_u64_be(1),
+            Default::default(),
+            Default::default(),
         )
         .await;
 
@@ -408,7 +422,7 @@ mod tests {
                 block_number: 0,
                 log_index: 0,
             },
-            Some(settlement.transaction_hash),
+            Some(H256(settlement.transaction_hash.0)),
         )
         .await;
         assert_trades(&db, &TradeFilter::default(), &[trade_a.clone()]).await;
@@ -421,7 +435,7 @@ mod tests {
                 block_number: 0,
                 log_index: 1,
             },
-            Some(settlement.transaction_hash),
+            Some(H256(settlement.transaction_hash.0)),
         )
         .await;
         assert_trades(&db, &TradeFilter::default(), &[trade_a, trade_b]).await;
@@ -441,8 +455,8 @@ mod tests {
                 block_number: 0,
                 log_index: 4,
             },
-            H160::default(),
-            H256::from_low_u64_be(1),
+            Default::default(),
+            Default::default(),
         )
         .await;
 
@@ -454,7 +468,7 @@ mod tests {
                 block_number: 0,
                 log_index: 0,
             },
-            Some(settlement.transaction_hash),
+            Some(H256(settlement.transaction_hash.0)),
         )
         .await;
 
@@ -466,7 +480,7 @@ mod tests {
                 block_number: 0,
                 log_index: 1,
             },
-            Some(settlement.transaction_hash),
+            Some(H256(settlement.transaction_hash.0)),
         )
         .await;
         // Trades query returns nothing when there are no corresponding orders.
@@ -487,8 +501,8 @@ mod tests {
                 block_number: 0,
                 log_index: 1,
             },
-            H160::default(),
-            H256::from_low_u64_be(1),
+            Default::default(),
+            Default::default(),
         )
         .await;
         let settlement_b = add_settlement(
@@ -497,8 +511,8 @@ mod tests {
                 block_number: 0,
                 log_index: 3,
             },
-            H160::default(),
-            H256::from_low_u64_be(2),
+            Default::default(),
+            ByteArray(H256::from_low_u64_be(2).0),
         )
         .await;
 
@@ -510,7 +524,7 @@ mod tests {
                 block_number: 0,
                 log_index: 0,
             },
-            Some(settlement_a.transaction_hash),
+            Some(H256(settlement_a.transaction_hash.0)),
         )
         .await;
         assert_trades(&db, &TradeFilter::default(), &[trade_a.clone()]).await;
@@ -523,7 +537,7 @@ mod tests {
                 block_number: 0,
                 log_index: 2,
             },
-            Some(settlement_b.transaction_hash),
+            Some(H256(settlement_b.transaction_hash.0)),
         )
         .await;
         assert_trades(&db, &TradeFilter::default(), &[trade_a, trade_b]).await;
