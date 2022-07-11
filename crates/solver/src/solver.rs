@@ -69,7 +69,7 @@ pub trait Solver: Send + Sync + 'static {
 /// A batch auction for a solver to produce a settlement for.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    /// An ID that identifies the unique solver competition that is exectuting.
+    /// An ID that identifies the unique solver competition that is executing.
     ///
     /// Note that multiple consecutive driver runs may use the same ID if the
     /// previous run was unable to find a settlement.
