@@ -62,8 +62,10 @@ mod tests {
             .method("POST")
             .header("authorization", "password")
             .body(body.clone());
-        let response = request.filter(&filter).await.unwrap().into_response();
+        let response = request.reply(&filter).await;
         assert_eq!(response.status(), StatusCode::CREATED);
+        let response: u64 = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(response, 1);
     }
 
     #[tokio::test]
@@ -87,7 +89,9 @@ mod tests {
             .method("POST")
             .header("authorization", "auth")
             .body(body);
-        let response = request_.filter(&filter).await.unwrap().into_response();
+        let response = request_.reply(&filter).await;
         assert_eq!(response.status(), StatusCode::CREATED);
+        let response: u64 = serde_json::from_slice(response.body()).unwrap();
+        assert_eq!(response, 1);
     }
 }
