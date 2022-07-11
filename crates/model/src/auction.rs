@@ -1,6 +1,6 @@
 //! Module defining a batch auction.
 
-use crate::{order::Order, u256_decimal::DecimalU256};
+use crate::{order::Order, solver_competition::SolverCompetitionId, u256_decimal::DecimalU256};
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -21,6 +21,13 @@ pub struct Auction {
     /// Note that under certain conditions it is possible for a settlement to
     /// have been mined as part of [`block`] but not have yet been processed.
     pub latest_settlement_block: u64,
+
+    /// The ID of the next solver competition to be recorded.
+    ///
+    /// This gives an indication as to what the ID will be if solver competition
+    /// were to happen and be recorded in the database.
+    #[serde(default)]
+    pub next_solver_competition: SolverCompetitionId,
 
     /// The solvable orders included in the auction.
     pub orders: Vec<Order>,
@@ -49,6 +56,7 @@ mod tests {
         let auction = Auction {
             block: 42,
             latest_settlement_block: 40,
+            next_solver_competition: 1337,
             orders: vec![order(1), order(2)],
             prices: btreemap! {
                 H160([2; 20]) => U256::from(2),
@@ -61,6 +69,7 @@ mod tests {
             json!({
                 "block": 42,
                 "latestSettlementBlock": 40,
+                "nextSolverCompetition": 1337,
                 "orders": [
                     order(1),
                     order(2),

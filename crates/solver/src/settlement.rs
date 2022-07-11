@@ -330,7 +330,6 @@ impl Settlement {
     // Checks whether the settlement prices do not deviate more than max_settlement_price_deviation from the auction prices on certain pairs.
     pub fn satisfies_price_checks(
         &self,
-        auction_id: u64,
         solver_name: &str,
         external_prices: &ExternalPrices,
         max_settlement_price_deviation: &Ratio<BigInt>,
@@ -387,11 +386,9 @@ impl Settlement {
                     .mul(&external_price_buy_token.mul(&clearing_price_sell_token)));
                 if !price_check_result {
                     tracing::debug!(
-                        "For auction id {:?} there is a price violation on the token-pair {:?} from solver {:?} for the settlement: {:?}",
-                        auction_id,
-                        format!("{}-{}", sell_token, buy_token),
-                        solver_name,
-                        self
+                        token_pair =% format!("{}-{}", sell_token, buy_token),
+                        %solver_name, settlement =? self,
+                        "price violation",
                     );
                 }
                 price_check_result
@@ -586,7 +583,6 @@ pub mod tests {
         ).unwrap();
         // Tolerance exceed on token2
         assert!(!settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -594,7 +590,6 @@ pub mod tests {
         ));
         // No tolerance exceeded on token0 and token1
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -602,7 +597,6 @@ pub mod tests {
         ));
         // Tolerance exceeded on token2
         assert!(!settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -615,7 +609,6 @@ pub mod tests {
         ).unwrap();
         // No tolerance exceeded
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -629,7 +622,6 @@ pub mod tests {
         .unwrap();
         // If only 1 token should be checked: trivially satisfies equation
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -643,7 +635,6 @@ pub mod tests {
         .unwrap();
         // Can deal with missing token1, tolerance exceeded on token1
         assert!(!settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -657,7 +648,6 @@ pub mod tests {
         .unwrap();
         // Can deal with missing token1, tolerance not exceeded
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -671,7 +661,6 @@ pub mod tests {
         .unwrap();
         // Token3 from external price is not in settlement, hence, it should accept any price
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,
@@ -679,7 +668,6 @@ pub mod tests {
         ));
         // If no tokens are in the check_list settlements always satisfy the check
         assert!(settlement.satisfies_price_checks(
-            0u64,
             "test_solver",
             &external_prices,
             &max_price_deviation,

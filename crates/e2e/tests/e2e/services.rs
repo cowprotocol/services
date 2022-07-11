@@ -241,6 +241,7 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
         ));
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+        let solver_competition = Arc::new(solver_competition::InMemoryStorage::default());
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
             db.clone(),
@@ -251,6 +252,7 @@ impl OrderbookServices {
             native_price_estimator,
             Arc::new(NoopMetrics),
             signature_validator.clone(),
+            solver_competition.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -283,7 +285,7 @@ impl OrderbookServices {
             quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
-            Arc::new(solver_competition::InMemoryStorage::default()),
+            solver_competition,
             None,
         );
 

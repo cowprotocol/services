@@ -41,9 +41,9 @@ pub fn is_transaction_failure(error: &ExecutionError) -> bool {
 
 // TODO: special rounding for the prices we get from the solver?
 
-/// Data shared between multiple instances of the http solver for the same solve id.
+/// Data shared between multiple instances of the http solver for the same driver run.
 pub struct InstanceData {
-    solve_id: u64,
+    run_id: u64,
     model: BatchAuctionModel,
     context: SettlementContext,
 }
@@ -87,6 +87,7 @@ impl HttpSolver {
     async fn prepare_model(
         &self,
         auction_id: u64,
+        run_id: u64,
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
         gas_price: f64,
@@ -151,6 +152,7 @@ impl HttpSolver {
             metadata: Some(MetadataModel {
                 environment: Some(self.solver.network_name.clone()),
                 auction_id: Some(auction_id),
+                run_id: Some(run_id),
                 gas_price: Some(gas_price),
                 native_token: Some(self.native_token),
             }),
@@ -376,6 +378,7 @@ impl Solver for HttpSolver {
         &self,
         Auction {
             id,
+            run,
             mut orders,
             liquidity,
             gas_price,
@@ -394,17 +397,17 @@ impl Solver for HttpSolver {
         let (model, context) = {
             let mut guard = self.instance_cache.lock().await;
             match guard.as_mut() {
-                Some(data) if data.solve_id == id => (data.model.clone(), data.context.clone()),
+                Some(data) if data.run_id == run => (data.model.clone(), data.context.clone()),
                 _ => {
                     let (model, context) = self
-                        .prepare_model(id, orders, liquidity, gas_price, external_prices)
+                        .prepare_model(id, run, orders, liquidity, gas_price, external_prices)
                         .await?;
                     tracing::debug!(
                         "Problem sent to http solvers (json):\n{}",
                         serde_json::to_string_pretty(&model).unwrap()
                     );
                     *guard = Some(InstanceData {
-                        solve_id: id,
+                        run_id: run,
                         model: model.clone(),
                         context: context.clone(),
                     });
@@ -545,7 +548,14 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         })];
         let (model, _context) = solver
-            .prepare_model(0u64, limit_orders, liquidity, gas_price, Default::default())
+            .prepare_model(
+                0u64,
+                1u64,
+                limit_orders,
+                liquidity,
+                gas_price,
+                Default::default(),
+            )
             .await
             .unwrap();
         let settled = solver
