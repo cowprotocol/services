@@ -1,9 +1,10 @@
+use crate::http_client::response_body_with_size_limit;
+use ::model::solver_competition::SolverCompetitionId;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, Url};
 use std::time::Duration;
 
-use crate::http_client::response_body_with_size_limit;
 pub mod gas_model;
 pub mod model;
 
@@ -102,7 +103,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
         let mut url = self.base.join("solve")?;
 
         let maybe_auction_id = model.metadata.as_ref().and_then(|data| data.auction_id);
-        let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0u64));
+        let instance_name = self.generate_instance_name(maybe_auction_id.unwrap_or(0));
         tracing::debug!("http solver instance name is {}", instance_name);
 
         url.query_pairs_mut()
@@ -181,7 +182,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 }
 
 impl DefaultHttpSolverApi {
-    fn generate_instance_name(&self, auction_id: u64) -> String {
+    fn generate_instance_name(&self, auction_id: SolverCompetitionId) -> String {
         let now = chrono::Utc::now();
         format!(
             "{}_{}_{}_{}",

@@ -13,7 +13,7 @@ use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
-use model::order::OrderKind;
+use model::{order::OrderKind, solver_competition::SolverCompetitionId};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
@@ -86,7 +86,7 @@ impl HttpSolver {
 
     async fn prepare_model(
         &self,
-        auction_id: u64,
+        auction_id: SolverCompetitionId,
         run_id: u64,
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
@@ -548,14 +548,7 @@ mod tests {
             settlement_handling: CapturingSettlementHandler::arc(),
         })];
         let (model, _context) = solver
-            .prepare_model(
-                0u64,
-                1u64,
-                limit_orders,
-                liquidity,
-                gas_price,
-                Default::default(),
-            )
+            .prepare_model(0, 1, limit_orders, liquidity, gas_price, Default::default())
             .await
             .unwrap();
         let settled = solver

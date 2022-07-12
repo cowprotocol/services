@@ -22,7 +22,7 @@ use sqlx::{Executor, PgPool};
 
 pub type PgTransaction<'a> = sqlx::Transaction<'a, sqlx::Postgres>;
 
-// The names of all tables we use in the db.
+/// The names of all tables we use in the db.
 pub const ALL_TABLES: &[&str] = &[
     "orders",
     "trades",
@@ -31,13 +31,14 @@ pub const ALL_TABLES: &[&str] = &[
     "settlements",
     "presignature_events",
     "order_quotes",
+    "solver_competitions",
 ];
 
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in ALL_TABLES {
-        ex.execute(format!("TRUNCATE {};", table).as_str()).await?;
+        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
 }

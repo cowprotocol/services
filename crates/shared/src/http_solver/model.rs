@@ -2,6 +2,7 @@ use derivative::Derivative;
 use ethcontract::H160;
 use model::{
     ratio_as_decimal,
+    solver_competition::SolverCompetitionId,
     u256_decimal::{self, DecimalU256},
 };
 use num::BigRational;
@@ -205,7 +206,7 @@ impl SettledBatchAuctionModel {
 #[derive(Clone, Debug, Serialize, Default)]
 pub struct MetadataModel {
     pub environment: Option<String>,
-    pub auction_id: Option<u64>,
+    pub auction_id: Option<SolverCompetitionId>,
     pub run_id: Option<u64>,
     pub gas_price: Option<f64>,
     pub native_token: Option<H160>,
