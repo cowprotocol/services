@@ -34,18 +34,11 @@ pub const ALL_TABLES: &[&str] = &[
     "solver_competitions",
 ];
 
-/// The names of all the sequences in the db.
-pub const ALL_SEQUENCES: &[&str] = &["quotes_id_seq", "solver_competitions_id_seq"];
-
 /// Delete all data in the database. Only used by tests.
 #[allow(non_snake_case)]
 pub async fn clear_DANGER_(ex: &mut PgTransaction<'_>) -> sqlx::Result<()> {
     for table in ALL_TABLES {
-        ex.execute(&*format!("TRUNCATE {table};")).await?;
-    }
-    for sequence in ALL_SEQUENCES {
-        ex.execute(&*format!("SELECT setval('{sequence}', 1, false);"))
-            .await?;
+        ex.execute(format!("TRUNCATE {table};").as_str()).await?;
     }
     Ok(())
 }

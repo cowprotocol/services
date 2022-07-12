@@ -116,12 +116,13 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let next_id = db.next_solver_competition().await.unwrap();
-        assert_eq!(next_id, 1);
+        // still the same
+        assert_eq!(db.next_solver_competition().await.unwrap(), next_id);
 
         let id = db.save(Default::default()).await.unwrap();
-        assert_eq!(id, 1);
+        assert_eq!(id, next_id);
 
-        let next_id = db.next_solver_competition().await.unwrap();
-        assert_eq!(next_id, 2);
+        let next_id_ = db.next_solver_competition().await.unwrap();
+        assert_eq!(next_id_, next_id + 1);
     }
 }
