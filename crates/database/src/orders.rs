@@ -132,22 +132,22 @@ INSERT INTO orders (
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
     "#;
     sqlx::query(QUERY)
-        .bind(order.uid)
-        .bind(order.owner)
+        .bind(&order.uid)
+        .bind(&order.owner)
         .bind(order.creation_timestamp)
-        .bind(order.sell_token)
-        .bind(order.buy_token)
-        .bind(order.receiver)
+        .bind(&order.sell_token)
+        .bind(&order.buy_token)
+        .bind(&order.receiver)
         .bind(&order.sell_amount)
         .bind(&order.buy_amount)
         .bind(order.valid_to)
-        .bind(order.app_data)
+        .bind(&order.app_data)
         .bind(&order.fee_amount)
         .bind(&order.kind)
         .bind(order.partially_fillable)
         .bind(order.signature.as_slice())
         .bind(order.signing_scheme)
-        .bind(order.settlement_contract)
+        .bind(&order.settlement_contract)
         .bind(order.sell_token_balance)
         .bind(order.buy_token_balance)
         .bind(&order.full_fee_amount)
@@ -166,10 +166,45 @@ pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
     false
 }
 
+/// One row in the `order_quotes` table.
+#[derive(Clone, Default, Debug, PartialEq, sqlx::FromRow)]
+pub struct Quote {
+    pub order_uid: OrderUid,
+    pub gas_amount: f64,
+    pub gas_price: f64,
+    pub sell_token_price: f64,
+    pub sell_amount: BigDecimal,
+    pub buy_amount: BigDecimal,
+}
+
+pub async fn insert_quote(ex: &mut PgConnection, quote: &Quote) -> Result<(), sqlx::Error> {
+    const QUERY: &str = r#"
+INSERT INTO order_quotes (
+    order_uid,
+    gas_amount,
+    gas_price,
+    sell_token_price,
+    sell_amount,
+    buy_amount
+)
+VALUES ($1, $2, $3, $4, $5, $6)
+    "#;
+    sqlx::query(QUERY)
+        .bind(&quote.order_uid)
+        .bind(quote.gas_amount)
+        .bind(quote.gas_price)
+        .bind(quote.sell_token_price)
+        .bind(&quote.sell_amount)
+        .bind(&quote.buy_amount)
+        .execute(ex)
+        .await?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::{Connection, PgConnection};
+    use sqlx::Connection;
 
     #[tokio::test]
     #[ignore]
@@ -182,5 +217,30 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let err = insert_order(&mut db, &order).await.unwrap_err();
         assert!(is_duplicate_record_error(&err));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_quote_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let quote = Quote {
+            order_uid: Default::default(),
+            gas_amount: 1.,
+            gas_price: 2.,
+            sell_token_price: 3.,
+            sell_amount: 4.into(),
+            buy_amount: 5.into(),
+        };
+        insert_quote(&mut db, &quote).await.unwrap();
+        let query = "SELECT * FROM order_quotes";
+        let quote_: Quote = sqlx::query_as(query)
+            .bind(&quote.order_uid)
+            .fetch_one(&mut db)
+            .await
+            .unwrap();
+        assert_eq!(quote, quote_);
     }
 }
