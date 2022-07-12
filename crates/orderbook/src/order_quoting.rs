@@ -417,12 +417,16 @@ impl OrderQuoter {
         let expiration = self.now.now() + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS);
 
         let trade_query = parameters.to_price_query();
-        let (gas_estimate, trade_estimate, sell_token_price) = futures::try_join!(
+        let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
             self.gas_estimator
                 .estimate()
                 .map_err(PriceEstimationError::from),
             single_estimate(self.price_estimator.as_ref(), &trade_query),
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.sell_token),
+            // We don't care about the native price of the buy_token for the quote but we need it
+            // when we build the auction. To prevent creating orders which we can't settle later on
+            // we make the native buy_token price a requirement here as well.
+            native_single_estimate(self.native_price_estimator.as_ref(), &parameters.buy_token),
         )?;
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
@@ -685,6 +689,13 @@ mod tests {
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let buy_token = parameters.buy_token;
+                move |q| q == [buy_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -783,6 +794,13 @@ mod tests {
             .withf({
                 let sell_token = parameters.sell_token;
                 move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let buy_token = parameters.buy_token;
+                move |q| q == [buy_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
@@ -888,6 +906,13 @@ mod tests {
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let buy_token = parameters.buy_token;
+                move |q| q == [buy_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(0.2)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -981,6 +1006,13 @@ mod tests {
                 move |q| q == [sell_token]
             })
             .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let buy_token = parameters.buy_token;
+                move |q| q == [buy_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
 
         let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
 
@@ -996,6 +1028,72 @@ mod tests {
         assert!(matches!(
             quoter.calculate_quote(parameters).await.unwrap_err(),
             CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } if fee_amount == U256::from(200),
+        ));
+    }
+
+    #[tokio::test]
+    async fn require_native_price_for_buy_token() {
+        let parameters = QuoteParameters {
+            sell_token: H160([1; 20]),
+            buy_token: H160([2; 20]),
+            side: OrderQuoteSide::Sell {
+                sell_amount: SellAmount::BeforeFee {
+                    value: 100_000.into(),
+                },
+            },
+            from: H160([3; 20]),
+            app_data: AppId([4; 32]),
+        };
+        let gas_price = GasPrice1559 {
+            base_fee_per_gas: 1.,
+            max_fee_per_gas: 2.,
+            max_priority_fee_per_gas: 0.,
+        };
+
+        let mut price_estimator = MockPriceEstimating::new();
+        price_estimator.expect_estimates().returning(|_| {
+            futures::stream::iter([Ok(price_estimation::Estimate {
+                out_amount: 100.into(),
+                gas: 200,
+            })])
+            .enumerate()
+            .boxed()
+        });
+
+        let mut native_price_estimator = MockNativePriceEstimating::new();
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let sell_token = parameters.sell_token;
+                move |q| q == [sell_token]
+            })
+            .returning(|_| futures::stream::iter([Ok(1.)]).enumerate().boxed());
+        native_price_estimator
+            .expect_estimate_native_prices()
+            .withf({
+                let buy_token = parameters.buy_token;
+                move |q| q == [buy_token]
+            })
+            .returning(|_| {
+                futures::stream::iter([Err(PriceEstimationError::NoLiquidity)])
+                    .enumerate()
+                    .boxed()
+            });
+
+        let gas_estimator = FakeGasPriceEstimator(Arc::new(Mutex::new(gas_price)));
+
+        let quoter = OrderQuoter {
+            price_estimator: Arc::new(price_estimator),
+            native_price_estimator: Arc::new(native_price_estimator),
+            gas_estimator: Arc::new(gas_estimator),
+            fee_subsidy: Arc::new(Subsidy::default()),
+            storage: Arc::new(MockQuoteStoring::new()),
+            now: Arc::new(Utc::now),
+        };
+
+        assert!(matches!(
+            quoter.calculate_quote(parameters).await.unwrap_err(),
+            CalculateQuoteError::Price(PriceEstimationError::NoLiquidity),
         ));
     }
 
