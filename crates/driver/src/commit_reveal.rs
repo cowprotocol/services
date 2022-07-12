@@ -1,4 +1,6 @@
 use anyhow::Result;
+use model::order::OrderUid;
+use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use solver::{
     settlement::Settlement,
@@ -7,8 +9,12 @@ use solver::{
 
 /// A `SolutionSummary` holds all information solvers are willing to disclose during settlement
 /// competition. It does **not** have to include the call data, yet.
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct SettlementSummary {}
+#[derive(Debug, Default, Clone, Deserialize, Serialize)]
+pub struct SettlementSummary {
+    pub surplus: f64,
+    pub gas_reimbursement: U256,
+    pub settled_orders: Vec<OrderUid>,
+}
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
