@@ -1,3 +1,4 @@
+use super::Postgres;
 use crate::{
     conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
     order_quoting::Quote,
@@ -5,6 +6,13 @@ use crate::{
 use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use const_format::concatcp;
+use database::{
+    byte_array::ByteArray,
+    orders::{
+        BuyTokenDestination as DbBuyTokenDestination, OrderKind as DbOrderKind,
+        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    },
+};
 use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt};
 use model::{
@@ -18,9 +26,7 @@ use model::{
 use num::Zero;
 use primitive_types::H160;
 use sqlx::{types::BigDecimal, Connection};
-use std::{borrow::Cow, convert::TryInto};
-
-use super::Postgres;
+use std::convert::TryInto;
 
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
@@ -52,115 +58,65 @@ pub struct SolvableOrders {
     pub latest_settlement_block: u64,
 }
 
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "OrderKind")]
-#[sqlx(rename_all = "lowercase")]
-pub enum DbOrderKind {
-    Buy,
-    Sell,
-}
-
-impl From<OrderKind> for DbOrderKind {
-    fn from(kind: OrderKind) -> Self {
-        match kind {
-            OrderKind::Buy => Self::Buy,
-            OrderKind::Sell => Self::Sell,
-        }
+pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {
+    match kind {
+        OrderKind::Buy => DbOrderKind::Buy,
+        OrderKind::Sell => DbOrderKind::Sell,
     }
 }
 
-impl From<DbOrderKind> for OrderKind {
-    fn from(kind: DbOrderKind) -> Self {
-        match kind {
-            DbOrderKind::Buy => Self::Buy,
-            DbOrderKind::Sell => Self::Sell,
-        }
+pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
+    match kind {
+        DbOrderKind::Buy => OrderKind::Buy,
+        DbOrderKind::Sell => OrderKind::Sell,
     }
 }
 
-/// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "SellTokenSource")]
-#[sqlx(rename_all = "lowercase")]
-pub enum DbSellTokenSource {
-    /// Direct ERC20 allowances to the Vault relayer contract
-    Erc20,
-    /// ERC20 allowances to the Vault with GPv2 relayer approval
-    Internal,
-    /// Internal balances to the Vault with GPv2 relayer approval
-    External,
-}
-
-impl DbSellTokenSource {
-    pub fn from(order_kind: SellTokenSource) -> Self {
-        match order_kind {
-            SellTokenSource::Erc20 => Self::Erc20,
-            SellTokenSource::Internal => Self::Internal,
-            SellTokenSource::External => Self::External,
-        }
-    }
-    fn into(self) -> SellTokenSource {
-        match self {
-            Self::Erc20 => SellTokenSource::Erc20,
-            Self::Internal => SellTokenSource::Internal,
-            Self::External => SellTokenSource::External,
-        }
+fn sell_token_source_into(source: SellTokenSource) -> DbSellTokenSource {
+    match source {
+        SellTokenSource::Erc20 => DbSellTokenSource::Erc20,
+        SellTokenSource::Internal => DbSellTokenSource::Internal,
+        SellTokenSource::External => DbSellTokenSource::External,
     }
 }
 
-/// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "BuyTokenDestination")]
-#[sqlx(rename_all = "lowercase")]
-pub enum DbBuyTokenDestination {
-    /// Pay trade proceeds as an ERC20 token transfer
-    Erc20,
-    /// Pay trade proceeds as a Vault internal balance transfer
-    Internal,
-}
-
-impl DbBuyTokenDestination {
-    pub fn from(order_kind: BuyTokenDestination) -> Self {
-        match order_kind {
-            BuyTokenDestination::Erc20 => Self::Erc20,
-            BuyTokenDestination::Internal => Self::Internal,
-        }
-    }
-    fn into(self) -> BuyTokenDestination {
-        match self {
-            Self::Erc20 => BuyTokenDestination::Erc20,
-            Self::Internal => BuyTokenDestination::Internal,
-        }
+fn sell_token_source_from(source: DbSellTokenSource) -> SellTokenSource {
+    match source {
+        DbSellTokenSource::Erc20 => SellTokenSource::Erc20,
+        DbSellTokenSource::Internal => SellTokenSource::Internal,
+        DbSellTokenSource::External => SellTokenSource::External,
     }
 }
 
-#[derive(PartialEq, sqlx::Type)]
-#[sqlx(type_name = "SigningScheme")]
-#[sqlx(rename_all = "lowercase")]
-pub enum DbSigningScheme {
-    Eip712,
-    EthSign,
-    Eip1271,
-    PreSign,
+fn buy_token_destination_into(destination: BuyTokenDestination) -> DbBuyTokenDestination {
+    match destination {
+        BuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
+        BuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
+    }
 }
 
-impl DbSigningScheme {
-    pub fn from(signing_scheme: SigningScheme) -> Self {
-        match signing_scheme {
-            SigningScheme::Eip712 => Self::Eip712,
-            SigningScheme::EthSign => Self::EthSign,
-            SigningScheme::Eip1271 => Self::Eip1271,
-            SigningScheme::PreSign => Self::PreSign,
-        }
+fn buy_token_destination_from(destination: DbBuyTokenDestination) -> BuyTokenDestination {
+    match destination {
+        DbBuyTokenDestination::Erc20 => BuyTokenDestination::Erc20,
+        DbBuyTokenDestination::Internal => BuyTokenDestination::Internal,
     }
+}
 
-    fn into(self) -> SigningScheme {
-        match self {
-            Self::Eip712 => SigningScheme::Eip712,
-            Self::EthSign => SigningScheme::EthSign,
-            Self::Eip1271 => SigningScheme::Eip1271,
-            Self::PreSign => SigningScheme::PreSign,
-        }
+fn signing_scheme_into(scheme: SigningScheme) -> DbSigningScheme {
+    match scheme {
+        SigningScheme::Eip712 => DbSigningScheme::Eip712,
+        SigningScheme::EthSign => DbSigningScheme::EthSign,
+        SigningScheme::Eip1271 => DbSigningScheme::Eip1271,
+        SigningScheme::PreSign => DbSigningScheme::PreSign,
+    }
+}
+
+fn signing_scheme_from(scheme: DbSigningScheme) -> SigningScheme {
+    match scheme {
+        DbSigningScheme::Eip712 => SigningScheme::Eip712,
+        DbSigningScheme::EthSign => SigningScheme::EthSign,
+        DbSigningScheme::Eip1271 => SigningScheme::Eip1271,
+        DbSigningScheme::PreSign => SigningScheme::PreSign,
     }
 }
 
@@ -224,47 +180,36 @@ async fn insert_order(
     order: &Order,
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), InsertionError> {
-    const QUERY: &str = "\
-            INSERT INTO orders (
-                uid, owner, creation_timestamp, sell_token, buy_token, receiver, sell_amount, buy_amount, \
-                valid_to, app_data, fee_amount, kind, partially_fillable, signature, signing_scheme, \
-                settlement_contract, sell_token_balance, buy_token_balance, full_fee_amount, is_liquidity_order) \
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20);";
-    let receiver = order
-        .data
-        .receiver
-        .map(|address| address.as_bytes().to_vec());
-    sqlx::query(QUERY)
-        .bind(order.metadata.uid.0.as_ref())
-        .bind(order.metadata.owner.as_bytes())
-        .bind(order.metadata.creation_date)
-        .bind(order.data.sell_token.as_bytes())
-        .bind(order.data.buy_token.as_bytes())
-        .bind(receiver)
-        .bind(u256_to_big_decimal(&order.data.sell_amount))
-        .bind(u256_to_big_decimal(&order.data.buy_amount))
-        .bind(order.data.valid_to as i64)
-        .bind(&order.data.app_data.0[..])
-        .bind(u256_to_big_decimal(&order.data.fee_amount))
-        .bind(DbOrderKind::from(order.data.kind))
-        .bind(order.data.partially_fillable)
-        .bind(&*order.signature.to_bytes())
-        .bind(DbSigningScheme::from(order.signature.scheme()))
-        .bind(order.metadata.settlement_contract.as_bytes())
-        .bind(DbSellTokenSource::from(order.data.sell_token_balance))
-        .bind(DbBuyTokenDestination::from(order.data.buy_token_balance))
-        .bind(u256_to_big_decimal(&order.metadata.full_fee_amount))
-        .bind(order.metadata.is_liquidity_order)
-        .execute(transaction)
+    let order = database::orders::Order {
+        uid: ByteArray(order.metadata.uid.0),
+        owner: ByteArray(order.metadata.owner.0),
+        creation_timestamp: order.metadata.creation_date,
+        sell_token: ByteArray(order.data.sell_token.0),
+        buy_token: ByteArray(order.data.buy_token.0),
+        receiver: order.data.receiver.map(|h160| ByteArray(h160.0)),
+        sell_amount: u256_to_big_decimal(&order.data.sell_amount),
+        buy_amount: u256_to_big_decimal(&order.data.buy_amount),
+        valid_to: order.data.valid_to as i64,
+        app_data: ByteArray(order.data.app_data.0),
+        fee_amount: u256_to_big_decimal(&order.data.fee_amount),
+        kind: order_kind_into(order.data.kind),
+        partially_fillable: order.data.partially_fillable,
+        signature: order.signature.to_bytes(),
+        signing_scheme: signing_scheme_into(order.signature.scheme()),
+        settlement_contract: ByteArray(order.metadata.settlement_contract.0),
+        sell_token_balance: sell_token_source_into(order.data.sell_token_balance),
+        buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
+        full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
+        is_liquidity_order: order.metadata.is_liquidity_order,
+    };
+    database::orders::insert_order(transaction, &order)
         .await
-        .map(|_| ())
         .map_err(|err| {
-            if let sqlx::Error::Database(db_err) = &err {
-                if let Some(Cow::Borrowed("23505")) = db_err.code() {
-                    return InsertionError::DuplicatedRecord;
-                }
+            if database::orders::is_duplicate_record_error(&err) {
+                InsertionError::DuplicatedRecord
+            } else {
+                InsertionError::DbError(err)
             }
-            InsertionError::DbError(err)
         })
 }
 
@@ -628,7 +573,7 @@ impl OrdersQueryRow {
                 .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
             is_liquidity_order: self.is_liquidity_order,
         };
-        let signing_scheme = self.signing_scheme.into();
+        let signing_scheme = signing_scheme_from(self.signing_scheme);
         let data = OrderData {
             sell_token: H160(self.sell_token.0),
             buy_token: H160(self.buy_token.0),
@@ -641,10 +586,10 @@ impl OrdersQueryRow {
             app_data: AppId(self.app_data.0),
             fee_amount: big_decimal_to_u256(&self.fee_amount)
                 .ok_or_else(|| anyhow!("fee_amount is not U256"))?,
-            kind: self.kind.into(),
+            kind: order_kind_from(self.kind),
             partially_fillable: self.partially_fillable,
-            sell_token_balance: self.sell_token_balance.into(),
-            buy_token_balance: self.buy_token_balance.into(),
+            sell_token_balance: sell_token_source_from(self.sell_token_balance),
+            buy_token_balance: buy_token_destination_from(self.buy_token_balance),
         };
         let signature = Signature::from_bytes(signing_scheme, &self.signature)?;
         Ok(Order {
@@ -907,23 +852,6 @@ mod tests {
             .calculate_status(),
             OrderStatus::Expired
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_insert_same_order_twice_fails() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let mut order = Order::default();
-        db.insert_order(&order, None).await.unwrap();
-
-        // Note that order UIDs do not care about the signing scheme.
-        order.signature = Signature::default_with(SigningScheme::PreSign);
-        assert!(matches!(
-            db.insert_order(&order, None).await,
-            Err(InsertionError::DuplicatedRecord)
-        ));
     }
 
     #[tokio::test]

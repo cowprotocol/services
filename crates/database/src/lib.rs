@@ -1,5 +1,6 @@
 pub mod byte_array;
 pub mod events;
+pub mod orders;
 
 use byte_array::ByteArray;
 use sqlx::{Executor, PgPool};

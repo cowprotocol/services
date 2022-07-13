@@ -1,4 +1,7 @@
-use super::{orders::DbOrderKind, Postgres};
+use super::{
+    orders::{order_kind_from, order_kind_into},
+    Postgres,
+};
 use crate::{
     conversions::*,
     fee_subsidy::FeeParameters,
@@ -7,6 +10,7 @@ use crate::{
 use anyhow::{Context, Result};
 use bigdecimal::BigDecimal;
 use chrono::{DateTime, Utc};
+use database::orders::OrderKind as DbOrderKind;
 use model::quote::QuoteId;
 use primitive_types::H160;
 use shared::maintenance::Maintaining;
@@ -41,7 +45,7 @@ impl TryFrom<QuoteRow> for QuoteData {
                 gas_price: row.gas_price,
                 sell_token_price: row.sell_token_price,
             },
-            kind: row.order_kind.into(),
+            kind: order_kind_from(row.order_kind),
             expiration: row.expiration_timestamp,
         })
     }
@@ -79,7 +83,7 @@ impl QuoteStoring for Postgres {
             .bind(&data.fee_parameters.gas_amount)
             .bind(&data.fee_parameters.gas_price)
             .bind(&data.fee_parameters.sell_token_price)
-            .bind(DbOrderKind::from(data.kind))
+            .bind(order_kind_into(data.kind))
             .bind(data.expiration)
             .fetch_one(&self.pool)
             .await
@@ -144,7 +148,7 @@ impl QuoteStoring for Postgres {
                 &(parameters.sell_amount + parameters.fee_amount),
             ))
             .bind(u256_to_big_decimal(&parameters.buy_amount))
-            .bind(DbOrderKind::from(parameters.kind))
+            .bind(order_kind_into(parameters.kind))
             .bind(expiration)
             .fetch_optional(&self.pool)
             .await
