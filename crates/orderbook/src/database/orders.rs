@@ -201,6 +201,7 @@ async fn insert_order(
         buy_token_balance: buy_token_destination_into(order.data.buy_token_balance),
         full_fee_amount: u256_to_big_decimal(&order.metadata.full_fee_amount),
         is_liquidity_order: order.metadata.is_liquidity_order,
+        cancellation_timestamp: None,
     };
     database::orders::insert_order(transaction, &order)
         .await
@@ -839,54 +840,6 @@ mod tests {
             .calculate_status(),
             OrderStatus::Expired
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_cancel_order() {
-        #[derive(sqlx::FromRow, Debug, PartialEq)]
-        struct CancellationQueryRow {
-            cancellation_timestamp: DateTime<Utc>,
-        }
-
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let order = Order::default();
-        db.insert_order(&order, None).await.unwrap();
-        let order = db.single_order(&order.metadata.uid).await.unwrap().unwrap();
-        assert!(!order.metadata.invalidated);
-
-        let cancellation_time =
-            DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
-        db.cancel_order(&order.metadata.uid, cancellation_time)
-            .await
-            .unwrap();
-        let order = db.single_order(&order.metadata.uid).await.unwrap().unwrap();
-        assert!(order.metadata.invalidated);
-
-        let query = "SELECT cancellation_timestamp FROM orders;";
-        let first_cancellation: CancellationQueryRow =
-            sqlx::query_as(query).fetch_one(&db.pool).await.unwrap();
-        assert_eq!(cancellation_time, first_cancellation.cancellation_timestamp);
-
-        // Cancel again and verify that cancellation timestamp was not changed.
-        let irrelevant_time = DateTime::<Utc>::from_utc(
-            NaiveDateTime::from_timestamp(1234567890, 1_000_000_000),
-            Utc,
-        );
-
-        assert_ne!(
-            irrelevant_time, cancellation_time,
-            "Expected cancellation times to be different."
-        );
-
-        db.cancel_order(&order.metadata.uid, irrelevant_time)
-            .await
-            .unwrap();
-        let second_cancellation: CancellationQueryRow =
-            sqlx::query_as(query).fetch_one(&db.pool).await.unwrap();
-        assert_eq!(first_cancellation, second_cancellation);
     }
 
     #[tokio::test]

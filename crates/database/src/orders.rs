@@ -7,7 +7,7 @@ use sqlx::{
     PgConnection,
 };
 
-#[derive(Clone, Copy, Default, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "OrderKind")]
 #[sqlx(rename_all = "lowercase")]
 pub enum OrderKind {
@@ -16,7 +16,7 @@ pub enum OrderKind {
     Sell,
 }
 
-#[derive(Clone, Copy, Default, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SigningScheme")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SigningScheme {
@@ -28,7 +28,7 @@ pub enum SigningScheme {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(Clone, Copy, Default, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "SellTokenSource")]
 #[sqlx(rename_all = "lowercase")]
 pub enum SellTokenSource {
@@ -42,7 +42,7 @@ pub enum SellTokenSource {
 }
 
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(Clone, Copy, Default, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, sqlx::Type)]
 #[sqlx(type_name = "BuyTokenDestination")]
 #[sqlx(rename_all = "lowercase")]
 pub enum BuyTokenDestination {
@@ -54,7 +54,7 @@ pub enum BuyTokenDestination {
 }
 
 /// One row in the `orders` table.
-#[derive(Clone, sqlx::FromRow)]
+#[derive(Clone, Debug, Eq, PartialEq, sqlx::FromRow)]
 pub struct Order {
     pub uid: OrderUid,
     pub owner: Address,
@@ -76,6 +76,7 @@ pub struct Order {
     pub buy_token_balance: BuyTokenDestination,
     pub full_fee_amount: BigDecimal,
     pub is_liquidity_order: bool,
+    pub cancellation_timestamp: Option<DateTime<Utc>>,
 }
 
 impl Default for Order {
@@ -101,6 +102,7 @@ impl Default for Order {
             buy_token_balance: Default::default(),
             full_fee_amount: Default::default(),
             is_liquidity_order: Default::default(),
+            cancellation_timestamp: Default::default(),
         }
     }
 }
@@ -127,9 +129,10 @@ INSERT INTO orders (
     sell_token_balance,
     buy_token_balance,
     full_fee_amount,
-    is_liquidity_order
+    is_liquidity_order,
+    cancellation_timestamp
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
     "#;
     sqlx::query(QUERY)
         .bind(&order.uid)
@@ -152,9 +155,21 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $
         .bind(order.buy_token_balance)
         .bind(&order.full_fee_amount)
         .bind(order.is_liquidity_order)
+        .bind(order.cancellation_timestamp)
         .execute(ex)
         .await?;
     Ok(())
+}
+
+pub async fn read_order(
+    ex: &mut PgConnection,
+    id: &OrderUid,
+) -> Result<Option<Order>, sqlx::Error> {
+    const QUERY: &str = r#"
+SELECT * FROM ORDERS
+WHERE uid = $1
+    "#;
+    sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
 
 pub fn is_duplicate_record_error(err: &sqlx::Error) -> bool {
@@ -201,10 +216,56 @@ VALUES ($1, $2, $3, $4, $5, $6)
     Ok(())
 }
 
+pub async fn read_quote(
+    ex: &mut PgConnection,
+    id: &OrderUid,
+) -> Result<Option<Quote>, sqlx::Error> {
+    let query = r#"
+SELECT * FROM order_quotes
+WHERE order_uid = $1
+"#;
+    sqlx::query_as(query).bind(id).fetch_optional(ex).await
+}
+
+pub async fn cancel_order(
+    ex: &mut PgConnection,
+    order_uid: &OrderUid,
+    timestamp: DateTime<Utc>,
+) -> Result<(), sqlx::Error> {
+    // We do not overwrite previously cancelled orders,
+    // but this query does allow the user to soft cancel
+    // an order that has already been invalidated on-chain.
+    const QUERY: &str = r#"
+UPDATE orders
+SET cancellation_timestamp = $1
+WHERE uid = $2
+AND cancellation_timestamp IS NULL
+    "#;
+    sqlx::query(QUERY)
+        .bind(timestamp)
+        .bind(order_uid.0.as_ref())
+        .execute(ex)
+        .await
+        .map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use sqlx::Connection;
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_order_roundtrip() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        let order_ = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(order, order_);
+    }
 
     #[tokio::test]
     #[ignore]
@@ -235,12 +296,38 @@ mod tests {
             buy_amount: 5.into(),
         };
         insert_quote(&mut db, &quote).await.unwrap();
-        let query = "SELECT * FROM order_quotes";
-        let quote_: Quote = sqlx::query_as(query)
-            .bind(&quote.order_uid)
-            .fetch_one(&mut db)
+        let quote_ = read_quote(&mut db, &quote.order_uid)
             .await
+            .unwrap()
             .unwrap();
         assert_eq!(quote, quote_);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_cancel_order() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_order(&mut db, &order).await.unwrap();
+        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert!(order.cancellation_timestamp.is_none());
+
+        let time = DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(1234567890, 0), Utc);
+        cancel_order(&mut db, &order.uid, time).await.unwrap();
+        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(time, order.cancellation_timestamp.unwrap());
+
+        // Cancel again and verify that cancellation timestamp was not changed.
+        let irrelevant_time = DateTime::<Utc>::from_utc(
+            NaiveDateTime::from_timestamp(1234567890, 1_000_000_000),
+            Utc,
+        );
+        assert_ne!(irrelevant_time, time);
+        cancel_order(&mut db, &order.uid, time).await.unwrap();
+        let order = read_order(&mut db, &order.uid).await.unwrap().unwrap();
+        assert_eq!(time, order.cancellation_timestamp.unwrap());
     }
 }
