@@ -218,29 +218,17 @@ async fn insert_quote(
     quote: &Quote,
     transaction: &mut sqlx::Transaction<'_, sqlx::Postgres>,
 ) -> Result<(), InsertionError> {
-    const QUERY: &str = r#"
-        INSERT INTO order_quotes (
-            order_uid,
-            gas_amount,
-            gas_price,
-            sell_token_price,
-            sell_amount,
-            buy_amount
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-    ;"#;
-
-    sqlx::query(QUERY)
-        .bind(uid.0.as_ref())
-        .bind(quote.data.fee_parameters.gas_amount)
-        .bind(quote.data.fee_parameters.gas_price)
-        .bind(quote.data.fee_parameters.sell_token_price)
-        .bind(u256_to_big_decimal(&quote.sell_amount))
-        .bind(u256_to_big_decimal(&quote.buy_amount))
-        .execute(transaction)
+    let quote = database::orders::Quote {
+        order_uid: ByteArray(uid.0),
+        gas_amount: quote.data.fee_parameters.gas_amount,
+        gas_price: quote.data.fee_parameters.gas_price,
+        sell_token_price: quote.data.fee_parameters.sell_token_price,
+        sell_amount: u256_to_big_decimal(&quote.sell_amount),
+        buy_amount: u256_to_big_decimal(&quote.buy_amount),
+    };
+    database::orders::insert_quote(transaction, &quote)
         .await
         .map_err(InsertionError::DbError)?;
-
     Ok(())
 }
 
@@ -619,7 +607,6 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fee_subsidy::FeeParameters, order_quoting::QuoteData};
     use chrono::{Duration, NaiveDateTime};
     use database::{
         byte_array::ByteArray,
@@ -852,69 +839,6 @@ mod tests {
             .calculate_status(),
             OrderStatus::Expired
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    #[allow(clippy::float_cmp)]
-    async fn postgres_insert_order_without_quote() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let order = Order::default();
-        db.insert_order(&order, None).await.unwrap();
-
-        let query = "SELECT COUNT(*) FROM order_quotes;";
-        let (count,): (i64,) = sqlx::query_as(query)
-            .bind(order.metadata.uid.0.as_ref())
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-
-        assert_eq!(count, 0);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    #[allow(clippy::float_cmp)]
-    async fn postgres_insert_order_with_quote() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        let order = Order::default();
-        let quote = Quote {
-            data: QuoteData {
-                fee_parameters: FeeParameters {
-                    gas_amount: 1.,
-                    gas_price: 2.,
-                    sell_token_price: 3.,
-                },
-                ..Default::default()
-            },
-            sell_amount: 4.into(),
-            buy_amount: 5.into(),
-            ..Default::default()
-        };
-        db.insert_order(&order, Some(quote)).await.unwrap();
-        let query = "SELECT * FROM order_quotes;";
-        let (uid, gas_amount, gas_price, sell_token_price, sell_amount, buy_amount): (
-            Vec<u8>,
-            f64,
-            f64,
-            f64,
-            BigDecimal,
-            BigDecimal,
-        ) = sqlx::query_as(query)
-            .bind(order.metadata.uid.0.as_ref())
-            .fetch_one(&db.pool)
-            .await
-            .unwrap();
-        assert_eq!(uid, order.metadata.uid.0.as_ref());
-        assert_eq!(gas_amount, 1.);
-        assert_eq!(gas_price, 2.);
-        assert_eq!(sell_token_price, 3.);
-        assert_eq!(sell_amount, 4.into());
-        assert_eq!(buy_amount, 5.into());
     }
 
     #[tokio::test]
