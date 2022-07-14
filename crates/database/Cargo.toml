@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bigdecimal = "0.3"
+const_format = "0.2"
+futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
 sqlx = { version = "0.6", default-features = false, features = ["chrono", "bigdecimal", "macros", "postgres"] }
 
