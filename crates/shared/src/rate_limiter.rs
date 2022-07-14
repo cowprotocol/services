@@ -182,10 +182,10 @@ impl RateLimiter {
         task: impl Future<Output = T>,
         requires_back_off: impl Fn(&T) -> bool,
     ) -> Result<T, RateLimiterError> {
-        let times_rate_limited = match self
+        let times_rate_limited = self
             .strategy()
-            .times_rate_limited(Instant::now(), &self.name)
-        {
+            .times_rate_limited(Instant::now(), &self.name);
+        let times_rate_limited = match times_rate_limited {
             None => {
                 tracing::warn!(?self.name, "dropping task because API is currently rate limited");
                 return Err(RateLimiterError::RateLimited);
@@ -196,10 +196,10 @@ impl RateLimiter {
         let result = task.await;
 
         if requires_back_off(&result) {
-            if let Some(new_back_off) = self
+            let new_back_off = self
                 .strategy()
-                .response_rate_limited(times_rate_limited, &self.name)
-            {
+                .response_rate_limited(times_rate_limited, &self.name);
+            if let Some(new_back_off) = new_back_off {
                 tracing::warn!(?self.name, ?new_back_off, "extended rate limiting");
             }
         } else {
