@@ -16,12 +16,10 @@ lazy_static! {
     static ref AMP_PRECISION: U256 = U256::from(1000);
 }
 
-/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L49-L105
-fn calculate_invariant(
-    amplification_parameter: U256,
-    balances: &[Bfp],
-    round_up: bool,
-) -> Result<U256, Error> {
+/// OLD: https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L49-L105
+/// NEW: https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57
+fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Result<U256, Error> {
+    // Always round down, to match Vyper's arithmetic (which always truncates).
     let mut sum = U256::zero();
     let num_tokens_usize = balances.len();
     for balance_i in balances.iter() {
@@ -36,42 +34,32 @@ fn calculate_invariant(
     let amp_times_total = amplification_parameter.bmul(num_tokens)?;
     for _ in 0..255 {
         // If balances were empty, we would have returned on sum.is_zero()
-        let mut p_d = balances[0].as_uint256().bmul(num_tokens)?;
-        for balance in &balances[1..] {
-            // P_D = Math.div(Math.mul(Math.mul(P_D, balances[j]), numTokens), invariant, roundUp);
-            p_d = rounded_div(
-                p_d.bmul(balance.as_uint256())?.bmul(num_tokens)?,
-                invariant,
-                round_up,
-            )?
+        let mut d_p = invariant;
+        for balance in balances {
+            // (d_p * invariant) / (balance * numTokens)
+            d_p = d_p
+                .bmul(invariant)?
+                .bdiv_down(balance.as_uint256().bmul(num_tokens)?)?;
         }
         let prev_invariant = invariant;
 
+        // Technically we can eliminate rounded_div now because its no longer used.
+        // However, I find it makes the code easier to read.
         invariant = rounded_div(
-            // invariant = Math.div(
-            //     Math.mul(Math.mul(numTokens, invariant), invariant).add(
-            //         Math.div(Math.mul(Math.mul(ampTimesTotal, sum), P_D), _AMP_PRECISION, roundUp)
-            //     ),
-            num_tokens
+            // ((ampTimesTotal * sum) / AMP_PRECISION + D_P * numTokens) * invariant
+            amp_times_total
+                .bmul(sum)?
+                .bdiv_down(*AMP_PRECISION)?
+                .badd(d_p.bmul(num_tokens)?)?
+                .bmul(invariant)?,
+            // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens + 1) * D_P
+            amp_times_total
+                .bsub(*AMP_PRECISION)?
                 .bmul(invariant)?
-                .bmul(invariant)?
-                .badd(rounded_div(
-                    amp_times_total.bmul(sum)?.bmul(p_d)?,
-                    *AMP_PRECISION,
-                    round_up,
-                )?)?,
-            // Math.mul(numTokens + 1, invariant).add(
-            //     // No need to use checked arithmetic for the amp precision, the amp is guaranteed to be at least 1
-            //     Math.div(Math.mul(ampTimesTotal - _AMP_PRECISION, P_D), _AMP_PRECISION, !roundUp)
-            // ),
-            (num_tokens.badd(1.into())?)
-                .bmul(invariant)?
-                .badd(rounded_div(
-                    (amp_times_total.bsub(*AMP_PRECISION)?).bmul(p_d)?,
-                    *AMP_PRECISION,
-                    !round_up,
-                )?)?,
-            round_up,
+                .bdiv_down(*AMP_PRECISION)?
+                .badd(num_tokens.badd(1.into())?)?
+                .bmul(d_p)?,
+            false,
         )?;
 
         match convergence_criteria(invariant, prev_invariant) {
@@ -95,7 +83,7 @@ pub fn calc_out_given_in(
     if token_index_out >= balances.len() || token_index_in >= balances.len() {
         return Err(Error::InvalidToken);
     }
-    let invariant = calculate_invariant(amplification_parameter, balances, true)?;
+    let invariant = calculate_invariant(amplification_parameter, balances)?;
     balances[token_index_in] = balances[token_index_in].add(token_amount_in)?;
 
     let final_balance_out = get_token_balance_given_invariant_and_all_other_balances(
@@ -127,7 +115,7 @@ pub fn calc_in_given_out(
     if token_index_out >= balances.len() || token_index_in >= balances.len() {
         return Err(Error::InvalidToken);
     }
-    let invariant = calculate_invariant(amplification_parameter, balances, true)?;
+    let invariant = calculate_invariant(amplification_parameter, balances)?;
     balances[token_index_out] = balances[token_index_out].sub(token_amount_out)?;
 
     let final_balance_in = get_token_balance_given_invariant_and_all_other_balances(
@@ -356,7 +344,7 @@ mod tests {
         let amp = 100.;
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
         let balances = vec![Bfp::from(10), Bfp::from(12)];
-        let result = calculate_invariant(amplification_parameter, &balances, true).unwrap();
+        let result = calculate_invariant(amplification_parameter, &balances).unwrap();
         let expected = calculate_analytic_invariant_two_tokens(
             balances[0].to_f64_lossy(),
             balances[1].to_f64_lossy(),
@@ -377,7 +365,7 @@ mod tests {
             .collect();
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
         assert_eq!(
-            calculate_invariant(amplification_parameter, balances.as_slice(), true)
+            calculate_invariant(amplification_parameter, balances.as_slice())
                 .unwrap_err()
                 .to_string(),
             "BAL#321: StableInvariantDidntConverge"
@@ -390,7 +378,7 @@ mod tests {
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
         let balances = vec![Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
-        let result = calculate_invariant(amplification_parameter, &balances, true).unwrap();
+        let result = calculate_invariant(amplification_parameter, &balances).unwrap();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
         assert!((result.to_f64_lossy() / 1e18 - expected)
@@ -414,7 +402,7 @@ mod tests {
             token_index_out,
             amount_out,
         )
-        .unwrap();
+            .unwrap();
         let expected = calc_in_given_out_approx(
             float_balances,
             amp,
@@ -444,7 +432,7 @@ mod tests {
             token_index_out,
             amount_out,
         )
-        .unwrap();
+            .unwrap();
         let expected = calc_in_given_out_approx(
             float_balances,
             amp,
@@ -474,7 +462,7 @@ mod tests {
             token_index_out,
             token_amount_in,
         )
-        .unwrap();
+            .unwrap();
         let expected = calc_out_given_in_approx(
             float_balances,
             amp,
@@ -504,7 +492,7 @@ mod tests {
             token_index_out,
             token_amount_in,
         )
-        .unwrap();
+            .unwrap();
         let expected = calc_out_given_in_approx(
             float_balances,
             amp,
