@@ -13,7 +13,7 @@ use crate::{
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes};
@@ -108,7 +108,9 @@ impl OneInchSolver {
         let final_slippage_bps = std::cmp::min(
             max_slippage_bps_respecting_wei_limit
                 .to_u32()
-                .context("could not convert wei based slippage to u32")?,
+                // if the wei based slippage is too big for u32 the default slippage will be smaller
+                // so we can safely use it as a fallback
+                .unwrap_or(default_slippage_bps),
             default_slippage_bps,
         );
 
@@ -200,7 +202,10 @@ impl SingleOrderSolving for OneInchSolver {
             .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
             .await?;
         let slippage = Self::compute_max_slippage(
-            auction.external_prices.price(&order.buy_token).unwrap(),
+            auction.external_prices.price(&order.buy_token).expect(
+                "auction should only contain orders where prices \
+                    for buy_token and sell_token are known",
+            ),
             &order.buy_amount,
             self.oneinch_slippage_bps,
             &self.max_slippage_in_wei,
@@ -229,6 +234,7 @@ mod tests {
     use super::*;
     use crate::interactions::allowances::{Approval, MockAllowanceManaging};
     use crate::liquidity::LimitOrder;
+    use crate::solver::ExternalPrices;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
@@ -250,7 +256,7 @@ mod tests {
             allowance_fetcher: Box::new(allowance_fetcher),
             protocol_cache: ProtocolCache::default(),
             oneinch_slippage_bps: 10u32,
-            max_slippage_in_wei: U256::exp10(17),
+            max_slippage_in_wei: U256::MAX,
         }
     }
 
@@ -290,6 +296,7 @@ mod tests {
 
         let sell_token = H160::from_low_u64_be(1);
         let buy_token = H160::from_low_u64_be(2);
+        let native_token = H160::from_low_u64_be(3);
 
         client.expect_get_spender().returning(|| {
             Ok(Spender {
@@ -327,8 +334,19 @@ mod tests {
             ..Default::default()
         };
 
+        let auction = Auction {
+            external_prices: ExternalPrices::new(
+                native_token,
+                hashmap! {
+                    buy_token => U256::exp10(18).to_big_rational(),
+                },
+            )
+            .unwrap(),
+            ..Default::default()
+        };
+
         let result = solver
-            .try_settle_order(order_passing_limit, &Auction::default())
+            .try_settle_order(order_passing_limit, &auction)
             .await
             .unwrap()
             .unwrap();
@@ -345,7 +363,7 @@ mod tests {
         );
 
         let result = solver
-            .try_settle_order(order_violating_limit, &Auction::default())
+            .try_settle_order(order_violating_limit, &auction)
             .await
             .unwrap();
         assert!(result.is_none());
@@ -458,9 +476,21 @@ mod tests {
             ..Default::default()
         };
 
+        let native_token = H160::from_low_u64_be(4);
+        let auction = Auction {
+            external_prices: ExternalPrices::new(
+                native_token,
+                hashmap! {
+                    buy_token => U256::exp10(18).to_big_rational(),
+                },
+            )
+            .unwrap(),
+            ..Default::default()
+        };
+
         // On first run we have two main interactions (approve + swap)
         let result = solver
-            .try_settle_order(order.clone(), &Auction::default())
+            .try_settle_order(order.clone(), &auction)
             .await
             .unwrap()
             .unwrap();
@@ -468,7 +498,7 @@ mod tests {
 
         // On second run we have only have one main interactions (swap)
         let result = solver
-            .try_settle_order(order, &Auction::default())
+            .try_settle_order(order, &auction)
             .await
             .unwrap()
             .unwrap();
