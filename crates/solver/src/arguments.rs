@@ -141,9 +141,13 @@ pub struct Arguments {
     #[clap(long, env, default_value = "10")]
     pub zeroex_slippage_bps: u32,
 
-    /// The slippage tolerance we apply to the price quoted by oneInchSolver
+    /// The default slippage tolerance we apply to the price quoted by OneInchSolver
     #[clap(long, env, default_value = "10")]
     pub oneinch_slippage_bps: u32,
+
+    /// The maximum slippage in ETH we are willing to incur per trade on 1Inch
+    #[clap(long, env, default_value = "0.1")]
+    pub oneinch_max_slippage_in_eth: f64,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
