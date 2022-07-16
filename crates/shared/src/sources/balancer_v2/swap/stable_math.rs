@@ -5,10 +5,7 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pkg/pool-stable/contracts/StableMath.sol
 
 use super::error::Error;
-use crate::sources::balancer_v2::swap::{
-    fixed_point::Bfp,
-    math::{rounded_div, BalU256},
-};
+use crate::sources::balancer_v2::swap::{fixed_point::Bfp, math::BalU256};
 use ethcontract::U256;
 use lazy_static::lazy_static;
 
@@ -43,25 +40,21 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
         }
         let prev_invariant = invariant;
 
-        // Technically we can eliminate rounded_div now because its no longer used.
+        // Technically we can eliminate rounded div method now because its no longer used.
         // However, I find it makes the code easier to read.
-        invariant = rounded_div(
-            // ((ampTimesTotal * sum) / AMP_PRECISION + D_P * numTokens) * invariant
-            amp_times_total
-                .bmul(sum)?
-                .bdiv_down(*AMP_PRECISION)?
-                .badd(d_p.bmul(num_tokens)?)?
-                .bmul(invariant)?,
-            // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens + 1) * D_P
-            amp_times_total
-                .bsub(*AMP_PRECISION)?
-                .bmul(invariant)?
-                .bdiv_down(*AMP_PRECISION)?
-                .badd(num_tokens.badd(1.into())?)?
-                .bmul(d_p)?,
-            false,
-        )?;
-
+        // ((ampTimesTotal * sum) / AMP_PRECISION + D_P * numTokens) * invariant
+        let numerator = amp_times_total
+            .bmul(sum)?
+            .bdiv_down(*AMP_PRECISION)?
+            .badd(d_p.bmul(num_tokens)?)?
+            .bmul(invariant)?;
+        // ((ampTimesTotal - _AMP_PRECISION) * invariant) / _AMP_PRECISION + (numTokens + 1) * D_P
+        let denominator = amp_times_total
+            .bsub(*AMP_PRECISION)?
+            .bmul(invariant)?
+            .bdiv_down(*AMP_PRECISION)?
+            .badd(num_tokens.badd(1.into())?.bmul(d_p)?)?;
+        invariant = numerator.bdiv_down(denominator)?;
         match convergence_criteria(invariant, prev_invariant) {
             None => continue,
             Some(invariant) => return Ok(invariant),
@@ -402,7 +395,7 @@ mod tests {
             token_index_out,
             amount_out,
         )
-            .unwrap();
+        .unwrap();
         let expected = calc_in_given_out_approx(
             float_balances,
             amp,
@@ -432,7 +425,7 @@ mod tests {
             token_index_out,
             amount_out,
         )
-            .unwrap();
+        .unwrap();
         let expected = calc_in_given_out_approx(
             float_balances,
             amp,
@@ -462,7 +455,7 @@ mod tests {
             token_index_out,
             token_amount_in,
         )
-            .unwrap();
+        .unwrap();
         let expected = calc_out_given_in_approx(
             float_balances,
             amp,
@@ -492,7 +485,7 @@ mod tests {
             token_index_out,
             token_amount_in,
         )
-            .unwrap();
+        .unwrap();
         let expected = calc_out_given_in_approx(
             float_balances,
             amp,
