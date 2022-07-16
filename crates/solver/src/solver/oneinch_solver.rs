@@ -243,6 +243,7 @@ mod tests {
     use shared::oneinch_api::{MockOneInchClient, Protocols, Spender};
     use shared::{dummy_contract, transport::create_env_test_transport};
 
+
     fn dummy_solver(
         client: MockOneInchClient,
         allowance_fetcher: MockAllowanceManaging,
@@ -287,6 +288,42 @@ mod tests {
         )
         .unwrap();
         assert_eq!(slippage, Slippage::percentage_from_basis_points(1).unwrap());
+    }
+
+    #[test]
+    fn limits_max_slippage_second() {
+        let slippage = OneInchSolver::compute_max_slippage(
+            &BigRational::from_float(0.002).unwrap(),      // price in wei
+            &U256::exp10(23),                              // buy amount
+            10,                                            // default slippage in bps
+            &U256::exp10(17),                              // max slippage in wei
+        )
+        .unwrap();
+        assert_eq!(slippage, Slippage::percentage_from_basis_points(5).unwrap());
+    }
+
+    #[test]
+    fn limits_max_slippage_third() {
+        let slippage = OneInchSolver::compute_max_slippage(
+            &U256::exp10(9).to_big_rational(),  // USDC price in wei
+            &U256::exp10(8),                    // USDC buy amount
+            10,                                 // default slippage in bps
+            &U256::exp10(17),                   // max slippage in wei
+        )
+        .unwrap();
+        assert_eq!(slippage, Slippage::percentage_from_basis_points(10).unwrap());
+    }
+
+    #[test]
+    fn limits_max_slippage_fourth() {
+        let slippage = OneInchSolver::compute_max_slippage(
+            &U256::exp10(9).to_big_rational(), // USDC price in wei
+            &U256::exp10(17),                  // USDC buy amount
+            10,                                // default slippage in bps
+            &U256::exp10(17),                  // max slippage in wei
+        )
+        .unwrap();
+        assert_eq!(slippage, Slippage::percentage_from_basis_points(0).unwrap());
     }
 
     #[tokio::test]
