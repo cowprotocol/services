@@ -40,8 +40,6 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
         }
         let prev_invariant = invariant;
 
-        // Technically we can eliminate rounded div method now because its no longer used.
-        // However, I find it makes the code easier to read.
         // ((ampTimesTotal * sum) / AMP_PRECISION + D_P * numTokens) * invariant
         let numerator = amp_times_total
             .bmul(sum)?
