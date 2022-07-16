@@ -293,7 +293,7 @@ mod tests {
     #[test]
     fn limits_max_slippage_second() {
         let slippage = OneInchSolver::compute_max_slippage(
-            &BigRational::from_float(0.002).unwrap(),      // price in wei
+            &BigRational::new(2.into(), 1000.into()),  // price in wei
             &U256::exp10(23),                              // buy amount
             10,                                            // default slippage in bps
             &U256::exp10(17),                              // max slippage in wei
