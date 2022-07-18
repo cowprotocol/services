@@ -348,19 +348,20 @@ mod tests {
     }
 
     #[test]
-    fn invariant_two_tokens_err() {
+    fn invariant_converges_at_extreme_values() {
         let amp = 5000.;
         let balances: Vec<Bfp> = vec!["0.00001", "1200000", "300"]
             .iter()
             .map(|x| Bfp::from_str(x).unwrap())
             .collect();
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
-        assert_eq!(
-            calculate_invariant(amplification_parameter, balances.as_slice())
-                .unwrap_err()
-                .to_string(),
-            "BAL#321: StableInvariantDidntConverge"
-        );
+        let result = calculate_invariant(amplification_parameter, balances.as_slice()).unwrap();
+        let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
+        let expected = calculate_invariant_approx(float_balances, amp);
+        let max_relative_error = 0.001;
+        assert!((result.to_f64_lossy() / 1e18 - expected)
+            .abs()
+            .le(&max_relative_error));
     }
 
     #[test]
