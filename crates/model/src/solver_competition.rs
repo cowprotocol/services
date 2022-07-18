@@ -7,9 +7,11 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::BTreeMap;
 
+pub type SolverCompetitionId = i64;
+
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
-pub struct SolverCompetitionResponse {
+pub struct SolverCompetition {
     pub gas_price: f64,
     pub auction_start_block: u64,
     pub liquidity_collected_block: u64,
@@ -116,7 +118,7 @@ mod tests {
             ],
         });
 
-        let orig = SolverCompetitionResponse {
+        let orig = SolverCompetition {
             gas_price: 1.,
             auction_start_block: 13,
             liquidity_collected_block: 14,
@@ -156,7 +158,7 @@ mod tests {
 
         let serialized = serde_json::to_value(&orig).unwrap();
         assert_eq!(correct, serialized);
-        let deserialized: SolverCompetitionResponse = serde_json::from_value(correct).unwrap();
+        let deserialized: SolverCompetition = serde_json::from_value(correct).unwrap();
         assert_eq!(orig, deserialized);
     }
 }

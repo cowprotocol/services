@@ -15,7 +15,7 @@ mod post_quote;
 mod post_solver_competition;
 mod replace_order;
 
-use crate::solver_competition::SolverCompetition;
+use crate::solver_competition::SolverCompetitionStoring;
 use crate::{database::trades::TradeRetrieving, order_quoting::QuoteHandler, orderbook::Orderbook};
 use shared::api::{error, finalize_router, internal_error, ApiReply};
 use std::sync::Arc;
@@ -25,7 +25,7 @@ pub fn handle_all_routes(
     database: Arc<dyn TradeRetrieving>,
     orderbook: Arc<Orderbook>,
     quotes: Arc<QuoteHandler>,
-    solver_competition: Arc<SolverCompetition>,
+    solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.

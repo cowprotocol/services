@@ -1,6 +1,7 @@
 pub mod events;
 pub mod orders;
 pub mod quotes;
+pub mod solver_competition;
 pub mod trades;
 
 use anyhow::Result;

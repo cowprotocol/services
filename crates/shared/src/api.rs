@@ -96,8 +96,19 @@ where
     T: Serialize,
     E: IntoWarpReply + Debug,
 {
+    convert_json_response_with_status(result, StatusCode::OK)
+}
+
+pub fn convert_json_response_with_status<T, E>(
+    result: Result<T, E>,
+    status: StatusCode,
+) -> WithStatus<Json>
+where
+    T: Serialize,
+    E: IntoWarpReply + Debug,
+{
     match result {
-        Ok(response) => with_status(warp::reply::json(&response), StatusCode::OK),
+        Ok(response) => with_status(warp::reply::json(&response), status),
         Err(err) => err.into_warp_reply(),
     }
 }

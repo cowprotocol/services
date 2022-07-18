@@ -250,6 +250,7 @@ impl OrderbookServices {
             native_price_estimator,
             Arc::new(NoopMetrics),
             signature_validator.clone(),
+            db.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -282,7 +283,7 @@ impl OrderbookServices {
             quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
-            Default::default(),
+            db.clone(),
             None,
         );
 

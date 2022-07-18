@@ -12,6 +12,7 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{Account, PrivateKey, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
+use model::solver_competition::SolverCompetitionId;
 use naive_solver::NaiveSolver;
 use num::BigRational;
 use oneinch_solver::OneInchSolver;
@@ -69,12 +70,18 @@ pub trait Solver: Send + Sync + 'static {
 /// A batch auction for a solver to produce a settlement for.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    /// An ID that identifies a batch within a `Driver` instance.
+    /// An ID that identifies the unique solver competition that is executing.
+    ///
+    /// Note that multiple consecutive driver runs may use the same ID if the
+    /// previous run was unable to find a settlement.
+    pub id: SolverCompetitionId,
+
+    /// An ID that identifies a driver run.
     ///
     /// Note that this ID is not unique across multiple instances of drivers,
     /// in particular it cannot be used to uniquely identify batches across
     /// service restarts.
-    pub id: u64,
+    pub run: u64,
 
     /// The GPv2 orders to match.
     pub orders: Vec<LimitOrder>,
@@ -112,6 +119,7 @@ impl Default for Auction {
         let never = Instant::now() + Duration::from_secs(SECONDS_IN_A_YEAR);
         Self {
             id: Default::default(),
+            run: Default::default(),
             orders: Default::default(),
             liquidity: Default::default(),
             gas_price: Default::default(),

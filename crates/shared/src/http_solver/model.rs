@@ -2,6 +2,7 @@ use derivative::Derivative;
 use ethcontract::H160;
 use model::{
     ratio_as_decimal,
+    solver_competition::SolverCompetitionId,
     u256_decimal::{self, DecimalU256},
 };
 use num::BigRational;
@@ -205,7 +206,8 @@ impl SettledBatchAuctionModel {
 #[derive(Clone, Debug, Serialize, Default)]
 pub struct MetadataModel {
     pub environment: Option<String>,
-    pub auction_id: Option<u64>,
+    pub auction_id: Option<SolverCompetitionId>,
+    pub run_id: Option<u64>,
     pub gas_price: Option<f64>,
     pub native_token: Option<H160>,
 }
@@ -478,9 +480,7 @@ mod tests {
             },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
-                auction_id: None,
-                gas_price: None,
-                native_token: None,
+                ..Default::default()
             }),
         };
 
@@ -579,6 +579,7 @@ mod tests {
           "metadata": {
             "environment": "Such Meta",
             "auction_id": null,
+            "run_id": null,
             "gas_price": null,
             "native_token": null,
           },

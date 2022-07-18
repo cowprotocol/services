@@ -161,9 +161,9 @@ impl HttpPriceEstimator {
             amms,
             metadata: Some(MetadataModel {
                 environment: Some(self.network_name.clone()),
-                auction_id: None,
                 gas_price: Some(gas_price.to_f64_lossy()),
                 native_token: Some(self.native_token),
+                ..Default::default()
             }),
         };
 

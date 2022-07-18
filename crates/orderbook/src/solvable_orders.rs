@@ -2,6 +2,7 @@ use crate::{
     account_balances::{BalanceFetching, Query},
     database::orders::OrderStoring,
     signature_validator::{SignatureCheck, SignatureValidating},
+    solver_competition::SolverCompetitionStoring,
 };
 use anyhow::{Context as _, Result};
 use ethcontract::H256;
@@ -52,6 +53,7 @@ pub struct SolvableOrdersCache {
     native_price_estimator: Arc<dyn NativePriceEstimating>,
     auction_metrics: Arc<dyn AuctionMetrics>,
     signature_validator: Arc<dyn SignatureValidating>,
+    solver_competition: Arc<dyn SolverCompetitionStoring>,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -82,6 +84,7 @@ impl SolvableOrdersCache {
         native_price_estimator: Arc<dyn NativePriceEstimating>,
         auction_metrics: Arc<dyn AuctionMetrics>,
         signature_validator: Arc<dyn SignatureValidating>,
+        solver_competition: Arc<dyn SolverCompetitionStoring>,
     ) -> Arc<Self> {
         let self_ = Arc::new(Self {
             min_order_validity_period,
@@ -98,16 +101,12 @@ impl SolvableOrdersCache {
                     block: 0,
                 },
                 balances: Default::default(),
-                auction: Auction {
-                    block: 0,
-                    latest_settlement_block: 0,
-                    orders: Default::default(),
-                    prices: Default::default(),
-                },
+                auction: Auction::default(),
             }),
             native_price_estimator,
             auction_metrics,
             signature_validator,
+            solver_competition,
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
         self_
@@ -186,9 +185,11 @@ impl SolvableOrdersCache {
             self.auction_metrics.as_ref(),
         )
         .await;
+        let next_solver_competition = self.solver_competition.next_solver_competition().await?;
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
+            next_solver_competition,
             orders: orders.clone(),
             prices,
         };
@@ -510,6 +511,7 @@ mod tests {
         database::orders::SolvableOrders as DbOrders,
         metrics::NoopMetrics,
         signature_validator::{MockSignatureValidating, SignatureValidationError},
+        solver_competition::MockSolverCompetitionStoring,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::{FutureExt, StreamExt};
@@ -658,6 +660,11 @@ mod tests {
             futures::stream::iter(std::iter::repeat(Ok(1.0)).take(a.len()).enumerate()).boxed()
         });
 
+        let mut solver_competition = MockSolverCompetitionStoring::new();
+        solver_competition
+            .expect_next_solver_competition()
+            .returning(|| Ok(1337));
+
         let cache = SolvableOrdersCache::new(
             Duration::from_secs(0),
             Arc::new(order_storing),
@@ -668,6 +675,7 @@ mod tests {
             Arc::new(native),
             Arc::new(NoopMetrics),
             Arc::new(MockSignatureValidating::new()),
+            Arc::new(solver_competition),
         );
 
         cache.update(0).await.unwrap();

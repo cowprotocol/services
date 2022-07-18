@@ -20,7 +20,6 @@ use orderbook::{
     serve_api,
     signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
-    solver_competition::SolverCompetition,
     verify_deployed_contract_constants,
 };
 use primitive_types::U256;
@@ -532,6 +531,7 @@ async fn main() {
         native_price_estimator.clone(),
         metrics.clone(),
         signature_validator.clone(),
+        database.clone(),
     );
     let block = current_block_stream.borrow().number.unwrap().as_u64();
     solvable_orders_cache
@@ -577,7 +577,6 @@ async fn main() {
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
-    let solver_competition = Arc::new(SolverCompetition::default());
     let serve_api = serve_api(
         database.clone(),
         orderbook.clone(),
@@ -586,7 +585,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
-        solver_competition,
+        database.clone(),
         args.shared.solver_competition_auth,
     );
     let maintenance_task =
