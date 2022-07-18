@@ -1,3 +1,4 @@
+#![allow(clippy::let_unit_value)]
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;
