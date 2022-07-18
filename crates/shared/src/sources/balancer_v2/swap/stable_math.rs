@@ -5,6 +5,7 @@
 //! https://github.com/balancer-labs/balancer-v2-monorepo/blob/stable-deployment/pkg/pool-stable/contracts/StableMath.sol
 
 use super::error::Error;
+use crate::sources::balancer_v2::swap::math::rounded_div;
 use crate::sources::balancer_v2::swap::{fixed_point::Bfp, math::BalU256};
 use ethcontract::U256;
 use lazy_static::lazy_static;
@@ -13,10 +14,12 @@ lazy_static! {
     static ref AMP_PRECISION: U256 = U256::from(1000);
 }
 
-/// OLD: https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L49-L105
-/// NEW: https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57
-fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Result<U256, Error> {
-    // Always round down, to match Vyper's arithmetic (which always truncates).
+/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L57-L85
+fn calculate_invariant(
+    amplification_parameter: U256,
+    balances: &[Bfp],
+    round_up: bool,
+) -> Result<U256, Error> {
     let mut sum = U256::zero();
     let num_tokens_usize = balances.len();
     for balance_i in balances.iter() {
@@ -26,9 +29,80 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
         return Ok(sum);
     }
 
-    let mut invariant = sum;
+    let invariant = sum;
     let num_tokens = U256::from(num_tokens_usize);
     let amp_times_total = amplification_parameter.bmul(num_tokens)?;
+    if round_up {
+        convergence_loop_v1(invariant, amp_times_total, balances, num_tokens, sum)
+    } else {
+        convergence_loop_v2(invariant, amp_times_total, balances, num_tokens, sum)
+    }
+}
+
+/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/ad1442113b26ec22081c2047e2ec95355a7f12ba/pkg/pool-stable/contracts/StableMath.sol#L78-L104
+fn convergence_loop_v1(
+    mut invariant: U256,
+    amp_times_total: U256,
+    balances: &[Bfp],
+    num_tokens: U256,
+    sum: U256,
+) -> Result<U256, Error> {
+    for _ in 0..255 {
+        // If balances were empty, we would have returned on sum.is_zero()
+        let mut p_d = balances[0].as_uint256().bmul(num_tokens)?;
+        for balance in &balances[1..] {
+            // P_D = Math.div(Math.mul(Math.mul(P_D, balances[j]), numTokens), invariant, roundUp);
+            p_d = rounded_div(
+                p_d.bmul(balance.as_uint256())?.bmul(num_tokens)?,
+                invariant,
+                true,
+            )?
+        }
+        let prev_invariant = invariant;
+
+        invariant = rounded_div(
+            // invariant = Math.div(
+            //     Math.mul(Math.mul(numTokens, invariant), invariant).add(
+            //         Math.div(Math.mul(Math.mul(ampTimesTotal, sum), P_D), _AMP_PRECISION, roundUp)
+            //     ),
+            num_tokens
+                .bmul(invariant)?
+                .bmul(invariant)?
+                .badd(rounded_div(
+                    amp_times_total.bmul(sum)?.bmul(p_d)?,
+                    *AMP_PRECISION,
+                    true,
+                )?)?,
+            // Math.mul(numTokens + 1, invariant).add(
+            //     // No need to use checked arithmetic for the amp precision, the amp is guaranteed to be at least 1
+            //     Math.div(Math.mul(ampTimesTotal - _AMP_PRECISION, P_D), _AMP_PRECISION, !roundUp)
+            // ),
+            (num_tokens.badd(1.into())?)
+                .bmul(invariant)?
+                .badd(rounded_div(
+                    (amp_times_total.bsub(*AMP_PRECISION)?).bmul(p_d)?,
+                    *AMP_PRECISION,
+                    false,
+                )?)?,
+            true,
+        )?;
+
+        match convergence_criteria(invariant, prev_invariant) {
+            None => continue,
+            Some(invariant) => return Ok(invariant),
+        }
+    }
+    Err(Error::StableInvariantDidntConverge)
+}
+
+/// https://github.com/balancer-labs/balancer-v2-monorepo/blob/9eb7e44a4e9ebbadfe3c6242a086118298cadc9f/pkg/pool-stable-phantom/contracts/StableMath.sol#L86-L119
+fn convergence_loop_v2(
+    mut invariant: U256,
+    amp_times_total: U256,
+    balances: &[Bfp],
+    num_tokens: U256,
+    sum: U256,
+) -> Result<U256, Error> {
     for _ in 0..255 {
         // If balances were empty, we would have returned on sum.is_zero()
         let mut d_p = invariant;
@@ -58,7 +132,6 @@ fn calculate_invariant(amplification_parameter: U256, balances: &[Bfp]) -> Resul
             Some(invariant) => return Ok(invariant),
         }
     }
-
     Err(Error::StableInvariantDidntConverge)
 }
 
@@ -74,7 +147,7 @@ pub fn calc_out_given_in(
     if token_index_out >= balances.len() || token_index_in >= balances.len() {
         return Err(Error::InvalidToken);
     }
-    let invariant = calculate_invariant(amplification_parameter, balances)?;
+    let invariant = calculate_invariant(amplification_parameter, balances, true)?;
     balances[token_index_in] = balances[token_index_in].add(token_amount_in)?;
 
     let final_balance_out = get_token_balance_given_invariant_and_all_other_balances(
@@ -106,7 +179,7 @@ pub fn calc_in_given_out(
     if token_index_out >= balances.len() || token_index_in >= balances.len() {
         return Err(Error::InvalidToken);
     }
-    let invariant = calculate_invariant(amplification_parameter, balances)?;
+    let invariant = calculate_invariant(amplification_parameter, balances, true)?;
     balances[token_index_out] = balances[token_index_out].sub(token_amount_out)?;
 
     let final_balance_in = get_token_balance_given_invariant_and_all_other_balances(
@@ -335,16 +408,34 @@ mod tests {
         let amp = 100.;
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
         let balances = vec![Bfp::from(10), Bfp::from(12)];
-        let result = calculate_invariant(amplification_parameter, &balances).unwrap();
+        let max_relative_error = 0.001;
         let expected = calculate_analytic_invariant_two_tokens(
             balances[0].to_f64_lossy(),
             balances[1].to_f64_lossy(),
             amp,
         );
-        let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() / 1e18 - expected)
-            .abs()
-            .le(&max_relative_error));
+        for round_up in &[true, false] {
+            let result = calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
+            assert!((result.to_f64_lossy() / 1e18 - expected)
+                .abs()
+                .le(&max_relative_error));
+        }
+    }
+
+    #[test]
+    fn invariant_two_tokens_err() {
+        let amp = 5000.;
+        let balances: Vec<Bfp> = vec!["0.00001", "1200000", "300"]
+            .iter()
+            .map(|x| Bfp::from_str(x).unwrap())
+            .collect();
+        let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
+        assert_eq!(
+            calculate_invariant(amplification_parameter, balances.as_slice(), true)
+                .unwrap_err()
+                .to_string(),
+            "BAL#321: StableInvariantDidntConverge"
+        );
     }
 
     #[test]
@@ -355,7 +446,8 @@ mod tests {
             .map(|x| Bfp::from_str(x).unwrap())
             .collect();
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
-        let result = calculate_invariant(amplification_parameter, balances.as_slice()).unwrap();
+        let result =
+            calculate_invariant(amplification_parameter, balances.as_slice(), false).unwrap();
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
@@ -370,12 +462,14 @@ mod tests {
         let amplification_parameter = U256::from_f64_lossy(amp * AMP_PRECISION.to_f64_lossy());
         let balances = vec![Bfp::from(10), Bfp::from(12), Bfp::from(14)];
         let float_balances = balances.iter().map(|x| x.to_f64_lossy()).collect();
-        let result = calculate_invariant(amplification_parameter, &balances).unwrap();
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
-        assert!((result.to_f64_lossy() / 1e18 - expected)
-            .abs()
-            .le(&max_relative_error));
+        for round_up in &[true, false] {
+            let result = calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
+            assert!((result.to_f64_lossy() / 1e18 - expected)
+                .abs()
+                .le(&max_relative_error));
+        }
     }
 
     #[test]
