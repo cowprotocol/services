@@ -139,7 +139,6 @@ mod tests {
             assert_has_deployment_address!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_address!(BalancerV2WeightedPool2TokensFactory for *network);
             assert_has_deployment_address!(BalancerV2StablePoolFactory for *network);
-            assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
         }
@@ -148,6 +147,7 @@ mod tests {
             assert_has_deployment_address!(HoneyswapFactory for *network);
             assert_has_deployment_address!(HoneyswapRouter for *network);
         }
+        assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for 1);
     }
 
     #[test]
@@ -171,7 +171,7 @@ mod tests {
             assert_has_deployment_information!(BalancerV2WeightedPoolFactory for *network);
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
             assert_has_deployment_information!(BalancerV2StablePoolFactory for *network);
-            assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for *network);
         }
+        assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for 1);
     }
 }
