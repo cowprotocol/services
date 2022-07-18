@@ -34,7 +34,8 @@ use clap::ArgEnum;
 use contracts::{
     BalancerV2LiquidityBootstrappingPoolFactory,
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
-    BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+    BalancerV2StablePoolFactoryV2, BalancerV2Vault, BalancerV2WeightedPool2TokensFactory,
+    BalancerV2WeightedPoolFactory,
 };
 use ethcontract::{Instance, H160, H256};
 use model::TokenPair;
@@ -150,6 +151,7 @@ pub enum BalancerFactoryKind {
     Weighted,
     Weighted2Token,
     Stable,
+    StableV2,
     LiquidityBootstrapping,
     NoProtocolFeeLiquidityBootstrapping,
 }
@@ -160,6 +162,7 @@ pub struct BalancerContracts {
     pub weighted: BalancerV2WeightedPoolFactory,
     pub weighted_2_token: BalancerV2WeightedPool2TokensFactory,
     pub stable: BalancerV2StablePoolFactory,
+    pub stable_v2: BalancerV2StablePoolFactoryV2,
     pub liquidity_bootstrapping: BalancerV2LiquidityBootstrappingPoolFactory,
     pub no_fee_liquidity_bootstrapping: BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
 }
@@ -171,6 +174,7 @@ impl BalancerContracts {
             weighted: BalancerV2WeightedPoolFactory::deployed(web3).await?,
             weighted_2_token: BalancerV2WeightedPool2TokensFactory::deployed(web3).await?,
             stable: BalancerV2StablePoolFactory::deployed(web3).await?,
+            stable_v2: BalancerV2StablePoolFactoryV2::deployed(web3).await?,
             liquidity_bootstrapping: BalancerV2LiquidityBootstrappingPoolFactory::deployed(web3)
                 .await?,
             no_fee_liquidity_bootstrapping:
@@ -294,6 +298,7 @@ async fn create_aggregate_pool_fetcher(
                 registry!(&contracts.weighted_2_token)
             }
             BalancerFactoryKind::Stable => registry!(&contracts.stable),
+            BalancerFactoryKind::StableV2 => registry!(&contracts.stable_v2),
             BalancerFactoryKind::LiquidityBootstrapping => {
                 registry!(&contracts.liquidity_bootstrapping)
             }
