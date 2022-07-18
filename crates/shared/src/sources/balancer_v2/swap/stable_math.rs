@@ -415,7 +415,8 @@ mod tests {
             amp,
         );
         for round_up in &[true, false] {
-            let result = calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
+            let result =
+                calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
             assert!((result.to_f64_lossy() / 1e18 - expected)
                 .abs()
                 .le(&max_relative_error));
@@ -465,7 +466,8 @@ mod tests {
         let expected = calculate_invariant_approx(float_balances, amp);
         let max_relative_error = 0.001;
         for round_up in &[true, false] {
-            let result = calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
+            let result =
+                calculate_invariant(amplification_parameter, &balances, *round_up).unwrap();
             assert!((result.to_f64_lossy() / 1e18 - expected)
                 .abs()
                 .le(&max_relative_error));
