@@ -77,7 +77,7 @@ impl Clone for PriceEstimationError {
             Self::NoLiquidity => Self::NoLiquidity,
             Self::ZeroAmount => Self::ZeroAmount,
             Self::UnsupportedOrderType => Self::UnsupportedOrderType,
-            err @ Self::RateLimited(_) => err.clone(),
+            Self::RateLimited(err) => Self::RateLimited(err.clone()),
             Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
         }
     }
