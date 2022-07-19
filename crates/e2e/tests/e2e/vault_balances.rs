@@ -1,6 +1,6 @@
 use crate::services::{
     create_order_converter, create_orderbook_api, deploy_mintable_token, to_wei,
-    uniswap_pair_provider, OrderbookServices, API_HOST,
+    uniswap_pair_provider, wait_for_solvable_orders, OrderbookServices, API_HOST,
 };
 use contracts::IUniswapLikeRouter;
 use ethcontract::prelude::{Account, Address, PrivateKey, U256};
@@ -96,7 +96,7 @@ async fn vault_balances(web3: Web3) {
 
     let OrderbookServices {
         block_stream,
-        solvable_orders_cache,
+        solvable_orders_cache: _,
         base_tokens,
         ..
     } = OrderbookServices::new(&web3, &contracts).await;
@@ -127,7 +127,8 @@ async fn vault_balances(web3: Web3) {
         .await;
     assert_eq!(placement.unwrap().status(), 201);
 
-    solvable_orders_cache.update(0).await.unwrap();
+    let api = create_orderbook_api();
+    wait_for_solvable_orders(&api, 1).await.unwrap();
 
     // Drive solution
     let uniswap_pair_provider = uniswap_pair_provider(&contracts);
@@ -191,7 +192,7 @@ async fn vault_balances(web3: Web3) {
             ),
         },
         10,
-        create_orderbook_api(),
+        api,
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
         15000000u128,
