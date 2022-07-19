@@ -366,18 +366,19 @@ fn pool_address_from_id(pool_id: H256) -> H160 {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
     use super::*;
     use crate::{
         sources::balancer_v2::{
             graph_api::{BalancerSubgraphClient, PoolData, PoolType},
+            pool_fetching::{BalancerContracts, NoopBalancerPoolCacheMetrics},
             pool_init::EmptyPoolInitializer,
         },
         token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
         transport,
     };
     use hex_literal::hex;
+    use model::TokenPair;
+    use std::time::Duration;
 
     #[test]
     fn can_extract_address_from_pool_id() {
@@ -531,5 +532,46 @@ mod tests {
                     TokenPair::new(pool.tokens[a].address, pool.tokens[b].address)
                 })
         })
+    }
+
+    // Test that prints pools for a token pair. Can be useful after adding a new factory type.
+    #[tokio::test]
+    #[ignore]
+    async fn stable_pools() {
+        let web3 = web3::Web3::new(crate::transport::create_env_test_transport());
+        let current_block =
+            crate::current_block::current_block_stream(web3.clone(), Duration::from_secs(10))
+                .await
+                .unwrap();
+        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let token_info_fetcher = Arc::new(TokenInfoFetcher { web3: web3.clone() });
+        let balancer_pool_fetcher = BalancerPoolFetcher::new(
+            1,
+            token_info_fetcher,
+            BalancerFactoryKind::value_variants(),
+            Default::default(),
+            current_block,
+            Arc::new(NoopBalancerPoolCacheMetrics),
+            Default::default(),
+            &contracts,
+            Default::default(),
+        )
+        .await
+        .unwrap();
+        let pair = TokenPair::new(
+            addr!("616e8BfA43F920657B3497DBf40D6b1A02D4608d"),
+            addr!("5c6Ee304399DBdB9C8Ef030aB642B10820DB8F56"),
+        )
+        .unwrap();
+        let pools = BalancerPoolFetching::fetch(
+            &balancer_pool_fetcher,
+            [pair].into_iter().collect(),
+            crate::recent_block_cache::Block::Recent,
+        )
+        .await
+        .unwrap();
+        for pool in pools.stable_pools {
+            println!("{:?}\n{:?}\n", pool.common.id, pool.common.address);
+        }
     }
 }
