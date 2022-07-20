@@ -1,3 +1,4 @@
+#![allow(clippy::let_unit_value)]
 #[cfg(feature = "bin")]
 pub mod paths;
 pub mod vault;
@@ -18,7 +19,12 @@ include!(concat!(
     "/BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory.rs"
 ));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
+include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolV2.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
+include!(concat!(
+    env!("OUT_DIR"),
+    "/BalancerV2StablePoolFactoryV2.rs"
+));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2Vault.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2WeightedPool.rs"));
 include!(concat!(
@@ -141,6 +147,7 @@ mod tests {
             assert_has_deployment_address!(HoneyswapFactory for *network);
             assert_has_deployment_address!(HoneyswapRouter for *network);
         }
+        assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for 1);
     }
 
     #[test]
@@ -165,5 +172,6 @@ mod tests {
             assert_has_deployment_information!(BalancerV2WeightedPool2TokensFactory for *network);
             assert_has_deployment_information!(BalancerV2StablePoolFactory for *network);
         }
+        assert_has_deployment_information!(BalancerV2StablePoolFactoryV2 for 1);
     }
 }
