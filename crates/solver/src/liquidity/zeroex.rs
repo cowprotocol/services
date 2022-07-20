@@ -125,7 +125,7 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
         orders.sort_by(|order_1, order_2| {
             let price_1 = order_1.order.maker_amount as f64 / order_1.order.taker_amount as f64;
             let price_2 = order_2.order.maker_amount as f64 / order_2.order.taker_amount as f64;
-            price_1.partial_cmp(&price_2).unwrap()
+            price_1.total_cmp(&price_2)
         });
         filtered_zeroex_orders.extend(orders.drain(orders.len() - orders_per_type..));
 
