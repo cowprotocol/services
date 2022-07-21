@@ -115,7 +115,7 @@ impl OneInchSolver {
         );
 
         if final_slippage_bps < default_slippage_bps {
-            tracing::info!(
+            tracing::debug!(
                 default_slippage_bps,
                 final_slippage_bps,
                 ?max_slippage_in_wei,
