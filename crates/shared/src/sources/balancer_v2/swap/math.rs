@@ -41,39 +41,9 @@ impl BalU256 for U256 {
     }
 }
 
-pub fn rounded_div(numerator: U256, denominator: U256, round_up: bool) -> Result<U256, Error> {
-    if round_up {
-        numerator.bdiv_up(denominator)
-    } else {
-        numerator.bdiv_down(denominator)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn rounded_div_ok() {
-        assert_eq!(rounded_div(1.into(), 2.into(), true).unwrap(), 1.into());
-        assert_eq!(rounded_div(1.into(), 2.into(), false).unwrap(), 0.into());
-    }
-
-    #[test]
-    fn rounded_div_err() {
-        assert_eq!(
-            rounded_div(1.into(), 0.into(), true)
-                .unwrap_err()
-                .to_string(),
-            "BAL#004: ZeroDivision"
-        );
-        assert_eq!(
-            rounded_div(1.into(), 0.into(), false)
-                .unwrap_err()
-                .to_string(),
-            "BAL#004: ZeroDivision"
-        );
-    }
 
     #[test]
     fn bmul_tests() {

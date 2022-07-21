@@ -136,6 +136,20 @@ fn main() {
             )
         // Not deployed on Görli
     });
+    generate_contract_with_config("BalancerV2StablePoolFactoryV2", |builder| {
+        builder
+            .contract_mod_override("balancer_v2_stable_pool_factory_v2")
+            .add_network(
+                "1",
+                Network {
+                    address: addr("0x8df6efec5547e31b0eb7d1291b511ff8a2bf987c"),
+                    // <https://etherscan.io/tx/0xef36451947ebd97b72278face57a53806e90071f4c902259db2db41d0c9a143d>
+                    deployment_information: Some(DeploymentInformation::BlockNumber(14934936)),
+                },
+            )
+        // Not deployed on Rinkeby
+        // Not deployed on Görli
+    });
     generate_contract_with_config("BalancerV2LiquidityBootstrappingPoolFactory", |builder| {
         builder
             .contract_mod_override("balancer_v2_liquidity_bootstrapping_pool_factory")
@@ -185,6 +199,12 @@ fn main() {
     );
     generate_contract("BalancerV2WeightedPool");
     generate_contract_with_config("BalancerV2StablePool", |builder| {
+        builder.add_method_alias(
+            "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),uint256[],uint256,uint256)",
+            "on_swap_with_balances"
+        )
+    });
+    generate_contract_with_config("BalancerV2StablePoolV2", |builder| {
         builder.add_method_alias(
             "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),uint256[],uint256,uint256)",
             "on_swap_with_balances"
