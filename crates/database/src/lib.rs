@@ -3,6 +3,7 @@ pub mod events;
 pub mod orders;
 pub mod quotes;
 pub mod solver_competition;
+pub mod trades;
 
 use byte_array::ByteArray;
 use sqlx::{Executor, PgPool};
