@@ -96,14 +96,14 @@ impl OneInchSolver {
         default_slippage_bps: u32,
         max_slippage_in_wei: &U256,
     ) -> Result<Slippage> {
-        let max_slippage_in_buy_token =
+        let max_absolute_slippage_in_buy_token =
             max_slippage_in_wei.to_big_rational() / external_buy_token_price_in_wei;
 
-        let max_slippage_percent_respecting_wei_limit =
-            max_slippage_in_buy_token / buy_amount.to_big_rational();
+        let max_relative_slippage_respecting_wei_limit =
+            max_absolute_slippage_in_buy_token / buy_amount.to_big_rational();
 
         let max_slippage_bps_respecting_wei_limit =
-            max_slippage_percent_respecting_wei_limit * BigRational::from_u128(10_000).unwrap();
+            max_relative_slippage_respecting_wei_limit * BigRational::from_u128(10_000).unwrap();
 
         let final_slippage_bps = std::cmp::min(
             max_slippage_bps_respecting_wei_limit
