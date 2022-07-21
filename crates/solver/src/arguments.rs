@@ -146,7 +146,7 @@ pub struct Arguments {
     pub oneinch_slippage_bps: u32,
 
     /// The maximum slippage in ETH we are willing to incur per trade on 1Inch
-    #[clap(long, env, default_value = "0.1")]
+    #[clap(long, env, default_value = "0.07")]
     pub oneinch_max_slippage_in_eth: f64,
 
     /// How to to submit settlement transactions.
