@@ -114,6 +114,15 @@ impl OneInchSolver {
             default_slippage_bps,
         );
 
+        if final_slippage_bps < default_slippage_bps {
+            tracing::info!(
+                default_slippage_bps,
+                final_slippage_bps,
+                ?max_slippage_in_wei,
+                "reducing default slippage bps to respect max absolute slippage configuration",
+            );
+        }
+
         Slippage::percentage_from_basis_points(final_slippage_bps)
     }
 
