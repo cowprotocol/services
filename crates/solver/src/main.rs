@@ -2,6 +2,7 @@ use anyhow::Context;
 use clap::{ArgEnum, Parser};
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
 use num::rational::Ratio;
+use primitive_types::U256;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
@@ -239,6 +240,7 @@ async fn main() {
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
         args.external_solvers.unwrap_or_default(),
+        U256::from_f64_lossy(args.oneinch_max_slippage_in_eth * 1e18),
     )
     .expect("failure creating solvers");
 

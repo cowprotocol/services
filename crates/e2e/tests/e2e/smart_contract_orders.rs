@@ -1,6 +1,7 @@
 use crate::services::{
     create_order_converter, create_orderbook_api, deploy_mintable_token,
-    gnosis_safe_eip1271_signature, to_wei, uniswap_pair_provider, OrderbookServices, API_HOST,
+    gnosis_safe_eip1271_signature, to_wei, uniswap_pair_provider, wait_for_solvable_orders,
+    OrderbookServices, API_HOST,
 };
 use contracts::{
     GnosisSafe, GnosisSafeCompatibilityFallbackHandler, GnosisSafeProxy, IUniswapLikeRouter,
@@ -116,7 +117,7 @@ async fn smart_contract_orders(web3: Web3) {
     let OrderbookServices {
         block_stream,
         maintenance,
-        solvable_orders_cache,
+        solvable_orders_cache: _,
         base_tokens,
         ..
     } = OrderbookServices::new(&web3, &contracts).await;
@@ -168,8 +169,6 @@ async fn smart_contract_orders(web3: Web3) {
     }
     let orders = orders; // prevent further changes to `orders`.
 
-    solvable_orders_cache.update(0).await.unwrap();
-
     let order_status = |order_uid: OrderUid| {
         let client = client.clone();
         async move {
@@ -210,11 +209,13 @@ async fn smart_contract_orders(web3: Web3) {
 
     // Drive orderbook in order to check that the presignature event was received.
     maintenance.run_maintenance().await.unwrap();
-    solvable_orders_cache.update(0).await.unwrap();
     assert_eq!(
         order_status(orders[1].metadata.uid).await,
         OrderStatus::Open
     );
+
+    let api = create_orderbook_api();
+    wait_for_solvable_orders(&api, 2).await.unwrap();
 
     // Drive solution
     let uniswap_pair_provider = uniswap_pair_provider(&contracts);
@@ -278,7 +279,7 @@ async fn smart_contract_orders(web3: Web3) {
             ),
         },
         10,
-        create_orderbook_api(),
+        api,
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
         15000000u128,

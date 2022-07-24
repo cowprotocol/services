@@ -638,6 +638,10 @@ dependencies = [
 name = "database"
 version = "0.1.0"
 dependencies = [
+ "bigdecimal",
+ "chrono",
+ "const_format",
+ "futures",
  "hex",
  "sqlx",
  "tokio",
@@ -1964,7 +1968,6 @@ dependencies = [
  "cached",
  "chrono",
  "clap 3.2.5",
- "const_format",
  "contracts",
  "database",
  "ethcontract",
