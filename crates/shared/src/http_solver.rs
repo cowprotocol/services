@@ -197,3 +197,51 @@ impl DefaultHttpSolverApi {
         .collect()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{model::SettledBatchAuctionModel, *};
+    use flate2::write::GzEncoder;
+    use tokio::{io::AsyncWriteExt, net::TcpListener};
+
+    #[tokio::test]
+    async fn supports_gzip() {
+        let listener = TcpListener::bind("localhost:1234").await.unwrap();
+        let listen = async move {
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut encoder = GzEncoder::new(Vec::new(), Default::default());
+                serde_json::to_writer(&mut encoder, &SettledBatchAuctionModel::default()).unwrap();
+                let body = encoder.finish().unwrap();
+                let response = "\
+HTTP/1.1 200 OK\r\n\
+Content-Type: application/json\r\n\
+Content-Encoding: gzip\r\n\
+\r\n\
+                ";
+                stream.write_all(response.as_bytes()).await.unwrap();
+                stream.write_all(&body).await.unwrap();
+                stream.shutdown().await.unwrap();
+            }
+        };
+        tokio::task::spawn(listen);
+
+        let mut api = DefaultHttpSolverApi {
+            name: Default::default(),
+            network_name: Default::default(),
+            chain_id: Default::default(),
+            base: "http://localhost:1234".parse().unwrap(),
+            client: Default::default(),
+            config: Default::default(),
+        };
+        // The default reqwest::Client supports gzip responses if the corresponding crate feature is enabled.
+        api.solve(&Default::default(), Duration::from_secs(1))
+            .await
+            .unwrap();
+        // After explicitly disabling gzip support the response no longer decodes.
+        api.client = reqwest::ClientBuilder::new().no_gzip().build().unwrap();
+        api.solve(&Default::default(), Duration::from_secs(1))
+            .await
+            .unwrap_err();
+    }
+}

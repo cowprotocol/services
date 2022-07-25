@@ -56,6 +56,9 @@ impl OneInchPriceEstimator {
                 gas: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
             }),
             RestResponse::Err(e) => {
+                if e.description == "insufficient liquidity" {
+                    return Err(PriceEstimationError::NoLiquidity);
+                }
                 Err(PriceEstimationError::Other(anyhow::anyhow!(e.description)))
             }
         }
