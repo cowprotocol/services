@@ -45,7 +45,7 @@ pub struct OneInchSolver {
     protocol_cache: ProtocolCache,
     oneinch_slippage_bps: u32,
     /// how much slippage in wei we allow per trade
-    max_slippage_in_wei: U256,
+    max_slippage_in_wei: Option<U256>,
 }
 
 impl From<RestError> for SettlementError {
@@ -69,7 +69,7 @@ impl OneInchSolver {
         client: Client,
         one_inch_url: Url,
         oneinch_slippage_bps: u32,
-        max_slippage_in_wei: U256,
+        max_slippage_in_wei: Option<U256>,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
@@ -210,15 +210,18 @@ impl SingleOrderSolving for OneInchSolver {
             .protocol_cache
             .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
             .await?;
-        let slippage = Self::compute_max_slippage(
-            auction.external_prices.price(&order.buy_token).expect(
-                "auction should only contain orders where prices \
+        let slippage = match self.max_slippage_in_wei {
+            Some(wei) => Self::compute_max_slippage(
+                auction.external_prices.price(&order.buy_token).expect(
+                    "auction should only contain orders where prices \
                     for buy_token and sell_token are known",
-            ),
-            &order.buy_amount,
-            self.oneinch_slippage_bps,
-            &self.max_slippage_in_wei,
-        )?;
+                ),
+                &order.buy_amount,
+                self.oneinch_slippage_bps,
+                &wei,
+            )?,
+            None => Slippage::percentage_from_basis_points(self.oneinch_slippage_bps).unwrap(),
+        };
         self.settle_order_with_protocols_and_slippage(order, protocols, slippage)
             .await
     }
@@ -265,7 +268,7 @@ mod tests {
             allowance_fetcher: Box::new(allowance_fetcher),
             protocol_cache: ProtocolCache::default(),
             oneinch_slippage_bps: 10u32,
-            max_slippage_in_wei: U256::MAX,
+            max_slippage_in_wei: Some(U256::MAX),
         }
     }
 
@@ -572,7 +575,7 @@ mod tests {
             Client::new(),
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
             10u32,
-            0.into(), // ignored for this test
+            None,
         )
         .unwrap();
         let slippage = Slippage::percentage_from_basis_points(solver.oneinch_slippage_bps).unwrap();
