@@ -141,6 +141,7 @@ mod tests {
     async fn postgres_save_and_get_quote_by_id() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
 
         let now = low_precision_now();
         let mut quote = Quote {
@@ -170,6 +171,7 @@ mod tests {
     async fn postgres_save_and_find_quote() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
 
         let now = low_precision_now();
         let token_a = ByteArray([1; 20]);
