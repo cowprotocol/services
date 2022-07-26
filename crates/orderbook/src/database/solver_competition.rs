@@ -1,6 +1,7 @@
 use super::Postgres;
 use crate::solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::{Context, Result};
+use database::byte_array::ByteArray;
 use model::solver_competition::{SolverCompetition, SolverCompetitionId};
 
 #[async_trait::async_trait]
@@ -11,10 +12,15 @@ impl SolverCompetitionStoring for Postgres {
             .with_label_values(&["save_solver_competition"])
             .start_timer();
 
+        let tx_hash = data.transaction_hash.map(|h256| ByteArray(h256.0));
         let mut ex = self.pool.acquire().await?;
-        let id = database::solver_competition::save(&mut ex, &serde_json::to_value(data)?)
-            .await
-            .context("failed to insert solver competition")?;
+        let id = database::solver_competition::save(
+            &mut ex,
+            &serde_json::to_value(data)?,
+            tx_hash.as_ref(),
+        )
+        .await
+        .context("failed to insert solver competition")?;
         Ok(id)
     }
 
@@ -28,7 +34,7 @@ impl SolverCompetitionStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        let value = database::solver_competition::load(&mut ex, id)
+        let value = database::solver_competition::load_by_id(&mut ex, id)
             .await
             .context("failed to get solver competition by ID")?;
         match value {
