@@ -158,10 +158,6 @@ pub enum BalancerFactoryKind {
 
 impl BalancerFactoryKind {
     /// Returns a vector with supported factories for the specified chain ID.
-    ///
-    /// # Panics
-    ///
-    /// This associated function panics for unsupported chain IDs.
     pub fn for_chain(chain_id: u64) -> Vec<Self> {
         match chain_id {
             1 => Self::value_variants().to_owned(),
@@ -173,7 +169,7 @@ impl BalancerFactoryKind {
                 Self::NoProtocolFeeLiquidityBootstrapping,
             ],
             5 => vec![Self::Weighted, Self::Weighted2Token],
-            _ => panic!("Balancer V2 does not support chain {chain_id}"),
+            _ => Default::default(),
         }
     }
 }
