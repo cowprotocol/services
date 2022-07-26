@@ -204,12 +204,6 @@ fn main() {
             "on_swap_with_balances"
         )
     });
-    generate_contract_with_config("BalancerV2StablePoolV2", |builder| {
-        builder.add_method_alias(
-            "onSwap((uint8,address,address,uint256,bytes32,uint256,address,address,bytes),uint256[],uint256,uint256)",
-            "on_swap_with_balances"
-        )
-    });
     generate_contract("BalancerV2LiquidityBootstrappingPool");
     generate_contract_with_config("BaoswapFactory", |builder| {
         builder.add_network_str("100", "0x45DE240fbE2077dd3e711299538A09854FAE9c9b")
