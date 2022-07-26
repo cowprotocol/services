@@ -174,6 +174,7 @@ fn solve_with_uniswap(
             AmmOrderExecution {
                 input: (uniswap_in_token, uniswap_in),
                 output: (uniswap_out_token, uniswap_out_with_rounding),
+                fee: None,
             },
         )
         .ok()?;

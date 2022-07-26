@@ -143,6 +143,7 @@ async fn vault_balances(web3: Web3) {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         balancer_v2_liquidity: None,
         zeroex_liquidity: None,
+        uniswap_v3_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
     let submitted_transactions = GlobalTxPool::default();

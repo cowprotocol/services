@@ -118,7 +118,7 @@ impl HttpPriceEstimator {
 
         let (uniswap_pools, balancer_pools) = futures::try_join!(
             self.uniswap_pools(pairs.clone(), &gas_model),
-            self.balancer_pools(pairs.clone(), &gas_model)
+            self.balancer_pools(pairs.clone(), &gas_model) // todo add univ3 pools?
         )?;
         let amms: BTreeMap<usize, AmmModel> = uniswap_pools
             .into_iter()
@@ -135,6 +135,7 @@ impl HttpPriceEstimator {
                 AmmParameters::ConstantProduct(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::WeightedProduct(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::Stable(params) => tokens.extend(params.reserves.keys()),
+                AmmParameters::Concentrated(_) => (),
             }
         }
         let tokens: Vec<_> = tokens.drain().collect();

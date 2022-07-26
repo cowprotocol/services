@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
 
+use crate::sources::uniswap_v3::pool_fetching::PoolInfo;
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
     pub tokens: BTreeMap<H160, TokenInfoModel>,
@@ -57,6 +59,7 @@ pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
     WeightedProduct(WeightedProductPoolParameters),
     Stable(StablePoolParameters),
+    Concentrated(ConcentratedPoolParameters),
 }
 
 #[serde_as]
@@ -88,6 +91,12 @@ pub struct StablePoolParameters {
     pub scaling_rates: BTreeMap<H160, U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ConcentratedPoolParameters {
+    pub pool: PoolInfo,
 }
 
 #[serde_as]
@@ -249,6 +258,7 @@ pub struct ExecutedAmmModel {
     /// able to determine and order of execution. That is, solver may have a solution
     /// which it wants to share with the driver even if it couldn't derive an execution plan.
     pub exec_plan: Option<ExecutionPlan>,
+    pub fee: Option<u32>,
 }
 
 impl UpdatedAmmModel {

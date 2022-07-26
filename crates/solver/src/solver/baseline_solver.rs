@@ -145,6 +145,8 @@ impl BaselineSolver {
                             tracing::debug!("Excluded stable pool from baseline solving.")
                         }
                         Liquidity::LimitOrder(_) => {}
+                        Liquidity::Concentrated(_) => {} // not being implemented right now since baseline solver
+                                                         // is not winning anyway
                     }
                     amm_map
                 });
@@ -263,6 +265,7 @@ impl Solution {
             let execution = AmmOrderExecution {
                 input: (sell_token, sell_amount),
                 output: (buy_token, buy_amount),
+                fee: None,
             };
             match &amm.order {
                 AmmOrder::ConstantProduct(order) => settlement.with_liquidity(order, execution),
@@ -397,6 +400,7 @@ mod tests {
             AmmOrderExecution {
                 input: (sell_token, 100_000.into()),
                 output: (native_token, 98_715.into()),
+                fee: None,
             }
         );
         assert_eq!(
@@ -404,6 +408,7 @@ mod tests {
             AmmOrderExecution {
                 input: (native_token, 98_715.into()),
                 output: (buy_token, 97_459.into()),
+                fee: None,
             }
         );
     }
@@ -499,6 +504,7 @@ mod tests {
             AmmOrderExecution {
                 input: (sell_token, 102_660.into()),
                 output: (native_token, 101_315.into()),
+                fee: None,
             }
         );
         assert_eq!(
@@ -506,6 +512,7 @@ mod tests {
             AmmOrderExecution {
                 input: (native_token, 101_315.into()),
                 output: (buy_token, 100_000.into()),
+                fee: None,
             }
         );
     }

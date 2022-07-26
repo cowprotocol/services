@@ -257,6 +257,7 @@ async fn main() {
         uniswap_like_liquidity,
         balancer_v2_liquidity,
         zeroex_liquidity,
+        uniswap_v3_liquidity: None,
     };
     let market_makable_token_list =
         TokenList::from_url(&args.market_makable_token_list, chain_id, client.clone())
@@ -460,6 +461,7 @@ async fn build_amm_artifacts(
                 .address(),
             BaselineSource::BalancerV2 => continue,
             BaselineSource::ZeroEx => continue,
+            BaselineSource::UniswapV3 => continue,
         };
         res.push(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),
