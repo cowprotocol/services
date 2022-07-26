@@ -136,15 +136,15 @@ async fn main() {
 
     let (balancer_pool_maintainer, balancer_v2_liquidity) =
         if baseline_sources.contains(&BaselineSource::BalancerV2) {
-            let contracts = BalancerContracts::new(&web3).await.unwrap();
+            let factories = args
+                .shared
+                .balancer_factories
+                .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
+            let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
             let balancer_pool_fetcher = Arc::new(
                 BalancerPoolFetcher::new(
                     chain_id,
                     token_info_fetcher.clone(),
-                    &args
-                        .shared
-                        .balancer_factories
-                        .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id)),
                     cache_config,
                     current_block_stream.clone(),
                     metrics.clone(),
