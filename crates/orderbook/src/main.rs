@@ -1,4 +1,4 @@
-use clap::{ArgEnum, Parser};
+use clap::Parser;
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, GPv2Settlement, IUniswapV3Factory,
     WETH9,
@@ -296,10 +296,10 @@ async fn main() {
             BalancerPoolFetcher::new(
                 chain_id,
                 token_info_fetcher.clone(),
-                args.shared
+                &args
+                    .shared
                     .balancer_factories
-                    .as_deref()
-                    .unwrap_or_else(BalancerFactoryKind::value_variants),
+                    .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id)),
                 cache_config,
                 current_block_stream.clone(),
                 metrics.clone(),
