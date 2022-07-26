@@ -19,7 +19,6 @@ include!(concat!(
     "/BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory.rs"
 ));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePool.rs"));
-include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolV2.rs"));
 include!(concat!(env!("OUT_DIR"), "/BalancerV2StablePoolFactory.rs"));
 include!(concat!(
     env!("OUT_DIR"),
