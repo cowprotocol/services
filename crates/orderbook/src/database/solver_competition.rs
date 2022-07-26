@@ -61,10 +61,8 @@ impl SolverCompetitionStoring for Postgres {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use database::TransactionHash;
     use model::solver_competition::{CompetitionAuction, SolverSettlement};
     use primitive_types::H256;
-    use sqlx::Executor;
 
     #[tokio::test]
     #[ignore]
@@ -104,79 +102,5 @@ mod tests {
         let id = db.next_solver_competition().await.unwrap();
         let result = db.load(id + 1).await.unwrap_err();
         assert!(matches!(result, LoadSolverCompetitionError::NotFound(_)));
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn temp_test_migration() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        db.save(SolverCompetition {
-            gas_price: 1.,
-            transaction_hash: Some(H256([5; 32])),
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-        db.save(SolverCompetition {
-            gas_price: 2.,
-            transaction_hash: None,
-            ..Default::default()
-        })
-        .await
-        .unwrap();
-
-        #[derive(Debug, sqlx::FromRow)]
-        struct Row {
-            id: i64,
-            json: sqlx::types::JsonValue,
-        }
-
-        let rows: Vec<Row> = sqlx::query_as("SELECT * FROM solver_competitions")
-            .fetch_all(&db.pool)
-            .await
-            .unwrap();
-
-        for row in rows {
-            println!("{:#?}", row);
-        }
-
-        // ---
-
-        let mut transaction = db.pool.begin().await.unwrap();
-        transaction
-            .execute(
-                r#"
-ALTER TABLE solver_competitions
-    ADD COLUMN tx_hash bytea UNIQUE;
-
-UPDATE solver_competitions
-    SET tx_hash = decode(substr(json ->> 'transactionHash', 3), 'hex');
-            "#,
-            )
-            .await
-            .unwrap();
-
-        #[derive(Debug, sqlx::FromRow)]
-        struct Row_ {
-            id: i64,
-            json: sqlx::types::JsonValue,
-            tx_hash: Option<TransactionHash>,
-        }
-
-        let rows: Vec<Row_> = sqlx::query_as("SELECT * FROM solver_competitions")
-            .fetch_all(&mut transaction)
-            .await
-            .unwrap();
-
-        for row in &rows {
-            println!("{:#?}", row);
-        }
-
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].tx_hash.unwrap().0, [5; 32]);
-        assert_eq!(rows[1].tx_hash, None);
     }
 }
