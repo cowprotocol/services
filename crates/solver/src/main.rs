@@ -1,5 +1,5 @@
 use anyhow::Context;
-use clap::{ArgEnum, Parser};
+use clap::Parser;
 use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
 use num::rational::Ratio;
 use primitive_types::U256;
@@ -136,15 +136,15 @@ async fn main() {
 
     let (balancer_pool_maintainer, balancer_v2_liquidity) =
         if baseline_sources.contains(&BaselineSource::BalancerV2) {
-            let contracts = BalancerContracts::new(&web3).await.unwrap();
+            let factories = args
+                .shared
+                .balancer_factories
+                .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
+            let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
             let balancer_pool_fetcher = Arc::new(
                 BalancerPoolFetcher::new(
                     chain_id,
                     token_info_fetcher.clone(),
-                    args.shared
-                        .balancer_factories
-                        .as_deref()
-                        .unwrap_or_else(BalancerFactoryKind::value_variants),
                     cache_config,
                     current_block_stream.clone(),
                     metrics.clone(),
@@ -240,7 +240,8 @@ async fn main() {
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
         args.external_solvers.unwrap_or_default(),
-        U256::from_f64_lossy(args.oneinch_max_slippage_in_eth * 1e18),
+        args.oneinch_max_slippage_in_eth
+            .map(|float| U256::from_f64_lossy(float * 1e18)),
     )
     .expect("failure creating solvers");
 

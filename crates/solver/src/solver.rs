@@ -241,7 +241,7 @@ pub fn create(
     mip_uses_internal_buffers: bool,
     one_inch_url: Url,
     external_solvers: Vec<ExternalSolverArg>,
-    oneinch_max_slippage_in_wei: U256,
+    oneinch_max_slippage_in_wei: Option<U256>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
