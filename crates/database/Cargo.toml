@@ -4,9 +4,13 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+bigdecimal = "0.3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+const_format = "0.2"
+futures = { version = "0.3", default-features = false, features = ["std"] }
 hex = "0.4"
-sqlx = { version = "0.6", default-features = false, features = ["chrono", "bigdecimal", "postgres"] }
+sqlx = { version = "0.6", default-features = false, features = ["chrono", "bigdecimal", "macros", "postgres"] }
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["chrono", "bigdecimal", "postgres", "runtime-tokio-native-tls"] }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tokio = { version = "1.15", features = ["macros"] }

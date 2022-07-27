@@ -420,7 +420,10 @@ mod tests {
             .unwrap(),
         );
         let token_info = Arc::new(TokenInfoFetcher { web3: web3.clone() });
-        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let contracts =
+            BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
+                .await
+                .unwrap();
         let current_block_stream = current_block_stream(web3.clone(), Duration::from_secs(10))
             .await
             .unwrap();
@@ -428,7 +431,6 @@ mod tests {
             BalancerPoolFetcher::new(
                 chain_id,
                 token_info.clone(),
-                BalancerFactoryKind::value_variants(),
                 Default::default(),
                 current_block_stream.clone(),
                 Arc::new(crate::sources::balancer_v2::pool_fetching::NoopBalancerPoolCacheMetrics),

@@ -1,4 +1,5 @@
 use crate::deploy::Contracts;
+use anyhow::{anyhow, Result};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
@@ -294,5 +295,22 @@ impl OrderbookServices {
             solvable_orders_cache,
             base_tokens,
         }
+    }
+}
+
+/// Returns error if communicating with the api fails or if a timeout is reached.
+pub async fn wait_for_solvable_orders(api: &OrderBookApi, minimum: usize) -> Result<()> {
+    let task = async {
+        loop {
+            let auction = api.get_auction().await?;
+            if auction.orders.len() >= minimum {
+                return Ok(());
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    };
+    match tokio::time::timeout(Duration::from_secs(10), task).await {
+        Ok(inner) => inner,
+        Err(_) => Err(anyhow!("timeout")),
     }
 }

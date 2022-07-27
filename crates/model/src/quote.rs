@@ -8,17 +8,12 @@ use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
 use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceQuality {
     Fast,
+    #[default]
     Optimal,
-}
-
-impl Default for PriceQuality {
-    fn default() -> Self {
-        Self::Optimal
-    }
 }
 
 /// The order parameters to quote a price and fee for.

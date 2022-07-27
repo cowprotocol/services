@@ -12,7 +12,7 @@ use crate::{
     settlement_post_processing::PostProcessingPipeline,
     settlement_rater::SettlementRater,
     settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
-    settlement_submission::SolutionSubmitter,
+    settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, SettlementWithError, Solver, Solvers},
 };
 use anyhow::{Context, Result};
@@ -208,7 +208,7 @@ impl Driver {
         &self,
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
-    ) -> Result<TransactionReceipt> {
+    ) -> Result<TransactionReceipt, SubmissionError> {
         let settlement = rated_settlement.settlement;
         let traded_orders = Self::get_traded_orders(&settlement);
 
@@ -260,7 +260,7 @@ impl Driver {
                         tracing::debug!(?err, "access list metric not saved");
                     }
                 }
-                Err(err.into_anyhow())
+                Err(err)
             }
         }
     }
@@ -708,31 +708,39 @@ impl Driver {
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
             let start = Instant::now();
-            if let Ok(receipt) = self
+            match self
                 .submit_settlement(winning_solver.clone(), winning_settlement.clone())
                 .await
             {
-                let block = match receipt.block_number {
-                    Some(block) => block.as_u64(),
-                    None => {
-                        tracing::error!("tx receipt does not contain block number");
-                        0
-                    }
-                };
+                Ok(receipt) => {
+                    let block = match receipt.block_number {
+                        Some(block) => block.as_u64(),
+                        None => {
+                            tracing::error!("tx receipt does not contain block number");
+                            0
+                        }
+                    };
 
-                self.in_flight_orders
-                    .mark_settled_orders(block, &winning_settlement.settlement);
+                    self.in_flight_orders
+                        .mark_settled_orders(block, &winning_settlement.settlement);
 
-                match receipt.effective_gas_price {
-                    Some(price) => {
-                        self.metrics.transaction_gas_price(price);
+                    match receipt.effective_gas_price {
+                        Some(price) => {
+                            self.metrics.transaction_gas_price(price);
+                        }
+                        None => {
+                            tracing::error!(
+                                "node did not return effective gas price in tx receipt"
+                            );
+                        }
                     }
-                    None => {
-                        tracing::error!("node did not return effective gas price in tx receipt");
-                    }
+
+                    solver_competition.transaction_hash = Some(receipt.transaction_hash);
                 }
-
-                solver_competition.transaction_hash = Some(receipt.transaction_hash);
+                Err(SubmissionError::Revert(hash)) => {
+                    solver_competition.transaction_hash = Some(hash);
+                }
+                _ => (),
             }
 
             self.metrics.transaction_submission(start.elapsed());

@@ -180,7 +180,7 @@ mod bytes_hex_or_array {
 }
 
 #[serde_as]
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
