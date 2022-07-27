@@ -232,8 +232,11 @@ mod tests {
         assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Untracked token
-        let (approval, _) =
-            inner.settle((H160::from_low_u64_be(3), 1.into()), (token_a, 100.into()), 10);
+        let (approval, _) = inner.settle(
+            (H160::from_low_u64_be(3), 1.into()),
+            (token_a, 100.into()),
+            10,
+        );
         assert_ne!(approval, Approval::AllowanceSufficient);
     }
 }
