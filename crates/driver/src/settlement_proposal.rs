@@ -59,52 +59,52 @@ impl TradedOrder {
     /// Computes and returns the executed trade amounts given the settlements uniform clearing
     /// prices. The computed fee will always be 0 because it does not matter for further
     /// computations.
-    fn execution(&self, clearing_prices: &HashMap<H160, U256>) -> Option<TradeExecution> {
-        let sell_price = clearing_prices.get(&self.order.data.sell_token)?;
-        let buy_price = self.buy_token_price(clearing_prices)?;
+    fn execution(&self, clearing_prices: &HashMap<H160, U256>) -> Result<TradeExecution> {
+        verify_executed_amount(&self.order, self.executed_amount)?;
+        let remaining = self.order.remaining_amounts()?;
+
+        let sell_price = clearing_prices
+            .get(&self.order.data.sell_token)
+            .context("no clearing price for sell token")?;
+        let buy_price = self
+            .buy_token_price(clearing_prices)
+            .context("no clearing price for buy token")?;
 
         let order = &self.order.data;
         let (sell_amount, buy_amount) = match order.kind {
             OrderKind::Sell => {
                 let sell_amount = self.executed_amount;
                 let buy_amount = sell_amount
-                    .checked_mul(*sell_price)?
-                    .checked_ceil_div(&buy_price)?;
+                    .checked_mul(*sell_price)
+                    .and_then(|v| v.checked_ceil_div(&buy_price))
+                    .ok_or_else(|| anyhow::anyhow!("could not compute buy amount"))?;
                 (sell_amount, buy_amount)
             }
             OrderKind::Buy => {
                 let buy_amount = self.executed_amount;
                 let sell_amount = buy_amount
-                    .checked_mul(buy_price)?
-                    .checked_div(*sell_price)?;
+                    .checked_mul(buy_price)
+                    .and_then(|v| v.checked_div(*sell_price))
+                    .ok_or_else(|| anyhow::anyhow!("could not compute sell amount"))?;
                 (sell_amount, buy_amount)
             }
         };
 
-        Some(TradeExecution {
+        let execution = TradeExecution {
             sell_token: order.sell_token,
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
             fee_amount: 0.into(),
-        })
-    }
+        };
 
-    /// Verifies that all our required properties are respected by this trade:
-    ///   - executed amounts make sense for order type (partially_fillable vs. fill-or-kill)
-    ///   - user order limit prices have been respected (TODO handle partially_fillable case)
-    fn sanity_check_trade_properties(&self, clearing_prices: &HashMap<H160, U256>) -> Result<()> {
-        verify_executed_amount(&self.order, self.executed_amount)?;
-        let remainig = self.order.remaining_amounts()?;
-        let executed = self
-            .execution(clearing_prices)
-            .context("could not compute executed amounts")?;
         anyhow::ensure!(
-            executed.sell_amount <= remainig.sell_amount
-                && executed.buy_amount >= remainig.buy_amount,
+            execution.sell_amount <= remaining.sell_amount
+                && execution.buy_amount >= remaining.buy_amount,
             "limit prices not respected"
         );
-        Ok(())
+
+        Ok(execution)
     }
 }
 
@@ -189,7 +189,6 @@ impl SettlementProposal {
 
         let mut trade_executions = Vec::with_capacity(self.trades.len());
         for trade in &self.trades {
-            trade.sanity_check_trade_properties(&self.clearing_prices)?;
             let execution = trade
                 .execution(&self.clearing_prices)
                 .with_context(|| format!("could not compute trade execution: {trade:?}"))?;
