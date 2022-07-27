@@ -16,10 +16,12 @@ path = "src/main.rs"
 anyhow = "1.0"
 async-trait = "0.1"
 clap = { version = "3.1", features = ["derive", "env"] }
+database = { path = "../database" }
 global-metrics = { path = "../global-metrics" }
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
 shared= { path = "../shared" }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
 tracing = "0.1"
 url = "2.2"

@@ -73,15 +73,6 @@ use shared::{
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
 
-pub async fn database_metrics(database: Postgres) -> ! {
-    loop {
-        if let Err(err) = database.update_table_rows_metric().await {
-            tracing::error!(?err, "failed to update table rows metric");
-        }
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-}
-
 #[tokio::main]
 async fn main() {
     let args = orderbook::arguments::Arguments::parse();
@@ -590,7 +581,6 @@ async fn main() {
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(postgres));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -601,7 +591,6 @@ async fn main() {
     tokio::select! {
         result = &mut serve_api => tracing::error!(?result, "API task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
-        result = db_metrics_task => tracing::error!(?result, "database metrics task exited"),
         result = metrics_task => tracing::error!(?result, "metrics task exited"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");
