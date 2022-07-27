@@ -141,7 +141,6 @@ mod tests {
             assert_has_deployment_address!(BalancerV2StablePoolFactory for *network);
             assert_has_deployment_address!(UniswapV2Factory for *network);
             assert_has_deployment_address!(UniswapV2Router02 for *network);
-            assert_has_deployment_address!(UniswapV3SwapRouter for *network);
         }
         #[allow(clippy::single_element_loop)]
         for network in &[100] {
@@ -149,6 +148,7 @@ mod tests {
             assert_has_deployment_address!(HoneyswapRouter for *network);
         }
         assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for 1);
+        assert_has_deployment_address!(UniswapV3SwapRouter for 1);
     }
 
     #[test]
