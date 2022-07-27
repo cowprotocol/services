@@ -11,19 +11,14 @@ use web3::{
     types::Recovery,
 };
 
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
 #[serde(rename_all = "lowercase")]
 pub enum SigningScheme {
+    #[default]
     Eip712,
     EthSign,
     Eip1271,
     PreSign,
-}
-
-impl Default for SigningScheme {
-    fn default() -> Self {
-        SigningScheme::Eip712
-    }
 }
 
 #[derive(Eq, PartialEq, Clone, Deserialize, Serialize, Hash)]

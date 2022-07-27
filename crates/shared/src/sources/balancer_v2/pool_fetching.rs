@@ -34,9 +34,10 @@ use clap::ArgEnum;
 use contracts::{
     BalancerV2LiquidityBootstrappingPoolFactory,
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
-    BalancerV2Vault, BalancerV2WeightedPool2TokensFactory, BalancerV2WeightedPoolFactory,
+    BalancerV2StablePoolFactoryV2, BalancerV2Vault, BalancerV2WeightedPool2TokensFactory,
+    BalancerV2WeightedPoolFactory,
 };
-use ethcontract::{Instance, H160, H256};
+use ethcontract::{dyns::DynInstance, Instance, H160, H256};
 use model::TokenPair;
 use reqwest::Client;
 use std::{
@@ -144,38 +145,72 @@ pub struct BalancerPoolFetcher {
 }
 
 /// An enum containing all supported Balancer factory types.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ArgEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ArgEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum BalancerFactoryKind {
     Weighted,
     Weighted2Token,
     Stable,
+    StableV2,
     LiquidityBootstrapping,
     NoProtocolFeeLiquidityBootstrapping,
+}
+
+impl BalancerFactoryKind {
+    /// Returns a vector with supported factories for the specified chain ID.
+    pub fn for_chain(chain_id: u64) -> Vec<Self> {
+        match chain_id {
+            1 => Self::value_variants().to_owned(),
+            4 => vec![
+                Self::Weighted,
+                Self::Weighted2Token,
+                Self::Stable,
+                Self::LiquidityBootstrapping,
+                Self::NoProtocolFeeLiquidityBootstrapping,
+            ],
+            5 => vec![Self::Weighted, Self::Weighted2Token],
+            _ => Default::default(),
+        }
+    }
 }
 
 /// All balancer related contracts that we expect to exist.
 pub struct BalancerContracts {
     pub vault: BalancerV2Vault,
-    pub weighted: BalancerV2WeightedPoolFactory,
-    pub weighted_2_token: BalancerV2WeightedPool2TokensFactory,
-    pub stable: BalancerV2StablePoolFactory,
-    pub liquidity_bootstrapping: BalancerV2LiquidityBootstrappingPoolFactory,
-    pub no_fee_liquidity_bootstrapping: BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+    pub factories: HashMap<BalancerFactoryKind, DynInstance>,
 }
 
 impl BalancerContracts {
-    pub async fn new(web3: &Web3) -> Result<Self> {
-        Ok(Self {
-            vault: BalancerV2Vault::deployed(web3).await?,
-            weighted: BalancerV2WeightedPoolFactory::deployed(web3).await?,
-            weighted_2_token: BalancerV2WeightedPool2TokensFactory::deployed(web3).await?,
-            stable: BalancerV2StablePoolFactory::deployed(web3).await?,
-            liquidity_bootstrapping: BalancerV2LiquidityBootstrappingPoolFactory::deployed(web3)
-                .await?,
-            no_fee_liquidity_bootstrapping:
-                BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory::deployed(web3).await?,
-        })
+    pub async fn new(web3: &Web3, factory_kinds: Vec<BalancerFactoryKind>) -> Result<Self> {
+        let vault = BalancerV2Vault::deployed(web3).await?;
+
+        macro_rules! instance {
+            ($factory:ident) => {{
+                $factory::deployed(web3).await?.raw_instance().clone()
+            }};
+        }
+
+        let mut factories = HashMap::new();
+        for kind in factory_kinds {
+            let instance = match &kind {
+                BalancerFactoryKind::Weighted => instance!(BalancerV2WeightedPoolFactory),
+                BalancerFactoryKind::Weighted2Token => {
+                    instance!(BalancerV2WeightedPool2TokensFactory)
+                }
+                BalancerFactoryKind::Stable => instance!(BalancerV2StablePoolFactory),
+                BalancerFactoryKind::StableV2 => instance!(BalancerV2StablePoolFactoryV2),
+                BalancerFactoryKind::LiquidityBootstrapping => {
+                    instance!(BalancerV2LiquidityBootstrappingPoolFactory)
+                }
+                BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
+                    instance!(BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory)
+                }
+            };
+
+            factories.insert(kind, instance);
+        }
+
+        Ok(Self { vault, factories })
     }
 }
 
@@ -184,7 +219,6 @@ impl BalancerPoolFetcher {
     pub async fn new(
         chain_id: u64,
         token_infos: Arc<dyn TokenInfoFetching>,
-        factories: &[BalancerFactoryKind],
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         metrics: Arc<dyn BalancerPoolCacheMetrics>,
@@ -194,8 +228,7 @@ impl BalancerPoolFetcher {
     ) -> Result<Self> {
         let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
         let fetcher = Arc::new(Cache::new(
-            create_aggregate_pool_fetcher(pool_initializer, token_infos, factories, contracts)
-                .await?,
+            create_aggregate_pool_fetcher(pool_initializer, token_infos, contracts).await?,
             config,
             block_stream,
             metrics,
@@ -265,7 +298,6 @@ impl Maintaining for BalancerPoolFetcher {
 async fn create_aggregate_pool_fetcher(
     pool_initializer: impl PoolInitializing,
     token_infos: Arc<dyn TokenInfoFetching>,
-    factories: &[BalancerFactoryKind],
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
     let registered_pools = pool_initializer.initialize_pools().await?;
@@ -273,32 +305,40 @@ async fn create_aggregate_pool_fetcher(
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
-        ($factory:expr) => {{
+        ($factory:ident, $instance:expr) => {{
             create_internal_pool_fetcher(
                 contracts.vault.clone(),
-                $factory.clone(),
+                $factory::with_deployment_info(
+                    &$instance.web3(),
+                    $instance.address(),
+                    $instance.deployment_information(),
+                ),
                 token_infos.clone(),
-                $factory.raw_instance(),
+                $instance,
                 registered_pools_by_factory
-                    .remove(&$factory.address())
+                    .remove(&$instance.address())
                     .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
             )?
         }};
     }
 
     let mut fetchers = Vec::new();
-    for factory in factories {
-        let registry = match factory {
-            BalancerFactoryKind::Weighted => registry!(&contracts.weighted),
+    for (kind, instance) in &contracts.factories {
+        let registry = match kind {
+            BalancerFactoryKind::Weighted => registry!(BalancerV2WeightedPoolFactory, instance),
             BalancerFactoryKind::Weighted2Token => {
-                registry!(&contracts.weighted_2_token)
+                registry!(BalancerV2WeightedPool2TokensFactory, instance)
             }
-            BalancerFactoryKind::Stable => registry!(&contracts.stable),
+            BalancerFactoryKind::Stable => registry!(BalancerV2StablePoolFactory, instance),
+            BalancerFactoryKind::StableV2 => registry!(BalancerV2StablePoolFactoryV2, instance),
             BalancerFactoryKind::LiquidityBootstrapping => {
-                registry!(&contracts.liquidity_bootstrapping)
+                registry!(BalancerV2LiquidityBootstrappingPoolFactory, instance)
             }
             BalancerFactoryKind::NoProtocolFeeLiquidityBootstrapping => {
-                registry!(&contracts.no_fee_liquidity_bootstrapping)
+                registry!(
+                    BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory,
+                    instance
+                )
             }
         };
         fetchers.push(registry);
@@ -390,7 +430,10 @@ mod tests {
         let transport = transport::create_env_test_transport();
         let web3 = Web3::new(transport);
         let chain_id = web3.eth().chain_id().await.unwrap().as_u64();
-        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let contracts =
+            BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
+                .await
+                .unwrap();
         let token_info_fetcher =
             Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
                 web3: web3.clone(),
@@ -406,7 +449,6 @@ mod tests {
         let pool_fetcher = BalancerPoolFetcher::new(
             chain_id,
             token_info_fetcher,
-            BalancerFactoryKind::value_variants(),
             Default::default(),
             block_stream,
             Arc::new(NoopBalancerPoolCacheMetrics),
@@ -444,17 +486,15 @@ mod tests {
 
         let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
-        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let contracts =
+            BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
+                .await
+                .unwrap();
         let pool_fetcher = BalancerPoolFetcher {
             fetcher: Arc::new(
-                create_aggregate_pool_fetcher(
-                    pool_initializer,
-                    Arc::new(token_infos),
-                    BalancerFactoryKind::value_variants(),
-                    &contracts,
-                )
-                .await
-                .unwrap(),
+                create_aggregate_pool_fetcher(pool_initializer, Arc::new(token_infos), &contracts)
+                    .await
+                    .unwrap(),
             ),
             pool_id_deny_list: Default::default(),
         };

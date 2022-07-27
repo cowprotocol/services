@@ -1,8 +1,8 @@
 use super::Postgres;
-use crate::solver_competition::{LoadSolverCompetitionError, SolverCompetitionStoring};
+use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::{Context, Result};
+use database::byte_array::ByteArray;
 use model::solver_competition::{SolverCompetition, SolverCompetitionId};
-use sqlx::types::Json;
 
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
@@ -12,44 +12,38 @@ impl SolverCompetitionStoring for Postgres {
             .with_label_values(&["save_solver_competition"])
             .start_timer();
 
-        const QUERY: &str = r#"
-            INSERT INTO solver_competitions (json)
-            VALUES ($1)
-            RETURNING id
-        ;"#;
-
-        let (id,) = sqlx::query_as(QUERY)
-            .bind(Json(data))
-            .fetch_one(&self.pool)
-            .await
-            .context("failed to insert solver competition")?;
-
+        let tx_hash = data.transaction_hash.map(|h256| ByteArray(h256.0));
+        let mut ex = self.pool.acquire().await?;
+        let id = database::solver_competition::save(
+            &mut ex,
+            &serde_json::to_value(data)?,
+            tx_hash.as_ref(),
+        )
+        .await
+        .context("failed to insert solver competition")?;
         Ok(id)
     }
 
-    async fn load(
-        &self,
-        id: SolverCompetitionId,
-    ) -> Result<SolverCompetition, LoadSolverCompetitionError> {
+    async fn load(&self, id: Identifier) -> Result<SolverCompetition, LoadSolverCompetitionError> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["load_solver_competition"])
             .start_timer();
 
-        const QUERY: &str = r#"
-            SELECT json
-            FROM solver_competitions
-            WHERE id = $1
-        ;"#;
-
-        let (solver_competition,): (Json<SolverCompetition>,) = sqlx::query_as(QUERY)
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("failed to get solver competition by ID")?
-            .ok_or(LoadSolverCompetitionError::NotFound(id))?;
-
-        Ok(solver_competition.0)
+        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
+        let value = match id {
+            Identifier::Id(id) => database::solver_competition::load_by_id(&mut ex, id).await,
+            Identifier::Transaction(hash) => {
+                database::solver_competition::load_by_tx_hash(&mut ex, &ByteArray(hash.0)).await
+            }
+        }
+        .context("failed to get solver competition by ID")?;
+        match value {
+            None => Err(LoadSolverCompetitionError::NotFound),
+            Some(value) => serde_json::from_value(value)
+                .map_err(anyhow::Error::from)
+                .map_err(Into::into),
+        }
     }
 
     async fn next_solver_competition(&self) -> Result<SolverCompetitionId> {
@@ -58,71 +52,56 @@ impl SolverCompetitionStoring for Postgres {
             .with_label_values(&["next_solver_competition"])
             .start_timer();
 
-        // The sequence we created for the serial `id` column can be queried for
-        // the next value it will produce [0]. Note that the exact semenatics of
-        // the sequence's next value depend on its `is_called` flag [1].
-        //
-        // [0]: <https://www.postgresql.org/docs/current/sql-createsequence.html>
-        // [1]: <https://www.postgresql.org/docs/14/functions-sequence.html>
-        const QUERY: &str = r#"
-            SELECT
-                CASE
-                    WHEN is_called THEN last_value + 1
-                    ELSE last_value
-                END AS next
-            FROM solver_competitions_id_seq
-        ;"#;
-
-        let (id,): (SolverCompetitionId,) = sqlx::query_as(QUERY)
-            .fetch_one(&self.pool)
+        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
+        database::solver_competition::next_solver_competition(&mut ex)
             .await
-            .context("failed to get next solver competition ID")?;
-
-        Ok(id)
+            .context("failed to get next solver competition ID")
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethcontract::H256;
+    use model::solver_competition::{CompetitionAuction, SolverSettlement};
+    use primitive_types::H256;
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_save_and_load_solver_competition_by_id() {
+    async fn postgres_solver_competition_roundtrip() {
         let db = Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
-        let model = SolverCompetition {
+        let expected = SolverCompetition {
             gas_price: 1.,
             auction_start_block: 2,
             liquidity_collected_block: 3,
             competition_simulation_block: 4,
             transaction_hash: Some(H256([5; 32])),
-            auction: Default::default(),
-            solutions: Default::default(),
+            auction: CompetitionAuction {
+                orders: vec![Default::default()],
+                prices: [Default::default()].into_iter().collect(),
+            },
+            solutions: vec![SolverSettlement {
+                solver: "asdf".to_string(),
+                objective: Default::default(),
+                clearing_prices: [Default::default()].into_iter().collect(),
+                orders: vec![Default::default()],
+                call_data: vec![1, 2],
+            }],
         };
-
-        let id = db.save(model.clone()).await.unwrap();
-        let loaded = db.load(id).await.unwrap();
-
-        assert_eq!(model, loaded);
+        let id = db.save(expected.clone()).await.unwrap();
+        let actual = db.load(Identifier::Id(id)).await.unwrap();
+        assert_eq!(expected, actual);
     }
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_solver_competition_id_sequence() {
+    async fn not_found_error() {
         let db = Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
-        let next_id = db.next_solver_competition().await.unwrap();
-        // still the same
-        assert_eq!(db.next_solver_competition().await.unwrap(), next_id);
-
-        let id = db.save(Default::default()).await.unwrap();
-        assert_eq!(id, next_id);
-
-        let next_id_ = db.next_solver_competition().await.unwrap();
-        assert_eq!(next_id_, next_id + 1);
+        let id = db.next_solver_competition().await.unwrap();
+        let result = db.load(Identifier::Id(id + 1)).await.unwrap_err();
+        assert!(matches!(result, LoadSolverCompetitionError::NotFound));
     }
 }
