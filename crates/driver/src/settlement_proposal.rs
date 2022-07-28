@@ -275,6 +275,7 @@ mod tests {
     use maplit::hashmap;
     use model::order::{OrderData, OrderMetadata, OrderUid};
     use num::FromPrimitive;
+
     fn r(u: u128) -> BigRational {
         BigRational::from_u128(u).unwrap()
     }
@@ -291,11 +292,11 @@ mod tests {
             .returning_st(move || InteractionMetadata {
                 inputs: vec![TokenAmount {
                     token: token(2),
-                    amount: 1.into(),
+                    amount: 60.into(),
                 }],
                 outputs: vec![TokenAmount {
                     token: token(3),
-                    amount: 1.into(),
+                    amount: 60.into(),
                 }],
                 gas_used: 1.into(),
             });
@@ -303,23 +304,22 @@ mod tests {
         let gas_price = 2.0;
         let external_prices = ExternalPrices::new(
             native_token,
-            hashmap! {
-                token(2) => r(1),
-            },
+            hashmap! { token(2) => r(100), token(3) => r(100), },
         )
         .unwrap();
 
         let mut proposal = SettlementProposal {
             clearing_prices: hashmap! {
-                token(2) => 1.into(), token(3) => 1.into(),
+                token(2) => 100.into(), token(3) => 100.into(),
             },
             trades: vec![TradedOrder {
                 order: Order {
                     data: OrderData {
                         sell_token: token(2),
-                        sell_amount: 1.into(),
+                        sell_amount: 60.into(),
                         buy_token: token(3),
-                        buy_amount: 1.into(),
+                        buy_amount: 50.into(),
+                        kind: OrderKind::Sell,
                         ..Default::default()
                     },
                     metadata: OrderMetadata {
@@ -328,7 +328,7 @@ mod tests {
                     },
                     ..Default::default()
                 },
-                executed_amount: 1.into(),
+                executed_amount: 60.into(),
             }],
             ..Default::default()
         };
@@ -344,24 +344,7 @@ mod tests {
 
         // gas_price * (interaction_cost + order_cost)
         assert_eq!(summary.gas_reimbursement, 132_632.into());
-        assert_eq!(summary.surplus, 0.);
-        assert_eq!(summary.settled_orders, vec![uid(1)]);
-
-        let external_prices = ExternalPrices::new(
-            native_token,
-            hashmap! {
-                token(2) => r(10),
-                token(3) => r(10),
-            },
-        )
-        .unwrap();
-        let summary = proposal
-            .into_settlement_summary(gas_price, &external_prices, &Default::default())
-            .unwrap();
-
-        // gas_price * (interaction_cost + order_cost)
-        assert_eq!(summary.gas_reimbursement, 132_632.into());
-        assert_eq!(summary.surplus, 2.);
+        assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
     }
 }
