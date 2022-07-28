@@ -11,8 +11,13 @@ use solver::{
 /// competition. It does **not** have to include the call data, yet.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 pub struct SettlementSummary {
+    /// Surplus is denominated in the chain's native token and based off of the auction's external
+    /// prices.
     pub surplus: f64,
+    /// This is how much gas the solver would like to get reimbursed for executing this solution.
     pub gas_reimbursement: U256,
+    /// Orders which would get settled by this solution. Partially fillable orders don't have to be
+    /// filled completely to be considered in this list.
     pub settled_orders: Vec<OrderUid>,
 }
 
