@@ -187,13 +187,15 @@ impl SettlementProposal {
         let mut balances = HashMap::<H160, U256>::default();
         let mut gas_used = U256::zero();
 
-        let mut trade_executions = Vec::with_capacity(self.trades.len());
-        for trade in &self.trades {
-            let execution = trade
-                .execution(&self.clearing_prices)
-                .with_context(|| format!("could not compute trade execution: {trade:?}"))?;
-            trade_executions.push(execution);
-        }
+        let trade_executions = self
+            .trades
+            .iter()
+            .map(|trade| {
+                trade
+                    .execution(&self.clearing_prices)
+                    .with_context(|| format!("could not compute trade execution: {trade:?}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         for (trade, execution) in self.trades.iter().zip(&trade_executions) {
             let balance = balances.entry(execution.sell_token).or_default();
