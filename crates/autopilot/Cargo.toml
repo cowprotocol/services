@@ -25,3 +25,4 @@ sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-n
 tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
 tracing = "0.1"
 url = "2.2"
+web3 = { version = "0.18", default-features = false }

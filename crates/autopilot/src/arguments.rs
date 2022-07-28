@@ -1,4 +1,5 @@
-use std::net::SocketAddr;
+use shared::arguments::duration_from_seconds;
+use std::{net::SocketAddr, time::Duration};
 use tracing::level_filters::LevelFilter;
 use url::Url;
 
@@ -16,6 +17,18 @@ pub struct Arguments {
     /// Url of the Postgres database. By default connects to locally running postgres.
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
+
+    /// The Ethereum node URL to connect to.
+    #[clap(long, env, default_value = "http://localhost:8545")]
+    pub node_url: Url,
+
+    /// Timeout in seconds for all http requests.
+    #[clap(
+        long,
+        default_value = "10",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub http_timeout: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -24,6 +37,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
+        writeln!(f, "node_url: {}", self.node_url)?;
+        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         Ok(())
     }
 }
