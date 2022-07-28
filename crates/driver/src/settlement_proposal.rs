@@ -178,13 +178,15 @@ impl SettlementProposal {
     ///   - individual trades don't violate required properties
     ///   - enough token balances before each on-chain interaction
     ///   - enough token balances to pay out orders at the end
+    ///   - solution doesn't drain settlement contract illegally
     ///   - token conservation (TODO)
     pub fn into_settlement_summary(
         &self,
         gas_price: f64,
         external_prices: &ExternalPrices,
+        contract_buffer: &HashMap<H160, U256>,
     ) -> Result<SettlementSummary> {
-        let mut balances = HashMap::<H160, U256>::default();
+        let mut balances = contract_buffer.clone();
         let mut gas_used = U256::zero();
 
         let trade_executions = self
@@ -241,6 +243,13 @@ impl SettlementProposal {
                 _ => anyhow::bail!(format!("no balance to pay out order: {trade:?}")),
             }
             gas_used += GAS_PER_ORDER.into();
+        }
+
+        for (token, balance_before) in contract_buffer {
+            if !matches!(balances.get(token), Some(balance_after) if balance_after >= balance_before)
+            {
+                anyhow::bail!("solution would drain settlement contract buffers illegally");
+            }
         }
 
         let surplus = self
@@ -325,12 +334,12 @@ mod tests {
         };
         // solution needs interaction to work
         assert!(proposal
-            .into_settlement_summary(gas_price, &external_prices)
+            .into_settlement_summary(gas_price, &external_prices, &Default::default())
             .is_err());
 
         proposal.execution_plan.push(Arc::new(interaction));
         let summary = proposal
-            .into_settlement_summary(gas_price, &external_prices)
+            .into_settlement_summary(gas_price, &external_prices, &Default::default())
             .unwrap();
 
         // gas_price * (interaction_cost + order_cost)
@@ -347,7 +356,7 @@ mod tests {
         )
         .unwrap();
         let summary = proposal
-            .into_settlement_summary(gas_price, &external_prices)
+            .into_settlement_summary(gas_price, &external_prices, &Default::default())
             .unwrap();
 
         // gas_price * (interaction_cost + order_cost)
