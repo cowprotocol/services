@@ -286,6 +286,7 @@ impl OrderbookServices {
             pending(),
             db.clone(),
             None,
+            solvable_orders_cache.clone(),
         );
 
         Self {
