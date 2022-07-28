@@ -201,6 +201,7 @@ impl SettlementProposal {
             let balance = balances.entry(execution.sell_token).or_default();
             *balance = balance
                 .checked_add(execution.sell_amount)
+                .and_then(|b| b.checked_add(execution.fee_amount))
                 .with_context(|| format!("order would overflow balance: {trade:?}"))?;
         }
 
