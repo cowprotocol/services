@@ -280,26 +280,38 @@ mod tests {
         BigRational::from_u128(u).unwrap()
     }
 
+    fn interaction(
+        inputs: &[(H160, U256)],
+        outputs: &[(H160, U256)],
+        gas_used: U256,
+    ) -> Arc<dyn InteractionProposal> {
+        let inputs = inputs
+            .iter()
+            .cloned()
+            .map(|(token, amount)| TokenAmount { token, amount })
+            .collect();
+        let outputs = outputs
+            .iter()
+            .cloned()
+            .map(|(token, amount)| TokenAmount { token, amount })
+            .collect();
+
+        let mut interaction = MockInteractionProposal::new();
+        interaction
+            .expect_metadata()
+            .return_const(InteractionMetadata {
+                inputs,
+                outputs,
+                gas_used,
+            });
+        Arc::new(interaction)
+    }
+
     #[test]
     fn verifies_interaction_precondition() {
         let token = H160::from_low_u64_be;
         let uid = OrderUid::from_integer;
         let native_token = token(1);
-
-        let mut interaction = MockInteractionProposal::new();
-        interaction
-            .expect_metadata()
-            .returning_st(move || InteractionMetadata {
-                inputs: vec![TokenAmount {
-                    token: token(2),
-                    amount: 60.into(),
-                }],
-                outputs: vec![TokenAmount {
-                    token: token(3),
-                    amount: 60.into(),
-                }],
-                gas_used: 1.into(),
-            });
 
         let gas_price = 2.0;
         let external_prices = ExternalPrices::new(
@@ -332,18 +344,96 @@ mod tests {
             }],
             ..Default::default()
         };
+
         // solution needs interaction to work
         assert!(proposal
             .into_settlement_summary(gas_price, &external_prices, &Default::default())
             .is_err());
 
-        proposal.execution_plan.push(Arc::new(interaction));
+        let i = interaction(&[(token(2), 60.into())], &[(token(3), 60.into())], 1.into());
+        proposal.execution_plan.push(i);
         let summary = proposal
             .into_settlement_summary(gas_price, &external_prices, &Default::default())
             .unwrap();
 
         // gas_price * (interaction_cost + order_cost)
         assert_eq!(summary.gas_reimbursement, 132_632.into());
+        assert_eq!(summary.surplus, 1_000.);
+        assert_eq!(summary.settled_orders, vec![uid(1)]);
+    }
+
+    #[test]
+    fn allows_flash_loans() {
+        let token = H160::from_low_u64_be;
+        let uid = OrderUid::from_integer;
+        let native_token = token(1);
+
+        let gas_price = 2.0;
+        let external_prices = ExternalPrices::new(
+            native_token,
+            hashmap! { token(2) => r(100), token(3) => r(100), },
+        )
+        .unwrap();
+
+        let mut proposal = SettlementProposal {
+            clearing_prices: hashmap! {
+                token(2) => 100.into(), token(3) => 100.into(),
+            },
+            trades: vec![TradedOrder {
+                order: Order {
+                    data: OrderData {
+                        sell_token: token(2),
+                        sell_amount: 60.into(),
+                        buy_token: token(3),
+                        buy_amount: 50.into(),
+                        kind: OrderKind::Sell,
+                        ..Default::default()
+                    },
+                    metadata: OrderMetadata {
+                        uid: uid(1),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+                executed_amount: 60.into(),
+            }],
+            ..Default::default()
+        };
+
+        let buffers = hashmap! { token(4) => 10.into() };
+
+        let loan = interaction(
+            &[(token(4), 10.into())], // inputs
+            &[],                      // outputs
+            1.into(),                 // gas
+        );
+        proposal.execution_plan.push(loan);
+        let i = interaction(
+            &[(token(2), 60.into())], // inputs
+            &[(token(3), 60.into())], // outputs
+            1.into(),                 // gas
+        );
+        proposal.execution_plan.push(i);
+
+        // failing to repay the loan throws an error
+        assert!(proposal
+            .into_settlement_summary(gas_price, &external_prices, &buffers)
+            .is_err());
+
+        let pay_back = interaction(
+            &[],                      // inputs
+            &[(token(4), 10.into())], // outputs
+            1.into(),                 // gas
+        );
+        proposal.execution_plan.push(pay_back);
+
+        // solution can loan tokens from the settlement contract if it repays them before the end
+        let summary = proposal
+            .into_settlement_summary(gas_price, &external_prices, &buffers)
+            .unwrap();
+
+        // gas_price * (interaction_cost + order_cost)
+        assert_eq!(summary.gas_reimbursement, 132_636.into());
         assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
     }
