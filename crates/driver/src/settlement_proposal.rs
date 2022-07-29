@@ -57,8 +57,7 @@ impl TradedOrder {
     }
 
     /// Computes and returns the executed trade amounts given the settlements uniform clearing
-    /// prices. The computed fee will always be 0 because it does not matter for further
-    /// computations.
+    /// prices.
     fn execution(&self, clearing_prices: &HashMap<H160, U256>) -> Result<TradeExecution> {
         verify_executed_amount(&self.order, self.executed_amount)?;
         let remaining = self.order.remaining_amounts()?;
