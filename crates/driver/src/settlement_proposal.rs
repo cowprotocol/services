@@ -70,22 +70,32 @@ impl TradedOrder {
             .context("no clearing price for buy token")?;
 
         let order = &self.order.data;
-        let (sell_amount, buy_amount) = match order.kind {
+        let (sell_amount, buy_amount, fee_amount) = match order.kind {
             OrderKind::Sell => {
                 let sell_amount = self.executed_amount;
                 let buy_amount = sell_amount
                     .checked_mul(*sell_price)
                     .and_then(|v| v.checked_ceil_div(&buy_price))
-                    .ok_or_else(|| anyhow::anyhow!("could not compute buy amount"))?;
-                (sell_amount, buy_amount)
+                    .context("could not compute buy amount")?;
+                let fee_amount = order
+                    .fee_amount
+                    .checked_mul(self.executed_amount)
+                    .and_then(|v| v.checked_div(order.sell_amount))
+                    .context("could not compute executed fee amount")?;
+                (sell_amount, buy_amount, fee_amount)
             }
             OrderKind::Buy => {
                 let buy_amount = self.executed_amount;
                 let sell_amount = buy_amount
                     .checked_mul(buy_price)
                     .and_then(|v| v.checked_div(*sell_price))
-                    .ok_or_else(|| anyhow::anyhow!("could not compute sell amount"))?;
-                (sell_amount, buy_amount)
+                    .context("could not compute sell amount")?;
+                let fee_amount = order
+                    .fee_amount
+                    .checked_mul(self.executed_amount)
+                    .and_then(|v| v.checked_div(order.buy_amount))
+                    .context("could not compute executed fee amount")?;
+                (sell_amount, buy_amount, fee_amount)
             }
         };
 
@@ -94,7 +104,7 @@ impl TradedOrder {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            fee_amount: remaining.fee_amount,
+            fee_amount,
         };
 
         anyhow::ensure!(
