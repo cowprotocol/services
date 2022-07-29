@@ -324,6 +324,8 @@ pub struct ExecutionPlanCoordinatesModel {
 
 #[cfg(test)]
 mod tests {
+    use crate::sources::uniswap_v3::graph_api::Token;
+
     use super::*;
     use maplit::btreemap;
     use serde_json::json;
@@ -465,6 +467,32 @@ mod tests {
             },
             mandatory: true,
         };
+        let concentrated_pool_model = AmmModel {
+            parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
+                pool: PoolInfo {
+                    address: H160::from_low_u64_be(1),
+                    tokens: vec![
+                        Token {
+                            id: buy_token,
+                            symbol: "CAT".to_string(),
+                            decimals: 6,
+                        },
+                        Token {
+                            id: sell_token,
+                            symbol: "DOG".to_string(),
+                            decimals: 18,
+                        },
+                    ],
+                    ..Default::default()
+                },
+            }),
+            fee: BigRational::new(3.into(), 1000.into()),
+            cost: TokenAmount {
+                amount: U256::from(3),
+                token: native_token,
+            },
+            mandatory: false,
+        };
         let model = BatchAuctionModel {
             tokens: btreemap! {
                 buy_token => TokenInfoModel {
@@ -487,6 +515,7 @@ mod tests {
                 0 => constant_product_pool_model,
                 1 => weighted_product_pool_model,
                 2 => stable_pool_model,
+                3 => concentrated_pool_model,
             },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
@@ -584,6 +613,40 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+            },
+            "3": {
+              "kind": "Concentrated",
+              "pool": {
+                "address": "0x0000000000000000000000000000000000000001",
+                 "tokens": [
+                {
+                  "id": "0x0000000000000000000000000000000000000539",
+                  "symbol": "CAT",
+                  "decimals": "6",
+                },
+                {
+                  "id": "0x000000000000000000000000000000000000a866",
+                  "symbol": "DOG",
+                  "decimals": "18",
+                }
+                ],
+              "state": {
+                "sqrt_price": "0",
+                "liquidity": "0",
+                "tick": "0",
+                "liquidity_net": {},
+                "fee": "0",
+              },
+              "gas_stats": {
+                "mean": "0",
+              }
+              },
+              "fee": "0.003",
+              "cost": {
+                "amount": "3",
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              },
+              "mandatory": false,
             },
           },
           "metadata": {
