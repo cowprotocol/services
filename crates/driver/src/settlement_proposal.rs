@@ -246,10 +246,10 @@ impl SettlementProposal {
         }
 
         for (token, balance_before) in contract_buffer {
-            if !matches!(balances.get(token), Some(balance_after) if balance_after >= balance_before)
-            {
-                anyhow::bail!("solution would drain settlement contract buffers illegally");
-            }
+            anyhow::ensure!(
+                matches!(balances.get(token), Some(balance_after) if balance_after >= balance_before),
+                "solution would drain settlement contract buffers illegally"
+            );
         }
 
         let surplus = self
