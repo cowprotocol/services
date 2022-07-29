@@ -10,7 +10,7 @@ use crate::{
     Web3CallBatch,
 };
 use anyhow::{ensure, Result};
-use contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory};
+use contracts::{BalancerV2StablePool, BalancerV2StablePoolFactory, BalancerV2StablePoolFactoryV2};
 use ethcontract::{BlockId, H160, U256};
 use futures::{future::BoxFuture, FutureExt as _};
 use num::BigRational;
@@ -106,6 +106,30 @@ impl FactoryIndexing for BalancerV2StablePoolFactory {
         }
         .boxed()
     }
+}
+
+#[async_trait::async_trait]
+impl FactoryIndexing for BalancerV2StablePoolFactoryV2 {
+    type PoolInfo = PoolInfo;
+    type PoolState = PoolState;
+
+    async fn specialize_pool_info(&self, pool: common::PoolInfo) -> Result<Self::PoolInfo> {
+        as_v1(self).specialize_pool_info(pool).await
+    }
+
+    fn fetch_pool_state(
+        &self,
+        pool_info: &Self::PoolInfo,
+        common_pool_state: BoxFuture<'static, common::PoolState>,
+        batch: &mut Web3CallBatch,
+        block: BlockId,
+    ) -> BoxFuture<'static, Result<Option<Self::PoolState>>> {
+        as_v1(self).fetch_pool_state(pool_info, common_pool_state, batch, block)
+    }
+}
+
+fn as_v1(factory: &BalancerV2StablePoolFactoryV2) -> BalancerV2StablePoolFactory {
+    BalancerV2StablePoolFactory::at(&factory.raw_instance().web3(), factory.address())
 }
 
 #[cfg(test)]

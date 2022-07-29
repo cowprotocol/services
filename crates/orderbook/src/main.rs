@@ -1,4 +1,4 @@
-use clap::{ArgEnum, Parser};
+use clap::Parser;
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, GPv2Settlement, IUniswapV3Factory,
     WETH9,
@@ -72,15 +72,6 @@ use shared::{
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
-
-pub async fn database_metrics(database: Postgres) -> ! {
-    loop {
-        if let Err(err) = database.update_table_rows_metric().await {
-            tracing::error!(?err, "failed to update table rows metric");
-        }
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -291,15 +282,15 @@ async fn main() {
         web3: web3.clone(),
     })));
     let balancer_pool_fetcher = if baseline_sources.contains(&BaselineSource::BalancerV2) {
-        let contracts = BalancerContracts::new(&web3).await.unwrap();
+        let factories = args
+            .shared
+            .balancer_factories
+            .unwrap_or_else(|| BalancerFactoryKind::for_chain(chain_id));
+        let contracts = BalancerContracts::new(&web3, factories).await.unwrap();
         let balancer_pool_fetcher = Arc::new(
             BalancerPoolFetcher::new(
                 chain_id,
                 token_info_fetcher.clone(),
-                args.shared
-                    .balancer_factories
-                    .as_deref()
-                    .unwrap_or_else(BalancerFactoryKind::value_variants),
                 cache_config,
                 current_block_stream.clone(),
                 metrics.clone(),
@@ -590,7 +581,6 @@ async fn main() {
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(postgres));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -601,7 +591,6 @@ async fn main() {
     tokio::select! {
         result = &mut serve_api => tracing::error!(?result, "API task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
-        result = db_metrics_task => tracing::error!(?result, "database metrics task exited"),
         result = metrics_task => tracing::error!(?result, "metrics task exited"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");

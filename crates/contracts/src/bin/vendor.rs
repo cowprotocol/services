@@ -113,6 +113,11 @@ fn run() -> Result<()> {
             "balancer-labs/balancer-subgraph-v2/2b97edd5e65aed06718ce64a69111ccdabccf048/\
              abis/StablePool.json",
         )?
+        .github(
+            "BalancerV2StablePoolFactoryV2",
+            "balancer-labs/balancer-v2-monorepo/903d34e491a5e9c5d59dabf512c7addf1ccf9bbd/\
+            pkg/deployments/tasks/20220609-stable-pool-v2/abi/StablePoolFactory.json",
+        )?
         .npm(
             "ERC20",
             "@openzeppelin/contracts@3.3.0/build/contracts/ERC20.json",

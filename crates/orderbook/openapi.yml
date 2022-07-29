@@ -481,11 +481,7 @@ paths:
     get:
       summary: Information about solver competition
       description: |
-        Returns the settlements submitted by every solver for a specific auction
-        id. The auction id corresponds to the id external solvers are provided
-        with. Auction ids are not globally unique, they are reused from time to
-        time. The backend keeps the competition information for a limited amount
-        of time.
+        Returns the competition information by auction id.
       parameters:
         - name: auction_id
           in: path
@@ -501,6 +497,26 @@ paths:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
         404:
           description: No competition information available for this auction id.
+  /api/v1/solver_competition/by_tx_hash/{tx_hash}:
+    get:
+      summary: Information about solver competition
+      description: |
+        Returns the competition information by transaction hash.
+      parameters:
+        - name: tx_hash
+          in: path
+          required: true
+          schema:
+            $ref: "#/components/schemas/TransactionHash"
+      responses:
+        200:
+          description: competition info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolverCompetitionResponse"
+        404:
+          description: No competition information available for this tx hash.
 components:
   schemas:
     TransactionHash:
@@ -1077,6 +1093,10 @@ components:
             order slippage.
           type: integer
     SolverCompetitionResponse:
+      description: |
+        The settlements submitted by every solver for a specific auction.
+        The auction id corresponds to the id external solvers are provided
+        with.
       type: object
       properties:
         transactionHash:
