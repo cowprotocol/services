@@ -95,7 +95,7 @@ impl TradedOrder {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            fee_amount: 0.into(),
+            fee_amount: remaining.fee_amount,
         };
 
         anyhow::ensure!(
