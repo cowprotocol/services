@@ -45,12 +45,22 @@ pub struct Arguments {
     pub max_order_validity_period: Duration,
 
     /// The time period an EIP1271-quote request is valid.
-    #[clap(long, env, default_value = "600")]
-    pub eip1271_quote_validity_seconds: i64,
+    #[clap(
+        long,
+        env,
+        default_value = "600",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub eip1271_quote_validity_seconds: Duration,
 
     /// The time period an PRESIGN-quote request is valid.
-    #[clap(long, env, default_value = "86400")]
-    pub presign_quote_validity_seconds: i64,
+    #[clap(
+        long,
+        env,
+        default_value = "86400",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub presign_quote_validity_seconds: Duration,
 
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.

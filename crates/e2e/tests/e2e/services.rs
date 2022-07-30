@@ -233,8 +233,8 @@ impl OrderbookServices {
                 ..Default::default()
             }),
             db.clone(),
-            60i64,
-            60i64,
+            Duration::from_secs(60u64),
+            Duration::from_secs(60u64),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),

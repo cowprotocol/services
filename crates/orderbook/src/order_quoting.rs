@@ -22,6 +22,7 @@ use shared::price_estimation::{
     single_estimate, PriceEstimating, PriceEstimationError,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 
 /// A high-level interface for handling API quote requests.
@@ -405,8 +406,8 @@ pub struct OrderQuoter {
     fee_subsidy: Arc<dyn FeeSubsidizing>,
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
-    eip1271_quote_validity_seconds: i64,
-    presign_quote_validity_seconds: i64,
+    eip1271_quote_validity_seconds: Duration,
+    presign_quote_validity_seconds: Duration,
 }
 
 impl OrderQuoter {
@@ -416,8 +417,8 @@ impl OrderQuoter {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         fee_subsidy: Arc<dyn FeeSubsidizing>,
         storage: Arc<dyn QuoteStoring>,
-        eip1271_quote_validity_seconds: i64,
-        presign_quote_validity_seconds: i64,
+        eip1271_quote_validity_seconds: Duration,
+        presign_quote_validity_seconds: Duration,
     ) -> Self {
         Self {
             price_estimator,
@@ -437,10 +438,12 @@ impl OrderQuoter {
     ) -> Result<QuoteData, CalculateQuoteError> {
         let expiration = match parameters.signing_scheme {
             SigningScheme::Eip1271 => {
-                self.now.now() + chrono::Duration::seconds(self.eip1271_quote_validity_seconds)
+                self.now.now()
+                    + chrono::Duration::from_std(self.eip1271_quote_validity_seconds).unwrap()
             }
             SigningScheme::PreSign => {
-                self.now.now() + chrono::Duration::seconds(self.presign_quote_validity_seconds)
+                self.now.now()
+                    + chrono::Duration::from_std(self.presign_quote_validity_seconds).unwrap()
             }
             _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
         };
@@ -755,8 +758,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -868,8 +871,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -982,8 +985,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -1063,8 +1066,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert!(matches!(
@@ -1085,6 +1088,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: SigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1131,6 +1135,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert!(matches!(
@@ -1166,8 +1172,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(Forget),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         let quote = quoter.calculate_quote(Default::default()).await.unwrap();
@@ -1216,8 +1222,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -1290,8 +1296,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -1362,8 +1368,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert_eq!(
@@ -1430,8 +1436,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert!(matches!(
@@ -1460,8 +1466,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
-            eip1271_quote_validity_seconds: 60i64,
-            presign_quote_validity_seconds: 60i64,
+            eip1271_quote_validity_seconds: Duration::from_secs(60u64),
+            presign_quote_validity_seconds: Duration::from_secs(60u64),
         };
 
         assert!(matches!(
