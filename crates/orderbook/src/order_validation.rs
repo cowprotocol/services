@@ -358,7 +358,7 @@ impl OrderValidating for OrderValidator {
         .map_err(ValidationError::Partial)?;
 
         let quote = if !liquidity_owner {
-            Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?)
+            Some(get_quote_and_check_fee(&*self.quoter, &order, true, owner).await?)
         } else {
             // We don't try to get quotes for orders created by liqudity order
             // owners for two reasons:
@@ -511,6 +511,7 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
     order: &OrderCreation,
+    order_placement_via_api: bool,
     owner: H160,
 ) -> Result<Quote, ValidationError> {
     let parameters = QuoteSearchParameters {
@@ -527,6 +528,13 @@ async fn get_quote_and_check_fee(
     let quote = match quoter.find_quote(order.quote_id, parameters).await {
         Ok(quote) => {
             tracing::debug!(quote_id =? order.quote_id, "found quote for order creation");
+            if order_placement_via_api {
+                if let Some(expiration_for_api_call) = quote.data.expiration_for_api_call {
+                    if expiration_for_api_call < chrono::offset::Utc::now() {
+                        return Err(ValidationError::InvalidQuote);
+                    }
+                }
+            }
             quote
         }
         // We couldn't find a quote, and no ID was specified. Try computing a
@@ -577,7 +585,8 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
 mod tests {
     use super::*;
     use crate::{
-        account_balances::MockBalanceFetching, order_quoting::MockOrderQuoting,
+        account_balances::MockBalanceFetching,
+        order_quoting::{MockOrderQuoting, QuoteData},
         signature_validator::MockSignatureValidating,
     };
     use anyhow::anyhow;
@@ -1392,7 +1401,7 @@ mod tests {
                 })
             });
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
             .await
             .unwrap();
 
@@ -1447,7 +1456,7 @@ mod tests {
                 })
             });
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
             .await
             .unwrap();
 
@@ -1472,11 +1481,45 @@ mod tests {
             .expect_find_quote()
             .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
             .await
             .unwrap_err();
 
         assert!(matches!(err, ValidationError::QuoteNotFound));
+    }
+
+    #[tokio::test]
+    async fn get_quote_errors_when_api_call_and_quote_no_longer_valid() {
+        let order = OrderCreation {
+            data: OrderData {
+                fee_amount: 1.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter.expect_find_quote().returning(|_, _| {
+            Ok(Quote {
+                data: QuoteData {
+                    expiration_for_api_call: Some(
+                        chrono::offset::Utc::now() - chrono::Duration::seconds(151i64),
+                    ),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+        });
+
+        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ValidationError::InvalidQuote));
+
+        get_quote_and_check_fee(&order_quoter, &order, false, Default::default())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]
@@ -1497,7 +1540,7 @@ mod tests {
             })
         });
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
             .await
             .unwrap_err();
 
@@ -1513,10 +1556,14 @@ mod tests {
                     .expect_find_quote()
                     .returning(|_, _| Err($find_err));
 
-                let err =
-                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
-                        .await
-                        .unwrap_err();
+                let err = get_quote_and_check_fee(
+                    &order_quoter,
+                    &Default::default(),
+                    true,
+                    Default::default(),
+                )
+                .await
+                .unwrap_err();
 
                 assert!(matches!(err, $validation_err));
             }};
@@ -1541,10 +1588,14 @@ mod tests {
                     .expect_calculate_quote()
                     .returning(|_| Err($calc_err));
 
-                let err =
-                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
-                        .await
-                        .unwrap_err();
+                let err = get_quote_and_check_fee(
+                    &order_quoter,
+                    &Default::default(),
+                    true,
+                    Default::default(),
+                )
+                .await
+                .unwrap_err();
 
                 assert!(matches!(err, $validation_err));
             }};

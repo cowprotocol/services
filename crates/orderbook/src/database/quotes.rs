@@ -35,6 +35,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             },
             kind: order_kind_from(row.order_kind),
             expiration: row.expiration_timestamp,
+            expiration_for_api_call: row.expiration_for_api_call_timestamp,
         })
     }
 }
@@ -59,6 +60,7 @@ impl QuoteStoring for Postgres {
             sell_token_price: data.fee_parameters.sell_token_price,
             order_kind: order_kind_into(data.kind),
             expiration_timestamp: data.expiration,
+            expiration_for_api_call_timestamp: data.expiration_for_api_call,
         };
         let id = database::quotes::save(&mut ex, &row).await?;
         Ok(Some(id))

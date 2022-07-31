@@ -20,6 +20,7 @@ pub struct Quote {
     pub sell_token_price: f64,
     pub order_kind: OrderKind,
     pub expiration_timestamp: DateTime<Utc>,
+    pub expiration_for_api_call_timestamp: Option<DateTime<Utc>>,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not used.
@@ -34,9 +35,10 @@ INSERT INTO quotes (
     gas_price,
     sell_token_price,
     order_kind,
-    expiration_timestamp
+    expiration_timestamp,
+    expiration_for_api_call_timestamp
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -49,6 +51,7 @@ RETURNING id
         .bind(quote.sell_token_price)
         .bind(quote.order_kind)
         .bind(quote.expiration_timestamp)
+        .bind(quote.expiration_for_api_call_timestamp)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -155,6 +158,7 @@ mod tests {
             sell_token_price: 7.,
             order_kind: OrderKind::Sell,
             expiration_timestamp: now,
+            expiration_for_api_call_timestamp: Some(now),
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -181,11 +185,12 @@ mod tests {
             buy_token: ByteArray([3; 20]),
             sell_amount: 4.into(),
             buy_amount: 5.into(),
-            order_kind: OrderKind::Sell,
             gas_amount: 1.,
             gas_price: 1.,
             sell_token_price: 1.,
+            order_kind: OrderKind::Sell,
             expiration_timestamp: now,
+            expiration_for_api_call_timestamp: Some(now),
         };
 
         let token_b = ByteArray([2; 20]);
@@ -200,6 +205,7 @@ mod tests {
             gas_price: 1.,
             sell_token_price: 1.,
             expiration_timestamp: now,
+            expiration_for_api_call_timestamp: Some(now),
         };
 
         // Save two measurements for token_a

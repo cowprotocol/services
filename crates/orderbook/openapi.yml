@@ -542,17 +542,22 @@ components:
         Provides the information to calculate the fees.
       type: object
       properties:
-        expirationDate:
+        expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
             the fee after this expiration date. Encoded as ISO 8601 UTC.
           type: string
           example: "2020-12-03T18:35:18.814523Z"
+        expirationForApiCall:
+          description: |
+            Expiration date of the offered fee for off-chain order placements.
+          type: string
+          example: "1985-03-10T18:35:18.814523Z"
         amount:
           description: Absolute amount of fee charged per order in specified sellToken
           $ref: "#/components/schemas/TokenAmount"
       required:
-        - expirationDate
+        - expiration
         - amount
     OrderType:
       description: Is this a buy order or sell order?
@@ -1081,10 +1086,15 @@ components:
           $ref: "#/components/schemas/OrderParameters"
         from:
           $ref: "#/components/schemas/Address"
-        expirationDate:
+        expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
             the fee after this expiration date. Encoded as ISO 8601 UTC.
+          type: string
+          example: "1985-03-10T18:35:18.814523Z"
+        expirationForApiCall:
+          description: |
+            Expiration date of the offered fee for off-chain order placements.
           type: string
           example: "1985-03-10T18:35:18.814523Z"
         id:

@@ -225,7 +225,13 @@ pub struct QuoteData {
     pub quoted_buy_amount: U256,
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
+    /// This is the general expiration date. The quote will be stored in the
+    /// local database, until this expiration date is reached. On-chain orders
+    /// are always accepted until this expiration date
     pub expiration: DateTime<Utc>,
+    /// The expiration date for the api requests might be closer in the future
+    /// than the general expiration date
+    pub expiration_for_api_call: Option<DateTime<Utc>>,
 }
 
 impl Default for QuoteData {
@@ -238,6 +244,7 @@ impl Default for QuoteData {
             fee_parameters: Default::default(),
             kind: Default::default(),
             expiration: Utc.timestamp(0, 0),
+            expiration_for_api_call: None,
         }
     }
 }
@@ -423,16 +430,22 @@ impl OrderQuoter {
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
-        let expiration = match parameters.signing_scheme {
-            SigningScheme::Eip1271 => {
+        let (expiration, expiration_for_api_call) = match parameters.signing_scheme {
+            SigningScheme::Eip1271 => (
                 self.now.now()
-                    + chrono::Duration::from_std(self.eip1271_quote_validity_seconds).unwrap()
-            }
-            SigningScheme::PreSign => {
+                    + chrono::Duration::from_std(self.eip1271_quote_validity_seconds).unwrap(),
+                Some(self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS)),
+            ),
+            SigningScheme::PreSign => (
                 self.now.now()
-                    + chrono::Duration::from_std(self.presign_quote_validity_seconds).unwrap()
+                    + chrono::Duration::from_std(self.presign_quote_validity_seconds).unwrap(),
+                None,
+            ),
+            _ => {
+                let expiration =
+                    self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS);
+                (expiration, Some(expiration))
             }
-            _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
         };
 
         let trade_query = parameters.to_price_query();
@@ -473,6 +486,7 @@ impl OrderQuoter {
             fee_parameters,
             kind: trade_query.kind,
             expiration,
+            expiration_for_api_call,
         };
 
         Ok(quote)
@@ -735,6 +749,9 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration_for_api_call: Some(
+                    now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                ),
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -765,6 +782,9 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration_for_api_call: Some(
+                        now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS)
+                    ),
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -845,6 +865,9 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration_for_api_call: Some(
+                    now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                ),
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -878,6 +901,9 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration_for_api_call: Some(
+                        now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS)
+                    ),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -958,6 +984,9 @@ mod tests {
                 },
                 kind: OrderKind::Buy,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                expiration_for_api_call: Some(
+                    now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                ),
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -992,6 +1021,9 @@ mod tests {
                     },
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    expiration_for_api_call: Some(
+                        now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS)
+                    ),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1196,6 +1228,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
+                expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
             }))
         });
 
@@ -1229,6 +1262,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
+                    expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1273,6 +1307,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
+                expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
             }))
         });
 
@@ -1303,6 +1338,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
+                    expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1344,6 +1380,7 @@ mod tests {
                         },
                         kind: OrderKind::Buy,
                         expiration: now + chrono::Duration::seconds(10),
+                        expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
                     },
                 )))
             });
@@ -1375,6 +1412,7 @@ mod tests {
                     },
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(10),
+                    expiration_for_api_call: Some(now + chrono::Duration::seconds(10)),
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
