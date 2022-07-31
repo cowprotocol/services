@@ -106,7 +106,7 @@ impl From<PartialValidationError> for OrderQuoteError {
 }
 
 /// Order parameters for quoting.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -114,19 +114,6 @@ pub struct QuoteParameters {
     pub from: H160,
     pub app_data: AppId,
     pub signing_scheme: SigningScheme,
-}
-
-impl Default for QuoteParameters {
-    fn default() -> Self {
-        QuoteParameters {
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            side: Default::default(),
-            from: Default::default(),
-            app_data: Default::default(),
-            signing_scheme: SigningScheme::Eip712,
-        }
-    }
 }
 
 impl QuoteParameters {
