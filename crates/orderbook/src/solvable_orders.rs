@@ -133,6 +133,13 @@ impl SolvableOrdersCache {
         self.notify.notify_one();
     }
 
+    /// Updates the id immediately without having to wait for next full cache update.
+    pub async fn update_next_solver_competition_id(&self) -> Result<()> {
+        let id = self.solver_competition.next_solver_competition().await?;
+        self.cache.lock().unwrap().auction.next_solver_competition = id;
+        Ok(())
+    }
+
     /// Manually update solvable orders. Usually called by the background updating task.
     ///
     /// Usually this method is called from update_task. If it isn't, which is the case in unit tests,
