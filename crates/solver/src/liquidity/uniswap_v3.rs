@@ -19,6 +19,10 @@ use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
 };
+
+// 1h timeout for Uniswap V3 interactions
+const TIMEOUT: u64 = 3600;
+
 pub struct UniswapV3Liquidity {
     inner: Arc<Inner>,
     pool_fetcher: Arc<dyn PoolFetching>,
@@ -140,18 +144,18 @@ impl Inner {
             approval,
             UniswapV3Interaction {
                 router: self.router.clone(),
-                //settlement: self.gpv2_settlement.clone(),
                 params: ExactOutputSingleParams {
                     token_in,
                     token_out,
                     fee,
                     recipient: self.gpv2_settlement.address(),
                     deadline: {
-                        let now = SystemTime::now()
+                        SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .unwrap_or_default()
-                            .as_secs();
-                        (now as u64).into()
+                            .as_secs()
+                            .saturating_add(TIMEOUT)
+                            .into()
                     },
                     amount_out,
                     amount_in_max: amount_in_with_slippage,
@@ -238,5 +242,18 @@ mod tests {
             10,
         );
         assert_ne!(approval, Approval::AllowanceSufficient);
+    }
+
+    #[test]
+    fn test_encode() {
+        let inner = Inner::new_dummy(Default::default());
+        let execution = AmmOrderExecution {
+            input: (H160::default(), U256::zero()),
+            output: (H160::default(), U256::zero()),
+            fee: None,
+        };
+        let mut encoder = SettlementEncoder::new(Default::default());
+        let encoded = inner.encode(execution, &mut encoder).unwrap_err();
+        assert!(encoded.to_string() == "missing fee");
     }
 }
