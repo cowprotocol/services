@@ -547,6 +547,7 @@ async fn get_quote_and_check_fee(
                 },
                 from: owner,
                 app_data: order.data.app_data,
+                signing_scheme: order.signature.scheme(),
             };
             let quote = quoter.calculate_quote(parameters).await?;
 
@@ -1437,6 +1438,7 @@ mod tests {
                 },
                 from,
                 app_data: AppId([5; 32]),
+                signing_scheme: SigningScheme::Eip712,
             }))
             .returning(|_| {
                 Ok(Quote {
