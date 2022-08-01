@@ -67,8 +67,9 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::{create_instrumented_transport, http::HttpTransport},
+    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
+    Web3Transport,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
@@ -87,10 +88,11 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url.clone(), "".to_string()),
-        metrics.clone(),
-    );
+    let transport = Web3Transport::new(HttpTransport::new(
+        client.clone(),
+        args.shared.node_url.clone(),
+        "".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let current_block = web3
         .eth()
