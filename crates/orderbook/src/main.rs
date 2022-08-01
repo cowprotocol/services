@@ -558,7 +558,7 @@ async fn main() {
             database.clone(),
             event_updater,
             pool_fetcher,
-            solvable_orders_cache,
+            solvable_orders_cache.clone(),
         ],
     };
     if let Some(balancer) = balancer_pool_fetcher {
@@ -578,6 +578,7 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
+        solvable_orders_cache.clone(),
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
