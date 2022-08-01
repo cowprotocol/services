@@ -146,11 +146,9 @@ impl SellOrderQuoteQuery {
             to_token_address: buy_token,
             amount,
             protocols,
-            // Use max value instead of default
-            complexity_level: Some(Amount::new(3).unwrap()),
+            complexity_level: None,
             gas_limit: None,
-            // use max value instead of default
-            main_route_parts: Some(Amount::new(50).unwrap()),
+            main_route_parts: None,
             parts: None,
             fee: None,
             gas_price: None,
