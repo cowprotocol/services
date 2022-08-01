@@ -1,8 +1,5 @@
 use super::Postgres;
-use crate::{
-    conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal},
-    order_quoting::Quote,
-};
+use crate::order_quoting::Quote;
 use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use database::{
@@ -23,6 +20,7 @@ use model::{
     signature::{Signature, SigningScheme},
 };
 use num::Zero;
+use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
 use sqlx::{types::BigDecimal, Connection, PgConnection};
 use std::convert::TryInto;
