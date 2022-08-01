@@ -8,7 +8,6 @@ use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::Postgres,
-    event_updater::EventUpdater,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -147,21 +146,6 @@ async fn main() {
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
     let database = Arc::new(postgres.clone());
 
-    let sync_start = if args.skip_event_sync {
-        web3.eth()
-            .block_number()
-            .await
-            .map(|block| block.as_u64())
-            .ok()
-    } else {
-        None
-    };
-
-    let event_updater = Arc::new(EventUpdater::new(
-        settlement_contract.clone(),
-        database.as_ref().clone(),
-        sync_start,
-    ));
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
         vault.clone(),
@@ -558,7 +542,6 @@ async fn main() {
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![
             database.clone(),
-            event_updater,
             pool_fetcher,
             solvable_orders_cache.clone(),
         ],

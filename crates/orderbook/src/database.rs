@@ -1,4 +1,3 @@
-pub mod events;
 pub mod orders;
 pub mod quotes;
 pub mod solver_competition;
@@ -30,7 +29,7 @@ impl Postgres {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Timing of db queries.
-    #[metric(labels("type"))]
+    #[metric(name = "orderbook_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 

@@ -2,7 +2,6 @@ pub mod account_balances;
 pub mod api;
 pub mod arguments;
 pub mod database;
-pub mod event_updater;
 pub mod fee_subsidy;
 pub mod gas_price;
 pub mod metrics;

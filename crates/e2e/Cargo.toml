@@ -11,6 +11,7 @@ harness = false
 
 [dev-dependencies]
 anyhow = "1.0"
+autopilot = { path = "../autopilot" }
 contracts = { path = "../contracts" }
 criterion = "0.3"
 database = { path = "../database" }
