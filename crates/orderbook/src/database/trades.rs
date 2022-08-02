@@ -1,10 +1,10 @@
-use crate::conversions::big_decimal_to_big_uint;
 use crate::database::Postgres;
 use anyhow::{anyhow, Context, Result};
 use database::{byte_array::ByteArray, trades::TradesQueryRow};
 use ethcontract::H160;
 use futures::{stream::TryStreamExt, StreamExt};
 use model::{order::OrderUid, trade::Trade};
+use number_conversions::big_decimal_to_big_uint;
 use primitive_types::H256;
 use std::convert::TryInto;
 
