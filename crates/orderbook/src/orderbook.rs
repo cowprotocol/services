@@ -207,7 +207,7 @@ impl Orderbook {
         self.database
             .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
-        Metrics::on_order_operation(&order, OrderOperation::Created);
+        Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         self.solvable_orders.request_update();
 
