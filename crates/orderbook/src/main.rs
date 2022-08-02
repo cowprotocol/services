@@ -540,11 +540,7 @@ async fn main() {
         order_validator.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![
-            database.clone(),
-            pool_fetcher,
-            solvable_orders_cache.clone(),
-        ],
+        maintainers: vec![pool_fetcher, solvable_orders_cache.clone()],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);

@@ -177,13 +177,14 @@ pub struct OrderbookServices {
 
 impl OrderbookServices {
     pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
-        let db = Arc::new(Postgres::new("postgresql://").unwrap());
-        database::clear_DANGER(&db.pool).await.unwrap();
+        let api_db = Arc::new(Postgres::new("postgresql://").unwrap());
+        let autopilot_db = autopilot::database::Postgres::new("postgresql://")
+            .await
+            .unwrap();
+        database::clear_DANGER(&api_db.pool).await.unwrap();
         let event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
             contracts.gp_settlement.clone(),
-            autopilot::database::Postgres::new("postgresql://")
-                .await
-                .unwrap(),
+            autopilot_db.clone(),
             None,
         ));
         let pair_provider = uniswap_pair_provider(contracts);
@@ -233,7 +234,7 @@ impl OrderbookServices {
                 factor: 0.,
                 ..Default::default()
             }),
-            db.clone(),
+            api_db.clone(),
         ));
         let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
             web3.clone(),
@@ -244,7 +245,7 @@ impl OrderbookServices {
         let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
         let solvable_orders_cache = SolvableOrdersCache::new(
             Duration::from_secs(120),
-            db.clone(),
+            api_db.clone(),
             Default::default(),
             balance_fetcher.clone(),
             bad_token_detector.clone(),
@@ -252,7 +253,7 @@ impl OrderbookServices {
             native_price_estimator,
             Arc::new(NoopMetrics),
             signature_validator.clone(),
-            db.clone(),
+            api_db.clone(),
         );
         let order_validator = Arc::new(OrderValidator::new(
             Box::new(web3.clone()),
@@ -270,22 +271,22 @@ impl OrderbookServices {
         let orderbook = Arc::new(Orderbook::new(
             contracts.domain_separator,
             contracts.gp_settlement.address(),
-            db.clone(),
+            api_db.clone(),
             solvable_orders_cache.clone(),
             Duration::from_secs(600),
             order_validator.clone(),
         ));
         let maintenance = ServiceMaintenance {
-            maintainers: vec![db.clone(), event_updater],
+            maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
         };
         let quotes = Arc::new(QuoteHandler::new(order_validator, quoter));
         orderbook::serve_api(
-            db.clone(),
+            api_db.clone(),
             orderbook,
             quotes,
             API_HOST[7..].parse().expect("Couldn't parse API address"),
             pending(),
-            db.clone(),
+            api_db.clone(),
             None,
             solvable_orders_cache.clone(),
         );
