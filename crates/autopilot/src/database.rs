@@ -1,4 +1,5 @@
 mod events;
+mod quotes;
 
 use sqlx::{PgConnection, PgPool};
 use std::time::Duration;

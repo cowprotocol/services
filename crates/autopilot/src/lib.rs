@@ -54,7 +54,7 @@ pub async fn main(args: arguments::Arguments) {
     ));
 
     let service_maintainer = shared::maintenance::ServiceMaintenance {
-        maintainers: vec![event_updater],
+        maintainers: vec![event_updater, Arc::new(db.clone())],
     };
     let maintenance_task =
         tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
