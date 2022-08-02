@@ -2,10 +2,11 @@ use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade,
 use crate::{
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
+    settlement::trade_surplus_in_native_token,
 };
 use anyhow::{bail, ensure, Context as _, Result};
 use model::order::{Order, OrderKind};
-use num::{BigRational, One, Zero};
+use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext;
@@ -309,40 +310,12 @@ impl SettlementEncoder {
         self.order_trades
             .iter()
             .fold(Some(num::zero()), |acc, order_trade| {
-                let order = order_trade.trade.order.clone();
-                let sell_token_clearing_price = self
-                    .clearing_prices
-                    .get(&order.data.sell_token)
-                    .expect("Solution with trade but without price for sell token")
-                    .to_big_rational();
-                let buy_token_clearing_price = self
-                    .clearing_prices
-                    .get(&order.data.buy_token)
-                    .expect("Solution with trade but without price for buy token")
-                    .to_big_rational();
-
-                if match order.data.kind {
-                    OrderKind::Sell => &buy_token_clearing_price,
-                    OrderKind::Buy => &sell_token_clearing_price,
-                }
-                .is_zero()
-                {
-                    return None;
-                }
-
-                let surplus = &order_trade
-                    .trade
-                    .surplus(&sell_token_clearing_price, &buy_token_clearing_price)?;
-                let normalized_surplus = match order.data.kind {
-                    OrderKind::Sell => external_prices.get_native_amount(
-                        order.data.buy_token,
-                        surplus / buy_token_clearing_price,
-                    ),
-                    OrderKind::Buy => external_prices.get_native_amount(
-                        order.data.sell_token,
-                        surplus / sell_token_clearing_price,
-                    ),
-                };
+                let normalized_surplus = trade_surplus_in_native_token(
+                    &order_trade.trade.order,
+                    order_trade.trade.executed_amount,
+                    external_prices,
+                    &self.clearing_prices,
+                )?;
                 Some(acc? + normalized_surplus)
             })
     }
@@ -552,12 +525,13 @@ impl SettlementEncoder {
     }
 }
 
-fn verify_executed_amount(order: &Order, executed_amount: U256) -> Result<()> {
+pub fn verify_executed_amount(order: &Order, executed_amount: U256) -> Result<()> {
+    let remaining_amounts = order.remaining_amounts()?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => executed_amount <= order.data.sell_amount,
-        (true, OrderKind::Buy) => executed_amount <= order.data.buy_amount,
-        (false, OrderKind::Sell) => executed_amount == order.data.sell_amount,
-        (false, OrderKind::Buy) => executed_amount == order.data.buy_amount,
+        (true, OrderKind::Sell) => executed_amount <= remaining_amounts.sell_amount,
+        (true, OrderKind::Buy) => executed_amount <= remaining_amounts.buy_amount,
+        (false, OrderKind::Sell) => executed_amount == remaining_amounts.sell_amount,
+        (false, OrderKind::Buy) => executed_amount == remaining_amounts.buy_amount,
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())

@@ -2,7 +2,7 @@ pub mod external_prices;
 mod settlement_encoder;
 
 use self::external_prices::ExternalPrices;
-pub use self::settlement_encoder::SettlementEncoder;
+pub use self::settlement_encoder::{verify_executed_amount, SettlementEncoder};
 use crate::{
     encoding::{self, EncodedInteraction, EncodedSettlement, EncodedTrade},
     liquidity::Settleable,
@@ -48,6 +48,69 @@ pub struct TradeExecution {
     pub fee_amount: U256,
 }
 
+pub fn trade_surplus(
+    order: &Order,
+    executed_amount: U256,
+    sell_token_price: &BigRational,
+    buy_token_price: &BigRational,
+) -> Option<BigRational> {
+    match order.data.kind {
+        model::order::OrderKind::Buy => buy_order_surplus(
+            sell_token_price,
+            buy_token_price,
+            &order.data.sell_amount.to_big_rational(),
+            &order.data.buy_amount.to_big_rational(),
+            &executed_amount.to_big_rational(),
+        ),
+        model::order::OrderKind::Sell => sell_order_surplus(
+            sell_token_price,
+            buy_token_price,
+            &order.data.sell_amount.to_big_rational(),
+            &order.data.buy_amount.to_big_rational(),
+            &executed_amount.to_big_rational(),
+        ),
+    }
+}
+
+pub fn trade_surplus_in_native_token(
+    order: &Order,
+    executed_amount: U256,
+    external_prices: &ExternalPrices,
+    clearing_prices: &HashMap<H160, U256>,
+) -> Option<BigRational> {
+    let sell_token_clearing_price = clearing_prices
+        .get(&order.data.sell_token)
+        .expect("Solution with trade but without price for sell token")
+        .to_big_rational();
+    let buy_token_clearing_price = clearing_prices
+        .get(&order.data.buy_token)
+        .expect("Solution with trade but without price for buy token")
+        .to_big_rational();
+
+    if match order.data.kind {
+        OrderKind::Sell => &buy_token_clearing_price,
+        OrderKind::Buy => &sell_token_clearing_price,
+    }
+    .is_zero()
+    {
+        return None;
+    }
+
+    let surplus = trade_surplus(
+        order,
+        executed_amount,
+        &sell_token_clearing_price,
+        &buy_token_clearing_price,
+    )?;
+    let normalized_surplus = match order.data.kind {
+        OrderKind::Sell => external_prices
+            .get_native_amount(order.data.buy_token, surplus / buy_token_clearing_price),
+        OrderKind::Buy => external_prices
+            .get_native_amount(order.data.sell_token, surplus / sell_token_clearing_price),
+    };
+    Some(normalized_surplus)
+}
+
 impl Trade {
     // The difference between the minimum you were willing to buy/maximum you were willing to sell, and what you ended up buying/selling
     pub fn surplus(
@@ -55,22 +118,12 @@ impl Trade {
         sell_token_price: &BigRational,
         buy_token_price: &BigRational,
     ) -> Option<BigRational> {
-        match self.order.data.kind {
-            model::order::OrderKind::Buy => buy_order_surplus(
-                sell_token_price,
-                buy_token_price,
-                &self.order.data.sell_amount.to_big_rational(),
-                &self.order.data.buy_amount.to_big_rational(),
-                &self.executed_amount.to_big_rational(),
-            ),
-            model::order::OrderKind::Sell => sell_order_surplus(
-                sell_token_price,
-                buy_token_price,
-                &self.order.data.sell_amount.to_big_rational(),
-                &self.order.data.buy_amount.to_big_rational(),
-                &self.executed_amount.to_big_rational(),
-            ),
-        }
+        trade_surplus(
+            &self.order,
+            self.executed_amount,
+            sell_token_price,
+            buy_token_price,
+        )
     }
 
     pub fn surplus_ratio(
