@@ -1,5 +1,4 @@
 use super::Postgres;
-use crate::conversions::u256_to_big_decimal;
 use anyhow::{anyhow, Context, Result};
 use contracts::gpv2_settlement::{
     event_data::{
@@ -14,6 +13,7 @@ use database::{
     OrderUid,
 };
 use ethcontract::{Event as EthContractEvent, EventMetadata};
+use number_conversions::u256_to_big_decimal;
 use shared::event_handling::EventStoring;
 use std::convert::TryInto;
 

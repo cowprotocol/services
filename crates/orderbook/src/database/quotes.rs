@@ -3,7 +3,6 @@ use super::{
     Postgres,
 };
 use crate::{
-    conversions::*,
     fee_subsidy::FeeParameters,
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
@@ -14,6 +13,7 @@ use database::{
     quotes::{Quote as QuoteRow, QuoteSearchParameters as DbQuoteSearchParameters},
 };
 use model::quote::QuoteId;
+use number_conversions::{big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
 use shared::maintenance::Maintaining;
 
