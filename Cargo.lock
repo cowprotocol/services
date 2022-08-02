@@ -173,8 +173,11 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 3.2.5",
+ "contracts",
  "database",
+ "ethcontract",
  "global-metrics",
+ "number_conversions",
  "prometheus",
  "prometheus-metric-storage",
  "shared",
@@ -786,6 +789,7 @@ name = "e2e"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "autopilot",
  "contracts",
  "criterion",
  "database",

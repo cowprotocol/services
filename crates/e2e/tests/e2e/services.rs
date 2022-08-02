@@ -5,7 +5,6 @@ use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
     account_balances::Web3BalanceFetcher,
     database::Postgres,
-    event_updater::EventUpdater,
     fee_subsidy::Subsidy,
     metrics::NoopMetrics,
     order_quoting::{OrderQuoter, QuoteHandler},
@@ -180,9 +179,11 @@ impl OrderbookServices {
     pub async fn new(web3: &Web3, contracts: &Contracts) -> Self {
         let db = Arc::new(Postgres::new("postgresql://").unwrap());
         database::clear_DANGER(&db.pool).await.unwrap();
-        let event_updater = Arc::new(EventUpdater::new(
+        let event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
             contracts.gp_settlement.clone(),
-            db.as_ref().clone(),
+            autopilot::database::Postgres::new("postgresql://")
+                .await
+                .unwrap(),
             None,
         ));
         let pair_provider = uniswap_pair_provider(contracts);

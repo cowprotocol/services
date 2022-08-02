@@ -47,7 +47,7 @@ impl EventStoring<ContractEvent> for Postgres {
             .with_label_values(&["last_event_block"])
             .start_timer();
 
-        let mut con = self.pool.acquire().await?;
+        let mut con = self.0.acquire().await?;
         let block_number = database::events::last_block(&mut con)
             .await
             .context("block_number_of_most_recent_event failed")?;
@@ -61,7 +61,7 @@ impl EventStoring<ContractEvent> for Postgres {
             .start_timer();
 
         let events = contract_to_db_events(events)?;
-        let mut transaction = self.pool.begin().await?;
+        let mut transaction = self.0.begin().await?;
         database::events::append(&mut transaction, &events)
             .await
             .context("append_events")?;
@@ -80,7 +80,7 @@ impl EventStoring<ContractEvent> for Postgres {
             .start_timer();
 
         let events = contract_to_db_events(events)?;
-        let mut transaction = self.pool.begin().await?;
+        let mut transaction = self.0.begin().await?;
         database::events::delete(&mut transaction, range.start().to_u64() as i64)
             .await
             .context("delete_events failed")?;

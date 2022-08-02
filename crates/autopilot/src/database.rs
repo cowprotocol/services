@@ -1,3 +1,5 @@
+mod events;
+
 use sqlx::{PgConnection, PgPool};
 use std::time::Duration;
 
@@ -32,7 +34,7 @@ struct Metrics {
     table_rows: prometheus::IntGaugeVec,
 
     /// Timing of db queries.
-    #[metric(labels("type"))]
+    #[metric(name = "autopilot_database_queries", labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 

@@ -16,8 +16,11 @@ path = "src/main.rs"
 anyhow = "1.0"
 async-trait = "0.1"
 clap = { version = "3.1", features = ["derive", "env"] }
+contracts = { path = "../contracts" }
 database = { path = "../database" }
+ethcontract = { version = "0.17.0", default-features = false }
 global-metrics = { path = "../global-metrics" }
+number_conversions = { path = "../number_conversions" }
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
 shared= { path = "../shared" }
