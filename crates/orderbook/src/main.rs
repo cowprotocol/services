@@ -6,7 +6,6 @@ use contracts::{
 use ethcontract::errors::DeployError;
 use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
-    account_balances::Web3BalanceFetcher,
     database::Postgres,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
@@ -23,6 +22,7 @@ use orderbook::{
 };
 use primitive_types::U256;
 use shared::{
+    account_balances::Web3BalanceFetcher,
     bad_token::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,

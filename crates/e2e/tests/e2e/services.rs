@@ -3,7 +3,6 @@ use anyhow::{anyhow, Result};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
-    account_balances::Web3BalanceFetcher,
     database::Postgres,
     fee_subsidy::Subsidy,
     metrics::NoopMetrics,
@@ -15,6 +14,7 @@ use orderbook::{
 };
 use reqwest::Client;
 use shared::{
+    account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},

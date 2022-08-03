@@ -1,5 +1,4 @@
 use crate::{
-    account_balances::{BalanceFetching, Query},
     database::orders::OrderStoring,
     signature_validator::{SignatureCheck, SignatureValidating},
     solver_competition::SolverCompetitionStoring,
@@ -10,7 +9,10 @@ use futures::StreamExt;
 use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
 use primitive_types::{H160, U256};
 use shared::{
-    bad_token::BadTokenDetecting, current_block::CurrentBlockStream, maintenance::Maintaining,
+    account_balances::{BalanceFetching, Query},
+    bad_token::BadTokenDetecting,
+    current_block::CurrentBlockStream,
+    maintenance::Maintaining,
     price_estimation::native::NativePriceEstimating,
 };
 use std::{
@@ -516,7 +518,6 @@ async fn filter_unsupported_tokens(
 mod tests {
     use super::*;
     use crate::{
-        account_balances::MockBalanceFetching,
         database::orders::MockOrderStoring,
         database::orders::SolvableOrders as DbOrders,
         metrics::NoopMetrics,
@@ -532,6 +533,7 @@ mod tests {
     };
     use primitive_types::H160;
     use shared::{
+        account_balances::MockBalanceFetching,
         bad_token::list_based::ListBasedDetector,
         price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
     };
