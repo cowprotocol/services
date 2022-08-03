@@ -174,6 +174,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
             Liquidity::BalancerWeighted(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::BalancerStable(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::LimitOrder(order) => token_set.extend([order.sell_token, order.buy_token]),
+            Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
 
@@ -327,6 +328,17 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     mandatory: false,
                 },
                 Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
+                Liquidity::Concentrated(amm) => AmmModel {
+                    parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
+                        pool: amm.pool.clone(),
+                    }),
+                    fee: BigRational::new(
+                        BigInt::from(*amm.pool.state.fee.numer()),
+                        BigInt::from(*amm.pool.state.fee.denom()),
+                    ),
+                    cost: gas_model.cost_for_gas(amm.pool.gas_stats.mean_gas),
+                    mandatory: false,
+                },
             })
         })
         .enumerate()

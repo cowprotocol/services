@@ -2,6 +2,7 @@ pub mod balancer_v2;
 pub mod order_converter;
 pub mod slippage;
 pub mod uniswap_v2;
+pub mod uniswap_v3;
 pub mod zeroex;
 
 use crate::settlement::SettlementEncoder;
@@ -13,12 +14,15 @@ use model::order::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};
-use shared::sources::balancer_v2::{
-    pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
-    swap::fixed_point::Bfp,
-};
 #[cfg(test)]
 use shared::sources::uniswap_v2::pool_fetching::Pool;
+use shared::sources::{
+    balancer_v2::{
+        pool_fetching::{AmplificationParameter, TokenState, WeightedTokenState},
+        swap::fixed_point::Bfp,
+    },
+    uniswap_v3::pool_fetching::PoolInfo,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use strum::{EnumVariantNames, IntoStaticStr};
@@ -31,6 +35,7 @@ pub enum Liquidity {
     BalancerWeighted(WeightedProductOrder),
     BalancerStable(StablePoolOrder),
     LimitOrder(LimitOrder),
+    Concentrated(ConcentratedLiquidity),
 }
 
 impl Liquidity {
@@ -43,6 +48,7 @@ impl Liquidity {
             Liquidity::LimitOrder(order) => TokenPair::new(order.sell_token, order.buy_token)
                 .map(|pair| vec![pair])
                 .unwrap_or_default(),
+            Liquidity::Concentrated(amm) => vec![amm.tokens],
         }
     }
 }
@@ -260,6 +266,31 @@ impl Settleable for WeightedProductOrder {
 }
 
 impl Settleable for StablePoolOrder {
+    type Execution = AmmOrderExecution;
+
+    fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {
+        &*self.settlement_handling
+    }
+}
+
+/// Concentrated type of liquidity with ticks (e.g. UniswapV3)
+#[derive(Clone)]
+#[cfg_attr(test, derive(Derivative))]
+#[cfg_attr(test, derivative(PartialEq))]
+pub struct ConcentratedLiquidity {
+    pub tokens: TokenPair,
+    pub pool: PoolInfo,
+    #[cfg_attr(test, derivative(PartialEq = "ignore"))]
+    pub settlement_handling: Arc<dyn SettlementHandling<Self>>,
+}
+
+impl std::fmt::Debug for ConcentratedLiquidity {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Concentrated liquidity {:?}", self.pool)
+    }
+}
+
+impl Settleable for ConcentratedLiquidity {
     type Execution = AmmOrderExecution;
 
     fn settlement_handling(&self) -> &dyn SettlementHandling<Self> {

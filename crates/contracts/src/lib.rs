@@ -58,6 +58,7 @@ include!(concat!(env!("OUT_DIR"), "/SwaprRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/ISwaprPair.rs"));
 include!(concat!(env!("OUT_DIR"), "/UniswapV2Factory.rs"));
 include!(concat!(env!("OUT_DIR"), "/UniswapV2Router02.rs"));
+include!(concat!(env!("OUT_DIR"), "/UniswapV3SwapRouter.rs"));
 include!(concat!(env!("OUT_DIR"), "/WETH9.rs"));
 include!(concat!(env!("OUT_DIR"), "/IUniswapV3Factory.rs"));
 include!(concat!(env!("OUT_DIR"), "/IZeroEx.rs"));
@@ -147,6 +148,7 @@ mod tests {
             assert_has_deployment_address!(HoneyswapRouter for *network);
         }
         assert_has_deployment_address!(BalancerV2StablePoolFactoryV2 for 1);
+        assert_has_deployment_address!(UniswapV3SwapRouter for 1);
     }
 
     #[test]

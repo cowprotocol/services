@@ -186,6 +186,7 @@ async fn onchain_settlement_without_liquidity(web3: Web3) {
         uniswap_like_liquidity: vec![uniswap_liquidity],
         balancer_v2_liquidity: None,
         zeroex_liquidity: None,
+        uniswap_v3_liquidity: None,
     };
     let network_id = web3.net().version().await.unwrap();
     let market_makable_token_list = TokenList::new(maplit::hashmap! {
