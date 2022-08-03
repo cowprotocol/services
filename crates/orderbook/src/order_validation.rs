@@ -1,5 +1,4 @@
 use crate::{
-    account_balances::{BalanceFetching, TransferSimulationError},
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
         QuoteSearchParameters,
@@ -19,7 +18,10 @@ use model::{
     DomainSeparator,
 };
 use shared::{
-    bad_token::BadTokenDetecting, price_estimation::PriceEstimationError, web3_traits::CodeFetching,
+    account_balances::{BalanceFetching, TransferSimulationError},
+    bad_token::BadTokenDetecting,
+    price_estimation::PriceEstimationError,
+    web3_traits::CodeFetching,
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
@@ -575,10 +577,7 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        account_balances::MockBalanceFetching, order_quoting::MockOrderQuoting,
-        signature_validator::MockSignatureValidating,
-    };
+    use crate::{order_quoting::MockOrderQuoting, signature_validator::MockSignatureValidating};
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
@@ -587,6 +586,7 @@ mod tests {
     use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
     use shared::{
+        account_balances::MockBalanceFetching,
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,
         rate_limiter::RateLimiterError,

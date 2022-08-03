@@ -1,6 +1,7 @@
 #[macro_use]
 pub mod macros;
 
+pub mod account_balances;
 pub mod api;
 pub mod arguments;
 pub mod bad_token;
