@@ -420,6 +420,8 @@ async fn main() {
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
         tenderly,
+        args.minimum_oneinch_objective_improvement_in_eth
+            .and_then(|v| num::BigRational::from_float(v * 1e18)),
     );
 
     let maintainer = ServiceMaintenance {

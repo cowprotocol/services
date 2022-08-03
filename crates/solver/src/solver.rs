@@ -464,7 +464,9 @@ impl Solver for SellVolumeFilteringSolver {
 }
 
 #[cfg(test)]
-struct DummySolver;
+struct DummySolver {
+    name: &'static str,
+}
 #[cfg(test)]
 #[async_trait::async_trait]
 impl Solver for DummySolver {
@@ -475,12 +477,18 @@ impl Solver for DummySolver {
         todo!()
     }
     fn name(&self) -> &'static str {
-        "DummySolver"
+        self.name
     }
 }
 #[cfg(test)]
 pub fn dummy_arc_solver() -> Arc<dyn Solver> {
-    Arc::new(DummySolver)
+    Arc::new(DummySolver {
+        name: "DummySolver",
+    })
+}
+#[cfg(test)]
+pub fn dummy_arc_solver_with_name(name: &'static str) -> Arc<dyn Solver> {
+    Arc::new(DummySolver { name })
 }
 
 #[cfg(test)]

@@ -71,6 +71,7 @@ pub struct Driver {
     token_list_restriction_for_price_checks: PriceCheckTokens,
     tenderly: Option<TenderlyApi>,
     settlement_rater: SettlementRater,
+    minimum_oneinch_objective_improvement_in_wei: Option<BigRational>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -99,6 +100,7 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<TenderlyApi>,
+        minimum_oneinch_objective_improvement_in_wei: Option<BigRational>,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -142,6 +144,7 @@ impl Driver {
             token_list_restriction_for_price_checks,
             tenderly,
             settlement_rater,
+            minimum_oneinch_objective_improvement_in_wei,
         }
     }
 
@@ -621,6 +624,10 @@ impl Driver {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+        if let Some(improvement) = &self.minimum_oneinch_objective_improvement_in_wei {
+            rated_settlements = drop_bad_oneinch_solutions(rated_settlements, improvement);
+        }
+
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
@@ -783,6 +790,50 @@ impl Driver {
     }
 }
 
+/// Drops all 1Inch solutions where the objective value is not at least `minimum_objective_improvement`
+/// units better than the next worse solution by a different solver. This is to reduce the problem of
+/// negative slippage of 1Inch while not affecting the user experience too much.
+///
+/// Expects a list of rated settlements which are sorted by objective value in ascending order.
+fn drop_bad_oneinch_solutions(
+    solutions: Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
+    minimum_objective_improvement: &BigRational,
+) -> Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)> {
+    let mut best_objective = None;
+    let number_of_solutions = solutions.len();
+
+    solutions
+        .into_iter()
+        .enumerate()
+        .filter(|(index, (solver, solution, _))| {
+            let objective = solution.objective_value();
+
+            if solver.name() != "1Inch" {
+                // 1Inch solutions only have to be compared against non-1Inch solutions
+                let best_or_current = best_objective.take().unwrap_or_else(|| objective.clone());
+                best_objective = Some(std::cmp::max(best_or_current, objective));
+                return true;
+            }
+
+            if let Some(best_objective) = &best_objective {
+                let improvement = objective - best_objective;
+                let keep_solution = improvement >= *minimum_objective_improvement;
+                if *index == number_of_solutions - 1 && !keep_solution {
+                    tracing::debug!(
+                        ?solution,
+                        "drop winning 1Inch solution because runner up is too close"
+                    );
+                }
+
+                keep_solution
+            } else {
+                true
+            }
+        })
+        .map(|(_, result)| result)
+        .collect()
+}
+
 fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
     !settlement
         .traded_orders()
@@ -834,12 +885,13 @@ mod tests {
     use super::*;
     use crate::{
         settlement::{OrderTrade, Trade},
-        solver::dummy_arc_solver,
+        solver::{dummy_arc_solver, dummy_arc_solver_with_name},
     };
     use maplit::hashmap;
     use model::order::{Order, OrderData};
     use shared::token_list::Token;
     use std::collections::HashMap;
+    use web3::types::AccessList;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {
@@ -929,5 +981,84 @@ mod tests {
 
         shared::tracing::initialize_for_tests("INFO");
         super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
+    }
+
+    fn r(number: f64) -> BigRational {
+        BigRational::from_float(number).unwrap()
+    }
+
+    fn settlement(
+        solver: &Arc<dyn Solver>,
+        id: usize,
+        objective: f64,
+    ) -> (Arc<dyn Solver>, RatedSettlement, Option<AccessList>) {
+        (
+            solver.clone(),
+            RatedSettlement {
+                id,
+                surplus: num::BigRational::from_float(objective).unwrap(),
+                settlement: Default::default(),
+                unscaled_subsidized_fee: r(0.),
+                scaled_unsubsidized_fee: r(0.),
+                gas_estimate: 0.into(),
+                gas_price: r(0.),
+            },
+            None,
+        )
+    }
+
+    fn assert_solutions(
+        solutions: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
+        expected: &[usize],
+    ) {
+        let solutions: Vec<_> = solutions.iter().map(|s| s.1.id).collect();
+        assert_eq!(solutions, expected);
+    }
+
+    #[test]
+    fn none_oneinch_solutions_stay() {
+        let dummy = dummy_arc_solver_with_name("Dummy");
+
+        let solutions = vec![settlement(&dummy, 1, 1.), settlement(&dummy, 2, 1.)];
+        let filtered_solutions = drop_bad_oneinch_solutions(solutions, &r(1.));
+        // non-1Inch solutions don't get dropped although they don't impove upon each other
+        assert_solutions(&filtered_solutions, &[1, 2]);
+    }
+
+    #[test]
+    fn leading_oneinch_solutions_stay() {
+        let oneinch = dummy_arc_solver_with_name("1Inch");
+        let dummy = dummy_arc_solver_with_name("Dummy");
+
+        let solutions = vec![
+            settlement(&oneinch, 1, 1.), // no baseline exists -> stays
+            settlement(&oneinch, 2, 1.), // no baseline exists -> stays
+            settlement(&dummy, 3, 1.),   // non-1Inch solutions required to create a baseline
+            settlement(&oneinch, 4, 1.), // 1Inch solution as good as the baseline -> filtered out
+            settlement(&oneinch, 5, 2.), // 1Inch solution improving upon baseline enough -> stays
+            settlement(&dummy, 6, 2.),   // new baseline
+            settlement(&oneinch, 7, 2.), // 1Inch solution as good as the baseline -> filtered out
+            settlement(&oneinch, 8, 4.), // 1Inch solution improving upon baseline enough -> stays
+        ];
+        let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &r(1.));
+        assert_solutions(&filtered_solutions, &[1, 2, 3, 5, 6, 8]);
+    }
+
+    #[test]
+    fn oneinch_solutions_filtering_negative_objectives() {
+        let oneinch = dummy_arc_solver_with_name("1Inch");
+        let dummy = dummy_arc_solver_with_name("Dummy");
+
+        let solutions = vec![
+            settlement(&dummy, 1, -8.),
+            settlement(&oneinch, 2, -4.),
+            settlement(&dummy, 3, -1.),
+            settlement(&oneinch, 4, -0.),
+            settlement(&oneinch, 5, 0.),
+            settlement(&oneinch, 6, 1.),
+        ];
+
+        let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &r(1.));
+        assert_solutions(&filtered_solutions, &[1, 2, 3, 5, 6, 8]);
     }
 }

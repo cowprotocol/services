@@ -149,6 +149,11 @@ pub struct Arguments {
     #[clap(long, env)]
     pub oneinch_max_slippage_in_eth: Option<f64>,
 
+    /// The minimum improvement in terms of objective solutions by 1Inch have to improve
+    /// over the next best solution to be considered viable. Denominated in ETH.
+    #[clap(long, env)]
+    pub minimum_oneinch_objective_improvement_in_eth: Option<f64>,
+
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
@@ -306,6 +311,9 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "paraswap_slippage_bps: {}", self.paraswap_slippage_bps)?;
         writeln!(f, "zeroex_slippage_bps: {}", self.zeroex_slippage_bps)?;
         writeln!(f, "oneinch_slippage_bps: {}", self.oneinch_slippage_bps)?;
+        write!(f, "minimum_oneinch_objective_improvement_in_eth: ")?;
+        display_option(&self.minimum_oneinch_objective_improvement_in_eth, f)?;
+        writeln!(f)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(
             f,
