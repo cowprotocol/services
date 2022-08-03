@@ -52,7 +52,7 @@ impl LiquidityCollector {
         if let Some(uniswap_v3_liquidity) = self.uniswap_v3_liquidity.as_ref() {
             amms.extend(
                 uniswap_v3_liquidity
-                    .get_liquidity(&user_orders, at_block)
+                    .get_liquidity(&user_orders)
                     .await?
                     .into_iter()
                     .map(Liquidity::Concentrated),
