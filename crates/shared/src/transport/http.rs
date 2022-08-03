@@ -147,6 +147,9 @@ impl BatchTransport for HttpTransport {
 
         async move {
             let _guard = metrics.on_request_start("batch");
+            for call in &calls {
+                metrics.on_request_start(method_name(call));
+            }
 
             let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
