@@ -1016,48 +1016,20 @@ mod tests {
     }
 
     #[test]
-    fn none_oneinch_solutions_stay() {
-        let dummy = dummy_arc_solver_with_name("Dummy");
-
-        let solutions = vec![settlement(&dummy, 1, 1.), settlement(&dummy, 2, 1.)];
-        let filtered_solutions = drop_bad_oneinch_solutions(solutions, &r(1.));
-        // non-1Inch solutions don't get dropped although they don't impove upon each other
-        assert_solutions(&filtered_solutions, &[1, 2]);
-    }
-
-    #[test]
-    fn leading_oneinch_solutions_stay() {
+    fn drops_oneinch_solutions_with_insignificant_improvements() {
         let oneinch = dummy_arc_solver_with_name("1Inch");
         let dummy = dummy_arc_solver_with_name("Dummy");
 
         let solutions = vec![
-            settlement(&oneinch, 1, 1.), // no baseline exists -> stays
-            settlement(&oneinch, 2, 1.), // no baseline exists -> stays
-            settlement(&dummy, 3, 1.),   // non-1Inch solutions required to create a baseline
-            settlement(&oneinch, 4, 1.), // 1Inch solution as good as the baseline -> filtered out
-            settlement(&oneinch, 5, 2.), // 1Inch solution improving upon baseline enough -> stays
-            settlement(&dummy, 6, 2.),   // new baseline
-            settlement(&oneinch, 7, 2.), // 1Inch solution as good as the baseline -> filtered out
-            settlement(&oneinch, 8, 4.), // 1Inch solution improving upon baseline enough -> stays
+            settlement(&oneinch, 1, -4.),  // no baseline exists -> stays
+            settlement(&oneinch, 2, -3.),  // no baseline exists -> stays
+            settlement(&dummy, 3, -0.5),   // non-1Inch solutions required to create a baseline
+            settlement(&oneinch, 4, -0.5), // 1Inch solution as good as the baseline -> filtered out
+            settlement(&oneinch, 5, 0.5),  // 1Inch solution improving upon baseline enough -> stays
+            settlement(&dummy, 6, 3.0),    // new baseline
+            settlement(&oneinch, 7, 3.0),  // 1Inch solution as good as the baseline -> filtered out
+            settlement(&oneinch, 8, 4.0),  // 1Inch solution improving upon baseline enough -> stays
         ];
-        let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &r(1.));
-        assert_solutions(&filtered_solutions, &[1, 2, 3, 5, 6, 8]);
-    }
-
-    #[test]
-    fn oneinch_solutions_filtering_negative_objectives() {
-        let oneinch = dummy_arc_solver_with_name("1Inch");
-        let dummy = dummy_arc_solver_with_name("Dummy");
-
-        let solutions = vec![
-            settlement(&dummy, 1, -8.),
-            settlement(&oneinch, 2, -4.),
-            settlement(&dummy, 3, -1.),
-            settlement(&oneinch, 4, -0.),
-            settlement(&oneinch, 5, 0.),
-            settlement(&oneinch, 6, 1.),
-        ];
-
         let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &r(1.));
         assert_solutions(&filtered_solutions, &[1, 2, 3, 5, 6, 8]);
     }
