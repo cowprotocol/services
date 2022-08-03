@@ -147,9 +147,10 @@ impl BatchTransport for HttpTransport {
 
         async move {
             let _guard = metrics.on_request_start("batch");
-            for call in &calls {
-                metrics.on_request_start(method_name(call));
-            }
+            let _guards: Vec<_> = calls
+                .iter()
+                .map(|call| metrics.on_request_start(method_name(call)))
+                .collect();
 
             let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
@@ -261,6 +262,8 @@ impl TransportMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::create_env_test_transport;
+    use crate::Web3;
 
     #[test]
     fn handles_batch_response_being_in_different_order_than_input() {
@@ -305,5 +308,32 @@ mod tests {
             vec![OutputOrString::String("there is no spoon".into())],
         )
         .is_err());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn batch_call_success() {
+        let http = create_env_test_transport();
+        let web3 = Web3::new(http);
+        let request = web3.transport().prepare("eth_blockNumber", Vec::default());
+        let request2 = web3.transport().prepare("eth_chainId", Vec::default());
+        let _batch_response = web3
+            .transport()
+            .send_batch([request, request2])
+            .await
+            .unwrap()
+            .into_iter();
+        let metric_storage =
+            TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        for method_name in ["eth_blockNumber", "eth_chainId", "batch"] {
+            let number_calls = metric_storage
+                .requests_complete
+                .with_label_values(&[method_name]);
+            let inflight_calls = metric_storage
+                .requests_inflight
+                .with_label_values(&[method_name]);
+            assert_eq!(number_calls.get(), 1);
+            assert_eq!(inflight_calls.get(), 0);
+        }
     }
 }
