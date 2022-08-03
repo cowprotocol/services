@@ -79,7 +79,6 @@ impl UniswapV3Liquidity {
     pub async fn get_liquidity(
         &self,
         offchain_orders: &[LimitOrder],
-        _at_block: Block,
     ) -> Result<Vec<ConcentratedLiquidity>> {
         let pairs = self.base_tokens.relevant_pairs(
             &mut offchain_orders
