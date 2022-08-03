@@ -11,10 +11,7 @@ use contracts::{GPv2Settlement, UniswapV3SwapRouter};
 use model::TokenPair;
 use num::rational::Ratio;
 use primitive_types::{H160, U256};
-use shared::{
-    baseline_solver::BaseTokens,
-    sources::uniswap_v3::pool_fetching::PoolFetching, Web3,
-};
+use shared::{baseline_solver::BaseTokens, sources::uniswap_v3::pool_fetching::PoolFetching, Web3};
 use std::{collections::HashSet, ops::Mul};
 use std::{
     sync::{Arc, Mutex},
