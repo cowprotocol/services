@@ -397,7 +397,6 @@ mod tests {
             AmmOrderExecution {
                 input: (H160([0x70; 20]), 10.into()),
                 output: (H160([0x71; 20]), 11.into()),
-                fee: None,
             },
             &mut encoder,
         )
@@ -407,7 +406,6 @@ mod tests {
             AmmOrderExecution {
                 input: (H160([0x71; 20]), 12.into()),
                 output: (H160([0x72; 20]), 13.into()),
-                fee: None,
             },
             &mut encoder,
         )

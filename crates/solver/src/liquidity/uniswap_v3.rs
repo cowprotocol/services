@@ -9,12 +9,13 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use contracts::{GPv2Settlement, UniswapV3SwapRouter};
 use model::TokenPair;
+use num::rational::Ratio;
 use primitive_types::{H160, U256};
 use shared::{
     baseline_solver::BaseTokens, recent_block_cache::Block,
     sources::uniswap_v3::pool_fetching::PoolFetching, Web3,
 };
-use std::collections::HashSet;
+use std::{collections::HashSet, ops::Mul};
 use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -36,19 +37,19 @@ pub struct Inner {
     allowances: Mutex<Allowances>,
 }
 
-#[cfg(test)]
-impl Inner {
-    pub fn new(
-        router: UniswapV3SwapRouter,
-        gpv2_settlement: GPv2Settlement,
-        allowances: Mutex<Allowances>,
-    ) -> Self {
-        Inner {
-            router,
-            gpv2_settlement,
-            allowances,
-        }
-    }
+pub struct UniswapV3SettlementHandler {
+    inner: Arc<Inner>,
+    fee: Option<u32>,
+}
+
+/// Highly corelated to Uniswap V3 only.
+/// Converts:
+/// 1% fee to 10000
+/// 0.3% fee to 3000
+/// 0.05% to 500
+/// 0.01% to 100
+fn ratio_to_u32(ratio: Ratio<u32>) -> u32 {
+    ratio.mul(1_000_000).to_integer()
 }
 
 impl UniswapV3Liquidity {
@@ -101,8 +102,11 @@ impl UniswapV3Liquidity {
 
             result.push(ConcentratedLiquidity {
                 tokens: token_pair,
+                settlement_handling: Arc::new(UniswapV3SettlementHandler {
+                    inner: self.inner.clone(),
+                    fee: Some(ratio_to_u32(pool.state.fee)),
+                }),
                 pool,
-                settlement_handling: self.inner.clone(),
             })
         }
         self.cache_allowances(tokens).await?;
@@ -126,7 +130,7 @@ impl UniswapV3Liquidity {
     }
 }
 
-impl Inner {
+impl UniswapV3SettlementHandler {
     fn settle(
         &self,
         (token_in, amount_in): (H160, U256),
@@ -135,6 +139,7 @@ impl Inner {
     ) -> (Approval, UniswapV3Interaction) {
         let amount_in_with_slippage = slippage::amount_plus_max_slippage(amount_in);
         let approval = self
+            .inner
             .allowances
             .lock()
             .expect("Thread holding mutex panicked")
@@ -143,12 +148,12 @@ impl Inner {
         (
             approval,
             UniswapV3Interaction {
-                router: self.router.clone(),
+                router: self.inner.router.clone(),
                 params: ExactOutputSingleParams {
                     token_in,
                     token_out,
                     fee,
-                    recipient: self.gpv2_settlement.address(),
+                    recipient: self.inner.gpv2_settlement.address(),
                     deadline: {
                         SystemTime::now()
                             .duration_since(UNIX_EPOCH)
@@ -166,13 +171,13 @@ impl Inner {
     }
 }
 
-impl SettlementHandling<ConcentratedLiquidity> for Inner {
+impl SettlementHandling<ConcentratedLiquidity> for UniswapV3SettlementHandler {
     // Creates the required interaction to convert the given input into output. Applies 0.1% slippage tolerance to the output.
     fn encode(&self, execution: AmmOrderExecution, encoder: &mut SettlementEncoder) -> Result<()> {
         let (approval, swap) = self.settle(
             execution.input,
             execution.output,
-            execution.fee.context("missing fee")?,
+            self.fee.context("missing fee")?,
         );
         encoder.append_to_execution_plan(approval);
         encoder.append_to_execution_plan(swap);
@@ -183,15 +188,19 @@ impl SettlementHandling<ConcentratedLiquidity> for Inner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use num::rational::Ratio;
     use shared::dummy_contract;
     use std::collections::HashMap;
 
-    impl Inner {
+    impl UniswapV3SettlementHandler {
         fn new_dummy(allowances: HashMap<H160, U256>) -> Self {
             Self {
-                router: dummy_contract!(UniswapV3SwapRouter, H160::zero()),
-                gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
-                allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                inner: Arc::new(Inner {
+                    router: dummy_contract!(UniswapV3SwapRouter, H160::zero()),
+                    gpv2_settlement: dummy_contract!(GPv2Settlement, H160::zero()),
+                    allowances: Mutex::new(Allowances::new(H160::zero(), allowances)),
+                }),
+                fee: None,
             }
         }
     }
@@ -205,38 +214,46 @@ mod tests {
             token_b => 200.into(),
         };
 
-        let inner = Inner::new_dummy(allowances);
+        let settlement_handler = UniswapV3SettlementHandler::new_dummy(allowances);
 
         // Token A below, equal, above
-        let (approval, _) = inner.settle((token_a, 50.into()), (token_b, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_a, 50.into()), (token_b, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
 
-        let (approval, _) = inner.settle((token_a, 99.into()), (token_b, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_a, 99.into()), (token_b, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
 
         // Allowance needed because of slippage
-        let (approval, _) = inner.settle((token_a, 100.into()), (token_b, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_a, 100.into()), (token_b, 100.into()), 10);
         assert_ne!(approval, Approval::AllowanceSufficient);
 
-        let (approval, _) = inner.settle((token_a, 150.into()), (token_b, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_a, 150.into()), (token_b, 100.into()), 10);
         assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Token B below, equal, above
-        let (approval, _) = inner.settle((token_b, 150.into()), (token_a, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_b, 150.into()), (token_a, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
 
-        let (approval, _) = inner.settle((token_b, 199.into()), (token_a, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_b, 199.into()), (token_a, 100.into()), 10);
         assert_eq!(approval, Approval::AllowanceSufficient);
 
         // Allowance needed because of slippage
-        let (approval, _) = inner.settle((token_b, 200.into()), (token_a, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_b, 200.into()), (token_a, 100.into()), 10);
         assert_ne!(approval, Approval::AllowanceSufficient);
 
-        let (approval, _) = inner.settle((token_b, 250.into()), (token_a, 100.into()), 10);
+        let (approval, _) =
+            settlement_handler.settle((token_b, 250.into()), (token_a, 100.into()), 10);
         assert_ne!(approval, Approval::AllowanceSufficient);
 
         // Untracked token
-        let (approval, _) = inner.settle(
+        let (approval, _) = settlement_handler.settle(
             (H160::from_low_u64_be(3), 1.into()),
             (token_a, 100.into()),
             10,
@@ -246,14 +263,28 @@ mod tests {
 
     #[test]
     fn test_encode() {
-        let inner = Inner::new_dummy(Default::default());
+        let settlement_handler = UniswapV3SettlementHandler::new_dummy(Default::default());
         let execution = AmmOrderExecution {
             input: (H160::default(), U256::zero()),
             output: (H160::default(), U256::zero()),
-            fee: None,
         };
         let mut encoder = SettlementEncoder::new(Default::default());
-        let encoded = inner.encode(execution, &mut encoder).unwrap_err();
+        let encoded = settlement_handler
+            .encode(execution, &mut encoder)
+            .unwrap_err();
         assert!(encoded.to_string() == "missing fee");
+    }
+
+    #[test]
+    fn test_ratio_to_u32() {
+        let fee_1 = Ratio::<u32>::new(1, 100);
+        let fee_2 = Ratio::<u32>::new(3, 1000);
+        let fee_3 = Ratio::<u32>::new(5, 10000);
+        let fee_4 = Ratio::<u32>::new(1, 10000);
+
+        assert_eq!(ratio_to_u32(fee_1), 10000);
+        assert_eq!(ratio_to_u32(fee_2), 3000);
+        assert_eq!(ratio_to_u32(fee_3), 500);
+        assert_eq!(ratio_to_u32(fee_4), 100);
     }
 }

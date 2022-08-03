@@ -258,7 +258,6 @@ pub struct ExecutedAmmModel {
     /// able to determine and order of execution. That is, solver may have a solution
     /// which it wants to share with the driver even if it couldn't derive an execution plan.
     pub exec_plan: Option<ExecutionPlan>,
-    pub fee: Option<u32>,
 }
 
 impl UpdatedAmmModel {

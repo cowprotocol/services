@@ -257,17 +257,17 @@ async fn main() {
         None
     };
 
-    let uniswap_v3_pool_fetcher = Arc::new(
-        AutoUpdatingUniswapV3PoolFetcher::new(
-            chain_id,
-            args.liquidity_fetcher_max_age_update,
-            client.clone(),
-        )
-        .await
-        .expect("failed to create UniswapV3 pool fetcher"),
-    );
-
     let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let uniswap_v3_pool_fetcher = Arc::new(
+            AutoUpdatingUniswapV3PoolFetcher::new(
+                chain_id,
+                args.liquidity_fetcher_max_age_update,
+                client.clone(),
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher"),
+        );
+
         Some(UniswapV3Liquidity::new(
             UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
             settlement_contract.clone(),

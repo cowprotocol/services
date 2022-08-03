@@ -66,7 +66,6 @@ impl Execution {
                 let execution = AmmOrderExecution {
                     input: executed_amm.input,
                     output: executed_amm.output,
-                    fee: executed_amm.fee,
                 };
                 match &executed_amm.order {
                     Liquidity::ConstantProduct(liquidity) => {
@@ -128,7 +127,6 @@ struct ExecutedAmm {
     output: (H160, U256),
     order: Liquidity,
     exec_plan: Option<ExecutionPlan>,
-    fee: Option<u32>,
 }
 
 impl Interaction for InteractionData {
@@ -233,7 +231,6 @@ fn match_prepared_and_settled_amms(
                 input: (settled.buy_token, settled.exec_buy_amount),
                 output: (settled.sell_token, settled.exec_sell_amount),
                 exec_plan: settled.exec_plan,
-                fee: settled.fee,
             })
         })
         .collect()
@@ -426,7 +423,6 @@ mod tests {
                     sequence: 0,
                     position: 0,
                 })),
-                fee: None,
             }],
             cost: Default::default(),
         };
@@ -437,7 +433,6 @@ mod tests {
                 exec_sell_amount: U256::from(1),
                 exec_buy_amount: U256::from(1),
                 exec_plan: Some(ExecutionPlan::Internal),
-                fee: None,
             }],
             cost: Default::default(),
         };
@@ -451,7 +446,6 @@ mod tests {
                     sequence: 1,
                     position: 0,
                 })),
-                fee: None,
             }],
             cost: Default::default(),
         };
@@ -465,7 +459,6 @@ mod tests {
                     sequence: 2,
                     position: 0,
                 })),
-                fee: None,
             }],
             cost: Default::default(),
         };
@@ -501,7 +494,6 @@ mod tests {
             vec![AmmOrderExecution {
                 input: (t0, 8.into()),
                 output: (t1, 9.into()),
-                fee: None,
             }]
         );
         assert_eq!(internal_amm_handler.calls(), vec![]);
@@ -510,7 +502,6 @@ mod tests {
             vec![AmmOrderExecution {
                 input: (t0, 1.into()),
                 output: (t1, 2.into()),
-                fee: None,
             }]
         );
         assert_eq!(
@@ -518,7 +509,6 @@ mod tests {
             vec![AmmOrderExecution {
                 input: (t0, 4.into()),
                 output: (t1, 6.into()),
-                fee: None,
             }]
         );
     }
@@ -762,7 +752,6 @@ mod tests {
                         sequence: 0u32,
                         position: 0u32,
                     })),
-                    fee: None,
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_0),
@@ -772,7 +761,6 @@ mod tests {
                         sequence: 0u32,
                         position: 1u32,
                     })),
-                    fee: None,
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::ConstantProduct(cpo_1),
@@ -782,7 +770,6 @@ mod tests {
                         sequence: 0u32,
                         position: 2u32,
                     })),
-                    fee: None,
                 })),
                 Execution::Amm(Box::new(ExecutedAmm {
                     order: Liquidity::BalancerStable(spo),
@@ -792,7 +779,6 @@ mod tests {
                         sequence: 0u32,
                         position: 3u32,
                     })),
-                    fee: None,
                 })),
             ],
         );
@@ -817,7 +803,6 @@ mod tests {
                 sequence: 1u32,
                 position: 2u32,
             })),
-            fee: None,
         }];
         let interactions = vec![InteractionData {
             target: H160::zero(),
