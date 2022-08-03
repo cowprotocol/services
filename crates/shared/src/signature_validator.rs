@@ -1,9 +1,9 @@
+use crate::{ethcontract_error::EthcontractErrorType, transport::MAX_BATCH_SIZE, Web3};
 use contracts::ERC1271SignatureValidator;
 use ethcontract::{batch::CallBatch, errors::MethodError, Bytes};
 use futures::future;
 use hex_literal::hex;
 use primitive_types::H160;
-use shared::{ethcontract_error::EthcontractErrorType, transport::MAX_BATCH_SIZE, Web3};
 use thiserror::Error;
 
 /// Structure used to represent a signature.
@@ -26,7 +26,7 @@ pub enum SignatureValidationError {
     Other(#[from] MethodError),
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 /// <https://eips.ethereum.org/EIPS/eip-1271>
 pub trait SignatureValidating: Send + Sync {

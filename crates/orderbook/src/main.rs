@@ -16,7 +16,6 @@ use orderbook::{
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
     serve_api,
-    signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
@@ -58,6 +57,7 @@ use shared::{
     },
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
+    signature_validator::Web3SignatureValidator,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{
         self,
