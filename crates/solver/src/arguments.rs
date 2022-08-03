@@ -277,15 +277,6 @@ pub struct Arguments {
     /// in the settlement are checked for price deviation.
     #[clap(long, env, use_value_delimiter = true)]
     pub token_list_restriction_for_price_checks: Option<Vec<H160>>,
-
-    /// If liquidity pool fetcher has caching mechanism, this argument defines how old pool data is allowed
-    /// to be before updating
-    #[clap(
-        long,
-        default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    pub liquidity_fetcher_max_age_update: Duration,
 }
 
 impl std::fmt::Display for Arguments {

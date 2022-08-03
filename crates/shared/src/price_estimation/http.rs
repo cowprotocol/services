@@ -3,9 +3,10 @@ use crate::{
     http_solver::{
         gas_model::GasModel,
         model::{
-            AmmModel, AmmParameters, BatchAuctionModel, ConstantProductPoolParameters,
-            MetadataModel, OrderModel, SettledBatchAuctionModel, StablePoolParameters, TokenAmount,
-            TokenInfoModel, WeightedPoolTokenData, WeightedProductPoolParameters,
+            AmmModel, AmmParameters, BatchAuctionModel, ConcentratedPoolParameters,
+            ConstantProductPoolParameters, MetadataModel, OrderModel, SettledBatchAuctionModel,
+            StablePoolParameters, TokenAmount, TokenInfoModel, WeightedPoolTokenData,
+            WeightedProductPoolParameters,
         },
         HttpSolverApi,
     },
@@ -21,6 +22,9 @@ use crate::{
             pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
         },
         uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetching},
+        uniswap_v3::pool_fetching::{
+            AutoUpdatingUniswapV3PoolFetcher, PoolFetching as UniswapV3PoolFetching,
+        },
     },
     token_info::TokenInfoFetching,
 };
@@ -44,6 +48,7 @@ pub struct HttpPriceEstimator {
     >,
     pools: Arc<PoolCache>,
     balancer_pools: Option<Arc<BalancerPoolFetcher>>,
+    uniswap_v3_pools: Option<Arc<AutoUpdatingUniswapV3PoolFetcher>>,
     token_info: Arc<dyn TokenInfoFetching>,
     gas_info: Arc<dyn GasPriceEstimating>,
     native_token: H160,
@@ -58,6 +63,7 @@ impl HttpPriceEstimator {
         api: Arc<dyn HttpSolverApi>,
         pools: Arc<PoolCache>,
         balancer_pools: Option<Arc<BalancerPoolFetcher>>,
+        uniswap_v3_pools: Option<Arc<AutoUpdatingUniswapV3PoolFetcher>>,
         token_info: Arc<dyn TokenInfoFetching>,
         gas_info: Arc<dyn GasPriceEstimating>,
         native_token: H160,
@@ -70,6 +76,7 @@ impl HttpPriceEstimator {
             sharing: Default::default(),
             pools,
             balancer_pools,
+            uniswap_v3_pools,
             token_info,
             gas_info,
             native_token,
@@ -116,13 +123,15 @@ impl HttpPriceEstimator {
             gas_price: gas_price.to_f64_lossy(),
         };
 
-        let (uniswap_pools, balancer_pools) = futures::try_join!(
+        let (uniswap_pools, balancer_pools, uniswap_v3_pools) = futures::try_join!(
             self.uniswap_pools(pairs.clone(), &gas_model),
-            self.balancer_pools(pairs.clone(), &gas_model)
+            self.balancer_pools(pairs.clone(), &gas_model),
+            self.uniswap_v3_pools(pairs.clone(), &gas_model)
         )?;
         let amms: BTreeMap<usize, AmmModel> = uniswap_pools
             .into_iter()
             .chain(balancer_pools)
+            .chain(uniswap_v3_pools)
             .enumerate()
             .collect();
 
@@ -135,7 +144,9 @@ impl HttpPriceEstimator {
                 AmmParameters::ConstantProduct(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::WeightedProduct(params) => tokens.extend(params.reserves.keys()),
                 AmmParameters::Stable(params) => tokens.extend(params.reserves.keys()),
-                AmmParameters::Concentrated(_) => (), // not used since no output amounts are calculated in driver
+                AmmParameters::Concentrated(params) => {
+                    tokens.extend(params.pool.tokens.iter().map(|token| token.id))
+                }
             }
         }
         let tokens: Vec<_> = tokens.drain().collect();
@@ -232,6 +243,32 @@ impl HttpPriceEstimator {
                     BigInt::from(*pool.fee.denom()),
                 )),
                 cost: gas_model.uniswap_cost(),
+                mandatory: false,
+            })
+            .collect())
+    }
+
+    async fn uniswap_v3_pools(
+        &self,
+        pairs: HashSet<TokenPair>,
+        gas_model: &GasModel,
+    ) -> Result<Vec<AmmModel>> {
+        let pools = match &self.uniswap_v3_pools {
+            Some(uniswap_v3) => uniswap_v3
+                .fetch(&pairs)
+                .await
+                .context("no uniswap v3 pools")?,
+            None => return Ok(Default::default()),
+        };
+        Ok(pools
+            .into_iter()
+            .map(|pool| AmmModel {
+                fee: BigRational::from((
+                    BigInt::from(*pool.state.fee.numer()),
+                    BigInt::from(*pool.state.fee.denom()),
+                )),
+                cost: gas_model.cost_for_gas(pool.gas_stats.mean_gas),
+                parameters: AmmParameters::Concentrated(ConcentratedPoolParameters { pool }),
                 mandatory: false,
             })
             .collect())
@@ -441,6 +478,15 @@ mod tests {
             .await
             .expect("failed to create Balancer pool fetcher"),
         );
+        let uniswap_v3_pool_fetcher = Arc::new(
+            AutoUpdatingUniswapV3PoolFetcher::new(
+                chain_id,
+                Duration::from_secs(30),
+                client.clone(),
+            )
+            .await
+            .expect("failed to create uniswap v3 pool fetcher"),
+        );
         let gas_info = Arc::new(web3);
 
         let estimator = HttpPriceEstimator {
@@ -470,6 +516,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
+            uniswap_v3_pools: Some(uniswap_v3_pool_fetcher),
         };
 
         let result = estimator

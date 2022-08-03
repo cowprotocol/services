@@ -261,11 +261,11 @@ async fn main() {
         let uniswap_v3_pool_fetcher = Arc::new(
             AutoUpdatingUniswapV3PoolFetcher::new(
                 chain_id,
-                args.liquidity_fetcher_max_age_update,
+                args.shared.liquidity_fetcher_max_age_update,
                 client.clone(),
             )
             .await
-            .expect("failed to create UniswapV3 pool fetcher"),
+            .expect("failed to create UniswapV3 pool fetcher in solver"),
         );
 
         Some(UniswapV3Liquidity::new(
