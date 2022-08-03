@@ -1,8 +1,4 @@
-use crate::{
-    database::orders::OrderStoring,
-    signature_validator::{SignatureCheck, SignatureValidating},
-    solver_competition::SolverCompetitionStoring,
-};
+use crate::{database::orders::OrderStoring, solver_competition::SolverCompetitionStoring};
 use anyhow::{Context as _, Result};
 use ethcontract::H256;
 use futures::StreamExt;
@@ -14,6 +10,7 @@ use shared::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
     price_estimation::native::NativePriceEstimating,
+    signature_validator::{SignatureCheck, SignatureValidating},
 };
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -518,11 +515,8 @@ async fn filter_unsupported_tokens(
 mod tests {
     use super::*;
     use crate::{
-        database::orders::MockOrderStoring,
-        database::orders::SolvableOrders as DbOrders,
-        metrics::NoopMetrics,
-        signature_validator::{MockSignatureValidating, SignatureValidationError},
-        solver_competition::MockSolverCompetitionStoring,
+        database::orders::MockOrderStoring, database::orders::SolvableOrders as DbOrders,
+        metrics::NoopMetrics, solver_competition::MockSolverCompetitionStoring,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::{FutureExt, StreamExt};
@@ -536,6 +530,7 @@ mod tests {
         account_balances::MockBalanceFetching,
         bad_token::list_based::ListBasedDetector,
         price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
+        signature_validator::{MockSignatureValidating, SignatureValidationError},
     };
 
     #[tokio::test]

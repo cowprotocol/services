@@ -9,7 +9,6 @@ use orderbook::{
     order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
-    signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
 };
 use reqwest::Client;
@@ -24,6 +23,7 @@ use shared::{
     price_estimation::sanitized::SanitizedPriceEstimator,
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
+    signature_validator::Web3SignatureValidator,
     sources::uniswap_v2::{
         self,
         pair_provider::PairProvider,

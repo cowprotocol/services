@@ -1,9 +1,6 @@
-use crate::{
-    order_quoting::{
-        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
-        QuoteSearchParameters,
-    },
-    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+use crate::order_quoting::{
+    CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
+    QuoteSearchParameters,
 };
 use anyhow::anyhow;
 use contracts::WETH9;
@@ -21,6 +18,7 @@ use shared::{
     account_balances::{BalanceFetching, TransferSimulationError},
     bad_token::BadTokenDetecting,
     price_estimation::PriceEstimationError,
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
     web3_traits::CodeFetching,
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
@@ -577,7 +575,7 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{order_quoting::MockOrderQuoting, signature_validator::MockSignatureValidating};
+    use crate::order_quoting::MockOrderQuoting;
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
@@ -590,6 +588,7 @@ mod tests {
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,
         rate_limiter::RateLimiterError,
+        signature_validator::MockSignatureValidating,
         web3_traits::MockCodeFetching,
     };
 

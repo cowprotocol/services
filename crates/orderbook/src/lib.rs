@@ -7,7 +7,6 @@ pub mod metrics;
 pub mod order_quoting;
 pub mod order_validation;
 pub mod orderbook;
-pub mod signature_validator;
 pub mod solvable_orders;
 pub mod solver_competition;
 

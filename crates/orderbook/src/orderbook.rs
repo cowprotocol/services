@@ -330,8 +330,7 @@ mod tests {
     use super::*;
     use crate::{
         database::orders::MockOrderStoring, metrics::NoopMetrics,
-        order_validation::MockOrderValidating, signature_validator::MockSignatureValidating,
-        solver_competition::MockSolverCompetitionStoring,
+        order_validation::MockOrderValidating, solver_competition::MockSolverCompetitionStoring,
     };
     use ethcontract::H160;
     use mockall::predicate::eq;
@@ -343,6 +342,7 @@ mod tests {
     use shared::{
         account_balances::MockBalanceFetching, bad_token::MockBadTokenDetecting, current_block,
         price_estimation::native::MockNativePriceEstimating,
+        signature_validator::MockSignatureValidating,
     };
 
     fn mock_orderbook() -> Orderbook {
