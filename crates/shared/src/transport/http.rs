@@ -317,12 +317,10 @@ mod tests {
         let web3 = Web3::new(http);
         let request = web3.transport().prepare("eth_blockNumber", Vec::default());
         let request2 = web3.transport().prepare("eth_chainId", Vec::default());
-        let _batch_response = web3
-            .transport()
+        web3.transport()
             .send_batch([request, request2])
             .await
-            .unwrap()
-            .into_iter();
+            .unwrap();
         let metric_storage =
             TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         for method_name in ["eth_blockNumber", "eth_chainId", "batch"] {
