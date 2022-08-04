@@ -20,6 +20,7 @@ type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessLis
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait SettlementRating: Send + Sync {
+    /// Rate settlements, ignoring those for which the rating procedure failed.
     async fn rate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
@@ -72,7 +73,6 @@ impl SettlementRater {
 
 #[async_trait::async_trait]
 impl SettlementRating for SettlementRater {
-    /// Rate settlements, ignoring those for which the rating procedure failed.
     async fn rate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,
