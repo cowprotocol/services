@@ -9,10 +9,10 @@ use crate::{
 use anyhow::{ensure, Context, Result};
 use contracts::{GPv2Settlement, UniswapV3SwapRouter};
 use model::TokenPair;
-use num::rational::Ratio;
+use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
 use shared::{baseline_solver::BaseTokens, sources::uniswap_v3::pool_fetching::PoolFetching, Web3};
-use std::{collections::HashSet, ops::Mul};
+use std::collections::HashSet;
 use std::{
     sync::{Arc, Mutex},
     time::{SystemTime, UNIX_EPOCH},
@@ -45,8 +45,11 @@ pub struct UniswapV3SettlementHandler {
 /// 0.3% fee to 3000
 /// 0.05% to 500
 /// 0.01% to 100
-fn ratio_to_u32(ratio: Ratio<u32>) -> u32 {
-    ratio.mul(1_000_000).to_integer()
+fn ratio_to_u32(ratio: Ratio<u32>) -> Result<u32> {
+    Ok(ratio
+        .checked_mul(&Ratio::new(1_000_000, 1))
+        .context("failed multiplication")?
+        .to_integer())
 }
 
 impl UniswapV3Liquidity {
@@ -100,7 +103,7 @@ impl UniswapV3Liquidity {
                 tokens: token_pair,
                 settlement_handling: Arc::new(UniswapV3SettlementHandler {
                     inner: self.inner.clone(),
-                    fee: Some(ratio_to_u32(pool.state.fee)),
+                    fee: Some(ratio_to_u32(pool.state.fee)?),
                 }),
                 pool,
             })
@@ -278,9 +281,9 @@ mod tests {
         let fee_3 = Ratio::<u32>::new(5, 10000);
         let fee_4 = Ratio::<u32>::new(1, 10000);
 
-        assert_eq!(ratio_to_u32(fee_1), 10000);
-        assert_eq!(ratio_to_u32(fee_2), 3000);
-        assert_eq!(ratio_to_u32(fee_3), 500);
-        assert_eq!(ratio_to_u32(fee_4), 100);
+        assert_eq!(ratio_to_u32(fee_1).unwrap(), 10000);
+        assert_eq!(ratio_to_u32(fee_2).unwrap(), 3000);
+        assert_eq!(ratio_to_u32(fee_3).unwrap(), 500);
+        assert_eq!(ratio_to_u32(fee_4).unwrap(), 100);
     }
 }
