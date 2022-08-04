@@ -8,12 +8,12 @@ use reqwest::Client;
 use shared::{
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::{create_instrumented_transport, http::HttpTransport},
+    transport::http::HttpTransport,
+    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
     interactions::allowances::AllowanceManager,
-    metrics::Metrics,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -30,7 +30,6 @@ use std::{sync::Arc, time::Duration};
 
 struct CommonComponents {
     client: Client,
-    metrics: Arc<Metrics>,
     web3: shared::Web3,
     network_id: String,
     chain_id: u64,
@@ -40,11 +39,11 @@ struct CommonComponents {
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
     let client = shared::http_client(args.http_timeout);
-    let metrics = Arc::new(Metrics::new().expect("Couldn't register metrics"));
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.node_url.clone(), "base".to_string()),
-        metrics.clone(),
-    );
+    let transport = Web3Transport::new(HttpTransport::new(
+        client.clone(),
+        args.node_url.clone(),
+        "base".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let network_id = web3
         .net()
@@ -66,7 +65,6 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
 
     CommonComponents {
         client,
-        metrics,
         web3,
         network_id,
         chain_id,
@@ -125,10 +123,11 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         .iter()
         .enumerate()
         .map(|(index, url)| {
-            let transport = create_instrumented_transport(
-                HttpTransport::new(client.clone(), url.clone(), index.to_string()),
-                common.metrics.clone(),
-            );
+            let transport = Web3Transport::new(HttpTransport::new(
+                client.clone(),
+                url.clone(),
+                index.to_string(),
+            ));
             (web3::Web3::new(transport), url)
         })
         .collect::<Vec<_>>();

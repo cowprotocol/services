@@ -207,7 +207,7 @@ impl Orderbook {
         self.database
             .cancel_order(&order.metadata.uid, Utc::now())
             .await?;
-        Metrics::on_order_operation(&order, OrderOperation::Created);
+        Metrics::on_order_operation(&order, OrderOperation::Cancelled);
 
         self.solvable_orders.request_update();
 
@@ -321,7 +321,7 @@ impl LivenessChecking for Orderbook {
 fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
     for order in orders.iter_mut() {
         order.metadata.available_balance =
-            cache.cached_balance(&crate::account_balances::Query::from_order(order));
+            cache.cached_balance(&shared::account_balances::Query::from_order(order));
     }
 }
 
@@ -329,10 +329,8 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
 mod tests {
     use super::*;
     use crate::{
-        account_balances::MockBalanceFetching, database::orders::MockOrderStoring,
-        metrics::NoopMetrics, order_validation::MockOrderValidating,
-        signature_validator::MockSignatureValidating,
-        solver_competition::MockSolverCompetitionStoring,
+        database::orders::MockOrderStoring, metrics::NoopMetrics,
+        order_validation::MockOrderValidating, solver_competition::MockSolverCompetitionStoring,
     };
     use ethcontract::H160;
     use mockall::predicate::eq;
@@ -342,8 +340,9 @@ mod tests {
         signature::Signature,
     };
     use shared::{
-        bad_token::MockBadTokenDetecting, current_block,
+        account_balances::MockBalanceFetching, bad_token::MockBadTokenDetecting, current_block,
         price_estimation::native::MockNativePriceEstimating,
+        signature_validator::MockSignatureValidating,
     };
 
     fn mock_orderbook() -> Orderbook {

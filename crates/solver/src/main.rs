@@ -18,8 +18,9 @@ use shared::{
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::{create_instrumented_transport, http::HttpTransport},
+    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
+    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
@@ -56,10 +57,11 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url, "base".to_string()),
-        metrics.clone(),
-    );
+    let transport = Web3Transport::new(HttpTransport::new(
+        client.clone(),
+        args.shared.node_url,
+        "base".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let chain_id = web3
         .eth()
@@ -271,10 +273,11 @@ async fn main() {
         .into_iter()
         .enumerate()
         .map(|(index, url)| {
-            let transport = create_instrumented_transport(
-                HttpTransport::new(client.clone(), url.clone(), index.to_string()),
-                metrics.clone(),
-            );
+            let transport = Web3Transport::new(HttpTransport::new(
+                client.clone(),
+                url.clone(),
+                index.to_string(),
+            ));
             (web3::Web3::new(transport), url)
         })
         .collect::<Vec<_>>();

@@ -21,10 +21,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "postgresql://")]
     pub db_url: Url,
 
-    /// Skip syncing past events (useful for local deployments)
-    #[clap(long)]
-    pub skip_event_sync: bool,
-
     /// The minimum amount of time in seconds an order has to be valid for.
     #[clap(
         long,
@@ -235,7 +231,6 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.shared)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "db_url: SECRET")?;
-        writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
         writeln!(
             f,
             "min_order_validity_period: {:?}",

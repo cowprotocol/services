@@ -1,10 +1,10 @@
+use crate::{Web3, Web3Transport};
 use anyhow::{anyhow, Context, Result};
 use contracts::{BalancerV2Vault, ERC20};
 use ethcontract::{batch::CallBatch, Account};
 use futures::{FutureExt, StreamExt};
 use model::order::{Order, SellTokenSource};
 use primitive_types::{H160, U256};
-use shared::{Web3, Web3Transport};
 use std::future::Future;
 use web3::types::{BlockId, BlockNumber, CallRequest};
 
@@ -39,7 +39,7 @@ impl From<anyhow::Error> for TransferSimulationError {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait BalanceFetching: Send + Sync {
     // Returns the balance available to the allowance manager for the given owner and token taking both balance as well as "allowance" into account.
@@ -285,9 +285,9 @@ fn is_empty_or_truthy(bytes: &[u8]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::create_env_test_transport;
     use contracts::{vault, BalancerV2Authorizer, ERC20Mintable};
     use hex_literal::hex;
-    use shared::transport::create_env_test_transport;
 
     #[tokio::test]
     #[ignore]
