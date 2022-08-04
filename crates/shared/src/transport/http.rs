@@ -147,10 +147,12 @@ impl BatchTransport for HttpTransport {
 
         async move {
             let _guard = metrics.on_request_start("batch");
-            let _guards: Vec<_> = calls
-                .iter()
-                .map(|call| metrics.on_request_start(method_name(call)))
-                .collect();
+            calls.iter().for_each(|call| {
+                metrics
+                    .inner_batch_requests_complete
+                    .with_label_values(&[method_name(call)])
+                    .inc()
+            });
 
             let outputs = execute_rpc(client, inner, id, &Request::Batch(calls)).await?;
             handle_batch_response(&ids, outputs)
@@ -239,6 +241,10 @@ struct TransportMetrics {
     /// Execution time for each RPC request (batches are counted as one request).
     #[metric(labels("method"))]
     requests_duration_seconds: prometheus::HistogramVec,
+
+    /// Number of completed RPC requests within a batch request
+    #[metric(labels("method"))]
+    inner_batch_requests_complete: prometheus::IntCounterVec,
 }
 
 impl TransportMetrics {
@@ -312,7 +318,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn batch_call_success() {
+    async fn inner_batch_requests_metrics_success() {
         let http = create_env_test_transport();
         let web3 = Web3::new(http);
         let request = web3.transport().prepare("eth_blockNumber", Vec::default());
@@ -323,15 +329,15 @@ mod tests {
             .unwrap();
         let metric_storage =
             TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
-        for method_name in ["eth_blockNumber", "eth_chainId", "batch"] {
+        for method_name in ["eth_blockNumber", "eth_chainId"] {
             let number_calls = metric_storage
-                .requests_complete
-                .with_label_values(&[method_name]);
-            let inflight_calls = metric_storage
-                .requests_inflight
+                .inner_batch_requests_complete
                 .with_label_values(&[method_name]);
             assert_eq!(number_calls.get(), 1);
-            assert_eq!(inflight_calls.get(), 0);
         }
+        let batch_calls = metric_storage
+            .requests_complete
+            .with_label_values(&["batch"]);
+        assert_eq!(batch_calls.get(), 1);
     }
 }
