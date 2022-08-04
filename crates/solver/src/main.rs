@@ -421,7 +421,7 @@ async fn main() {
         args.token_list_restriction_for_price_checks.into(),
         tenderly,
         args.minimum_oneinch_objective_improvement_in_eth
-            .and_then(|v| num::BigRational::from_float(v * 1e18)),
+            .and_then(|v| Some(U256::from_f64_lossy(v * 1e18))),
     );
 
     let maintainer = ServiceMaintenance {

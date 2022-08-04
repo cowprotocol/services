@@ -28,6 +28,7 @@ use model::{
     solver_competition::CompetitionAuction,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
+use primitive_types::U256;
 use primitive_types::{H160, H256};
 use rand::prelude::SliceRandom;
 use shared::{
@@ -71,7 +72,7 @@ pub struct Driver {
     token_list_restriction_for_price_checks: PriceCheckTokens,
     tenderly: Option<TenderlyApi>,
     settlement_rater: SettlementRater,
-    minimum_oneinch_objective_improvement_in_wei: Option<BigRational>,
+    minimum_oneinch_objective_improvement_in_wei: Option<U256>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -100,7 +101,7 @@ impl Driver {
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
         tenderly: Option<TenderlyApi>,
-        minimum_oneinch_objective_improvement_in_wei: Option<BigRational>,
+        minimum_oneinch_objective_improvement_in_wei: Option<U256>,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
@@ -797,10 +798,13 @@ impl Driver {
 /// Expects a list of rated settlements which are sorted by objective value in ascending order.
 fn drop_bad_oneinch_solutions(
     solutions: Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
-    minimum_objective_improvement: &BigRational,
+    minimum_objective_improvement: &U256,
 ) -> Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)> {
     let mut best_objective = None;
     let number_of_solutions = solutions.len();
+
+    let minimum_objective_improvement =
+        number_conversions::u256_to_big_rational(minimum_objective_improvement);
 
     solutions
         .into_iter()
@@ -817,7 +821,7 @@ fn drop_bad_oneinch_solutions(
 
             if let Some(best_objective) = &best_objective {
                 let improvement = objective - best_objective;
-                let keep_solution = improvement >= *minimum_objective_improvement;
+                let keep_solution = improvement >= minimum_objective_improvement;
                 if *index == number_of_solutions - 1 && !keep_solution {
                     tracing::debug!(
                         ?solution,
@@ -891,7 +895,6 @@ mod tests {
     use model::order::{Order, OrderData};
     use shared::token_list::Token;
     use std::collections::HashMap;
-    use web3::types::AccessList;
 
     #[test]
     fn test_is_only_selling_trusted_tokens() {
@@ -983,42 +986,25 @@ mod tests {
         super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
     }
 
-    fn r(number: f64) -> BigRational {
-        BigRational::from_float(number).unwrap()
-    }
-
-    fn settlement(
-        solver: &Arc<dyn Solver>,
-        id: usize,
-        objective: f64,
-    ) -> (Arc<dyn Solver>, RatedSettlement, Option<AccessList>) {
-        (
-            solver.clone(),
-            RatedSettlement {
-                id,
-                surplus: num::BigRational::from_float(objective).unwrap(),
-                settlement: Default::default(),
-                unscaled_subsidized_fee: r(0.),
-                scaled_unsubsidized_fee: r(0.),
-                gas_estimate: 0.into(),
-                gas_price: r(0.),
-            },
-            None,
-        )
-    }
-
-    fn assert_solutions(
-        solutions: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-        expected: &[usize],
-    ) {
-        let solutions: Vec<_> = solutions.iter().map(|s| s.1.id).collect();
-        assert_eq!(solutions, expected);
-    }
-
     #[test]
     fn drops_oneinch_solutions_with_insignificant_improvements() {
         let oneinch = dummy_arc_solver_with_name("1Inch");
         let dummy = dummy_arc_solver_with_name("Dummy");
+        let settlement = |solver: &Arc<dyn Solver>, id, objective| {
+            (
+                solver.clone(),
+                RatedSettlement {
+                    id,
+                    surplus: num::BigRational::from_float(objective).unwrap(),
+                    settlement: Default::default(),
+                    unscaled_subsidized_fee: BigRational::from_float(0.).unwrap(),
+                    scaled_unsubsidized_fee: BigRational::from_float(0.).unwrap(),
+                    gas_estimate: 0.into(),
+                    gas_price: BigRational::from_float(0.).unwrap(),
+                },
+                None,
+            )
+        };
 
         let solutions = vec![
             settlement(&oneinch, 1, -4.),  // no baseline exists -> stays
@@ -1030,7 +1016,8 @@ mod tests {
             settlement(&oneinch, 7, 3.0),  // 1Inch solution as good as the baseline -> filtered out
             settlement(&oneinch, 8, 4.0),  // 1Inch solution improving upon baseline enough -> stays
         ];
-        let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &r(1.));
-        assert_solutions(&filtered_solutions, &[1, 2, 3, 5, 6, 8]);
+        let filtered_solutions = drop_bad_oneinch_solutions(solutions.clone(), &(1.into()));
+        let filtered_solutions: Vec<_> = filtered_solutions.iter().map(|s| s.1.id).collect();
+        assert_eq!(filtered_solutions, vec![1, 2, 3, 5, 6, 8]);
     }
 }
