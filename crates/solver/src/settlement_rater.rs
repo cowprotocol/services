@@ -17,7 +17,7 @@ use web3::types::AccessList;
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
 type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
-#[cfg_attr(any(feature = "mockall", test), mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait SettlementRating: Send + Sync {
     async fn rate_settlements(
