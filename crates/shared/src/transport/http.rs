@@ -149,7 +149,7 @@ impl BatchTransport for HttpTransport {
             let _guard = metrics.on_request_start("batch");
             calls.iter().for_each(|call| {
                 metrics
-                    .inner_batch_requests_complete
+                    .inner_batch_requests_initiated
                     .with_label_values(&[method_name(call)])
                     .inc()
             });
@@ -242,9 +242,9 @@ struct TransportMetrics {
     #[metric(labels("method"))]
     requests_duration_seconds: prometheus::HistogramVec,
 
-    /// Number of completed RPC requests within a batch request
+    /// Number of RPC requests initiated within a batch request
     #[metric(labels("method"))]
-    inner_batch_requests_complete: prometheus::IntCounterVec,
+    inner_batch_requests_initiated: prometheus::IntCounterVec,
 }
 
 impl TransportMetrics {
@@ -331,7 +331,7 @@ mod tests {
             TransportMetrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
         for method_name in ["eth_blockNumber", "eth_chainId"] {
             let number_calls = metric_storage
-                .inner_batch_requests_complete
+                .inner_batch_requests_initiated
                 .with_label_values(&[method_name]);
             assert_eq!(number_calls.get(), 1);
         }
