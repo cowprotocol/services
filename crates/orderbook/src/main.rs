@@ -163,7 +163,6 @@ async fn main() {
         )
         .await
         .expect("failed to create gas price estimator"),
-        metrics.clone(),
     ));
 
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
