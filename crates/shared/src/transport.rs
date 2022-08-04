@@ -1,32 +1,14 @@
 pub mod buffered;
 pub mod dummy;
 pub mod http;
-pub mod instrumented;
 pub mod mock;
 
-use self::{
-    http::HttpTransport,
-    instrumented::{MetricTransport, TransportMetrics},
-};
+use self::http::HttpTransport;
 use crate::Web3Transport;
 use reqwest::Client;
-use std::{convert::TryInto as _, sync::Arc};
-use web3::BatchTransport;
+use std::convert::TryInto as _;
 
 pub const MAX_BATCH_SIZE: usize = 100;
-
-/// Convenience method to create our standard instrumented transport.
-pub fn create_instrumented_transport<T>(
-    transport: T,
-    metrics: Arc<dyn TransportMetrics>,
-) -> Web3Transport
-where
-    T: BatchTransport + Send + Sync + 'static,
-    T::Out: Send + 'static,
-    T::Batch: Send + 'static,
-{
-    Web3Transport::new(MetricTransport::new(transport, metrics))
-}
 
 /// Convenience method to create a transport from a URL.
 pub fn create_test_transport(url: &str) -> Web3Transport {

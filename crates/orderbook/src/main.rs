@@ -6,9 +6,7 @@ use contracts::{
 use ethcontract::errors::DeployError;
 use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
-    account_balances::Web3BalanceFetcher,
     database::Postgres,
-    event_updater::EventUpdater,
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
@@ -18,12 +16,12 @@ use orderbook::{
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
     serve_api,
-    signature_validator::Web3SignatureValidator,
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
 use primitive_types::U256;
 use shared::{
+    account_balances::Web3BalanceFetcher,
     bad_token::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
@@ -59,6 +57,7 @@ use shared::{
     },
     rate_limiter::RateLimiter,
     recent_block_cache::CacheConfig,
+    signature_validator::Web3SignatureValidator,
     sources::balancer_v2::BalancerFactoryKind,
     sources::{
         self,
@@ -67,20 +66,12 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::{create_instrumented_transport, http::HttpTransport},
+    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
+    Web3Transport,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
-
-pub async fn database_metrics(database: Postgres) -> ! {
-    loop {
-        if let Err(err) = database.update_table_rows_metric().await {
-            tracing::error!(?err, "failed to update table rows metric");
-        }
-        tokio::time::sleep(Duration::from_secs(10)).await;
-    }
-}
 
 #[tokio::main]
 async fn main() {
@@ -96,10 +87,11 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = create_instrumented_transport(
-        HttpTransport::new(client.clone(), args.shared.node_url.clone(), "".to_string()),
-        metrics.clone(),
-    );
+    let transport = Web3Transport::new(HttpTransport::new(
+        client.clone(),
+        args.shared.node_url.clone(),
+        "".to_string(),
+    ));
     let web3 = web3::Web3::new(transport);
     let current_block = web3
         .eth()
@@ -154,21 +146,6 @@ async fn main() {
     let postgres = Postgres::new(args.db_url.as_str()).expect("failed to create database");
     let database = Arc::new(postgres.clone());
 
-    let sync_start = if args.skip_event_sync {
-        web3.eth()
-            .block_number()
-            .await
-            .map(|block| block.as_u64())
-            .ok()
-    } else {
-        None
-    };
-
-    let event_updater = Arc::new(EventUpdater::new(
-        settlement_contract.clone(),
-        database.as_ref().clone(),
-        sync_start,
-    ));
     let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
         vault.clone(),
@@ -563,12 +540,7 @@ async fn main() {
         order_validator.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![
-            database.clone(),
-            event_updater,
-            pool_fetcher,
-            solvable_orders_cache,
-        ],
+        maintainers: vec![pool_fetcher, solvable_orders_cache.clone()],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
@@ -587,10 +559,10 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
+        solvable_orders_cache.clone(),
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
-    let db_metrics_task = task::spawn(database_metrics(postgres));
 
     let mut metrics_address = args.bind_address;
     metrics_address.set_port(DEFAULT_METRICS_PORT);
@@ -601,7 +573,6 @@ async fn main() {
     tokio::select! {
         result = &mut serve_api => tracing::error!(?result, "API task exited"),
         result = maintenance_task => tracing::error!(?result, "maintenance task exited"),
-        result = db_metrics_task => tracing::error!(?result, "database metrics task exited"),
         result = metrics_task => tracing::error!(?result, "metrics task exited"),
         _ = shutdown_signal() => {
             tracing::info!("Gracefully shutting down API");

@@ -3,7 +3,6 @@ use super::{
     Postgres,
 };
 use crate::{
-    conversions::*,
     fee_subsidy::FeeParameters,
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
@@ -14,8 +13,8 @@ use database::{
     quotes::{Quote as QuoteRow, QuoteSearchParameters as DbQuoteSearchParameters},
 };
 use model::quote::QuoteId;
+use number_conversions::{big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
-use shared::maintenance::Maintaining;
 
 impl TryFrom<QuoteRow> for QuoteData {
     type Error = anyhow::Error;
@@ -101,27 +100,5 @@ impl QuoteStoring for Postgres {
         quote
             .map(|quote| Ok((quote.id, quote.try_into()?)))
             .transpose()
-    }
-}
-
-impl Postgres {
-    pub async fn remove_expired_quotes(&self, max_expiry: DateTime<Utc>) -> Result<()> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["remove_expired_quotes"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await?;
-        database::quotes::remove_expired_quotes(&mut ex, max_expiry).await?;
-        Ok(())
-    }
-}
-
-#[async_trait::async_trait]
-impl Maintaining for Postgres {
-    async fn run_maintenance(&self) -> Result<()> {
-        self.remove_expired_quotes(Utc::now())
-            .await
-            .context("fee measurement maintenance error")
     }
 }

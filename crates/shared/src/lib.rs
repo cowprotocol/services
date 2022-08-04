@@ -1,6 +1,7 @@
 #[macro_use]
 pub mod macros;
 
+pub mod account_balances;
 pub mod api;
 pub mod arguments;
 pub mod bad_token;
@@ -22,6 +23,7 @@ pub mod price_estimation;
 pub mod rate_limiter;
 pub mod recent_block_cache;
 pub mod request_sharing;
+pub mod signature_validator;
 pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;

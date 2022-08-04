@@ -36,6 +36,7 @@ impl BalancerSubgraphClient {
         let subgraph_name = match chain_id {
             1 => "balancer-v2",
             4 => "balancer-rinkeby-v2",
+            5 => "balancer-goerli-v2",
             _ => bail!("unsupported chain {}", chain_id),
         };
         Ok(Self(SubgraphClient::new(
