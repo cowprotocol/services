@@ -1,7 +1,6 @@
 use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
-    signature::SigningScheme,
     time, u256_decimal,
 };
 use chrono::{DateTime, Utc};
@@ -14,6 +13,20 @@ pub enum PriceQuality {
     Fast,
     #[default]
     Optimal,
+}
+
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
+#[serde(rename_all = "lowercase")]
+pub enum QuoteSigningScheme {
+    #[default]
+    Eip712,
+    EthSign,
+    /// EIP1271 orders can be created via API-call or in the future via on-chain orders
+    Eip1271,
+    Eip1271ForOnchainOrder,
+    /// PreSign orders can be created via API-call or in the future via on-chain orders
+    PreSign,
+    PreSignForOnchainOrder,
 }
 
 /// The order parameters to quote a price and fee for.
@@ -38,7 +51,7 @@ pub struct OrderQuoteRequest {
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
     #[serde(default)]
-    pub signing_scheme: SigningScheme,
+    pub signing_scheme: QuoteSigningScheme,
     #[serde(default)]
     pub price_quality: PriceQuality,
 }

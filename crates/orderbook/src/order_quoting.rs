@@ -3,7 +3,8 @@ use crate::{
     order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
 use anyhow::Result;
-use chrono::{DateTime, TimeZone as _, Utc};
+use chrono::{DateTime, TimeZone as _, Utc, Duration};
+use database::quotes::OnchainSigningScheme;
 use ethcontract::{H160, U256};
 use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
@@ -12,7 +13,7 @@ use model::{
     order::OrderKind,
     quote::{
         OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
-        SellAmount,
+        SellAmount, QuoteSigningScheme,
     },
 };
 use shared::price_estimation::{
@@ -111,6 +112,7 @@ pub struct QuoteParameters {
     pub side: OrderQuoteSide,
     pub from: H160,
     pub app_data: AppId,
+    pub signing_scheme: QuoteSigningScheme,
 }
 
 impl QuoteParameters {
@@ -223,6 +225,11 @@ pub struct QuoteData {
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
+    /// Since different on-chain signing schemes have different expirations,
+    /// we need to store the onchain_signing_scheme to prevent missuse of quotes.
+    /// Since all off-chain orders have the same validity, no differentiation 
+    /// needs to be stored and we can set the value to None
+    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
 }
 
 impl Default for QuoteData {
@@ -235,6 +242,7 @@ impl Default for QuoteData {
             fee_parameters: Default::default(),
             kind: Default::default(),
             expiration: Utc.timestamp(0, 0),
+            onchain_signing_scheme: None,
         }
     }
 }
@@ -294,6 +302,7 @@ pub struct QuoteSearchParameters {
     pub kind: OrderKind,
     pub from: H160,
     pub app_data: AppId,
+    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
 }
 
 impl QuoteSearchParameters {
@@ -379,8 +388,8 @@ impl Now for DateTime<Utc> {
     }
 }
 
-/// How long a quote remains valid for.
-const QUOTE_VALIDITY_SECONDS: i64 = 60;
+/// Standard validity for a quote: Quotes are stored only as long as their validity is.
+const STANDARD_QUOTE_VALIDITY_SECONDS: i64 = 60;
 
 /// An order quoter implementation that relies
 pub struct OrderQuoter {
@@ -390,6 +399,8 @@ pub struct OrderQuoter {
     fee_subsidy: Arc<dyn FeeSubsidizing>,
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
+    eip1271_onchain_quote_validity_seconds: Duration,
+    presign_onchain_quote_validity_seconds:Duration,
 }
 
 impl OrderQuoter {
@@ -399,6 +410,8 @@ impl OrderQuoter {
         gas_estimator: Arc<dyn GasPriceEstimating>,
         fee_subsidy: Arc<dyn FeeSubsidizing>,
         storage: Arc<dyn QuoteStoring>,
+        eip1271_onchain_quote_validity_seconds: Duration,
+        presign_onchain_quote_validity_seconds: Duration,
     ) -> Self {
         Self {
             price_estimator,
@@ -407,6 +420,8 @@ impl OrderQuoter {
             fee_subsidy,
             storage,
             now: Arc::new(Utc::now),
+            eip1271_onchain_quote_validity_seconds,
+            presign_onchain_quote_validity_seconds,
         }
     }
 
@@ -414,7 +429,17 @@ impl OrderQuoter {
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
-        let expiration = self.now.now() + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS);
+        let expiration = match parameters.signing_scheme{ 
+            QuoteSigningScheme::Eip1271ForOnchainOrder => {
+                self.now.now()
+                    + self.eip1271_onchain_quote_validity_seconds
+            }
+            QuoteSigningScheme::PreSignForOnchainOrder => {
+                self.now.now()
+                    + self.presign_onchain_quote_validity_seconds
+            },
+            _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+        };
 
         let trade_query = parameters.to_price_query();
         let (gas_estimate, trade_estimate, sell_token_price, _) = futures::try_join!(
@@ -446,6 +471,12 @@ impl OrderQuoter {
             sell_token_price,
         };
 
+        let onchain_signing_scheme = match parameters.signing_scheme {
+            QuoteSigningScheme::Eip1271ForOnchainOrder => Some(OnchainSigningScheme::Eip1271),
+            QuoteSigningScheme::PreSignForOnchainOrder => Some(OnchainSigningScheme::PreSign),
+            _ => None
+        };
+
         let quote = QuoteData {
             sell_token: parameters.sell_token,
             buy_token: parameters.buy_token,
@@ -454,6 +485,7 @@ impl OrderQuoter {
             fee_parameters,
             kind: trade_query.kind,
             expiration,
+            onchain_signing_scheme,
         };
 
         Ok(quote)
@@ -584,7 +616,7 @@ impl From<&OrderQuoteRequest> for PreOrderData {
             partially_fillable: quote_request.partially_fillable,
             buy_token_balance: quote_request.buy_token_balance,
             sell_token_balance: quote_request.sell_token_balance,
-            signing_scheme: quote_request.signing_scheme,
+            signing_scheme: quote_request.signing_scheme.into(),
             is_liquidity_order: quote_request.partially_fillable,
         }
     }
@@ -598,6 +630,7 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
             side: request.side,
             from: request.from,
             app_data: request.app_data,
+            signing_scheme: request.signing_scheme,
         }
     }
 }
@@ -654,6 +687,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -713,7 +747,8 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                onchain_signing_scheme: None,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -724,6 +759,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -741,7 +778,8 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -761,6 +799,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -820,7 +859,8 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Sell,
-                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                onchain_signing_scheme: None,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -834,6 +874,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -851,7 +893,8 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Sell,
-                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -871,6 +914,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.5,
@@ -930,7 +974,8 @@ mod tests {
                     sell_token_price: 0.2,
                 },
                 kind: OrderKind::Buy,
-                expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                onchain_signing_scheme: None,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -945,6 +990,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -962,7 +1009,8 @@ mod tests {
                         sell_token_price: 0.2,
                     },
                     kind: OrderKind::Buy,
-                    expiration: now + chrono::Duration::seconds(QUOTE_VALIDITY_SECONDS),
+                    expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -981,6 +1029,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1023,6 +1072,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1043,6 +1094,7 @@ mod tests {
             },
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            signing_scheme: QuoteSigningScheme::Eip712,
         };
         let gas_price = GasPrice1559 {
             base_fee_per_gas: 1.,
@@ -1089,6 +1141,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(MockQuoteStoring::new()),
             now: Arc::new(Utc::now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1124,6 +1178,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(Forget),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         let quote = quoter.calculate_quote(Default::default()).await.unwrap();
@@ -1143,6 +1199,7 @@ mod tests {
             kind: OrderKind::Sell,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            onchain_signing_scheme: None,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1159,6 +1216,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
+                onchain_signing_scheme: None,
             }))
         });
 
@@ -1172,6 +1230,8 @@ mod tests {
             }),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1190,6 +1250,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1218,6 +1279,7 @@ mod tests {
             kind: OrderKind::Sell,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            onchain_signing_scheme: None,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1234,6 +1296,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
+                onchain_signing_scheme: None,
             }))
         });
 
@@ -1244,6 +1307,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1262,6 +1327,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1282,6 +1348,7 @@ mod tests {
             kind: OrderKind::Buy,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
+            onchain_signing_scheme: None,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1303,6 +1370,7 @@ mod tests {
                         },
                         kind: OrderKind::Buy,
                         expiration: now + chrono::Duration::seconds(10),
+                        onchain_signing_scheme: None,
                     },
                 )))
             });
@@ -1314,6 +1382,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert_eq!(
@@ -1332,6 +1402,7 @@ mod tests {
                     },
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(10),
+                    onchain_signing_scheme: None,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1380,6 +1451,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(
@@ -1408,6 +1481,8 @@ mod tests {
             fee_subsidy: Arc::new(Subsidy::default()),
             storage: Arc::new(storage),
             now: Arc::new(Utc::now),
+            eip1271_onchain_quote_validity_seconds: Duration::seconds(60i64),
+            presign_onchain_quote_validity_seconds: Duration::seconds(60i64),
         };
 
         assert!(matches!(

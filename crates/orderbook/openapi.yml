@@ -542,7 +542,7 @@ components:
         Provides the information to calculate the fees.
       type: object
       properties:
-        expirationDate:
+        expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
             the fee after this expiration date. Encoded as ISO 8601 UTC.
@@ -552,7 +552,7 @@ components:
           description: Absolute amount of fee charged per order in specified sellToken
           $ref: "#/components/schemas/TokenAmount"
       required:
-        - expirationDate
+        - expiration
         - amount
     OrderType:
       description: Is this a buy order or sell order?
@@ -623,7 +623,7 @@ components:
           $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
         signingScheme:
-          $ref: "#/components/schemas/SigningScheme"
+          $ref: "#/components/schemas/QuoteSigningScheme"
           default: "eip712"
       required:
         - sellToken
@@ -837,6 +837,10 @@ components:
       description: How was the order signed?
       type: string
       enum: [eip712, ethsign, presign]
+    QuoteSigningScheme:
+      description: How will the order be signed and is it intended for onchain order placement?
+      type: string
+      enum: [eip712, ethsign, presign, eip1271, eip1271asonchainorder, presignasonchainorder]
     EcdsaSigningScheme:
       description: How was the order signed?
       type: string
@@ -1081,7 +1085,7 @@ components:
           $ref: "#/components/schemas/OrderParameters"
         from:
           $ref: "#/components/schemas/Address"
-        expirationDate:
+        expiration:
           description: |
             Expiration date of the offered fee. Order service might not accept
             the fee after this expiration date. Encoded as ISO 8601 UTC.

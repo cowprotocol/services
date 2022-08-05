@@ -63,9 +63,8 @@ mod tests {
         app_id::AppId,
         order::{BuyTokenDestination, SellTokenSource},
         quote::{
-            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount, Validity,
-        },
-        signature::SigningScheme,
+            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount, Validity, QuoteSigningScheme,
+        }
     };
     use serde_json::json;
     use shared::api::response_body;
@@ -101,8 +100,8 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
-                signing_scheme: SigningScheme::PreSign,
-                price_quality: PriceQuality::Optimal
+                signing_scheme: QuoteSigningScheme::PreSign,
+                price_quality: PriceQuality::Optimal,
             }
         );
     }

@@ -493,6 +493,8 @@ async fn main() {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             storage,
+            chrono::Duration::from_std(args.eip1271_onchain_quote_validity_seconds).unwrap(),
+            chrono::Duration::from_std(args.presign_onchain_quote_validity_seconds).unwrap(),
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
