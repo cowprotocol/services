@@ -1,14 +1,11 @@
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
-use prometheus::{Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts};
-use std::time::Duration;
+use prometheus::{Gauge, IntCounter, IntCounterVec, IntGauge, Opts};
 
 pub struct Metrics {
     /// Gas estimate metrics
     gas_price: Gauge,
-    price_estimates: IntCounterVec,
     native_price_cache: IntCounterVec,
-    price_estimation_times: HistogramVec,
     // auction metrics
     auction_creations: IntCounter,
     auction_solvable_orders: IntGauge,
@@ -25,24 +22,11 @@ impl Metrics {
         let gas_price = Gauge::with_opts(opts).unwrap();
         registry.register(Box::new(gas_price.clone()))?;
 
-        let price_estimates = IntCounterVec::new(
-            Opts::new("price_estimates", "Price estimator success/failure counter"),
-            &["estimator_type", "result"],
-        )?;
-        registry.register(Box::new(price_estimates.clone()))?;
-
         let native_price_cache = IntCounterVec::new(
             Opts::new("native_price_cache", "Native price cache hit/miss counter."),
             &["result"],
         )?;
         registry.register(Box::new(native_price_cache.clone()))?;
-
-        let price_estimation_times = HistogramVec::new(
-            HistogramOpts::new("price_estimation_times", "Times for price estimations"),
-            &["estimator_type", "time_spent_estimating"],
-        )
-        .unwrap();
-        registry.register(Box::new(price_estimation_times.clone()))?;
 
         let auction_creations = IntCounter::new(
             "auction_creations",
@@ -76,9 +60,7 @@ impl Metrics {
 
         Ok(Self {
             gas_price,
-            price_estimates,
             native_price_cache,
-            price_estimation_times,
             auction_creations,
             auction_solvable_orders,
             auction_filtered_orders,
@@ -110,29 +92,6 @@ impl crate::solvable_orders::AuctionMetrics for Metrics {
 impl crate::gas_price::Metrics for Metrics {
     fn gas_price(&self, estimate: GasPrice1559) {
         self.gas_price.set(estimate.effective_gas_price() / 1e9);
-    }
-}
-
-impl shared::price_estimation::instrumented::Metrics for Metrics {
-    fn initialize_estimator(&self, name: &str) {
-        for result in ["success", "failure"] {
-            self.price_estimates
-                .with_label_values(&[name, result])
-                .reset();
-        }
-    }
-
-    fn price_estimated(&self, name: &str, success: bool) {
-        let result = if success { "success" } else { "failure" };
-        self.price_estimates
-            .with_label_values(&[name, result])
-            .inc();
-    }
-
-    fn price_estimation_timed(&self, name: &str, time: Duration) {
-        self.price_estimation_times
-            .with_label_values(&[name, "time_spent_estimating"])
-            .observe(time.as_secs_f64());
     }
 }
 

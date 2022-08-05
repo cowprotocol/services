@@ -319,7 +319,7 @@ async fn main() {
         OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id)
             .map(Arc::new);
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
-        InstrumentedPriceEstimator::new(inner, name, metrics.clone())
+        InstrumentedPriceEstimator::new(inner, name)
     };
     let balancer_sor_api = args
         .balancer_sor_url
