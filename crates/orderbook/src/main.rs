@@ -10,7 +10,6 @@ use orderbook::{
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
-    gas_price::InstrumentedGasEstimator,
     metrics::Metrics,
     order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::{OrderValidator, SignatureConfiguration},
@@ -35,6 +34,7 @@ use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    gas_price::InstrumentedGasEstimator,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
@@ -163,7 +163,6 @@ async fn main() {
         )
         .await
         .expect("failed to create gas price estimator"),
-        metrics.clone(),
     ));
 
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {

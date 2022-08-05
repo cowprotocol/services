@@ -1,10 +1,7 @@
 use anyhow::Result;
-use gas_estimation::GasPrice1559;
-use prometheus::{Gauge, IntCounter, IntCounterVec, IntGauge, Opts};
+use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
 
 pub struct Metrics {
-    /// Gas estimate metrics
-    gas_price: Gauge,
     native_price_cache: IntCounterVec,
     // auction metrics
     auction_creations: IntCounter,
@@ -17,10 +14,6 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Result<Self> {
         let registry = global_metrics::get_metrics_registry();
-
-        let opts = Opts::new("gas_price", "Gas price estimate over time.");
-        let gas_price = Gauge::with_opts(opts).unwrap();
-        registry.register(Box::new(gas_price.clone()))?;
 
         let native_price_cache = IntCounterVec::new(
             Opts::new("native_price_cache", "Native price cache hit/miss counter."),
@@ -59,7 +52,6 @@ impl Metrics {
         registry.register(Box::new(auction_price_estimate_timeouts.clone()))?;
 
         Ok(Self {
-            gas_price,
             native_price_cache,
             auction_creations,
             auction_solvable_orders,
@@ -86,12 +78,6 @@ impl crate::solvable_orders::AuctionMetrics for Metrics {
         self.auction_filtered_orders.set(filtered_orders as i64);
         self.auction_errored_price_estimates
             .inc_by(errored_estimates);
-    }
-}
-
-impl crate::gas_price::Metrics for Metrics {
-    fn gas_price(&self, estimate: GasPrice1559) {
-        self.gas_price.set(estimate.effective_gas_price() / 1e9);
     }
 }
 
