@@ -3,7 +3,7 @@ use crate::{
     order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
 use anyhow::Result;
-use chrono::{DateTime, TimeZone as _, Utc, Duration};
+use chrono::{DateTime, Duration, TimeZone as _, Utc};
 use database::quotes::OnchainSigningScheme;
 use ethcontract::{H160, U256};
 use futures::TryFutureExt as _;
@@ -13,7 +13,7 @@ use model::{
     order::OrderKind,
     quote::{
         OrderQuote, OrderQuoteRequest, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteId,
-        SellAmount, QuoteSigningScheme,
+        QuoteSigningScheme, SellAmount,
     },
 };
 use shared::price_estimation::{
@@ -227,7 +227,7 @@ pub struct QuoteData {
     pub expiration: DateTime<Utc>,
     /// Since different on-chain signing schemes have different expirations,
     /// we need to store the onchain_signing_scheme to prevent missuse of quotes.
-    /// Since all off-chain orders have the same validity, no differentiation 
+    /// Since all off-chain orders have the same validity, no differentiation
     /// needs to be stored and we can set the value to None
     pub onchain_signing_scheme: Option<OnchainSigningScheme>,
 }
@@ -400,7 +400,7 @@ pub struct OrderQuoter {
     storage: Arc<dyn QuoteStoring>,
     now: Arc<dyn Now>,
     eip1271_onchain_quote_validity_seconds: Duration,
-    presign_onchain_quote_validity_seconds:Duration,
+    presign_onchain_quote_validity_seconds: Duration,
 }
 
 impl OrderQuoter {
@@ -429,15 +429,13 @@ impl OrderQuoter {
         &self,
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
-        let expiration = match parameters.signing_scheme{ 
+        let expiration = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271ForOnchainOrder => {
-                self.now.now()
-                    + self.eip1271_onchain_quote_validity_seconds
+                self.now.now() + self.eip1271_onchain_quote_validity_seconds
             }
             QuoteSigningScheme::PreSignForOnchainOrder => {
-                self.now.now()
-                    + self.presign_onchain_quote_validity_seconds
-            },
+                self.now.now() + self.presign_onchain_quote_validity_seconds
+            }
             _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
         };
 
@@ -474,7 +472,7 @@ impl OrderQuoter {
         let onchain_signing_scheme = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271ForOnchainOrder => Some(OnchainSigningScheme::Eip1271),
             QuoteSigningScheme::PreSignForOnchainOrder => Some(OnchainSigningScheme::PreSign),
-            _ => None
+            _ => None,
         };
 
         let quote = QuoteData {

@@ -63,8 +63,9 @@ mod tests {
         app_id::AppId,
         order::{BuyTokenDestination, SellTokenSource},
         quote::{
-            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, SellAmount, Validity, QuoteSigningScheme,
-        }
+            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
+            SellAmount, Validity,
+        },
     };
     use serde_json::json;
     use shared::api::response_body;

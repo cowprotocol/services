@@ -1,4 +1,4 @@
-use crate::{orders::{OrderKind}, Address};
+use crate::{orders::OrderKind, Address};
 use bigdecimal::BigDecimal;
 use sqlx::{
     types::chrono::{DateTime, Utc},
@@ -398,15 +398,9 @@ mod tests {
             expiration: now,
             onchain_signing_scheme: quote_a.onchain_signing_scheme.clone(),
         };
-        
-        assert_eq!(
-            find(&mut db, &search_a).await.unwrap().unwrap(),
-            quote_a,
-        );
+
+        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote_a,);
         search_a.onchain_signing_scheme = None;
-        assert_eq!(
-            find(&mut db, &search_a).await.unwrap(),
-            None,
-        );
+        assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }
 }

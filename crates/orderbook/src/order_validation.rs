@@ -11,7 +11,7 @@ use model::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
-    quote::{OrderQuoteSide, SellAmount, QuoteSigningScheme},
+    quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
     DomainSeparator,
 };
@@ -516,7 +516,10 @@ async fn get_quote_and_check_fee(
     order_placement_via_api: bool,
     owner: H160,
 ) -> Result<Quote, ValidationError> {
-    let onchain_signing_scheme= convert_signing_scheme_into_onchain_signing_scheme(order.signature.scheme(), order_placement_via_api)?;
+    let onchain_signing_scheme = convert_signing_scheme_into_onchain_signing_scheme(
+        order.signature.scheme(),
+        order_placement_via_api,
+    )?;
     let parameters = QuoteSearchParameters {
         sell_token: order.data.sell_token,
         buy_token: order.data.buy_token,
@@ -537,7 +540,10 @@ async fn get_quote_and_check_fee(
         // We couldn't find a quote, and no ID was specified. Try computing a
         // fresh quote to use instead.
         Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
-            let signing_scheme = convert_signing_scheme_into_quote_signing_scheme(order.signature.scheme(), order_placement_via_api)?;
+            let signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
+                order.signature.scheme(),
+                order_placement_via_api,
+            )?;
             let parameters = QuoteParameters {
                 sell_token: order.data.sell_token,
                 buy_token: order.data.buy_token,
@@ -579,48 +585,54 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
     order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
 }
 
-fn convert_signing_scheme_into_quote_signing_scheme(scheme: SigningScheme, order_placement_via_api: bool) -> Result<QuoteSigningScheme,ValidationError> {
+fn convert_signing_scheme_into_quote_signing_scheme(
+    scheme: SigningScheme,
+    order_placement_via_api: bool,
+) -> Result<QuoteSigningScheme, ValidationError> {
     match order_placement_via_api {
-        true =>
-        match scheme{
+        true => match scheme {
             SigningScheme::PreSign => Ok(QuoteSigningScheme::PreSign),
             SigningScheme::Eip1271 => Ok(QuoteSigningScheme::Eip1271),
             SigningScheme::Eip712 => Ok(QuoteSigningScheme::Eip712),
             SigningScheme::EthSign => Ok(QuoteSigningScheme::EthSign),
         },
-        false =>
-        match scheme{
+        false => match scheme {
             SigningScheme::PreSign => Ok(QuoteSigningScheme::PreSignForOnchainOrder),
             SigningScheme::Eip1271 => Ok(QuoteSigningScheme::Eip1271ForOnchainOrder),
             SigningScheme::Eip712 => Err(ValidationError::IncompatibleSigningScheme),
             SigningScheme::EthSign => Err(ValidationError::IncompatibleSigningScheme),
-        }
+        },
     }
 }
 
-fn convert_signing_scheme_into_onchain_signing_scheme(scheme: SigningScheme, order_placement_via_api: bool) -> Result<Option<OnchainSigningScheme>,ValidationError> {
+fn convert_signing_scheme_into_onchain_signing_scheme(
+    scheme: SigningScheme,
+    order_placement_via_api: bool,
+) -> Result<Option<OnchainSigningScheme>, ValidationError> {
     match order_placement_via_api {
         true => Ok(None),
         false => match scheme {
             SigningScheme::Eip1271 => Ok(Some(OnchainSigningScheme::Eip1271)),
             SigningScheme::PreSign => Ok(Some(OnchainSigningScheme::PreSign)),
             _ => Err(ValidationError::IncompatibleSigningScheme),
-            }
+        },
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        order_quoting::{MockOrderQuoting},
-    };
+    use crate::order_quoting::MockOrderQuoting;
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{app_id::AppId, order::OrderBuilder, signature::{EcdsaSigningScheme, EcdsaSignature}};
+    use model::{
+        app_id::AppId,
+        order::OrderBuilder,
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+    };
     use secp256k1::ONE_KEY;
     use shared::{
         account_balances::MockBalanceFetching,

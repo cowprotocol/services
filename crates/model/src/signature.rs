@@ -1,4 +1,4 @@
-use crate::{bytes_hex, DomainSeparator, quote::QuoteSigningScheme};
+use crate::{bytes_hex, quote::QuoteSigningScheme, DomainSeparator};
 use anyhow::{ensure, Context as _, Result};
 use primitive_types::{H160, H256};
 use serde::{de, Deserialize, Serialize};
@@ -23,7 +23,7 @@ pub enum SigningScheme {
 
 impl From<QuoteSigningScheme> for SigningScheme {
     fn from(scheme: QuoteSigningScheme) -> Self {
-        match scheme{
+        match scheme {
             QuoteSigningScheme::Eip712 => SigningScheme::Eip712,
             QuoteSigningScheme::Eip1271 => SigningScheme::Eip1271,
             QuoteSigningScheme::Eip1271ForOnchainOrder => SigningScheme::Eip1271,
