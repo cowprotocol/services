@@ -6,6 +6,7 @@ pub mod honeyswap;
 pub mod sushiswap;
 pub mod swapr;
 pub mod uniswap_v2;
+pub mod uniswap_v3;
 pub mod uniswap_v3_pair_provider;
 
 use self::uniswap_v2::{
@@ -30,6 +31,7 @@ pub enum BaselineSource {
     Baoswap,
     Swapr,
     ZeroEx,
+    UniswapV3,
 }
 
 pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
@@ -39,13 +41,18 @@ pub fn defaults_for_chain(chain_id: u64) -> Result<Vec<BaselineSource>> {
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
             BaselineSource::ZeroEx,
+            BaselineSource::UniswapV3,
         ],
         4 => vec![
             BaselineSource::UniswapV2,
             BaselineSource::SushiSwap,
             BaselineSource::BalancerV2,
         ],
-        5 => vec![BaselineSource::UniswapV2, BaselineSource::SushiSwap],
+        5 => vec![
+            BaselineSource::UniswapV2,
+            BaselineSource::SushiSwap,
+            BaselineSource::UniswapV3,
+        ],
         100 => vec![
             BaselineSource::Honeyswap,
             BaselineSource::SushiSwap,
@@ -72,6 +79,7 @@ pub async fn uniswap_like_liquidity_sources(
             BaselineSource::Swapr => swapr::get_liquidity_source(web3).await?,
             BaselineSource::BalancerV2 => continue,
             BaselineSource::ZeroEx => continue,
+            BaselineSource::UniswapV3 => continue,
         };
 
         liquidity_sources.insert(*source, liquidity_source);

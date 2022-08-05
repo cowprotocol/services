@@ -145,6 +145,8 @@ impl BaselineSolver {
                             tracing::debug!("Excluded stable pool from baseline solving.")
                         }
                         Liquidity::LimitOrder(_) => {}
+                        Liquidity::Concentrated(_) => {} // not being implemented right now since baseline solver
+                                                         // is not winning anyway
                     }
                     amm_map
                 });
