@@ -1,8 +1,7 @@
 use anyhow::Result;
-use prometheus::{IntCounter, IntCounterVec, IntGauge, Opts};
+use prometheus::{IntCounter, IntGauge};
 
 pub struct Metrics {
-    native_price_cache: IntCounterVec,
     // auction metrics
     auction_creations: IntCounter,
     auction_solvable_orders: IntGauge,
@@ -14,12 +13,6 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Result<Self> {
         let registry = global_metrics::get_metrics_registry();
-
-        let native_price_cache = IntCounterVec::new(
-            Opts::new("native_price_cache", "Native price cache hit/miss counter."),
-            &["result"],
-        )?;
-        registry.register(Box::new(native_price_cache.clone()))?;
 
         let auction_creations = IntCounter::new(
             "auction_creations",
@@ -52,7 +45,6 @@ impl Metrics {
         registry.register(Box::new(auction_price_estimate_timeouts.clone()))?;
 
         Ok(Self {
-            native_price_cache,
             auction_creations,
             auction_solvable_orders,
             auction_filtered_orders,
@@ -78,17 +70,6 @@ impl crate::solvable_orders::AuctionMetrics for Metrics {
         self.auction_filtered_orders.set(filtered_orders as i64);
         self.auction_errored_price_estimates
             .inc_by(errored_estimates);
-    }
-}
-
-impl shared::price_estimation::native_price_cache::Metrics for Metrics {
-    fn native_price_cache(&self, misses: usize, hits: usize) {
-        self.native_price_cache
-            .with_label_values(&["misses"])
-            .inc_by(misses as u64);
-        self.native_price_cache
-            .with_label_values(&["hits"])
-            .inc_by(hits as u64);
     }
 }
 
