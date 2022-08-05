@@ -63,6 +63,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
+        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -289,6 +290,20 @@ async fn main() {
     } else {
         None
     };
+    let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let uniswap_v3_pool_fetcher = Arc::new(
+            AutoUpdatingUniswapV3PoolFetcher::new(
+                chain_id,
+                args.shared.liquidity_fetcher_max_age_update,
+                client.clone(),
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in orderbook"),
+        );
+        Some(uniswap_v3_pool_fetcher)
+    } else {
+        None
+    };
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
             args.shared
@@ -335,6 +350,7 @@ async fn main() {
                     }),
                     pool_fetcher.clone(),
                     balancer_pool_fetcher.clone(),
+                    uniswap_v3_pool_fetcher.clone(),
                     token_info_fetcher.clone(),
                     gas_price_estimator.clone(),
                     native_token.address(),
