@@ -4,6 +4,7 @@ use ethcontract::H256;
 use futures::StreamExt;
 use model::{auction::Auction, order::Order, signature::Signature, time::now_in_epoch_seconds};
 use primitive_types::{H160, U256};
+use prometheus::{IntCounter, IntGauge};
 use shared::{
     account_balances::{BalanceFetching, Query},
     bad_token::BadTokenDetecting,
@@ -25,14 +26,22 @@ use tokio::{sync::Notify, time::Instant};
 // operation.
 const MAX_AUCTION_CREATION_TIME: Duration = Duration::from_secs(10);
 
-pub trait AuctionMetrics: Send + Sync + 'static {
-    fn auction_updated(
-        &self,
-        solvable_orders: u64,
-        filtered_orders: u64,
-        errored_estimates: u64,
-        timeout: bool,
-    );
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// auction creations
+    auction_creations: IntCounter,
+
+    /// auction solvable orders
+    auction_solvable_orders: IntGauge,
+
+    /// auction filtered orders
+    auction_filtered_orders: IntGauge,
+
+    /// auction errored price estimates
+    auction_errored_price_estimates: IntCounter,
+
+    /// auction price estimate timeouts
+    auction_price_estimate_timeouts: IntCounter,
 }
 
 /// Keeps track and updates the set of currently solvable orders.
@@ -50,9 +59,9 @@ pub struct SolvableOrdersCache {
     notify: Notify,
     cache: Mutex<Inner>,
     native_price_estimator: Arc<dyn NativePriceEstimating>,
-    auction_metrics: Arc<dyn AuctionMetrics>,
     signature_validator: Arc<dyn SignatureValidating>,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
+    metrics: &'static Metrics,
 }
 
 type Balances = HashMap<Query, U256>;
@@ -81,7 +90,6 @@ impl SolvableOrdersCache {
         bad_token_detector: Arc<dyn BadTokenDetecting>,
         current_block: CurrentBlockStream,
         native_price_estimator: Arc<dyn NativePriceEstimating>,
-        auction_metrics: Arc<dyn AuctionMetrics>,
         signature_validator: Arc<dyn SignatureValidating>,
         solver_competition: Arc<dyn SolverCompetitionStoring>,
     ) -> Arc<Self> {
@@ -103,9 +111,9 @@ impl SolvableOrdersCache {
                 auction: Auction::default(),
             }),
             native_price_estimator,
-            auction_metrics,
             signature_validator,
             solver_competition,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         });
         tokio::task::spawn(update_task(Arc::downgrade(&self_), current_block));
         self_
@@ -191,7 +199,7 @@ impl SolvableOrdersCache {
             orders.clone(),
             &*self.native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
-            self.auction_metrics.as_ref(),
+            self.metrics,
         )
         .await;
         let next_solver_competition = self.solver_competition.next_solver_competition().await?;
@@ -411,7 +419,7 @@ async fn get_orders_with_native_prices(
     mut orders: Vec<Order>,
     native_price_estimator: &dyn NativePriceEstimating,
     deadline: Instant,
-    metrics: &dyn AuctionMetrics,
+    metrics: &Metrics,
 ) -> (Vec<Order>, BTreeMap<H160, U256>) {
     let traded_tokens = orders
         .iter()
@@ -476,7 +484,15 @@ async fn get_orders_with_native_prices(
 
     let solvable_orders = orders.len() as u64;
     let filtered_orders = original_order_count - solvable_orders;
-    metrics.auction_updated(solvable_orders, filtered_orders, errored_estimates, timeout);
+    metrics.auction_creations.inc();
+    metrics.auction_solvable_orders.set(solvable_orders as i64);
+    if timeout {
+        metrics.auction_price_estimate_timeouts.inc();
+    }
+    metrics.auction_filtered_orders.set(filtered_orders as i64);
+    metrics
+        .auction_errored_price_estimates
+        .inc_by(errored_estimates);
 
     (orders, used_prices)
 }
@@ -516,7 +532,7 @@ mod tests {
     use super::*;
     use crate::{
         database::orders::MockOrderStoring, database::orders::SolvableOrders as DbOrders,
-        metrics::NoopMetrics, solver_competition::MockSolverCompetitionStoring,
+        solver_competition::MockSolverCompetitionStoring,
     };
     use chrono::{DateTime, NaiveDateTime, Utc};
     use futures::{FutureExt, StreamExt};
@@ -680,7 +696,6 @@ mod tests {
             Arc::new(bad_token_detector),
             receiver,
             Arc::new(native),
-            Arc::new(NoopMetrics),
             Arc::new(MockSignatureValidating::new()),
             Arc::new(solver_competition),
         );
@@ -812,7 +827,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             Instant::now() + MAX_AUCTION_CREATION_TIME,
-            &NoopMetrics,
+            Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         )
         .await;
 
@@ -935,7 +950,7 @@ mod tests {
             orders.clone(),
             &native_price_estimator,
             deadline,
-            &NoopMetrics,
+            Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         )
         .await;
         assert_eq!(orders_.len(), 1);

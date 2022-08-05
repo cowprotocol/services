@@ -5,7 +5,6 @@ use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
     database::Postgres,
     fee_subsidy::Subsidy,
-    metrics::NoopMetrics,
     order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
@@ -247,7 +246,6 @@ impl OrderbookServices {
             bad_token_detector.clone(),
             current_block_stream.clone(),
             native_price_estimator,
-            Arc::new(NoopMetrics),
             signature_validator.clone(),
             api_db.clone(),
         );
