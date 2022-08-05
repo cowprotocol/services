@@ -457,7 +457,6 @@ async fn main() {
             native_token_price_estimation_amount,
         )),
         args.native_price_cache_max_age_secs,
-        metrics.clone(),
     ));
     native_price_estimator.spawn_maintenance_task(
         Duration::from_secs(1),
