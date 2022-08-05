@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
-use contracts::{BalancerV2Vault, IUniswapLikeRouter, WETH9};
+use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV3SwapRouter, WETH9};
 use num::rational::Ratio;
 use primitive_types::U256;
 use shared::{
@@ -14,6 +14,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
+        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
         BaselineSource,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -27,7 +28,7 @@ use solver::{
     driver::Driver,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
-        uniswap_v2::UniswapLikeLiquidity, zeroex::ZeroExLiquidity,
+        uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
@@ -125,13 +126,9 @@ async fn main() {
             .expect("failed to load baseline source uniswap liquidity")
             .into_iter()
             .map(|(source, (_, pool_fetcher))| {
-                let pool_cache = PoolCache::new(
-                    cache_config,
-                    pool_fetcher,
-                    current_block_stream.clone(),
-                    metrics.clone(),
-                )
-                .expect("failed to create pool cache");
+                let pool_cache =
+                    PoolCache::new(cache_config, pool_fetcher, current_block_stream.clone())
+                        .expect("failed to create pool cache");
                 (source, Arc::new(pool_cache))
             })
             .collect();
@@ -149,7 +146,6 @@ async fn main() {
                     token_info_fetcher.clone(),
                     cache_config,
                     current_block_stream.clone(),
-                    metrics.clone(),
                     client.clone(),
                     &contracts,
                     args.shared.balancer_pool_deny_list,
@@ -251,9 +247,31 @@ async fn main() {
         Some(ZeroExLiquidity {
             api: zeroex_api,
             zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
-            base_tokens,
+            base_tokens: base_tokens.clone(),
             gpv2: settlement_contract.clone(),
         })
+    } else {
+        None
+    };
+
+    let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let uniswap_v3_pool_fetcher = Arc::new(
+            AutoUpdatingUniswapV3PoolFetcher::new(
+                chain_id,
+                args.shared.liquidity_fetcher_max_age_update,
+                client.clone(),
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in solver"),
+        );
+
+        Some(UniswapV3Liquidity::new(
+            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+            settlement_contract.clone(),
+            base_tokens.clone(),
+            web3.clone(),
+            uniswap_v3_pool_fetcher,
+        ))
     } else {
         None
     };
@@ -262,6 +280,7 @@ async fn main() {
         uniswap_like_liquidity,
         balancer_v2_liquidity,
         zeroex_liquidity,
+        uniswap_v3_liquidity,
     };
     let market_makable_token_list =
         TokenList::from_url(&args.market_makable_token_list, chain_id, client.clone())
@@ -466,6 +485,7 @@ async fn build_amm_artifacts(
                 .address(),
             BaselineSource::BalancerV2 => continue,
             BaselineSource::ZeroEx => continue,
+            BaselineSource::UniswapV3 => continue,
         };
         res.push(UniswapLikeLiquidity::new(
             IUniswapLikeRouter::at(&web3, router_address),

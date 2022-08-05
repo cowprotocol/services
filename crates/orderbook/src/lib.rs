@@ -2,7 +2,6 @@ pub mod api;
 pub mod arguments;
 pub mod database;
 pub mod fee_subsidy;
-pub mod gas_price;
 pub mod metrics;
 pub mod order_quoting;
 pub mod order_validation;

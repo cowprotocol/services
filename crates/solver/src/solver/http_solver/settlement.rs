@@ -79,6 +79,9 @@ impl Execution {
                     }
                     // This sort of liquidity gets used elsewhere
                     Liquidity::LimitOrder(_) => Ok(()),
+                    Liquidity::Concentrated(liquidity) => {
+                        settlement.with_liquidity(liquidity, execution)
+                    }
                 }
             }
             CustomInteraction(interaction_data) => {
