@@ -25,10 +25,7 @@ use shared::{
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
     sources::uniswap_v2::{
-        self,
-        pair_provider::PairProvider,
-        pool_cache::{NoopPoolCacheMetrics, PoolCache},
-        pool_fetching::PoolFetcher,
+        self, pair_provider::PairProvider, pool_cache::PoolCache, pool_fetching::PoolFetcher,
     },
     Web3,
 };
@@ -200,7 +197,6 @@ impl OrderbookServices {
             },
             Arc::new(PoolFetcher::uniswap(pair_provider, web3.clone())),
             current_block_stream.clone(),
-            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());

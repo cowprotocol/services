@@ -1,14 +1,9 @@
 use anyhow::Result;
 use gas_estimation::GasPrice1559;
 use prometheus::{Gauge, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGauge, Opts};
-use shared::sources::{
-    balancer_v2::pool_fetching::BalancerPoolCacheMetrics, uniswap_v2::pool_cache::PoolCacheMetrics,
-};
 use std::time::Duration;
 
 pub struct Metrics {
-    pool_cache_hits: IntCounter,
-    pool_cache_misses: IntCounter,
     /// Gas estimate metrics
     gas_price: Gauge,
     price_estimates: IntCounterVec,
@@ -25,17 +20,6 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Result<Self> {
         let registry = global_metrics::get_metrics_registry();
-
-        let pool_cache_hits = IntCounter::new(
-            "pool_cache_hits",
-            "Number of cache hits in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_hits.clone()))?;
-        let pool_cache_misses = IntCounter::new(
-            "pool_cache_misses",
-            "Number of cache misses in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_misses.clone()))?;
 
         let opts = Opts::new("gas_price", "Gas price estimate over time.");
         let gas_price = Gauge::with_opts(opts).unwrap();
@@ -91,8 +75,6 @@ impl Metrics {
         registry.register(Box::new(auction_price_estimate_timeouts.clone()))?;
 
         Ok(Self {
-            pool_cache_hits,
-            pool_cache_misses,
             gas_price,
             price_estimates,
             native_price_cache,
@@ -103,13 +85,6 @@ impl Metrics {
             auction_errored_price_estimates,
             auction_price_estimate_timeouts,
         })
-    }
-}
-
-impl PoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 
@@ -158,15 +133,6 @@ impl shared::price_estimation::instrumented::Metrics for Metrics {
         self.price_estimation_times
             .with_label_values(&[name, "time_spent_estimating"])
             .observe(time.as_secs_f64());
-    }
-}
-
-impl BalancerPoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        // We may want to distinguish cache metrics between the different
-        // liquidity sources in the future, for now just use the same counters.
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 

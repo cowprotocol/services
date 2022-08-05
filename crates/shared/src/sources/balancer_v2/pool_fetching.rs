@@ -9,7 +9,6 @@ mod internal;
 mod pool_storage;
 mod registry;
 
-pub use self::cache::{BalancerPoolCacheMetrics, NoopBalancerPoolCacheMetrics};
 use self::{
     aggregate::Aggregate, cache::Cache, internal::InternalPoolFetching, registry::Registry,
 };
@@ -221,7 +220,6 @@ impl BalancerPoolFetcher {
         token_infos: Arc<dyn TokenInfoFetching>,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn BalancerPoolCacheMetrics>,
         client: Client,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
@@ -231,7 +229,6 @@ impl BalancerPoolFetcher {
             create_aggregate_pool_fetcher(pool_initializer, token_infos, contracts).await?,
             config,
             block_stream,
-            metrics,
         )?);
 
         Ok(Self {
@@ -451,7 +448,6 @@ mod tests {
             token_info_fetcher,
             Default::default(),
             block_stream,
-            Arc::new(NoopBalancerPoolCacheMetrics),
             Default::default(),
             &contracts,
             deny_list,
