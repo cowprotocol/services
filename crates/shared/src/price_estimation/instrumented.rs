@@ -1,21 +1,25 @@
 use crate::price_estimation::{PriceEstimating, PriceEstimationError, Query};
 use futures::stream::StreamExt;
-use std::{
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use prometheus::{HistogramVec, IntCounterVec};
+use std::time::Instant;
 
 /// An instrumented price estimator.
 pub struct InstrumentedPriceEstimator {
     inner: Box<dyn PriceEstimating>,
     name: String,
-    metrics: Arc<dyn Metrics>,
+    metrics: &'static Metrics,
 }
 
 impl InstrumentedPriceEstimator {
     /// Wraps an existing price estimator in an instrumented one.
-    pub fn new(inner: Box<dyn PriceEstimating>, name: String, metrics: Arc<dyn Metrics>) -> Self {
-        metrics.initialize_estimator(&name);
+    pub fn new(inner: Box<dyn PriceEstimating>, name: String) -> Self {
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+        for result in ["success", "failure"] {
+            metrics
+                .price_estimates
+                .with_label_values(&[name.as_str(), result])
+                .reset();
+        }
         Self {
             inner,
             name,
@@ -33,25 +37,34 @@ impl PriceEstimating for InstrumentedPriceEstimator {
         let start = Instant::now();
         let measure_time = async move {
             self.metrics
-                .price_estimation_timed(&self.name, start.elapsed());
+                .price_estimation_times
+                .with_label_values(&[self.name.as_str()])
+                .observe(start.elapsed().as_secs_f64());
         };
         self.inner
             .estimates(queries)
             .inspect(move |result| {
                 let success = !matches!(&result.1, Err(PriceEstimationError::Other(_)));
-                self.metrics.price_estimated(&self.name, success);
+                let result = if success { "success" } else { "failure" };
+                self.metrics
+                    .price_estimates
+                    .with_label_values(&[self.name.as_str(), result])
+                    .inc();
             })
             .chain(futures::stream::once(measure_time).filter_map(|_| async { None }))
             .boxed()
     }
 }
 
-/// Metrics used by price estimators.
-#[cfg_attr(test, mockall::automock)]
-pub trait Metrics: Send + Sync + 'static {
-    fn initialize_estimator(&self, name: &str);
-    fn price_estimated(&self, name: &str, success: bool);
-    fn price_estimation_timed(&self, name: &str, time: Duration);
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// price estimates
+    #[metric(labels("estimator_type", "result"))]
+    price_estimates: IntCounterVec,
+
+    /// price estimation times
+    #[metric(labels("estimator_type"))]
+    price_estimation_times: HistogramVec,
 }
 
 #[cfg(test)]
@@ -63,7 +76,6 @@ mod tests {
     use anyhow::anyhow;
     use ethcontract::H160;
     use futures::StreamExt;
-    use mockall::{predicate::*, Sequence};
     use model::order::OrderKind;
 
     #[tokio::test]
@@ -97,37 +109,22 @@ mod tests {
                 .boxed()
             });
 
-        let mut metrics = MockMetrics::new();
-        metrics
-            .expect_initialize_estimator()
-            .times(1)
-            .with(eq("foo"))
-            .return_const(());
-        let mut seq = Sequence::new();
-        metrics
-            .expect_price_estimated()
-            .times(1)
-            .in_sequence(&mut seq)
-            .with(eq("foo"), eq(true))
-            .return_const(());
-        metrics
-            .expect_price_estimated()
-            .times(1)
-            .in_sequence(&mut seq)
-            .with(eq("foo"), eq(false))
-            .return_const(());
-        metrics
-            .expect_price_estimation_timed()
-            .times(1)
-            .in_sequence(&mut seq)
-            .with(eq("foo"), always())
-            .return_const(());
-
-        let instrumented = InstrumentedPriceEstimator::new(
-            Box::new(estimator),
-            "foo".to_string(),
-            Arc::new(metrics),
-        );
+        let instrumented = InstrumentedPriceEstimator::new(Box::new(estimator), "foo".to_string());
         let _ = vec_estimates(&instrumented, &queries).await;
+
+        for result in &["success", "failure"] {
+            let observed = instrumented
+                .metrics
+                .price_estimates
+                .with_label_values(&["foo", result])
+                .get();
+            assert_eq!(observed, 1);
+        }
+        let observed = instrumented
+            .metrics
+            .price_estimation_times
+            .with_label_values(&["foo"])
+            .get_sample_count();
+        assert_eq!(observed, 1);
     }
 }
