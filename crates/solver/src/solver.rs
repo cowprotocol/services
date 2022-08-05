@@ -48,6 +48,7 @@ mod zeroex_solver;
 /// A `solve` method transforming a collection of `Liquidity` (sources) into a list of
 /// independent `Settlements`. Solvers are free to choose which types `Liquidity` they
 /// would like to process, including their own private sources.
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait Solver: Send + Sync + 'static {
     /// Runs the solver.
