@@ -44,7 +44,7 @@ INSERT INTO quotes (
     sell_token_price,
     order_kind,
     expiration_timestamp,
-    onchain_signing_scheme,
+    onchain_signing_scheme
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id
@@ -104,7 +104,7 @@ WHERE
     ) AND
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
-    onchain_signing_scheme = $8
+    onchain_signing_scheme IS NOT DISTINCT FROM $8
 ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
@@ -196,12 +196,12 @@ mod tests {
             buy_token: ByteArray([3; 20]),
             sell_amount: 4.into(),
             buy_amount: 5.into(),
+            order_kind: OrderKind::Sell,
             gas_amount: 1.,
             gas_price: 1.,
             sell_token_price: 1.,
-            order_kind: OrderKind::Sell,
             expiration_timestamp: now,
-            onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
+            onchain_signing_scheme: None,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -264,7 +264,7 @@ mod tests {
             buy_amount: 1.into(),
             kind: quote_a.order_kind,
             expiration: now,
-            onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
+            onchain_signing_scheme: None,
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
@@ -374,32 +374,38 @@ mod tests {
 
         let now = low_precision_now();
         let token_a = ByteArray([1; 20]);
-        let quote_a = Quote {
-            id: Default::default(),
-            sell_token: token_a,
-            buy_token: ByteArray([3; 20]),
-            sell_amount: 4.into(),
-            buy_amount: 5.into(),
-            gas_amount: 1.,
-            gas_price: 1.,
-            sell_token_price: 1.,
-            order_kind: OrderKind::Sell,
-            expiration_timestamp: now,
-            onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
-        };
+        let quote = 
+            {
+                let mut quote = Quote {
+                    id: Default::default(),
+                    sell_token: token_a,
+                    buy_token: ByteArray([3; 20]),
+                    sell_amount: 4.into(),
+                    buy_amount: 5.into(),
+                    gas_amount: 1.,
+                    gas_price: 1.,
+                    sell_token_price: 1.,
+                    order_kind: OrderKind::Sell,
+                    expiration_timestamp: now,
+                    onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
+                };
+                let id = save(&mut db, &quote).await.unwrap();
+                quote.id = id;
+                quote
+            };
         // Token A has readings valid until now and in 30s
         let mut search_a = QuoteSearchParameters {
-            sell_token: quote_a.sell_token,
-            buy_token: quote_a.buy_token,
-            sell_amount_0: quote_a.sell_amount.clone(),
-            sell_amount_1: quote_a.sell_amount.clone(),
-            buy_amount: 1.into(),
-            kind: quote_a.order_kind,
-            expiration: now,
-            onchain_signing_scheme: quote_a.onchain_signing_scheme.clone(),
+            sell_token: quote.sell_token,
+            buy_token: quote.buy_token,
+            sell_amount_0: quote.sell_amount.clone(),
+            sell_amount_1: quote.sell_amount.clone(),
+            buy_amount: quote.buy_amount.clone(),
+            kind: quote.order_kind,
+            expiration: quote.expiration_timestamp,
+            onchain_signing_scheme: quote.onchain_signing_scheme.clone(),
         };
 
-        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote_a,);
+        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
         search_a.onchain_signing_scheme = None;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }

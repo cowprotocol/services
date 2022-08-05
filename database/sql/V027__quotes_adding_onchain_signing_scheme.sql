@@ -3,4 +3,4 @@
 CREATE TYPE OnchainSigningScheme AS ENUM ('eip1271', 'presign');
 
 ALTER TABLE quotes
-ADD COLUMN onchain_signing_sheme OnchainSigningScheme;
+ADD COLUMN onchain_signing_scheme OnchainSigningScheme DEFAULT NULL;
