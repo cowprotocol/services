@@ -374,25 +374,24 @@ mod tests {
 
         let now = low_precision_now();
         let token_a = ByteArray([1; 20]);
-        let quote = 
-            {
-                let mut quote = Quote {
-                    id: Default::default(),
-                    sell_token: token_a,
-                    buy_token: ByteArray([3; 20]),
-                    sell_amount: 4.into(),
-                    buy_amount: 5.into(),
-                    gas_amount: 1.,
-                    gas_price: 1.,
-                    sell_token_price: 1.,
-                    order_kind: OrderKind::Sell,
-                    expiration_timestamp: now,
-                    onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
-                };
-                let id = save(&mut db, &quote).await.unwrap();
-                quote.id = id;
-                quote
+        let quote = {
+            let mut quote = Quote {
+                id: Default::default(),
+                sell_token: token_a,
+                buy_token: ByteArray([3; 20]),
+                sell_amount: 4.into(),
+                buy_amount: 5.into(),
+                gas_amount: 1.,
+                gas_price: 1.,
+                sell_token_price: 1.,
+                order_kind: OrderKind::Sell,
+                expiration_timestamp: now,
+                onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
             };
+            let id = save(&mut db, &quote).await.unwrap();
+            quote.id = id;
+            quote
+        };
         // Token A has readings valid until now and in 30s
         let mut search_a = QuoteSearchParameters {
             sell_token: quote.sell_token,
