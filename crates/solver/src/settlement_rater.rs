@@ -14,6 +14,21 @@ use shared::Web3;
 use std::sync::Arc;
 use web3::types::AccessList;
 
+type SolverSettlement = (Arc<dyn Solver>, Settlement);
+type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
+
+#[mockall::automock]
+#[async_trait::async_trait]
+pub trait SettlementRating: Send + Sync {
+    /// Rate settlements, ignoring those for which the rating procedure failed.
+    async fn rate_settlements(
+        &self,
+        settlements: Vec<SolverSettlement>,
+        prices: &ExternalPrices,
+        gas_price: GasPrice1559,
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)>;
+}
+
 pub struct SettlementRater {
     pub access_list_estimator: Arc<dyn AccessListEstimating>,
     pub settlement_contract: GPv2Settlement,
@@ -54,17 +69,16 @@ impl SettlementRater {
             })
             .collect()
     }
+}
 
-    /// Rate settlements, ignoring those for which the rating procedure failed.
-    pub async fn rate_settlements(
+#[async_trait::async_trait]
+impl SettlementRating for SettlementRater {
+    async fn rate_settlements(
         &self,
-        settlements: Vec<(Arc<dyn Solver>, Settlement)>,
+        settlements: Vec<SolverSettlement>,
         prices: &ExternalPrices,
         gas_price: GasPrice1559,
-    ) -> Result<(
-        Vec<(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)>,
-        Vec<SettlementWithError>,
-    )> {
+    ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)> {
         let settlements = self.append_access_lists(settlements, gas_price).await;
 
         let simulations = simulate_and_estimate_gas_at_current_block(

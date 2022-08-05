@@ -129,12 +129,12 @@ flyway -user=$USER -password="" -locations="filesystem:database/sql/" -url=jdbc:
 In order to run the `e2e` tests you have to have a testnet running locally.
 Due to the RPC calls the services issue `Ganache` is incompatible, so we will use `hardhat`.
 
-1. Install [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)  
-2. Install hardhat with `npm install --save-dev hardhat`  
+1. Install [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
+2. Install hardhat with `npm install --save-dev hardhat`
 3. Create `hardhat.config.js` in the directory you installed `hardhat` in with following content:
    ```javascript
    module.exports = {
-       networks: { 
+       networks: {
            hardhat: {
                initialBaseFeePerGas: 0,
                accounts: {
@@ -157,6 +157,20 @@ Note that the `node-url` is sensitive data. The `orderbook` and `solver` executa
 
 To avoid confusion during your tests, always double check that the token and account addresses you use actually correspond to the network of the `node-url` you are running the executables with.
 
+### Autopilot
+
+To see all supported command line arguments run `cargo run --bin autopilot -- --help`.
+
+Run an `autopilot` with:
+
+```sh
+cargo run --bin autopilot -- \
+  --skip-event-sync \
+  --node-url <YOUR_NODE_URL>
+```
+
+`--skip-event-sync` will skip some work to speed up the initialization process.
+
 ### Orderbook
 
 To see all supported command line arguments run `cargo run --bin orderbook -- --help`.
@@ -166,11 +180,8 @@ Run an `orderbook` on `localhost:8080` with:
 ```sh
 cargo run --bin orderbook -- \
   --skip-trace-api true \
-  --skip-event-sync \
   --node-url <YOUR_NODE_URL>
 ```
-
-`--skip-event-sync` will skip some work to speed up the initialization process.
 
 `--skip-trace-api true` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
 

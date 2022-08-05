@@ -10,7 +10,7 @@ use crate::{
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
-    settlement_rater::SettlementRater,
+    settlement_rater::{SettlementRater, SettlementRating},
     settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, SettlementWithError, Solver, Solvers},
@@ -70,7 +70,7 @@ pub struct Driver {
     max_settlement_price_deviation: Option<Ratio<BigInt>>,
     token_list_restriction_for_price_checks: PriceCheckTokens,
     tenderly: Option<TenderlyApi>,
-    settlement_rater: SettlementRater,
+    settlement_rater: Box<dyn SettlementRating>,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -107,11 +107,11 @@ impl Driver {
             settlement_contract.clone(),
         );
 
-        let settlement_rater = SettlementRater {
+        let settlement_rater = Box::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
             web3: web3.clone(),
-        };
+        });
 
         Self {
             settlement_contract,

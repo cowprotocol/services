@@ -173,13 +173,19 @@ dependencies = [
  "anyhow",
  "async-trait",
  "clap 3.2.5",
+ "contracts",
+ "database",
+ "ethcontract",
  "global-metrics",
+ "number_conversions",
  "prometheus",
  "prometheus-metric-storage",
  "shared",
+ "sqlx",
  "tokio",
  "tracing",
  "url",
+ "web3",
 ]
 
 [[package]]
@@ -762,8 +768,10 @@ dependencies = [
  "ethcontract",
  "futures",
  "global-metrics",
+ "maplit",
  "mockall",
  "model",
+ "num",
  "primitive-types",
  "reqwest",
  "serde",
@@ -783,6 +791,7 @@ name = "e2e"
 version = "1.0.0"
 dependencies = [
  "anyhow",
+ "autopilot",
  "contracts",
  "criterion",
  "database",
@@ -1916,6 +1925,7 @@ name = "number_conversions"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bigdecimal",
  "num",
  "primitive-types",
 ]
