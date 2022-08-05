@@ -7,28 +7,15 @@ use super::internal::InternalPoolFetching;
 use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
-    recent_block_cache::{
-        Block, CacheConfig, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache,
-    },
+    recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
     sources::balancer_v2::pools::Pool,
 };
 use anyhow::Result;
 use ethcontract::H256;
 use std::{collections::HashSet, sync::Arc};
 
-/// Trait used for Balancer pool cache metrics.
-pub trait BalancerPoolCacheMetrics: Send + Sync {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
-}
-
-pub struct NoopBalancerPoolCacheMetrics;
-impl BalancerPoolCacheMetrics for NoopBalancerPoolCacheMetrics {
-    fn pools_fetched(&self, _: usize, _: usize) {}
-}
-
 /// Internal type alias used for inner recent block cache.
-type PoolCache<Inner> =
-    RecentBlockCache<H256, Pool, CacheFetcher<Inner>, Arc<dyn BalancerPoolCacheMetrics>>;
+type PoolCache<Inner> = RecentBlockCache<H256, Pool, CacheFetcher<Inner>>;
 
 /// A cached pool fetcher that wraps an inner `InternalPoolFetching`
 /// implementation.
@@ -48,11 +35,10 @@ where
         inner: Inner,
         config: CacheConfig,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn BalancerPoolCacheMetrics>,
     ) -> Result<Self> {
         let inner = Arc::new(inner);
         let fetcher = CacheFetcher(inner.clone());
-        let cache = RecentBlockCache::new(config, fetcher, block_stream, metrics)?;
+        let cache = RecentBlockCache::new(config, fetcher, block_stream, "balancerv2")?;
         Ok(Self { inner, cache })
     }
 }
@@ -109,11 +95,5 @@ where
 {
     async fn fetch_values(&self, pool_ids: HashSet<H256>, at_block: Block) -> Result<Vec<Pool>> {
         self.0.pools_by_id(pool_ids, at_block).await
-    }
-}
-
-impl CacheMetrics for Arc<dyn BalancerPoolCacheMetrics> {
-    fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pools_fetched(cache_hits, cache_misses)
     }
 }

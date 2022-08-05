@@ -126,13 +126,9 @@ async fn main() {
             .expect("failed to load baseline source uniswap liquidity")
             .into_iter()
             .map(|(source, (_, pool_fetcher))| {
-                let pool_cache = PoolCache::new(
-                    cache_config,
-                    pool_fetcher,
-                    current_block_stream.clone(),
-                    metrics.clone(),
-                )
-                .expect("failed to create pool cache");
+                let pool_cache =
+                    PoolCache::new(cache_config, pool_fetcher, current_block_stream.clone())
+                        .expect("failed to create pool cache");
                 (source, Arc::new(pool_cache))
             })
             .collect();
@@ -150,7 +146,6 @@ async fn main() {
                     token_info_fetcher.clone(),
                     cache_config,
                     current_block_stream.clone(),
-                    metrics.clone(),
                     client.clone(),
                     &contracts,
                     args.shared.balancer_pool_deny_list,

@@ -23,6 +23,7 @@ use crate::current_block::{self, CurrentBlockStream};
 use anyhow::Result;
 use ethcontract::BlockNumber;
 use lru::LruCache;
+use prometheus::IntCounterVec;
 use std::{
     collections::{hash_map::Entry, BTreeMap, HashMap, HashSet},
     hash::Hash,
@@ -69,7 +70,7 @@ impl From<Block> for BlockNumber {
 ///
 /// Caches on-chain data for a specific number of blocks and automatically updates the N most
 /// recently used entries automatically when a new block arrives.
-pub struct RecentBlockCache<K, V, F, M>
+pub struct RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
     F: CacheFetching<K, V>,
@@ -78,9 +79,10 @@ where
     number_of_blocks_to_cache: NonZeroU64,
     fetcher: F,
     block_stream: CurrentBlockStream,
-    metrics: M,
     maximum_retries: u32,
     delay_between_retries: Duration,
+    metrics: &'static Metrics,
+    metrics_label: &'static str,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -104,21 +106,22 @@ impl Default for CacheConfig {
     }
 }
 
-pub trait CacheMetrics: Send + Sync {
-    fn entries_fetched(&self, cache_hits: usize, cache_misses: usize);
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// hits
+    #[metric(labels("cache_type"))]
+    recent_block_cache_hits: IntCounterVec,
+
+    /// misses
+    #[metric(labels("cache_type"))]
+    recent_block_cache_misses: IntCounterVec,
 }
 
-pub struct NoopCacheMetrics;
-impl CacheMetrics for NoopCacheMetrics {
-    fn entries_fetched(&self, _: usize, _: usize) {}
-}
-
-impl<K, V, F, M> RecentBlockCache<K, V, F, M>
+impl<K, V, F> RecentBlockCache<K, V, F>
 where
     K: CacheKey<V>,
     V: Clone,
     F: CacheFetching<K, V>,
-    M: CacheMetrics,
 {
     /// number_of_blocks_to_cache: Previous blocks stay cached until the block is this much older
     /// than the current block. If there is a request for a block that is already too old then the
@@ -133,7 +136,7 @@ where
         config: CacheConfig,
         fetcher: F,
         block_stream: CurrentBlockStream,
-        metrics: M,
+        metrics_label: &'static str,
     ) -> Result<Self> {
         let block = current_block::block_number(&block_stream.borrow())?;
         Ok(Self {
@@ -145,9 +148,10 @@ where
             number_of_blocks_to_cache: config.number_of_blocks_to_cache,
             fetcher,
             block_stream,
-            metrics,
             maximum_retries: config.max_retries,
             delay_between_retries: config.delay_between_retries,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+            metrics_label,
         })
     }
 
@@ -219,7 +223,13 @@ where
         }
 
         self.metrics
-            .entries_fetched(cache_hit_count, cache_misses.len());
+            .recent_block_cache_hits
+            .with_label_values(&[self.metrics_label])
+            .inc_by(cache_hit_count as u64);
+        self.metrics
+            .recent_block_cache_misses
+            .with_label_values(&[self.metrics_label])
+            .inc_by(cache_misses.len() as u64);
 
         if cache_misses.is_empty() {
             return Ok(cache_hits);
@@ -393,7 +403,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
 
@@ -447,7 +457,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
 
@@ -495,7 +505,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
 
@@ -553,7 +563,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
 
@@ -618,7 +628,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
 
@@ -660,7 +670,7 @@ mod tests {
             },
             fetcher,
             receiver,
-            NoopCacheMetrics,
+            "",
         )
         .unwrap();
         let key = TestKey(0);

@@ -261,7 +261,6 @@ async fn main() {
             cache_config,
             Arc::new(pool_aggregator),
             current_block_stream.clone(),
-            metrics.clone(),
         )
         .expect("failed to create pool cache"),
     );
@@ -280,7 +279,6 @@ async fn main() {
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
-                metrics.clone(),
                 client.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,

@@ -383,7 +383,6 @@ mod tests {
     use crate::sources::balancer_v2::pool_fetching::BalancerContracts;
     use crate::sources::balancer_v2::BalancerFactoryKind;
     use crate::sources::uniswap_v2;
-    use crate::sources::uniswap_v2::pool_cache::NoopPoolCacheMetrics;
     use crate::token_info::TokenInfoFetcher;
     use crate::transport::http::HttpTransport;
     use crate::Web3;
@@ -452,7 +451,6 @@ mod tests {
                 current_block_stream(web3.clone(), Duration::from_secs(1))
                     .await
                     .unwrap(),
-                Arc::new(NoopPoolCacheMetrics),
             )
             .unwrap(),
         );
@@ -470,7 +468,6 @@ mod tests {
                 token_info.clone(),
                 Default::default(),
                 current_block_stream.clone(),
-                Arc::new(crate::sources::balancer_v2::pool_fetching::NoopBalancerPoolCacheMetrics),
                 client.clone(),
                 &contracts,
                 Default::default(),
