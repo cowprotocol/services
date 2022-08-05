@@ -17,7 +17,6 @@ use orderbook::{
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
-use primitive_types::U256;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -126,7 +125,11 @@ async fn main() {
 
     let native_token_price_estimation_amount = args
         .amount_to_estimate_prices_with
-        .or_else(|| default_amount_to_estimate_prices_with(&network))
+        .or_else(|| {
+            shared::price_estimation::native::default_amount_to_estimate_native_prices_with(
+                &network,
+            )
+        })
         .expect("No amount to estimate prices with set.");
 
     let vault = match BalancerV2Vault::deployed(&web3).await {
@@ -629,14 +632,4 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
-}
-
-fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
-    match network_id {
-        // Mainnet, Rinkeby, Göŕli
-        "1" | "4" | "5" => Some(10u128.pow(18).into()),
-        // Xdai
-        "100" => Some(10u128.pow(21).into()),
-        _ => None,
-    }
 }
