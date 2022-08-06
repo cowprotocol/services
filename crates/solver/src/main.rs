@@ -433,7 +433,7 @@ async fn main() {
         solution_submitter,
         args.max_settlements_per_solver,
         api,
-        order_converter.clone(),
+        order_converter,
         args.weth_unwrap_factor,
         args.simulation_gas_limit,
         args.fee_objective_scaling_factor,
