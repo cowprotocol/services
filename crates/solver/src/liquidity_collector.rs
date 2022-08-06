@@ -53,7 +53,8 @@ impl LiquidityCollector {
             amms.extend(
                 uniswap_v3_liquidity
                     .get_liquidity(&user_orders)
-                    .await?
+                    .await
+                    .context("failed to get UniswapV3 liquidity")?
                     .into_iter()
                     .map(Liquidity::Concentrated),
             )
