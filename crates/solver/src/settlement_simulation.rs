@@ -737,6 +737,7 @@ mod tests {
             parsed_response.unwrap(),
             settlement_context,
             Arc::new(MockAllowanceManaging::new()),
+            Arc::new(OrderConverter::test(H160([0x42; 20]))),
         )
         .await
         .map(|settlement| vec![settlement])

@@ -15,6 +15,7 @@ use shared::{
 use solver::{
     arguments::TransactionStrategyArg,
     interactions::allowances::AllowanceManager,
+    liquidity::order_converter::OrderConverter,
     settlement_access_list::AccessListEstimating,
     settlement_rater::SettlementRater,
     settlement_submission::{
@@ -40,6 +41,7 @@ struct CommonComponents {
     native_token_contract: WETH9,
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    order_converter: Arc<OrderConverter>,
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
@@ -90,6 +92,11 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         .expect("failed to create gas price estimator"),
     );
 
+    let order_converter = Arc::new(OrderConverter {
+        native_token: native_token_contract.clone(),
+        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+    });
+
     CommonComponents {
         client,
         web3,
@@ -99,6 +106,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         native_token_contract,
         access_list_estimator,
         gas_price_estimator,
+        order_converter,
     }
 }
 
@@ -137,6 +145,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 token_info_fetcher.clone(),
                 buffer_retriever.clone(),
                 allowance_mananger.clone(),
+                common.order_converter.clone(),
                 http_solver_cache.clone(),
             )) as Arc<dyn Solver>
         })
