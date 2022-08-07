@@ -589,19 +589,15 @@ fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
 ) -> Result<QuoteSigningScheme, ValidationError> {
-    match order_placement_via_api {
-        true => match scheme {
-            SigningScheme::PreSign => Ok(QuoteSigningScheme::PreSign),
-            SigningScheme::Eip1271 => Ok(QuoteSigningScheme::Eip1271),
-            SigningScheme::Eip712 => Ok(QuoteSigningScheme::Eip712),
-            SigningScheme::EthSign => Ok(QuoteSigningScheme::EthSign),
-        },
-        false => match scheme {
-            SigningScheme::PreSign => Ok(QuoteSigningScheme::PreSignForOnchainOrder),
-            SigningScheme::Eip1271 => Ok(QuoteSigningScheme::Eip1271ForOnchainOrder),
-            SigningScheme::Eip712 => Err(ValidationError::IncompatibleSigningScheme),
-            SigningScheme::EthSign => Err(ValidationError::IncompatibleSigningScheme),
-        },
+    match (order_placement_via_api, scheme) {
+        (true, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign),
+        (true, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271),
+        (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
+        (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
+        (false, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSignForOnchainOrder),
+        (false, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271ForOnchainOrder),
+        (false, SigningScheme::Eip712) => Err(ValidationError::IncompatibleSigningScheme),
+        (false, SigningScheme::EthSign) => Err(ValidationError::IncompatibleSigningScheme),
     }
 }
 
