@@ -65,7 +65,7 @@ impl CommitRevealSolver {
         }
     }
 
-    async fn _commit(&self, auction: Auction) -> Result<(SettlementSummary, Settlement)> {
+    async fn commit_impl(&self, auction: Auction) -> Result<(SettlementSummary, Settlement)> {
         let prices = auction.external_prices.clone();
         let solutions = self.solver.solve(auction).await?;
         let solutions = solutions
@@ -107,7 +107,7 @@ impl CommitRevealSolver {
 #[async_trait::async_trait]
 impl CommitRevealSolving for CommitRevealSolver {
     async fn commit(&self, auction: Auction) -> Result<SettlementSummary> {
-        let result = self._commit(auction).await;
+        let result = self.commit_impl(auction).await;
         let mut stored_solution = self.stored_solution.lock().unwrap();
 
         match result {
