@@ -1,4 +1,5 @@
 use crate::interactions::allowances::AllowanceManager;
+use crate::liquidity::order_converter::OrderConverter;
 use crate::metrics::SolverMetrics;
 use crate::settlement::external_prices::ExternalPrices;
 use crate::solver::balancer_sor_solver::BalancerSorSolver;
@@ -243,6 +244,7 @@ pub fn create(
     one_inch_url: Url,
     external_solvers: Vec<ExternalSolverArg>,
     oneinch_max_slippage_in_wei: Option<U256>,
+    order_converter: Arc<OrderConverter>,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -276,6 +278,7 @@ pub fn create(
                 token_info_fetcher.clone(),
                 buffer_retriever.clone(),
                 allowance_mananger.clone(),
+                order_converter.clone(),
                 http_solver_cache.clone(),
             )
         };

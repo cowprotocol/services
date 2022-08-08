@@ -4,7 +4,7 @@ pub mod settlement;
 use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{Exchange, LimitOrder, Liquidity},
+    liquidity::{order_converter::OrderConverter, Exchange, LimitOrder, Liquidity},
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
@@ -59,6 +59,7 @@ pub struct HttpSolver {
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
     allowance_manager: Arc<dyn AllowanceManaging>,
+    order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
 }
 
@@ -71,6 +72,7 @@ impl HttpSolver {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
         allowance_manager: Arc<dyn AllowanceManaging>,
+        order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
     ) -> Self {
         Self {
@@ -80,6 +82,7 @@ impl HttpSolver {
             token_info_fetcher,
             buffer_retriever,
             allowance_manager,
+            order_converter,
             instance_cache,
         }
     }
@@ -451,6 +454,7 @@ impl Solver for HttpSolver {
             settled.clone(),
             context,
             self.allowance_manager.clone(),
+            self.order_converter.clone(),
         )
         .await
         {
@@ -541,6 +545,7 @@ mod tests {
             Arc::new(mock_token_info_fetcher),
             Arc::new(mock_buffer_retriever),
             Arc::new(MockAllowanceManaging::new()),
+            Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);

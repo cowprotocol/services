@@ -49,6 +49,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
+    /// Fee scaling factor for objective value. This controls the constant
+    /// factor by which order fees are multiplied with. Setting this to a value
+    /// greater than 1.0 makes settlements with negative objective values less
+    /// likely, promoting more aggressive merging of single order settlements.
+    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    pub fee_objective_scaling_factor: f64,
+
     /// How to to submit settlement transactions.
     /// Expected to contain either:
     /// 1. One value equal to TransactionStrategyArg::DryRun or
@@ -185,9 +192,14 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
-        write!(f, "transaction_submission_nodes: ",)?;
+        write!(f, "transaction_submission_nodes: ")?;
         display_list(self.transaction_submission_nodes.iter(), f)?;
         writeln!(f)?;
+        writeln!(
+            f,
+            "fee_objective_scaling_factor: {}",
+            self.fee_objective_scaling_factor,
+        )?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(

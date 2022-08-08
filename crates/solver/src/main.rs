@@ -210,6 +210,11 @@ async fn main() {
         .unwrap(),
     );
 
+    let order_converter = Arc::new(OrderConverter {
+        native_token: native_token_contract.clone(),
+        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+    });
+
     let solver = solver::solver::create(
         web3.clone(),
         solvers,
@@ -240,6 +245,7 @@ async fn main() {
         args.external_solvers.unwrap_or_default(),
         args.oneinch_max_slippage_in_eth
             .map(|float| U256::from_f64_lossy(float * 1e18)),
+        order_converter.clone(),
     )
     .expect("failure creating solvers");
 
@@ -404,10 +410,6 @@ async fn main() {
         client.clone(),
         args.shared.solver_competition_auth,
     );
-    let order_converter = OrderConverter {
-        native_token: native_token_contract.clone(),
-        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
-    };
     let tenderly = args
         .tenderly_url
         .zip(args.tenderly_api_key)
