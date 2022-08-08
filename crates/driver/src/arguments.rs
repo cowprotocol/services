@@ -194,12 +194,12 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         write!(f, "transaction_submission_nodes: ")?;
         display_list(self.transaction_submission_nodes.iter(), f)?;
+        writeln!(f)?;
         writeln!(
             f,
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor,
         )?;
-        writeln!(f)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         writeln!(
