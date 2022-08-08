@@ -1,3 +1,5 @@
+use crate::maintenance::Maintaining;
+
 use super::graph_api::{PoolData, Token, UniV3SubgraphClient};
 use anyhow::{Context, Result};
 use ethcontract::{H160, U256};
@@ -10,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
-    sync::{Arc, Mutex, Weak},
+    sync::Mutex,
     time::{Duration, Instant},
 };
 
@@ -203,52 +205,18 @@ impl PoolFetching for UniswapV3PoolFetcher {
     }
 }
 
-pub struct AutoUpdatingUniswapV3PoolFetcher(Arc<UniswapV3PoolFetcher>);
-
-impl AutoUpdatingUniswapV3PoolFetcher {
-    /// Creates new CachingUniswapV3PoolFetcher with the purpose of spawning an additional
-    /// background task for periodic update of cache
-    pub async fn new(chain_id: u64, max_age: Duration, client: Client) -> Result<Self> {
-        Ok(Self(Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, max_age, client).await?,
-        )))
-    }
-
-    /// Spawns a background task maintaining the cache once per `update_interval`.
-    /// Only soon to be outdated pools get updated and recently used pools have a higher priority.
-    /// If `update_size` is `Some(n)` at most `n` pools get updated per interval.
-    /// If `update_size` is `None` no limit gets applied.
-    pub fn spawn_maintenance_task(&self, update_interval: Duration, update_size: Option<usize>) {
-        tokio::spawn(update_recently_used_outdated_pools(
-            Arc::downgrade(&self.0),
-            update_interval,
-            update_size,
-        ));
-    }
-}
-
 #[async_trait::async_trait]
-impl PoolFetching for AutoUpdatingUniswapV3PoolFetcher {
-    async fn fetch(&self, token_pairs: &HashSet<TokenPair>) -> Result<Vec<PoolInfo>> {
-        self.0.fetch(token_pairs).await
-    }
-}
-
-async fn update_recently_used_outdated_pools(
-    inner: Weak<UniswapV3PoolFetcher>,
-    update_interval: Duration,
-    update_size: Option<usize>,
-) {
-    while let Some(inner) = inner.upgrade() {
-        tracing::debug!("periodical update started");
+impl Maintaining for UniswapV3PoolFetcher {
+    async fn run_maintenance(&self) -> Result<()> {
+        tracing::debug!("periodic update started");
         let now = Instant::now();
 
-        let mut outdated_entries = inner
+        let mut outdated_entries = self
             .cache
             .lock()
             .unwrap()
             .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > inner.max_age)
+            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > self.max_age)
             .map(|(pool_id, cached)| (*pool_id, cached.requested_at))
             .collect::<Vec<_>>();
         outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
@@ -256,13 +224,12 @@ async fn update_recently_used_outdated_pools(
 
         let pools_to_update = outdated_entries
             .iter()
-            .take(update_size.unwrap_or(outdated_entries.len()))
             .map(|(pool_id, _)| *pool_id)
             .collect::<Vec<_>>();
         tracing::debug!("pools to update {:?}", pools_to_update);
 
         if !pools_to_update.is_empty() {
-            if let Err(err) = inner.get_pools_and_update_cache(&pools_to_update).await {
+            if let Err(err) = self.get_pools_and_update_cache(&pools_to_update).await {
                 tracing::warn!(
                     error = %err,
                     "failed to update pools",
@@ -270,8 +237,8 @@ async fn update_recently_used_outdated_pools(
             }
         }
 
-        tracing::debug!("periodical update ended");
-        tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
+        tracing::debug!("periodic update ended");
+        Ok(())
     }
 }
 
@@ -374,26 +341,10 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn caching_uniswap_v3_pool_fetcher_test() {
-        let fetcher =
-            AutoUpdatingUniswapV3PoolFetcher::new(1, Duration::from_secs(10), Client::new())
-                .await
-                .unwrap();
-
-        fetcher.spawn_maintenance_task(Duration::from_secs(1), Some(50));
-
-        loop {
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
-
-    #[tokio::test]
-    #[ignore]
     async fn fetch_test() {
-        let fetcher =
-            AutoUpdatingUniswapV3PoolFetcher::new(1, Duration::from_secs(10), Client::new())
-                .await
-                .unwrap();
+        let fetcher = UniswapV3PoolFetcher::new(1, Duration::from_secs(10), Client::new())
+            .await
+            .unwrap();
         let token_pairs = HashSet::from([TokenPair::new(
             H160::from_str("0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2").unwrap(),
             H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),

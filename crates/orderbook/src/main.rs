@@ -62,7 +62,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
+        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -289,7 +289,7 @@ async fn main() {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            AutoUpdatingUniswapV3PoolFetcher::new(
+            UniswapV3PoolFetcher::new(
                 chain_id,
                 args.shared.liquidity_fetcher_max_age_update,
                 client.clone(),
@@ -553,6 +553,9 @@ async fn main() {
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
+    }
+    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
+        service_maintainer.maintainers.push(uniswap_v3);
     }
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
