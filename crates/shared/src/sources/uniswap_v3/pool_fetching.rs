@@ -132,7 +132,9 @@ impl UniswapV3PoolFetcher {
     }
 
     async fn get_pools_and_update_cache(&self, pool_ids: &[H160]) -> Result<Vec<PoolData>> {
+        tracing::debug!("get_pools_and_update_cache");
         let pools = self.graph_api.get_pools_with_ticks_by_ids(pool_ids).await?;
+        tracing::debug!("pools len: {}", pools.len());
         let now = Instant::now();
         let mut cache = self.cache.lock().unwrap();
         for pool in &pools {
@@ -150,11 +152,14 @@ impl UniswapV3PoolFetcher {
 
     /// Returns cached pools and ids of outdated pools.
     fn get_cached_pools(&self, token_pairs: &HashSet<TokenPair>) -> (Vec<PoolData>, Vec<H160>) {
+        tracing::debug!("UniswapV3PoolFetcher::get_cached_pools");
         let mut pool_ids = token_pairs
             .iter()
             .filter_map(|pair| self.pools_by_token_pair.get(pair))
             .flatten()
             .peekable();
+
+        tracing::debug!("pool_ids: {:?}", pool_ids);
 
         match pool_ids.peek() {
             Some(_) => {
@@ -164,10 +169,14 @@ impl UniswapV3PoolFetcher {
                     Some(entry)
                         if now.saturating_duration_since(entry.updated_at) < self.max_age =>
                     {
+                        tracing::debug!("returning cached pool: {:?}", pool_id);
                         entry.requested_at = now;
                         Either::Left(entry.pool.clone())
                     }
-                    _ => Either::Right(pool_id),
+                    _ => {
+                        tracing::debug!("returning outdated pool: {:?}", pool_id);
+                        Either::Right(pool_id)
+                    }
                 })
             }
             None => Default::default(),
@@ -178,10 +187,17 @@ impl UniswapV3PoolFetcher {
 #[async_trait::async_trait]
 impl PoolFetching for UniswapV3PoolFetcher {
     async fn fetch(&self, token_pairs: &HashSet<TokenPair>) -> Result<Vec<PoolInfo>> {
+        tracing::debug!("token_pairs {:?}", token_pairs);
         let (mut cached_pools, outdated_pools) = self.get_cached_pools(token_pairs);
+        tracing::debug!(
+            "cached pools: {:?}, outdated pools: {:?}",
+            cached_pools,
+            outdated_pools
+        );
 
         if !outdated_pools.is_empty() {
             let updated_pools = self.get_pools_and_update_cache(&outdated_pools).await?;
+            tracing::debug!("updated pools: {:?}", updated_pools);
             cached_pools.extend(updated_pools);
         }
 
@@ -229,6 +245,7 @@ async fn update_recently_used_outdated_pools(
     update_size: Option<usize>,
 ) {
     while let Some(inner) = inner.upgrade() {
+        tracing::debug!("periodical update started");
         let now = Instant::now();
 
         let mut outdated_entries = inner
@@ -240,12 +257,14 @@ async fn update_recently_used_outdated_pools(
             .map(|(pool_id, cached)| (*pool_id, cached.requested_at))
             .collect::<Vec<_>>();
         outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
+        tracing::debug!("outdated_entries {:?}", outdated_entries);
 
         let pools_to_update = outdated_entries
             .iter()
             .take(update_size.unwrap_or(outdated_entries.len()))
             .map(|(pool_id, _)| *pool_id)
             .collect::<Vec<_>>();
+        tracing::debug!("pools to update {:?}", pools_to_update);
 
         if !pools_to_update.is_empty() {
             if let Err(err) = inner.get_pools_and_update_cache(&pools_to_update).await {
@@ -256,6 +275,7 @@ async fn update_recently_used_outdated_pools(
             }
         }
 
+        tracing::debug!("periodical update ended");
         tokio::time::sleep(update_interval.saturating_sub(now.elapsed())).await;
     }
 }

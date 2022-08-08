@@ -10,7 +10,6 @@ use orderbook::{
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
-    metrics::Metrics,
     order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
@@ -84,7 +83,6 @@ async fn main() {
     tracing::info!("running order book with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
-    let metrics = Arc::new(Metrics::new().unwrap());
 
     let client = shared::http_client(args.shared.http_timeout);
 
@@ -518,7 +516,6 @@ async fn main() {
         bad_token_detector.clone(),
         current_block_stream.clone(),
         native_price_estimator.clone(),
-        metrics.clone(),
         signature_validator.clone(),
         database.clone(),
     );
