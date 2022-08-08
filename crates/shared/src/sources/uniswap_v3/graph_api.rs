@@ -52,6 +52,17 @@ const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
             }
         ) {
             id
+            token0 {
+                symbol
+                id
+                decimals
+            }
+            token1 {
+                symbol
+                id
+                decimals
+            }
+            feeTier
             liquidity
             sqrtPrice
             tick
@@ -167,9 +178,9 @@ pub struct RegisteredPools {
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub id: H160,
-    pub token0: Option<Token>,
-    pub token1: Option<Token>,
-    pub fee_tier: Option<U256>,
+    pub token0: Token,
+    pub token1: Token,
+    pub fee_tier: U256,
     pub liquidity: U256,
     pub sqrt_price: U256,
     #[serde(with = "serde_with::rust::display_fromstr")]
@@ -201,7 +212,7 @@ impl ContainsId for TickData {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub id: H160,
@@ -289,19 +300,19 @@ mod tests {
                 inner: vec![
                     PoolData {
                         id: H160::from_str("0x0001fcbba8eb491c3ccfeddc5a5caba1a98c4c28").unwrap(),
-                        token0: Some(Token {
+                        token0: Token {
                             id: H160::from_str("0xbef81556ef066ec840a540595c8d12f516b6378f")
                                 .unwrap(),
                             symbol: "BCZ".to_string(),
                             decimals: 18,
-                        }),
-                        token1: Some(Token {
+                        },
+                        token1: Token {
                             id: H160::from_str("0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2")
                                 .unwrap(),
                             symbol: "WETH".to_string(),
                             decimals: 18,
-                        }),
-                        fee_tier: Some(U256::from_str("10000").unwrap()),
+                        },
+                        fee_tier: U256::from_str("10000").unwrap(),
                         liquidity: U256::from_str("303015134493562686441").unwrap(),
                         sqrt_price: U256::from_str("792216481398733702759960397").unwrap(),
                         tick: BigInt::from(-92110),
@@ -309,19 +320,19 @@ mod tests {
                     },
                     PoolData {
                         id: H160::from_str("0x0002e63328169d7feea121f1e32e4f620abf0352").unwrap(),
-                        token0: Some(Token {
+                        token0: Token {
                             id: H160::from_str("0x0d438f3b5175bebc262bf23753c1e53d03432bde")
                                 .unwrap(),
                             symbol: "wNXM".to_string(),
                             decimals: 18,
-                        }),
-                        token1: Some(Token {
+                        },
+                        token1: Token {
                             id: H160::from_str("0x903bef1736cddf2a537176cf3c64579c3867a881")
                                 .unwrap(),
                             symbol: "ICHI".to_string(),
                             decimals: 9,
-                        }),
-                        fee_tier: Some(U256::from_str("3000").unwrap()),
+                        },
+                        fee_tier: U256::from_str("3000").unwrap(),
                         liquidity: U256::from_str("3125586395511534995").unwrap(),
                         sqrt_price: U256::from_str("5986323062404391218190509").unwrap(),
                         tick: BigInt::from(-189822),
