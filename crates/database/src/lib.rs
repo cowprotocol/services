@@ -1,3 +1,4 @@
+pub mod auction;
 pub mod byte_array;
 pub mod events;
 pub mod orders;
@@ -36,6 +37,7 @@ pub const ALL_TABLES: &[&str] = &[
     "presignature_events",
     "order_quotes",
     "solver_competitions",
+    "auctions",
 ];
 
 /// Delete all data in the database. Only used by tests.
