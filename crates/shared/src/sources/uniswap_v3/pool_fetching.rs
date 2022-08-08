@@ -59,10 +59,7 @@ impl TryFrom<PoolData> for PoolInfo {
     fn try_from(pool: PoolData) -> Result<Self> {
         Ok(Self {
             address: pool.id,
-            tokens: vec![
-                pool.token0.context("no token0")?,
-                pool.token1.context("no token1")?,
-            ],
+            tokens: vec![pool.token0, pool.token1],
             state: PoolState {
                 sqrt_price: pool.sqrt_price,
                 liquidity: pool.liquidity,
@@ -79,7 +76,7 @@ impl TryFrom<PoolData> for PoolInfo {
                         }
                     })
                     .collect(),
-                fee: Ratio::new(pool.fee_tier.context("no fee")?.as_u32(), 1_000_000u32),
+                fee: Ratio::new(pool.fee_tier.as_u32(), 1_000_000u32),
             },
             gas_stats: PoolStats {
                 mean_gas: U256::from(300_000), // todo: hardcoded for testing purposes
@@ -116,10 +113,8 @@ impl UniswapV3PoolFetcher {
 
         let mut pools_by_token_pair: HashMap<TokenPair, HashSet<H160>> = HashMap::new();
         for pool in registered_pools.pools {
-            let token0 = pool.token0.clone().context("token0 does not exist")?.id;
-            let token1 = pool.token1.clone().context("token1 does not exist")?.id;
-
-            let pair = TokenPair::new(token0, token1).context("cant create pair")?;
+            let pair =
+                TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 
