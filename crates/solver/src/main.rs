@@ -14,7 +14,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
+        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -260,27 +260,31 @@ async fn main() {
         None
     };
 
-    let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
-        let uniswap_v3_pool_fetcher = Arc::new(
-            AutoUpdatingUniswapV3PoolFetcher::new(
-                chain_id,
-                args.shared.liquidity_fetcher_max_age_update,
-                client.clone(),
-            )
-            .await
-            .expect("failed to create UniswapV3 pool fetcher in solver"),
-        );
+    let (uniswap_v3_liquidity, uniswap_v3_maintainer) =
+        if baseline_sources.contains(&BaselineSource::UniswapV3) {
+            let uniswap_v3_pool_fetcher = Arc::new(
+                UniswapV3PoolFetcher::new(
+                    chain_id,
+                    args.shared.liquidity_fetcher_max_age_update,
+                    client.clone(),
+                )
+                .await
+                .expect("failed to create UniswapV3 pool fetcher in solver"),
+            );
 
-        Some(UniswapV3Liquidity::new(
-            UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
-            settlement_contract.clone(),
-            base_tokens.clone(),
-            web3.clone(),
-            uniswap_v3_pool_fetcher,
-        ))
-    } else {
-        None
-    };
+            (
+                Some(UniswapV3Liquidity::new(
+                    UniswapV3SwapRouter::deployed(&web3).await.unwrap(),
+                    settlement_contract.clone(),
+                    base_tokens.clone(),
+                    web3.clone(),
+                    uniswap_v3_pool_fetcher.clone(),
+                )),
+                Some(uniswap_v3_pool_fetcher.clone() as Arc<dyn Maintaining>),
+            )
+        } else {
+            (None, None)
+        };
 
     let liquidity_collector = LiquidityCollector {
         uniswap_like_liquidity,
@@ -448,6 +452,7 @@ async fn main() {
             .into_iter()
             .map(|(_, cache)| cache as Arc<dyn Maintaining>)
             .chain(balancer_pool_maintainer)
+            .chain(uniswap_v3_maintainer)
             .collect(),
     };
     tokio::task::spawn(maintainer.run_maintenance_on_new_block(current_block_stream));
