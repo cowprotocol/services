@@ -27,9 +27,8 @@ pub struct SettlementSummary {
     pub settled_orders: Vec<OrderUid>,
 }
 
-// #[cfg_attr(test, mockall::automock)]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
-#[cfg_attr(feature = "test", mockall::automock)]
 pub trait CommitRevealSolving: Send + Sync {
     /// Calculates a solution for a given `Auction` but does **not** disclose secret details.
     async fn commit(&self, auction: Auction) -> Result<SettlementSummary>;
