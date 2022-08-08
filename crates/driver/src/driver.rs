@@ -1,5 +1,6 @@
 use crate::{
     api::{execute::ExecuteError, solve::SolveError},
+    auction_converter::AuctionConverting,
     commit_reveal::{CommitRevealSolving, SettlementSummary},
 };
 use anyhow::Result;
@@ -10,6 +11,7 @@ use std::sync::Arc;
 pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
     pub submitter: Arc<SolutionSubmitter>,
+    pub auction_converter: Arc<dyn AuctionConverting>,
 }
 
 impl Driver {
@@ -17,11 +19,9 @@ impl Driver {
     /// for the solver.
     pub async fn on_auction_started(
         &self,
-        _auction: Auction,
+        auction: Auction,
     ) -> Result<SettlementSummary, SolveError> {
-        // TODO sanity checks
-        // TODO liquidity collection
-        let auction = solver::solver::Auction::default();
+        let auction = self.auction_converter.convert_auction(auction).await?;
         self.solver.commit(auction).await.map_err(SolveError::from)
     }
 
