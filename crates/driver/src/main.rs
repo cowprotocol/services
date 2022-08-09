@@ -2,7 +2,8 @@ use anyhow::Context;
 use clap::Parser;
 use contracts::WETH9;
 use driver::{
-    api::serve_api, arguments::Arguments, commit_reveal::CommitRevealSolver, driver::Driver,
+    api::serve_api, arguments::Arguments, auction_converter::AuctionConverter,
+    commit_reveal::CommitRevealSolver, driver::Driver,
 };
 use gas_estimation::GasPriceEstimating;
 use reqwest::Client;
@@ -273,6 +274,11 @@ async fn main() {
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
     });
+    let auction_converter = Arc::new(AuctionConverter::new(
+        common.native_token_contract.clone(),
+        common.gas_price_estimator.clone(),
+        args.fee_objective_scaling_factor,
+    ));
 
     let drivers = solvers
         .into_iter()
@@ -285,6 +291,7 @@ async fn main() {
                     common.gas_price_estimator.clone(),
                 )),
                 submitter: submitter.clone(),
+                auction_converter: auction_converter.clone(),
             });
             (driver, name)
         })
