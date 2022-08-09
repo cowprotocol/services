@@ -26,6 +26,7 @@ impl BlockscoutTokenOwnerFinder {
             100 => "xdai/",
             _ => bail!("Unsupported Network"),
         };
+
         Ok(Self {
             client,
             base: Url::try_from(BASE)
@@ -35,6 +36,34 @@ impl BlockscoutTokenOwnerFinder {
                 .join("mainnet/api")
                 .expect("Invalid Blockscout URL Segement"),
         })
+    }
+
+    async fn query_owners(&self, token: H160) -> Result<Vec<H160>> {
+        let mut url = self.base.clone();
+        url.query_pairs_mut()
+            .append_pair("module", "token")
+            .append_pair("action", "getTokenHolders")
+            .append_pair("contractaddress", &format!("{token:#x}"));
+
+        tracing::debug!(%url, "Querying Blockscout API");
+
+        let response = self.client.get(url).timeout(TIMEOUT).send().await?;
+        let status = response.status();
+        let status_result = response.error_for_status_ref().map(|_| ());
+        let body = response.text().await?;
+
+        tracing::debug!(%status, %body, "Response from Blockscout API");
+
+        status_result?;
+        let parsed = serde_json::from_str::<Response>(&body)?;
+
+        // We technically only need one candidate, returning the top 2 in case there is a race condition and tokens have just been transferred out
+        Ok(parsed
+            .result
+            .into_iter()
+            .map(|owner| owner.address)
+            .take(2)
+            .collect())
     }
 }
 
@@ -59,38 +88,21 @@ struct Metrics {
 #[async_trait::async_trait]
 impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let mut url = self.base.clone();
-        url.query_pairs_mut()
-            .append_pair("module", "token")
-            .append_pair("action", "getTokenHolders")
-            .append_pair("contractaddress", &format!("{token:#x}"));
-
         let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
             .results;
-        tracing::debug!("Querying Blockscout API: {}", url);
-        let request = self.client.get(url).timeout(TIMEOUT).send();
-        let response_text = match async { request.await?.text().await }.await {
-            Ok(response) => {
+
+        match self.query_owners(token).await {
+            Ok(ok) => {
                 metric.with_label_values(&["ok"]).inc();
-                response
+                Ok(ok)
             }
             Err(err) => {
+                tracing::warn!(?err, "error finding token owners with Blockscout");
                 metric.with_label_values(&["err"]).inc();
-                return Err(err.into());
+                Err(err)
             }
-        };
-        tracing::debug!("Response from Blockscout API: {}", response_text);
-
-        let parsed = serde_json::from_str::<Response>(&response_text)?;
-        let mut addresses: Vec<_> = parsed
-            .result
-            .into_iter()
-            .map(|owner| owner.address)
-            .collect();
-        // We technically only need one candidate, returning the top 2 in case there is a race condition and tokens have just been transferred out
-        addresses.truncate(2);
-        Ok(addresses)
+        }
     }
 }
 
