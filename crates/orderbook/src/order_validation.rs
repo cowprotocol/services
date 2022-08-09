@@ -4,7 +4,7 @@ use crate::order_quoting::{
 };
 use anyhow::anyhow;
 use contracts::WETH9;
-use database::quotes::OnchainSigningScheme;
+use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use model::{
     order::{
@@ -516,10 +516,8 @@ async fn get_quote_and_check_fee(
     order_placement_via_api: bool,
     owner: H160,
 ) -> Result<Quote, ValidationError> {
-    let onchain_signing_scheme = convert_signing_scheme_into_onchain_signing_scheme(
-        order.signature.scheme(),
-        order_placement_via_api,
-    )?;
+    let quote_kind =
+        convert_signing_scheme_into_quote_kind(order.signature.scheme(), order_placement_via_api)?;
     let parameters = QuoteSearchParameters {
         sell_token: order.data.sell_token,
         buy_token: order.data.buy_token,
@@ -529,7 +527,7 @@ async fn get_quote_and_check_fee(
         kind: order.data.kind,
         from: owner,
         app_data: order.data.app_data,
-        onchain_signing_scheme,
+        quote_kind,
     };
 
     let quote = match quoter.find_quote(order.quote_id, parameters).await {
@@ -603,15 +601,15 @@ fn convert_signing_scheme_into_quote_signing_scheme(
     }
 }
 
-fn convert_signing_scheme_into_onchain_signing_scheme(
+fn convert_signing_scheme_into_quote_kind(
     scheme: SigningScheme,
     order_placement_via_api: bool,
-) -> Result<Option<OnchainSigningScheme>, ValidationError> {
+) -> Result<QuoteKind, ValidationError> {
     match order_placement_via_api {
-        true => Ok(None),
+        true => Ok(QuoteKind::Standard),
         false => match scheme {
-            SigningScheme::Eip1271 => Ok(Some(OnchainSigningScheme::Eip1271)),
-            SigningScheme::PreSign => Ok(Some(OnchainSigningScheme::PreSign)),
+            SigningScheme::Eip1271 => Ok(QuoteKind::Eip1271OnchainOrder),
+            SigningScheme::PreSign => Ok(QuoteKind::PreSignOnchainOrder),
             _ => Err(ValidationError::IncompatibleSigningScheme),
         },
     }
@@ -1430,7 +1428,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     from: H160([0xf0; 20]),
                     app_data: AppId([5; 32]),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 }),
             )
             .returning(|_, _| {

@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
-use database::quotes::OnchainSigningScheme;
+use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
@@ -225,11 +225,9 @@ pub struct QuoteData {
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
-    /// Since different on-chain signing schemes have different expirations,
-    /// we need to store the onchain_signing_scheme to prevent missuse of quotes.
-    /// Since all off-chain orders have the same validity, no differentiation
-    /// needs to be stored and we can set the value to None
-    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
+    /// Since different quote kinds have different expirations,
+    /// we need to store the quote kind to prevent missuse of quotes.
+    pub quote_kind: QuoteKind,
 }
 
 impl Default for QuoteData {
@@ -242,7 +240,7 @@ impl Default for QuoteData {
             fee_parameters: Default::default(),
             kind: Default::default(),
             expiration: Utc.timestamp(0, 0),
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         }
     }
 }
@@ -302,7 +300,7 @@ pub struct QuoteSearchParameters {
     pub kind: OrderKind,
     pub from: H160,
     pub app_data: AppId,
-    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
+    pub quote_kind: QuoteKind,
 }
 
 impl QuoteSearchParameters {
@@ -388,7 +386,7 @@ impl Now for DateTime<Utc> {
     }
 }
 
-/// Standard validity for a quote: Quotes are stored only as long as their validity is.
+/// Standard validity for a quote: Quotes are stored only as long as they are valid.
 const STANDARD_QUOTE_VALIDITY_SECONDS: i64 = 60;
 
 /// An order quoter implementation that relies
@@ -469,14 +467,14 @@ impl OrderQuoter {
             sell_token_price,
         };
 
-        let onchain_signing_scheme = match parameters.signing_scheme {
+        let quote_kind = match parameters.signing_scheme {
             QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-            } => Some(OnchainSigningScheme::Eip1271),
+            } => QuoteKind::Eip1271OnchainOrder,
             QuoteSigningScheme::PreSign {
                 onchain_order: true,
-            } => Some(OnchainSigningScheme::PreSign),
-            _ => None,
+            } => QuoteKind::PreSignOnchainOrder,
+            _ => QuoteKind::Standard,
         };
 
         let quote = QuoteData {
@@ -487,7 +485,7 @@ impl OrderQuoter {
             fee_parameters,
             kind: trade_query.kind,
             expiration,
-            onchain_signing_scheme,
+            quote_kind,
         };
 
         Ok(quote)
@@ -750,7 +748,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                onchain_signing_scheme: None,
+                quote_kind: QuoteKind::Standard,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -781,7 +779,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 70.into(),
                 buy_amount: 29.into(),
@@ -862,7 +860,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                onchain_signing_scheme: None,
+                quote_kind: QuoteKind::Standard,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -896,7 +894,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -977,7 +975,7 @@ mod tests {
                 },
                 kind: OrderKind::Buy,
                 expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                onchain_signing_scheme: None,
+                quote_kind: QuoteKind::Standard,
             }))
             .returning(|_| Ok(Some(1337)));
 
@@ -1012,7 +1010,7 @@ mod tests {
                     },
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1201,7 +1199,7 @@ mod tests {
             kind: OrderKind::Sell,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1218,7 +1216,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
-                onchain_signing_scheme: None,
+                quote_kind: QuoteKind::Standard,
             }))
         });
 
@@ -1252,7 +1250,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 85.into(),
                 // Allows for "out-of-price" buy amounts. This means that order
@@ -1281,7 +1279,7 @@ mod tests {
             kind: OrderKind::Sell,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1298,7 +1296,7 @@ mod tests {
                 },
                 kind: OrderKind::Sell,
                 expiration: now + chrono::Duration::seconds(10),
-                onchain_signing_scheme: None,
+                quote_kind: QuoteKind::Standard,
             }))
         });
 
@@ -1329,7 +1327,7 @@ mod tests {
                     },
                     kind: OrderKind::Sell,
                     expiration: now + chrono::Duration::seconds(10),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),
@@ -1350,7 +1348,7 @@ mod tests {
             kind: OrderKind::Buy,
             from: H160([3; 20]),
             app_data: AppId([4; 32]),
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
 
         let mut storage = MockQuoteStoring::new();
@@ -1372,7 +1370,7 @@ mod tests {
                         },
                         kind: OrderKind::Buy,
                         expiration: now + chrono::Duration::seconds(10),
-                        onchain_signing_scheme: None,
+                        quote_kind: QuoteKind::Standard,
                     },
                 )))
             });
@@ -1404,7 +1402,7 @@ mod tests {
                     },
                     kind: OrderKind::Buy,
                     expiration: now + chrono::Duration::seconds(10),
-                    onchain_signing_scheme: None,
+                    quote_kind: QuoteKind::Standard,
                 },
                 sell_amount: 100.into(),
                 buy_amount: 42.into(),

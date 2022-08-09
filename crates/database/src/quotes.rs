@@ -7,12 +7,14 @@ use sqlx::{
 
 pub type QuoteId = i64;
 
-#[derive(Clone, Debug, PartialEq, sqlx::Type)]
-#[sqlx(type_name = "OnchainSigningScheme")]
+#[derive(Clone, Debug, Default, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "QuoteKind")]
 #[sqlx(rename_all = "lowercase")]
-pub enum OnchainSigningScheme {
-    Eip1271,
-    PreSign,
+pub enum QuoteKind {
+    #[default]
+    Standard,
+    Eip1271OnchainOrder,
+    PreSignOnchainOrder,
 }
 
 /// One row in the `quotes` table.
@@ -28,7 +30,7 @@ pub struct Quote {
     pub sell_token_price: f64,
     pub order_kind: OrderKind,
     pub expiration_timestamp: DateTime<Utc>,
-    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
+    pub quote_kind: QuoteKind,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not used.
@@ -44,7 +46,7 @@ INSERT INTO quotes (
     sell_token_price,
     order_kind,
     expiration_timestamp,
-    onchain_signing_scheme
+    quote_kind
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id
@@ -59,7 +61,7 @@ RETURNING id
         .bind(quote.sell_token_price)
         .bind(quote.order_kind)
         .bind(quote.expiration_timestamp)
-        .bind(&quote.onchain_signing_scheme)
+        .bind(&quote.quote_kind)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -84,7 +86,7 @@ pub struct QuoteSearchParameters {
     pub buy_amount: BigDecimal,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
-    pub onchain_signing_scheme: Option<OnchainSigningScheme>,
+    pub quote_kind: QuoteKind,
 }
 
 pub async fn find(
@@ -104,7 +106,7 @@ WHERE
     ) AND
     order_kind = $6 AND
     expiration_timestamp >= $7 AND
-    onchain_signing_scheme IS NOT DISTINCT FROM $8
+    quote_kind = $8
 ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
@@ -116,7 +118,7 @@ LIMIT 1
         .bind(&params.buy_amount)
         .bind(params.kind)
         .bind(params.expiration)
-        .bind(&params.onchain_signing_scheme)
+        .bind(&params.quote_kind)
         .fetch_optional(ex)
         .await
 }
@@ -169,7 +171,7 @@ mod tests {
             sell_token_price: 7.,
             order_kind: OrderKind::Sell,
             expiration_timestamp: now,
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -201,7 +203,7 @@ mod tests {
             gas_price: 1.,
             sell_token_price: 1.,
             expiration_timestamp: now,
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -216,7 +218,7 @@ mod tests {
             gas_price: 1.,
             sell_token_price: 1.,
             expiration_timestamp: now,
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
 
         // Save two measurements for token_a
@@ -264,7 +266,7 @@ mod tests {
             buy_amount: 1.into(),
             kind: quote_a.order_kind,
             expiration: now,
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
@@ -324,7 +326,7 @@ mod tests {
             buy_amount: quote_b.buy_amount,
             kind: quote_b.order_kind,
             expiration: now,
-            onchain_signing_scheme: None,
+            quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
             find(&mut db, &search_b).await.unwrap().unwrap(),
@@ -386,7 +388,7 @@ mod tests {
                 sell_token_price: 1.,
                 order_kind: OrderKind::Sell,
                 expiration_timestamp: now,
-                onchain_signing_scheme: Some(OnchainSigningScheme::Eip1271),
+                quote_kind: QuoteKind::Eip1271OnchainOrder,
             };
             let id = save(&mut db, &quote).await.unwrap();
             quote.id = id;
@@ -401,11 +403,11 @@ mod tests {
             buy_amount: quote.buy_amount.clone(),
             kind: quote.order_kind,
             expiration: quote.expiration_timestamp,
-            onchain_signing_scheme: quote.onchain_signing_scheme.clone(),
+            quote_kind: quote.quote_kind.clone(),
         };
 
         assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
-        search_a.onchain_signing_scheme = None;
+        search_a.quote_kind = QuoteKind::Standard;
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }
 }
