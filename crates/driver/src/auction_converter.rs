@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use contracts::WETH9;
 use gas_estimation::GasPriceEstimating;
 use model::auction::Auction as AuctionModel;
 use primitive_types::H160;
@@ -27,7 +26,7 @@ pub trait AuctionConverting: Send + Sync {
 }
 
 pub struct AuctionConverter {
-    pub order_converter: OrderConverter,
+    pub order_converter: Arc<OrderConverter>,
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
     pub native_token: H160,
     pub run: AtomicU64,
@@ -36,20 +35,16 @@ pub struct AuctionConverter {
 
 impl AuctionConverter {
     pub fn new(
-        native_token: WETH9,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
-        fee_objective_scaling_factor: f64,
         liquidity_collector: Box<dyn LiquidityCollecting>,
+        order_converter: Arc<OrderConverter>,
     ) -> Self {
         Self {
-            order_converter: OrderConverter {
-                native_token: native_token.clone(),
-                fee_objective_scaling_factor,
-            },
             gas_price_estimator,
-            native_token: native_token.address(),
+            native_token: order_converter.native_token.address(),
             run: AtomicU64::default(),
             liquidity_collector,
+            order_converter,
         }
     }
 }
@@ -121,6 +116,7 @@ impl AuctionConverting for AuctionConverter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use contracts::WETH9;
     use gas_estimation::GasPrice1559;
     use maplit::btreemap;
     use model::{
@@ -195,11 +191,14 @@ mod tests {
                     settlement_handling: Arc::new(DummySettlementHandler),
                 })])
             });
+        let order_converter = Arc::new(OrderConverter {
+            native_token: native_token.clone(),
+            fee_objective_scaling_factor: 2.,
+        });
         let converter = AuctionConverter::new(
-            native_token.clone(),
             gas_estimator,
-            2.,
             Box::new(liquidity_collector),
+            order_converter,
         );
         let mut model = AuctionModel {
             block: 1,

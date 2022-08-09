@@ -426,10 +426,9 @@ async fn build_auction_converter(
         uniswap_v3_liquidity,
     });
     Ok(Arc::new(AuctionConverter::new(
-        common.native_token_contract.clone(),
         common.gas_price_estimator.clone(),
-        args.fee_objective_scaling_factor,
         liquidity_collector,
+        common.order_converter.clone(),
     )))
 }
 
