@@ -17,7 +17,6 @@ use orderbook::{
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
-use primitive_types::U256;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -62,7 +61,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
+        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -126,7 +125,11 @@ async fn main() {
 
     let native_token_price_estimation_amount = args
         .amount_to_estimate_prices_with
-        .or_else(|| default_amount_to_estimate_prices_with(&network))
+        .or_else(|| {
+            shared::price_estimation::native::default_amount_to_estimate_native_prices_with(
+                &network,
+            )
+        })
         .expect("No amount to estimate prices with set.");
 
     let vault = match BalancerV2Vault::deployed(&web3).await {
@@ -289,7 +292,7 @@ async fn main() {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            AutoUpdatingUniswapV3PoolFetcher::new(
+            UniswapV3PoolFetcher::new(
                 chain_id,
                 args.shared.liquidity_fetcher_max_age_update,
                 client.clone(),
@@ -554,6 +557,9 @@ async fn main() {
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
     }
+    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
+        service_maintainer.maintainers.push(uniswap_v3);
+    }
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
         Arc::new(QuoteHandler::new(order_validator, optimal_quoter).with_fast_quoter(fast_quoter));
@@ -626,14 +632,4 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
-}
-
-fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
-    match network_id {
-        // Mainnet, Rinkeby, Göŕli
-        "1" | "4" | "5" => Some(10u128.pow(18).into()),
-        // Xdai
-        "100" => Some(10u128.pow(21).into()),
-        _ => None,
-    }
 }

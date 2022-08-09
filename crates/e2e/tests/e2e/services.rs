@@ -142,11 +142,11 @@ pub fn create_orderbook_api() -> OrderBookApi {
     )
 }
 
-pub fn create_order_converter(web3: &Web3, weth_address: H160) -> OrderConverter {
-    OrderConverter {
+pub fn create_order_converter(web3: &Web3, weth_address: H160) -> Arc<OrderConverter> {
+    Arc::new(OrderConverter {
         native_token: WETH9::at(web3, weth_address),
         fee_objective_scaling_factor: 1.,
-    }
+    })
 }
 
 pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {

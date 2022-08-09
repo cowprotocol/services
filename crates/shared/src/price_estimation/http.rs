@@ -22,9 +22,7 @@ use crate::{
             pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
         },
         uniswap_v2::{pool_cache::PoolCache, pool_fetching::PoolFetching},
-        uniswap_v3::pool_fetching::{
-            AutoUpdatingUniswapV3PoolFetcher, PoolFetching as UniswapV3PoolFetching,
-        },
+        uniswap_v3::pool_fetching::{PoolFetching as UniswapV3PoolFetching, UniswapV3PoolFetcher},
     },
     token_info::TokenInfoFetching,
 };
@@ -48,7 +46,7 @@ pub struct HttpPriceEstimator {
     >,
     pools: Arc<PoolCache>,
     balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-    uniswap_v3_pools: Option<Arc<AutoUpdatingUniswapV3PoolFetcher>>,
+    uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
     token_info: Arc<dyn TokenInfoFetching>,
     gas_info: Arc<dyn GasPriceEstimating>,
     native_token: H160,
@@ -63,7 +61,7 @@ impl HttpPriceEstimator {
         api: Arc<dyn HttpSolverApi>,
         pools: Arc<PoolCache>,
         balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-        uniswap_v3_pools: Option<Arc<AutoUpdatingUniswapV3PoolFetcher>>,
+        uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
         token_info: Arc<dyn TokenInfoFetching>,
         gas_info: Arc<dyn GasPriceEstimating>,
         native_token: H160,
@@ -476,13 +474,9 @@ mod tests {
             .expect("failed to create Balancer pool fetcher"),
         );
         let uniswap_v3_pool_fetcher = Arc::new(
-            AutoUpdatingUniswapV3PoolFetcher::new(
-                chain_id,
-                Duration::from_secs(30),
-                client.clone(),
-            )
-            .await
-            .expect("failed to create uniswap v3 pool fetcher"),
+            UniswapV3PoolFetcher::new(chain_id, Duration::from_secs(30), client.clone())
+                .await
+                .expect("failed to create uniswap v3 pool fetcher"),
         );
         let gas_info = Arc::new(web3);
 

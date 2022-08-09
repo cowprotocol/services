@@ -1,7 +1,9 @@
 use derivative::Derivative;
 use ethcontract::H160;
 use model::{
+    order::OrderData,
     ratio_as_decimal,
+    signature::Signature,
     solver_competition::SolverCompetitionId,
     u256_decimal::{self, DecimalU256},
 };
@@ -184,6 +186,8 @@ mod bytes_hex_or_array {
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
+    pub foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
+    #[serde(default)]
     pub amms: HashMap<usize, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
     #[serde_as(as = "HashMap<_, DecimalU256>")]
@@ -237,6 +241,24 @@ pub struct ExecutedOrderModel {
     pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
     pub exec_plan: Option<ExecutionPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct ExecutedLiquidityOrderModel {
+    pub order: NativeLiquidityOrder,
+    #[serde(with = "u256_decimal")]
+    pub exec_sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    pub exec_buy_amount: U256,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct NativeLiquidityOrder {
+    pub from: H160,
+    #[serde(flatten)]
+    pub data: OrderData,
+    #[serde(flatten)]
+    pub signature: Signature,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -327,6 +349,10 @@ mod tests {
 
     use super::*;
     use maplit::btreemap;
+    use model::{
+        app_id::AppId,
+        order::{OrderKind, SellTokenSource},
+    };
     use serde_json::json;
 
     #[test]
@@ -815,6 +841,58 @@ mod tests {
                 inputs: Vec::new(),
                 outputs: Vec::new(),
                 exec_plan: None,
+            },
+        );
+    }
+
+    #[test]
+    fn decode_foreign_liquidity_order() {
+        assert_eq!(
+            serde_json::from_str::<ExecutedLiquidityOrderModel>(
+                r#"
+                {
+                    "order": {
+                        "from": "0x4242424242424242424242424242424242424242",
+                        "sellToken": "0x0101010101010101010101010101010101010101",
+                        "buyToken": "0x0202020202020202020202020202020202020202",
+                        "sellAmount": "101",
+                        "buyAmount": "102",
+                        "validTo": 3,
+                        "appData":
+                            "0x0303030303030303030303030303030303030303030303030303030303030303",
+                        "feeAmount": "13",
+                        "kind": "sell",
+                        "partiallyFillable": true,
+                        "sellTokenBalance": "external",
+                        "signingScheme": "eip1271",
+                        "signature": "0x01020304"
+                    },
+                    "exec_sell_amount": "50",
+                    "exec_buy_amount": "51"
+                }
+                "#,
+            )
+            .unwrap(),
+            ExecutedLiquidityOrderModel {
+                order: NativeLiquidityOrder {
+                    from: H160([0x42; 20]),
+                    data: OrderData {
+                        sell_token: H160([1; 20]),
+                        buy_token: H160([2; 20]),
+                        sell_amount: 101.into(),
+                        buy_amount: 102.into(),
+                        valid_to: 3,
+                        app_data: AppId([3; 32]),
+                        fee_amount: 13.into(),
+                        kind: OrderKind::Sell,
+                        partially_fillable: true,
+                        sell_token_balance: SellTokenSource::External,
+                        ..Default::default()
+                    },
+                    signature: Signature::Eip1271(vec![1, 2, 3, 4]),
+                },
+                exec_sell_amount: 50.into(),
+                exec_buy_amount: 51.into(),
             },
         );
     }
