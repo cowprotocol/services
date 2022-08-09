@@ -103,6 +103,19 @@ pub struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     pub native_price_cache_max_age_secs: Duration,
+
+    /// The minimum amount of time in seconds an order has to be valid for.
+    #[clap(
+        long,
+        env,
+        default_value = "60",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub min_order_validity_period: Duration,
+
+    /// List of account addresses to be denied from order creation
+    #[clap(long, env, use_value_delimiter = true)]
+    pub banned_users: Vec<H160>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -149,6 +162,12 @@ impl std::fmt::Display for Arguments {
             "native_price_cache_max_age_secs: {:?}",
             self.native_price_cache_max_age_secs
         )?;
+        writeln!(
+            f,
+            "min_order_validity_period: {:?}",
+            self.min_order_validity_period
+        )?;
+        writeln!(f, "banned_users: {:?}", self.banned_users)?;
         Ok(())
     }
 }

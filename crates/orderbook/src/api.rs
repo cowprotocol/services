@@ -15,7 +15,6 @@ mod post_quote;
 pub mod post_solver_competition;
 mod replace_order;
 
-use self::post_solver_competition::SolvableOrdersCache;
 use crate::solver_competition::SolverCompetitionStoring;
 use crate::{database::trades::TradeRetrieving, order_quoting::QuoteHandler, orderbook::Orderbook};
 use shared::api::{error, finalize_router, internal_error, ApiReply};
@@ -28,7 +27,6 @@ pub fn handle_all_routes(
     quotes: Arc<QuoteHandler>,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
-    solvable_orders: Arc<dyn SolvableOrdersCache>,
 ) -> impl Filter<Extract = (impl Reply,), Error = Rejection> + Clone {
     // Routes for api v1.
 
@@ -82,7 +80,7 @@ pub fn handle_all_routes(
         .map(|result| (result, "v1/solver_competition"))
         .boxed();
     let post_solver_competition =
-        post_solver_competition::post(solver_competition, solvable_orders, solver_competition_auth)
+        post_solver_competition::post(solver_competition, solver_competition_auth)
             .map(|result| (result, "v1/solver_competition"))
             .boxed();
 

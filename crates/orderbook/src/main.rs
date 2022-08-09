@@ -13,9 +13,7 @@ use orderbook::{
     order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
-    serve_api,
-    solvable_orders::SolvableOrdersCache,
-    verify_deployed_contract_constants,
+    serve_api, verify_deployed_contract_constants,
 };
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -513,22 +511,6 @@ async fn main() {
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
     let fast_quoter = create_quoter(fast_price_estimator.clone(), Arc::new(Forget));
 
-    let solvable_orders_cache = SolvableOrdersCache::new(
-        args.min_order_validity_period,
-        database.clone(),
-        args.banned_users.iter().copied().collect(),
-        balance_fetcher.clone(),
-        bad_token_detector.clone(),
-        current_block_stream.clone(),
-        native_price_estimator.clone(),
-        signature_validator.clone(),
-        database.clone(),
-    );
-    let block = current_block_stream.borrow().number.unwrap().as_u64();
-    solvable_orders_cache
-        .update(block)
-        .await
-        .expect("failed to perform initial solvable orders update");
     let order_validator = Arc::new(OrderValidator::new(
         Box::new(web3.clone()),
         native_token.clone(),
@@ -548,13 +530,13 @@ async fn main() {
     let orderbook = Arc::new(Orderbook::new(
         domain_separator,
         settlement_contract.address(),
-        database.clone(),
-        solvable_orders_cache.clone(),
-        args.solvable_orders_max_update_age,
+        database.as_ref().clone(),
         order_validator.clone(),
+        args.solvable_orders_max_update_age_blocks,
+        current_block_stream.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
-        maintainers: vec![pool_fetcher, solvable_orders_cache.clone()],
+        maintainers: vec![pool_fetcher],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
@@ -576,7 +558,6 @@ async fn main() {
         },
         database.clone(),
         args.shared.solver_competition_auth,
-        solvable_orders_cache.clone(),
     );
     let maintenance_task =
         task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));

@@ -37,7 +37,7 @@ async fn local_node_smart_contract_orders() {
 }
 
 async fn smart_contract_orders(web3: Web3) {
-    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug");
+    shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
@@ -117,7 +117,7 @@ async fn smart_contract_orders(web3: Web3) {
     let OrderbookServices {
         block_stream,
         maintenance,
-        solvable_orders_cache: _,
+        solvable_orders_cache: _solvable_orders_cache,
         base_tokens,
         ..
     } = OrderbookServices::new(&web3, &contracts).await;
@@ -214,8 +214,7 @@ async fn smart_contract_orders(web3: Web3) {
         OrderStatus::Open
     );
 
-    let api = create_orderbook_api();
-    wait_for_solvable_orders(&api, 2).await.unwrap();
+    wait_for_solvable_orders(&client, 2).await.unwrap();
 
     // Drive solution
     let uniswap_pair_provider = uniswap_pair_provider(&contracts);
@@ -278,7 +277,7 @@ async fn smart_contract_orders(web3: Web3) {
                 .unwrap(),
             ),
         },
-        api,
+        create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
         0.0,
         15000000u128,

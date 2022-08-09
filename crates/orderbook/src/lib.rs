@@ -5,13 +5,11 @@ pub mod fee_subsidy;
 pub mod order_quoting;
 pub mod order_validation;
 pub mod orderbook;
-pub mod solvable_orders;
 pub mod solver_competition;
 
 use crate::database::trades::TradeRetrieving;
 use crate::{order_quoting::QuoteHandler, orderbook::Orderbook};
 use anyhow::{anyhow, Context as _, Result};
-use api::post_solver_competition::SolvableOrdersCache;
 use contracts::GPv2Settlement;
 use futures::Future;
 use model::DomainSeparator;
@@ -29,7 +27,6 @@ pub fn serve_api(
     shutdown_receiver: impl Future<Output = ()> + Send + 'static,
     solver_competition: Arc<dyn SolverCompetitionStoring>,
     solver_competition_auth: Option<String>,
-    solvable_orders: Arc<dyn SolvableOrdersCache>,
 ) -> JoinHandle<()> {
     let filter = api::handle_all_routes(
         database,
@@ -37,7 +34,6 @@ pub fn serve_api(
         quotes,
         solver_competition,
         solver_competition_auth,
-        solvable_orders,
     )
     .boxed();
     tracing::info!(%address, "serving order book");
