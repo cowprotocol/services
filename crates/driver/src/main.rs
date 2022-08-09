@@ -2,8 +2,10 @@ use anyhow::Context;
 use clap::Parser;
 use contracts::WETH9;
 use driver::{
-    api::serve_api, arguments::Arguments, commit_reveal::CommitRevealSolver, driver::Driver,
+    api::serve_api, arguments::Arguments, auction_converter::AuctionConverter,
+    commit_reveal::CommitRevealSolver, driver::Driver,
 };
+use gas_estimation::GasPriceEstimating;
 use reqwest::Client;
 use shared::{
     http_solver::{DefaultHttpSolverApi, SolverConfig},
@@ -14,6 +16,9 @@ use shared::{
 use solver::{
     arguments::TransactionStrategyArg,
     interactions::allowances::AllowanceManager,
+    liquidity::order_converter::OrderConverter,
+    settlement_access_list::AccessListEstimating,
+    settlement_rater::SettlementRater,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -35,6 +40,9 @@ struct CommonComponents {
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     native_token_contract: WETH9,
+    access_list_estimator: Arc<dyn AccessListEstimating>,
+    gas_price_estimator: Arc<dyn GasPriceEstimating>,
+    order_converter: Arc<OrderConverter>,
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
@@ -62,6 +70,33 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
+    let access_list_estimator = Arc::new(
+        solver::settlement_access_list::create_priority_estimator(
+            &client,
+            &web3,
+            args.access_list_estimators.as_slice(),
+            args.tenderly_url.clone(),
+            args.tenderly_api_key.clone(),
+            network_id.clone(),
+        )
+        .await
+        .expect("failed to create access list estimator"),
+    );
+    let gas_price_estimator = Arc::new(
+        shared::gas_price_estimation::create_priority_estimator(
+            client.clone(),
+            &web3,
+            args.gas_estimators.as_slice(),
+            args.blocknative_api_key.clone(),
+        )
+        .await
+        .expect("failed to create gas price estimator"),
+    );
+
+    let order_converter = Arc::new(OrderConverter {
+        native_token: native_token_contract.clone(),
+        fee_objective_scaling_factor: args.fee_objective_scaling_factor,
+    });
 
     CommonComponents {
         client,
@@ -70,10 +105,13 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         chain_id,
         settlement_contract,
         native_token_contract,
+        access_list_estimator,
+        gas_price_estimator,
+        order_converter,
     }
 }
 
-async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Box<dyn Solver>> {
+async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<dyn Solver>> {
     let token_info_fetcher = Arc::new(CachedTokenInfoFetcher::new(Box::new(TokenInfoFetcher {
         web3: common.web3.clone(),
     })));
@@ -91,7 +129,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Box<d
     args.solvers
         .iter()
         .map(|arg| {
-            Box::new(HttpSolver::new(
+            Arc::new(HttpSolver::new(
                 DefaultHttpSolverApi {
                     name: arg.name.clone(),
                     network_name: common.network_id.clone(),
@@ -108,8 +146,9 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Box<d
                 token_info_fetcher.clone(),
                 buffer_retriever.clone(),
                 allowance_mananger.clone(),
+                common.order_converter.clone(),
                 http_solver_cache.clone(),
-            )) as Box<dyn Solver>
+            )) as Arc<dyn Solver>
         })
         .collect()
 }
@@ -207,39 +246,17 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             }
         }
     }
-    let access_list_estimator = Arc::new(
-        solver::settlement_access_list::create_priority_estimator(
-            client,
-            web3,
-            args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
-            common.network_id.clone(),
-        )
-        .await
-        .expect("failed to create access list estimator"),
-    );
-    let gas_price_estimator = Arc::new(
-        shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
-            web3,
-            args.gas_estimators.as_slice(),
-            args.blocknative_api_key.clone(),
-        )
-        .await
-        .expect("failed to create gas price estimator"),
-    );
 
     Arc::new(SolutionSubmitter {
         web3: web3.clone(),
         contract: common.settlement_contract.clone(),
-        gas_price_estimator,
+        gas_price_estimator: common.gas_price_estimator.clone(),
         target_confirm_time: args.target_confirm_time,
         max_confirm_time: args.max_submission_seconds,
         retry_interval: args.submission_retry_interval_seconds,
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
-        access_list_estimator,
+        access_list_estimator: common.access_list_estimator.clone(),
     })
 }
 
@@ -252,14 +269,29 @@ async fn main() {
     let common = init_common_components(&args).await;
     let solvers = build_solvers(&common, &args).await;
     let submitter = build_submitter(&common, &args).await;
+    let settlement_rater = Arc::new(SettlementRater {
+        access_list_estimator: common.access_list_estimator.clone(),
+        settlement_contract: common.settlement_contract.clone(),
+        web3: common.web3.clone(),
+    });
+    let auction_converter = Arc::new(AuctionConverter::new(
+        common.native_token_contract.clone(),
+        common.gas_price_estimator.clone(),
+        args.fee_objective_scaling_factor,
+    ));
 
     let drivers = solvers
         .into_iter()
         .map(|solver| {
             let name = solver.name().to_string();
             let driver = Arc::new(Driver {
-                solver: Arc::new(CommitRevealSolver::new(solver)),
+                solver: Arc::new(CommitRevealSolver::new(
+                    solver,
+                    settlement_rater.clone(),
+                    common.gas_price_estimator.clone(),
+                )),
                 submitter: submitter.clone(),
+                auction_converter: auction_converter.clone(),
             });
             (driver, name)
         })

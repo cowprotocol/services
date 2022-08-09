@@ -4,7 +4,7 @@ pub mod settlement;
 use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{Exchange, LimitOrder, Liquidity},
+    liquidity::{order_converter::OrderConverter, Exchange, LimitOrder, Liquidity},
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
@@ -59,6 +59,7 @@ pub struct HttpSolver {
     token_info_fetcher: Arc<dyn TokenInfoFetching>,
     buffer_retriever: Arc<dyn BufferRetrieving>,
     allowance_manager: Arc<dyn AllowanceManaging>,
+    order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
 }
 
@@ -71,6 +72,7 @@ impl HttpSolver {
         token_info_fetcher: Arc<dyn TokenInfoFetching>,
         buffer_retriever: Arc<dyn BufferRetrieving>,
         allowance_manager: Arc<dyn AllowanceManaging>,
+        order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
     ) -> Self {
         Self {
@@ -80,6 +82,7 @@ impl HttpSolver {
             token_info_fetcher,
             buffer_retriever,
             allowance_manager,
+            order_converter,
             instance_cache,
         }
     }
@@ -174,6 +177,7 @@ fn map_tokens_for_solver(orders: &[LimitOrder], liquidity: &[Liquidity]) -> Vec<
             Liquidity::BalancerWeighted(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::BalancerStable(amm) => token_set.extend(amm.reserves.keys()),
             Liquidity::LimitOrder(order) => token_set.extend([order.sell_token, order.buy_token]),
+            Liquidity::Concentrated(amm) => token_set.extend(amm.tokens),
         }
     }
 
@@ -327,6 +331,17 @@ fn amm_models(liquidity: &[Liquidity], gas_model: &GasModel) -> BTreeMap<usize, 
                     mandatory: false,
                 },
                 Liquidity::LimitOrder(_) => unreachable!("filtered out before"),
+                Liquidity::Concentrated(amm) => AmmModel {
+                    parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
+                        pool: amm.pool.clone(),
+                    }),
+                    fee: BigRational::new(
+                        BigInt::from(*amm.pool.state.fee.numer()),
+                        BigInt::from(*amm.pool.state.fee.denom()),
+                    ),
+                    cost: gas_model.cost_for_gas(amm.pool.gas_stats.mean_gas),
+                    mandatory: false,
+                },
             })
         })
         .enumerate()
@@ -439,6 +454,7 @@ impl Solver for HttpSolver {
             settled.clone(),
             context,
             self.allowance_manager.clone(),
+            self.order_converter.clone(),
         )
         .await
         {
@@ -529,6 +545,7 @@ mod tests {
             Arc::new(mock_token_info_fetcher),
             Arc::new(mock_buffer_retriever),
             Arc::new(MockAllowanceManaging::new()),
+            Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);

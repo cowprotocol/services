@@ -5,7 +5,6 @@ use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{
     database::Postgres,
     fee_subsidy::Subsidy,
-    metrics::NoopMetrics,
     order_quoting::{OrderQuoter, QuoteHandler},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
@@ -25,10 +24,7 @@ use shared::{
     recent_block_cache::CacheConfig,
     signature_validator::Web3SignatureValidator,
     sources::uniswap_v2::{
-        self,
-        pair_provider::PairProvider,
-        pool_cache::{NoopPoolCacheMetrics, PoolCache},
-        pool_fetching::PoolFetcher,
+        self, pair_provider::PairProvider, pool_cache::PoolCache, pool_fetching::PoolFetcher,
     },
     Web3,
 };
@@ -146,11 +142,11 @@ pub fn create_orderbook_api() -> OrderBookApi {
     )
 }
 
-pub fn create_order_converter(web3: &Web3, weth_address: H160) -> OrderConverter {
-    OrderConverter {
+pub fn create_order_converter(web3: &Web3, weth_address: H160) -> Arc<OrderConverter> {
+    Arc::new(OrderConverter {
         native_token: WETH9::at(web3, weth_address),
         fee_objective_scaling_factor: 1.,
-    }
+    })
 }
 
 pub async fn deploy_mintable_token(web3: &Web3) -> ERC20Mintable {
@@ -200,7 +196,6 @@ impl OrderbookServices {
             },
             Arc::new(PoolFetcher::uniswap(pair_provider, web3.clone())),
             current_block_stream.clone(),
-            Arc::new(NoopPoolCacheMetrics),
         )
         .unwrap();
         let gas_estimator = Arc::new(web3.clone());
@@ -253,7 +248,6 @@ impl OrderbookServices {
             bad_token_detector.clone(),
             current_block_stream.clone(),
             native_price_estimator,
-            Arc::new(NoopMetrics),
             signature_validator.clone(),
             api_db.clone(),
         );

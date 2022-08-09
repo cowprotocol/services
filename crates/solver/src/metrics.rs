@@ -8,13 +8,7 @@ use model::order::Order;
 use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };
-use shared::{
-    metrics::LivenessChecking,
-    sources::{
-        balancer_v2::pool_fetching::BalancerPoolCacheMetrics,
-        uniswap_v2::pool_cache::PoolCacheMetrics,
-    },
-};
+use shared::metrics::LivenessChecking;
 use std::{
     convert::TryInto,
     sync::Mutex,
@@ -91,8 +85,6 @@ pub struct Metrics {
     solver_runs: IntCounterVec,
     single_order_solver_runs: IntCounterVec,
     matched_but_unsettled_orders: IntCounter,
-    pool_cache_hits: IntCounter,
-    pool_cache_misses: IntCounter,
     last_runloop_completed: Mutex<Instant>,
     order_surplus_report: Histogram,
     complete_runloop_until_transaction: Histogram,
@@ -194,18 +186,6 @@ impl Metrics {
         )?;
         registry.register(Box::new(order_surplus_report.clone()))?;
 
-        let pool_cache_hits = IntCounter::new(
-            "pool_cache_hits",
-            "Number of cache hits in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_hits.clone()))?;
-
-        let pool_cache_misses = IntCounter::new(
-            "pool_cache_misses",
-            "Number of cache misses in the pool fetcher cache.",
-        )?;
-        registry.register(Box::new(pool_cache_misses.clone()))?;
-
         let opts = prometheus::opts!(
             "complete_runloop_until_transaction_seconds",
             "Time a runloop that wants to submit a solution takes until the transaction submission starts."
@@ -244,8 +224,6 @@ impl Metrics {
             solver_runs,
             single_order_solver_runs,
             matched_but_unsettled_orders,
-            pool_cache_hits,
-            pool_cache_misses,
             last_runloop_completed: Mutex::new(Instant::now()),
             order_surplus_report,
             complete_runloop_until_transaction,
@@ -413,22 +391,6 @@ impl SolverMetrics for Metrics {
         self.settlement_revertable_status
             .with_label_values(&[result, solver])
             .inc()
-    }
-}
-
-impl PoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
-    }
-}
-
-impl BalancerPoolCacheMetrics for Metrics {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        // We may want to distinguish cache metrics between the different
-        // liquidity sources in the future, for now just use the same counters.
-        self.pool_cache_hits.inc_by(cache_hits as u64);
-        self.pool_cache_misses.inc_by(cache_misses as u64);
     }
 }
 

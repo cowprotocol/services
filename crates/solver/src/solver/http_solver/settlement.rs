@@ -1,12 +1,12 @@
 use crate::{
     encoding::EncodedInteraction,
     interactions::allowances::{AllowanceManaging, Approval, ApprovalRequest},
-    liquidity::{AmmOrderExecution, LimitOrder, Liquidity},
+    liquidity::{order_converter::OrderConverter, AmmOrderExecution, LimitOrder, Liquidity},
     settlement::{Interaction, Settlement},
 };
 use anyhow::{anyhow, Context as _, Result};
 use ethcontract::Bytes;
-use model::order::OrderKind;
+use model::order::{Order, OrderKind, OrderMetadata};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -26,8 +26,9 @@ pub async fn convert_settlement(
     settled: SettledBatchAuctionModel,
     context: SettlementContext,
     allowance_manager: Arc<dyn AllowanceManaging>,
+    order_converter: Arc<OrderConverter>,
 ) -> Result<Settlement> {
-    IntermediateSettlement::new(settled, context, allowance_manager)
+    IntermediateSettlement::new(settled, context, allowance_manager, order_converter)
         .await?
         .into_settlement()
 }
@@ -79,6 +80,9 @@ impl Execution {
                     }
                     // This sort of liquidity gets used elsewhere
                     Liquidity::LimitOrder(_) => Ok(()),
+                    Liquidity::Concentrated(liquidity) => {
+                        settlement.with_liquidity(liquidity, execution)
+                    }
                 }
             }
             CustomInteraction(interaction_data) => {
@@ -137,9 +141,12 @@ impl IntermediateSettlement {
         settled: SettledBatchAuctionModel,
         context: SettlementContext,
         allowance_manager: Arc<dyn AllowanceManaging>,
+        order_converter: Arc<OrderConverter>,
     ) -> Result<Self> {
         let executed_limit_orders =
             match_prepared_and_settled_orders(context.orders, settled.orders)?;
+        let foreign_liquidity_orders =
+            convert_foreign_liquidity_orders(order_converter, settled.foreign_liquidity_orders)?;
         let prices = match_settled_prices(executed_limit_orders.as_slice(), settled.prices)?;
         let approvals = compute_approvals(allowance_manager, settled.approvals).await?;
         let executions_amm = match_prepared_and_settled_amms(context.liquidity, settled.amms)?;
@@ -147,7 +154,7 @@ impl IntermediateSettlement {
         let executions = merge_and_order_executions(
             executions_amm,
             settled.interaction_data,
-            executed_limit_orders,
+            [executed_limit_orders, foreign_liquidity_orders].concat(),
         );
 
         Ok(Self {
@@ -206,6 +213,40 @@ fn match_prepared_and_settled_orders(
                 executed_buy_amount: settled.exec_buy_amount,
                 executed_sell_amount: settled.exec_sell_amount,
                 exec_plan: settled.exec_plan,
+            })
+        })
+        .collect()
+}
+
+fn convert_foreign_liquidity_orders(
+    order_converter: Arc<OrderConverter>,
+    foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
+) -> Result<Vec<ExecutedLimitOrder>> {
+    foreign_liquidity_orders
+        .into_iter()
+        .map(|liquidity| {
+            let converted = order_converter.normalize_limit_order(Order {
+                metadata: OrderMetadata {
+                    owner: liquidity.order.from,
+                    full_fee_amount: liquidity.order.data.fee_amount,
+                    // All foreign orders **MUST** be liquidity, this is
+                    // important so they cannot be used to affect the objective.
+                    is_liquidity_order: true,
+                    // These fields do not seem to be used at all for order
+                    // encoding, so we just use the default values.
+                    uid: Default::default(),
+                    settlement_contract: Default::default(),
+                    // For other metdata fields, the default value is correct.
+                    ..Default::default()
+                },
+                data: liquidity.order.data,
+                signature: liquidity.order.signature,
+            })?;
+            Ok(ExecutedLimitOrder {
+                order: converted,
+                executed_sell_amount: liquidity.exec_sell_amount,
+                executed_buy_amount: liquidity.exec_buy_amount,
+                exec_plan: None,
             })
         })
         .collect()
@@ -320,10 +361,11 @@ mod tests {
             tests::CapturingSettlementHandler, ConstantProductOrder, StablePoolOrder,
             WeightedProductOrder,
         },
+        settlement::{LiquidityOrderTrade, Trade},
     };
     use hex_literal::hex;
     use maplit::hashmap;
-    use model::TokenPair;
+    use model::{order::OrderData, signature::Signature, TokenPair};
     use num::rational::Ratio;
     use num::BigRational;
     use shared::sources::balancer_v2::{
@@ -334,6 +376,8 @@ mod tests {
 
     #[tokio::test]
     async fn convert_settlement_() {
+        let weth = H160([0xe7; 20]);
+
         let t0 = H160::zero();
         let t1 = H160::from_low_u64_be(1);
 
@@ -410,6 +454,24 @@ mod tests {
             fee: Default::default(),
             exec_plan: None,
         };
+        let foreign_liquidity_order = ExecutedLiquidityOrderModel {
+            order: NativeLiquidityOrder {
+                from: H160([99; 20]),
+                data: OrderData {
+                    sell_token: t1,
+                    buy_token: t0,
+                    sell_amount: 101.into(),
+                    buy_amount: 102.into(),
+                    fee_amount: 42.into(),
+                    valid_to: u32::MAX,
+                    kind: OrderKind::Sell,
+                    ..Default::default()
+                },
+                signature: Signature::PreSign,
+            },
+            exec_sell_amount: 101.into(),
+            exec_buy_amount: 102.into(),
+        };
         let updated_uniswap = UpdatedAmmModel {
             execution: vec![ExecutedAmmModel {
                 sell_token: t1,
@@ -461,6 +523,7 @@ mod tests {
         };
         let settled = SettledBatchAuctionModel {
             orders: hashmap! { 0 => executed_order },
+            foreign_liquidity_orders: vec![foreign_liquidity_order],
             amms: hashmap! {
                 0 => updated_uniswap,
                 1 => internal_uniswap,
@@ -469,20 +532,54 @@ mod tests {
             },
             ref_token: Some(t0),
             prices: hashmap! { t0 => 10.into(), t1 => 11.into() },
-            approvals: Vec::new(),
-            interaction_data: Vec::new(),
-            metadata: None,
+            ..Default::default()
         };
 
         let prepared = SettlementContext { orders, liquidity };
 
-        let settlement =
-            convert_settlement(settled, prepared, Arc::new(MockAllowanceManaging::new()))
-                .await
-                .unwrap();
+        let settlement = convert_settlement(
+            settled,
+            prepared,
+            Arc::new(MockAllowanceManaging::new()),
+            Arc::new(OrderConverter::test(weth)),
+        )
+        .await
+        .unwrap();
         assert_eq!(
             settlement.clearing_prices(),
             &hashmap! { t0 => 10.into(), t1 => 11.into() }
+        );
+
+        assert_eq!(
+            settlement.encoder.liquidity_order_trades(),
+            [LiquidityOrderTrade {
+                trade: Trade {
+                    order: Order {
+                        metadata: OrderMetadata {
+                            owner: H160([99; 20]),
+                            full_fee_amount: 42.into(),
+                            is_liquidity_order: true,
+                            ..Default::default()
+                        },
+                        data: OrderData {
+                            sell_token: t1,
+                            buy_token: t0,
+                            sell_amount: 101.into(),
+                            buy_amount: 102.into(),
+                            fee_amount: 42.into(),
+                            valid_to: u32::MAX,
+                            kind: OrderKind::Sell,
+                            ..Default::default()
+                        },
+                        signature: Signature::PreSign,
+                    },
+                    sell_token_index: 1,
+                    executed_amount: 101.into(),
+                    scaled_unsubsidized_fee: 42.into(),
+                },
+                buy_token_offset_index: 0,
+                buy_token_price: (10 * 102 / 101).into(),
+            }]
         );
 
         assert_eq!(limit_handler.calls(), vec![7.into()]);

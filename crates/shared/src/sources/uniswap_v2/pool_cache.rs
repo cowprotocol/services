@@ -1,27 +1,14 @@
 use crate::{
     current_block::CurrentBlockStream,
     maintenance::Maintaining,
-    recent_block_cache::{
-        Block, CacheConfig, CacheFetching, CacheKey, CacheMetrics, RecentBlockCache,
-    },
+    recent_block_cache::{Block, CacheConfig, CacheFetching, CacheKey, RecentBlockCache},
     sources::uniswap_v2::pool_fetching::{Pool, PoolFetching},
 };
 use anyhow::Result;
 use model::TokenPair;
 use std::{collections::HashSet, sync::Arc};
 
-pub trait PoolCacheMetrics: Send + Sync {
-    fn pools_fetched(&self, cache_hits: usize, cache_misses: usize);
-}
-
-pub struct NoopPoolCacheMetrics;
-impl PoolCacheMetrics for NoopPoolCacheMetrics {
-    fn pools_fetched(&self, _: usize, _: usize) {}
-}
-
-pub struct PoolCache(
-    RecentBlockCache<TokenPair, Pool, Arc<dyn PoolFetching>, Arc<dyn PoolCacheMetrics>>,
-);
+pub struct PoolCache(RecentBlockCache<TokenPair, Pool, Arc<dyn PoolFetching>>);
 
 impl CacheKey<Pool> for TokenPair {
     fn first_ord() -> Self {
@@ -40,25 +27,18 @@ impl CacheFetching<TokenPair, Pool> for Arc<dyn PoolFetching> {
     }
 }
 
-impl CacheMetrics for Arc<dyn PoolCacheMetrics> {
-    fn entries_fetched(&self, cache_hits: usize, cache_misses: usize) {
-        self.pools_fetched(cache_hits, cache_misses)
-    }
-}
-
 impl PoolCache {
     /// Creates a new pool cache.
     pub fn new(
         config: CacheConfig,
         fetcher: Arc<dyn PoolFetching>,
         block_stream: CurrentBlockStream,
-        metrics: Arc<dyn PoolCacheMetrics>,
     ) -> Result<Self> {
         Ok(Self(RecentBlockCache::new(
             config,
             fetcher,
             block_stream,
-            metrics,
+            "uniswapv2",
         )?))
     }
 }

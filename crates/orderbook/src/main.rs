@@ -10,8 +10,6 @@ use orderbook::{
     fee_subsidy::{
         config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
     },
-    gas_price::InstrumentedGasEstimator,
-    metrics::Metrics,
     order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
     order_validation::{OrderValidator, SignatureConfiguration},
     orderbook::Orderbook,
@@ -19,7 +17,6 @@ use orderbook::{
     solvable_orders::SolvableOrdersCache,
     verify_deployed_contract_constants,
 };
-use primitive_types::U256;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -35,6 +32,7 @@ use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    gas_price::InstrumentedGasEstimator,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
@@ -63,6 +61,7 @@ use shared::{
         self,
         balancer_v2::{pool_fetching::BalancerContracts, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
+        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -83,7 +82,6 @@ async fn main() {
     tracing::info!("running order book with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
-    let metrics = Arc::new(Metrics::new().unwrap());
 
     let client = shared::http_client(args.shared.http_timeout);
 
@@ -127,7 +125,11 @@ async fn main() {
 
     let native_token_price_estimation_amount = args
         .amount_to_estimate_prices_with
-        .or_else(|| default_amount_to_estimate_prices_with(&network))
+        .or_else(|| {
+            shared::price_estimation::native::default_amount_to_estimate_native_prices_with(
+                &network,
+            )
+        })
         .expect("No amount to estimate prices with set.");
 
     let vault = match BalancerV2Vault::deployed(&web3).await {
@@ -162,7 +164,6 @@ async fn main() {
         )
         .await
         .expect("failed to create gas price estimator"),
-        metrics.clone(),
     ));
 
     let baseline_sources = args.shared.baseline_sources.unwrap_or_else(|| {
@@ -260,7 +261,6 @@ async fn main() {
             cache_config,
             Arc::new(pool_aggregator),
             current_block_stream.clone(),
-            metrics.clone(),
         )
         .expect("failed to create pool cache"),
     );
@@ -279,7 +279,6 @@ async fn main() {
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
-                metrics.clone(),
                 client.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
@@ -288,6 +287,20 @@ async fn main() {
             .expect("failed to create Balancer pool fetcher"),
         );
         Some(balancer_pool_fetcher)
+    } else {
+        None
+    };
+    let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
+        let uniswap_v3_pool_fetcher = Arc::new(
+            UniswapV3PoolFetcher::new(
+                chain_id,
+                args.shared.liquidity_fetcher_max_age_update,
+                client.clone(),
+            )
+            .await
+            .expect("failed to create UniswapV3 pool fetcher in orderbook"),
+        );
+        Some(uniswap_v3_pool_fetcher)
     } else {
         None
     };
@@ -306,7 +319,7 @@ async fn main() {
         OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id)
             .map(Arc::new);
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
-        InstrumentedPriceEstimator::new(inner, name, metrics.clone())
+        InstrumentedPriceEstimator::new(inner, name)
     };
     let balancer_sor_api = args
         .balancer_sor_url
@@ -337,6 +350,7 @@ async fn main() {
                     }),
                     pool_fetcher.clone(),
                     balancer_pool_fetcher.clone(),
+                    uniswap_v3_pool_fetcher.clone(),
                     token_info_fetcher.clone(),
                     gas_price_estimator.clone(),
                     native_token.address(),
@@ -444,7 +458,6 @@ async fn main() {
             native_token_price_estimation_amount,
         )),
         args.native_price_cache_max_age_secs,
-        metrics.clone(),
     ));
     native_price_estimator.spawn_maintenance_task(
         Duration::from_secs(1),
@@ -508,7 +521,6 @@ async fn main() {
         bad_token_detector.clone(),
         current_block_stream.clone(),
         native_price_estimator.clone(),
-        metrics.clone(),
         signature_validator.clone(),
         database.clone(),
     );
@@ -546,6 +558,9 @@ async fn main() {
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
+    }
+    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
+        service_maintainer.maintainers.push(uniswap_v3);
     }
     check_database_connection(orderbook.as_ref()).await;
     let quotes =
@@ -619,14 +634,4 @@ async fn check_database_connection(orderbook: &Orderbook) {
         .get_order(&Default::default())
         .await
         .expect("failed to connect to database");
-}
-
-fn default_amount_to_estimate_prices_with(network_id: &str) -> Option<U256> {
-    match network_id {
-        // Mainnet, Rinkeby, Göŕli
-        "1" | "4" | "5" => Some(10u128.pow(18).into()),
-        // Xdai
-        "100" => Some(10u128.pow(21).into()),
-        _ => None,
-    }
 }

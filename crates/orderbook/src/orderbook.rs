@@ -329,8 +329,8 @@ fn set_available_balances(orders: &mut [Order], cache: &SolvableOrdersCache) {
 mod tests {
     use super::*;
     use crate::{
-        database::orders::MockOrderStoring, metrics::NoopMetrics,
-        order_validation::MockOrderValidating, solver_competition::MockSolverCompetitionStoring,
+        database::orders::MockOrderStoring, order_validation::MockOrderValidating,
+        solver_competition::MockSolverCompetitionStoring,
     };
     use ethcontract::H160;
     use mockall::predicate::eq;
@@ -358,7 +358,6 @@ mod tests {
                 Arc::new(MockBadTokenDetecting::new()),
                 current_block::mock_single_block(Default::default()),
                 Arc::new(MockNativePriceEstimating::new()),
-                Arc::new(NoopMetrics),
                 Arc::new(MockSignatureValidating::new()),
                 Arc::new(MockSolverCompetitionStoring::new()),
             ),

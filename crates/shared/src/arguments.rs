@@ -154,6 +154,15 @@ pub struct Arguments {
     /// Value of the authorization header for the solver competition post api.
     #[clap(long, env)]
     pub solver_competition_auth: Option<String>,
+
+    /// If liquidity pool fetcher has caching mechanism, this argument defines how old pool data is allowed
+    /// to be before updating
+    #[clap(
+        long,
+        default_value = "30",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub liquidity_fetcher_max_age_update: Duration,
 }
 
 pub fn display_option(option: &Option<impl Display>, f: &mut Formatter<'_>) -> std::fmt::Result {

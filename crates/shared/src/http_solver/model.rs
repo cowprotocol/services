@@ -1,7 +1,9 @@
 use derivative::Derivative;
 use ethcontract::H160;
 use model::{
+    order::OrderData,
     ratio_as_decimal,
+    signature::Signature,
     solver_competition::SolverCompetitionId,
     u256_decimal::{self, DecimalU256},
 };
@@ -10,6 +12,8 @@ use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use std::collections::{BTreeMap, HashMap};
+
+use crate::sources::uniswap_v3::pool_fetching::PoolInfo;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct BatchAuctionModel {
@@ -57,6 +61,7 @@ pub enum AmmParameters {
     ConstantProduct(ConstantProductPoolParameters),
     WeightedProduct(WeightedProductPoolParameters),
     Stable(StablePoolParameters),
+    Concentrated(ConcentratedPoolParameters),
 }
 
 #[serde_as]
@@ -88,6 +93,12 @@ pub struct StablePoolParameters {
     pub scaling_rates: BTreeMap<H160, U256>,
     #[serde(with = "ratio_as_decimal")]
     pub amplification_parameter: BigRational,
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ConcentratedPoolParameters {
+    pub pool: PoolInfo,
 }
 
 #[serde_as]
@@ -175,6 +186,8 @@ mod bytes_hex_or_array {
 pub struct SettledBatchAuctionModel {
     pub orders: HashMap<usize, ExecutedOrderModel>,
     #[serde(default)]
+    pub foreign_liquidity_orders: Vec<ExecutedLiquidityOrderModel>,
+    #[serde(default)]
     pub amms: HashMap<usize, UpdatedAmmModel>,
     pub ref_token: Option<H160>,
     #[serde_as(as = "HashMap<_, DecimalU256>")]
@@ -228,6 +241,24 @@ pub struct ExecutedOrderModel {
     pub fee: Option<TokenAmount>,
     // Orders which need to be executed in a specific order have an `exec_plan` (e.g. 0x limit orders)
     pub exec_plan: Option<ExecutionPlan>,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct ExecutedLiquidityOrderModel {
+    pub order: NativeLiquidityOrder,
+    #[serde(with = "u256_decimal")]
+    pub exec_sell_amount: U256,
+    #[serde(with = "u256_decimal")]
+    pub exec_buy_amount: U256,
+}
+
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+pub struct NativeLiquidityOrder {
+    pub from: H160,
+    #[serde(flatten)]
+    pub data: OrderData,
+    #[serde(flatten)]
+    pub signature: Signature,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -314,8 +345,14 @@ pub struct ExecutionPlanCoordinatesModel {
 
 #[cfg(test)]
 mod tests {
+    use crate::sources::uniswap_v3::graph_api::Token;
+
     use super::*;
     use maplit::btreemap;
+    use model::{
+        app_id::AppId,
+        order::{OrderKind, SellTokenSource},
+    };
     use serde_json::json;
 
     #[test]
@@ -455,6 +492,32 @@ mod tests {
             },
             mandatory: true,
         };
+        let concentrated_pool_model = AmmModel {
+            parameters: AmmParameters::Concentrated(ConcentratedPoolParameters {
+                pool: PoolInfo {
+                    address: H160::from_low_u64_be(1),
+                    tokens: vec![
+                        Token {
+                            id: buy_token,
+                            symbol: "CAT".to_string(),
+                            decimals: 6,
+                        },
+                        Token {
+                            id: sell_token,
+                            symbol: "DOG".to_string(),
+                            decimals: 18,
+                        },
+                    ],
+                    ..Default::default()
+                },
+            }),
+            fee: BigRational::new(3.into(), 1000.into()),
+            cost: TokenAmount {
+                amount: U256::from(3),
+                token: native_token,
+            },
+            mandatory: false,
+        };
         let model = BatchAuctionModel {
             tokens: btreemap! {
                 buy_token => TokenInfoModel {
@@ -477,6 +540,7 @@ mod tests {
                 0 => constant_product_pool_model,
                 1 => weighted_product_pool_model,
                 2 => stable_pool_model,
+                3 => concentrated_pool_model,
             },
             metadata: Some(MetadataModel {
                 environment: Some(String::from("Such Meta")),
@@ -574,6 +638,40 @@ mod tests {
                 "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
               },
               "mandatory": true,
+            },
+            "3": {
+              "kind": "Concentrated",
+              "pool": {
+                "address": "0x0000000000000000000000000000000000000001",
+                 "tokens": [
+                {
+                  "id": "0x0000000000000000000000000000000000000539",
+                  "symbol": "CAT",
+                  "decimals": "6",
+                },
+                {
+                  "id": "0x000000000000000000000000000000000000a866",
+                  "symbol": "DOG",
+                  "decimals": "18",
+                }
+                ],
+              "state": {
+                "sqrt_price": "0",
+                "liquidity": "0",
+                "tick": "0",
+                "liquidity_net": {},
+                "fee": "0",
+              },
+              "gas_stats": {
+                "mean": "0",
+              }
+              },
+              "fee": "0.003",
+              "cost": {
+                "amount": "3",
+                "token": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+              },
+              "mandatory": false,
             },
           },
           "metadata": {
@@ -743,6 +841,58 @@ mod tests {
                 inputs: Vec::new(),
                 outputs: Vec::new(),
                 exec_plan: None,
+            },
+        );
+    }
+
+    #[test]
+    fn decode_foreign_liquidity_order() {
+        assert_eq!(
+            serde_json::from_str::<ExecutedLiquidityOrderModel>(
+                r#"
+                {
+                    "order": {
+                        "from": "0x4242424242424242424242424242424242424242",
+                        "sellToken": "0x0101010101010101010101010101010101010101",
+                        "buyToken": "0x0202020202020202020202020202020202020202",
+                        "sellAmount": "101",
+                        "buyAmount": "102",
+                        "validTo": 3,
+                        "appData":
+                            "0x0303030303030303030303030303030303030303030303030303030303030303",
+                        "feeAmount": "13",
+                        "kind": "sell",
+                        "partiallyFillable": true,
+                        "sellTokenBalance": "external",
+                        "signingScheme": "eip1271",
+                        "signature": "0x01020304"
+                    },
+                    "exec_sell_amount": "50",
+                    "exec_buy_amount": "51"
+                }
+                "#,
+            )
+            .unwrap(),
+            ExecutedLiquidityOrderModel {
+                order: NativeLiquidityOrder {
+                    from: H160([0x42; 20]),
+                    data: OrderData {
+                        sell_token: H160([1; 20]),
+                        buy_token: H160([2; 20]),
+                        sell_amount: 101.into(),
+                        buy_amount: 102.into(),
+                        valid_to: 3,
+                        app_data: AppId([3; 32]),
+                        fee_amount: 13.into(),
+                        kind: OrderKind::Sell,
+                        partially_fillable: true,
+                        sell_token_balance: SellTokenSource::External,
+                        ..Default::default()
+                    },
+                    signature: Signature::Eip1271(vec![1, 2, 3, 4]),
+                },
+                exec_sell_amount: 50.into(),
+                exec_buy_amount: 51.into(),
             },
         );
     }

@@ -6,20 +6,23 @@
 
 use anyhow::Result;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use std::{sync::Arc, time::Duration};
+use std::time::Duration;
 
 /// An instrumented gas price estimator that wraps an inner one.
 pub struct InstrumentedGasEstimator<T> {
     inner: T,
-    metrics: Arc<dyn Metrics>,
+    metrics: &'static Metrics,
 }
 
 impl<T> InstrumentedGasEstimator<T>
 where
     T: GasPriceEstimating,
 {
-    pub fn new(inner: T, metrics: Arc<dyn Metrics>) -> Self {
-        Self { inner, metrics }
+    pub fn new(inner: T) -> Self {
+        Self {
+            inner,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
+        }
     }
 }
 
@@ -40,12 +43,15 @@ where
 
     async fn estimate(&self) -> Result<GasPrice1559> {
         let estimate = self.inner.estimate().await?;
-        self.metrics.gas_price(estimate);
+        self.metrics
+            .gas_price
+            .set(estimate.effective_gas_price() / 1e9);
         Ok(estimate)
     }
 }
 
-/// Gas estimator metrics.
-pub trait Metrics: Send + Sync + 'static {
-    fn gas_price(&self, estimate: GasPrice1559);
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// Last measured gas price in gwei
+    gas_price: prometheus::Gauge,
 }

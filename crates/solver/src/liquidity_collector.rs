@@ -2,7 +2,7 @@ use crate::{
     liquidity::Liquidity,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, uniswap_v2::UniswapLikeLiquidity,
-        zeroex::ZeroExLiquidity, LimitOrder,
+        uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity, LimitOrder,
     },
 };
 use anyhow::{Context, Result};
@@ -12,6 +12,7 @@ pub struct LiquidityCollector {
     pub uniswap_like_liquidity: Vec<UniswapLikeLiquidity>,
     pub balancer_v2_liquidity: Option<BalancerV2Liquidity>,
     pub zeroex_liquidity: Option<ZeroExLiquidity>,
+    pub uniswap_v3_liquidity: Option<UniswapV3Liquidity>,
 }
 
 impl LiquidityCollector {
@@ -47,6 +48,16 @@ impl LiquidityCollector {
         }
         if let Some(zeroex_liquidity) = self.zeroex_liquidity.as_ref() {
             amms.append(&mut zeroex_liquidity.get_liquidity(limit_orders).await?)
+        }
+        if let Some(uniswap_v3_liquidity) = self.uniswap_v3_liquidity.as_ref() {
+            amms.extend(
+                uniswap_v3_liquidity
+                    .get_liquidity(&user_orders)
+                    .await
+                    .context("failed to get UniswapV3 liquidity")?
+                    .into_iter()
+                    .map(Liquidity::Concentrated),
+            )
         }
         tracing::debug!("got {} AMMs", amms.len());
 

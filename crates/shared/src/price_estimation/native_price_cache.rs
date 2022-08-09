@@ -2,20 +2,18 @@ use crate::price_estimation::native::{NativePriceEstimateResult, NativePriceEsti
 use futures::stream::{Stream, StreamExt};
 use itertools::{Either, Itertools};
 use primitive_types::H160;
+use prometheus::IntCounterVec;
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, Weak},
     time::{Duration, Instant},
 };
 
-#[cfg_attr(test, mockall::automock)]
-pub trait Metrics: Send + Sync + 'static {
-    fn native_price_cache(&self, misses: usize, hits: usize);
-}
-
-struct NoopMetrics;
-impl Metrics for NoopMetrics {
-    fn native_price_cache(&self, _: usize, _: usize) {}
+#[derive(prometheus_metric_storage::MetricStorage)]
+struct Metrics {
+    /// native price cache hits misses
+    #[metric(labels("result"))]
+    native_price_cache: IntCounterVec,
 }
 
 #[derive(Debug, Clone)]
@@ -29,7 +27,7 @@ struct Inner {
     cache: Mutex<HashMap<H160, CachedPrice>>,
     estimator: Box<dyn NativePriceEstimating>,
     max_age: Duration,
-    metrics: Arc<dyn Metrics>,
+    metrics: &'static Metrics,
 }
 
 impl Inner {
@@ -87,16 +85,12 @@ pub struct CachingNativePriceEstimator(Arc<Inner>);
 impl CachingNativePriceEstimator {
     /// Creates new CachingNativePriceEstimator using `estimator` to calculate native prices which
     /// get cached a duration of `max_age`.
-    pub fn new(
-        estimator: Box<dyn NativePriceEstimating>,
-        max_age: Duration,
-        metrics: Arc<dyn Metrics>,
-    ) -> Self {
+    pub fn new(estimator: Box<dyn NativePriceEstimating>, max_age: Duration) -> Self {
         Self(Arc::new(Inner {
             estimator,
             cache: Mutex::new(Default::default()),
             max_age,
-            metrics,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap(),
         }))
     }
 
@@ -124,7 +118,14 @@ impl NativePriceEstimating for CachingNativePriceEstimator {
             let (cached_prices, missing_indices) = self.0.get_cached_prices(tokens);
             self.0
                 .metrics
-                .native_price_cache(missing_indices.len(), cached_prices.len());
+                .native_price_cache
+                .with_label_values(&["misses"])
+                .inc_by(missing_indices.len() as u64);
+            self.0
+                .metrics
+                .native_price_cache
+                .with_label_values(&["hits"])
+                .inc_by(cached_prices.len() as u64);
 
             for (index, price) in cached_prices {
                 yield (index, Ok(price));
@@ -206,11 +207,8 @@ mod tests {
                 futures::stream::iter([(0, Ok(1.0))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Arc::new(NoopMetrics),
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -233,11 +231,8 @@ mod tests {
                 futures::stream::iter([(0, Err(PriceEstimationError::NoLiquidity))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Arc::new(NoopMetrics),
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
 
         for _ in 0..10 {
             let tokens = &[token(0)];
@@ -291,11 +286,8 @@ mod tests {
                 futures::stream::iter([(0, Ok(3.0))]).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Arc::new(NoopMetrics),
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
         let _join_handle = tokio::spawn(update_recently_used_outdated_prices(
             Arc::downgrade(&estimator.0),
             Duration::from_millis(50),
@@ -352,11 +344,8 @@ mod tests {
                 futures::stream::iter(std::iter::repeat(Ok(2.0)).enumerate().take(10)).boxed()
             });
 
-        let estimator = CachingNativePriceEstimator::new(
-            Box::new(inner),
-            Duration::from_millis(30),
-            Arc::new(NoopMetrics),
-        );
+        let estimator =
+            CachingNativePriceEstimator::new(Box::new(inner), Duration::from_millis(30));
 
         let _join_handle = tokio::spawn(update_recently_used_outdated_prices(
             Arc::downgrade(&estimator.0),

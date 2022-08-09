@@ -4,8 +4,10 @@ use anyhow::{bail, Result};
 use lazy_static::lazy_static;
 use reqwest::{Client, IntoUrl, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::{json, Map, Value};
 use thiserror::Error;
+
+const QUERY_PAGE_SIZE: usize = 1000;
 
 /// A general client for querying subgraphs.
 pub struct SubgraphClient {
@@ -17,6 +19,16 @@ lazy_static! {
     pub static ref DEFAULT_GRAPH_API_BASE_URL: Url =
         Url::parse("https://api.thegraph.com/subgraphs/name/")
             .expect("invalid default Graph API base URL");
+}
+
+pub trait ContainsId {
+    fn get_id(&self) -> String;
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+pub struct Data<T> {
+    #[serde(alias = "pools", alias = "ticks")]
+    pub inner: Vec<T>,
 }
 
 impl SubgraphClient {
@@ -55,6 +67,45 @@ impl SubgraphClient {
             .json::<QueryResponse<T>>()
             .await?
             .into_result()
+    }
+
+    /// Performs the specified GraphQL query on the current subgraph.
+    /// This function should be called for queries that return very long(paginated) result.
+    pub async fn paginated_query<T>(&self, block_number: u64, query: &str) -> Result<Vec<T>>
+    where
+        T: ContainsId + DeserializeOwned,
+    {
+        let mut result = Vec::new();
+        let mut last_id = String::default();
+
+        // We do paging by last ID instead of using `skip`. This is the
+        // suggested approach to paging best performance:
+        // <https://thegraph.com/docs/en/developer/graphql-api/#pagination>
+        loop {
+            let page = self
+                .query::<Data<T>>(
+                    query,
+                    Some(json_map! {
+                        "block" => block_number,
+                        "pageSize" => QUERY_PAGE_SIZE,
+                        "lastId" => json!(last_id),
+                    }),
+                )
+                .await?
+                .inner;
+            let no_more_pages = page.len() != QUERY_PAGE_SIZE;
+            if let Some(last_pool) = page.last() {
+                last_id = last_pool.get_id();
+            }
+
+            result.extend(page);
+
+            if no_more_pages {
+                break;
+            }
+        }
+
+        Ok(result)
     }
 }
 
