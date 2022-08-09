@@ -101,7 +101,9 @@ mod tests {
                 partially_fillable: false,
                 sell_token_balance: SellTokenSource::Erc20,
                 buy_token_balance: BuyTokenDestination::Internal,
-                signing_scheme: QuoteSigningScheme::PreSign,
+                signing_scheme: QuoteSigningScheme::PreSign {
+                    onchain_order: false
+                },
                 price_quality: PriceQuality::Optimal,
             }
         );

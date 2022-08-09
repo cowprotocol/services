@@ -590,14 +590,16 @@ fn convert_signing_scheme_into_quote_signing_scheme(
     order_placement_via_api: bool,
 ) -> Result<QuoteSigningScheme, ValidationError> {
     match (order_placement_via_api, scheme) {
-        (true, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign),
-        (true, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271),
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
         (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
-        (false, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSignForOnchainOrder),
-        (false, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271ForOnchainOrder),
         (false, SigningScheme::Eip712) => Err(ValidationError::IncompatibleSigningScheme),
         (false, SigningScheme::EthSign) => Err(ValidationError::IncompatibleSigningScheme),
+        (order_placement_via_api, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign {
+            onchain_order: !order_placement_via_api,
+        }),
+        (order_placement_via_api, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271 {
+            onchain_order: !order_placement_via_api,
+        }),
     }
 }
 

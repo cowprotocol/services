@@ -623,7 +623,7 @@ components:
           $ref: "#/components/schemas/BuyTokenDestination"
           default: "erc20"
         signingScheme:
-          $ref: "#/components/schemas/QuoteSigningScheme"
+          $ref: "#/components/schemas/SigningScheme"
           default: "eip712"
       required:
         - sellToken
@@ -836,11 +836,7 @@ components:
     SigningScheme:
       description: How was the order signed?
       type: string
-      enum: [eip712, ethsign, presign]
-    QuoteSigningScheme:
-      description: How will the order be signed and is it intended for onchain order placement?
-      type: string
-      enum: [eip712, ethsign, presign, eip1271, eip1271asonchainorder, presignasonchainorder]
+      enum: [eip712, ethsign, presign, eip1271]
     EcdsaSigningScheme:
       description: How was the order signed?
       type: string
@@ -1071,6 +1067,12 @@ components:
             priceQuality:
               $ref: "#/components/schemas/PriceQuality"
               default: "optimal"
+            signingScheme:
+              $ref: "#/components/schemas/SigningScheme"
+              default: "eip712"
+            onchainOrder:
+              description: "Flag to signal whether the order is intended for onchain order placement. Only valid for non ECDSA-signed orders"
+              default: false
           required:
             - sellToken
             - buyToken

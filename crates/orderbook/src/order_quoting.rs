@@ -430,12 +430,12 @@ impl OrderQuoter {
         parameters: &QuoteParameters,
     ) -> Result<QuoteData, CalculateQuoteError> {
         let expiration = match parameters.signing_scheme {
-            QuoteSigningScheme::Eip1271ForOnchainOrder => {
-                self.now.now() + self.eip1271_onchain_quote_validity_seconds
-            }
-            QuoteSigningScheme::PreSignForOnchainOrder => {
-                self.now.now() + self.presign_onchain_quote_validity_seconds
-            }
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+            } => self.now.now() + self.eip1271_onchain_quote_validity_seconds,
+            QuoteSigningScheme::PreSign {
+                onchain_order: true,
+            } => self.now.now() + self.presign_onchain_quote_validity_seconds,
             _ => self.now.now() + chrono::Duration::seconds(STANDARD_QUOTE_VALIDITY_SECONDS),
         };
 
@@ -470,8 +470,12 @@ impl OrderQuoter {
         };
 
         let onchain_signing_scheme = match parameters.signing_scheme {
-            QuoteSigningScheme::Eip1271ForOnchainOrder => Some(OnchainSigningScheme::Eip1271),
-            QuoteSigningScheme::PreSignForOnchainOrder => Some(OnchainSigningScheme::PreSign),
+            QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+            } => Some(OnchainSigningScheme::Eip1271),
+            QuoteSigningScheme::PreSign {
+                onchain_order: true,
+            } => Some(OnchainSigningScheme::PreSign),
             _ => None,
         };
 

@@ -25,10 +25,8 @@ impl From<QuoteSigningScheme> for SigningScheme {
     fn from(scheme: QuoteSigningScheme) -> Self {
         match scheme {
             QuoteSigningScheme::Eip712 => SigningScheme::Eip712,
-            QuoteSigningScheme::Eip1271 => SigningScheme::Eip1271,
-            QuoteSigningScheme::Eip1271ForOnchainOrder => SigningScheme::Eip1271,
-            QuoteSigningScheme::PreSign => SigningScheme::PreSign,
-            QuoteSigningScheme::PreSignForOnchainOrder => SigningScheme::PreSign,
+            QuoteSigningScheme::Eip1271 { .. } => SigningScheme::Eip1271,
+            QuoteSigningScheme::PreSign { .. } => SigningScheme::PreSign,
             QuoteSigningScheme::EthSign => SigningScheme::EthSign,
         }
     }

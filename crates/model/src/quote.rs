@@ -1,8 +1,10 @@
 use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
+    signature::SigningScheme,
     time, u256_decimal,
 };
+use anyhow::bail;
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
 use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
@@ -16,17 +18,48 @@ pub enum PriceQuality {
 }
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash)]
-#[serde(rename_all = "lowercase")]
+#[serde(
+    rename_all = "lowercase",
+    tag = "signingScheme",
+    try_from = "QuoteSigningDeserializationData"
+)]
 pub enum QuoteSigningScheme {
     #[default]
     Eip712,
     EthSign,
-    /// EIP1271 orders can be created via API-call or in the future via on-chain orders
-    Eip1271,
-    Eip1271ForOnchainOrder,
-    /// PreSign orders can be created via API-call or in the future via on-chain orders
-    PreSign,
-    PreSignForOnchainOrder,
+    Eip1271 {
+        #[serde(rename = "onchainOrder")]
+        onchain_order: bool,
+    },
+    PreSign {
+        #[serde(rename = "onchainOrder")]
+        onchain_order: bool,
+    },
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct QuoteSigningDeserializationData {
+    #[serde(default)]
+    signing_scheme: SigningScheme,
+    #[serde(default)]
+    onchain_order: bool,
+}
+
+impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
+    type Error = anyhow::Error;
+
+    fn try_from(data: QuoteSigningDeserializationData) -> Result<Self, Self::Error> {
+        match (data.signing_scheme, data.onchain_order) {
+            (scheme, true) if scheme.is_ecdsa_scheme() => {
+                bail!("ECDSA-signed orders cannot be on-chain")
+            }
+            (SigningScheme::Eip712, _) => Ok(Self::Eip712),
+            (SigningScheme::EthSign, _) => Ok(Self::EthSign),
+            (SigningScheme::Eip1271, onchain_order) => Ok(Self::Eip1271 { onchain_order }),
+            (SigningScheme::PreSign, onchain_order) => Ok(Self::PreSign { onchain_order }),
+        }
+    }
 }
 
 /// The order parameters to quote a price and fee for.
@@ -50,7 +83,7 @@ pub struct OrderQuoteRequest {
     pub sell_token_balance: SellTokenSource,
     #[serde(default)]
     pub buy_token_balance: BuyTokenDestination,
-    #[serde(default)]
+    #[serde(flatten)]
     pub signing_scheme: QuoteSigningScheme,
     #[serde(default)]
     pub price_quality: PriceQuality,
@@ -225,5 +258,138 @@ mod tests {
                 "priceQuality": "optimal",
             })
         );
+    }
+
+    #[test]
+    fn deserialize_quote_requests() {
+        let valid_json = [
+            json!({
+                  "from": "0x0000000000000000000000000000000000000000",
+                  "sellToken": "0x0000000000000000000000000000000000000001",
+                  "buyToken": "0x0000000000000000000000000000000000000002",
+                  "kind": "buy",
+                  "buyAmountAfterFee": "1",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "eip712",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "ethsign",
+                "onchainOrder": false,
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "eip1271",
+                "onchainOrder": true,
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme":  "eip1271",
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "presign",
+                "onchainOrder": true,
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme":  "presign",
+            }),
+        ];
+        let expected_standard_response = OrderQuoteRequest {
+            sell_token: H160::from_low_u64_be(1),
+            buy_token: H160::from_low_u64_be(2),
+            ..Default::default()
+        };
+        let modify_signing_scheme = |signing_scheme: QuoteSigningScheme| {
+            let mut response = expected_standard_response;
+            response.signing_scheme = signing_scheme;
+            response
+        };
+        let expected_quote_responses = vec![
+            expected_standard_response,
+            expected_standard_response,
+            modify_signing_scheme(QuoteSigningScheme::EthSign),
+            modify_signing_scheme(QuoteSigningScheme::Eip1271 {
+                onchain_order: true,
+            }),
+            modify_signing_scheme(QuoteSigningScheme::Eip1271 {
+                onchain_order: false,
+            }),
+            modify_signing_scheme(QuoteSigningScheme::PreSign {
+                onchain_order: true,
+            }),
+            modify_signing_scheme(QuoteSigningScheme::PreSign {
+                onchain_order: false,
+            }),
+        ];
+        for (i, json) in valid_json.iter().enumerate() {
+            assert_eq!(
+                serde_json::from_value::<OrderQuoteRequest>(json.clone()).unwrap(),
+                *expected_quote_responses.get(i).unwrap()
+            );
+        }
+        let invalid_json = vec![
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "onchainOrder": true,
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "eip712",
+                "onchainOrder": true,
+            }),
+            json!({
+                "from": "0x0000000000000000000000000000000000000000",
+                "sellToken": "0x0000000000000000000000000000000000000001",
+                "buyToken": "0x0000000000000000000000000000000000000002",
+                "kind": "buy",
+                "buyAmountAfterFee": "1",
+                "signingScheme": "ethsign",
+                "onchainOrder": true,
+            }),
+        ];
+        for json in invalid_json.iter() {
+            assert_eq!(
+                serde_json::from_value::<OrderQuoteRequest>(json.clone())
+                    .unwrap_err()
+                    .to_string(),
+                String::from("ECDSA-signed orders cannot be on-chain")
+            );
+        }
     }
 }
