@@ -1,7 +1,9 @@
 use crate::driver::Driver;
 use anyhow::Result;
 use model::auction::Auction;
-use shared::api::{convert_json_response, error, extract_payload, ApiReply, IntoWarpReply};
+use shared::api::{
+    convert_json_response, error, extract_payload_with_max_size, ApiReply, IntoWarpReply,
+};
 use std::{convert::Infallible, sync::Arc};
 use tracing::Instrument;
 use warp::{hyper::StatusCode, reply::with_status, Filter, Rejection};
@@ -12,7 +14,7 @@ fn post_solve_request(
     warp::path(prefix)
         .and(warp::path("solve"))
         .and(warp::post())
-        .and(extract_payload())
+        .and(extract_payload_with_max_size(1024 * 32))
 }
 
 pub fn post_solve(
