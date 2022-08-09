@@ -3,9 +3,10 @@ use contracts::WETH9;
 use gas_estimation::GasPriceEstimating;
 use model::auction::Auction as AuctionModel;
 use primitive_types::H160;
+use shared::recent_block_cache::Block;
 use solver::{
-    liquidity::order_converter::OrderConverter, settlement::external_prices::ExternalPrices,
-    solver::Auction,
+    liquidity::order_converter::OrderConverter, liquidity_collector::LiquidityCollecting,
+    settlement::external_prices::ExternalPrices, solver::Auction,
 };
 use std::{
     sync::{
@@ -22,7 +23,7 @@ const RUN_DURATION: Duration = Duration::from_secs(15);
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait AuctionConverting: Send + Sync {
-    async fn convert_auction(&self, model: AuctionModel) -> Result<Auction>;
+    async fn convert_auction(&self, model: AuctionModel, block: Block) -> Result<Auction>;
 }
 
 pub struct AuctionConverter {
@@ -30,6 +31,7 @@ pub struct AuctionConverter {
     pub gas_price_estimator: Arc<dyn GasPriceEstimating>,
     pub native_token: H160,
     pub run: AtomicU64,
+    pub liquidity_collector: Box<dyn LiquidityCollecting>,
 }
 
 impl AuctionConverter {
@@ -37,6 +39,7 @@ impl AuctionConverter {
         native_token: WETH9,
         gas_price_estimator: Arc<dyn GasPriceEstimating>,
         fee_objective_scaling_factor: f64,
+        liquidity_collector: Box<dyn LiquidityCollecting>,
     ) -> Self {
         Self {
             order_converter: OrderConverter {
@@ -46,23 +49,33 @@ impl AuctionConverter {
             gas_price_estimator,
             native_token: native_token.address(),
             run: AtomicU64::default(),
+            liquidity_collector,
         }
     }
 }
 
 #[async_trait::async_trait]
 impl AuctionConverting for AuctionConverter {
-    async fn convert_auction(&self, auction: AuctionModel) -> Result<Auction> {
+    async fn convert_auction(&self, auction: AuctionModel, block: Block) -> Result<Auction> {
         let run = self.run.fetch_add(1, Ordering::SeqCst);
         let orders = auction
             .orders
             .into_iter()
             .filter_map(
                 |order| match self.order_converter.normalize_limit_order(order) {
-                    Ok(order) => Some(order),
+                    Ok(order) if order.buy_amount != 0.into() && order.sell_amount != 0.into() => {
+                        Some(order)
+                    }
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
+                        tracing::error!(?err, "error normalizing limit order");
+                        None
+                    }
+                    _ => {
+                        // TODO: Find out why those orders are not an issue in the old driver.
+                        // Those orders cause errors inside quasimodo.
+                        let err = anyhow::anyhow!("but_amount or sell_amount is 0");
                         tracing::error!(?err, "error normalizing limit order");
                         None
                     }
@@ -75,6 +88,11 @@ impl AuctionConverting for AuctionConverter {
         );
 
         tracing::info!(?orders, "got {} orders", orders.len());
+
+        let liquidity = self
+            .liquidity_collector
+            .get_liquidity_for_orders(&orders, block)
+            .await?;
 
         let external_prices =
             ExternalPrices::try_from_auction_prices(self.native_token, auction.prices)
@@ -92,7 +110,7 @@ impl AuctionConverting for AuctionConverter {
             id: auction.next_solver_competition,
             run,
             orders,
-            liquidity: vec![],
+            liquidity,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + RUN_DURATION,
             external_prices,
@@ -105,11 +123,31 @@ mod tests {
     use super::*;
     use gas_estimation::GasPrice1559;
     use maplit::btreemap;
-    use model::order::{Order, OrderData, OrderMetadata, BUY_ETH_ADDRESS};
-    use num::BigRational;
+    use model::{
+        order::{Order, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+        TokenPair,
+    };
+    use num::rational::{BigRational, Ratio};
     use primitive_types::U256;
-    use shared::dummy_contract;
-    use shared::gas_price_estimation::FakeGasPriceEstimator;
+    use shared::{dummy_contract, gas_price_estimation::FakeGasPriceEstimator};
+    use solver::{
+        liquidity::{
+            AmmOrderExecution, ConstantProductOrder, Liquidity::ConstantProduct, SettlementHandling,
+        },
+        liquidity_collector::MockLiquidityCollecting,
+        settlement::SettlementEncoder,
+    };
+
+    struct DummySettlementHandler;
+    impl SettlementHandling<ConstantProductOrder> for DummySettlementHandler {
+        fn encode(
+            &self,
+            _execution: AmmOrderExecution,
+            _encoder: &mut SettlementEncoder,
+        ) -> Result<()> {
+            Ok(())
+        }
+    }
 
     #[tokio::test]
     async fn converts_auction() {
@@ -137,7 +175,32 @@ mod tests {
         };
         let gas_estimator = Arc::new(FakeGasPriceEstimator::new(gas_price));
         let native_token = dummy_contract!(WETH9, token(1));
-        let converter = AuctionConverter::new(native_token.clone(), gas_estimator, 2.);
+        let mut liquidity_collector = MockLiquidityCollecting::new();
+        liquidity_collector
+            .expect_get_liquidity_for_orders()
+            .times(2)
+            .withf(move |orders, block| {
+                orders.len() == 2
+                    && orders[0].sell_token == token(1)
+                    && orders[0].buy_token == token(2)
+                    && orders[1].sell_token == token(2)
+                    && orders[1].buy_token == token(3)
+                    && block == &Block::Number(3)
+            })
+            .returning(move |_, _| {
+                Ok(vec![ConstantProduct(ConstantProductOrder {
+                    tokens: TokenPair::new(token(1), token(2)).unwrap(),
+                    reserves: (1u128, 1u128),
+                    fee: Ratio::<u32>::new(1, 1),
+                    settlement_handling: Arc::new(DummySettlementHandler),
+                })])
+            });
+        let converter = AuctionConverter::new(
+            native_token.clone(),
+            gas_estimator,
+            2.,
+            Box::new(liquidity_collector),
+        );
         let mut model = AuctionModel {
             block: 1,
             latest_settlement_block: 2,
@@ -146,7 +209,10 @@ mod tests {
             prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
         };
 
-        let auction = converter.convert_auction(model.clone()).await.unwrap();
+        let auction = converter
+            .convert_auction(model.clone(), Block::Number(3))
+            .await
+            .unwrap();
         assert_eq!(auction.id, 3);
         assert_eq!(
             auction
@@ -167,7 +233,7 @@ mod tests {
         // 100 total fee of 10% filled order with fee factor of 2.0 == 180 scaled fee
         assert_eq!(auction.orders[0].scaled_unsubsidized_fee, 180.into());
         assert_eq!(auction.orders[1].scaled_unsubsidized_fee, 180.into());
-        assert!(auction.liquidity.is_empty());
+        assert_eq!(auction.liquidity.len(), 1);
         for t in &[native_token.address(), BUY_ETH_ADDRESS, token(2), token(3)] {
             assert_eq!(
                 auction.external_prices.price(t).unwrap(),
@@ -175,12 +241,18 @@ mod tests {
             );
         }
 
-        let auction = converter.convert_auction(model.clone()).await.unwrap();
+        let auction = converter
+            .convert_auction(model.clone(), Block::Number(3))
+            .await
+            .unwrap();
         assert_eq!(auction.run, 1);
 
         // auction has to include at least 1 user order
         model.orders = vec![order(1, 2, false)];
         model.orders[0].metadata.is_liquidity_order = true;
-        assert!(converter.convert_auction(model).await.is_err());
+        assert!(converter
+            .convert_auction(model, Block::Number(3))
+            .await
+            .is_err());
     }
 }
