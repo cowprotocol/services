@@ -1,13 +1,15 @@
+use primitive_types::{H160, H256};
 use reqwest::Url;
 use shared::{
     arguments::{display_list, display_option, duration_from_seconds},
     gas_price_estimation::GasEstimatorType,
+    sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use solver::{
     arguments::TransactionStrategyArg, settlement_access_list::AccessListEstimatorType,
     solver::ExternalSolverArg,
 };
-use std::{net::SocketAddr, time::Duration};
+use std::{net::SocketAddr, num::NonZeroU64, time::Duration};
 use tracing::level_filters::LevelFilter;
 
 #[derive(clap::Parser)]
@@ -181,6 +183,67 @@ pub struct Arguments {
     /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
     #[clap(long, env)]
     pub blocknative_api_key: Option<String>,
+
+    /// Base tokens used for finding multi-hop paths between multiple AMMs
+    /// Should be the most liquid tokens of the given network.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub base_tokens: Vec<H160>,
+
+    /// Which Liquidity sources to be used by Price Estimator.
+    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    pub baseline_sources: Option<Vec<BaselineSource>>,
+
+    /// The number of blocks kept in the pool cache.
+    #[clap(long, env, default_value = "10")]
+    pub pool_cache_blocks: NonZeroU64,
+
+    /// The number of pairs that are automatically updated in the pool cache.
+    #[clap(long, env, default_value = "4")]
+    pub pool_cache_maximum_recent_block_age: u64,
+
+    /// How often to retry requests in the pool cache.
+    #[clap(long, env, default_value = "5")]
+    pub pool_cache_maximum_retries: u32,
+
+    /// How long to sleep in seconds between retries in the pool cache.
+    #[clap(long, env, default_value = "1", parse(try_from_str = duration_from_seconds))]
+    pub pool_cache_delay_between_retries_seconds: Duration,
+
+    /// How often in seconds we poll the node to check if the current block has changed.
+    #[clap(
+        long,
+        env,
+        default_value = "5",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub block_stream_poll_interval_seconds: Duration,
+
+    /// The Balancer V2 factories to consider for indexing liquidity. Allows
+    /// specific pool kinds to be disabled via configuration. Will use all
+    /// supported Balancer V2 factory kinds if not specified.
+    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
+
+    /// Deny list of balancer pool ids.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub balancer_pool_deny_list: Vec<H256>,
+
+    /// If liquidity pool fetcher has caching mechanism, this argument defines how old pool data is allowed
+    /// to be before updating
+    #[clap(
+        long,
+        default_value = "30",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub liquidity_fetcher_max_age_update: Duration,
+
+    /// ZeroEx API endpoint URL.
+    #[clap(long, env)]
+    pub zeroex_url: Option<String>,
+
+    /// ZeroEx API key.
+    #[clap(long, env)]
+    pub zeroex_api_key: Option<String>,
 }
 
 impl std::fmt::Display for Arguments {
@@ -253,6 +316,53 @@ impl std::fmt::Display for Arguments {
             f,
             "blocknative_api_key: {}",
             self.blocknative_api_key
+                .as_ref()
+                .map(|_| "SECRET")
+                .unwrap_or("None")
+        )?;
+        writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
+        writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
+        writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
+        writeln!(
+            f,
+            "pool_cache_maximum_recent_block_age: {}",
+            self.pool_cache_maximum_recent_block_age
+        )?;
+        writeln!(
+            f,
+            "pool_cache_maximum_retries: {}",
+            self.pool_cache_maximum_retries
+        )?;
+        writeln!(
+            f,
+            "pool_cache_delay_between_retries_seconds: {:?}",
+            self.pool_cache_delay_between_retries_seconds
+        )?;
+        writeln!(
+            f,
+            "block_stream_poll_interval_seconds: {:?}",
+            self.block_stream_poll_interval_seconds
+        )?;
+        writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
+        writeln!(
+            f,
+            "balancer_pool_deny_list: {:?}",
+            self.balancer_pool_deny_list
+        )?;
+        writeln!(
+            f,
+            "liquidity_fetcher_max_age_update: {:?}",
+            self.liquidity_fetcher_max_age_update
+        )?;
+        writeln!(
+            f,
+            "zeroex_url: {}",
+            self.zeroex_url.as_deref().unwrap_or("None")
+        )?;
+        writeln!(
+            f,
+            "zeroex_api_key: {}",
+            self.zeroex_api_key
                 .as_ref()
                 .map(|_| "SECRET")
                 .unwrap_or("None")
