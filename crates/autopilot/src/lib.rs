@@ -38,7 +38,7 @@ use shared::{
     sources::{
         balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher},
         uniswap_v2::pool_cache::PoolCache,
-        uniswap_v3::pool_fetching::AutoUpdatingUniswapV3PoolFetcher,
+        uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
@@ -261,7 +261,7 @@ pub async fn main(args: arguments::Arguments) {
     };
     let uniswap_v3_pool_fetcher = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            AutoUpdatingUniswapV3PoolFetcher::new(
+            UniswapV3PoolFetcher::new(
                 chain_id,
                 args.shared.liquidity_fetcher_max_age_update,
                 client.clone(),
@@ -428,9 +428,15 @@ pub async fn main(args: arguments::Arguments) {
         sync_start,
     ));
 
-    let service_maintainer = shared::maintenance::ServiceMaintenance {
+    let mut service_maintainer = shared::maintenance::ServiceMaintenance {
         maintainers: vec![event_updater, Arc::new(db.clone())],
     };
+    if let Some(balancer) = balancer_pool_fetcher {
+        service_maintainer.maintainers.push(balancer);
+    }
+    if let Some(uniswap_v3) = uniswap_v3_pool_fetcher {
+        service_maintainer.maintainers.push(uniswap_v3);
+    }
     let maintenance_task =
         tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
 
