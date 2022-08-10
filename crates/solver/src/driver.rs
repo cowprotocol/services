@@ -321,7 +321,7 @@ impl Driver {
                 let original_solution = rated_settlements.last();
                 tracing::debug!(
                     original_solution = ?original_solution.map(|s| &s.1),
-                    "failed to compute optimized solution, copying last solution"
+                    "failed to compute the optimized solution, copying original winning solution"
                 );
                 rated_settlements.extend(original_solution.cloned());
             }
