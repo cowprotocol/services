@@ -24,12 +24,9 @@ LIMIT 1
     sqlx::query_as(QUERY).fetch_optional(ex).await
 }
 
-pub async fn delete_other_than(ex: &mut PgConnection, id: AuctionId) -> Result<(), sqlx::Error> {
-    const QUERY: &str = r#"
-DELETE FROM auctions
-WHERE id != $1
-    ;"#;
-    sqlx::query(QUERY).bind(id).execute(ex).await.map(|_| ())
+pub async fn delete_all_auctions(ex: &mut PgConnection) -> Result<(), sqlx::Error> {
+    const QUERY: &str = "TRUNCATE auctions;";
+    sqlx::query(QUERY).execute(ex).await.map(|_| ())
 }
 
 #[cfg(test)]
@@ -57,8 +54,16 @@ mod tests {
         assert_eq!(value, value_);
         assert_eq!(id_, id);
 
-        delete_other_than(&mut db, id + 1).await.unwrap();
+        delete_all_auctions(&mut db).await.unwrap();
         let result = load_most_recent(&mut db).await.unwrap();
         assert!(result.is_none());
+
+        // id still increases after deletion
+        let value = JsonValue::Number(3.into());
+        let id_ = save(&mut db, &value).await.unwrap();
+        assert_eq!(id + 1, id_);
+        let (id, value_) = load_most_recent(&mut db).await.unwrap().unwrap();
+        assert_eq!(value, value_);
+        assert_eq!(id_, id);
     }
 }
