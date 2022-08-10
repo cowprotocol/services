@@ -1,3 +1,4 @@
+pub mod auctions;
 pub mod orders;
 pub mod quotes;
 pub mod solver_competition;
