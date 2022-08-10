@@ -34,6 +34,7 @@ impl TryFrom<QuoteRow> for QuoteData {
             },
             kind: order_kind_from(row.order_kind),
             expiration: row.expiration_timestamp,
+            quote_kind: row.quote_kind,
         })
     }
 }
@@ -58,6 +59,7 @@ impl QuoteStoring for Postgres {
             sell_token_price: data.fee_parameters.sell_token_price,
             order_kind: order_kind_into(data.kind),
             expiration_timestamp: data.expiration,
+            quote_kind: data.quote_kind,
         };
         let id = database::quotes::save(&mut ex, &row).await?;
         Ok(Some(id))
@@ -93,6 +95,7 @@ impl QuoteStoring for Postgres {
             buy_amount: u256_to_big_decimal(&params.buy_amount),
             kind: order_kind_into(params.kind),
             expiration,
+            quote_kind: params.quote_kind,
         };
         let quote = database::quotes::find(&mut ex, &params)
             .await
