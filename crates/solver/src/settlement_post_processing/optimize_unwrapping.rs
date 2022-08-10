@@ -3,7 +3,6 @@ use crate::settlement::Settlement;
 use crate::solver::http_solver::buffers::BufferRetrieving;
 use contracts::WETH9;
 use primitive_types::U256;
-use web3::types::AccessList;
 
 /// Tries to do one of 2 optimizations.
 /// 1) Drop WETH unwraps and instead pay ETH with the settlment contract's buffer.
@@ -11,7 +10,6 @@ use web3::types::AccessList;
 ///    needs. This will cause the next few settlements to use optimization 1.
 pub async fn optimize_unwrapping(
     settlement: Settlement,
-    access_list: Option<AccessList>,
     settlement_simulator: &impl SettlementSimulating,
     buffer_retriever: &impl BufferRetrieving,
     weth: &WETH9,
@@ -29,7 +27,7 @@ pub async fn optimize_unwrapping(
     optimized_settlement.encoder.drop_unwrap(weth.address());
 
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone(), access_list.clone())
+        .settlement_would_succeed(optimized_settlement.clone())
         .await
     {
         tracing::debug!("use internal buffer for unwraps");
@@ -60,7 +58,7 @@ pub async fn optimize_unwrapping(
     // solution. Increasing the unwrap could alter the buffers such that the proposed solution is no
     // longer possible. That's why a simulation is necessary.
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone(), access_list)
+        .settlement_would_succeed(optimized_settlement.clone())
         .await
     {
         tracing::debug!(
@@ -112,11 +110,10 @@ mod tests {
         settlement_simulator
             .expect_settlement_would_succeed()
             .times(1)
-            .returning(|_, _| true);
+            .returning(|_| true);
 
         let settlement = optimize_unwrapping(
             settlement_with_unwrap(&weth, to_wei(1)),
-            None,
             &settlement_simulator,
             &buffer_retriever,
             &weth,
@@ -144,15 +141,14 @@ mod tests {
         settlement_simulator
             .expect_settlement_would_succeed()
             .times(1)
-            .returning(|_, _| false);
+            .returning(|_| false);
         settlement_simulator
             .expect_settlement_would_succeed()
             .times(1)
-            .returning(|_, _| true);
+            .returning(|_| true);
 
         let settlement = optimize_unwrapping(
             settlement_with_unwrap(&weth, to_wei(10)),
-            None,
             &settlement_simulator,
             &buffer_retriever,
             &weth,
@@ -176,7 +172,7 @@ mod tests {
         settlement_simulator
             .expect_settlement_would_succeed()
             .times(2)
-            .returning(|_, _| false);
+            .returning(|_| false);
 
         let weth = dummy_contract!(WETH9, [0x42; 20]);
         let weth_address = weth.address();
@@ -189,7 +185,6 @@ mod tests {
 
         let settlement = optimize_unwrapping(
             settlement_with_unwrap(&weth, eth_to_unwrap),
-            None,
             &settlement_simulator,
             &buffer_retriever,
             &weth,
