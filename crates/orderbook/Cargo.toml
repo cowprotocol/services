@@ -25,7 +25,7 @@ clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 ethcontract = { version = "0.17.0", default-features = false }
-futures = "0.3.19"
+futures = "0.3"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_"] }
 global-metrics = { path = "../global-metrics" }
 hex = { version = "0.4", default-features = false }
