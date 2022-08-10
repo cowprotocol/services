@@ -36,9 +36,9 @@ use shared::{
     token_list::TokenList,
     Web3,
 };
-use std::collections::HashSet;
-use std::iter::FromIterator;
 use std::{
+    collections::HashSet,
+    iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
 };
