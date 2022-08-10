@@ -1,3 +1,4 @@
+pub mod auction;
 mod events;
 mod quotes;
 
