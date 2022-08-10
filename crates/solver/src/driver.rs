@@ -391,7 +391,7 @@ impl Driver {
                 "reduced {} orders to {} because in flight at last seen block {}",
                 before_count,
                 auction.orders.len(),
-                auction.latest_settlement_block,
+                auction.block
             );
         }
 
