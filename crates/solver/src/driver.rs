@@ -54,13 +54,11 @@ pub struct Driver {
     metrics: Arc<dyn SolverMetrics>,
     web3: Web3,
     network_id: String,
-    max_merged_settlements: usize,
     solver_time_limit: Duration,
     market_makable_token_list: Option<TokenList>,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
-    max_settlements_per_solver: usize,
     api: OrderBookApi,
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
@@ -85,12 +83,10 @@ impl Driver {
         metrics: Arc<dyn SolverMetrics>,
         web3: Web3,
         network_id: String,
-        max_merged_settlements: usize,
         solver_time_limit: Duration,
         market_makable_token_list: Option<TokenList>,
         block_stream: CurrentBlockStream,
         solution_submitter: SolutionSubmitter,
-        max_settlements_per_solver: usize,
         api: OrderBookApi,
         order_converter: Arc<OrderConverter>,
         weth_unwrap_factor: f64,
@@ -124,13 +120,11 @@ impl Driver {
             metrics,
             web3,
             network_id,
-            max_merged_settlements,
             solver_time_limit,
             market_makable_token_list,
             block_stream,
             solution_submitter,
             run_id: 0,
-            max_settlements_per_solver,
             api,
             order_converter,
             in_flight_orders: InFlightOrders::default(),
@@ -501,7 +495,7 @@ impl Driver {
         for (solver, settlements) in run_solver_results {
             let name = solver.name();
 
-            let mut settlements = match settlements {
+            let settlements = match settlements {
                 Ok(mut settlement) => {
                     for settlement in &settlement {
                         tracing::debug!(solver_name = %name, ?settlement, "found solution");
@@ -558,20 +552,6 @@ impl Driver {
                     continue;
                 }
             };
-
-            // Keep at most this many settlements. This is important in case where a solver produces
-            // a large number of settlements which would hold up the driver logic when simulating
-            // them.
-            // Shuffle first so that in the case a buggy solver keeps returning some amount of
-            // invalid settlements first we have a chance to make progress.
-            settlements.shuffle(&mut rand::thread_rng());
-            settlements.truncate(self.max_settlements_per_solver);
-
-            solver_settlements::merge_settlements(
-                self.max_merged_settlements,
-                &external_prices,
-                &mut settlements,
-            );
 
             solver_settlements.reserve(settlements.len());
 

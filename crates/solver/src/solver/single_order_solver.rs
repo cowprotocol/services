@@ -1,4 +1,5 @@
 use crate::{
+    driver::solver_settlements::merge_settlements,
     liquidity::LimitOrder,
     metrics::SolverMetrics,
     settlement::Settlement,
@@ -29,19 +30,31 @@ pub trait SingleOrderSolving: Send + Sync + 'static {
     }
 }
 
-pub struct SingleOrderSolver<I> {
-    inner: I,
+pub struct SingleOrderSolver {
+    inner: Box<dyn SingleOrderSolving>,
     metrics: Arc<dyn SolverMetrics>,
+    max_merged_settlements: usize,
+    max_settlements_per_solver: usize,
 }
 
-impl<I: SingleOrderSolving> SingleOrderSolver<I> {
-    pub fn new(inner: I, metrics: Arc<dyn SolverMetrics>) -> Self {
-        Self { inner, metrics }
+impl SingleOrderSolver {
+    pub fn new(
+        inner: Box<dyn SingleOrderSolving>,
+        metrics: Arc<dyn SolverMetrics>,
+        max_settlements_per_solver: usize,
+        max_merged_settlements: usize,
+    ) -> Self {
+        Self {
+            inner,
+            metrics,
+            max_merged_settlements,
+            max_settlements_per_solver,
+        }
     }
 }
 
 #[async_trait::async_trait]
-impl<I: SingleOrderSolving> Solver for SingleOrderSolver<I> {
+impl Solver for SingleOrderSolver {
     async fn solve(&self, auction: Auction) -> Result<Vec<Settlement>> {
         let mut orders = auction.orders.clone();
 
@@ -78,6 +91,21 @@ impl<I: SingleOrderSolving> Solver for SingleOrderSolver<I> {
         // Subtract a small amount of time to ensure that the driver doesn't reach the deadline first.
         let _ = tokio::time::timeout_at((auction.deadline - Duration::from_secs(1)).into(), settle)
             .await;
+
+        // Keep at most this many settlements. This is important in case where a solver produces
+        // a large number of settlements which would hold up the driver logic when simulating
+        // them.
+        // Shuffle first so that in the case a buggy solver keeps returning some amount of
+        // invalid settlements first we have a chance to make progress.
+        settlements.shuffle(&mut rand::thread_rng());
+        settlements.truncate(self.max_settlements_per_solver);
+
+        merge_settlements(
+            self.max_merged_settlements,
+            &auction.external_prices,
+            &mut settlements,
+        );
+
         Ok(settlements)
     }
 
@@ -128,6 +156,15 @@ mod tests {
     use model::order::OrderKind;
     use std::sync::Arc;
 
+    fn test_solver(inner: MockSingleOrderSolving) -> SingleOrderSolver {
+        SingleOrderSolver {
+            inner: Box::new(inner),
+            metrics: Arc::new(NoopMetrics::default()),
+            max_merged_settlements: 5,
+            max_settlements_per_solver: 5,
+        }
+    }
+
     #[tokio::test]
     async fn uses_inner_solver() {
         let mut inner = MockSingleOrderSolving::new();
@@ -137,8 +174,7 @@ mod tests {
             .returning(|_, _| Ok(Some(Settlement::new(Default::default()))));
         inner.expect_name().returning(|| "Mock Solver");
 
-        let solver: SingleOrderSolver<_> =
-            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
+        let solver = test_solver(inner);
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             settlement_handling: handler.clone(),
@@ -162,7 +198,7 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(settlements.len(), 2);
+        assert_eq!(settlements.len(), 3);
     }
 
     #[tokio::test]
@@ -187,8 +223,7 @@ mod tests {
                 result
             });
 
-        let solver: SingleOrderSolver<_> =
-            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
+        let solver = test_solver(inner);
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             settlement_handling: handler.clone(),
@@ -214,8 +249,7 @@ mod tests {
             })
         });
 
-        let solver: SingleOrderSolver<_> =
-            SingleOrderSolver::new(inner, Arc::new(NoopMetrics::default()));
+        let solver = test_solver(inner);
         let handler = Arc::new(CapturingSettlementHandler::default());
         let order = LimitOrder {
             settlement_handling: handler.clone(),

@@ -246,6 +246,8 @@ async fn main() {
         args.oneinch_max_slippage_in_eth
             .map(|float| U256::from_f64_lossy(float * 1e18)),
         order_converter.clone(),
+        args.max_settlements_per_solver,
+        args.max_merged_settlements,
     )
     .expect("failure creating solvers");
 
@@ -430,12 +432,10 @@ async fn main() {
         metrics.clone(),
         web3,
         network_id,
-        args.max_merged_settlements,
         args.solver_time_limit,
         market_makable_token_list,
         current_block_stream.clone(),
         solution_submitter,
-        args.max_settlements_per_solver,
         api,
         order_converter,
         args.weth_unwrap_factor,

@@ -25,7 +25,7 @@ use shared::zeroex_api::ZeroExApi;
 use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
 };
-use single_order_solver::SingleOrderSolver;
+use single_order_solver::{SingleOrderSolver, SingleOrderSolving};
 use std::str::FromStr;
 use std::{
     sync::Arc,
@@ -245,6 +245,8 @@ pub fn create(
     external_solvers: Vec<ExternalSolverArg>,
     oneinch_max_slippage_in_wei: Option<U256>,
     order_converter: Arc<OrderConverter>,
+    max_settlements_per_solver: usize,
+    max_merged_settlements: usize,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -286,6 +288,14 @@ pub fn create(
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
         .map(|(account, solver_type)| {
+            let single_order = |inner: Box<dyn SingleOrderSolving>| {
+                SingleOrderSolver::new(
+                    inner,
+                    solver_metrics.clone(),
+                    max_merged_settlements,
+                    max_settlements_per_solver,
+                )
+            };
             let solver = match solver_type {
                 SolverType::Naive => Ok(shared(NaiveSolver::new(account))),
                 SolverType::Baseline => {
@@ -315,7 +325,7 @@ pub fn create(
                         ..Default::default()
                     },
                 ))),
-                SolverType::OneInch => Ok(shared(SingleOrderSolver::new(
+                SolverType::OneInch => Ok(shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
                         account,
                         web3.clone(),
@@ -327,8 +337,7 @@ pub fn create(
                         oneinch_slippage_bps,
                         oneinch_max_slippage_in_wei,
                     )?,
-                    solver_metrics.clone(),
-                ))),
+                )))),
                 SolverType::ZeroEx => {
                     let zeroex_solver = ZeroExSolver::new(
                         account,
@@ -340,27 +349,21 @@ pub fn create(
                         disabled_zeroex_sources.clone(),
                     )
                     .unwrap();
-                    Ok(shared(SingleOrderSolver::new(
-                        zeroex_solver,
-                        solver_metrics.clone(),
-                    )))
+                    Ok(shared(single_order(Box::new(zeroex_solver))))
                 }
-                SolverType::Paraswap => Ok(shared(SingleOrderSolver::new(
-                    ParaswapSolver::new(
-                        account,
-                        web3.clone(),
-                        settlement_contract.clone(),
-                        token_info_fetcher.clone(),
-                        paraswap_slippage_bps,
-                        disabled_paraswap_dexs.clone(),
-                        client.clone(),
-                        paraswap_partner.clone(),
-                        None,
-                    ),
-                    solver_metrics.clone(),
-                ))),
-                SolverType::BalancerSor => Ok(shared(SingleOrderSolver::new(
-                    BalancerSorSolver::new(
+                SolverType::Paraswap => Ok(shared(single_order(Box::new(ParaswapSolver::new(
+                    account,
+                    web3.clone(),
+                    settlement_contract.clone(),
+                    token_info_fetcher.clone(),
+                    paraswap_slippage_bps,
+                    disabled_paraswap_dexs.clone(),
+                    client.clone(),
+                    paraswap_partner.clone(),
+                    None,
+                ))))),
+                SolverType::BalancerSor => {
+                    Ok(shared(single_order(Box::new(BalancerSorSolver::new(
                         account,
                         vault_contract
                             .ok_or_else(|| {
@@ -374,9 +377,8 @@ pub fn create(
                             chain_id,
                         )?),
                         allowance_mananger.clone(),
-                    ),
-                    solver_metrics.clone(),
-                ))),
+                    )))))
+                }
             };
 
             if let Ok(solver) = &solver {
