@@ -253,7 +253,7 @@ impl OrderBuilder {
 ///
 /// These are the exact fields that get signed and verified by the settlement
 /// contract.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize, Hash)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderData {
     pub sell_token: H160,
