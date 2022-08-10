@@ -532,13 +532,6 @@ impl Driver {
 
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {
-            tracing::info!(
-                "winning settlement id {} by solver {}: {:?}",
-                winning_settlement.id,
-                winning_solver.name(),
-                winning_settlement
-            );
-
             winning_settlement.settlement = self
                 .post_processing_pipeline
                 .optimize_settlement(
@@ -548,6 +541,13 @@ impl Driver {
                     gas_price,
                 )
                 .await;
+
+            tracing::info!(
+                "winning settlement id {} by solver {}: {:?}",
+                winning_settlement.id,
+                winning_solver.name(),
+                winning_settlement
+            );
 
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
