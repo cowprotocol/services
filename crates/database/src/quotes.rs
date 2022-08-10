@@ -7,6 +7,16 @@ use sqlx::{
 
 pub type QuoteId = i64;
 
+#[derive(Clone, Debug, Default, PartialEq, sqlx::Type)]
+#[sqlx(type_name = "QuoteKind")]
+#[sqlx(rename_all = "lowercase")]
+pub enum QuoteKind {
+    #[default]
+    Standard,
+    Eip1271OnchainOrder,
+    PreSignOnchainOrder,
+}
+
 /// One row in the `quotes` table.
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
 pub struct Quote {
@@ -20,6 +30,7 @@ pub struct Quote {
     pub sell_token_price: f64,
     pub order_kind: OrderKind,
     pub expiration_timestamp: DateTime<Utc>,
+    pub quote_kind: QuoteKind,
 }
 
 /// Stores the quote and returns the id. The id of the quote parameter is not used.
@@ -34,9 +45,10 @@ INSERT INTO quotes (
     gas_price,
     sell_token_price,
     order_kind,
-    expiration_timestamp
+    expiration_timestamp,
+    quote_kind
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 RETURNING id
     "#;
     let (id,) = sqlx::query_as(QUERY)
@@ -49,6 +61,7 @@ RETURNING id
         .bind(quote.sell_token_price)
         .bind(quote.order_kind)
         .bind(quote.expiration_timestamp)
+        .bind(&quote.quote_kind)
         .fetch_one(ex)
         .await?;
     Ok(id)
@@ -73,6 +86,7 @@ pub struct QuoteSearchParameters {
     pub buy_amount: BigDecimal,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
+    pub quote_kind: QuoteKind,
 }
 
 pub async fn find(
@@ -91,7 +105,8 @@ WHERE
         (order_kind = 'buy' AND buy_amount = $5)
     ) AND
     order_kind = $6 AND
-    expiration_timestamp >= $7
+    expiration_timestamp >= $7 AND
+    quote_kind = $8
 ORDER BY gas_amount * gas_price * sell_token_price ASC
 LIMIT 1
     "#;
@@ -103,6 +118,7 @@ LIMIT 1
         .bind(&params.buy_amount)
         .bind(params.kind)
         .bind(params.expiration)
+        .bind(&params.quote_kind)
         .fetch_optional(ex)
         .await
 }
@@ -155,6 +171,7 @@ mod tests {
             sell_token_price: 7.,
             order_kind: OrderKind::Sell,
             expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
         };
         let id = save(&mut db, &quote).await.unwrap();
         quote.id = id;
@@ -186,6 +203,7 @@ mod tests {
             gas_price: 1.,
             sell_token_price: 1.,
             expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
         };
 
         let token_b = ByteArray([2; 20]);
@@ -200,6 +218,7 @@ mod tests {
             gas_price: 1.,
             sell_token_price: 1.,
             expiration_timestamp: now,
+            quote_kind: QuoteKind::Standard,
         };
 
         // Save two measurements for token_a
@@ -247,6 +266,7 @@ mod tests {
             buy_amount: 1.into(),
             kind: quote_a.order_kind,
             expiration: now,
+            quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
             find(&mut db, &search_a).await.unwrap().unwrap(),
@@ -306,6 +326,7 @@ mod tests {
             buy_amount: quote_b.buy_amount,
             kind: quote_b.order_kind,
             expiration: now,
+            quote_kind: QuoteKind::Standard,
         };
         assert_eq!(
             find(&mut db, &search_b).await.unwrap().unwrap(),
@@ -344,5 +365,49 @@ mod tests {
             .unwrap();
         assert_eq!(find(&mut db, &search_a).await.unwrap(), None);
         assert_eq!(find(&mut db, &search_b).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_save_and_find_quote_and_differentiates_by_signing_scheme() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let now = low_precision_now();
+        let token_a = ByteArray([1; 20]);
+        let quote = {
+            let mut quote = Quote {
+                id: Default::default(),
+                sell_token: token_a,
+                buy_token: ByteArray([3; 20]),
+                sell_amount: 4.into(),
+                buy_amount: 5.into(),
+                gas_amount: 1.,
+                gas_price: 1.,
+                sell_token_price: 1.,
+                order_kind: OrderKind::Sell,
+                expiration_timestamp: now,
+                quote_kind: QuoteKind::Eip1271OnchainOrder,
+            };
+            let id = save(&mut db, &quote).await.unwrap();
+            quote.id = id;
+            quote
+        };
+        // Token A has readings valid until now and in 30s
+        let mut search_a = QuoteSearchParameters {
+            sell_token: quote.sell_token,
+            buy_token: quote.buy_token,
+            sell_amount_0: quote.sell_amount.clone(),
+            sell_amount_1: quote.sell_amount.clone(),
+            buy_amount: quote.buy_amount.clone(),
+            kind: quote.order_kind,
+            expiration: quote.expiration_timestamp,
+            quote_kind: quote.quote_kind.clone(),
+        };
+
+        assert_eq!(find(&mut db, &search_a).await.unwrap().unwrap(), quote,);
+        search_a.quote_kind = QuoteKind::Standard;
+        assert_eq!(find(&mut db, &search_a).await.unwrap(), None,);
     }
 }
