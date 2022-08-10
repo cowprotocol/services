@@ -70,11 +70,12 @@ impl InFlightOrders {
                 // fill-or-kill orders can only be used once and there is already a trade in flight
                 // for this one => Modify it such that it gets filtered out in the next step.
                 order.metadata.executed_buy_amount = u256_to_big_uint(&order.data.buy_amount);
+                order.metadata.executed_sell_amount = u256_to_big_uint(&order.data.sell_amount);
             }
         });
         auction.orders.retain(|order| {
             u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
-                && u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount
+                || u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount
         });
         in_flight
     }
@@ -233,5 +234,36 @@ mod tests {
         // Because we drop all in-flight trades from blocks older than the settlement block there
         // is nothing left to filter solvable orders by => keep all orders unaltered
         assert_eq!(filtered.len(), 4);
+    }
+
+    #[test]
+    fn test_order_is_not_excluded_when_min_buy_amount_is_reached() {
+        let order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                sell_amount: 100u8.into(),
+                buy_amount: 100u8.into(),
+                kind: OrderKind::Sell,
+                partially_fillable: true,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid::from_integer(1),
+                // Only half filled but min buy amount already reached
+                executed_sell_amount: 50u8.into(),
+                executed_buy_amount: 100u8.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut auction = Auction {
+            block: 0,
+            orders: vec![order],
+            ..Default::default()
+        };
+        let mut inflight = InFlightOrders::default();
+        inflight.update_and_filter(&mut auction);
+        assert_eq!(auction.orders.len(), 1);
     }
 }
