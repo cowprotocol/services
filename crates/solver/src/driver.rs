@@ -388,7 +388,7 @@ impl Driver {
         let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
         if before_count != auction.orders.len() {
             tracing::debug!(
-                "reduced {} orders to {} because in flight at last seen block {}, order in flight: {:?}",
+                "reduced {} orders to {} because in flight at last seen block {}, orders in flight: {:?}",
                 before_count,
                 auction.orders.len(),
                 auction.block,
