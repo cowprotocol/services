@@ -54,7 +54,6 @@ pub struct Driver {
     web3: Web3,
     network_id: String,
     solver_time_limit: Duration,
-    market_makable_token_list: Option<TokenList>,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
     run_id: u64,
@@ -98,6 +97,7 @@ impl Driver {
             web3.clone(),
             weth_unwrap_factor,
             settlement_contract.clone(),
+            market_makable_token_list,
         );
 
         let settlement_rater = Box::new(SettlementRater {
@@ -125,7 +125,6 @@ impl Driver {
             web3,
             network_id,
             solver_time_limit,
-            market_makable_token_list,
             block_stream,
             solution_submitter,
             run_id: 0,
@@ -279,38 +278,6 @@ impl Driver {
         }
 
         Ok(())
-    }
-
-    async fn can_settle_without_liquidity(
-        &self,
-        solver: Arc<dyn Solver>,
-        settlement: &RatedSettlement,
-        gas_price: GasPrice1559,
-        access_list: Option<AccessList>,
-    ) -> Result<bool> {
-        // We don't want to buy tokens that we don't trust. If no list is set, we settle with external liquidity.
-        if !self
-            .market_makable_token_list
-            .as_ref()
-            .map(|list| is_only_selling_trusted_tokens(&settlement.settlement, list))
-            .unwrap_or(false)
-        {
-            return Ok(false);
-        }
-
-        let simulations = settlement_simulation::simulate_and_estimate_gas_at_current_block(
-            std::iter::once((
-                solver.account().clone(),
-                settlement.settlement.without_onchain_liquidity(),
-                access_list,
-            )),
-            &self.settlement_contract,
-            &self.web3,
-            gas_price,
-        )
-        .await
-        .context("failed to simulate settlement")?;
-        Ok(simulations[0].is_ok())
     }
 
     // Log simulation errors only if the simulation also fails in the block at which on chain
@@ -565,22 +532,6 @@ impl Driver {
 
         if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
         {
-            // If we have enough buffer in the settlement contract to not use on-chain interactions, remove those
-            if self
-                .can_settle_without_liquidity(
-                    winning_solver.clone(),
-                    &winning_settlement,
-                    gas_price,
-                    access_list.clone(),
-                )
-                .await
-                .unwrap_or(false)
-            {
-                winning_settlement.settlement =
-                    winning_settlement.settlement.without_onchain_liquidity();
-                tracing::debug!("settlement without onchain liquidity");
-            }
-
             tracing::info!(
                 "winning settlement id {} by solver {}: {:?}",
                 winning_settlement.id,
@@ -676,12 +627,6 @@ impl Driver {
     }
 }
 
-fn is_only_selling_trusted_tokens(settlement: &Settlement, token_list: &TokenList) -> bool {
-    !settlement
-        .traded_orders()
-        .any(|order| token_list.get(&order.data.sell_token).is_none())
-}
-
 fn print_settlements(
     rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
     fee_objective_scaling_factor: &BigRational,
@@ -719,68 +664,7 @@ fn print_settlements(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        settlement::{OrderTrade, Trade},
-        solver::dummy_arc_solver,
-    };
-    use maplit::hashmap;
-    use model::order::{Order, OrderData};
-    use shared::token_list::Token;
-    use std::collections::HashMap;
-
-    #[test]
-    fn test_is_only_selling_trusted_tokens() {
-        let good_token = H160::from_low_u64_be(1);
-        let another_good_token = H160::from_low_u64_be(2);
-        let bad_token = H160::from_low_u64_be(3);
-
-        let token_list = TokenList::new(hashmap! {
-            good_token => Token {
-                address: good_token,
-                symbol: "Foo".into(),
-                name: "FooCoin".into(),
-                decimals: 18,
-            },
-            another_good_token => Token {
-                address: another_good_token,
-                symbol: "Bar".into(),
-                name: "BarCoin".into(),
-                decimals: 18,
-            }
-        });
-
-        let trade = |token| OrderTrade {
-            trade: Trade {
-                order: Order {
-                    data: OrderData {
-                        sell_token: token,
-                        ..Default::default()
-                    },
-                    ..Default::default()
-                },
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        let settlement = Settlement::with_trades(
-            HashMap::new(),
-            vec![trade(good_token), trade(another_good_token)],
-            vec![],
-        );
-        assert!(is_only_selling_trusted_tokens(&settlement, &token_list));
-
-        let settlement = Settlement::with_trades(
-            HashMap::new(),
-            vec![
-                trade(good_token),
-                trade(another_good_token),
-                trade(bad_token),
-            ],
-            vec![],
-        );
-        assert!(!is_only_selling_trusted_tokens(&settlement, &token_list));
-    }
+    use crate::solver::dummy_arc_solver;
 
     #[test]
     #[ignore]

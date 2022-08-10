@@ -1,14 +1,17 @@
+pub mod optimize_buffer_usage;
 pub mod optimize_unwrapping;
 
-use crate::settlement::Settlement;
-use crate::settlement_simulation::simulate_and_estimate_gas_at_current_block;
-use crate::solver::http_solver::buffers::BufferRetriever;
+use crate::{
+    settlement::Settlement, settlement_simulation::simulate_and_estimate_gas_at_current_block,
+    solver::http_solver::buffers::BufferRetriever,
+};
 use contracts::{GPv2Settlement, WETH9};
 use ethcontract::Account;
 use gas_estimation::GasPrice1559;
+use optimize_buffer_usage::optimize_buffer_usage;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
-use shared::Web3;
+use shared::{token_list::TokenList, Web3};
 use web3::types::AccessList;
 
 /// Determines whether a settlement would be executed successfully.
@@ -53,6 +56,7 @@ pub struct PostProcessingPipeline {
     unwrap_factor: f64,
     weth: WETH9,
     buffer_retriever: BufferRetriever,
+    market_makable_token_list: Option<TokenList>,
 }
 
 impl PostProcessingPipeline {
@@ -61,6 +65,7 @@ impl PostProcessingPipeline {
         web3: Web3,
         unwrap_factor: f64,
         settlement_contract: GPv2Settlement,
+        market_makable_token_list: Option<TokenList>,
     ) -> Self {
         let weth = WETH9::at(&web3, native_token);
         let buffer_retriever = BufferRetriever::new(web3.clone(), settlement_contract.address());
@@ -71,6 +76,7 @@ impl PostProcessingPipeline {
             unwrap_factor,
             weth,
             buffer_retriever,
+            market_makable_token_list,
         }
     }
 
@@ -88,9 +94,17 @@ impl PostProcessingPipeline {
             solver_account,
         };
 
+        let optimized_solution = optimize_buffer_usage(
+            settlement,
+            access_list.clone(),
+            &self.market_makable_token_list,
+            &simulator,
+        )
+        .await;
+
         // an error will leave the settlement unmodified
         optimize_unwrapping(
-            settlement,
+            optimized_solution,
             access_list,
             &simulator,
             &self.buffer_retriever,
