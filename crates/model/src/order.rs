@@ -30,7 +30,7 @@ pub const BUY_ETH_ADDRESS: H160 = H160([0xee; 20]);
 /// An order that is returned when querying the orderbook.
 ///
 /// Contains extra fields that are populated by the orderbook.
-#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
     #[serde(flatten)]
@@ -253,7 +253,7 @@ impl OrderBuilder {
 ///
 /// These are the exact fields that get signed and verified by the settlement
 /// contract.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderData {
     pub sell_token: H160,
@@ -397,7 +397,7 @@ impl From<Order> for OrderCreation {
 
 /// An order cancellation as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Copy, Debug, Hash)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub struct OrderCancellation {
     pub order_uid: OrderUid,
     pub signature: EcdsaSignature,
@@ -442,7 +442,7 @@ impl OrderCancellation {
 
 /// An order as provided to the orderbook by the frontend.
 #[serde_as]
-#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize, Hash)]
+#[derive(Eq, PartialEq, Clone, Derivative, Deserialize, Serialize)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
