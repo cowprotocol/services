@@ -37,8 +37,6 @@ use shared::{
     Web3,
 };
 use std::{
-    collections::HashSet,
-    iter::FromIterator,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -386,19 +384,16 @@ impl Driver {
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
 
-        let before = auction.orders.clone();
-        self.in_flight_orders.update_and_filter(&mut auction);
-        if before.len() != auction.orders.len() {
+        let before_count = auction.orders.len();
+        let inflight_order_uids = self.in_flight_orders.update_and_filter(&mut auction);
+        if before_count != auction.orders.len() {
             tracing::debug!(
-                "reduced {} orders to {} because in flight at last seen block {}, difference: {:?}",
-                before.len(),
+                "reduced {} orders to {} because in flight at last seen block {}, order in flight: {:?}",
+                before_count,
                 auction.orders.len(),
                 auction.block,
-                HashSet::<Order>::from_iter(before)
-                    .difference(&HashSet::from_iter(auction.orders.iter().cloned()))
-                    .into_iter()
-                    .map(|o| o.metadata.uid)
-                    .collect::<Vec<_>>()
+                inflight_order_uids.len()
+
             );
         }
 
