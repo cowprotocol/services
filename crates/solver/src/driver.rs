@@ -6,14 +6,15 @@ use crate::{
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
     liquidity_collector::{LiquidityCollecting, LiquidityCollector},
-    metrics::{SolverMetrics, SolverRunOutcome},
+    metrics::SolverMetrics,
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
-    settlement_rater::{SettlementRater, SettlementRating},
+    settlement_ranker::SettlementRanker,
+    settlement_rater::SettlementRater,
     settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
     settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, SettlementWithError, Solver, Solvers},
+    solver::{Auction, SettlementWithError, Solver, SolverRunError, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
@@ -29,7 +30,6 @@ use model::{
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, H256};
-use rand::prelude::SliceRandom;
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -50,7 +50,6 @@ pub struct Driver {
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     settle_interval: Duration,
     native_token: H160,
-    min_order_age: Duration,
     metrics: Arc<dyn SolverMetrics>,
     web3: Web3,
     network_id: String,
@@ -65,10 +64,8 @@ pub struct Driver {
     post_processing_pipeline: PostProcessingPipeline,
     simulation_gas_limit: u128,
     fee_objective_scaling_factor: BigRational,
-    max_settlement_price_deviation: Option<Ratio<BigInt>>,
-    token_list_restriction_for_price_checks: PriceCheckTokens,
     tenderly: Option<TenderlyApi>,
-    settlement_rater: Box<dyn SettlementRating>,
+    settlement_ranker: SettlementRanker,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -109,6 +106,14 @@ impl Driver {
             web3: web3.clone(),
         });
 
+        let settlement_ranker = SettlementRanker {
+            max_settlement_price_deviation,
+            token_list_restriction_for_price_checks,
+            metrics: metrics.clone(),
+            min_order_age,
+            settlement_rater,
+        };
+
         Self {
             settlement_contract,
             liquidity_collector,
@@ -116,7 +121,6 @@ impl Driver {
             gas_price_estimator,
             settle_interval,
             native_token,
-            min_order_age,
             metrics,
             web3,
             network_id,
@@ -132,10 +136,8 @@ impl Driver {
             simulation_gas_limit,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
-            max_settlement_price_deviation,
-            token_list_restriction_for_price_checks,
             tenderly,
-            settlement_rater,
+            settlement_ranker,
         }
     }
 
@@ -477,8 +479,6 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
-        let mut solver_settlements = Vec::new();
-
         let next_solver_competition = auction.next_solver_competition;
         let auction = Auction {
             id: auction.next_solver_competition,
@@ -492,91 +492,9 @@ impl Driver {
 
         tracing::debug!(deadline =? auction.deadline, "solving auction");
         let run_solver_results = self.run_solvers(auction).await;
-        for (solver, settlements) in run_solver_results {
-            let name = solver.name();
-
-            let settlements = match settlements {
-                Ok(mut settlement) => {
-                    for settlement in &settlement {
-                        tracing::debug!(solver_name = %name, ?settlement, "found solution");
-                    }
-
-                    // Do not continue with settlements that are empty or only liquidity orders.
-                    let settlement_count = settlement.len();
-                    settlement.retain(solver_settlements::has_user_order);
-                    if settlement_count != settlement.len() {
-                        tracing::debug!(
-                            solver_name = %name,
-                            "settlement(s) filtered containing only liquidity orders",
-                        );
-                    }
-
-                    if let Some(max_settlement_price_deviation) =
-                        &self.max_settlement_price_deviation
-                    {
-                        let settlement_count = settlement.len();
-                        settlement.retain(|settlement| {
-                            settlement.satisfies_price_checks(
-                                solver.name(),
-                                &external_prices,
-                                max_settlement_price_deviation,
-                                &self.token_list_restriction_for_price_checks,
-                            )
-                        });
-                        if settlement_count != settlement.len() {
-                            tracing::debug!(
-                                solver_name = %name,
-                                "settlement(s) filtered for violating maximum external price deviation",
-                            );
-                        }
-                    }
-
-                    if settlement.is_empty() {
-                        self.metrics.solver_run(SolverRunOutcome::Empty, name);
-                        continue;
-                    }
-
-                    self.metrics.solver_run(SolverRunOutcome::Success, name);
-                    settlement
-                }
-                Err(err) => {
-                    match err {
-                        SolverRunError::Timeout => {
-                            self.metrics.solver_run(SolverRunOutcome::Timeout, name)
-                        }
-                        SolverRunError::Solving(_) => {
-                            self.metrics.solver_run(SolverRunOutcome::Failure, name)
-                        }
-                    }
-                    tracing::warn!(solver_name = %name, ?err, "solver error");
-                    continue;
-                }
-            };
-
-            solver_settlements.reserve(settlements.len());
-
-            for settlement in settlements {
-                solver_settlements.push((solver.clone(), settlement))
-            }
-        }
-
-        // filters out all non-mature settlements
-        let solver_settlements =
-            solver_settlements::retain_mature_settlements(self.min_order_age, solver_settlements);
-
-        // log considered settlements. While we already log all found settlements, this additonal
-        // statement allows us to figure out which settlements were filtered out and which ones are
-        // going to be simulated and considered for competition.
-        for (solver, settlement) in &solver_settlements {
-            tracing::debug!(
-                solver_name = %solver.name(), ?settlement,
-                "considering solution for solver competition",
-            );
-        }
-
         let (mut rated_settlements, errors) = self
-            .settlement_rater
-            .rate_settlements(solver_settlements, &external_prices, gas_price)
+            .settlement_ranker
+            .rank_legal_settlements(run_solver_results, &external_prices, gas_price)
             .await?;
 
         // We don't know the exact block because simulation can happen over multiple blocks but
@@ -596,11 +514,6 @@ impl Driver {
             self.metrics.settlement_simulation_succeeded(solver.name());
         }
 
-        // Before sorting, make sure to shuffle the settlements. This is to make sure we don't give
-        // preference to any specific solver when there is an objective value tie.
-        rated_settlements.shuffle(&mut rand::thread_rng());
-
-        rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
@@ -801,12 +714,6 @@ fn print_settlements(
         .unwrap();
     }
     tracing::info!("Rated Settlements: {}", text);
-}
-
-#[derive(Debug)]
-enum SolverRunError {
-    Timeout,
-    Solving(anyhow::Error),
 }
 
 #[cfg(test)]

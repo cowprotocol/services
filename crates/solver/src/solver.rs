@@ -44,6 +44,12 @@ mod single_order_solver;
 pub mod uni_v3_router_solver;
 mod zeroex_solver;
 
+#[derive(Debug)]
+pub enum SolverRunError {
+    Timeout,
+    Solving(anyhow::Error),
+}
+
 /// Interface that all solvers must implement.
 ///
 /// A `solve` method transforming a collection of `Liquidity` (sources) into a list of

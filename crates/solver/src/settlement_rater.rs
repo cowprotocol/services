@@ -15,7 +15,7 @@ use std::sync::Arc;
 use web3::types::AccessList;
 
 type SolverSettlement = (Arc<dyn Solver>, Settlement);
-type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
+pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<AccessList>);
 
 #[mockall::automock]
 #[async_trait::async_trait]
