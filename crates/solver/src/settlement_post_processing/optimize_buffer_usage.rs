@@ -1,12 +1,10 @@
 use super::SettlementSimulating;
 use crate::settlement::Settlement;
 use shared::token_list::TokenList;
-use web3::types::AccessList;
 
 /// If a settlement only trades trusted tokens try to optimize it by trading with internal buffers.
 pub async fn optimize_buffer_usage(
     settlement: Settlement,
-    access_list: Option<AccessList>,
     market_makable_token_list: &Option<TokenList>,
     settlement_simulator: &impl SettlementSimulating,
 ) -> Settlement {
@@ -22,7 +20,7 @@ pub async fn optimize_buffer_usage(
     let optimized_settlement = settlement.clone().without_onchain_liquidity();
 
     if settlement_simulator
-        .settlement_would_succeed(optimized_settlement.clone(), access_list)
+        .settlement_would_succeed(optimized_settlement.clone())
         .await
     {
         tracing::debug!("settlement without onchain liquidity");

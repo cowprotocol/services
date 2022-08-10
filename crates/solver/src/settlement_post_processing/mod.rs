@@ -12,17 +12,12 @@ use optimize_buffer_usage::optimize_buffer_usage;
 use optimize_unwrapping::optimize_unwrapping;
 use primitive_types::H160;
 use shared::{token_list::TokenList, Web3};
-use web3::types::AccessList;
 
 /// Determines whether a settlement would be executed successfully.
 #[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
 pub trait SettlementSimulating: Send + Sync {
-    async fn settlement_would_succeed(
-        &self,
-        settlement: Settlement,
-        access_list: Option<AccessList>,
-    ) -> bool;
+    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool;
 }
 
 pub struct SettlementSimulator {
@@ -34,13 +29,9 @@ pub struct SettlementSimulator {
 
 #[async_trait::async_trait]
 impl SettlementSimulating for SettlementSimulator {
-    async fn settlement_would_succeed(
-        &self,
-        settlement: Settlement,
-        access_list: Option<AccessList>,
-    ) -> bool {
+    async fn settlement_would_succeed(&self, settlement: Settlement) -> bool {
         let result = simulate_and_estimate_gas_at_current_block(
-            std::iter::once((self.solver_account.clone(), settlement, access_list)),
+            std::iter::once((self.solver_account.clone(), settlement, None)),
             &self.settlement_contract,
             &self.web3,
             self.gas_price,
@@ -83,7 +74,6 @@ impl PostProcessingPipeline {
     pub async fn optimize_settlement(
         &self,
         settlement: Settlement,
-        access_list: Option<AccessList>,
         solver_account: Account,
         gas_price: GasPrice1559,
     ) -> Settlement {
@@ -94,18 +84,12 @@ impl PostProcessingPipeline {
             solver_account,
         };
 
-        let optimized_solution = optimize_buffer_usage(
-            settlement,
-            access_list.clone(),
-            &self.market_makable_token_list,
-            &simulator,
-        )
-        .await;
+        let optimized_solution =
+            optimize_buffer_usage(settlement, &self.market_makable_token_list, &simulator).await;
 
         // an error will leave the settlement unmodified
         optimize_unwrapping(
             optimized_solution,
-            access_list,
             &simulator,
             &self.buffer_retriever,
             &self.weth,

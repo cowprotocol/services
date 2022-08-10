@@ -530,13 +530,11 @@ impl Driver {
                 .collect(),
         };
 
-        if let Some((winning_solver, mut winning_settlement, access_list)) = rated_settlements.pop()
-        {
+        if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
             winning_settlement.settlement = self
                 .post_processing_pipeline
                 .optimize_settlement(
                     winning_settlement.settlement,
-                    access_list,
                     winning_solver.account().clone(),
                     gas_price,
                 )
