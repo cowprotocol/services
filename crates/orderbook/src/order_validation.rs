@@ -4,13 +4,14 @@ use crate::order_quoting::{
 };
 use anyhow::anyhow;
 use contracts::WETH9;
+use database::quotes::QuoteKind;
 use ethcontract::{H160, U256};
 use model::{
     order::{
         BuyTokenDestination, Order, OrderCreation, OrderData, OrderKind, SellTokenSource,
         BUY_ETH_ADDRESS,
     },
-    quote::{OrderQuoteSide, SellAmount},
+    quote::{OrderQuoteSide, QuoteSigningScheme, SellAmount},
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
     DomainSeparator,
 };
@@ -97,6 +98,7 @@ pub enum ValidationError {
     MissingFrom,
     WrongOwner(H160),
     ZeroAmount,
+    IncompatibleSigningScheme,
     Other(anyhow::Error),
 }
 
@@ -358,7 +360,7 @@ impl OrderValidating for OrderValidator {
         .map_err(ValidationError::Partial)?;
 
         let quote = if !liquidity_owner {
-            Some(get_quote_and_check_fee(&*self.quoter, &order, owner).await?)
+            Some(get_quote_and_check_fee(&*self.quoter, &order, true, owner).await?)
         } else {
             // We don't try to get quotes for orders created by liqudity order
             // owners for two reasons:
@@ -511,8 +513,11 @@ fn minimum_balance(order: &OrderData) -> Option<U256> {
 async fn get_quote_and_check_fee(
     quoter: &dyn OrderQuoting,
     order: &OrderCreation,
+    order_placement_via_api: bool,
     owner: H160,
 ) -> Result<Quote, ValidationError> {
+    let quote_kind =
+        convert_signing_scheme_into_quote_kind(order.signature.scheme(), order_placement_via_api)?;
     let parameters = QuoteSearchParameters {
         sell_token: order.data.sell_token,
         buy_token: order.data.buy_token,
@@ -522,6 +527,7 @@ async fn get_quote_and_check_fee(
         kind: order.data.kind,
         from: owner,
         app_data: order.data.app_data,
+        quote_kind,
     };
 
     let quote = match quoter.find_quote(order.quote_id, parameters).await {
@@ -532,6 +538,10 @@ async fn get_quote_and_check_fee(
         // We couldn't find a quote, and no ID was specified. Try computing a
         // fresh quote to use instead.
         Err(FindQuoteError::NotFound(_)) if order.quote_id.is_none() => {
+            let signing_scheme = convert_signing_scheme_into_quote_signing_scheme(
+                order.signature.scheme(),
+                order_placement_via_api,
+            )?;
             let parameters = QuoteParameters {
                 sell_token: order.data.sell_token,
                 buy_token: order.data.buy_token,
@@ -547,6 +557,7 @@ async fn get_quote_and_check_fee(
                 },
                 from: owner,
                 app_data: order.data.app_data,
+                signing_scheme,
             };
             let quote = quoter.calculate_quote(parameters).await?;
 
@@ -572,6 +583,38 @@ fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
     order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
 }
 
+fn convert_signing_scheme_into_quote_signing_scheme(
+    scheme: SigningScheme,
+    order_placement_via_api: bool,
+) -> Result<QuoteSigningScheme, ValidationError> {
+    match (order_placement_via_api, scheme) {
+        (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
+        (true, SigningScheme::EthSign) => Ok(QuoteSigningScheme::EthSign),
+        (false, SigningScheme::Eip712) => Err(ValidationError::IncompatibleSigningScheme),
+        (false, SigningScheme::EthSign) => Err(ValidationError::IncompatibleSigningScheme),
+        (order_placement_via_api, SigningScheme::PreSign) => Ok(QuoteSigningScheme::PreSign {
+            onchain_order: !order_placement_via_api,
+        }),
+        (order_placement_via_api, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271 {
+            onchain_order: !order_placement_via_api,
+        }),
+    }
+}
+
+fn convert_signing_scheme_into_quote_kind(
+    scheme: SigningScheme,
+    order_placement_via_api: bool,
+) -> Result<QuoteKind, ValidationError> {
+    match order_placement_via_api {
+        true => Ok(QuoteKind::Standard),
+        false => match scheme {
+            SigningScheme::Eip1271 => Ok(QuoteKind::Eip1271OnchainOrder),
+            SigningScheme::PreSign => Ok(QuoteKind::PreSignOnchainOrder),
+            _ => Err(ValidationError::IncompatibleSigningScheme),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -581,7 +624,11 @@ mod tests {
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
+    use model::{
+        app_id::AppId,
+        order::OrderBuilder,
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+    };
     use secp256k1::ONE_KEY;
     use shared::{
         account_balances::MockBalanceFetching,
@@ -1381,6 +1428,7 @@ mod tests {
                     kind: OrderKind::Buy,
                     from: H160([0xf0; 20]),
                     app_data: AppId([5; 32]),
+                    quote_kind: QuoteKind::Standard,
                 }),
             )
             .returning(|_, _| {
@@ -1390,7 +1438,7 @@ mod tests {
                 })
             });
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
             .await
             .unwrap();
 
@@ -1436,6 +1484,7 @@ mod tests {
                 },
                 from,
                 app_data: AppId([5; 32]),
+                signing_scheme: QuoteSigningScheme::Eip712,
             }))
             .returning(|_| {
                 Ok(Quote {
@@ -1444,7 +1493,7 @@ mod tests {
                 })
             });
 
-        let quote = get_quote_and_check_fee(&order_quoter, &order, from)
+        let quote = get_quote_and_check_fee(&order_quoter, &order, true, from)
             .await
             .unwrap();
 
@@ -1469,11 +1518,31 @@ mod tests {
             .expect_find_quote()
             .returning(|_, _| Err(FindQuoteError::NotFound(Some(0))));
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
             .await
             .unwrap_err();
 
         assert!(matches!(err, ValidationError::QuoteNotFound));
+    }
+
+    #[tokio::test]
+    async fn get_quote_errors_in_case_of_api_call_and_quote_requested_for_onchain_orders() {
+        let order = OrderCreation {
+            data: OrderData {
+                fee_amount: 1.into(),
+                ..Default::default()
+            },
+            signature: Signature::Eip712(EcdsaSignature::default()),
+            ..Default::default()
+        };
+
+        let order_quoter = MockOrderQuoting::new();
+
+        let err = get_quote_and_check_fee(&order_quoter, &order, false, Default::default())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, ValidationError::IncompatibleSigningScheme));
     }
 
     #[tokio::test]
@@ -1494,7 +1563,7 @@ mod tests {
             })
         });
 
-        let err = get_quote_and_check_fee(&order_quoter, &order, Default::default())
+        let err = get_quote_and_check_fee(&order_quoter, &order, true, Default::default())
             .await
             .unwrap_err();
 
@@ -1510,10 +1579,14 @@ mod tests {
                     .expect_find_quote()
                     .returning(|_, _| Err($find_err));
 
-                let err =
-                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
-                        .await
-                        .unwrap_err();
+                let err = get_quote_and_check_fee(
+                    &order_quoter,
+                    &Default::default(),
+                    true,
+                    Default::default(),
+                )
+                .await
+                .unwrap_err();
 
                 assert!(matches!(err, $validation_err));
             }};
@@ -1538,10 +1611,14 @@ mod tests {
                     .expect_calculate_quote()
                     .returning(|_| Err($calc_err));
 
-                let err =
-                    get_quote_and_check_fee(&order_quoter, &Default::default(), Default::default())
-                        .await
-                        .unwrap_err();
+                let err = get_quote_and_check_fee(
+                    &order_quoter,
+                    &Default::default(),
+                    true,
+                    Default::default(),
+                )
+                .await
+                .unwrap_err();
 
                 assert!(matches!(err, $validation_err));
             }};

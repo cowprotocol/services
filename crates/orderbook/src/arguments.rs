@@ -40,6 +40,24 @@ pub struct Arguments {
     )]
     pub max_order_validity_period: Duration,
 
+    /// The time period an EIP1271-quote request is valid.
+    #[clap(
+        long,
+        env,
+        default_value = "600",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub eip1271_onchain_quote_validity_seconds: Duration,
+
+    /// The time period an PRESIGN-quote request is valid.
+    #[clap(
+        long,
+        env,
+        default_value = "600",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub presign_onchain_quote_validity_seconds: Duration,
+
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
@@ -240,6 +258,16 @@ impl std::fmt::Display for Arguments {
             f,
             "max_order_validity_period: {:?}",
             self.max_order_validity_period
+        )?;
+        writeln!(
+            f,
+            "eip1271_onchain_quote_validity_second: {:?}",
+            self.eip1271_onchain_quote_validity_seconds
+        )?;
+        writeln!(
+            f,
+            "presign_onchain_quote_validity_second: {:?}",
+            self.presign_onchain_quote_validity_seconds
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(

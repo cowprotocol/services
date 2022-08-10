@@ -159,6 +159,13 @@ impl IntoWarpReply for ValidationError {
                 error("ZeroAmount", "Buy or sell amount is zero."),
                 StatusCode::BAD_REQUEST,
             ),
+            Self::IncompatibleSigningScheme => with_status(
+                error(
+                    "IncompatibleSigningScheme",
+                    "Signing scheme is not compatible with order placement method.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             Self::Other(err) => with_status(
                 internal_error(err.context("order_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -5,7 +5,7 @@ use crate::{
     analytics, auction_preprocessing,
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
-    liquidity_collector::LiquidityCollector,
+    liquidity_collector::{LiquidityCollecting, LiquidityCollector},
     metrics::{SolverMetrics, SolverRunOutcome},
     orderbook::OrderBookApi,
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},

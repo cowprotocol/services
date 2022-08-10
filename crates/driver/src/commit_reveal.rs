@@ -68,16 +68,24 @@ impl CommitRevealSolver {
     async fn commit_impl(&self, auction: Auction) -> Result<(SettlementSummary, Settlement)> {
         let prices = auction.external_prices.clone();
         let solutions = self.solver.solve(auction).await?;
+        tracing::debug!(?solutions, "received solutions");
         let solutions = solutions
             .into_iter()
             .map(|solution| (self.solver.clone(), solution))
             .collect();
 
         let gas_price = self.gas_estimator.estimate().await?;
-        let (mut rated_settlements, _) = self
+        let (mut rated_settlements, errors) = self
             .settlement_rater
             .rate_settlements(solutions, &prices, gas_price)
             .await?;
+
+        // TODO properly log simulation errors with tenderly links
+        tracing::debug!(
+            "settlement rating yielded {} successes and {} errors",
+            rated_settlements.len(),
+            errors.len()
+        );
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
         if let Some((_, winning_settlement, _)) = rated_settlements.pop() {

@@ -8,6 +8,16 @@ use crate::{
 use anyhow::{Context, Result};
 use shared::recent_block_cache::Block;
 
+#[mockall::automock]
+#[async_trait::async_trait]
+pub trait LiquidityCollecting: Send + Sync {
+    async fn get_liquidity_for_orders(
+        &self,
+        limit_orders: &[LimitOrder],
+        at_block: Block,
+    ) -> Result<Vec<Liquidity>>;
+}
+
 pub struct LiquidityCollector {
     pub uniswap_like_liquidity: Vec<UniswapLikeLiquidity>,
     pub balancer_v2_liquidity: Option<BalancerV2Liquidity>,
@@ -16,7 +26,20 @@ pub struct LiquidityCollector {
 }
 
 impl LiquidityCollector {
-    pub async fn get_liquidity_for_orders(
+    /// Creates a `LiquidityCollector` which does not collect any liquidity.
+    pub fn default() -> Self {
+        Self {
+            uniswap_like_liquidity: vec![],
+            balancer_v2_liquidity: None,
+            zeroex_liquidity: None,
+            uniswap_v3_liquidity: None,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl LiquidityCollecting for LiquidityCollector {
+    async fn get_liquidity_for_orders(
         &self,
         limit_orders: &[LimitOrder],
         at_block: Block,
