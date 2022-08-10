@@ -140,6 +140,13 @@ pub fn extract_payload<T: DeserializeOwned + Send>(
     warp::body::content_length_limit(MAX_JSON_BODY_PAYLOAD).and(warp::body::json())
 }
 
+pub fn extract_payload_with_max_size<T: DeserializeOwned + Send>(
+    max_size: u64,
+) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
+    // (rejecting huge payloads)...
+    warp::body::content_length_limit(max_size).and(warp::body::json())
+}
+
 /// Sets up basic metrics, cors and proper log tracing for all routes.
 pub fn finalize_router(
     routes: BoxedFilter<(ApiReply, &'static str)>,

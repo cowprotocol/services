@@ -5,6 +5,10 @@ use crate::{
 };
 use anyhow::Result;
 use model::auction::Auction;
+use shared::{
+    current_block::{block_number, CurrentBlockStream},
+    recent_block_cache::Block,
+};
 use solver::{settlement::Settlement, settlement_submission::SolutionSubmitter};
 use std::sync::Arc;
 
@@ -12,6 +16,7 @@ pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
     pub submitter: Arc<SolutionSubmitter>,
     pub auction_converter: Arc<dyn AuctionConverting>,
+    pub block_stream: CurrentBlockStream,
 }
 
 impl Driver {
@@ -21,7 +26,11 @@ impl Driver {
         &self,
         auction: Auction,
     ) -> Result<SettlementSummary, SolveError> {
-        let auction = self.auction_converter.convert_auction(auction).await?;
+        let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
+        let auction = self
+            .auction_converter
+            .convert_auction(auction, Block::Number(fetch_liquidity_from_block))
+            .await?;
         self.solver.commit(auction).await.map_err(SolveError::from)
     }
 
