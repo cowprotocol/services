@@ -204,6 +204,7 @@ impl Driver {
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt, SubmissionError> {
+        let start = Instant::now();
         let result = self
             .solution_submitter
             .settle(
@@ -212,6 +213,7 @@ impl Driver {
                 solver.account().clone(),
             )
             .await;
+        self.metrics.transaction_submission(start.elapsed());
         self.log_submission_info(&result, &rated_settlement, &solver)
             .await;
         result
@@ -555,7 +557,6 @@ impl Driver {
 
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
-            let start = Instant::now();
             match self
                 .submit_settlement(winning_solver.clone(), winning_settlement.clone())
                 .await
@@ -570,7 +571,6 @@ impl Driver {
                 _ => (),
             }
 
-            self.metrics.transaction_submission(start.elapsed());
             self.report_on_batch(
                 &(winning_solver, winning_settlement),
                 rated_settlements
