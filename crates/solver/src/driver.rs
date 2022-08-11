@@ -473,14 +473,6 @@ impl Driver {
             .number
             .unwrap_or_default()
             .as_u64();
-        tracing::info!(
-            "{} settlements passed simulation and {} failed",
-            rated_settlements.len(),
-            errors.len(),
-        );
-        for (solver, _, _) in &rated_settlements {
-            self.metrics.settlement_simulation_succeeded(solver.name());
-        }
 
         print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
