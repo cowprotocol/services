@@ -88,12 +88,11 @@ impl InFlightOrders {
         settlement
             .executed_trades()
             .filter(|(trade, _)| trade.order.data.partially_fillable)
-            .into_group_map_by(|(trade, _)| &trade.order)
+            .into_group_map_by(|(trade, _)| trade.order.metadata.uid)
             .into_iter()
-            .for_each(|(order, trades)| {
-                let uid = order.metadata.uid;
+            .for_each(|(uid, trades)| {
                 let most_recent_data = PartiallyFilledOrder {
-                    order: order.clone(),
+                    order: trades[0].0.order.clone(),
                     in_flight_trades: trades.into_iter().map(|(_, trade)| trade).collect(),
                 };
                 // always overwrite existing data with the most recent data
