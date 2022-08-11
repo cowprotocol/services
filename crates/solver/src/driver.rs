@@ -2,7 +2,7 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
-    analytics, auction_preprocessing,
+    auction_preprocessing,
     driver_logger::DriverLogger,
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
@@ -192,26 +192,6 @@ impl Driver {
             .log_submission_info(&result, &rated_settlement, &solver)
             .await;
         result
-    }
-
-    /// Record metrics on the matched orders from a single batch. Specifically we report on
-    /// the number of orders that were;
-    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
-    ///  - matched but not settled in this runloop (effectively queued for the next one)
-    /// Should help us to identify how much we can save by parallelizing execution.
-    fn report_on_batch(
-        &self,
-        submitted: &(Arc<dyn Solver>, RatedSettlement),
-        other_settlements: Vec<(Arc<dyn Solver>, RatedSettlement)>,
-    ) {
-        // Report surplus
-        analytics::report_alternative_settlement_surplus(
-            &*self.metrics,
-            submitted,
-            &other_settlements,
-        );
-        // Report matched but not settled
-        analytics::report_matched_but_not_settled(&*self.metrics, submitted, &other_settlements);
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
@@ -413,7 +393,7 @@ impl Driver {
                 _ => (),
             }
 
-            self.report_on_batch(
+            self.logger.report_on_batch(
                 &(winning_solver, winning_settlement),
                 rated_settlements
                     .into_iter()

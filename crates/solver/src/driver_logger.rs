@@ -1,4 +1,5 @@
 use crate::{
+    analytics,
     driver::solver_settlements::RatedSettlement,
     metrics::SolverMetrics,
     settlement::Settlement,
@@ -219,6 +220,26 @@ impl DriverLogger {
             .unwrap();
         }
         tracing::info!("Rated Settlements: {}", text);
+    }
+
+    /// Record metrics on the matched orders from a single batch. Specifically we report on
+    /// the number of orders that were;
+    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
+    ///  - matched but not settled in this runloop (effectively queued for the next one)
+    /// Should help us to identify how much we can save by parallelizing execution.
+    pub fn report_on_batch(
+        &self,
+        submitted: &(Arc<dyn Solver>, RatedSettlement),
+        other_settlements: Vec<(Arc<dyn Solver>, RatedSettlement)>,
+    ) {
+        // Report surplus
+        analytics::report_alternative_settlement_surplus(
+            &*self.metrics,
+            submitted,
+            &other_settlements,
+        );
+        // Report matched but not settled
+        analytics::report_matched_but_not_settled(&*self.metrics, submitted, &other_settlements);
     }
 }
 
