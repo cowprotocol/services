@@ -38,7 +38,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tracing::Instrument as _;
-use web3::types::{AccessList, TransactionReceipt};
+use web3::types::TransactionReceipt;
 
 pub struct Driver {
     liquidity_collector: LiquidityCollector,
@@ -331,7 +331,7 @@ impl Driver {
             .unwrap_or_default()
             .as_u64();
 
-        print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
         let mut solver_competition = SolverCompetition {
@@ -465,81 +465,5 @@ impl Driver {
             }
             Err(err) => tracing::warn!(?err, "failed to send solver competition"),
         }
-    }
-}
-
-fn print_settlements(
-    rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-    fee_objective_scaling_factor: &BigRational,
-) {
-    let mut text = String::new();
-    for (solver, settlement, access_list) in rated_settlements {
-        use std::fmt::Write;
-        write!(
-            text,
-            "\nid={} solver={} \
-             objective={:.2e} surplus={:.2e} \
-             gas_estimate={:.2e} gas_price={:.2e} \
-             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-             access_list_addreses={}",
-            settlement.id,
-            solver.name(),
-            settlement.objective_value().to_f64().unwrap_or(f64::NAN),
-            settlement.surplus.to_f64().unwrap_or(f64::NAN),
-            settlement.gas_estimate.to_f64_lossy(),
-            settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-            (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
-                .to_f64()
-                .unwrap_or(f64::NAN),
-            settlement
-                .unscaled_subsidized_fee
-                .to_f64()
-                .unwrap_or(f64::NAN),
-            access_list.clone().unwrap_or_default().len()
-        )
-        .unwrap();
-    }
-    tracing::info!("Rated Settlements: {}", text);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::solver::dummy_arc_solver;
-
-    #[test]
-    #[ignore]
-    fn print_settlements() {
-        let a = [
-            (
-                dummy_arc_solver(),
-                RatedSettlement {
-                    id: 0,
-                    settlement: Default::default(),
-                    surplus: BigRational::new(1u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
-                    gas_estimate: 4.into(),
-                    gas_price: BigRational::new(5u8.into(), 1u8.into()),
-                },
-                None,
-            ),
-            (
-                dummy_arc_solver(),
-                RatedSettlement {
-                    id: 6,
-                    settlement: Default::default(),
-                    surplus: BigRational::new(7u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
-                    gas_estimate: 10.into(),
-                    gas_price: BigRational::new(11u8.into(), 1u8.into()),
-                },
-                None,
-            ),
-        ];
-
-        shared::tracing::initialize_for_tests("INFO");
-        super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
     }
 }
