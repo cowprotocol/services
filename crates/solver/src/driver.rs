@@ -548,17 +548,7 @@ impl Driver {
                 .await
             {
                 Ok(receipt) => {
-                    let block = match receipt.block_number {
-                        Some(block) => block.as_u64(),
-                        None => {
-                            tracing::error!("tx receipt does not contain block number");
-                            0
-                        }
-                    };
-
-                    self.in_flight_orders
-                        .mark_settled_orders(block, &winning_settlement.settlement);
-
+                    self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
                     match receipt.effective_gas_price {
                         Some(price) => {
                             self.metrics.transaction_gas_price(price);
@@ -592,6 +582,18 @@ impl Driver {
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
         Ok(())
+    }
+
+    /// Marks all orders in the winning settlement as "in flight".
+    fn update_in_flight_orders(&mut self, receipt: &TransactionReceipt, settlement: &Settlement) {
+        let block = match receipt.block_number {
+            Some(block) => block.as_u64(),
+            None => {
+                tracing::error!("tx receipt does not contain block number");
+                0
+            }
+        };
+        self.in_flight_orders.mark_settled_orders(block, settlement);
     }
 
     fn next_run_id(&mut self) -> u64 {
