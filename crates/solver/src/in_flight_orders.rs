@@ -42,7 +42,7 @@ impl InFlightOrders {
     /// Takes note of the new set of solvable orders and returns the ones that aren't in flight and
     /// scales down partially fillable orders if there are currently orders in-flight tapping into
     /// their executable amounts.
-    /// Returns the set of order uids that's considered in flight
+    /// Returns the set of order uids that are considered in flight.
     pub fn update_and_filter(&mut self, auction: &mut Auction) -> HashSet<OrderUid> {
         // If api has seen block X then trades starting at X + 1 are still in flight.
         self.in_flight = self
