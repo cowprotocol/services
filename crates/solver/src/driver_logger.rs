@@ -2,16 +2,21 @@ use crate::{
     driver::solver_settlements::RatedSettlement,
     metrics::SolverMetrics,
     settlement::Settlement,
-    settlement_simulation::{simulate_before_after_access_list, TenderlyApi},
+    settlement_simulation::{
+        simulate_and_error_with_tenderly_link, simulate_before_after_access_list, TenderlyApi,
+    },
     settlement_submission::SubmissionError,
-    solver::Solver,
+    solver::{SettlementWithError, Solver},
 };
 use anyhow::{Context, Result};
+use contracts::GPv2Settlement;
+use gas_estimation::GasPrice1559;
 use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use primitive_types::H256;
 use shared::Web3;
 use std::sync::Arc;
+use tracing::{Instrument as _, Span};
 use web3::types::TransactionReceipt;
 
 pub struct DriverLogger {
@@ -19,6 +24,8 @@ pub struct DriverLogger {
     pub web3: Web3,
     pub tenderly: Option<TenderlyApi>,
     pub network_id: String,
+    pub settlement_contract: GPv2Settlement,
+    pub simulation_gas_limit: u128,
 }
 
 impl DriverLogger {
@@ -120,5 +127,62 @@ impl DriverLogger {
                 }
             }
         }
+    }
+
+    // Log simulation errors only if the simulation also fails in the block at which on chain
+    // liquidity was queried. If the simulation succeeds at the previous block then the solver
+    // worked correctly and the error doesn't have to be reported.
+    // Note that we could still report a false positive because the earlier block might be off by if
+    // the block has changed just as were were querying the node.
+    pub fn report_simulation_errors(
+        &self,
+        errors: Vec<SettlementWithError>,
+        current_block_during_liquidity_fetch: u64,
+        gas_price: GasPrice1559,
+    ) {
+        let contract = self.settlement_contract.clone();
+        let web3 = self.web3.clone();
+        let network_id = self.network_id.clone();
+        let metrics = self.metrics.clone();
+        let simulation_gas_limit = self.simulation_gas_limit;
+        let task = async move {
+            let simulations = simulate_and_error_with_tenderly_link(
+                errors.iter().map(|(solver, settlement, access_list, _)| {
+                    (
+                        solver.account().clone(),
+                        settlement.clone(),
+                        access_list.clone(),
+                    )
+                }),
+                &contract,
+                &web3,
+                gas_price,
+                &network_id,
+                current_block_during_liquidity_fetch,
+                simulation_gas_limit,
+            )
+            .await;
+
+            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
+                metrics.settlement_simulation_failed_on_latest(solver.name());
+                if let Err(error_at_earlier_block) = result {
+                    tracing::warn!(
+                        "{} settlement simulation failed at submission and block {}:\n{:?}",
+                        solver.name(),
+                        current_block_during_liquidity_fetch,
+                        error_at_earlier_block,
+                    );
+                    // split warning into separate logs so that the messages aren't too long.
+                    tracing::warn!(
+                        "{} settlement failure for: \n{:#?}",
+                        solver.name(),
+                        settlement,
+                    );
+
+                    metrics.settlement_simulation_failed(solver.name());
+                }
+            }
+        };
+        tokio::task::spawn(task.instrument(Span::current()));
     }
 }

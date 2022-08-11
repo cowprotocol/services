@@ -15,12 +15,12 @@ use crate::{
     settlement_rater::SettlementRater,
     settlement_simulation::{self, TenderlyApi},
     settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, SettlementWithError, Solver, SolverRunError, Solvers},
+    solver::{Auction, Solver, SolverRunError, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
+use gas_estimation::GasPriceEstimating;
 use model::solver_competition::CompetitionAuction;
 use model::solver_competition::{
     self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
@@ -37,19 +37,16 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::{Instrument as _, Span};
+use tracing::Instrument as _;
 use web3::types::{AccessList, TransactionReceipt};
 
 pub struct Driver {
-    settlement_contract: GPv2Settlement,
     liquidity_collector: LiquidityCollector,
     solvers: Solvers,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     settle_interval: Duration,
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
-    web3: Web3,
-    network_id: String,
     solver_time_limit: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
@@ -58,7 +55,6 @@ pub struct Driver {
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
     post_processing_pipeline: PostProcessingPipeline,
-    simulation_gas_limit: u128,
     fee_objective_scaling_factor: BigRational,
     settlement_ranker: SettlementRanker,
     logger: DriverLogger,
@@ -113,21 +109,20 @@ impl Driver {
 
         let logger = DriverLogger {
             metrics: metrics.clone(),
-            web3: web3.clone(),
+            web3,
             tenderly,
-            network_id: network_id.clone(),
+            network_id,
+            settlement_contract,
+            simulation_gas_limit,
         };
 
         Self {
-            settlement_contract,
             liquidity_collector,
             solvers,
             gas_price_estimator,
             settle_interval,
             native_token,
             metrics,
-            web3,
-            network_id,
             solver_time_limit,
             block_stream,
             solution_submitter,
@@ -136,7 +131,6 @@ impl Driver {
             order_converter,
             in_flight_orders: InFlightOrders::default(),
             post_processing_pipeline,
-            simulation_gas_limit,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
             settlement_ranker,
@@ -198,63 +192,6 @@ impl Driver {
             .log_submission_info(&result, &rated_settlement, &solver)
             .await;
         result
-    }
-
-    // Log simulation errors only if the simulation also fails in the block at which on chain
-    // liquidity was queried. If the simulation succeeds at the previous block then the solver
-    // worked correctly and the error doesn't have to be reported.
-    // Note that we could still report a false positive because the earlier block might be off by if
-    // the block has changed just as were were querying the node.
-    fn report_simulation_errors(
-        &self,
-        errors: Vec<SettlementWithError>,
-        current_block_during_liquidity_fetch: u64,
-        gas_price: GasPrice1559,
-    ) {
-        let contract = self.settlement_contract.clone();
-        let web3 = self.web3.clone();
-        let network_id = self.network_id.clone();
-        let metrics = self.metrics.clone();
-        let simulation_gas_limit = self.simulation_gas_limit;
-        let task = async move {
-            let simulations = settlement_simulation::simulate_and_error_with_tenderly_link(
-                errors.iter().map(|(solver, settlement, access_list, _)| {
-                    (
-                        solver.account().clone(),
-                        settlement.clone(),
-                        access_list.clone(),
-                    )
-                }),
-                &contract,
-                &web3,
-                gas_price,
-                &network_id,
-                current_block_during_liquidity_fetch,
-                simulation_gas_limit,
-            )
-            .await;
-
-            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
-                metrics.settlement_simulation_failed_on_latest(solver.name());
-                if let Err(error_at_earlier_block) = result {
-                    tracing::warn!(
-                        "{} settlement simulation failed at submission and block {}:\n{:?}",
-                        solver.name(),
-                        current_block_during_liquidity_fetch,
-                        error_at_earlier_block,
-                    );
-                    // split warning into separate logs so that the messages aren't too long.
-                    tracing::warn!(
-                        "{} settlement failure for: \n{:#?}",
-                        solver.name(),
-                        settlement,
-                    );
-
-                    metrics.settlement_simulation_failed(solver.name());
-                }
-            }
-        };
-        tokio::task::spawn(task.instrument(Span::current()));
     }
 
     /// Record metrics on the matched orders from a single batch. Specifically we report on
@@ -487,7 +424,11 @@ impl Driver {
                 .await;
         }
         // Happens after settlement submission so that we do not delay it.
-        self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
+        self.logger.report_simulation_errors(
+            errors,
+            current_block_during_liquidity_fetch,
+            gas_price,
+        );
         Ok(())
     }
 
