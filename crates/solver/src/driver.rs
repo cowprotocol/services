@@ -194,70 +194,10 @@ impl Driver {
             )
             .await;
         self.metrics.transaction_submission(start.elapsed());
-        self.log_submission_info(&result, &rated_settlement, &solver)
+        self.logger
+            .log_submission_info(&result, &rated_settlement, &solver)
             .await;
         result
-    }
-
-    async fn log_submission_info(
-        &self,
-        submission: &Result<TransactionReceipt, SubmissionError>,
-        rated_settlement: &RatedSettlement,
-        solver: &Arc<dyn Solver>,
-    ) {
-        self.metrics
-            .settlement_revertable_status(rated_settlement.settlement.revertable(), solver.name());
-        match submission {
-            Ok(receipt) => {
-                let name = solver.name();
-                tracing::info!(
-                    settlement_id =% rated_settlement.id,
-                    transaction_hash =? receipt.transaction_hash,
-                    "Successfully submitted settlement",
-                );
-                DriverLogger::get_traded_orders(&rated_settlement.settlement)
-                    .iter()
-                    .for_each(|order| self.metrics.order_settled(order, name));
-                self.metrics.settlement_submitted(
-                    crate::metrics::SettlementSubmissionOutcome::Success,
-                    name,
-                );
-                if let Err(err) = self
-                    .logger
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
-                    .await
-                {
-                    tracing::debug!(?err, "access list metric not saved");
-                }
-                match receipt.effective_gas_price {
-                    Some(price) => {
-                        self.metrics.transaction_gas_price(price);
-                    }
-                    None => {
-                        tracing::error!("node did not return effective gas price in tx receipt");
-                    }
-                }
-            }
-            Err(err) => {
-                // Since we simulate and only submit solutions when they used to pass before, there is no
-                // point in logging transaction failures in the form of race conditions as hard errors.
-                tracing::warn!(
-                    settlement_id =% rated_settlement.id, ?err,
-                    "Failed to submit settlement",
-                );
-                self.metrics
-                    .settlement_submitted(err.as_outcome(), solver.name());
-                if let Some(transaction_hash) = err.transaction_hash() {
-                    if let Err(err) = self
-                        .logger
-                        .metric_access_list_gas_saved(transaction_hash)
-                        .await
-                    {
-                        tracing::debug!(?err, "access list metric not saved");
-                    }
-                }
-            }
-        }
     }
 
     // Log simulation errors only if the simulation also fails in the block at which on chain
