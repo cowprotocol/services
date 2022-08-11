@@ -239,6 +239,14 @@ impl Driver {
                 {
                     tracing::debug!(?err, "access list metric not saved");
                 }
+                match receipt.effective_gas_price {
+                    Some(price) => {
+                        self.metrics.transaction_gas_price(price);
+                    }
+                    None => {
+                        tracing::error!("node did not return effective gas price in tx receipt");
+                    }
+                }
                 Ok(receipt)
             }
             Err(err) => {
@@ -549,17 +557,6 @@ impl Driver {
             {
                 Ok(receipt) => {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
-                    match receipt.effective_gas_price {
-                        Some(price) => {
-                            self.metrics.transaction_gas_price(price);
-                        }
-                        None => {
-                            tracing::error!(
-                                "node did not return effective gas price in tx receipt"
-                            );
-                        }
-                    }
-
                     solver_competition.transaction_hash = Some(receipt.transaction_hash);
                 }
                 Err(SubmissionError::Revert(hash)) => {
