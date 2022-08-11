@@ -47,10 +47,11 @@ impl ServiceMaintenance {
             let block = block.number.unwrap_or_default().as_u64();
             metrics.last_seen_block.set(block as _);
 
-            if let Ok(_) = self
+            if self
                 .run_maintenance()
                 .instrument(tracing::debug_span!("maintenance", block))
                 .await
+                .is_ok()
             {
                 metrics.last_updated_block.set(block as _);
             }
