@@ -21,13 +21,9 @@ use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use itertools::Itertools;
+use model::solver_competition::CompetitionAuction;
 use model::solver_competition::{
     self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
-};
-use model::{
-    order::{Order, OrderKind},
-    solver_competition::CompetitionAuction,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::H160;
@@ -183,30 +179,6 @@ impl Driver {
         .await
     }
 
-    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
-    /// orders multiple times will not result in duplicates. Partially fillable orders get
-    /// considered as traded only the first time we tap into their liquidity.
-    fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
-        let mut traded_orders = Vec::new();
-        for (_, group) in &settlement
-            .executed_trades()
-            .map(|(trade, _)| trade)
-            .group_by(|trade| trade.order.metadata.uid)
-        {
-            let mut group = group.into_iter().peekable();
-            let order = &group.peek().unwrap().order;
-            let was_already_filled = match order.data.kind {
-                OrderKind::Buy => &order.metadata.executed_buy_amount,
-                OrderKind::Sell => &order.metadata.executed_sell_amount,
-            } > &0u8.into();
-            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
-            if !was_already_filled && is_getting_filled {
-                traded_orders.push(order.clone());
-            }
-        }
-        traded_orders
-    }
-
     async fn submit_settlement(
         &self,
         solver: Arc<dyn Solver>,
@@ -243,7 +215,7 @@ impl Driver {
                     transaction_hash =? receipt.transaction_hash,
                     "Successfully submitted settlement",
                 );
-                Self::get_traded_orders(&rated_settlement.settlement)
+                DriverLogger::get_traded_orders(&rated_settlement.settlement)
                     .iter()
                     .for_each(|order| self.metrics.order_settled(order, name));
                 self.metrics.settlement_submitted(

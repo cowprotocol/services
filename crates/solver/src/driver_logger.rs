@@ -1,8 +1,11 @@
 use crate::{
     metrics::SolverMetrics,
+    settlement::Settlement,
     settlement_simulation::{simulate_before_after_access_list, TenderlyApi},
 };
 use anyhow::{Context, Result};
+use itertools::Itertools;
+use model::order::{Order, OrderKind};
 use primitive_types::H256;
 use shared::Web3;
 use std::sync::Arc;
@@ -33,5 +36,29 @@ impl DriverLogger {
         }
 
         Ok(())
+    }
+
+    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
+    /// orders multiple times will not result in duplicates. Partially fillable orders get
+    /// considered as traded only the first time we tap into their liquidity.
+    pub fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
+        let mut traded_orders = Vec::new();
+        for (_, group) in &settlement
+            .executed_trades()
+            .map(|(trade, _)| trade)
+            .group_by(|trade| trade.order.metadata.uid)
+        {
+            let mut group = group.into_iter().peekable();
+            let order = &group.peek().unwrap().order;
+            let was_already_filled = match order.data.kind {
+                OrderKind::Buy => &order.metadata.executed_buy_amount,
+                OrderKind::Sell => &order.metadata.executed_sell_amount,
+            } > &0u8.into();
+            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
+            if !was_already_filled && is_getting_filled {
+                traded_orders.push(order.clone());
+            }
+        }
+        traded_orders
     }
 }
