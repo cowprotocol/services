@@ -173,27 +173,6 @@ impl Driver {
         .await
     }
 
-    async fn submit_settlement(
-        &self,
-        solver: Arc<dyn Solver>,
-        rated_settlement: RatedSettlement,
-    ) -> Result<TransactionReceipt, SubmissionError> {
-        let start = Instant::now();
-        let result = self
-            .solution_submitter
-            .settle(
-                rated_settlement.settlement.clone(),
-                rated_settlement.gas_estimate,
-                solver.account().clone(),
-            )
-            .await;
-        self.metrics.transaction_submission(start.elapsed());
-        self.logger
-            .log_submission_info(&result, &rated_settlement, &solver)
-            .await;
-        result
-    }
-
     pub async fn single_run(&mut self) -> Result<()> {
         let auction = self
             .api
@@ -379,9 +358,13 @@ impl Driver {
 
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
-            match self
-                .submit_settlement(winning_solver.clone(), winning_settlement.clone())
-                .await
+            match submit_settlement(
+                &self.solution_submitter,
+                &self.logger,
+                winning_solver.clone(),
+                winning_settlement.clone(),
+            )
+            .await
             {
                 Ok(receipt) => {
                     self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
@@ -446,4 +429,26 @@ impl Driver {
             Err(err) => tracing::warn!(?err, "failed to send solver competition"),
         }
     }
+}
+
+/// Submits the winning solution and handles the related logging and metrics.
+pub async fn submit_settlement(
+    solution_submitter: &SolutionSubmitter,
+    logger: &DriverLogger,
+    solver: Arc<dyn Solver>,
+    rated_settlement: RatedSettlement,
+) -> Result<TransactionReceipt, SubmissionError> {
+    let start = Instant::now();
+    let result = solution_submitter
+        .settle(
+            rated_settlement.settlement.clone(),
+            rated_settlement.gas_estimate,
+            solver.account().clone(),
+        )
+        .await;
+    logger.metrics.transaction_submission(start.elapsed());
+    logger
+        .log_submission_info(&result, &rated_settlement, &solver)
+        .await;
+    result
 }
