@@ -36,7 +36,7 @@ struct Metrics {
     table_rows: prometheus::IntGaugeVec,
 
     /// Timing of db queries.
-    #[metric(name = "autopilot_database_queries", labels("type"))]
+    #[metric(labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 

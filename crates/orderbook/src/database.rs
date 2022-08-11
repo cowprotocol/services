@@ -30,7 +30,7 @@ impl Postgres {
 #[derive(prometheus_metric_storage::MetricStorage)]
 struct Metrics {
     /// Timing of db queries.
-    #[metric(name = "orderbook_database_queries", labels("type"))]
+    #[metric(labels("type"))]
     database_queries: prometheus::HistogramVec,
 }
 
