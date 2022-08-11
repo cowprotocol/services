@@ -1,5 +1,5 @@
 use crate::current_block::{self, Block, CurrentBlockStream};
-use anyhow::Result;
+use anyhow::{ensure, Result};
 use futures::{future::join_all, Stream, StreamExt};
 use std::sync::Arc;
 use tracing::Instrument;
@@ -18,11 +18,15 @@ pub trait Maintaining: Send + Sync {
 #[async_trait::async_trait]
 impl Maintaining for ServiceMaintenance {
     async fn run_maintenance(&self) -> Result<()> {
+        let mut no_error = true;
         for result in join_all(self.maintainers.iter().map(|m| m.run_maintenance())).await {
             if let Err(err) = result {
-                tracing::error!("Service Maintenance Error: {:?}", err);
+                tracing::warn!("Service Maintenance Error: {:?}", err);
+                no_error = false;
             }
         }
+
+        ensure!(no_error, "maintenance encounted one or more errors");
         Ok(())
     }
 }
@@ -30,17 +34,26 @@ impl Maintaining for ServiceMaintenance {
 impl ServiceMaintenance {
     async fn run_maintenance_for_block_stream(self, block_stream: impl Stream<Item = Block>) {
         futures::pin_mut!(block_stream);
+
+        let metrics = Metrics::instance(global_metrics::get_metric_storage_registry()).unwrap();
+
         while let Some(block) = block_stream.next().await {
             tracing::debug!(
                 "running maintenance on block number {:?} hash {:?}",
                 block.number,
                 block.hash
             );
+
             let block = block.number.unwrap_or_default().as_u64();
-            self.run_maintenance()
-                .instrument(tracing::debug_span!("maintenance", block,))
+            metrics.last_seen_block.set(block as _);
+
+            if let Ok(_) = self
+                .run_maintenance()
+                .instrument(tracing::debug_span!("maintenance", block))
                 .await
-                .expect("Service maintenance always Ok");
+            {
+                metrics.last_updated_block.set(block as _);
+            }
         }
     }
 
@@ -49,6 +62,18 @@ impl ServiceMaintenance {
             .await;
         unreachable!()
     }
+}
+
+#[derive(prometheus_metric_storage::MetricStorage)]
+#[metric(subsystem = "maintenance")]
+struct Metrics {
+    /// Service maintenance last seen block.
+    #[metric()]
+    last_seen_block: prometheus::IntGauge,
+
+    /// Service maintenance last seen block.
+    #[metric()]
+    last_updated_block: prometheus::IntGauge,
 }
 
 #[cfg(test)]
