@@ -393,7 +393,6 @@ impl Driver {
                 auction.orders.len(),
                 auction.latest_settlement_block,
                 inflight_order_uids
-
             );
         }
 
