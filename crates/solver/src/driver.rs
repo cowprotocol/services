@@ -3,6 +3,7 @@ pub mod solver_settlements;
 use self::solver_settlements::RatedSettlement;
 use crate::{
     analytics, auction_preprocessing,
+    driver_logger::DriverLogger,
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
     liquidity_collector::{LiquidityCollecting, LiquidityCollector},
@@ -12,7 +13,7 @@ use crate::{
     settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
+    settlement_simulation::{self, TenderlyApi},
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, SettlementWithError, Solver, SolverRunError, Solvers},
 };
@@ -29,7 +30,7 @@ use model::{
     solver_competition::CompetitionAuction,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::{H160, H256};
+use primitive_types::H160;
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -63,8 +64,8 @@ pub struct Driver {
     post_processing_pipeline: PostProcessingPipeline,
     simulation_gas_limit: u128,
     fee_objective_scaling_factor: BigRational,
-    tenderly: Option<TenderlyApi>,
     settlement_ranker: SettlementRanker,
+    logger: DriverLogger,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -114,6 +115,13 @@ impl Driver {
             settlement_rater,
         };
 
+        let logger = DriverLogger {
+            metrics: metrics.clone(),
+            web3: web3.clone(),
+            tenderly,
+            network_id: network_id.clone(),
+        };
+
         Self {
             settlement_contract,
             liquidity_collector,
@@ -135,8 +143,8 @@ impl Driver {
             simulation_gas_limit,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
-            tenderly,
             settlement_ranker,
+            logger,
         }
     }
 
@@ -243,6 +251,7 @@ impl Driver {
                     name,
                 );
                 if let Err(err) = self
+                    .logger
                     .metric_access_list_gas_saved(receipt.transaction_hash)
                     .await
                 {
@@ -267,32 +276,16 @@ impl Driver {
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
                 if let Some(transaction_hash) = err.transaction_hash() {
-                    if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
+                    if let Err(err) = self
+                        .logger
+                        .metric_access_list_gas_saved(transaction_hash)
+                        .await
+                    {
                         tracing::debug!(?err, "access list metric not saved");
                     }
                 }
             }
         }
-    }
-
-    async fn metric_access_list_gas_saved(&self, transaction_hash: H256) -> Result<()> {
-        let gas_saved = simulate_before_after_access_list(
-            &self.web3,
-            self.tenderly.as_ref().context("tenderly disabled")?,
-            self.network_id.clone(),
-            transaction_hash,
-        )
-        .await?;
-        tracing::debug!(?gas_saved, "access list gas saved");
-        if gas_saved.is_sign_positive() {
-            self.metrics
-                .settlement_access_list_saved_gas(gas_saved, "positive");
-        } else {
-            self.metrics
-                .settlement_access_list_saved_gas(-gas_saved, "negative");
-        }
-
-        Ok(())
     }
 
     // Log simulation errors only if the simulation also fails in the block at which on chain
