@@ -204,21 +204,28 @@ impl Driver {
         solver: Arc<dyn Solver>,
         rated_settlement: RatedSettlement,
     ) -> Result<TransactionReceipt, SubmissionError> {
-        let settlement = rated_settlement.settlement;
-        let traded_orders = Self::get_traded_orders(&settlement);
-
-        self.metrics
-            .settlement_revertable_status(settlement.revertable(), solver.name());
-
-        match self
+        let result = self
             .solution_submitter
             .settle(
-                settlement,
+                rated_settlement.settlement.clone(),
                 rated_settlement.gas_estimate,
                 solver.account().clone(),
             )
-            .await
-        {
+            .await;
+        self.log_submission_info(&result, &rated_settlement, &solver)
+            .await;
+        result
+    }
+
+    async fn log_submission_info(
+        &self,
+        submission: &Result<TransactionReceipt, SubmissionError>,
+        rated_settlement: &RatedSettlement,
+        solver: &Arc<dyn Solver>,
+    ) {
+        self.metrics
+            .settlement_revertable_status(rated_settlement.settlement.revertable(), solver.name());
+        match submission {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
@@ -226,7 +233,7 @@ impl Driver {
                     transaction_hash =? receipt.transaction_hash,
                     "Successfully submitted settlement",
                 );
-                traded_orders
+                Self::get_traded_orders(&rated_settlement.settlement)
                     .iter()
                     .for_each(|order| self.metrics.order_settled(order, name));
                 self.metrics.settlement_submitted(
@@ -247,7 +254,6 @@ impl Driver {
                         tracing::error!("node did not return effective gas price in tx receipt");
                     }
                 }
-                Ok(receipt)
             }
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
@@ -263,7 +269,6 @@ impl Driver {
                         tracing::debug!(?err, "access list metric not saved");
                     }
                 }
-                Err(err)
             }
         }
     }
