@@ -2,7 +2,7 @@ use crate::settlement::{Settlement, TradeExecution};
 use itertools::Itertools;
 use model::{
     auction::Auction,
-    order::{Order, OrderUid},
+    order::{Order, OrderKind, OrderUid},
 };
 use number_conversions::u256_to_big_uint;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -73,9 +73,13 @@ impl InFlightOrders {
                 order.metadata.executed_sell_amount = u256_to_big_uint(&order.data.sell_amount);
             }
         });
-        auction.orders.retain(|order| {
-            u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
-                || u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount
+        auction.orders.retain(|order| match order.data.kind {
+            OrderKind::Sell => {
+                u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount
+            }
+            OrderKind::Buy => {
+                u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
+            }
         });
         in_flight
     }
@@ -265,5 +269,35 @@ mod tests {
         let mut inflight = InFlightOrders::default();
         inflight.update_and_filter(&mut auction);
         assert_eq!(auction.orders.len(), 1);
+    }
+
+    #[test]
+    fn test_filled_buy_order_gets_filtered() {
+        let order = Order {
+            data: OrderData {
+                sell_token: H160::from_low_u64_be(0),
+                buy_token: H160::from_low_u64_be(1),
+                sell_amount: 100u8.into(),
+                buy_amount: 100u8.into(),
+                kind: OrderKind::Buy,
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                uid: OrderUid::from_integer(1),
+                // Filled with a lot of surplus (only needed to sell half of maxSellAmount)
+                executed_sell_amount: 50u8.into(),
+                executed_buy_amount: 100u8.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut auction = Auction {
+            block: 0,
+            orders: vec![order],
+            ..Default::default()
+        };
+        let mut inflight = InFlightOrders::default();
+        inflight.update_and_filter(&mut auction);
+        assert_eq!(auction.orders.len(), 0);
     }
 }
