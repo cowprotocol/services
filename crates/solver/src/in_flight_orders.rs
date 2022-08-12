@@ -75,7 +75,8 @@ impl InFlightOrders {
         });
         auction.orders.retain(|order| match order.data.kind {
             OrderKind::Sell => {
-                u256_to_big_uint(&order.data.sell_amount) > order.metadata.executed_sell_amount_before_fees
+                u256_to_big_uint(&order.data.sell_amount)
+                    > u256_to_big_uint(&order.metadata.executed_sell_amount_before_fees)
             }
             OrderKind::Buy => {
                 u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
