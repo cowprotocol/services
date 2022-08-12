@@ -330,7 +330,9 @@ impl Driver {
                 .cloned()
                 .map(into_solver_settlement)
                 .collect(),
-            optimized_winning_solution: optimized_solution.clone().map(into_solver_settlement),
+            optimized_call_data: optimized_solution
+                .as_ref()
+                .map(|s| settlement_simulation::call_data(s.1.settlement.clone().into())),
         };
         rated_settlements.extend(optimized_solution);
 
