@@ -35,6 +35,7 @@ pub struct SolverCompetition {
     pub transaction_hash: Option<H256>,
     pub auction: CompetitionAuction,
     pub solutions: Vec<SolverSettlement>,
+    pub optimized_winning_solution: Option<SolverSettlement>,
 }
 
 #[serde_as]
@@ -133,7 +134,48 @@ mod tests {
                     "callData": "0x13",
                 },
             ],
+            "optimizedWinningSolution": {
+                "solver": "2",
+                "objective": {
+                    "total": 3.0f64,
+                    "surplus": 4.0f64,
+                    "fees": 5.0f64,
+                    "cost": 6.0f64,
+                    "gas": 7u64,
+                },
+                "clearingPrices": {
+                    "0x2222222222222222222222222222222222222222": "8",
+                },
+                "orders": [
+                    {
+                        "id": "0x3333333333333333333333333333333333333333333333333333333333333333\
+                                 3333333333333333333333333333333333333333\
+                                 33333333",
+                        "executedAmount": "12",
+                    }
+                ],
+                "callData": "0x13",
+            },
         });
+
+        let winning_solution = SolverSettlement {
+            solver: "2".to_string(),
+            objective: Objective {
+                total: 3.,
+                surplus: 4.,
+                fees: 5.,
+                cost: 6.,
+                gas: 7,
+            },
+            clearing_prices: btreemap! {
+                H160([0x22; 20]) => 8.into(),
+            },
+            orders: vec![Order {
+                id: OrderUid([0x33; 56]),
+                executed_amount: 12.into(),
+            }],
+            call_data: vec![0x13],
+        };
 
         let orig = SolverCompetition {
             auction_id: 0,
@@ -154,24 +196,8 @@ mod tests {
                     H160([0x33; 20]) => 3000.into(),
                 },
             },
-            solutions: vec![SolverSettlement {
-                solver: "2".to_string(),
-                objective: Objective {
-                    total: 3.,
-                    surplus: 4.,
-                    fees: 5.,
-                    cost: 6.,
-                    gas: 7,
-                },
-                clearing_prices: btreemap! {
-                    H160([0x22; 20]) => 8.into(),
-                },
-                orders: vec![Order {
-                    id: OrderUid([0x33; 56]),
-                    executed_amount: 12.into(),
-                }],
-                call_data: vec![0x13],
-            }],
+            solutions: vec![winning_solution.clone()],
+            optimized_winning_solution: Some(winning_solution),
         };
 
         let serialized = serde_json::to_value(&orig).unwrap();

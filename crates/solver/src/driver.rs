@@ -12,7 +12,7 @@ use crate::{
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
-    settlement_rater::{SettlementRater, SettlementRating},
+    settlement_rater::{RatedSolverSettlement, SettlementRater, SettlementRating},
     settlement_simulation,
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, Solver, Solvers},
@@ -312,20 +312,9 @@ impl Driver {
             .as_u64();
 
         DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
-        match self
+        let optimized_solution = self
             .optimize_winning_solution(&rated_settlements, gas_price, &external_prices)
-            .await
-        {
-            Some(optimized_solution) => rated_settlements.push(optimized_solution),
-            None => {
-                let original_solution = rated_settlements.last();
-                tracing::debug!(
-                    original_solution = ?original_solution.map(|s| &s.1),
-                    "failed to compute the optimized solution, copying original winning solution"
-                );
-                rated_settlements.extend(original_solution.cloned());
-            }
-        }
+            .await;
 
         // Report solver competition data to the api.
         let solver_competition = SolverCompetition {
@@ -338,42 +327,13 @@ impl Driver {
             auction: competition_auction,
             solutions: rated_settlements
                 .iter()
-                .map(|(solver, rated_settlement, _)| SolverSettlement {
-                    solver: solver.name().to_string(),
-                    objective: Objective {
-                        total: rated_settlement
-                            .objective_value()
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
-                        surplus: rated_settlement.surplus.to_f64().unwrap_or(f64::NAN),
-                        fees: rated_settlement
-                            .scaled_unsubsidized_fee
-                            .to_f64()
-                            .unwrap_or(f64::NAN),
-                        cost: rated_settlement.gas_estimate.to_f64_lossy()
-                            * rated_settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-                        gas: rated_settlement.gas_estimate.low_u64(),
-                    },
-                    clearing_prices: rated_settlement
-                        .settlement
-                        .clearing_prices()
-                        .iter()
-                        .map(|(address, price)| (*address, *price))
-                        .collect(),
-                    orders: rated_settlement
-                        .settlement
-                        .executed_trades()
-                        .map(|(trade, _)| solver_competition::Order {
-                            id: trade.order.metadata.uid,
-                            executed_amount: trade.executed_amount,
-                        })
-                        .collect(),
-                    call_data: settlement_simulation::call_data(
-                        rated_settlement.settlement.clone().into(),
-                    ),
-                })
+                .cloned()
+                .map(into_solver_settlement)
                 .collect(),
+            optimized_winning_solution: optimized_solution.clone().map(into_solver_settlement),
         };
+        rated_settlements.extend(optimized_solution);
+
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
             competition: solver_competition,
@@ -537,4 +497,36 @@ pub async fn submit_settlement(
         .log_submission_info(&result, &settlement, settlement_id, &solver)
         .await;
     result
+}
+
+fn into_solver_settlement((solver, settlement, _): RatedSolverSettlement) -> SolverSettlement {
+    SolverSettlement {
+        solver: solver.name().to_string(),
+        objective: Objective {
+            total: settlement.objective_value().to_f64().unwrap_or(f64::NAN),
+            surplus: settlement.surplus.to_f64().unwrap_or(f64::NAN),
+            fees: settlement
+                .unscaled_subsidized_fee
+                .to_f64()
+                .unwrap_or(f64::NAN),
+            cost: settlement.gas_estimate.to_f64_lossy()
+                * settlement.gas_price.to_f64().unwrap_or(f64::NAN),
+            gas: settlement.gas_estimate.low_u64(),
+        },
+        clearing_prices: settlement
+            .settlement
+            .clearing_prices()
+            .iter()
+            .map(|(address, price)| (*address, *price))
+            .collect(),
+        orders: settlement
+            .settlement
+            .executed_trades()
+            .map(|(trade, _)| solver_competition::Order {
+                id: trade.order.metadata.uid,
+                executed_amount: trade.executed_amount,
+            })
+            .collect(),
+        call_data: settlement_simulation::call_data(settlement.settlement.into()),
+    }
 }

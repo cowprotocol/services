@@ -89,6 +89,13 @@ mod tests {
         let db = Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
+        let winning_solution = SolverSettlement {
+            solver: "asdf".to_string(),
+            objective: Default::default(),
+            clearing_prices: [Default::default()].into_iter().collect(),
+            orders: vec![Default::default()],
+            call_data: vec![1, 2],
+        };
         let expected = SolverCompetition {
             auction_id: 0,
             gas_price: 1.,
@@ -100,13 +107,8 @@ mod tests {
                 orders: vec![Default::default()],
                 prices: [Default::default()].into_iter().collect(),
             },
-            solutions: vec![SolverSettlement {
-                solver: "asdf".to_string(),
-                objective: Default::default(),
-                clearing_prices: [Default::default()].into_iter().collect(),
-                orders: vec![Default::default()],
-                call_data: vec![1, 2],
-            }],
+            solutions: vec![winning_solution.clone()],
+            optimized_winning_solution: Some(winning_solution),
         };
         db.save_competition(expected.clone()).await.unwrap();
         let actual = db.load_competition(Identifier::Id(0)).await.unwrap();
