@@ -72,7 +72,7 @@ struct Metrics {
     #[metric()]
     last_seen_block: prometheus::IntGauge,
 
-    /// Service maintenance last seen block.
+    /// Service maintenance last successfully updated block.
     #[metric()]
     last_updated_block: prometheus::IntGauge,
 }
@@ -83,10 +83,11 @@ mod tests {
     use anyhow::bail;
 
     #[tokio::test]
-    async fn run_maintenance_ignores_errors() {
-        let mut ok_mock_maintenance = MockMaintaining::new();
+    async fn run_maintenance_no_early_exit_on_error() {
+        let mut ok1_mock_maintenance = MockMaintaining::new();
         let mut err_mock_maintenance = MockMaintaining::new();
-        ok_mock_maintenance
+        let mut ok2_mock_maintenance = MockMaintaining::new();
+        ok1_mock_maintenance
             .expect_run_maintenance()
             .times(1)
             .returning(|| Ok(()));
@@ -94,15 +95,20 @@ mod tests {
             .expect_run_maintenance()
             .times(1)
             .returning(|| bail!("Failed maintenance"));
+        ok2_mock_maintenance
+            .expect_run_maintenance()
+            .times(1)
+            .returning(|| Ok(()));
 
         let service_maintenance = ServiceMaintenance {
             maintainers: vec![
-                Arc::new(ok_mock_maintenance),
+                Arc::new(ok1_mock_maintenance),
                 Arc::new(err_mock_maintenance),
+                Arc::new(ok2_mock_maintenance),
             ],
         };
 
-        assert!(service_maintenance.run_maintenance().await.is_ok());
+        assert!(service_maintenance.run_maintenance().await.is_err());
     }
 
     #[tokio::test]
