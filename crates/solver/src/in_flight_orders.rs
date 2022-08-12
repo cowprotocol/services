@@ -42,7 +42,7 @@ impl InFlightOrders {
     /// Takes note of the new set of solvable orders and returns the ones that aren't in flight and
     /// scales down partially fillable orders if there are currently orders in-flight tapping into
     /// their executable amounts.
-    /// Returns the set of order uids that's considered in flight
+    /// Returns the set of order uids that are considered in flight.
     pub fn update_and_filter(&mut self, auction: &mut Auction) -> HashSet<OrderUid> {
         // If api has seen block X then trades starting at X + 1 are still in flight.
         self.in_flight = self
@@ -93,12 +93,11 @@ impl InFlightOrders {
         settlement
             .executed_trades()
             .filter(|(trade, _)| trade.order.data.partially_fillable)
-            .into_group_map_by(|(trade, _)| &trade.order)
+            .into_group_map_by(|(trade, _)| trade.order.metadata.uid)
             .into_iter()
-            .for_each(|(order, trades)| {
-                let uid = order.metadata.uid;
+            .for_each(|(uid, trades)| {
                 let most_recent_data = PartiallyFilledOrder {
-                    order: order.clone(),
+                    order: trades[0].0.order.clone(),
                     in_flight_trades: trades.into_iter().map(|(_, trade)| trade).collect(),
                 };
                 // always overwrite existing data with the most recent data
