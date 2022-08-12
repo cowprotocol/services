@@ -172,6 +172,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "clap 3.2.5",
  "contracts",
  "database",
@@ -179,6 +180,8 @@ dependencies = [
  "futures",
  "gas-estimation",
  "global-metrics",
+ "maplit",
+ "mockall",
  "model",
  "number_conversions",
  "primitive-types",

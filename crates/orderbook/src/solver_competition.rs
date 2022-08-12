@@ -25,10 +25,6 @@ pub trait SolverCompetitionStoring: Send + Sync {
         &self,
         identifier: Identifier,
     ) -> Result<SolverCompetition, LoadSolverCompetitionError>;
-
-    /// Retrieves the ID that will be assigned to the next solver competition
-    /// entry to get saved.
-    async fn next_solver_competition(&self) -> Result<SolverCompetitionId>;
 }
 
 /// Possible errors when loading a solver competition by ID.

@@ -45,18 +45,6 @@ impl SolverCompetitionStoring for Postgres {
                 .map_err(Into::into),
         }
     }
-
-    async fn next_solver_competition(&self) -> Result<SolverCompetitionId> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["next_solver_competition"])
-            .start_timer();
-
-        let mut ex = self.pool.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition::next_solver_competition(&mut ex)
-            .await
-            .context("failed to get next solver competition ID")
-    }
 }
 
 #[cfg(test)]
@@ -100,8 +88,10 @@ mod tests {
         let db = Postgres::new("postgresql://").unwrap();
         database::clear_DANGER(&db.pool).await.unwrap();
 
-        let id = db.next_solver_competition().await.unwrap();
-        let result = db.load(Identifier::Id(id + 1)).await.unwrap_err();
+        let result = db
+            .load(Identifier::Transaction(Default::default()))
+            .await
+            .unwrap_err();
         assert!(matches!(result, LoadSolverCompetitionError::NotFound));
     }
 }

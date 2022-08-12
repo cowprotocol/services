@@ -1,4 +1,4 @@
-pub mod auction;
+mod auction;
 mod events;
 mod quotes;
 
