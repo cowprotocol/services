@@ -368,16 +368,46 @@ impl Driver {
         let run = self.next_run_id();
 
         // extra function so that we can add span information
-        self.single_auction(auction, run)
+        let stored_competition_info = self
+            .single_auction(auction, run)
             .instrument(tracing::info_span!("auction", id, run))
-            .await
+            .await?;
+        if stored_competition_info {
+            self.wait_for_competition_id_to_change(id).await;
+        }
+        Ok(())
     }
 
+    // Wait for the auction to notice that we submitted competition info and update the next id.
+    // Otherwise there is a chance that we use the same id again.
+    async fn wait_for_competition_id_to_change(&self, previous: SolverCompetitionId) {
+        let wait_for_id_to_change = async {
+            tracing::debug!("waiting for auction competition id to change");
+            loop {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                let auction = match self.api.get_auction().await {
+                    Ok(auction) => auction,
+                    Err(_) => continue,
+                };
+                if auction.next_solver_competition != previous {
+                    tracing::debug!("auction competition id has changed");
+                    break;
+                }
+            }
+        };
+        if (tokio::time::timeout(Duration::from_secs(10), wait_for_id_to_change).await).is_err() {
+            tracing::warn!(
+                "auction competition id didn't change in time after submitting competition info"
+            );
+        }
+    }
+
+    /// Returns whether a settlement was attempted and thus a solver competition info stored.
     async fn single_auction(
         &mut self,
         mut auction: model::auction::Auction,
         run_id: u64,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let start = Instant::now();
         tracing::debug!("starting single run");
 
@@ -437,7 +467,7 @@ impl Driver {
         self.metrics.liquidity_fetched(&liquidity);
 
         if !auction_preprocessing::has_at_least_one_user_order(&orders) {
-            return Ok(());
+            return Ok(false);
         }
 
         let gas_price = self
@@ -531,6 +561,7 @@ impl Driver {
                 .collect(),
         };
 
+        let mut stored_solver_competition = false;
         if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
             winning_settlement.settlement = self
                 .post_processing_pipeline
@@ -596,10 +627,11 @@ impl Driver {
             );
             self.send_solver_competition(next_solver_competition, solver_competition)
                 .await;
+            stored_solver_competition = true;
         }
         // Happens after settlement submission so that we do not delay it.
         self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
-        Ok(())
+        Ok(stored_solver_competition)
     }
 
     fn next_run_id(&mut self) -> u64 {
