@@ -101,14 +101,10 @@ pub struct Arguments {
     #[clap(long, env, parse(try_from_str), default_value = "false")]
     pub enable_presign_orders: bool,
 
-    /// If solvable orders haven't been successfully update in this time in seconds attempting
+    /// If solvable orders haven't been successfully updated in this many blocks attempting
     /// to get them errors and our liveness check fails.
-    #[clap(
-        long,
-        default_value = "300",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
-    )]
-    pub solvable_orders_max_update_age: Duration,
+    #[clap(long, default_value = "24")]
+    pub solvable_orders_max_update_age_blocks: u64,
 
     /// A flat fee discount denominated in the network's native token (i.e. Ether for Mainnet).
     ///
@@ -283,8 +279,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
         writeln!(
             f,
-            "solvable_orders_max_update_age: {:?}",
-            self.solvable_orders_max_update_age
+            "solvable_orders_max_update_age_blocks: {:?}",
+            self.solvable_orders_max_update_age_blocks,
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;

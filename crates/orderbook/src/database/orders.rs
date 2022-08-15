@@ -39,8 +39,6 @@ pub trait OrderStoring: Send + Sync {
     ) -> Result<(), InsertionError>;
     async fn orders_for_tx(&self, tx_hash: &H256) -> Result<Vec<Order>>;
     async fn single_order(&self, uid: &OrderUid) -> Result<Option<Order>>;
-    /// Orders that are solvable: minimum valid to, not fully executed, not invalidated.
-    async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders>;
     /// All orders of a single user ordered by creation date descending (newest orders first).
     async fn user_orders(
         &self,
@@ -310,28 +308,6 @@ impl OrderStoring for Postgres {
         .try_collect()
         .await
     }
-
-    async fn solvable_orders(&self, min_valid_to: u32) -> Result<SolvableOrders> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["solvable_orders"])
-            .start_timer();
-
-        let mut ex = self.pool.begin().await?;
-        let orders = database::orders::solvable_orders(&mut ex, min_valid_to as i64)
-            .map(|result| match result {
-                Ok(order) => full_order_into_model_order(order),
-                Err(err) => Err(anyhow::Error::from(err)),
-            })
-            .try_collect::<Vec<_>>()
-            .await?;
-        let latest_settlement_block =
-            database::orders::latest_settlement_block(&mut ex).await? as u64;
-        Ok(SolvableOrders {
-            orders,
-            latest_settlement_block,
-        })
-    }
 }
 
 fn calculate_status(order: &FullOrder) -> OrderStatus {
@@ -432,18 +408,8 @@ fn is_buy_order_filled(amount: &BigDecimal, executed_amount: &BigDecimal) -> boo
 mod tests {
     use super::*;
     use chrono::Duration;
-    use database::{
-        byte_array::ByteArray,
-        events::{Event, EventIndex, Settlement},
-    };
+    use database::byte_array::ByteArray;
     use std::sync::atomic::{AtomicI64, Ordering};
-
-    async fn append_events(db: &Postgres, events: &[(EventIndex, Event)]) -> Result<()> {
-        let mut transaction = db.pool.begin().await?;
-        database::events::append(&mut transaction, events).await?;
-        transaction.commit().await?;
-        Ok(())
-    }
 
     #[test]
     fn order_status() {
@@ -751,50 +717,6 @@ mod tests {
                 .await
                 .unwrap();
         assert_eq!(old_order_cancellation, None);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_solvable_orders_settlement_block() {
-        let db = Postgres::new("postgresql://").unwrap();
-        database::clear_DANGER(&db.pool).await.unwrap();
-
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            0
-        );
-        append_events(
-            &db,
-            &[(
-                EventIndex {
-                    block_number: 1,
-                    log_index: 0,
-                },
-                Event::Settlement(Settlement::default()),
-            )],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            1
-        );
-        append_events(
-            &db,
-            &[(
-                EventIndex {
-                    block_number: 5,
-                    log_index: 3,
-                },
-                Event::Settlement(Settlement::default()),
-            )],
-        )
-        .await
-        .unwrap();
-        assert_eq!(
-            db.solvable_orders(0).await.unwrap().latest_settlement_block,
-            5
-        );
     }
 
     #[tokio::test]

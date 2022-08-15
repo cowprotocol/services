@@ -339,39 +339,35 @@ pub fn full_orders_in_tx<'a>(
     ex: &'a mut PgConnection,
     tx_hash: &'a TransactionHash,
 ) -> BoxStream<'a, Result<FullOrder, sqlx::Error>> {
-    // TODO - This query assumes there is only one settlement per block.
-    //  when there are two, we would want all trades for which the log index is between
-    //  that of the correct settlement and the next. For this we would have to
-    //  - fetch all settlements for the block containing the specified txHash
-    //  - sort them by log index
-    //  - pick out the target settlement and get all trades with log index between target's and next.
-    //  I believe this would require a string of queries something like
-    // with target_block_number as (
-    //     SELECT block_number from settlements where tx_hash = $1
-    // ),
-    // with next_log_index as (
-    //     SELECT log_index from settlements
-    //     WHERE block_number > target_block_number
-    //     ORDER BY block_number asc
-    //     LIMIT 1
-    // )
-    // "SELECT ", ORDERS_SELECT,
-    // "FROM ", ORDERS_FROM,
-    // "JOIN trades t \
-    //     ON t.order_uid = o.uid \
-    //  JOIN settlements s \
-    //     ON s.block_number = t.block_number \
-    //  WHERE s.tx_hash = $1 \
-    //  AND t.log_index BETWEEN s.log_index AND next_log_index"
-    #[rustfmt::skip]
-        const QUERY: &str = const_format::concatcp!(
-"SELECT ", ORDERS_SELECT,
-" FROM ", ORDERS_FROM,
-" JOIN trades t
-    ON t.order_uid = o.uid
-    JOIN settlements s
-    ON s.block_number = t.block_number
-    WHERE s.tx_hash = $1 ",
+    const QUERY: &str = const_format::formatcp!(
+        r#"
+-- This will fail if we ever have multiple settlements in the same transaction because this WITH
+-- query will return multiple rows. If we ever want to do this, a tx hash is no longer enough to
+-- uniquely identify a settlement so the "orders for tx hash" route needs to change in some way
+-- like taking block number and log index directly.
+WITH settlement as (
+    SELECT block_number, log_index
+    FROM settlements
+    WHERE tx_hash = $1
+)
+SELECT {ORDERS_SELECT}
+FROM {ORDERS_FROM}
+JOIN trades t ON t.order_uid = o.uid
+WHERE
+    t.block_number = (SELECT block_number FROM settlement) AND
+    -- BETWEEN is inclusive
+    t.log_index BETWEEN
+        -- previous settlement, the settlement event is emitted after the trade events
+        (
+            -- COALESCE because there might not be a previous settlement
+            SELECT COALESCE(MAX(log_index), 0)
+            FROM settlements
+            WHERE
+                block_number = (SELECT block_number FROM settlement) AND
+                log_index < (SELECT log_index from settlement)
+        ) AND
+        (SELECT log_index FROM settlement)
+;"#
     );
     sqlx::query_as(QUERY).bind(tx_hash).fetch(ex)
 }
@@ -445,7 +441,7 @@ mod tests {
         PgTransaction,
     };
     use bigdecimal::num_bigint::{BigInt, ToBigInt};
-    use futures::StreamExt;
+    use futures::{StreamExt, TryStreamExt};
     use sqlx::Connection;
 
     #[tokio::test]
@@ -810,45 +806,73 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let uids: Vec<OrderUid> = (0u8..=3).map(|i| ByteArray([i; 56])).collect();
+        let uid = |i: u8| ByteArray([i; 56]);
+        let tx_hash = |i: u8| ByteArray([i; 32]);
         let uid_to_order = |uid: &OrderUid| Order {
             uid: *uid,
             ..Default::default()
         };
+        let trade = |block_number, log_index, order_uid| {
+            (
+                EventIndex {
+                    block_number,
+                    log_index,
+                },
+                Event::Trade(Trade {
+                    order_uid,
+                    ..Default::default()
+                }),
+            )
+        };
+        let settlement = |block_number, log_index, transaction_hash| {
+            (
+                EventIndex {
+                    block_number,
+                    log_index,
+                },
+                Event::Settlement(Settlement {
+                    transaction_hash,
+                    ..Default::default()
+                }),
+            )
+        };
 
-        // Each order was traded in the consecutive blocks.
-        for (i, uid) in uids.iter().enumerate() {
-            insert_order(&mut db, &uid_to_order(uid)).await.unwrap();
-            let events = [
-                (
-                    EventIndex {
-                        block_number: i as i64,
-                        log_index: 0,
-                    },
-                    Event::Settlement(Settlement {
-                        solver: Default::default(),
-                        transaction_hash: ByteArray([i as u8; 32]),
-                    }),
-                ),
-                (
-                    EventIndex {
-                        block_number: i as i64,
-                        log_index: 1,
-                    },
-                    Event::Trade(Trade {
-                        order_uid: *uid,
-                        ..Default::default()
-                    }),
-                ),
-            ];
-            crate::events::append(&mut db, &events).await.unwrap();
+        for i in 0..8 {
+            insert_order(&mut db, &uid_to_order(&uid(i))).await.unwrap();
         }
-        for (i, uid) in uids.iter().enumerate() {
-            let result = full_orders_in_tx(&mut db, &ByteArray([i as u8; 32]))
-                .map(|result| result.unwrap().uid.0)
-                .collect::<Vec<_>>()
-                .await;
-            assert_eq!(result.as_slice(), &[uid.0]);
+        let events = &[
+            // first block, 1 settlement, 1 order
+            trade(0, 0, uid(0)),
+            settlement(0, 1, tx_hash(0)),
+            // second block, 3 settlements with 2 orders each
+            trade(1, 0, uid(1)),
+            trade(1, 1, uid(2)),
+            settlement(1, 2, tx_hash(1)),
+            trade(1, 3, uid(3)),
+            trade(1, 4, uid(4)),
+            settlement(1, 5, tx_hash(2)),
+            trade(1, 6, uid(5)),
+            trade(1, 7, uid(6)),
+            settlement(1, 8, tx_hash(3)),
+            // third block, 1 settlement, 1 order
+            trade(2, 0, uid(7)),
+            settlement(2, 1, tx_hash(4)),
+        ];
+        crate::events::append(&mut db, events).await.unwrap();
+
+        for (tx_hash, expected_uids) in [
+            (tx_hash(0), &[uid(0)] as &[OrderUid]),
+            (tx_hash(1), &[uid(1), uid(2)]),
+            (tx_hash(2), &[uid(3), uid(4)]),
+            (tx_hash(3), &[uid(5), uid(6)]),
+            (tx_hash(4), &[uid(7)]),
+        ] {
+            let actual = full_orders_in_tx(&mut db, &tx_hash)
+                .map_ok(|order| order.uid)
+                .try_collect::<Vec<_>>()
+                .await
+                .unwrap();
+            assert_eq!(actual, expected_uids);
         }
     }
 

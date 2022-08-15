@@ -1,11 +1,11 @@
 pub mod arguments;
 pub mod database;
 pub mod event_updater;
+pub mod solvable_orders;
 
-use crate::database::Postgres;
+use crate::{database::Postgres, solvable_orders::SolvableOrdersCache};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9};
 use ethcontract::errors::DeployError;
-use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -46,7 +46,7 @@ use shared::{
     zeroex_api::DefaultZeroExApi,
     Web3Transport,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 struct Liveness;
 #[async_trait::async_trait]
@@ -121,11 +121,9 @@ pub async fn main(args: arguments::Arguments) {
         .expect("block_number")
         .as_u64();
 
-    let _signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
+    let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
-    let _domain_separator = DomainSeparator::new(chain_id, settlement_contract.address());
-
-    let _balance_fetcher = Arc::new(Web3BalanceFetcher::new(
+    let balance_fetcher = Arc::new(Web3BalanceFetcher::new(
         web3.clone(),
         vault.clone(),
         vault_relayer,
@@ -399,7 +397,7 @@ pub async fn main(args: arguments::Arguments) {
             bad_token_detector.clone(),
         )
     };
-    let _native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
+    let native_price_estimator = Arc::new(CachingNativePriceEstimator::new(
         Box::new(NativePriceEstimator::new(
             Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
                 args.native_price_estimators
@@ -412,6 +410,23 @@ pub async fn main(args: arguments::Arguments) {
         )),
         args.native_price_cache_max_age_secs,
     ));
+
+    let solvable_orders_cache = SolvableOrdersCache::new(
+        args.min_order_validity_period,
+        db.clone(),
+        args.banned_users.iter().copied().collect(),
+        balance_fetcher.clone(),
+        bad_token_detector.clone(),
+        current_block_stream.clone(),
+        native_price_estimator.clone(),
+        signature_validator.clone(),
+        Duration::from_secs(2),
+    );
+    let block = current_block_stream.borrow().number.unwrap().as_u64();
+    solvable_orders_cache
+        .update(block)
+        .await
+        .expect("failed to perform initial solvable orders update");
 
     let sync_start = if args.skip_event_sync {
         web3.eth()

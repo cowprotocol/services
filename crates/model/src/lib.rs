@@ -136,7 +136,7 @@ impl DomainSeparator {
     }
 }
 
-#[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolvableOrders {
     pub orders: Vec<order::Order>,
