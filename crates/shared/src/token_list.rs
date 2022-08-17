@@ -8,7 +8,7 @@ use serde::Deserialize;
 pub struct TokenList {
     tokens: HashMap<H160, Token>,
 }
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub address: H160,
@@ -47,14 +47,14 @@ impl TokenList {
 }
 
 /// Relevant parts of TokenList schema as defined in https://uniswap.org/tokenlist.schema.json
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TokenListModel {
     name: String,
     tokens: Vec<TokenModel>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 struct TokenModel {
     chain_id: u64,

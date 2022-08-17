@@ -174,7 +174,7 @@ pub struct OrderValidator {
     signature_validator: Arc<dyn SignatureValidating>,
 }
 
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default)]
 pub struct PreOrderData {
     pub owner: H160,
     pub sell_token: H160,
@@ -450,7 +450,7 @@ impl OrderValidating for OrderValidator {
 }
 
 /// Signature configuration that is accepted by the orderbook.
-#[derive(Debug, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq, Default)]
 pub struct SignatureConfiguration {
     pub eip1271: bool,
     pub presign: bool,

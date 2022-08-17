@@ -7,7 +7,7 @@ use primitive_types::H160;
 use thiserror::Error;
 
 /// Structure used to represent a signature.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignatureCheck {
     pub signer: H160,
     pub hash: [u8; 32],

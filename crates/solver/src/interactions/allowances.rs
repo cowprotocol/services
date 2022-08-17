@@ -41,14 +41,14 @@ pub trait AllowanceManaging: Send + Sync {
     async fn get_approvals(&self, requests: &[ApprovalRequest]) -> Result<Vec<Approval>>;
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct ApprovalRequest {
     pub token: H160,
     pub spender: H160,
     pub amount: U256,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct Allowances {
     spender: H160,
     allowances: HashMap<H160, U256>,

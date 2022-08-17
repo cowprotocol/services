@@ -18,7 +18,7 @@ use std::time::Duration;
 /// Parts to split a swap.
 ///
 /// This type is generic on the maximum number of splits allowed.
-#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd)]
 pub struct Amount<const MIN: usize, const MAX: usize>(usize);
 
 impl<const MIN: usize, const MAX: usize> Amount<MIN, MAX> {
@@ -306,14 +306,14 @@ impl SwapQuery {
 }
 
 /// A 1Inch API response.
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum RestResponse<T> {
     Ok(T),
     Err(RestError),
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Default)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct RestError {
     pub status_code: u32,

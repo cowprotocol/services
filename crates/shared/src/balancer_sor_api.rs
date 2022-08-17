@@ -62,7 +62,7 @@ impl BalancerSorApi for DefaultBalancerSorApi {
 }
 
 /// An SOR query.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Query {
     /// The sell token to quote.
@@ -135,7 +135,7 @@ pub struct Quote {
 }
 
 /// A swap included in a larger batched swap.
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Swap {
     /// The ID of the pool swapping in this step.

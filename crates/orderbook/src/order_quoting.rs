@@ -105,7 +105,7 @@ impl From<PartialValidationError> for OrderQuoteError {
 }
 
 /// Order parameters for quoting.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuoteParameters {
     pub sell_token: H160,
     pub buy_token: H160,
@@ -290,7 +290,7 @@ pub enum FindQuoteError {
 }
 
 /// Fields for searching stored quotes.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QuoteSearchParameters {
     pub sell_token: H160,
     pub buy_token: H160,

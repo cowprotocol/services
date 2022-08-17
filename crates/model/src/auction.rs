@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 /// A batch auction.
 #[serde_as]
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Auction {
     /// The block that this auction is valid for.

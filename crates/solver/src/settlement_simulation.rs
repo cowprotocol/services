@@ -257,7 +257,7 @@ pub fn tenderly_link(
     )
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TenderlyRequest {
     pub network_id: String,
     pub block_number: u64,
