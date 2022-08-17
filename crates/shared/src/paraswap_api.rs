@@ -198,7 +198,7 @@ impl PriceQuery {
 }
 
 /// A Paraswap API price response.
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct PriceResponse {
     /// Opaque type, which the API expects to get echoed back in the exact form when requesting settlement transaction data
     pub price_route_raw: Value,

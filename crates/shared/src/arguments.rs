@@ -300,7 +300,7 @@ pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
 
 pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     let percentage_factor = f64::from_str(s)?;
-    ensure!(percentage_factor.is_finite() && percentage_factor >= 0. && percentage_factor <= 1.0);
+    ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
     Ok(percentage_factor)
 }
 

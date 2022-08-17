@@ -159,6 +159,10 @@ impl SolutionSubmitter {
                 .iter()
                 .map(|strategy| {
                     async {
+                        // Needed so that the compiler understands that we don't
+                        // want to move `strategy` into the closure but use a
+                        // reference to it.
+                        #[allow(clippy::borrow_deref_ref)]
                         match &*strategy {
                             TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
                                 if !matches!(account, Account::Offline(..)) {

@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
 use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
 
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum PriceQuality {
     Fast,
@@ -63,7 +63,7 @@ impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
 }
 
 /// The order parameters to quote a price and fee for.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteRequest {
     pub from: H160,
@@ -89,7 +89,7 @@ pub struct OrderQuoteRequest {
     pub price_quality: PriceQuality,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum OrderQuoteSide {
     #[serde(rename_all = "camelCase")]
@@ -112,7 +112,7 @@ impl Default for OrderQuoteSide {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Validity {
     To(u32),
     For(u32),
@@ -177,7 +177,7 @@ impl Serialize for Validity {
     }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(untagged)]
 pub enum SellAmount {
     BeforeFee {
@@ -191,7 +191,7 @@ pub enum SellAmount {
 }
 
 /// The quoted order by the service.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuote {
     pub sell_token: H160,
@@ -213,7 +213,7 @@ pub struct OrderQuote {
 
 pub type QuoteId = i64;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderQuoteResponse {
     pub quote: OrderQuote,

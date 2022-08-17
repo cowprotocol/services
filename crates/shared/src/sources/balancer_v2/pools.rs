@@ -49,7 +49,7 @@ macro_rules! impl_from_state {
 impl_from_state!(weighted::PoolState, Weighted);
 impl_from_state!(stable::PoolState, Stable);
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 /// Balancer pool status.
 pub enum PoolStatus {
     Active(Pool),

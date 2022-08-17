@@ -22,7 +22,7 @@ pub trait PoolFetching: Send + Sync {
 }
 
 /// Pool data in a format prepared for solvers.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolInfo {
     pub address: H160,
     pub tokens: Vec<Token>,
@@ -32,7 +32,7 @@ pub struct PoolInfo {
 
 /// Pool state in a format prepared for solvers.
 #[serde_as]
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolState {
     #[serde(with = "u256_decimal")]
     pub sqrt_price: U256,
@@ -48,7 +48,7 @@ pub struct PoolState {
 }
 
 /// Pool stats in a format prepared for solvers
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PoolStats {
     #[serde(with = "u256_decimal")]
     #[serde(rename = "mean")]
