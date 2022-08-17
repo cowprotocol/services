@@ -13,6 +13,7 @@ use ethcontract::{H160, H256, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
+use std::cmp;
 use std::collections::HashSet;
 use thiserror::Error;
 
@@ -434,6 +435,8 @@ fn retain_valid_orders(orders: &mut Vec<OrderRecord>) {
     });
 }
 
+const MAX_RESPONSE_LOG_LENGTH: usize = 10 * 1024; // 10 KB.
+
 impl DefaultZeroExApi {
     async fn request<T: for<'a> serde::Deserialize<'a>>(
         &self,
@@ -452,7 +455,26 @@ impl DefaultZeroExApi {
             .text()
             .await
             .map_err(ZeroExResponseError::TextFetch)?;
-        tracing::debug!("Response from 0x API: {}", response_text);
+
+        // 0x responses are HUGE when querying limit orders. This causes issues
+        // when storing logs with Kibana/Elastic Search, so trim them
+        {
+            let sliced = if response_text.len() > MAX_RESPONSE_LOG_LENGTH {
+                "..."
+            } else {
+                ""
+            };
+            let sliced_response_text = response_text
+                .get(..cmp::min(response_text.len(), MAX_RESPONSE_LOG_LENGTH))
+                // This can happen only if we slice in the middle of a UTF-8
+                // codepoint. Since 0x limit order response is just ASCII, this
+                // should never happen. We deal with this case to avoid panics,
+                // but it isn't worth handling it more completely (by finding
+                // the start/end of the UTF-8 codepoint for example) since it
+                // really should never happen.
+                .unwrap_or("UTF-8 SLICE ERROR");
+            tracing::debug!("Respnse from 0x API: {sliced_response_text}{sliced}");
+        }
 
         match serde_json::from_str::<RawResponse<T>>(&response_text) {
             Ok(RawResponse::ResponseOk(response)) => Ok(response),
