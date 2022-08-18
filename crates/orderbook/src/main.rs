@@ -393,6 +393,7 @@ async fn main() {
                     one_inch_api.as_ref().unwrap().clone(),
                     args.shared.disabled_one_inch_protocols.clone(),
                     rate_limiter(estimator.name()),
+                    args.shared.one_inch_referrer_address
                 )),
                 PriceEstimatorType::Yearn => create_http_estimator(
                     "yearn-price-estimator".to_string(),

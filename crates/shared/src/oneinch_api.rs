@@ -69,6 +69,9 @@ pub struct SellOrderQuoteQuery {
     pub virtual_parts: Option<Amount<1, 500>>,
     /// Which tokens should be used for intermediate trading hops.
     pub connector_tokens: Option<Vec<H160>>,
+    /// Adress referring this trade which will receive a portion of the swap
+    /// fees as a reward.
+    pub referrer_address: Option<H160>,
 }
 
 // The `Display` implementation for `H160` unfortunately does not print
@@ -131,6 +134,10 @@ impl SellOrderQuoteQuery {
             url.query_pairs_mut()
                 .append_pair("gasPrice", &gas_price.to_string());
         }
+        if let Some(referrer_address) = self.referrer_address {
+            url.query_pairs_mut()
+                .append_pair("referrerAddress", &addr2str(referrer_address));
+        }
 
         url
     }
@@ -140,6 +147,7 @@ impl SellOrderQuoteQuery {
         buy_token: H160,
         protocols: Option<Vec<String>>,
         amount: U256,
+        referrer_address: Option<H160>,
     ) -> Self {
         Self {
             from_token_address: sell_token,
@@ -154,6 +162,7 @@ impl SellOrderQuoteQuery {
             gas_price: None,
             virtual_parts: None,
             connector_tokens: None,
+            referrer_address,
         }
     }
 }
@@ -189,8 +198,6 @@ pub struct SwapQuery {
     pub disable_estimate: Option<bool>,
     /// Receiver of destination currency. default: from_address
     pub dest_receiver: Option<H160>,
-    /// Who is referring this swap to 1Inch.
-    pub referrer_address: Option<H160>,
     /// Should Chi of from_token_address be burnt to compensate for gas.
     /// default: false
     pub burn_chi: Option<bool>,
@@ -243,7 +250,7 @@ impl SwapQuery {
             url.query_pairs_mut()
                 .append_pair("destReceiver", &addr2str(dest_receiver));
         }
-        if let Some(referrer_address) = self.referrer_address {
+        if let Some(referrer_address) = self.quote.referrer_address {
             url.query_pairs_mut()
                 .append_pair("referrerAddress", &addr2str(referrer_address));
         }
@@ -287,6 +294,7 @@ impl SwapQuery {
         from_address: H160,
         protocols: Option<Vec<String>>,
         slippage: Slippage,
+        referrer_address: Option<H160>,
     ) -> Self {
         Self {
             from_address,
@@ -295,10 +303,13 @@ impl SwapQuery {
             // does not hold balances to traded tokens.
             disable_estimate: Some(true),
             quote: SellOrderQuoteQuery::with_default_options(
-                sell_token, buy_token, protocols, in_amount,
+                sell_token,
+                buy_token,
+                protocols,
+                in_amount,
+                referrer_address,
             ),
             dest_receiver: None,
-            referrer_address: None,
             burn_chi: None,
             allow_partial_fill: Some(false),
         }
@@ -595,9 +606,9 @@ mod tests {
                 gas_price: None,
                 virtual_parts: None,
                 connector_tokens: None,
+                referrer_address: None,
             },
             dest_receiver: None,
-            referrer_address: None,
             burn_chi: None,
             allow_partial_fill: None,
         }
@@ -637,11 +648,11 @@ mod tests {
                     addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                     addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                 ]),
+                referrer_address: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
             },
             burn_chi: Some(false),
             allow_partial_fill: Some(false),
             dest_receiver: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
-            referrer_address: Some(addr!("41111a111217dc0aa78b774fa6a738024120c302")),
         }
         .into_url(&base_url, 1);
 
@@ -818,11 +829,11 @@ mod tests {
                     addr!("111111111117dc0aa78b770fa6a738034120c302"),
                     None,
                     1_000_000_000_000_000_000u128.into(),
+                    None,
                 ),
                 burn_chi: None,
                 allow_partial_fill: None,
                 dest_receiver: None,
-                referrer_address: None,
             })
             .await
             .unwrap();
@@ -848,15 +859,16 @@ mod tests {
                     main_route_parts: Some(Amount::new(3).unwrap()),
                     parts: Some(Amount::new(3).unwrap()),
                     fee: Some(1.5),
-                    gas_price: Some(100_000.into()),
+                    // setting `gas_price` will produce a response with different fields
+                    gas_price: None,
                     connector_tokens: Some(vec![
                         addr!("c02aaa39b223fe8d0a0e5c4f27ead9083c756cc2"),
                         addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                     ]),
                     virtual_parts: Some(Amount::new(10).unwrap()),
+                    referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
                 },
                 dest_receiver: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
-                referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
                 burn_chi: Some(false),
                 allow_partial_fill: Some(false),
             })
@@ -903,6 +915,7 @@ mod tests {
             gas_price: None,
             virtual_parts: None,
             connector_tokens: None,
+            referrer_address: None,
         }
         .into_url(&base_url, 1);
 
@@ -934,6 +947,7 @@ mod tests {
             gas_limit: Some(Amount::new(750_000).unwrap()),
             main_route_parts: Some(Amount::new(3).unwrap()),
             parts: Some(Amount::new(3).unwrap()),
+            referrer_address: Some(addr!("9008D19f58AAbD9eD0D60971565AA8510560ab41")),
         }
         .into_url(&base_url, 1);
 
@@ -951,7 +965,8 @@ mod tests {
                 &mainRouteParts=3\
                 &virtualParts=42\
                 &parts=3\
-                &gasPrice=200000"
+                &gasPrice=200000\
+                &referrerAddress=0x9008d19f58aabd9ed0d60971565aa8510560ab41"
         );
     }
 
@@ -1078,6 +1093,7 @@ mod tests {
                 addr!("111111111117dc0aa78b770fa6a738034120c302"),
                 None,
                 1_000_000_000_000_000_000u128.into(),
+                None,
             ))
             .await
             .unwrap();
@@ -1100,11 +1116,13 @@ mod tests {
                     addr!("6810e776880c02933d47db1b9fc05908e5386b96"),
                 ]),
                 virtual_parts: Some(Amount::new(42).unwrap()),
-                gas_price: Some(200_000.into()),
+                // setting `gas_price` will produce a response with different fields
+                gas_price: None,
                 complexity_level: Some(Amount::new(3).unwrap()),
                 gas_limit: Some(Amount::new(750_000).unwrap()),
                 main_route_parts: Some(Amount::new(2).unwrap()),
                 parts: Some(Amount::new(2).unwrap()),
+                referrer_address: Some(addr!("6C642caFCbd9d8383250bb25F67aE409147f78b2")),
             })
             .await
             .unwrap();
