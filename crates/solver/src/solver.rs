@@ -270,19 +270,18 @@ pub fn create(
     ));
 
     // We use two separate solver caches: one for our internal optimization
-    // solvers (which **does** include AMM liquidity and filter out orders with
-    // non-fee-connected-tokens), and one for external solvers (which **does
-    // not** include AMM liquidity or filter out orders with
+    // solvers (which **does** filter out orders with non-fee-connected-tokens),
+    // and one for external solvers (which **does not** filter out orders with
     // non-fee-connected-tokens)
-    let http_solver_cache_with_liquidity = http_solver::InstanceCache::default();
-    let http_solver_cache_without_liquidity = http_solver::InstanceCache::default();
+    let http_instance_with_filtered_orders = http_solver::InstanceCache::default();
+    let http_instance_with_all_orders = http_solver::InstanceCache::default();
 
     // Helper function to create http solver instances.
     let create_http_solver = |account: Account,
                               url: Url,
                               name: String,
                               config: SolverConfig,
-                              include_liquidity_in_instance: bool|
+                              filter_non_fee_connected_orders: bool|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -299,13 +298,12 @@ pub fn create(
             buffer_retriever.clone(),
             allowance_mananger.clone(),
             order_converter.clone(),
-            if include_liquidity_in_instance {
-                http_solver_cache_with_liquidity.clone()
+            if filter_non_fee_connected_orders {
+                http_instance_with_filtered_orders.clone()
             } else {
-                http_solver_cache_without_liquidity.clone()
+                http_instance_with_all_orders.clone()
             },
-            // include AMM liquidity for our internal optimiation solvers
-            include_liquidity_in_instance,
+            filter_non_fee_connected_orders,
         )
     };
 
