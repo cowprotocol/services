@@ -1,7 +1,7 @@
 use crate::event_handling::{BlockNumber, EventRetrieving, EventStoring};
 use crate::Web3;
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use contracts::{
     uniswap_v3_pool::event_data::{Burn, Mint, Swap},
     UniswapV3Pool,
@@ -50,6 +50,7 @@ impl EventRetrieving for UniswapV3PoolEventFetcher {
 
 #[derive(Debug, Default)]
 pub struct RecentEventsCache {
+    /// Events are ordered by block number
     events: Vec<Event<UniswapV3Event>>,
 }
 
@@ -64,6 +65,38 @@ impl RecentEventsCache {
                 .block_number
                 >= delete_from_block_number
         });
+    }
+
+    fn first_event_block(&self) -> Result<u64> {
+        Ok(self
+            .events
+            .first()
+            .context("event cache is empty")?
+            .meta
+            .as_ref()
+            .context("event meta is empty")?
+            .block_number)
+    }
+
+    pub async fn get_events(&self, block_number: u64) -> Result<Vec<Event<UniswapV3Event>>> {
+        if block_number < self.first_event_block().context("empty event cache")?
+            || block_number > self.last_event_block().await?
+        {
+            return Err(anyhow!("events cache miss"));
+        }
+
+        Ok(self
+            .events
+            .iter()
+            .take_while(|event| {
+                event
+                    .meta
+                    .as_ref()
+                    .filter(|event| event.block_number <= block_number)
+                    .is_some()
+            })
+            .cloned()
+            .collect())
     }
 }
 
@@ -84,10 +117,13 @@ impl EventStoring<UniswapV3Event> for RecentEventsCache {
     }
 
     async fn last_event_block(&self) -> Result<u64> {
-        self.events
-            .iter()
-            .filter_map(|event| event.meta.as_ref().map(|meta| meta.block_number))
-            .max()
-            .context("event with max block number missing")
+        Ok(self
+            .events
+            .last()
+            .context("event cache is empty")?
+            .meta
+            .as_ref()
+            .context("event meta is empty")?
+            .block_number)
     }
 }
