@@ -388,13 +388,9 @@ async fn build_auction_converter(
 
     let uniswap_v3_liquidity = if baseline_sources.contains(&BaselineSource::UniswapV3) {
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(
-                common.chain_id,
-                args.liquidity_fetcher_max_age_update,
-                common.client.clone(),
-            )
-            .await
-            .expect("failed to create UniswapV3 pool fetcher in solver"),
+            UniswapV3PoolFetcher::new(common.chain_id, common.client.clone(), common.web3.clone())
+                .await
+                .expect("failed to create UniswapV3 pool fetcher in solver"),
         );
 
         Some(UniswapV3Liquidity::new(

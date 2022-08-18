@@ -265,13 +265,9 @@ async fn main() {
     let (uniswap_v3_liquidity, uniswap_v3_maintainer) =
         if baseline_sources.contains(&BaselineSource::UniswapV3) {
             let uniswap_v3_pool_fetcher = Arc::new(
-                UniswapV3PoolFetcher::new(
-                    chain_id,
-                    args.shared.liquidity_fetcher_max_age_update,
-                    client.clone(),
-                )
-                .await
-                .expect("failed to create UniswapV3 pool fetcher in solver"),
+                UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone())
+                    .await
+                    .expect("failed to create UniswapV3 pool fetcher in solver"),
             );
 
             (

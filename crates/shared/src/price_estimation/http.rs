@@ -474,7 +474,7 @@ mod tests {
             .expect("failed to create Balancer pool fetcher"),
         );
         let uniswap_v3_pool_fetcher = Arc::new(
-            UniswapV3PoolFetcher::new(chain_id, Duration::from_secs(30), client.clone())
+            UniswapV3PoolFetcher::new(chain_id, client.clone(), web3.clone())
                 .await
                 .expect("failed to create uniswap v3 pool fetcher"),
         );

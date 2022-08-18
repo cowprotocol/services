@@ -1,11 +1,13 @@
+use crate::event_handling::EventHandler;
 use crate::maintenance::Maintaining;
+use crate::Web3;
 
+use super::event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher};
 use super::graph_api::{PoolData, Token, UniV3SubgraphClient};
 use anyhow::{Context, Result};
 use ethcontract::{H160, U256};
 use itertools::{Either, Itertools};
-use model::u256_decimal;
-use model::TokenPair;
+use model::{u256_decimal, TokenPair};
 use num::{rational::Ratio, BigInt, Zero};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
@@ -13,7 +15,6 @@ use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
     sync::Mutex,
-    time::{Duration, Instant},
 };
 
 #[async_trait::async_trait]
@@ -87,25 +88,33 @@ impl TryFrom<PoolData> for PoolInfo {
     }
 }
 
-pub struct CachedPool {
-    pub pool: PoolData,
-    pub updated_at: Instant,
-    pub requested_at: Instant,
+#[derive(Default)]
+struct PoolsCheckpoint {
+    /// Pools state checkpoint on the `last_checkpoint_block` number.
+    data: HashMap<H160, PoolData>,
+    /// Last block considered reorg safe.
+    last_checkpoint_block: Option<u64>,
 }
 
 pub struct UniswapV3PoolFetcher {
+    /// Graph api is used in two different situations:
+    /// 1. once in constructor, to get the initial list of existing pools without their state.
+    /// 2. once per each pool, to get the state, right at the moment when that pool state is requested by the user.
+    /// This is done in order to avoid fetching all pools state at the same time for performance issues.
     graph_api: UniV3SubgraphClient,
-    /// H160 is pool id while TokenPair is a pair or tokens for each pool
+    /// H160 is pool id while TokenPair is a pair or tokens for each pool.
     pools_by_token_pair: HashMap<TokenPair, HashSet<H160>>,
-    cache: Mutex<HashMap<H160, CachedPool>>,
-    max_age: Duration,
+    /// Pools state on a specific block number in history
+    pools_checkpoint: Mutex<PoolsCheckpoint>,
+    /// Recent events used on top of pools_checkpoint to get the `latest_block` pools state.
+    events: tokio::sync::Mutex<EventHandler<Web3, UniswapV3PoolEventFetcher, RecentEventsCache>>,
 }
 
 impl UniswapV3PoolFetcher {
-    /// Retrieves all registered pools on Uniswap V3 subgraph, but without `ticks`,
-    /// making the cache values outdated immediately. Cache values are supposed to be updated
+    /// Retrieves all registered pools on Uniswap V3 subgraph, but without `ticks`.
+    /// Pools checkpoint is initially empty, but is supposed to be updated
     /// either on fetch or on periodic maintenance update.
-    pub async fn new(chain_id: u64, max_age: Duration, client: Client) -> Result<Self> {
+    pub async fn new(chain_id: u64, client: Client, web3: Web3) -> Result<Self> {
         let graph_api = UniV3SubgraphClient::for_chain(chain_id, client)?;
         let registered_pools = graph_api.get_registered_pools().await?;
         tracing::debug!(
@@ -114,41 +123,30 @@ impl UniswapV3PoolFetcher {
         );
 
         let mut pools_by_token_pair: HashMap<TokenPair, HashSet<H160>> = HashMap::new();
-        for pool in registered_pools.pools {
+        for pool in &registered_pools.pools {
             let pair =
                 TokenPair::new(pool.token0.id, pool.token1.id).context("cant create pair")?;
             pools_by_token_pair.entry(pair).or_default().insert(pool.id);
         }
 
         Ok(Self {
-            pools_by_token_pair,
             graph_api,
-            cache: Default::default(),
-            max_age,
+            pools_by_token_pair,
+            pools_checkpoint: Default::default(),
+            events: tokio::sync::Mutex::new(EventHandler::new(
+                web3.clone(),
+                UniswapV3PoolEventFetcher {
+                    web3: web3.clone(),
+                    contracts: registered_pools.pools.iter().map(|pool| pool.id).collect(),
+                },
+                RecentEventsCache::default(),
+                Some(registered_pools.fetched_block_number),
+            )),
         })
     }
 
-    async fn get_pools_and_update_cache(&self, pool_ids: &[H160]) -> Result<Vec<PoolData>> {
-        tracing::debug!("get_pools_and_update_cache");
-        let pools = self.graph_api.get_pools_with_ticks_by_ids(pool_ids).await?;
-        tracing::debug!("pools len: {}", pools.len());
-        let now = Instant::now();
-        let mut cache = self.cache.lock().unwrap();
-        for pool in &pools {
-            cache.insert(
-                pool.id,
-                CachedPool {
-                    pool: pool.clone(),
-                    updated_at: now,
-                    requested_at: now,
-                },
-            );
-        }
-        Ok(pools)
-    }
-
-    /// Returns cached pools and ids of outdated pools.
-    fn get_cached_pools(&self, token_pairs: &HashSet<TokenPair>) -> (Vec<PoolData>, Vec<H160>) {
+    /// Fetches pool states of existing pools (in the pools checkpoint) and a list of missing pools.
+    fn get_pools(&self, token_pairs: &HashSet<TokenPair>) -> (Vec<PoolData>, Vec<H160>) {
         tracing::debug!("UniswapV3PoolFetcher::get_cached_pools");
         let mut pool_ids = token_pairs
             .iter()
@@ -160,18 +158,14 @@ impl UniswapV3PoolFetcher {
 
         match pool_ids.peek() {
             Some(_) => {
-                let now = Instant::now();
-                let mut cache = self.cache.lock().unwrap();
-                pool_ids.partition_map(|pool_id| match cache.get_mut(pool_id) {
-                    Some(entry)
-                        if now.saturating_duration_since(entry.updated_at) < self.max_age =>
-                    {
-                        tracing::debug!("returning cached pool: {:?}", pool_id);
-                        entry.requested_at = now;
-                        Either::Left(entry.pool.clone())
+                let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
+                pool_ids.partition_map(|pool_id| match pools_checkpoint.data.get_mut(pool_id) {
+                    Some(entry) => {
+                        tracing::debug!("returning pool: {:?}", pool_id);
+                        Either::Left(entry.clone())
                     }
                     _ => {
-                        tracing::debug!("returning outdated pool: {:?}", pool_id);
+                        tracing::debug!("missing pool: {:?}", pool_id);
                         Either::Right(pool_id)
                     }
                 })
@@ -179,26 +173,66 @@ impl UniswapV3PoolFetcher {
             None => Default::default(),
         }
     }
+
+    /// For the pools not found in the state checkpoint, get initial state of them via graph
+    /// and store that initial state into checkpoint
+    async fn get_initial_state_of_missing_pools_and_store_into_checkpoint(
+        &self,
+        pool_ids: &[H160],
+    ) -> Result<Vec<PoolData>> {
+        tracing::debug!("get_missing_pools");
+        // release the lock as we dont want to hold it accross get_pools_with_ticks_by_ids await
+        let last_checkpoint_block = self.pools_checkpoint.lock().unwrap().last_checkpoint_block;
+        let block_number = match last_checkpoint_block {
+            Some(number) => number,
+            None => self.graph_api.get_safe_block().await?,
+        };
+
+        let pools = self
+            .graph_api
+            .get_pools_with_ticks_by_ids(pool_ids, block_number)
+            .await?;
+
+        tracing::debug!("pools len: {}", pools.len());
+        let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
+        if pools_checkpoint.last_checkpoint_block.unwrap_or_default() > block_number {
+            // here, it is possible that the pools_checkpoint changed after previously releasing the lock,
+            // therefore, we should skip to update the checkpoint with obsolete values.
+            // no particular harm is done, just no liquidity will be provided for the subset of the token pairs this time
+            // we also have an option to try again until success, but don't want to further stall the fetch function
+            return Ok(vec![]);
+        }
+
+        for pool in &pools {
+            pools_checkpoint.data.insert(pool.id, pool.clone());
+        }
+        // no harm is done if pools_checkpoint.last_checkpoint_block is Some before assignment, just overwrite
+        pools_checkpoint.last_checkpoint_block = Some(block_number);
+        Ok(pools)
+    }
 }
 
 #[async_trait::async_trait]
 impl PoolFetching for UniswapV3PoolFetcher {
     async fn fetch(&self, token_pairs: &HashSet<TokenPair>) -> Result<Vec<PoolInfo>> {
         tracing::debug!("token_pairs {:?}", token_pairs);
-        let (mut cached_pools, outdated_pools) = self.get_cached_pools(token_pairs);
+
+        let (mut existing_pools, missing_pools) = self.get_pools(token_pairs);
         tracing::debug!(
-            "cached pools: {:?}, outdated pools: {:?}",
-            cached_pools,
-            outdated_pools
+            "existing pools: {:?}, missing pools: {:?}",
+            existing_pools,
+            missing_pools
         );
 
-        if !outdated_pools.is_empty() {
-            let updated_pools = self.get_pools_and_update_cache(&outdated_pools).await?;
-            tracing::debug!("updated pools: {:?}", updated_pools);
-            cached_pools.extend(updated_pools);
+        if !missing_pools.is_empty() {
+            let new_pools = self
+                .get_initial_state_of_missing_pools_and_store_into_checkpoint(&missing_pools)
+                .await?;
+            tracing::debug!("new_pools pools: {:?}", new_pools);
+            existing_pools.extend(new_pools);
         }
 
-        Ok(cached_pools
+        Ok(existing_pools
             .into_iter()
             .flat_map(TryInto::try_into)
             .collect())
@@ -208,42 +242,18 @@ impl PoolFetching for UniswapV3PoolFetcher {
 #[async_trait::async_trait]
 impl Maintaining for UniswapV3PoolFetcher {
     async fn run_maintenance(&self) -> Result<()> {
-        tracing::debug!("periodic update started");
-        let now = Instant::now();
+        // self.events.run_maintenance().await.and_then(|()| {
+        //     //update pools
+        // })
 
-        let mut outdated_entries = self
-            .cache
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, cached)| now.saturating_duration_since(cached.updated_at) > self.max_age)
-            .map(|(pool_id, cached)| (*pool_id, cached.requested_at))
-            .collect::<Vec<_>>();
-        outdated_entries.sort_by_key(|entry| std::cmp::Reverse(entry.1));
-        tracing::debug!("outdated_entries {:?}", outdated_entries);
-
-        let pools_to_update = outdated_entries
-            .iter()
-            .map(|(pool_id, _)| *pool_id)
-            .collect::<Vec<_>>();
-        tracing::debug!("pools to update {:?}", pools_to_update);
-
-        if !pools_to_update.is_empty() {
-            if let Err(err) = self.get_pools_and_update_cache(&pools_to_update).await {
-                tracing::warn!(
-                    error = %err,
-                    "failed to update pools",
-                );
-            }
-        }
-
-        tracing::debug!("periodic update ended");
         Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::transport;
+
     use super::*;
     use serde_json::json;
     use std::str::FromStr;
@@ -330,19 +340,29 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn uniswap_v3_pool_fetcher_test() {
-        let fetcher = UniswapV3PoolFetcher::new(1, Duration::from_secs(10), Client::new())
+    async fn uniswap_v3_pool_fetcher_constructor_test() {
+        let transport = transport::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3)
             .await
             .unwrap();
 
         assert!(!fetcher.pools_by_token_pair.is_empty());
-        assert!(!fetcher.cache.lock().unwrap().is_empty());
+        assert!(fetcher.pools_checkpoint.lock().unwrap().data.is_empty());
+        assert!(fetcher
+            .pools_checkpoint
+            .lock()
+            .unwrap()
+            .last_checkpoint_block
+            .is_none());
     }
 
     #[tokio::test]
     #[ignore]
     async fn fetch_test() {
-        let fetcher = UniswapV3PoolFetcher::new(1, Duration::from_secs(10), Client::new())
+        let transport = transport::create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3)
             .await
             .unwrap();
         let token_pairs = HashSet::from([TokenPair::new(

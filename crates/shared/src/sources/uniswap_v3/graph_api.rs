@@ -76,24 +76,6 @@ const POOLS_WITH_TICKS_BY_IDS_QUERY: &str = r#"
     }
 "#;
 
-const TICKS_QUERY: &str = r#"
-    query Ticks($block: Int, $pageSize: Int, $lastId: ID) {
-        ticks(
-            block: { number: $block }
-            first: $pageSize
-            where: {
-                id_gt: $lastId
-                liquidityNet_not: "0"
-            }
-        ) {
-            id
-            tickIdx
-            liquidityNet
-            poolAddress
-        }
-    }
-"#;
-
 /// A client to the Uniswap V3 subgraph.
 ///
 /// This client is not implemented to allow general GraphQL queries, but instead
@@ -125,8 +107,11 @@ impl UniV3SubgraphClient {
     }
 
     /// Retrieves the pools (including ticks) by ids from the subgraph.
-    pub async fn get_pools_with_ticks_by_ids(&self, ids: &[H160]) -> Result<Vec<PoolData>> {
-        let block_number = self.get_safe_block().await?;
+    pub async fn get_pools_with_ticks_by_ids(
+        &self,
+        ids: &[H160],
+        block_number: u64,
+    ) -> Result<Vec<PoolData>> {
         Ok(self
             .0
             .query::<Data<PoolData>>(
@@ -140,15 +125,9 @@ impl UniV3SubgraphClient {
             .inner)
     }
 
-    /// Retrieves the list of ticks from the subgraph.
-    pub async fn get_ticks(&self) -> Result<Vec<TickData>> {
-        let block_number = self.get_safe_block().await?;
-        self.0.paginated_query(block_number, TICKS_QUERY).await
-    }
-
     /// Retrieves a recent block number for which it is safe to assume no
     /// reorgs will happen.
-    async fn get_safe_block(&self) -> Result<u64> {
+    pub async fn get_safe_block(&self) -> Result<u64> {
         // Ideally we would want to use block hash here so that we can check
         // that there indeed is no reorg. However, it does not seem possible to
         // retrieve historic block hashes just from the subgraph (it always
@@ -442,19 +421,15 @@ mod tests {
             H160::from_str("0x00a151b39b43f6a79366f9129222b9370e30a702").unwrap(),
             H160::from_str("0x00a9205611cc32ec9c0d16fc58f31b9355ec7ade").unwrap(),
         ];
-        let result = client.get_pools_with_ticks_by_ids(&ids).await.unwrap();
+        let block_number = client.get_safe_block().await.unwrap();
+        let result = client
+            .get_pools_with_ticks_by_ids(&ids, block_number)
+            .await
+            .unwrap();
         println!(
             "Retrieved {} total pools out of {}",
             result.len(),
             ids.len()
         );
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn uniswap_v3_subgraph_query_get_ticks() {
-        let client = UniV3SubgraphClient::for_chain(1, Client::new()).unwrap();
-        let result = client.get_ticks().await.unwrap();
-        println!("Retrieved {} total ticks", result.len(),);
     }
 }
