@@ -61,6 +61,7 @@ pub struct HttpSolver {
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
+    include_liquidity_in_instance: bool,
 }
 
 impl HttpSolver {
@@ -74,6 +75,7 @@ impl HttpSolver {
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
+        include_liquidity_in_instance: bool,
     ) -> Self {
         Self {
             solver,
@@ -84,6 +86,7 @@ impl HttpSolver {
             allowance_manager,
             order_converter,
             instance_cache,
+            include_liquidity_in_instance,
         }
     }
 
@@ -96,6 +99,15 @@ impl HttpSolver {
         gas_price: f64,
         external_prices: ExternalPrices,
     ) -> Result<(BatchAuctionModel, SettlementContext)> {
+        // Not all HTTP solvers want liquidity. Specifically, the external
+        // solvers currently only use their internal liquidity, while our HTTP
+        // optimization solvers rely on "baseline" liquidity.
+        let liquidity = if self.include_liquidity_in_instance {
+            liquidity
+        } else {
+            vec![]
+        };
+
         let tokens = map_tokens_for_solver(&orders, &liquidity);
         let (token_infos, buffers_result) = join!(
             measure_time(
@@ -137,9 +149,19 @@ impl HttpSolver {
         // slow down the solver and the solver can estimate them on its own.
         let price_estimates = external_prices.into_http_solver_prices();
 
-        // For the solver to run correctly we need to be sure that there are no
-        // isolated islands of tokens without connection between them.
-        let fee_connected_tokens = compute_fee_connected_tokens(&liquidity, self.native_token);
+        // For the optimization HTTP solver to run correctly we need to be sure
+        // that there are no isolated islands of tokens without connection
+        // between them.
+        let fee_connected_tokens = if self.include_liquidity_in_instance {
+            compute_fee_connected_tokens(&liquidity, self.native_token)
+        } else {
+            // If we don't include liquidity in instance file, for external
+            // solvers for example, then assume all tokens are connected to the
+            // fee token. Ideally, this filtering should be done in the HTTP
+            // solvers, but we need to patch this for now to not filter out
+            // orders to external solvers that should be included.
+            tokens.iter().copied().collect()
+        };
         let gas_model = GasModel {
             native_token: self.native_token,
             gas_price,
@@ -547,6 +569,7 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
+            true,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {
