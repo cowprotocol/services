@@ -142,7 +142,7 @@ impl Default for OrdersQuery {
     }
 }
 
-#[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
@@ -154,7 +154,7 @@ pub struct OrderMetadata {
     pub remaining_fillable_taker_amount: u128,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ZeroExSignature {
     pub r: H256,
@@ -163,7 +163,7 @@ pub struct ZeroExSignature {
     pub signature_type: u8,
 }
 
-#[derive(Debug, Derivative, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct Order {
@@ -213,7 +213,7 @@ pub struct Order {
     pub verifying_contract: H160,
 }
 
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
 pub struct OrderRecord {
     #[serde(rename = "metaData")]
     pub metadata: OrderMetadata,
@@ -239,7 +239,7 @@ impl OrderRecord {
 }
 
 /// A Ox API `orders` response.
-#[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Default, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct OrdersResponse {
     pub total: u64,

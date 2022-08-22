@@ -165,7 +165,7 @@ impl UniV3SubgraphClient {
 }
 
 /// Result of the registered stable pool query.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct RegisteredPools {
     /// The block number that the data was fetched
     pub fetched_block_number: u64,
@@ -174,7 +174,7 @@ pub struct RegisteredPools {
 }
 
 /// Pool data from the Uniswap V3 subgraph.
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Default, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PoolData {
     pub id: H160,
@@ -195,7 +195,7 @@ impl ContainsId for PoolData {
 }
 
 /// Tick data from the Uniswap V3 subgraph.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TickData {
     pub id: String,
@@ -212,7 +212,7 @@ impl ContainsId for TickData {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Token {
     pub id: H160,
@@ -230,18 +230,18 @@ mod block_number_query {
         }
     }"#;
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Data {
         #[serde(rename = "_meta")]
         pub meta: Meta,
     }
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Meta {
         pub block: Block,
     }
 
-    #[derive(Debug, Deserialize, PartialEq)]
+    #[derive(Debug, Deserialize, Eq, PartialEq)]
     pub struct Block {
         pub number: u64,
     }

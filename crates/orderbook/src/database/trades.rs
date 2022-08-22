@@ -14,7 +14,7 @@ pub trait TradeRetrieving: Send + Sync {
 }
 
 /// Any default value means that this field is unfiltered.
-#[derive(Debug, Default, PartialEq)]
+#[derive(Debug, Default, Eq, PartialEq)]
 pub struct TradeFilter {
     pub owner: Option<H160>,
     pub order_uid: Option<OrderUid>,

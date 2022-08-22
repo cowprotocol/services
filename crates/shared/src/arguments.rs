@@ -143,6 +143,10 @@ pub struct Arguments {
     #[structopt(long, env, default_value = "https://api.1inch.exchange/")]
     pub one_inch_url: Url,
 
+    /// Which address should receive the rewards for referring trades to 1Inch.
+    #[structopt(long, env)]
+    pub one_inch_referrer_address: Option<H160>,
+
     /// The list of disabled 0x sources.
     #[clap(long, env, use_value_delimiter = true)]
     pub disabled_zeroex_sources: Vec<String>,
@@ -270,6 +274,9 @@ impl Display for Arguments {
             self.disabled_one_inch_protocols
         )?;
         writeln!(f, "one_inch_url: {}", self.one_inch_url)?;
+        write!(f, "one_inch_referrer_address: ")?;
+        display_option(&self.one_inch_referrer_address.map(|a| format!("{a:?}")), f)?;
+        writeln!(f)?;
         writeln!(
             f,
             "disabled_zeroex_sources: {:?}",
@@ -300,7 +307,7 @@ pub fn parse_unbounded_factor(s: &str) -> Result<f64> {
 
 pub fn parse_percentage_factor(s: &str) -> Result<f64> {
     let percentage_factor = f64::from_str(s)?;
-    ensure!(percentage_factor.is_finite() && percentage_factor >= 0. && percentage_factor <= 1.0);
+    ensure!(percentage_factor.is_finite() && (0. ..=1.0).contains(&percentage_factor));
     Ok(percentage_factor)
 }
 

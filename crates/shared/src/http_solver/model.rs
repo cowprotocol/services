@@ -112,14 +112,14 @@ pub struct TokenInfoModel {
     pub internal_buffer: Option<U256>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct TokenAmount {
     #[serde(with = "u256_decimal")]
     pub amount: U256,
     pub token: H160,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ApprovalModel {
     pub token: H160,
     pub spender: H160,
@@ -127,11 +127,12 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Derivative, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
-    #[derivative(Debug(format_with = "debug_bytes"))]
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(deserialize_with = "bytes_hex_or_array::deserialize")]
     #[serde(serialize_with = "model::bytes_hex::serialize")]
     pub call_data: Vec<u8>,
@@ -243,7 +244,7 @@ pub struct ExecutedOrderModel {
     pub exec_plan: Option<ExecutionPlan>,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct ExecutedLiquidityOrderModel {
     pub order: NativeLiquidityOrder,
     #[serde(with = "u256_decimal")]
@@ -252,7 +253,7 @@ pub struct ExecutedLiquidityOrderModel {
     pub exec_buy_amount: U256,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Deserialize, Serialize)]
 pub struct NativeLiquidityOrder {
     pub from: H160,
     #[serde(flatten)]
