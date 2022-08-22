@@ -2,7 +2,8 @@ pub mod solver_settlements;
 
 use self::solver_settlements::RatedSettlement;
 use crate::{
-    analytics, auction_preprocessing,
+    auction_preprocessing,
+    driver_logger::DriverLogger,
     in_flight_orders::InFlightOrders,
     liquidity::order_converter::OrderConverter,
     liquidity_collector::{LiquidityCollecting, LiquidityCollector},
@@ -12,24 +13,20 @@ use crate::{
     settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation::{self, simulate_before_after_access_list, TenderlyApi},
+    settlement_simulation::{self, TenderlyApi},
     settlement_submission::{SolutionSubmitter, SubmissionError},
-    solver::{Auction, SettlementWithError, Solver, SolverRunError, Solvers},
+    solver::{Auction, Solver, SolverRunError, Solvers},
 };
 use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
-use gas_estimation::{GasPrice1559, GasPriceEstimating};
-use itertools::Itertools;
+use gas_estimation::GasPriceEstimating;
+use model::solver_competition::CompetitionAuction;
 use model::solver_competition::{
     self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
 };
-use model::{
-    order::{Order, OrderKind},
-    solver_competition::CompetitionAuction,
-};
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::{H160, H256};
+use primitive_types::H160;
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -40,19 +37,16 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
-use tracing::{Instrument as _, Span};
-use web3::types::{AccessList, TransactionReceipt};
+use tracing::Instrument as _;
+use web3::types::TransactionReceipt;
 
 pub struct Driver {
-    settlement_contract: GPv2Settlement,
     liquidity_collector: LiquidityCollector,
     solvers: Solvers,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     settle_interval: Duration,
     native_token: H160,
     metrics: Arc<dyn SolverMetrics>,
-    web3: Web3,
-    network_id: String,
     solver_time_limit: Duration,
     block_stream: CurrentBlockStream,
     solution_submitter: SolutionSubmitter,
@@ -61,10 +55,9 @@ pub struct Driver {
     order_converter: Arc<OrderConverter>,
     in_flight_orders: InFlightOrders,
     post_processing_pipeline: PostProcessingPipeline,
-    simulation_gas_limit: u128,
     fee_objective_scaling_factor: BigRational,
-    tenderly: Option<TenderlyApi>,
     settlement_ranker: SettlementRanker,
+    logger: DriverLogger,
 }
 impl Driver {
     #[allow(clippy::too_many_arguments)]
@@ -114,16 +107,22 @@ impl Driver {
             settlement_rater,
         };
 
-        Self {
+        let logger = DriverLogger {
+            metrics: metrics.clone(),
+            web3,
+            tenderly,
+            network_id,
             settlement_contract,
+            simulation_gas_limit,
+        };
+
+        Self {
             liquidity_collector,
             solvers,
             gas_price_estimator,
             settle_interval,
             native_token,
             metrics,
-            web3,
-            network_id,
             solver_time_limit,
             block_stream,
             solution_submitter,
@@ -132,11 +131,10 @@ impl Driver {
             order_converter,
             in_flight_orders: InFlightOrders::default(),
             post_processing_pipeline,
-            simulation_gas_limit,
             fee_objective_scaling_factor: BigRational::from_float(fee_objective_scaling_factor)
                 .unwrap(),
-            tenderly,
             settlement_ranker,
+            logger,
         }
     }
 
@@ -173,188 +171,6 @@ impl Driver {
             }
         }))
         .await
-    }
-
-    /// Collects all orders which got traded in the settlement. Tapping into partially fillable
-    /// orders multiple times will not result in duplicates. Partially fillable orders get
-    /// considered as traded only the first time we tap into their liquidity.
-    fn get_traded_orders(settlement: &Settlement) -> Vec<Order> {
-        let mut traded_orders = Vec::new();
-        for (_, group) in &settlement
-            .executed_trades()
-            .map(|(trade, _)| trade)
-            .group_by(|trade| trade.order.metadata.uid)
-        {
-            let mut group = group.into_iter().peekable();
-            let order = &group.peek().unwrap().order;
-            let was_already_filled = match order.data.kind {
-                OrderKind::Buy => &order.metadata.executed_buy_amount,
-                OrderKind::Sell => &order.metadata.executed_sell_amount,
-            } > &0u8.into();
-            let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
-            if !was_already_filled && is_getting_filled {
-                traded_orders.push(order.clone());
-            }
-        }
-        traded_orders
-    }
-
-    async fn submit_settlement(
-        &self,
-        solver: Arc<dyn Solver>,
-        rated_settlement: RatedSettlement,
-    ) -> Result<TransactionReceipt, SubmissionError> {
-        let settlement = rated_settlement.settlement;
-        let traded_orders = Self::get_traded_orders(&settlement);
-
-        self.metrics
-            .settlement_revertable_status(settlement.revertable(), solver.name());
-
-        match self
-            .solution_submitter
-            .settle(
-                settlement,
-                rated_settlement.gas_estimate,
-                solver.account().clone(),
-            )
-            .await
-        {
-            Ok(receipt) => {
-                let name = solver.name();
-                tracing::info!(
-                    settlement_id =% rated_settlement.id,
-                    transaction_hash =? receipt.transaction_hash,
-                    "Successfully submitted settlement",
-                );
-                traded_orders
-                    .iter()
-                    .for_each(|order| self.metrics.order_settled(order, name));
-                self.metrics.settlement_submitted(
-                    crate::metrics::SettlementSubmissionOutcome::Success,
-                    name,
-                );
-                if let Err(err) = self
-                    .metric_access_list_gas_saved(receipt.transaction_hash)
-                    .await
-                {
-                    tracing::debug!(?err, "access list metric not saved");
-                }
-                Ok(receipt)
-            }
-            Err(err) => {
-                // Since we simulate and only submit solutions when they used to pass before, there is no
-                // point in logging transaction failures in the form of race conditions as hard errors.
-                tracing::warn!(
-                    settlement_id =% rated_settlement.id, ?err,
-                    "Failed to submit settlement",
-                );
-                self.metrics
-                    .settlement_submitted(err.as_outcome(), solver.name());
-                if let Some(transaction_hash) = err.transaction_hash() {
-                    if let Err(err) = self.metric_access_list_gas_saved(transaction_hash).await {
-                        tracing::debug!(?err, "access list metric not saved");
-                    }
-                }
-                Err(err)
-            }
-        }
-    }
-
-    async fn metric_access_list_gas_saved(&self, transaction_hash: H256) -> Result<()> {
-        let gas_saved = simulate_before_after_access_list(
-            &self.web3,
-            self.tenderly.as_ref().context("tenderly disabled")?,
-            self.network_id.clone(),
-            transaction_hash,
-        )
-        .await?;
-        tracing::debug!(?gas_saved, "access list gas saved");
-        if gas_saved.is_sign_positive() {
-            self.metrics
-                .settlement_access_list_saved_gas(gas_saved, "positive");
-        } else {
-            self.metrics
-                .settlement_access_list_saved_gas(-gas_saved, "negative");
-        }
-
-        Ok(())
-    }
-
-    // Log simulation errors only if the simulation also fails in the block at which on chain
-    // liquidity was queried. If the simulation succeeds at the previous block then the solver
-    // worked correctly and the error doesn't have to be reported.
-    // Note that we could still report a false positive because the earlier block might be off by if
-    // the block has changed just as were were querying the node.
-    fn report_simulation_errors(
-        &self,
-        errors: Vec<SettlementWithError>,
-        current_block_during_liquidity_fetch: u64,
-        gas_price: GasPrice1559,
-    ) {
-        let contract = self.settlement_contract.clone();
-        let web3 = self.web3.clone();
-        let network_id = self.network_id.clone();
-        let metrics = self.metrics.clone();
-        let simulation_gas_limit = self.simulation_gas_limit;
-        let task = async move {
-            let simulations = settlement_simulation::simulate_and_error_with_tenderly_link(
-                errors.iter().map(|(solver, settlement, access_list, _)| {
-                    (
-                        solver.account().clone(),
-                        settlement.clone(),
-                        access_list.clone(),
-                    )
-                }),
-                &contract,
-                &web3,
-                gas_price,
-                &network_id,
-                current_block_during_liquidity_fetch,
-                simulation_gas_limit,
-            )
-            .await;
-
-            for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
-                metrics.settlement_simulation_failed_on_latest(solver.name());
-                if let Err(error_at_earlier_block) = result {
-                    tracing::warn!(
-                        "{} settlement simulation failed at submission and block {}:\n{:?}",
-                        solver.name(),
-                        current_block_during_liquidity_fetch,
-                        error_at_earlier_block,
-                    );
-                    // split warning into separate logs so that the messages aren't too long.
-                    tracing::warn!(
-                        "{} settlement failure for: \n{:#?}",
-                        solver.name(),
-                        settlement,
-                    );
-
-                    metrics.settlement_simulation_failed(solver.name());
-                }
-            }
-        };
-        tokio::task::spawn(task.instrument(Span::current()));
-    }
-
-    /// Record metrics on the matched orders from a single batch. Specifically we report on
-    /// the number of orders that were;
-    ///  - surplus in winning settlement vs unrealized surplus from other feasible solutions.
-    ///  - matched but not settled in this runloop (effectively queued for the next one)
-    /// Should help us to identify how much we can save by parallelizing execution.
-    fn report_on_batch(
-        &self,
-        submitted: &(Arc<dyn Solver>, RatedSettlement),
-        other_settlements: Vec<(Arc<dyn Solver>, RatedSettlement)>,
-    ) {
-        // Report surplus
-        analytics::report_alternative_settlement_surplus(
-            &*self.metrics,
-            submitted,
-            &other_settlements,
-        );
-        // Report matched but not settled
-        analytics::report_matched_but_not_settled(&*self.metrics, submitted, &other_settlements);
     }
 
     pub async fn single_run(&mut self) -> Result<()> {
@@ -503,16 +319,8 @@ impl Driver {
             .number
             .unwrap_or_default()
             .as_u64();
-        tracing::info!(
-            "{} settlements passed simulation and {} failed",
-            rated_settlements.len(),
-            errors.len(),
-        );
-        for (solver, _, _) in &rated_settlements {
-            self.metrics.settlement_simulation_succeeded(solver.name());
-        }
 
-        print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
+        DriverLogger::print_settlements(&rated_settlements, &self.fee_objective_scaling_factor);
 
         // Report solver competition data to the api.
         let mut solver_competition = SolverCompetition {
@@ -581,34 +389,16 @@ impl Driver {
 
             self.metrics
                 .complete_runloop_until_transaction(start.elapsed());
-            let start = Instant::now();
-            match self
-                .submit_settlement(winning_solver.clone(), winning_settlement.clone())
-                .await
+            match submit_settlement(
+                &self.solution_submitter,
+                &self.logger,
+                winning_solver.clone(),
+                winning_settlement.clone(),
+            )
+            .await
             {
                 Ok(receipt) => {
-                    let block = match receipt.block_number {
-                        Some(block) => block.as_u64(),
-                        None => {
-                            tracing::error!("tx receipt does not contain block number");
-                            0
-                        }
-                    };
-
-                    self.in_flight_orders
-                        .mark_settled_orders(block, &winning_settlement.settlement);
-
-                    match receipt.effective_gas_price {
-                        Some(price) => {
-                            self.metrics.transaction_gas_price(price);
-                        }
-                        None => {
-                            tracing::error!(
-                                "node did not return effective gas price in tx receipt"
-                            );
-                        }
-                    }
-
+                    self.update_in_flight_orders(&receipt, &winning_settlement.settlement);
                     solver_competition.transaction_hash = Some(receipt.transaction_hash);
                 }
                 Err(SubmissionError::Revert(hash)) => {
@@ -617,8 +407,7 @@ impl Driver {
                 _ => (),
             }
 
-            self.metrics.transaction_submission(start.elapsed());
-            self.report_on_batch(
+            self.logger.report_on_batch(
                 &(winning_solver, winning_settlement),
                 rated_settlements
                     .into_iter()
@@ -630,8 +419,24 @@ impl Driver {
             stored_solver_competition = true;
         }
         // Happens after settlement submission so that we do not delay it.
-        self.report_simulation_errors(errors, current_block_during_liquidity_fetch, gas_price);
+        self.logger.report_simulation_errors(
+            errors,
+            current_block_during_liquidity_fetch,
+            gas_price,
+        );
         Ok(stored_solver_competition)
+    }
+
+    /// Marks all orders in the winning settlement as "in flight".
+    fn update_in_flight_orders(&mut self, receipt: &TransactionReceipt, settlement: &Settlement) {
+        let block = match receipt.block_number {
+            Some(block) => block.as_u64(),
+            None => {
+                tracing::error!("tx receipt does not contain block number");
+                0
+            }
+        };
+        self.in_flight_orders.mark_settled_orders(block, settlement);
     }
 
     fn next_run_id(&mut self) -> u64 {
@@ -658,78 +463,24 @@ impl Driver {
     }
 }
 
-fn print_settlements(
-    rated_settlements: &[(Arc<dyn Solver>, RatedSettlement, Option<AccessList>)],
-    fee_objective_scaling_factor: &BigRational,
-) {
-    let mut text = String::new();
-    for (solver, settlement, access_list) in rated_settlements {
-        use std::fmt::Write;
-        write!(
-            text,
-            "\nid={} solver={} \
-             objective={:.2e} surplus={:.2e} \
-             gas_estimate={:.2e} gas_price={:.2e} \
-             unscaled_unsubsidized_fee={:.2e} unscaled_subsidized_fee={:.2e} \
-             access_list_addreses={}",
-            settlement.id,
-            solver.name(),
-            settlement.objective_value().to_f64().unwrap_or(f64::NAN),
-            settlement.surplus.to_f64().unwrap_or(f64::NAN),
-            settlement.gas_estimate.to_f64_lossy(),
-            settlement.gas_price.to_f64().unwrap_or(f64::NAN),
-            (&settlement.scaled_unsubsidized_fee / fee_objective_scaling_factor)
-                .to_f64()
-                .unwrap_or(f64::NAN),
-            settlement
-                .unscaled_subsidized_fee
-                .to_f64()
-                .unwrap_or(f64::NAN),
-            access_list.clone().unwrap_or_default().len()
+/// Submits the winning solution and handles the related logging and metrics.
+pub async fn submit_settlement(
+    solution_submitter: &SolutionSubmitter,
+    logger: &DriverLogger,
+    solver: Arc<dyn Solver>,
+    rated_settlement: RatedSettlement,
+) -> Result<TransactionReceipt, SubmissionError> {
+    let start = Instant::now();
+    let result = solution_submitter
+        .settle(
+            rated_settlement.settlement.clone(),
+            rated_settlement.gas_estimate,
+            solver.account().clone(),
         )
-        .unwrap();
-    }
-    tracing::info!("Rated Settlements: {}", text);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::solver::dummy_arc_solver;
-
-    #[test]
-    #[ignore]
-    fn print_settlements() {
-        let a = [
-            (
-                dummy_arc_solver(),
-                RatedSettlement {
-                    id: 0,
-                    settlement: Default::default(),
-                    surplus: BigRational::new(1u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(2u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(3u8.into(), 1u8.into()),
-                    gas_estimate: 4.into(),
-                    gas_price: BigRational::new(5u8.into(), 1u8.into()),
-                },
-                None,
-            ),
-            (
-                dummy_arc_solver(),
-                RatedSettlement {
-                    id: 6,
-                    settlement: Default::default(),
-                    surplus: BigRational::new(7u8.into(), 1u8.into()),
-                    unscaled_subsidized_fee: BigRational::new(8u8.into(), 1u8.into()),
-                    scaled_unsubsidized_fee: BigRational::new(9u8.into(), 1u8.into()),
-                    gas_estimate: 10.into(),
-                    gas_price: BigRational::new(11u8.into(), 1u8.into()),
-                },
-                None,
-            ),
-        ];
-
-        shared::tracing::initialize_for_tests("INFO");
-        super::print_settlements(&a, &BigRational::new(1u8.into(), 2u8.into()));
-    }
+        .await;
+    logger.metrics.transaction_submission(start.elapsed());
+    logger
+        .log_submission_info(&result, &rated_settlement, &solver)
+        .await;
+    result
 }
