@@ -20,7 +20,7 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use num::{BigRational, FromPrimitive, ToPrimitive};
-use primitive_types::U256;
+use primitive_types::{H160, U256};
 use reqwest::Client;
 use reqwest::Url;
 use shared::conversions::U256Ext;
@@ -46,6 +46,7 @@ pub struct OneInchSolver {
     oneinch_slippage_bps: u32,
     /// how much slippage in wei we allow per trade
     max_slippage_in_wei: Option<U256>,
+    referrer_address: Option<H160>,
 }
 
 impl From<RestError> for SettlementError {
@@ -70,6 +71,7 @@ impl OneInchSolver {
         one_inch_url: Url,
         oneinch_slippage_bps: u32,
         max_slippage_in_wei: Option<U256>,
+        referrer_address: Option<H160>,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
         Ok(Self {
@@ -81,6 +83,7 @@ impl OneInchSolver {
             protocol_cache: ProtocolCache::default(),
             oneinch_slippage_bps,
             max_slippage_in_wei,
+            referrer_address,
         })
     }
 }
@@ -158,6 +161,7 @@ impl OneInchSolver {
             self.settlement_contract.address(),
             protocols,
             slippage,
+            self.referrer_address,
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
@@ -269,6 +273,7 @@ mod tests {
             protocol_cache: ProtocolCache::default(),
             oneinch_slippage_bps: 10u32,
             max_slippage_in_wei: Some(U256::MAX),
+            referrer_address: None,
         }
     }
 
@@ -575,6 +580,7 @@ mod tests {
             Client::new(),
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
             10u32,
+            None,
             None,
         )
         .unwrap();

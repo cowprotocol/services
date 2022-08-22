@@ -242,6 +242,7 @@ async fn main() {
         args.shared.quasimodo_uses_internal_buffers,
         args.shared.mip_uses_internal_buffers,
         args.shared.one_inch_url,
+        args.shared.one_inch_referrer_address,
         args.external_solvers.unwrap_or_default(),
         args.oneinch_max_slippage_in_eth
             .map(|float| U256::from_f64_lossy(float * 1e18)),

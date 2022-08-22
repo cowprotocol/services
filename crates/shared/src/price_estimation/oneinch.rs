@@ -11,6 +11,7 @@ use crate::{
 };
 use futures::{future::BoxFuture, FutureExt, StreamExt};
 use model::order::OrderKind;
+use primitive_types::H160;
 use std::sync::Arc;
 
 pub struct OneInchPriceEstimator {
@@ -22,6 +23,7 @@ pub struct OneInchPriceEstimator {
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     rate_limiter: Arc<RateLimiter>,
+    referrer_address: Option<H160>,
 }
 
 impl OneInchPriceEstimator {
@@ -41,6 +43,7 @@ impl OneInchPriceEstimator {
             query.buy_token,
             allowed_protocols,
             query.in_amount,
+            self.referrer_address,
         );
         let quote_future = async move {
             api.get_sell_order_quote(oneinch_query)
@@ -68,6 +71,7 @@ impl OneInchPriceEstimator {
         api: Arc<dyn OneInchClient>,
         disabled_protocols: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
+        referrer_address: Option<H160>,
     ) -> Self {
         Self {
             api,
@@ -75,6 +79,7 @@ impl OneInchPriceEstimator {
             protocol_cache: ProtocolCache::default(),
             sharing: Default::default(),
             rate_limiter,
+            referrer_address,
         }
     }
 }
@@ -118,6 +123,7 @@ mod tests {
                 Default::default(),
                 "test".into(),
             )),
+            None,
         )
     }
 
