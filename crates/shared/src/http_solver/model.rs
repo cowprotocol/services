@@ -127,11 +127,12 @@ pub struct ApprovalModel {
     pub amount: U256,
 }
 
-#[derive(Clone, Debug, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Derivative, Deserialize, Eq, PartialEq, Serialize)]
+#[derivative(Debug)]
 pub struct InteractionData {
     pub target: H160,
     pub value: U256,
-    #[derivative(Debug(format_with = "debug_bytes"))]
+    #[derivative(Debug(format_with = "crate::debug_bytes"))]
     #[serde(deserialize_with = "bytes_hex_or_array::deserialize")]
     #[serde(serialize_with = "model::bytes_hex::serialize")]
     pub call_data: Vec<u8>,
