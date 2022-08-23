@@ -54,7 +54,11 @@ impl Driver {
             .simulate_settlements(vec![(fake_solver, settlement)], gas_price)
             .await?
             .pop()
-            .unwrap();
+            .context("simulation returned no results")?;
+        anyhow::ensure!(
+            simulation_details.gas_estimate.is_ok(),
+            "settlement reverted during simulation"
+        );
         Ok(simulation_details)
     }
 
@@ -87,7 +91,7 @@ impl Driver {
             simulation_details.settlement,
             simulation_details
                 .gas_estimate
-                .context("settlement reverted during simulation")?,
+                .expect("checked simulation gas_estimate during validation"),
             12, // TODO propagate tracable settlement id
         )
         .await
