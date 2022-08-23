@@ -334,7 +334,6 @@ impl Driver {
                 .as_ref()
                 .map(|s| settlement_simulation::call_data(s.1.settlement.clone().into())),
         };
-        rated_settlements.extend(optimized_solution);
 
         let mut solver_competition = model::solver_competition::Request {
             auction: auction_id,
