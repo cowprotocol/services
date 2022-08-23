@@ -445,7 +445,7 @@ pub async fn main(args: arguments::Arguments) {
     ));
 
     let mut service_maintainer = shared::maintenance::ServiceMaintenance {
-        maintainers: vec![event_updater, Arc::new(db.clone())],
+        maintainers: vec![pool_fetcher, event_updater, Arc::new(db.clone())],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
