@@ -27,14 +27,17 @@ use shared::{
 };
 use solver::{
     arguments::TransactionStrategyArg,
+    driver_logger::DriverLogger,
     interactions::allowances::AllowanceManager,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
         uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
     settlement_access_list::AccessListEstimating,
     settlement_rater::SettlementRater,
+    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -476,6 +479,23 @@ async fn build_amm_artifacts(
     res
 }
 
+async fn build_logger(common: &CommonComponents, args: &Arguments) -> Arc<DriverLogger> {
+    let tenderly = args
+        .tenderly_url
+        .clone()
+        .zip(args.tenderly_api_key.clone())
+        .and_then(|(url, api_key)| TenderlyApi::new(url, common.client.clone(), &api_key).ok());
+
+    Arc::new(DriverLogger {
+        web3: common.web3.clone(),
+        metrics: Arc::new(Metrics::new().unwrap()),
+        network_id: common.network_id.clone(),
+        settlement_contract: common.settlement_contract.clone(),
+        simulation_gas_limit: u128::MAX, // TODO pass as CLI argument?
+        tenderly,
+    })
+}
+
 #[tokio::main]
 async fn main() {
     let args = driver::arguments::Arguments::parse();
@@ -491,6 +511,7 @@ async fn main() {
         web3: common.web3.clone(),
     });
     let auction_converter = build_auction_converter(&common, &args).await.unwrap();
+    let logger = build_logger(&common, &args).await;
 
     let drivers = solvers
         .into_iter()
@@ -505,6 +526,9 @@ async fn main() {
                 submitter: submitter.clone(),
                 auction_converter: auction_converter.clone(),
                 block_stream: common.current_block_stream.clone(),
+                logger: logger.clone(),
+                settlement_rater: settlement_rater.clone(),
+                gas_price_estimator: common.gas_price_estimator.clone(),
             });
             (driver, name)
         })
