@@ -499,7 +499,7 @@ async fn build_logger(common: &CommonComponents, args: &Arguments) -> Arc<Driver
         metrics: Arc::new(Metrics::new().unwrap()),
         network_id: common.network_id.clone(),
         settlement_contract: common.settlement_contract.clone(),
-        simulation_gas_limit: u128::MAX, // TODO pass as CLI argument?
+        simulation_gas_limit: 15000000, // TODO pass as CLI argument?
         tenderly,
     })
 }
