@@ -11,7 +11,10 @@ use contracts::{GPv2Settlement, UniswapV3SwapRouter};
 use model::TokenPair;
 use num::{rational::Ratio, CheckedMul};
 use primitive_types::{H160, U256};
-use shared::{baseline_solver::BaseTokens, sources::uniswap_v3::pool_fetching::PoolFetching, Web3};
+use shared::{
+    baseline_solver::BaseTokens, recent_block_cache::Block,
+    sources::uniswap_v3::pool_fetching::PoolFetching, Web3,
+};
 use std::collections::HashSet;
 use std::{
     sync::{Arc, Mutex},
@@ -79,6 +82,7 @@ impl UniswapV3Liquidity {
     pub async fn get_liquidity(
         &self,
         offchain_orders: &[LimitOrder],
+        block: Block,
     ) -> Result<Vec<ConcentratedLiquidity>> {
         let pairs = self.base_tokens.relevant_pairs(
             &mut offchain_orders
@@ -88,7 +92,7 @@ impl UniswapV3Liquidity {
 
         let mut tokens = HashSet::new();
         let mut result = Vec::new();
-        for pool in self.pool_fetcher.fetch(&pairs).await? {
+        for pool in self.pool_fetcher.fetch(&pairs, block).await? {
             ensure!(
                 pool.tokens.len() == 2,
                 "two tokens required for uniswap v3 pools"

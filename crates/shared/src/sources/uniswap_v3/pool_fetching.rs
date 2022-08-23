@@ -1,11 +1,12 @@
 use crate::event_handling::EventHandler;
 use crate::maintenance::Maintaining;
+use crate::recent_block_cache::Block;
 use crate::Web3;
 
-use super::event_fetching::{RecentEventsCache, UniswapV3PoolEventFetcher};
-use super::graph_api::{PoolData, Token, UniV3SubgraphClient};
+use super::event_fetching::{RecentEventsCache, UniswapV3Event, UniswapV3PoolEventFetcher};
+use super::graph_api::{PoolData, TickData, Token, UniV3SubgraphClient};
 use anyhow::{Context, Result};
-use ethcontract::{H160, U256};
+use ethcontract::{Event, H160, U256};
 use itertools::{Either, Itertools};
 use model::{u256_decimal, TokenPair};
 use num::{rational::Ratio, BigInt, Zero};
@@ -13,13 +14,17 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DisplayFromStr};
 use std::{
-    collections::{BTreeMap, HashMap, HashSet},
+    collections::{HashMap, HashSet},
     sync::Mutex,
 };
 
 #[async_trait::async_trait]
 pub trait PoolFetching: Send + Sync {
-    async fn fetch(&self, token_pairs: &HashSet<TokenPair>) -> Result<Vec<PoolInfo>>;
+    async fn fetch(
+        &self,
+        token_pairs: &HashSet<TokenPair>,
+        at_block: Block,
+    ) -> Result<Vec<PoolInfo>>;
 }
 
 /// Pool data in a format prepared for solvers.
@@ -42,8 +47,8 @@ pub struct PoolState {
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub tick: BigInt,
     // (tick_idx, liquidity_net)
-    #[serde_as(as = "BTreeMap<DisplayFromStr, DisplayFromStr>")]
-    pub liquidity_net: Vec<(BigInt, BigInt)>,
+    #[serde_as(as = "HashMap<DisplayFromStr, DisplayFromStr>")]
+    pub liquidity_net: HashMap<BigInt, BigInt>,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub fee: Ratio<u32>,
 }
@@ -97,6 +102,7 @@ struct PoolsCheckpoint {
 }
 
 pub struct UniswapV3PoolFetcher {
+    web3: Web3,
     /// Graph api is used in two different situations:
     /// 1. once in constructor, to get the initial list of existing pools without their state.
     /// 2. once per each pool, to get the state, right at the moment when that pool state is requested by the user.
@@ -104,7 +110,7 @@ pub struct UniswapV3PoolFetcher {
     graph_api: UniV3SubgraphClient,
     /// H160 is pool id while TokenPair is a pair or tokens for each pool.
     pools_by_token_pair: HashMap<TokenPair, HashSet<H160>>,
-    /// Pools state on a specific block number in history
+    /// Pools state on a specific block number in history considered reorg safe
     pools_checkpoint: Mutex<PoolsCheckpoint>,
     /// Recent events used on top of pools_checkpoint to get the `latest_block` pools state.
     events: tokio::sync::Mutex<EventHandler<Web3, UniswapV3PoolEventFetcher, RecentEventsCache>>,
@@ -130,6 +136,7 @@ impl UniswapV3PoolFetcher {
         }
 
         Ok(Self {
+            web3: web3.clone(),
             graph_api,
             pools_by_token_pair,
             pools_checkpoint: Default::default(),
@@ -146,7 +153,10 @@ impl UniswapV3PoolFetcher {
     }
 
     /// Fetches pool states of existing pools (in the pools checkpoint) and a list of missing pools.
-    fn get_pools(&self, token_pairs: &HashSet<TokenPair>) -> (Vec<PoolData>, Vec<H160>) {
+    fn get_pools_checkpoint_state(
+        &self,
+        token_pairs: &HashSet<TokenPair>,
+    ) -> (HashMap<H160, PoolData>, Vec<H160>) {
         tracing::debug!("UniswapV3PoolFetcher::get_cached_pools");
         let mut pool_ids = token_pairs
             .iter()
@@ -158,11 +168,11 @@ impl UniswapV3PoolFetcher {
 
         match pool_ids.peek() {
             Some(_) => {
-                let mut pools_checkpoint = self.pools_checkpoint.lock().unwrap();
-                pool_ids.partition_map(|pool_id| match pools_checkpoint.data.get_mut(pool_id) {
+                let pools_checkpoint = self.pools_checkpoint.lock().unwrap();
+                pool_ids.partition_map(|pool_id| match pools_checkpoint.data.get(pool_id) {
                     Some(entry) => {
                         tracing::debug!("returning pool: {:?}", pool_id);
-                        Either::Left(entry.clone())
+                        Either::Left((entry.id, entry.clone()))
                     }
                     _ => {
                         tracing::debug!("missing pool: {:?}", pool_id);
@@ -214,28 +224,154 @@ impl UniswapV3PoolFetcher {
 
 #[async_trait::async_trait]
 impl PoolFetching for UniswapV3PoolFetcher {
-    async fn fetch(&self, token_pairs: &HashSet<TokenPair>) -> Result<Vec<PoolInfo>> {
+    async fn fetch(
+        &self,
+        token_pairs: &HashSet<TokenPair>,
+        at_block: Block,
+    ) -> Result<Vec<PoolInfo>> {
         tracing::debug!("token_pairs {:?}", token_pairs);
 
-        let (mut existing_pools, missing_pools) = self.get_pools(token_pairs);
+        let block_number = match at_block {
+            Block::Recent => self
+                .web3
+                .eth()
+                .block_number()
+                .await
+                .expect("block_number")
+                .as_u64(),
+            Block::Number(number) => number,
+        };
+
+        let (mut existing_pools_checkpoint, missing_pools) =
+            self.get_pools_checkpoint_state(token_pairs);
         tracing::debug!(
             "existing pools: {:?}, missing pools: {:?}",
-            existing_pools,
+            existing_pools_checkpoint,
             missing_pools
         );
 
         if !missing_pools.is_empty() {
-            let new_pools = self
+            let missing_pools_checkpoint = self
                 .get_initial_state_of_missing_pools_and_store_into_checkpoint(&missing_pools)
                 .await?;
-            tracing::debug!("new_pools pools: {:?}", new_pools);
-            existing_pools.extend(new_pools);
+            tracing::debug!("missing pools checkpoint: {:?}", missing_pools_checkpoint);
+            existing_pools_checkpoint.extend(
+                missing_pools_checkpoint
+                    .into_iter()
+                    .map(|pool| (pool.id, pool)),
+            );
         }
 
-        Ok(existing_pools
-            .into_iter()
+        let events_since_checkpoint = self
+            .events
+            .lock()
+            .await
+            .store()
+            .get_events(block_number)
+            .await?;
+
+        append_events(&mut existing_pools_checkpoint, events_since_checkpoint);
+
+        Ok(existing_pools_checkpoint
+            .into_values()
             .flat_map(TryInto::try_into)
             .collect())
+    }
+}
+
+/// For a given checkpoint, append events to get a new checkpoint
+fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV3Event>>) {
+    for event in &events {
+        let address = H160::default(); //todo reference new ethcontract-rs
+        if let Some(pool) = pools.get_mut(&address) {
+            match &event.data {
+                UniswapV3Event::Burn(burn) => {
+                    let tick_lower = BigInt::from(burn.tick_lower);
+                    let tick_upper = BigInt::from(burn.tick_upper);
+
+                    //liquidity tracks the liquidity on recent tick,
+                    // only need to update it if the new position includes the recent tick.
+                    if pool.tick <= tick_lower && pool.tick > tick_upper {
+                        pool.liquidity -= burn.amount.into();
+                    }
+
+                    if let Some(ticks) = &mut pool.ticks {
+                        //todo optimize to map
+                        if ticks.iter().all(|tick| tick.tick_idx != tick_lower) {
+                            ticks.push(TickData {
+                                id: address.to_string() + "#" + &tick_lower.to_string(),
+                                tick_idx: tick_lower.clone(),
+                                liquidity_net: 0.into(),
+                                pool_address: address,
+                            });
+                        }
+
+                        if ticks.iter().all(|tick| tick.tick_idx != tick_upper) {
+                            ticks.push(TickData {
+                                id: address.to_string() + "#" + &tick_upper.to_string(),
+                                tick_idx: tick_upper.clone(),
+                                liquidity_net: 0.into(),
+                                pool_address: address,
+                            });
+                        }
+
+                        for tick in ticks {
+                            if tick.tick_idx == tick_lower {
+                                tick.liquidity_net -= BigInt::from(burn.amount);
+                            }
+                            if tick.tick_idx == tick_upper {
+                                tick.liquidity_net += BigInt::from(burn.amount);
+                            }
+                        }
+                    }
+                }
+                UniswapV3Event::Mint(mint) => {
+                    let tick_lower = BigInt::from(mint.tick_lower);
+                    let tick_upper = BigInt::from(mint.tick_upper);
+
+                    //liquidity tracks the liquidity on recent tick,
+                    // only need to update it if the new position includes the recent tick.
+                    if pool.tick <= tick_lower && pool.tick > tick_upper {
+                        pool.liquidity += mint.amount.into();
+                    }
+
+                    if let Some(ticks) = &mut pool.ticks {
+                        //todo optimize to map
+                        if ticks.iter().all(|tick| tick.tick_idx != tick_lower) {
+                            ticks.push(TickData {
+                                id: address.to_string() + "#" + &tick_lower.to_string(),
+                                tick_idx: tick_lower.clone(),
+                                liquidity_net: 0.into(),
+                                pool_address: address,
+                            });
+                        }
+
+                        if ticks.iter().all(|tick| tick.tick_idx != tick_upper) {
+                            ticks.push(TickData {
+                                id: address.to_string() + "#" + &tick_upper.to_string(),
+                                tick_idx: tick_upper.clone(),
+                                liquidity_net: 0.into(),
+                                pool_address: address,
+                            });
+                        }
+
+                        for tick in ticks {
+                            if tick.tick_idx == tick_lower {
+                                tick.liquidity_net += BigInt::from(mint.amount);
+                            }
+                            if tick.tick_idx == tick_upper {
+                                tick.liquidity_net -= BigInt::from(mint.amount);
+                            }
+                        }
+                    }
+                }
+                UniswapV3Event::Swap(swap) => {
+                    pool.tick = BigInt::from(swap.tick);
+                    pool.liquidity = swap.liquidity.into();
+                    pool.sqrt_price = swap.sqrt_price_x96;
+                }
+            }
+        }
     }
 }
 
@@ -310,7 +446,7 @@ mod tests {
                 sqrt_price: U256::from_dec_str("792216481398733702759960397").unwrap(),
                 liquidity: U256::from_dec_str("303015134493562686441").unwrap(),
                 tick: BigInt::from_str("-92110").unwrap(),
-                liquidity_net: vec![
+                liquidity_net: HashMap::from([
                     (
                         BigInt::from_str("-122070").unwrap(),
                         BigInt::from_str("104713649338178916454").unwrap(),
@@ -323,7 +459,7 @@ mod tests {
                         BigInt::from_str("67260").unwrap(),
                         BigInt::from_str("5812623076452005012674").unwrap(),
                     ),
-                ],
+                ]),
                 fee: Ratio::new(10_000u32, 1_000_000u32),
             },
             gas_stats: PoolStats {
@@ -362,7 +498,7 @@ mod tests {
     async fn fetch_test() {
         let transport = transport::create_env_test_transport();
         let web3 = Web3::new(transport);
-        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3)
+        let fetcher = UniswapV3PoolFetcher::new(1, Client::new(), web3.clone())
             .await
             .unwrap();
         let token_pairs = HashSet::from([TokenPair::new(
@@ -370,7 +506,8 @@ mod tests {
             H160::from_str("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48").unwrap(),
         )
         .unwrap()]);
-        let pools = fetcher.fetch(&token_pairs).await.unwrap();
+        let block_number = Block::Number(web3.eth().block_number().await.unwrap().as_u64());
+        let pools = fetcher.fetch(&token_pairs, block_number).await.unwrap();
         assert!(!pools.is_empty());
     }
 }

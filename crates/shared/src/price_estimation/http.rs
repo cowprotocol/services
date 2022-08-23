@@ -253,7 +253,7 @@ impl HttpPriceEstimator {
     ) -> Result<Vec<AmmModel>> {
         let pools = match &self.uniswap_v3_pools {
             Some(uniswap_v3) => uniswap_v3
-                .fetch(&pairs)
+                .fetch(&pairs, Block::Recent)
                 .await
                 .context("no uniswap v3 pools")?,
             None => return Ok(Default::default()),
