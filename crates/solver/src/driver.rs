@@ -92,7 +92,7 @@ impl Driver {
             market_makable_token_list,
         );
 
-        let settlement_rater = Box::new(SettlementRater {
+        let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
             web3: web3.clone(),

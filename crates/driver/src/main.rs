@@ -36,6 +36,7 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     settlement_access_list::AccessListEstimating,
+    settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
     settlement_simulation::TenderlyApi,
     settlement_submission::{
@@ -495,6 +496,13 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         .and_then(|(url, api_key)| TenderlyApi::new(url, common.client.clone(), &api_key).ok());
     let metrics = Arc::new(Metrics::new().unwrap());
 
+    let settlement_ranker = Arc::new(SettlementRanker {
+        metrics: metrics.clone(),
+        settlement_rater: settlement_rater.clone(),
+        min_order_age: std::time::Duration::from_secs(30),
+        max_settlement_price_deviation: None,
+        token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
+    });
     let logger = Arc::new(DriverLogger {
         web3: common.web3.clone(),
         network_id: common.network_id.clone(),
@@ -511,8 +519,8 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
             let driver = Arc::new(Driver {
                 solver: Arc::new(CommitRevealSolver::new(
                     solver,
-                    settlement_rater.clone(),
                     common.gas_price_estimator.clone(),
+                    settlement_ranker.clone(),
                 )),
                 submitter: submitter.clone(),
                 auction_converter: auction_converter.clone(),
