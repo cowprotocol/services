@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use ethcontract::Account;
 use gas_estimation::GasPriceEstimating;
 use model::order::OrderUid;
 use num::ToPrimitive;
@@ -37,6 +38,10 @@ pub trait CommitRevealSolving: Send + Sync {
     /// executable call data. If the solver no longer wants to execute the solution it returns
     /// `Ok(None)`.
     async fn reveal(&self, summary: SettlementSummary) -> Result<Option<Settlement>>;
+
+    fn account(&self) -> &Account;
+
+    fn name(&self) -> &str;
 }
 
 // Wraps a legacy `Solver` implementation and makes it compatible with the commit reveal protocol.
@@ -144,6 +149,46 @@ impl CommitRevealSolving for CommitRevealSolver {
                 "could not find solution for requested summary"
             )),
         }
+    }
+
+    fn account(&self) -> &Account {
+        self.solver.account()
+    }
+
+    fn name(&self) -> &str {
+        self.solver.name()
+    }
+}
+
+/// This is just a wrapper type to make a `dyn CommitRevealSolving` usable where `dyn Solver` is
+/// expected. This type is only supposed to give information about the name and account of the
+/// underlying solver and will panic if `solve()` gets called.
+#[derive(Clone)]
+pub struct CommitRevealSolverAdapter {
+    solver: Arc<dyn CommitRevealSolving>,
+}
+
+impl From<Arc<dyn CommitRevealSolving>> for CommitRevealSolverAdapter {
+    fn from(solver: Arc<dyn CommitRevealSolving>) -> Self {
+        Self { solver }
+    }
+}
+
+#[async_trait::async_trait]
+impl Solver for CommitRevealSolverAdapter {
+    async fn solve(&self, _auction: Auction) -> Result<Vec<Settlement>> {
+        panic!(
+            "A dyn Solver created from a dyn CommitRevealSolving\
+            is only supposed to be used for its account data and name."
+        )
+    }
+
+    fn account(&self) -> &Account {
+        self.solver.account()
+    }
+
+    fn name(&self) -> &str {
+        self.solver.name()
     }
 }
 
