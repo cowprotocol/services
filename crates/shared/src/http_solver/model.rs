@@ -141,14 +141,12 @@ pub struct InteractionData {
     /// for this calldata.
     ///
     /// `GPv2Settlement -> AMM`
-    #[serde(default)]
     pub inputs: Vec<TokenAmount>,
     /// The output amounts from the AMM interaction - i.e. the amount of tokens
     /// that are expected to be sent from the AMM into the settlement contract
     /// for this calldata.
     ///
     /// `AMM -> GPv2Settlement`
-    #[serde(default)]
     pub outputs: Vec<TokenAmount>,
     pub exec_plan: Option<ExecutionPlan>,
 }
@@ -830,7 +828,9 @@ mod tests {
                     {
                         "target": "0xffffffffffffffffffffffffffffffffffffffff",
                         "value": "0",
-                        "call_data": [1, 2, 3, 4]
+                        "call_data": [1, 2, 3, 4],
+                        "inputs": [],
+                        "outputs": []
                     }
                 "#,
             )
@@ -838,6 +838,7 @@ mod tests {
             InteractionData {
                 target: H160([0xff; 20]),
                 value: 0.into(),
+                // the only backwards compatible thing remaining
                 call_data: vec![1, 2, 3, 4],
                 inputs: Vec::new(),
                 outputs: Vec::new(),
