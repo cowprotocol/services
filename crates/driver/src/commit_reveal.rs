@@ -8,6 +8,7 @@ use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use shared::conversions::U256Ext;
 use solver::{
+    driver_logger::DriverLogger,
     settlement::Settlement,
     settlement_ranker::SettlementRanker,
     solver::{Auction, Solver, SolverRunError},
@@ -94,6 +95,8 @@ impl CommitRevealSolver {
             .rank_legal_settlements(vec![(self.solver.clone(), solutions)], &prices, gas_price)
             .await?;
 
+        self.logger
+            .report_simulation_errors(errors, liquidity_fetch_block, gas_price);
 
         let (_, winning_settlement, _) = rated_settlements
             .pop()

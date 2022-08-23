@@ -98,6 +98,9 @@ pub struct Auction {
     /// settling orders.
     pub liquidity: Vec<Liquidity>,
 
+    /// On which block the liquidity got fetched.
+    pub liquidity_fetch_block: u64,
+
     /// The current gas price estimate.
     pub gas_price: f64,
 
@@ -130,6 +133,7 @@ impl Default for Auction {
             run: Default::default(),
             orders: Default::default(),
             liquidity: Default::default(),
+            liquidity_fetch_block: Default::default(),
             gas_price: Default::default(),
             deadline: never,
             external_prices: Default::default(),

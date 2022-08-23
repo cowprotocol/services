@@ -6,10 +6,7 @@ use crate::{
 use anyhow::{Context, Result};
 use gas_estimation::GasPriceEstimating;
 use model::auction::Auction;
-use shared::{
-    current_block::{block_number, CurrentBlockStream},
-    recent_block_cache::Block,
-};
+use shared::current_block::{block_number, CurrentBlockStream};
 use solver::{
     driver::submit_settlement,
     driver_logger::DriverLogger,
@@ -40,7 +37,7 @@ impl Driver {
         let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
         let auction = self
             .auction_converter
-            .convert_auction(auction, Block::Number(fetch_liquidity_from_block))
+            .convert_auction(auction, fetch_liquidity_from_block)
             .await?;
         self.solver.commit(auction).await.map_err(SolveError::from)
     }

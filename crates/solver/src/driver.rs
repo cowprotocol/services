@@ -298,6 +298,7 @@ impl Driver {
             run: run_id,
             orders: orders.clone(),
             liquidity,
+            liquidity_fetch_block: current_block_during_liquidity_fetch,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),

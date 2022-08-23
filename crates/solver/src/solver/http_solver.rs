@@ -399,6 +399,7 @@ impl Solver for HttpSolver {
             gas_price,
             deadline,
             external_prices,
+            ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
         if orders.is_empty() {

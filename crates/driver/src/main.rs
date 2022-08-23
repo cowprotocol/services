@@ -521,6 +521,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
                     solver,
                     common.gas_price_estimator.clone(),
                     settlement_ranker.clone(),
+                    logger.clone(),
                 )),
                 submitter: submitter.clone(),
                 auction_converter: auction_converter.clone(),
