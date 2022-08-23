@@ -1,6 +1,5 @@
 pub mod solver_settlements;
 
-use self::solver_settlements::RatedSettlement;
 use crate::{
     auction_preprocessing,
     driver_logger::DriverLogger,
@@ -26,7 +25,7 @@ use model::solver_competition::{
     self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::H160;
+use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -393,7 +392,9 @@ impl Driver {
                 &self.solution_submitter,
                 &self.logger,
                 winning_solver.clone(),
-                winning_settlement.clone(),
+                winning_settlement.settlement.clone(),
+                winning_settlement.gas_estimate,
+                winning_settlement.id,
             )
             .await
             {
@@ -468,19 +469,17 @@ pub async fn submit_settlement(
     solution_submitter: &SolutionSubmitter,
     logger: &DriverLogger,
     solver: Arc<dyn Solver>,
-    rated_settlement: RatedSettlement,
+    settlement: Settlement,
+    gas_estimate: U256,
+    settlement_id: usize,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
-        .settle(
-            rated_settlement.settlement.clone(),
-            rated_settlement.gas_estimate,
-            solver.account().clone(),
-        )
+        .settle(settlement.clone(), gas_estimate, solver.account().clone())
         .await;
     logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &rated_settlement, &solver)
+        .log_submission_info(&result, &settlement, settlement_id, &solver)
         .await;
     result
 }

@@ -78,20 +78,21 @@ impl DriverLogger {
     pub async fn log_submission_info(
         &self,
         submission: &Result<TransactionReceipt, SubmissionError>,
-        rated_settlement: &RatedSettlement,
+        settlement: &Settlement,
+        settlement_id: usize,
         solver: &Arc<dyn Solver>,
     ) {
         self.metrics
-            .settlement_revertable_status(rated_settlement.settlement.revertable(), solver.name());
+            .settlement_revertable_status(settlement.revertable(), solver.name());
         match submission {
             Ok(receipt) => {
                 let name = solver.name();
                 tracing::info!(
-                    settlement_id =% rated_settlement.id,
+                    settlement_id,
                     transaction_hash =? receipt.transaction_hash,
                     "Successfully submitted settlement",
                 );
-                Self::get_traded_orders(&rated_settlement.settlement)
+                Self::get_traded_orders(settlement)
                     .iter()
                     .for_each(|order| self.metrics.order_settled(order, name));
                 self.metrics.settlement_submitted(
@@ -116,10 +117,7 @@ impl DriverLogger {
             Err(err) => {
                 // Since we simulate and only submit solutions when they used to pass before, there is no
                 // point in logging transaction failures in the form of race conditions as hard errors.
-                tracing::warn!(
-                    settlement_id =% rated_settlement.id, ?err,
-                    "Failed to submit settlement",
-                );
+                tracing::warn!(settlement_id, ?err, "Failed to submit settlement",);
                 self.metrics
                     .settlement_submitted(err.as_outcome(), solver.name());
                 if let Some(transaction_hash) = err.transaction_hash() {
