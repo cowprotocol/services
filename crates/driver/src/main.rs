@@ -479,7 +479,7 @@ async fn build_amm_artifacts(
     res
 }
 
-async fn build_logger(common: &CommonComponents, args: &Arguments) -> Arc<DriverLogger> {
+fn build_logger(common: &CommonComponents, args: &Arguments) -> Arc<DriverLogger> {
     let tenderly = args
         .tenderly_url
         .clone()
@@ -511,7 +511,7 @@ async fn main() {
         web3: common.web3.clone(),
     });
     let auction_converter = build_auction_converter(&common, &args).await.unwrap();
-    let logger = build_logger(&common, &args).await;
+    let logger = build_logger(&common, &args);
 
     let drivers = solvers
         .into_iter()
