@@ -269,28 +269,44 @@ pub fn create(
         web3.clone(),
         settlement_contract.address(),
     ));
-    let http_solver_cache = http_solver::InstanceCache::default();
+
+    // We use two separate solver caches: one for our internal optimization
+    // solvers (which **does** filter out orders with non-fee-connected-tokens),
+    // and one for external solvers (which **does not** filter out orders with
+    // non-fee-connected-tokens)
+    let http_instance_with_filtered_orders = http_solver::InstanceCache::default();
+    let http_instance_with_all_orders = http_solver::InstanceCache::default();
+
     // Helper function to create http solver instances.
-    let create_http_solver =
-        |account: Account, url: Url, name: String, config: SolverConfig| -> HttpSolver {
-            HttpSolver::new(
-                DefaultHttpSolverApi {
-                    name,
-                    network_name: network_id.clone(),
-                    chain_id,
-                    base: url,
-                    client: client.clone(),
-                    config,
-                },
-                account,
-                native_token,
-                token_info_fetcher.clone(),
-                buffer_retriever.clone(),
-                allowance_mananger.clone(),
-                order_converter.clone(),
-                http_solver_cache.clone(),
-            )
-        };
+    let create_http_solver = |account: Account,
+                              url: Url,
+                              name: String,
+                              config: SolverConfig,
+                              filter_non_fee_connected_orders: bool|
+     -> HttpSolver {
+        HttpSolver::new(
+            DefaultHttpSolverApi {
+                name,
+                network_name: network_id.clone(),
+                chain_id,
+                base: url,
+                client: client.clone(),
+                config,
+            },
+            account,
+            native_token,
+            token_info_fetcher.clone(),
+            buffer_retriever.clone(),
+            allowance_mananger.clone(),
+            order_converter.clone(),
+            if filter_non_fee_connected_orders {
+                http_instance_with_filtered_orders.clone()
+            } else {
+                http_instance_with_all_orders.clone()
+            },
+            filter_non_fee_connected_orders,
+        )
+    };
 
     let mut solvers: Vec<Arc<dyn Solver>> = solvers
         .into_iter()
@@ -316,12 +332,14 @@ pub fn create(
                         use_internal_buffers: Some(mip_uses_internal_buffers),
                         ..Default::default()
                     },
+                    true,
                 ))),
                 SolverType::CowDexAg => Ok(shared(create_http_solver(
                     account,
                     cow_dex_ag_solver_url.clone(),
                     "CowDexAg".to_string(),
                     SolverConfig::default(),
+                    false,
                 ))),
                 SolverType::Quasimodo => Ok(shared(create_http_solver(
                     account,
@@ -331,6 +349,7 @@ pub fn create(
                         use_internal_buffers: Some(quasimodo_uses_internal_buffers),
                         ..Default::default()
                     },
+                    true,
                 ))),
                 SolverType::OneInch => Ok(shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -409,6 +428,7 @@ pub fn create(
                 use_internal_buffers: Some(mip_uses_internal_buffers),
                 ..Default::default()
             },
+            false,
         ))
     });
     solvers.extend(external_solvers);

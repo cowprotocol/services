@@ -171,6 +171,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 allowance_mananger.clone(),
                 common.order_converter.clone(),
                 http_solver_cache.clone(),
+                false,
             )) as Arc<dyn Solver>
         })
         .collect()
