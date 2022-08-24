@@ -371,6 +371,7 @@ pub async fn main(args: arguments::Arguments) {
                     one_inch_api.as_ref().unwrap().clone(),
                     args.shared.disabled_one_inch_protocols.clone(),
                     rate_limiter(estimator.name()),
+                    args.shared.one_inch_referrer_address
                 )),
                 PriceEstimatorType::Yearn => create_http_estimator(
                     "yearn-price-estimator".to_string(),
@@ -444,7 +445,7 @@ pub async fn main(args: arguments::Arguments) {
     ));
 
     let mut service_maintainer = shared::maintenance::ServiceMaintenance {
-        maintainers: vec![event_updater, Arc::new(db.clone())],
+        maintainers: vec![pool_fetcher, event_updater, Arc::new(db.clone())],
     };
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);

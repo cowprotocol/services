@@ -137,6 +137,16 @@ impl SettlementRanker {
         rated_settlements.shuffle(&mut rand::thread_rng());
 
         rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
+
+        tracing::info!(
+            "{} settlements passed simulation and {} failed",
+            rated_settlements.len(),
+            errors.len(),
+        );
+        for (solver, _, _) in &rated_settlements {
+            self.metrics.settlement_simulation_succeeded(solver.name());
+        }
+
         Ok((rated_settlements, errors))
     }
 }

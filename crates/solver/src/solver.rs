@@ -248,6 +248,7 @@ pub fn create(
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
     one_inch_url: Url,
+    one_inch_referrer_address: Option<H160>,
     external_solvers: Vec<ExternalSolverArg>,
     oneinch_max_slippage_in_wei: Option<U256>,
     order_converter: Arc<OrderConverter>,
@@ -361,6 +362,7 @@ pub fn create(
                         one_inch_url.clone(),
                         oneinch_slippage_bps,
                         oneinch_max_slippage_in_wei,
+                        one_inch_referrer_address,
                     )?,
                 )))),
                 SolverType::ZeroEx => {
