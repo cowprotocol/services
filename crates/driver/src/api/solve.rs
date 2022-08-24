@@ -24,7 +24,13 @@ pub fn post_solve(
     post_solve_request(prefix).and_then(move |auction: Auction| {
         let driver = driver.clone();
         async move {
-            let result = driver.on_auction_started(auction.clone()).await;
+            let result = driver
+                .on_auction_started(auction.clone())
+                .instrument(tracing::info_span!(
+                    "auction",
+                    id = auction.next_solver_competition
+                ))
+                .await;
             if let Err(err) = &result {
                 tracing::warn!(?err, ?auction, "post_solve error");
             }

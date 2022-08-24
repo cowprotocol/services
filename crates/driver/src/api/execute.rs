@@ -21,7 +21,10 @@ pub fn post_execute(
     post_execute_request(prefix).and_then(move |summary: SettlementSummary| {
         let driver = driver.clone();
         async move {
-            let result = driver.on_auction_won(summary.clone()).await;
+            let result = driver
+                .on_auction_won(summary.clone())
+                .instrument(tracing::info_span!("auction", id = summary.auction_id))
+                .await;
             if let Err(err) = &result {
                 tracing::warn!(?err, ?summary, "post_execute error");
             }
