@@ -20,17 +20,21 @@ pub fn post_execute(
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     post_execute_request(prefix).and_then(move |summary: SettlementSummary| {
         let driver = driver.clone();
+        let auction_id = summary.auction_id;
+        let settlement_id = summary.settlement_id;
         async move {
-            let result = driver
-                .on_auction_won(summary.clone())
-                .instrument(tracing::info_span!("auction", id = summary.auction_id))
-                .await;
+            let result = driver.on_auction_won(summary.clone()).await;
             if let Err(err) = &result {
                 tracing::warn!(?err, ?summary, "post_execute error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        .instrument(tracing::info_span!("solver", name = prefix))
+        .instrument(tracing::info_span!(
+            "execute",
+            solver = prefix,
+            auction_id,
+            settlement_id
+        ))
     })
 }
 
