@@ -123,6 +123,7 @@ pub struct SettlementProposal {
     pub clearing_prices: HashMap<H160, U256>,
     pub trades: Vec<TradedOrder>,
     pub execution_plan: Vec<Arc<dyn InteractionProposal>>,
+    pub id: u64,
 }
 
 impl SettlementProposal {
@@ -194,6 +195,7 @@ impl SettlementProposal {
         gas_price: f64,
         external_prices: &ExternalPrices,
         contract_buffer: &HashMap<H160, U256>,
+        auction_id: i64,
     ) -> Result<SettlementSummary> {
         let mut balances = contract_buffer.clone();
         let mut gas_used = U256::zero();
@@ -274,6 +276,8 @@ impl SettlementProposal {
             surplus,
             gas_reimbursement,
             settled_orders: self.trades.iter().map(|t| t.order.metadata.uid).collect(),
+            settlement_id: self.id,
+            auction_id,
         })
     }
 }
@@ -330,6 +334,7 @@ mod tests {
         .unwrap();
 
         let mut proposal = SettlementProposal {
+            id: 42,
             clearing_prices: hashmap! {
                 token(2) => 100.into(), token(3) => 100.into(),
             },
@@ -356,19 +361,21 @@ mod tests {
 
         // solution needs interaction to work
         assert!(proposal
-            .into_settlement_summary(gas_price, &external_prices, &Default::default())
+            .into_settlement_summary(gas_price, &external_prices, &Default::default(), 1)
             .is_err());
 
         let i = interaction(&[(token(2), 60.into())], &[(token(3), 60.into())], 1.into());
         proposal.execution_plan.push(i);
         let summary = proposal
-            .into_settlement_summary(gas_price, &external_prices, &Default::default())
+            .into_settlement_summary(gas_price, &external_prices, &Default::default(), 1)
             .unwrap();
 
         // gas_price * (interaction_cost + order_cost)
         assert_eq!(summary.gas_reimbursement, 132_632.into());
         assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
+        assert_eq!(summary.auction_id, 1);
+        assert_eq!(summary.settlement_id, 42);
     }
 
     #[test]
@@ -426,7 +433,7 @@ mod tests {
 
         // failing to repay the loan throws an error
         assert!(proposal
-            .into_settlement_summary(gas_price, &external_prices, &buffers)
+            .into_settlement_summary(gas_price, &external_prices, &buffers, 1)
             .is_err());
 
         let pay_back = interaction(
@@ -438,12 +445,14 @@ mod tests {
 
         // solution can loan tokens from the settlement contract if it repays them before the end
         let summary = proposal
-            .into_settlement_summary(gas_price, &external_prices, &buffers)
+            .into_settlement_summary(gas_price, &external_prices, &buffers, 1)
             .unwrap();
 
         // gas_price * (interaction_cost + order_cost)
         assert_eq!(summary.gas_reimbursement, 132_636.into());
         assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
+        assert_eq!(summary.settlement_id, 0);
+        assert_eq!(summary.auction_id, 1);
     }
 }

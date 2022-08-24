@@ -27,6 +27,10 @@ pub struct SettlementSummary {
     /// Orders which would get settled by this solution. Partially fillable orders don't have to be
     /// filled completely to be considered in this list.
     pub settled_orders: Vec<OrderUid>,
+    /// Number to uniquely identify a `Settlement` within a solver.
+    pub settlement_id: u64,
+    /// Number to identify which auction this summary belongs to.
+    pub auction_id: i64,
 }
 
 #[cfg_attr(test, mockall::automock)]
@@ -38,7 +42,7 @@ pub trait CommitRevealSolving: Send + Sync {
     /// Finalizes solution for a previously calculated `SolutionSummary` which can be used to compute
     /// executable call data. If the solver no longer wants to execute the solution it returns
     /// `Ok(None)`.
-    async fn reveal(&self, summary: SettlementSummary) -> Result<Option<Settlement>>;
+    async fn reveal(&self, summary: &SettlementSummary) -> Result<Option<Settlement>>;
 
     fn account(&self) -> &Account;
 
@@ -75,6 +79,7 @@ impl CommitRevealSolver {
     }
 
     async fn commit_impl(&self, auction: Auction) -> Result<(SettlementSummary, Settlement)> {
+        let auction_id = auction.id;
         let prices = auction.external_prices.clone();
         let liquidity_fetch_block = auction.liquidity_fetch_block;
         let solutions = match tokio::time::timeout_at(
@@ -115,6 +120,8 @@ impl CommitRevealSolver {
                 .traded_orders()
                 .map(|order| order.metadata.uid)
                 .collect(),
+            settlement_id: winning_settlement.id as u64,
+            auction_id,
         };
 
         Ok((summary, winning_settlement.settlement))
@@ -140,14 +147,14 @@ impl CommitRevealSolving for CommitRevealSolver {
         }
     }
 
-    async fn reveal(&self, summary: SettlementSummary) -> Result<Option<Settlement>> {
+    async fn reveal(&self, expected_summary: &SettlementSummary) -> Result<Option<Settlement>> {
         match &*self.stored_solution.lock().unwrap() {
-            Some(stored_solution) if stored_solution.0 == summary => {
+            Some((summary, solution)) if summary == expected_summary => {
                 // A solver could opt-out of executing the solution but since this is just a component
                 // wrapping solvers which don't yet implement the commit-reveal scheme natively we
                 // have no way of knowing if the solver would still execute the solution.
                 // That's why we will always chose to execute the solution.
-                Ok(Some(stored_solution.1.clone()))
+                Ok(Some(solution.clone()))
             }
             _ => Err(anyhow::anyhow!(
                 "could not find solution for requested summary"

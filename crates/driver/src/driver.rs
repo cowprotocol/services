@@ -65,12 +65,12 @@ impl Driver {
         &self,
         summary: SettlementSummary,
     ) -> Result<TransactionReceipt, ExecuteError> {
-        let settlement = match self.solver.reveal(summary).await? {
+        let settlement = match self.solver.reveal(&summary).await? {
             None => return Err(ExecuteError::ExecutionRejected),
             Some(solution) => solution,
         };
         let simulation_details = self.validate_settlement(settlement).await?;
-        self.submit_settlement(simulation_details)
+        self.submit_settlement(simulation_details, summary.settlement_id)
             .await
             // TODO correctly propagate specific errors to the end
             .map_err(|e| ExecuteError::from(e.into_anyhow()))
@@ -80,6 +80,7 @@ impl Driver {
     async fn submit_settlement(
         &self,
         simulation_details: SimulationDetails,
+        settlement_id: u64,
     ) -> Result<TransactionReceipt, SubmissionError> {
         submit_settlement(
             &self.submitter,
@@ -89,7 +90,7 @@ impl Driver {
             simulation_details
                 .gas_estimate
                 .expect("checked simulation gas_estimate during validation"),
-            42, // TODO propagate tracable settlement id
+            settlement_id,
         )
         .await
     }

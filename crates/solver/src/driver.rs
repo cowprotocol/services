@@ -395,7 +395,7 @@ impl Driver {
                 winning_solver.clone(),
                 winning_settlement.settlement.clone(),
                 winning_settlement.gas_estimate,
-                winning_settlement.id,
+                winning_settlement.id as u64,
             )
             .await
             {
@@ -472,7 +472,7 @@ pub async fn submit_settlement(
     solver: Arc<dyn Solver>,
     settlement: Settlement,
     gas_estimate: U256,
-    settlement_id: usize,
+    settlement_id: u64,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
