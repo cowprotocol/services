@@ -19,8 +19,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
-ethcontract = { version = "0.17.0", default-features = false }
-ethcontract-mock = { version = "0.17.0", default-features = false }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_", "tokio_"] }
 global-metrics = { path = "../global-metrics" }

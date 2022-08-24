@@ -920,9 +920,8 @@ dependencies = [
 
 [[package]]
 name = "ethcontract"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f83825914e9f5bdcdafa87048e14f81d553caffed241a7c821bdc945f4f4946d"
+version = "0.18.0"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?tag=v0.18.0#30966c7e04560eb773c4102771226de38b0b411c"
 dependencies = [
  "arrayvec",
  "ethcontract-common",
@@ -944,9 +943,8 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-common"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0228d491b0de1d3cac82bda1a85344bf8a6b509df462e768bc2ba3c3b05d0857"
+version = "0.18.0"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?tag=v0.18.0#30966c7e04560eb773c4102771226de38b0b411c"
 dependencies = [
  "ethabi 16.0.0",
  "hex",
@@ -960,9 +958,8 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-derive"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f458ae58f5a9cc46759c9d4346f2be20618215234207261a9584f373b25ad55"
+version = "0.18.0"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?tag=v0.18.0#30966c7e04560eb773c4102771226de38b0b411c"
 dependencies = [
  "anyhow",
  "ethcontract-common",
@@ -974,9 +971,8 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-generate"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "484dfe95826d192475ff4437a1e7d82a00926e686b71aa6a9d8dfa6e8635bb27"
+version = "0.18.0"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?tag=v0.18.0#30966c7e04560eb773c4102771226de38b0b411c"
 dependencies = [
  "Inflector",
  "anyhow",
@@ -990,9 +986,8 @@ dependencies = [
 
 [[package]]
 name = "ethcontract-mock"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6bd90819d4dac06d6807006829b20b89f5aa1da6ee692719cdba55d072ba659f"
+version = "0.18.0"
+source = "git+https://github.com/gnosis/ethcontract-rs.git?tag=v0.18.0#30966c7e04560eb773c4102771226de38b0b411c"
 dependencies = [
  "ethcontract",
  "hex",

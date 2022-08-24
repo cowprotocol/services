@@ -282,7 +282,7 @@ impl PoolFetching for UniswapV3PoolFetcher {
 /// For a given checkpoint, append events to get a new checkpoint
 fn append_events(pools: &mut HashMap<H160, PoolData>, events: Vec<Event<UniswapV3Event>>) {
     for event in &events {
-        let address = H160::default(); //todo reference new ethcontract-rs
+        let address = event.meta.as_ref().expect("metadata must exist for mined blocks").address;
         if let Some(pool) = pools.get_mut(&address) {
             match &event.data {
                 UniswapV3Event::Burn(burn) => {

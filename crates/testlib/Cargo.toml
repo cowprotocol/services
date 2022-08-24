@@ -9,6 +9,6 @@ license = "MIT"
 
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.17.0", default-features = false }
-ethcontract-mock = { version = "0.17.0" }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", tag = "v0.18.0" }
 hex-literal = "0.3"
