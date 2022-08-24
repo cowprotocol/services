@@ -161,8 +161,10 @@ impl CommitRevealSolving for CommitRevealSolver {
 }
 
 /// This is just a wrapper type to make a `dyn CommitRevealSolving` usable where `dyn Solver` is
-/// expected. This type is only supposed to give information about the name and account of the
-/// underlying solver and will panic if `solve()` gets called.
+/// expected for logging purposes. This type is only supposed to give information about the
+/// name and account of the underlying solver and will panic if `solve()` gets called.
+/// Eventually this wrapper should get removed when the logging code got refactored to expect
+/// something like a `NamedAccount` (name + account info) instead of an `Arc<dyn Solver>`.
 #[derive(Clone)]
 pub struct CommitRevealSolverAdapter {
     solver: Arc<dyn CommitRevealSolving>,
