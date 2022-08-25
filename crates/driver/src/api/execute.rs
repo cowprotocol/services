@@ -56,7 +56,10 @@ impl IntoWarpReply for ExecuteError {
                 ),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            Self::Other(err) => err.into_warp_reply(),
+            Self::Other(err) => with_status(
+                error("InternalServerError", err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         }
     }
 }
