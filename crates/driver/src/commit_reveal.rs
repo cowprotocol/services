@@ -91,8 +91,6 @@ impl CommitRevealSolver {
             Err(_timeout) => Err(SolverRunError::Timeout),
         };
 
-        tracing::debug!(?solutions, "received solutions");
-
         let gas_price = self.gas_estimator.estimate().await?;
         let (mut rated_settlements, errors) = self
             .settlement_ranker
@@ -122,6 +120,7 @@ impl CommitRevealSolver {
             auction_id,
         };
 
+        tracing::debug!(?summary, settlement =? winning_settlement.settlement, "computed winning solution");
         Ok((summary, winning_settlement.settlement))
     }
 }

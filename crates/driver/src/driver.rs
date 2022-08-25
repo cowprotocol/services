@@ -3,7 +3,7 @@ use crate::{
     auction_converter::AuctionConverting,
     commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Error, Result};
 use gas_estimation::GasPriceEstimating;
 use model::auction::Auction;
 use primitive_types::H256;
@@ -34,31 +34,30 @@ impl Driver {
         &self,
         auction: Auction,
     ) -> Result<SettlementSummary, SolveError> {
-        tracing::info!(?auction, "received new auction");
         let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
         let auction = self
             .auction_converter
             .convert_auction(auction, fetch_liquidity_from_block)
             .await?;
-        tracing::debug!(?auction, "converted original auction to useful type");
-        self.solver.commit(auction).await.map_err(SolveError::from)
+        let summary = self.solver.commit(auction).await?;
+        tracing::info!(?summary, "computed winning settlement summary");
+        Ok(summary)
     }
 
     /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
     async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationDetails> {
         let gas_price = self.gas_price_estimator.estimate().await?;
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
-        tracing::debug!(?gas_price, ?settlement, "simulating settlement");
         let simulation_details = self
             .settlement_rater
             .simulate_settlements(vec![(fake_solver, settlement)], gas_price)
             .await?
             .pop()
             .context("simulation returned no results")?;
-        anyhow::ensure!(
-            simulation_details.gas_estimate.is_ok(),
-            "settlement reverted during simulation"
-        );
+        match simulation_details.gas_estimate {
+            Err(err) => return Err(Error::from(err)).context("simulation failed"),
+            Ok(gas_estimate) => tracing::info!(?gas_estimate, "settlement simulated successfully"),
+        }
         Ok(simulation_details)
     }
 
@@ -72,6 +71,7 @@ impl Driver {
             }
             Some(solution) => solution,
         };
+        tracing::info!(?settlement, "received settlement from solver");
         let simulation_details = self.validate_settlement(settlement).await?;
         self.submit_settlement(simulation_details)
             .await
