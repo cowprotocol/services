@@ -121,3 +121,31 @@ impl TransactionSubmitting for CustomNodesApi {
         Strategy::CustomNodes
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settlement::NoopInteraction;
+
+    #[test]
+    fn submission_status_configuration() {
+        let high_risk_settlement = {
+            let mut settlement = Settlement::new(Default::default());
+            settlement.encoder.append_to_execution_plan(NoopInteraction);
+            assert_eq!(settlement.revertable(), Revertable::HighRisk);
+            settlement
+        };
+
+        let submitter = CustomNodesApi::new(vec![], false);
+        assert_eq!(
+            submitter.submission_status(&high_risk_settlement, ""),
+            SubmissionLoopStatus::Enabled(AdditionalTip::Off),
+        );
+
+        let submitter = CustomNodesApi::new(vec![], true);
+        assert_eq!(
+            submitter.submission_status(&high_risk_settlement, ""),
+            SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable),
+        );
+    }
+}
