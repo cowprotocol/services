@@ -27,7 +27,7 @@ pub fn post_solve(
         async move {
             let result = driver.on_auction_started(auction.clone()).await;
             if let Err(err) = &result {
-                tracing::warn!(?err, ?auction, "post_solve error");
+                tracing::warn!(?err, "post_solve error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }

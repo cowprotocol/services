@@ -25,7 +25,7 @@ pub fn post_execute(
         async move {
             let result = driver.on_auction_won(summary.clone()).await;
             if let Err(err) = &result {
-                tracing::warn!(?err, ?summary, "post_execute error");
+                tracing::warn!(?err, "post_execute error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
