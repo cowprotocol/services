@@ -46,6 +46,7 @@ impl Driver {
     async fn validate_settlement(&self, settlement: Settlement) -> Result<SimulationDetails> {
         let gas_price = self.gas_price_estimator.estimate().await?;
         let fake_solver = Arc::new(CommitRevealSolverAdapter::from(self.solver.clone()));
+        tracing::debug!(?gas_price, ?settlement, "simulating settlement");
         let simulation_details = self
             .settlement_rater
             .simulate_settlements(vec![(fake_solver, settlement)], gas_price)
@@ -66,7 +67,10 @@ impl Driver {
         summary: SettlementSummary,
     ) -> Result<TransactionReceipt, ExecuteError> {
         let settlement = match self.solver.reveal(&summary).await? {
-            None => return Err(ExecuteError::ExecutionRejected),
+            None => {
+                tracing::info!("solver decided against executing the settlement");
+                return Err(ExecuteError::ExecutionRejected);
+            }
             Some(solution) => solution,
         };
         let simulation_details = self.validate_settlement(settlement).await?;
@@ -82,14 +86,16 @@ impl Driver {
         simulation_details: SimulationDetails,
         settlement_id: u64,
     ) -> Result<TransactionReceipt, SubmissionError> {
+        let gas_estimate = simulation_details
+            .gas_estimate
+            .expect("checked simulation gas_estimate during validation");
+        tracing::info!(?gas_estimate, settlement =? simulation_details.settlement, "start submitting settlement");
         submit_settlement(
             &self.submitter,
             &self.logger,
             simulation_details.solver,
             simulation_details.settlement,
-            simulation_details
-                .gas_estimate
-                .expect("checked simulation gas_estimate during validation"),
+            gas_estimate,
             settlement_id,
         )
         .await
