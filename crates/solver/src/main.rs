@@ -339,7 +339,10 @@ async fn main() {
         match strategy {
             TransactionStrategyArg::PublicMempool => {
                 transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        vec![web3.clone()],
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
@@ -378,7 +381,10 @@ async fn main() {
                     "missing transaction submission nodes"
                 );
                 transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        submission_nodes.clone(),
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
