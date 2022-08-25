@@ -6,6 +6,7 @@ use crate::{
 use anyhow::{Context, Result};
 use gas_estimation::GasPriceEstimating;
 use model::auction::Auction;
+use primitive_types::H256;
 use shared::current_block::{block_number, CurrentBlockStream};
 use solver::{
     driver::submit_settlement,
@@ -15,7 +16,6 @@ use solver::{
     settlement_submission::{SolutionSubmitter, SubmissionError},
 };
 use std::sync::Arc;
-use web3::types::TransactionReceipt;
 
 pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
@@ -64,10 +64,7 @@ impl Driver {
 
     /// When the solver won the competition it finalizes the `Settlement` and decides whether it
     /// still wants to execute and submit that `Settlement`.
-    pub async fn on_auction_won(
-        &self,
-        summary: SettlementSummary,
-    ) -> Result<TransactionReceipt, ExecuteError> {
+    pub async fn on_auction_won(&self, summary: SettlementSummary) -> Result<H256, ExecuteError> {
         let settlement = match self.solver.reveal(&summary).await? {
             None => {
                 tracing::info!("solver decided against executing the settlement");
@@ -87,7 +84,7 @@ impl Driver {
         &self,
         simulation_details: SimulationDetails,
         settlement_id: u64,
-    ) -> Result<TransactionReceipt, SubmissionError> {
+    ) -> Result<H256, SubmissionError> {
         let gas_estimate = simulation_details
             .gas_estimate
             .expect("checked simulation gas_estimate during validation");
@@ -101,5 +98,6 @@ impl Driver {
             settlement_id,
         )
         .await
+        .map(|receipt| receipt.transaction_hash)
     }
 }
