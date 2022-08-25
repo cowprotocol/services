@@ -64,6 +64,7 @@ impl Driver {
     /// When the solver won the competition it finalizes the `Settlement` and decides whether it
     /// still wants to execute and submit that `Settlement`.
     pub async fn on_auction_won(&self, summary: SettlementSummary) -> Result<H256, ExecuteError> {
+        tracing::info!("solver won the auction");
         let settlement = match self.solver.reveal(&summary).await? {
             None => {
                 tracing::info!("solver decided against executing the settlement");
