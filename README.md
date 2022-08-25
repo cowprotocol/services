@@ -179,11 +179,11 @@ Run an `orderbook` on `localhost:8080` with:
 
 ```sh
 cargo run --bin orderbook -- \
-  --skip-trace-api true \
+  --skip-trace-api \
   --node-url <YOUR_NODE_URL>
 ```
 
-`--skip-trace-api true` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
+`--skip-trace-api` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
 
 Note: Current version of the code does not compile under Windows OS. Context and workaround are [here](https://github.com/cowprotocol/services/issues/226).
 
