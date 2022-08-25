@@ -28,7 +28,7 @@ pub fn post_execute(
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        .instrument(tracing::info_span!("execute", solver = prefix, auction_id,))
+        .instrument(tracing::info_span!("execute", solver = prefix, auction_id))
     })
 }
 
