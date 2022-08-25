@@ -34,11 +34,13 @@ impl Driver {
         &self,
         auction: Auction,
     ) -> Result<SettlementSummary, SolveError> {
+        tracing::info!(?auction, "received new auction");
         let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
         let auction = self
             .auction_converter
             .convert_auction(auction, fetch_liquidity_from_block)
             .await?;
+        tracing::debug!(?auction, "converted original auction to useful type");
         self.solver.commit(auction).await.map_err(SolveError::from)
     }
 
