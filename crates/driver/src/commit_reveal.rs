@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use ethcontract::Account;
 use gas_estimation::GasPriceEstimating;
-use model::order::OrderUid;
+use model::{order::OrderUid, u256_decimal};
 use num::ToPrimitive;
 use number_conversions::big_rational_to_u256;
 use primitive_types::U256;
@@ -23,6 +23,7 @@ pub struct SettlementSummary {
     /// prices.
     pub surplus: f64,
     /// This is how much gas the solver would like to get reimbursed for executing this solution.
+    #[serde(with = "u256_decimal")]
     pub gas_reimbursement: U256,
     /// Orders which would get settled by this solution. Partially fillable orders don't have to be
     /// filled completely to be considered in this list.
