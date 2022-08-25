@@ -4,10 +4,11 @@ use crate::{
     commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
 };
 use anyhow::{Context, Error, Result};
+use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
 use primitive_types::H256;
-use shared::current_block::{block_number, CurrentBlockStream};
+use shared::current_block::{block_number, into_stream, Block, CurrentBlockStream};
 use solver::{
     driver::submit_settlement,
     driver_logger::DriverLogger,
@@ -34,14 +35,46 @@ impl Driver {
         &self,
         auction: AuctionWithId,
     ) -> Result<SettlementSummary, SolveError> {
-        let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
+        self.solve_until_deadline(auction)
+            .await
+            .map_err(SolveError::from)
+    }
+
+    /// Computes a solution with the liquidity collected from a given block.
+    async fn compute_solution_for_block(
+        &self,
+        auction: Auction,
+        block: Block,
+    ) -> Result<SettlementSummary> {
+        let block = block_number(&block)?;
         let auction = self
             .auction_converter
-            .convert_auction(auction, fetch_liquidity_from_block)
+            .convert_auction(auction, block)
             .await?;
-        let summary = self.solver.commit(auction).await?;
-        tracing::info!(?summary, "computed winning settlement summary");
-        Ok(summary)
+        self.solver.commit(auction).await
+    }
+
+    /// Keeps solving the given auction with updated liquidity on every new block or until the
+    /// auction deadline is reached.
+    async fn solve_until_deadline(&self, auction: Auction) -> Result<SettlementSummary> {
+        let compute_solutions = into_stream(self.block_stream.clone())
+            .then(|block| self.compute_solution_for_block(auction.clone(), block));
+        // TODO get deadline from autopilot auction
+        let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(25));
+        tokio::pin!(timeout, compute_solutions);
+
+        let mut current_solution = Err(anyhow::anyhow!("reached the deadline without a result"));
+        loop {
+            tokio::select! {
+                new_solution = compute_solutions.next() => {
+                    if let Some(result) = new_solution {
+                        tracing::debug!(?result, "computed new result");
+                        current_solution = result;
+                    }
+                },
+                _ = &mut timeout => return current_solution
+            }
+        }
     }
 
     /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
