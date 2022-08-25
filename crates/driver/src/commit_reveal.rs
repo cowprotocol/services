@@ -28,8 +28,6 @@ pub struct SettlementSummary {
     /// Orders which would get settled by this solution. Partially fillable orders don't have to be
     /// filled completely to be considered in this list.
     pub settled_orders: Vec<OrderUid>,
-    /// Number to uniquely identify a `Settlement` within a solver.
-    pub settlement_id: u64,
     /// Number to identify which auction this summary belongs to.
     pub auction_id: i64,
 }
@@ -121,7 +119,6 @@ impl CommitRevealSolver {
                 .traded_orders()
                 .map(|order| order.metadata.uid)
                 .collect(),
-            settlement_id: winning_settlement.id as u64,
             auction_id,
         };
 

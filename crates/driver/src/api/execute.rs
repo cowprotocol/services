@@ -21,7 +21,6 @@ pub fn post_execute(
     post_execute_request(prefix).and_then(move |summary: SettlementSummary| {
         let driver = driver.clone();
         let auction_id = summary.auction_id;
-        let settlement_id = summary.settlement_id;
         async move {
             let result = driver.on_auction_won(summary.clone()).await;
             if let Err(err) = &result {
@@ -29,12 +28,7 @@ pub fn post_execute(
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        .instrument(tracing::info_span!(
-            "execute",
-            solver = prefix,
-            auction_id,
-            settlement_id
-        ))
+        .instrument(tracing::info_span!("execute", solver = prefix, auction_id,))
     })
 }
 

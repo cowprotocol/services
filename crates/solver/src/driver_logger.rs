@@ -79,7 +79,7 @@ impl DriverLogger {
         &self,
         submission: &Result<TransactionReceipt, SubmissionError>,
         settlement: &Settlement,
-        settlement_id: u64,
+        settlement_id: Option<u64>,
         solver: &Arc<dyn Solver>,
     ) {
         self.metrics

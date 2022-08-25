@@ -73,7 +73,7 @@ impl Driver {
             Some(solution) => solution,
         };
         let simulation_details = self.validate_settlement(settlement).await?;
-        self.submit_settlement(simulation_details, summary.settlement_id)
+        self.submit_settlement(simulation_details)
             .await
             // TODO correctly propagate specific errors to the end
             .map_err(|e| ExecuteError::from(e.into_anyhow()))
@@ -83,7 +83,6 @@ impl Driver {
     async fn submit_settlement(
         &self,
         simulation_details: SimulationDetails,
-        settlement_id: u64,
     ) -> Result<H256, SubmissionError> {
         let gas_estimate = simulation_details
             .gas_estimate
@@ -95,7 +94,7 @@ impl Driver {
             simulation_details.solver,
             simulation_details.settlement,
             gas_estimate,
-            settlement_id,
+            None, // the concept of a settlement_id does not make sense here
         )
         .await
         .map(|receipt| receipt.transaction_hash)

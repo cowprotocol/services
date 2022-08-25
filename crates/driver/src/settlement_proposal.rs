@@ -276,7 +276,6 @@ impl SettlementProposal {
             surplus,
             gas_reimbursement,
             settled_orders: self.trades.iter().map(|t| t.order.metadata.uid).collect(),
-            settlement_id: self.id,
             auction_id,
         })
     }
@@ -375,7 +374,6 @@ mod tests {
         assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
         assert_eq!(summary.auction_id, 1);
-        assert_eq!(summary.settlement_id, 42);
     }
 
     #[test]
@@ -452,7 +450,6 @@ mod tests {
         assert_eq!(summary.gas_reimbursement, 132_636.into());
         assert_eq!(summary.surplus, 1_000.);
         assert_eq!(summary.settled_orders, vec![uid(1)]);
-        assert_eq!(summary.settlement_id, 0);
         assert_eq!(summary.auction_id, 1);
     }
 }
