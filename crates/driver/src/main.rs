@@ -383,12 +383,13 @@ async fn build_auction_converter(
             .unwrap(),
         );
 
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: common.settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            common.web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
+            base_tokens.clone(),
+            common.settlement_contract.clone(),
+        ))
     } else {
         None
     };
