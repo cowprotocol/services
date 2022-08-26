@@ -199,6 +199,8 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::{interactions::allowances::Approval, settlement::Interaction};
+    use maplit::hashmap;
     use shared::zeroex_api::OrderMetadata;
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
@@ -325,5 +327,42 @@ pub mod tests {
         assert_eq!(filtered_zeroex_orders[0].order.taker_amount, 1_000);
         // Second item in the list will be on the basis of remaining_fillable_taker_amount
         assert_eq!(filtered_zeroex_orders[1].order.taker_amount, 10_000_000);
+    }
+
+    #[tokio::test]
+    async fn interaction_encodes_approval() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = shared::dummy_contract!(IZeroEx, H160::default());
+        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 0.into() });
+        let order = Order {
+            taker_amount: 100,
+            taker_token: sell_token,
+            ..Default::default()
+        };
+        let handler = OrderSettlementHandler {
+            order: order.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        handler.encode(100.into(), &mut encoder).unwrap();
+        let [_, interactions, _] = encoder.finish().interactions;
+        assert_eq!(
+            interactions,
+            [
+                Approval::Approve {
+                    token: sell_token,
+                    spender: zeroex.address(),
+                }
+                .encode(),
+                ZeroExInteraction {
+                    order,
+                    taker_token_fill_amount: 100,
+                    zeroex
+                }
+                .encode(),
+            ]
+            .concat(),
+        );
     }
 }
