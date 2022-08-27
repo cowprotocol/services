@@ -330,10 +330,10 @@ pub mod tests {
     }
 
     #[tokio::test]
-    async fn interaction_encodes_approval() {
+    async fn interaction_encodes_approval_when_insufficient() {
         let sell_token = H160::from_low_u64_be(1);
         let zeroex = shared::dummy_contract!(IZeroEx, H160::default());
-        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 0.into() });
+        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
         let order = Order {
             taker_amount: 100,
             taker_token: sell_token,
@@ -355,6 +355,39 @@ pub mod tests {
                     spender: zeroex.address(),
                 }
                 .encode(),
+                ZeroExInteraction {
+                    order,
+                    taker_token_fill_amount: 100,
+                    zeroex
+                }
+                .encode(),
+            ]
+            .concat(),
+        );
+    }
+
+    #[tokio::test]
+    async fn interaction_encodes_no_approval_when_sufficient() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = shared::dummy_contract!(IZeroEx, H160::default());
+        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
+        let order = Order {
+            taker_amount: 100,
+            taker_token: sell_token,
+            ..Default::default()
+        };
+        let handler = OrderSettlementHandler {
+            order: order.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        handler.encode(100.into(), &mut encoder).unwrap();
+        let [_, interactions, _] = encoder.finish().interactions;
+        assert_eq!(
+            interactions,
+            [
+                Approval::AllowanceSufficient.encode(),
                 ZeroExInteraction {
                     order,
                     taker_token_fill_amount: 100,
