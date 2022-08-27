@@ -76,7 +76,7 @@ impl ZeroExLiquidity {
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
         let tokens: HashSet<_> = filtered_zeroex_orders
             .iter()
-            .flat_map(|o| [o.order.maker_token, o.order.taker_token])
+            .map(|o| o.order.taker_token)
             .collect();
 
         let allowances = Arc::new(
