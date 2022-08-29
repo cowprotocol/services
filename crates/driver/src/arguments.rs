@@ -134,6 +134,12 @@ pub struct Arguments {
     #[clap(long, env)]
     pub tenderly_api_key: Option<String>,
 
+    /// Gas limit for simulations. This parameter is important to set correctly, such that
+    /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
+    /// but at the same time we don't restrict solutions sizes too much
+    #[clap(long, env, default_value = "15000000")]
+    pub simulation_gas_limit: u128,
+
     /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
     #[clap(
         long,
@@ -310,6 +316,7 @@ impl std::fmt::Display for Arguments {
                 .map(|_| "SECRET")
                 .unwrap_or("None")
         )?;
+        writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(
             f,

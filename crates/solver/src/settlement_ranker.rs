@@ -15,7 +15,7 @@ type SolverResult = (Arc<dyn Solver>, Result<Vec<Settlement>, SolverRunError>);
 
 pub struct SettlementRanker {
     pub metrics: Arc<dyn SolverMetrics>,
-    pub settlement_rater: Box<dyn SettlementRating>,
+    pub settlement_rater: Arc<dyn SettlementRating>,
     // TODO: these should probably come from the autopilot to make the test parameters identical for
     // everyone.
     pub min_order_age: Duration,

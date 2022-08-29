@@ -1,6 +1,5 @@
 pub mod solver_settlements;
 
-use self::solver_settlements::RatedSettlement;
 use crate::{
     auction_preprocessing,
     driver_logger::DriverLogger,
@@ -26,7 +25,7 @@ use model::solver_competition::{
     self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
-use primitive_types::H160;
+use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
@@ -93,7 +92,7 @@ impl Driver {
             market_makable_token_list,
         );
 
-        let settlement_rater = Box::new(SettlementRater {
+        let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
             web3: web3.clone(),
@@ -299,6 +298,7 @@ impl Driver {
             run: run_id,
             orders: orders.clone(),
             liquidity,
+            liquidity_fetch_block: current_block_during_liquidity_fetch,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
@@ -393,7 +393,9 @@ impl Driver {
                 &self.solution_submitter,
                 &self.logger,
                 winning_solver.clone(),
-                winning_settlement.clone(),
+                winning_settlement.settlement.clone(),
+                winning_settlement.gas_estimate,
+                winning_settlement.id,
             )
             .await
             {
@@ -468,19 +470,17 @@ pub async fn submit_settlement(
     solution_submitter: &SolutionSubmitter,
     logger: &DriverLogger,
     solver: Arc<dyn Solver>,
-    rated_settlement: RatedSettlement,
+    settlement: Settlement,
+    gas_estimate: U256,
+    settlement_id: usize,
 ) -> Result<TransactionReceipt, SubmissionError> {
     let start = Instant::now();
     let result = solution_submitter
-        .settle(
-            rated_settlement.settlement.clone(),
-            rated_settlement.gas_estimate,
-            solver.account().clone(),
-        )
+        .settle(settlement.clone(), gas_estimate, solver.account().clone())
         .await;
     logger.metrics.transaction_submission(start.elapsed());
     logger
-        .log_submission_info(&result, &rated_settlement, &solver)
+        .log_submission_info(&result, &settlement, settlement_id, &solver)
         .await;
     result
 }

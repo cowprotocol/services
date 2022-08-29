@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use ethcontract::Account;
 use gas_estimation::GasPriceEstimating;
 use model::order::OrderUid;
 use num::ToPrimitive;
@@ -7,9 +8,10 @@ use primitive_types::U256;
 use serde::{Deserialize, Serialize};
 use shared::conversions::U256Ext;
 use solver::{
+    driver_logger::DriverLogger,
     settlement::Settlement,
-    settlement_rater::SettlementRating,
-    solver::{Auction, Solver},
+    settlement_ranker::SettlementRanker,
+    solver::{Auction, Solver, SolverRunError},
 };
 use std::sync::{Arc, Mutex};
 
@@ -37,6 +39,10 @@ pub trait CommitRevealSolving: Send + Sync {
     /// executable call data. If the solver no longer wants to execute the solution it returns
     /// `Ok(None)`.
     async fn reveal(&self, summary: SettlementSummary) -> Result<Option<Settlement>>;
+
+    fn account(&self) -> &Account;
+
+    fn name(&self) -> &str;
 }
 
 // Wraps a legacy `Solver` implementation and makes it compatible with the commit reveal protocol.
@@ -46,69 +52,72 @@ pub trait CommitRevealSolving: Send + Sync {
 // solvers for faster development.
 pub struct CommitRevealSolver {
     solver: Arc<dyn Solver>,
-    settlement_rater: Arc<dyn SettlementRating>,
     gas_estimator: Arc<dyn GasPriceEstimating>,
     stored_solution: Mutex<Option<(SettlementSummary, Settlement)>>,
+    settlement_ranker: Arc<SettlementRanker>,
+    logger: Arc<DriverLogger>,
 }
 
 impl CommitRevealSolver {
     pub fn new(
         solver: Arc<dyn Solver>,
-        settlement_rater: Arc<dyn SettlementRating>,
         gas_estimator: Arc<dyn GasPriceEstimating>,
+        settlement_ranker: Arc<SettlementRanker>,
+        logger: Arc<DriverLogger>,
     ) -> Self {
         Self {
             solver,
-            settlement_rater,
             gas_estimator,
             stored_solution: Mutex::new(Default::default()),
+            settlement_ranker,
+            logger,
         }
     }
 
     async fn commit_impl(&self, auction: Auction) -> Result<(SettlementSummary, Settlement)> {
         let prices = auction.external_prices.clone();
-        let solutions = self.solver.solve(auction).await?;
+        let liquidity_fetch_block = auction.liquidity_fetch_block;
+        let solutions = match tokio::time::timeout_at(
+            auction.deadline.into(),
+            self.solver.solve(auction),
+        )
+        .await
+        {
+            Ok(inner) => inner.map_err(SolverRunError::Solving),
+            Err(_timeout) => Err(SolverRunError::Timeout),
+        };
+
         tracing::debug!(?solutions, "received solutions");
-        let solutions = solutions
-            .into_iter()
-            .map(|solution| (self.solver.clone(), solution))
-            .collect();
 
         let gas_price = self.gas_estimator.estimate().await?;
         let (mut rated_settlements, errors) = self
-            .settlement_rater
-            .rate_settlements(solutions, &prices, gas_price)
+            .settlement_ranker
+            .rank_legal_settlements(vec![(self.solver.clone(), solutions)], &prices, gas_price)
             .await?;
 
-        // TODO properly log simulation errors with tenderly links
-        tracing::debug!(
-            "settlement rating yielded {} successes and {} errors",
-            rated_settlements.len(),
-            errors.len()
-        );
+        self.logger
+            .report_simulation_errors(errors, liquidity_fetch_block, gas_price);
 
-        rated_settlements.sort_by(|a, b| a.1.objective_value().cmp(&b.1.objective_value()));
-        if let Some((_, winning_settlement, _)) = rated_settlements.pop() {
-            let summary = SettlementSummary {
-                surplus: winning_settlement
-                    .surplus
-                    .to_f64()
-                    .context("couldn't convert surplus to f64")?,
-                gas_reimbursement: big_rational_to_u256(
-                    &(winning_settlement.gas_estimate.to_big_rational()
-                        * winning_settlement.gas_price),
-                )?,
-                settled_orders: winning_settlement
-                    .settlement
-                    .traded_orders()
-                    .map(|order| order.metadata.uid)
-                    .collect(),
-            };
+        let (_, winning_settlement, _) = rated_settlements
+            .pop()
+            .context("could not compute a valid solution")?;
 
-            return Ok((summary, winning_settlement.settlement));
-        }
+        let summary = SettlementSummary {
+            surplus: winning_settlement
+                .surplus
+                .to_f64()
+                .context("couldn't convert surplus to f64")?,
+            gas_reimbursement: big_rational_to_u256(
+                &(winning_settlement.gas_estimate.to_big_rational() * winning_settlement.gas_price),
+            )?,
+            settled_orders: winning_settlement
+                .settlement
+                .traded_orders()
+                .map(|order| order.metadata.uid)
+                .collect(),
+        };
 
-        Err(anyhow::anyhow!("could not compute a valid solution"))
+        Ok((summary, winning_settlement.settlement))
     }
 }
 
@@ -145,180 +154,46 @@ impl CommitRevealSolving for CommitRevealSolver {
             )),
         }
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use maplit::hashmap;
-    use model::order::Order;
-    use num::BigRational;
-    use primitive_types::H160;
-    use shared::gas_price_estimation::FakeGasPriceEstimator;
-    use solver::{
-        driver::solver_settlements::RatedSettlement, settlement_rater::MockSettlementRating,
-        solver::MockSolver,
-    };
-    use web3::types::AccessList;
-
-    fn settlement(user_order_ids: &[u32], liquidity_order_ids: &[u32]) -> Settlement {
-        let mut settlement = Settlement::new(hashmap! { H160::default() => U256::exp10(18) });
-        let order = |id: &u32, amounts: u128| {
-            let mut order = Order::default();
-            order.data.buy_amount = amounts.into();
-            order.data.sell_amount = amounts.into();
-            order.metadata.uid = OrderUid::from_integer(*id);
-            order
-        };
-        for id in user_order_ids {
-            settlement
-                .encoder
-                .add_trade(order(id, 1), 1.into(), 0.into())
-                .unwrap();
-        }
-        for id in liquidity_order_ids {
-            settlement
-                .encoder
-                .add_liquidity_order_trade(order(id, 1), 1.into(), 0.into())
-                .unwrap();
-        }
-        settlement
+    fn account(&self) -> &Account {
+        self.solver.account()
     }
 
-    fn rated_settlement(
-        id: usize,
-        objective: f64,
-        gas: u128,
-        settlement: Settlement,
-    ) -> (Arc<dyn Solver>, RatedSettlement, Option<AccessList>) {
-        (
-            Arc::new(MockSolver::new()) as Arc<dyn Solver>,
-            RatedSettlement {
-                id,
-                surplus: num::BigRational::from_float(objective).unwrap(),
-                settlement,
-                unscaled_subsidized_fee: BigRational::from_float(0.).unwrap(),
-                scaled_unsubsidized_fee: BigRational::from_float(0.).unwrap(),
-                gas_estimate: gas.into(),
-                gas_price: BigRational::from_float(1.).unwrap(),
-            },
-            None,
+    fn name(&self) -> &str {
+        self.solver.name()
+    }
+}
+
+/// This is just a wrapper type to make a `dyn CommitRevealSolving` usable where `dyn Solver` is
+/// expected for logging purposes. This type is only supposed to give information about the
+/// name and account of the underlying solver and will panic if `solve()` gets called.
+/// Eventually this wrapper should get removed when the logging code got refactored to expect
+/// something like a `NamedAccount` (name + account info) instead of an `Arc<dyn Solver>`.
+#[derive(Clone)]
+pub struct CommitRevealSolverAdapter {
+    solver: Arc<dyn CommitRevealSolving>,
+}
+
+impl From<Arc<dyn CommitRevealSolving>> for CommitRevealSolverAdapter {
+    fn from(solver: Arc<dyn CommitRevealSolving>) -> Self {
+        Self { solver }
+    }
+}
+
+#[async_trait::async_trait]
+impl Solver for CommitRevealSolverAdapter {
+    async fn solve(&self, _auction: Auction) -> Result<Vec<Settlement>> {
+        panic!(
+            "A dyn Solver created from a dyn CommitRevealSolving\
+            is only supposed to be used for its account data and name."
         )
     }
 
-    #[tokio::test]
-    async fn commits_best_solutions() {
-        let auction = Auction {
-            id: 1, // specific id to verify that the auction gets propagated correctly
-            ..Default::default()
-        };
-        let gas_price_estimator = Arc::new(FakeGasPriceEstimator::new(Default::default()));
+    fn account(&self) -> &Account {
+        self.solver.account()
+    }
 
-        let mut settlement_rater = MockSettlementRating::new();
-        settlement_rater
-            .expect_rate_settlements()
-            .times(1)
-            // used to verify ordering by objective value
-            .returning(|settlements, _, _| {
-                Ok((
-                    vec![
-                        rated_settlement(1, 8., 3, settlements[0].1.clone()),
-                        rated_settlement(2, 10., 2, settlements[1].1.clone()),
-                        rated_settlement(3, 6., 4, settlements[2].1.clone()),
-                        rated_settlement(4, 4., 5, settlements[3].1.clone()),
-                    ],
-                    vec![],
-                ))
-            });
-        settlement_rater
-            .expect_rate_settlements()
-            .times(1)
-            // check solution overwrite behavior on success
-            .returning(|settlements, _, _| {
-                Ok((
-                    vec![rated_settlement(1, 8., 3, settlements[0].1.clone())],
-                    vec![],
-                ))
-            });
-
-        let mut inner = MockSolver::new();
-        inner
-            .expect_solve()
-            .times(1)
-            .withf(|auction| auction.id == 1)
-            // used to verify ordering by objective value
-            .returning(|_| {
-                Ok(vec![
-                    settlement(&[1], &[2]),
-                    settlement(&[3], &[4]),
-                    settlement(&[5], &[6]),
-                    settlement(&[7], &[8]),
-                ])
-            });
-        inner
-            .expect_solve()
-            .times(1)
-            // check solution overwrite behavior on success
-            .returning(|_| Ok(vec![settlement(&[1], &[2])]));
-        inner
-            .expect_solve()
-            .times(1)
-            // used to check solution overwrite behavior on error
-            .returning(|_| Err(anyhow::anyhow!("couldn't compute solution")));
-
-        let solver = CommitRevealSolver::new(
-            Arc::new(inner),
-            Arc::new(settlement_rater),
-            gas_price_estimator,
-        );
-
-        // solution with best objective value won and the summary is correct
-        let first_winner = solver.commit(auction).await.unwrap();
-        assert_eq!(
-            first_winner,
-            SettlementSummary {
-                gas_reimbursement: 2.into(),
-                surplus: 10.,
-                settled_orders: [3, 4]
-                    .iter()
-                    .map(|id| OrderUid::from_integer(*id))
-                    .collect()
-            }
-        );
-
-        // can't reveal solution if the summary doesn't match exactly
-        let modified_winner = SettlementSummary {
-            surplus: 9.,
-            ..first_winner.clone()
-        };
-        assert!(solver.reveal(modified_winner).await.is_err());
-
-        // can correctly reveal the latest solution if the summary matches
-        let revealed_solution = solver.reveal(first_winner.clone()).await.unwrap().unwrap();
-        assert_eq!(
-            revealed_solution
-                .traded_orders()
-                .map(|o| o.metadata.uid)
-                .collect::<Vec<_>>(),
-            vec![OrderUid::from_integer(3), OrderUid::from_integer(4)]
-        );
-
-        // new solution overwrites previous solution
-        let second_winner = solver.commit(Default::default()).await.unwrap();
-        assert!(solver.reveal(first_winner).await.is_err());
-
-        // new solution can be revealed now
-        let revealed_solution = solver.reveal(second_winner.clone()).await.unwrap().unwrap();
-        assert_eq!(
-            revealed_solution
-                .traded_orders()
-                .map(|o| o.metadata.uid)
-                .collect::<Vec<_>>(),
-            vec![OrderUid::from_integer(1), OrderUid::from_integer(2)]
-        );
-
-        // error during solution computation unsets the stored solution
-        assert!(solver.commit(Default::default()).await.is_err());
-        assert!(solver.reveal(second_winner).await.is_err());
+    fn name(&self) -> &str {
+        self.solver.name()
     }
 }
