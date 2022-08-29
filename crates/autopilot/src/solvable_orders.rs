@@ -312,6 +312,11 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
                 remaining_balance = balance;
                 result.push(order);
+            } else {
+                tracing::debug!(
+                    "Filtering order {} because of insufficient allowance/balance",
+                    order.metadata.uid
+                );
             }
         }
     }
