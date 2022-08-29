@@ -381,6 +381,8 @@ impl<'a> Submitter<'a> {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
+        let mut tx_underpriced = false;
+
         tracing::debug!(
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
             submitter_name
@@ -467,7 +469,13 @@ impl<'a> Submitter<'a> {
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
             {
-                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                // Sometimes a tx gets successfully submitted but the API returns an error. When that
+                // happens the gas price computation will return a gas price which is not big enough to
+                // replace the supposedly not submitted tx. To get out of that issue the new gas price
+                // has to be bumped by `GAS_PRICE_BUMP * 2` in order to replace the stuck tx.
+                let bump_factor = if tx_underpriced { 2. } else { 1. };
+                let previous_gas_price =
+                    previous_gas_price.bump(GAS_PRICE_BUMP * bump_factor).ceil();
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
@@ -500,6 +508,7 @@ impl<'a> Submitter<'a> {
                         submitter = %submitter_name, ?err,
                         "submission failed",
                     );
+                    tx_underpriced = err.to_string().contains("underpriced");
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
