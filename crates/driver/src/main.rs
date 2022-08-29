@@ -27,14 +27,17 @@ use shared::{
 };
 use solver::{
     arguments::TransactionStrategyArg,
+    driver_logger::DriverLogger,
     interactions::allowances::AllowanceManager,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
         uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
     settlement_access_list::AccessListEstimating,
     settlement_rater::SettlementRater,
+    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -484,23 +487,32 @@ async fn build_amm_artifacts(
     res
 }
 
-#[tokio::main]
-async fn main() {
-    let args = driver::arguments::Arguments::parse();
-    shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
-    tracing::info!("running driver with validated arguments:\n{}", args);
-    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
-    let common = init_common_components(&args).await;
-    let solvers = build_solvers(&common, &args).await;
-    let submitter = build_submitter(&common, &args).await;
+async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<Driver>, String)> {
+    let solvers = build_solvers(common, args).await;
+    let submitter = build_submitter(common, args).await;
     let settlement_rater = Arc::new(SettlementRater {
         access_list_estimator: common.access_list_estimator.clone(),
         settlement_contract: common.settlement_contract.clone(),
         web3: common.web3.clone(),
     });
-    let auction_converter = build_auction_converter(&common, &args).await.unwrap();
+    let auction_converter = build_auction_converter(common, args).await.unwrap();
+    let tenderly = args
+        .tenderly_url
+        .clone()
+        .zip(args.tenderly_api_key.clone())
+        .and_then(|(url, api_key)| TenderlyApi::new(url, common.client.clone(), &api_key).ok());
+    let metrics = Arc::new(Metrics::new().unwrap());
 
-    let drivers = solvers
+    let logger = Arc::new(DriverLogger {
+        web3: common.web3.clone(),
+        network_id: common.network_id.clone(),
+        metrics,
+        settlement_contract: common.settlement_contract.clone(),
+        simulation_gas_limit: args.simulation_gas_limit,
+        tenderly,
+    });
+
+    solvers
         .into_iter()
         .map(|solver| {
             let name = solver.name().to_string();
@@ -513,10 +525,22 @@ async fn main() {
                 submitter: submitter.clone(),
                 auction_converter: auction_converter.clone(),
                 block_stream: common.current_block_stream.clone(),
+                logger: logger.clone(),
+                settlement_rater: settlement_rater.clone(),
+                gas_price_estimator: common.gas_price_estimator.clone(),
             });
             (driver, name)
         })
-        .collect();
+        .collect()
+}
+
+#[tokio::main]
+async fn main() {
+    let args = driver::arguments::Arguments::parse();
+    shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
+    tracing::info!("running driver with validated arguments:\n{}", args);
+    global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
+    let common = init_common_components(&args).await;
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -524,7 +548,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
-        drivers,
+        build_drivers(&common, &args).await,
     );
 
     futures::pin_mut!(serve_api);
