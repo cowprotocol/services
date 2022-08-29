@@ -61,6 +61,7 @@ pub struct HttpSolver {
     allowance_manager: Arc<dyn AllowanceManaging>,
     order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
+    filter_non_fee_connected_orders: bool,
 }
 
 impl HttpSolver {
@@ -74,6 +75,7 @@ impl HttpSolver {
         allowance_manager: Arc<dyn AllowanceManaging>,
         order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
+        filter_non_fee_connected_orders: bool,
     ) -> Self {
         Self {
             solver,
@@ -84,6 +86,7 @@ impl HttpSolver {
             allowance_manager,
             order_converter,
             instance_cache,
+            filter_non_fee_connected_orders,
         }
     }
 
@@ -137,9 +140,19 @@ impl HttpSolver {
         // slow down the solver and the solver can estimate them on its own.
         let price_estimates = external_prices.into_http_solver_prices();
 
-        // For the solver to run correctly we need to be sure that there are no
-        // isolated islands of tokens without connection between them.
-        let fee_connected_tokens = compute_fee_connected_tokens(&liquidity, self.native_token);
+        let fee_connected_tokens = if self.filter_non_fee_connected_orders {
+            // For the optimization HTTP solver to run correctly we need to be
+            // sure that there are no isolated islands of tokens without
+            // connection between them. Ideally, this filtering **should not be
+            // needed** and done in the optimization solvers themselves, since
+            // it is logic specific to those solvers.
+            compute_fee_connected_tokens(&liquidity, self.native_token)
+        } else {
+            // For external solvers assume all tokens are connected to the fee
+            // token as they may use additional internal liquidity that we don't
+            // know about.
+            tokens.iter().copied().collect()
+        };
         let gas_model = GasModel {
             native_token: self.native_token,
             gas_price,
@@ -548,6 +561,7 @@ mod tests {
             Arc::new(MockAllowanceManaging::new()),
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
+            true,
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {

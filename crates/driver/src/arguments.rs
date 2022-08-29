@@ -51,6 +51,12 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
+    /// Don't submit high revert risk (i.e. transactions that interact with on-chain
+    /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
+    /// transaction submission strategies are available.
+    #[clap(long, env)]
+    pub disable_high_risk_public_mempool_transactions: bool,
+
     /// Fee scaling factor for objective value. This controls the constant
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
@@ -127,6 +133,12 @@ pub struct Arguments {
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
     pub tenderly_api_key: Option<String>,
+
+    /// Gas limit for simulations. This parameter is important to set correctly, such that
+    /// there are no simulation errors due to: err: insufficient funds for gas * price + value,
+    /// but at the same time we don't restrict solutions sizes too much
+    #[clap(long, env, default_value = "15000000")]
+    pub simulation_gas_limit: u128,
 
     /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
     #[clap(
@@ -260,6 +272,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f)?;
         writeln!(
             f,
+            "disable_high_risk_public_mempool_transactions: {}",
+            self.disable_high_risk_public_mempool_transactions,
+        )?;
+        writeln!(
+            f,
             "fee_objective_scaling_factor: {}",
             self.fee_objective_scaling_factor,
         )?;
@@ -299,6 +316,7 @@ impl std::fmt::Display for Arguments {
                 .map(|_| "SECRET")
                 .unwrap_or("None")
         )?;
+        writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(
             f,
