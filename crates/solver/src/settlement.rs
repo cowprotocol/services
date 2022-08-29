@@ -256,6 +256,7 @@ pub struct Settlement {
     pub encoder: SettlementEncoder,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Revertable {
     NoRisk,
     HighRisk,

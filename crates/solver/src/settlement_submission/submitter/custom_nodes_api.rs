@@ -16,16 +16,22 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "nonce too low",                             //infura
     "OldNonce",                                  //erigon
     "INTERNAL_ERROR: nonce too low",             //erigon
+    "INTERNAL_ERROR: existing tx with same hash", //erigon
+    "ALREADY_EXISTS: already known",             //erigon
 ];
 
 #[derive(Clone)]
 pub struct CustomNodesApi {
     nodes: Vec<Web3>,
+    high_risk_disabled: bool,
 }
 
 impl CustomNodesApi {
-    pub fn new(nodes: Vec<Web3>) -> Self {
-        Self { nodes }
+    pub fn new(nodes: Vec<Web3>, high_risk_disabled: bool) -> Self {
+        Self {
+            nodes,
+            high_risk_disabled,
+        }
     }
 }
 
@@ -104,12 +110,10 @@ impl TransactionSubmitting for CustomNodesApi {
         self.submit_transaction(tx).await
     }
 
-    fn submission_status(&self, settlement: &Settlement, network_id: &str) -> SubmissionLoopStatus {
+    fn submission_status(&self, settlement: &Settlement, _: &str) -> SubmissionLoopStatus {
         // disable strategy if there is a slightest possibility for a transaction to be reverted (check done only for mainnet)
-        if shared::gas_price_estimation::is_mainnet(network_id) {
-            if let Revertable::HighRisk = settlement.revertable() {
-                return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
-            }
+        if self.high_risk_disabled && settlement.revertable() == Revertable::HighRisk {
+            return SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable);
         }
 
         SubmissionLoopStatus::Enabled(AdditionalTip::Off)
@@ -117,5 +121,33 @@ impl TransactionSubmitting for CustomNodesApi {
 
     fn name(&self) -> Strategy {
         Strategy::CustomNodes
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::settlement::NoopInteraction;
+
+    #[test]
+    fn submission_status_configuration() {
+        let high_risk_settlement = {
+            let mut settlement = Settlement::new(Default::default());
+            settlement.encoder.append_to_execution_plan(NoopInteraction);
+            assert_eq!(settlement.revertable(), Revertable::HighRisk);
+            settlement
+        };
+
+        let submitter = CustomNodesApi::new(vec![], false);
+        assert_eq!(
+            submitter.submission_status(&high_risk_settlement, ""),
+            SubmissionLoopStatus::Enabled(AdditionalTip::Off),
+        );
+
+        let submitter = CustomNodesApi::new(vec![], true);
+        assert_eq!(
+            submitter.submission_status(&high_risk_settlement, ""),
+            SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable),
+        );
     }
 }

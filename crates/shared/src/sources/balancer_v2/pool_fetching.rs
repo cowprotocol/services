@@ -517,7 +517,7 @@ mod tests {
 
         let mut unknown_pools = Vec::new();
         for subgraph_pool in subgraph_pools.pools.iter().filter(|pool| pool.swap_enabled) {
-            tracing::info!(?subgraph_pool);
+            tracing::debug!(?subgraph_pool);
 
             let fetched_pool = match fetched_pools_by_id.get(&subgraph_pool.id) {
                 Some(pool) => pool,
@@ -526,7 +526,7 @@ mod tests {
                     continue;
                 }
             };
-            tracing::info!(?fetched_pool);
+            tracing::debug!(?fetched_pool);
 
             match &fetched_pool.kind {
                 PoolKind::Weighted(state) => {

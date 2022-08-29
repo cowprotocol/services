@@ -54,7 +54,7 @@ pub struct SubmitterParams {
     pub network_id: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum SubmissionLoopStatus {
     Enabled(AdditionalTip),
     Disabled(DisabledReason),
@@ -73,13 +73,13 @@ impl fmt::Display for Strategy {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum AdditionalTip {
     Off,
     On,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum DisabledReason {
     MevExtractable,
 }

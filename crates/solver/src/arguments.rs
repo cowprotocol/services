@@ -240,6 +240,12 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub transaction_submission_nodes: Vec<Url>,
 
+    /// Don't submit high revert risk (i.e. transactions that interact with on-chain
+    /// AMMs) to the public mempool. This can be enabled to avoid MEV when private
+    /// transaction submission strategies are available.
+    #[clap(long, env)]
+    pub disable_high_risk_public_mempool_transactions: bool,
+
     /// Fee scaling factor for objective value. This controls the constant
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
@@ -352,9 +358,14 @@ impl std::fmt::Display for Arguments {
             "additional_tip_percentage: {}",
             self.additional_tip_percentage
         )?;
-        write!(f, "transaction_submission_nodes: ",)?;
+        write!(f, "transaction_submission_nodes: ")?;
         display_list(self.transaction_submission_nodes.iter(), f)?;
         writeln!(f)?;
+        writeln!(
+            f,
+            "disable_high_risk_public_mempool_transactions: {}",
+            self.disable_high_risk_public_mempool_transactions,
+        )?;
         writeln!(
             f,
             "fee_objective_scaling_factor: {}",

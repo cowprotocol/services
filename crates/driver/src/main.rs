@@ -175,6 +175,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                 allowance_mananger.clone(),
                 common.order_converter.clone(),
                 http_solver_cache.clone(),
+                false,
             )) as Arc<dyn Solver>
         })
         .collect()
@@ -223,7 +224,10 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         match strategy {
             TransactionStrategyArg::PublicMempool => {
                 transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()])),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        vec![web3.clone()],
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
@@ -262,7 +266,10 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     "missing transaction submission nodes"
                 );
                 transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(submission_nodes.clone())),
+                    submit_api: Box::new(CustomNodesApi::new(
+                        submission_nodes.clone(),
+                        args.disable_high_risk_public_mempool_transactions,
+                    )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
@@ -380,12 +387,13 @@ async fn build_auction_converter(
             .unwrap(),
         );
 
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: common.settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            common.web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
+            base_tokens.clone(),
+            common.settlement_contract.clone(),
+        ))
     } else {
         None
     };
@@ -508,7 +516,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         network_id: common.network_id.clone(),
         metrics,
         settlement_contract: common.settlement_contract.clone(),
-        simulation_gas_limit: 15000000, // TODO pass as CLI argument?
+        simulation_gas_limit: args.simulation_gas_limit,
         tenderly,
     });
 
