@@ -381,7 +381,7 @@ impl<'a> Submitter<'a> {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        let mut tx_underpriced = false;
+        let mut tx_consecutively_underpriced = 1.;
 
         tracing::debug!(
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
@@ -455,7 +455,9 @@ impl<'a> Submitter<'a> {
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_gas_price)) = transactions.last() {
-                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                    let gas_price = previous_gas_price
+                        .bump(GAS_PRICE_BUMP * tx_consecutively_underpriced)
+                        .ceil();
                     match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
@@ -473,9 +475,9 @@ impl<'a> Submitter<'a> {
                 // happens the gas price computation will return a gas price which is not big enough to
                 // replace the supposedly not submitted tx. To get out of that issue the new gas price
                 // has to be bumped by `GAS_PRICE_BUMP * 2` in order to replace the stuck tx.
-                let bump_factor = if tx_underpriced { 2. } else { 1. };
-                let previous_gas_price =
-                    previous_gas_price.bump(GAS_PRICE_BUMP * bump_factor).ceil();
+                let previous_gas_price = previous_gas_price
+                    .bump(GAS_PRICE_BUMP * tx_consecutively_underpriced)
+                    .ceil();
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
@@ -502,13 +504,18 @@ impl<'a> Submitter<'a> {
                         "submitted transaction",
                     );
                     transactions.push((handle, gas_price));
+                    tx_consecutively_underpriced = 1.;
                 }
                 Err(err) => {
                     tracing::warn!(
                         submitter = %submitter_name, ?err,
                         "submission failed",
                     );
-                    tx_underpriced = err.to_string().contains("underpriced");
+                    if err.to_string().contains("underpriced") {
+                        tx_consecutively_underpriced += 1.;
+                    } else {
+                        tx_consecutively_underpriced = 1.;
+                    }
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
