@@ -16,6 +16,8 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
     "nonce too low",                             //infura
     "OldNonce",                                  //erigon
     "INTERNAL_ERROR: nonce too low",             //erigon
+    "INTERNAL_ERROR: existing tx with same hash", //erigon
+    "ALREADY_EXISTS: already known",             //erigon
 ];
 
 #[derive(Clone)]
