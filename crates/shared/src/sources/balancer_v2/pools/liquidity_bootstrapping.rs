@@ -3,6 +3,7 @@
 pub use super::weighted::{PoolState, TokenState};
 use super::{common, FactoryIndexing, PoolIndexing};
 use crate::{
+    event_handling::BlockNumberHash,
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
@@ -22,7 +23,7 @@ pub struct PoolInfo {
 }
 
 impl PoolIndexing for PoolInfo {
-    fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
+    fn from_graph_data(pool: &PoolData, block_created: BlockNumberHash) -> Result<Self> {
         Ok(PoolInfo {
             common: common::PoolInfo::for_type(
                 PoolType::LiquidityBootstrapping,
@@ -164,7 +165,7 @@ mod tests {
                     .values()
                     .map(|token| token.common.scaling_exponent)
                     .collect(),
-                block_created: 1337,
+                block_created: (1337, Some(H256::from_low_u64_be(1337))),
             },
         };
         let common_pool_state = common::PoolState {
@@ -218,7 +219,7 @@ mod tests {
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([1; 20])],
                 scaling_exponents: vec![0, 0],
-                block_created: 1337,
+                block_created: (1337, Some(H256::from_low_u64_be(1337))),
             },
         };
         let common_pool_state = common::PoolState {
@@ -276,6 +277,6 @@ mod tests {
             ],
         };
 
-        assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, (42, Some(H256::from_low_u64_be(42)))).is_err());
     }
 }

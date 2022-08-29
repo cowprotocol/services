@@ -221,10 +221,11 @@ impl BalancerPoolFetcher {
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         client: Client,
+        web3: Web3,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
     ) -> Result<Self> {
-        let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
+        let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client, web3)?;
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(pool_initializer, token_infos, contracts).await?,
             config,
@@ -449,6 +450,7 @@ mod tests {
             Default::default(),
             block_stream,
             Default::default(),
+            web3.clone(),
             &contracts,
             deny_list,
         )
@@ -499,7 +501,8 @@ mod tests {
         pool_fetcher.run_maintenance().await.unwrap();
 
         // see what the subgraph says.
-        let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
+        let client =
+            BalancerSubgraphClient::for_chain(chain_id, Client::new(), web3.clone()).unwrap();
         let subgraph_pools = client.get_registered_pools().await.unwrap();
         let subgraph_token_pairs = subgraph_pools_token_pairs(&subgraph_pools.pools).collect();
 
@@ -507,7 +510,7 @@ mod tests {
         let fetched_pools_by_id = pool_fetcher
             .fetch_pools(
                 subgraph_token_pairs,
-                Block::Number(subgraph_pools.fetched_block_number),
+                Block::Number(subgraph_pools.fetched_block_number.0),
             )
             .await
             .unwrap()

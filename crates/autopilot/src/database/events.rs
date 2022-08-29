@@ -14,7 +14,7 @@ use database::{
 };
 use ethcontract::{Event as EthContractEvent, EventMetadata};
 use number_conversions::u256_to_big_decimal;
-use shared::event_handling::EventStoring;
+use shared::event_handling::{BlockNumberHash, EventStoring};
 use std::convert::TryInto;
 
 pub fn contract_to_db_events(
@@ -41,7 +41,7 @@ pub fn contract_to_db_events(
 
 #[async_trait::async_trait]
 impl EventStoring<ContractEvent> for Postgres {
-    async fn last_event_block(&self) -> Result<u64> {
+    async fn last_event_block(&self) -> Result<BlockNumberHash> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["last_event_block"])
@@ -51,7 +51,13 @@ impl EventStoring<ContractEvent> for Postgres {
         let block_number = database::events::last_block(&mut con)
             .await
             .context("block_number_of_most_recent_event failed")?;
-        block_number.try_into().context("block number is negative")
+
+        Ok((
+            block_number
+                .try_into()
+                .context("block number is negative")?,
+            None, //todo
+        ))
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {

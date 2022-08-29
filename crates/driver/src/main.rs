@@ -343,6 +343,7 @@ async fn build_auction_converter(
                     cache_config,
                     common.current_block_stream.clone(),
                     common.client.clone(),
+                    common.web3.clone(),
                     &contracts,
                     args.balancer_pool_deny_list.clone(),
                 )

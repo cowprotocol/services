@@ -278,6 +278,7 @@ async fn main() {
                 cache_config,
                 current_block_stream.clone(),
                 client.clone(),
+                web3.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )

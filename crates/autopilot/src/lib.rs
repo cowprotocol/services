@@ -5,7 +5,7 @@ pub mod solvable_orders;
 
 use crate::{database::Postgres, solvable_orders::SolvableOrdersCache};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9};
-use ethcontract::errors::DeployError;
+use ethcontract::{errors::DeployError, BlockId, BlockNumber};
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::{
@@ -247,6 +247,7 @@ pub async fn main(args: arguments::Arguments) {
                 cache_config,
                 current_block_stream.clone(),
                 client.clone(),
+                web3.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )
@@ -431,10 +432,16 @@ pub async fn main(args: arguments::Arguments) {
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
-            .block_number()
+            .block(BlockId::Number(BlockNumber::Latest))
             .await
-            .map(|block| block.as_u64())
             .ok()
+            .flatten()
+            .map(|block| {
+                (
+                    block.number.expect("number must exist").as_u64(),
+                    block.hash,
+                )
+            })
     } else {
         None
     };

@@ -2,6 +2,7 @@ use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
 use anyhow::{Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
+use ethcontract::H256;
 use ethcontract::{
     dyns::DynTransport, BlockNumber as Web3BlockNumber, Event as EthcontractEvent, EventMetadata,
 };
@@ -14,6 +15,12 @@ pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
+/// Block hash is optional since it is not always needed. For example, when we define a range of blocks,
+/// block hash is important for range.end() block because that one is used to be stored in `last_handled_block`
+/// and used in the next iterations, while for range.start() block is irrelevant, therefore, we don't want to spend
+/// additional rpc calls just to satisfy the form.
+pub type BlockNumberHash = (u64, Option<H256>);
+
 pub struct EventHandler<B, C, S>
 where
     B: BlockRetrieving,
@@ -23,7 +30,7 @@ where
     block_retriever: B,
     contract: C,
     store: S,
-    last_handled_block: Option<u64>,
+    last_handled_block: Option<BlockNumberHash>,
 }
 
 /// `EventStoring` is used by `EventHandler` for the purpose of giving the user freedom
@@ -51,7 +58,7 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
-    async fn last_event_block(&self) -> Result<u64>;
+    async fn last_event_block(&self) -> Result<BlockNumberHash>;
 }
 
 pub trait EventRetrieving {
@@ -69,7 +76,7 @@ where
         block_retriever: B,
         contract: C,
         store: S,
-        start_sync_at_block: Option<u64>,
+        start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
         Self {
             block_retriever,
@@ -83,7 +90,7 @@ where
         &self.store
     }
 
-    pub fn last_handled_block(&self) -> Option<u64> {
+    pub fn last_handled_block(&self) -> Option<BlockNumberHash> {
         self.last_handled_block
     }
 
@@ -91,21 +98,35 @@ where
         // Instead of using only the most recent event block from the db we also store the last
         // handled block in self so that during long times of no events we do not query needlessly
         // large block ranges.
-        let last_handled_block = match self.last_handled_block {
+        let (last_handled_block_number, last_handled_block_hash) = match self.last_handled_block {
             Some(block) => block,
             None => self.store.last_event_block().await?,
         };
-        let current_block = self.block_retriever.current_block_number().await?;
-        let from_block = last_handled_block.saturating_sub(MAX_REORG_BLOCK_COUNT);
+        let current_block = self.block_retriever.current_block().await?;
+        let current_block_number = current_block
+            .number
+            .context("missing block number")?
+            .as_u64();
+        let from_block = if Some(current_block.parent_hash) == last_handled_block_hash {
+            // no reorg
+            (last_handled_block_number, last_handled_block_hash)
+        } else {
+            (
+                last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
+                None,
+            )
+        };
+
         anyhow::ensure!(
-            from_block <= current_block,
+            from_block.0 <= current_block_number,
             format!(
                 "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-                current_block, MAX_REORG_BLOCK_COUNT, last_handled_block
+                current_block_number, MAX_REORG_BLOCK_COUNT, last_handled_block_number
             )
         );
-        Ok(BlockNumber::Specific(from_block)..=BlockNumber::Latest(current_block))
+        Ok(BlockNumber::Specific(from_block)
+            ..=BlockNumber::Latest((current_block_number, current_block.hash)))
     }
 
     /// Get new events from the contract and insert them into the database.
@@ -161,7 +182,7 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
-        self.last_handled_block = Some(range.end().to_u64());
+        self.last_handled_block = Some(range.end().to_value());
         Ok(())
     }
 
@@ -226,12 +247,19 @@ impl From<&EventMetadata> for EventIndex {
 // off from the actually used Latest block number.
 #[derive(Debug, Clone, Copy)]
 pub enum BlockNumber {
-    Specific(u64),
-    Latest(u64),
+    Specific(BlockNumberHash),
+    Latest(BlockNumberHash),
 }
 
 impl BlockNumber {
     pub fn to_u64(self) -> u64 {
+        match self {
+            BlockNumber::Specific(block) => block.0,
+            BlockNumber::Latest(block) => block.0,
+        }
+    }
+
+    pub fn to_value(self) -> BlockNumberHash {
         match self {
             BlockNumber::Specific(block) => block,
             BlockNumber::Latest(block) => block,
@@ -240,7 +268,7 @@ impl BlockNumber {
 
     pub fn block_number(&self) -> Web3BlockNumber {
         match self {
-            BlockNumber::Specific(block) => Web3BlockNumber::from(*block),
+            BlockNumber::Specific(block) => Web3BlockNumber::from(block.0),
             BlockNumber::Latest(_) => Web3BlockNumber::Latest,
         }
     }

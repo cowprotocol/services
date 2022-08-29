@@ -36,7 +36,7 @@ impl PoolInitializing for EmptyPoolInitializer {
         let fetched_block_number =
             deployment_block(BalancerV2Vault::raw_contract(), self.0).await?;
         Ok(RegisteredPools {
-            fetched_block_number,
+            fetched_block_number: (fetched_block_number, None),
             ..Default::default()
         })
     }
@@ -47,8 +47,9 @@ impl PoolInitializing for BalancerSubgraphClient {
     async fn initialize_pools(&self) -> Result<RegisteredPools> {
         let registered_pools = self.get_registered_pools().await?;
         tracing::debug!(
-            block = %registered_pools.fetched_block_number, pools = %registered_pools.pools.len(),
-            "initialized registered pools",
+            "initialized registered pools: block = {:?}, pools = {}",
+            registered_pools.fetched_block_number,
+            registered_pools.pools.len()
         );
 
         Ok(registered_pools)
@@ -88,7 +89,7 @@ mod tests {
         assert_eq!(
             initializer.initialize_pools().await.unwrap(),
             RegisteredPools {
-                fetched_block_number: 8441702,
+                fetched_block_number: (8441702, None),
                 ..Default::default()
             }
         );
