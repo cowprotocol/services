@@ -22,10 +22,10 @@ clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
 derive_more = "0.99"
-ethcontract = { version = "0.19.0", default-features = false }
-ethcontract-mock = { version = "0.19.0" }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
+ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter" }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_"] }
 global-metrics = { path = "../global-metrics" }
 hex = "0.4"
 hex-literal = "0.3"
@@ -35,7 +35,7 @@ lazy_static = "1.4"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
-number-conversions = { path = "../number-conversions" }
+number_conversions = { path = "../number_conversions" }
 primitive-types = { version = "0.10", features = ["fp-conversion"] }
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
@@ -53,6 +53,5 @@ web3 = { version = "0.18", default-features = false }
 mockall = "0.11"
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tracing-subscriber = "0.3"
 testlib = { path = "../testlib" }

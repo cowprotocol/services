@@ -221,10 +221,11 @@ impl BalancerPoolFetcher {
         config: CacheConfig,
         block_stream: CurrentBlockStream,
         client: Client,
+        web3: Web3,
         contracts: &BalancerContracts,
         deny_listed_pool_ids: Vec<H256>,
     ) -> Result<Self> {
-        let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client)?;
+        let pool_initializer = BalancerSubgraphClient::for_chain(chain_id, client, web3)?;
         let fetcher = Arc::new(Cache::new(
             create_aggregate_pool_fetcher(pool_initializer, token_infos, contracts).await?,
             config,
@@ -298,7 +299,7 @@ async fn create_aggregate_pool_fetcher(
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
     let registered_pools = pool_initializer.initialize_pools().await?;
-    let fetched_block_number = registered_pools.fetched_block_number;
+    let fetched_block = registered_pools.fetched_block;
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
@@ -314,7 +315,7 @@ async fn create_aggregate_pool_fetcher(
                 $instance,
                 registered_pools_by_factory
                     .remove(&$instance.address())
-                    .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
+                    .unwrap_or_else(|| RegisteredPools::empty(fetched_block)),
             )?
         }};
     }
@@ -372,9 +373,9 @@ where
     let initial_pools = registered_pools
         .pools
         .iter()
-        .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
+        .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block.0))
         .collect::<Result<_>>()?;
-    let start_sync_at_block = Some(registered_pools.fetched_block_number);
+    let start_sync_at_block = Some(registered_pools.fetched_block);
 
     Ok(Box::new(Registry::new(
         Arc::new(PoolInfoFetcher::new(vault, factory, token_infos)),
@@ -449,6 +450,7 @@ mod tests {
             Default::default(),
             block_stream,
             Default::default(),
+            web3.clone(),
             &contracts,
             deny_list,
         )
@@ -480,7 +482,7 @@ mod tests {
         println!("Indexing events for chain {}", chain_id);
         crate::tracing::initialize_for_tests("warn,shared=debug");
 
-        let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
+        let pool_initializer = EmptyPoolInitializer::for_chain(chain_id, web3.clone());
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
         let contracts =
             BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())
@@ -499,7 +501,8 @@ mod tests {
         pool_fetcher.run_maintenance().await.unwrap();
 
         // see what the subgraph says.
-        let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
+        let client =
+            BalancerSubgraphClient::for_chain(chain_id, Client::new(), web3.clone()).unwrap();
         let subgraph_pools = client.get_registered_pools().await.unwrap();
         let subgraph_token_pairs = subgraph_pools_token_pairs(&subgraph_pools.pools).collect();
 
@@ -507,7 +510,7 @@ mod tests {
         let fetched_pools_by_id = pool_fetcher
             .fetch_pools(
                 subgraph_token_pairs,
-                Block::Number(subgraph_pools.fetched_block_number),
+                Block::Number(subgraph_pools.fetched_block.0),
             )
             .await
             .unwrap()

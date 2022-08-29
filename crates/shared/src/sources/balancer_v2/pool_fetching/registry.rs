@@ -4,7 +4,7 @@
 use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
 use crate::{
     ethcontract_error::EthcontractErrorType,
-    event_handling::EventHandler,
+    event_handling::{BlockNumberHash, EventHandler},
     impl_event_retrieving,
     maintenance::Maintaining,
     recent_block_cache::Block,
@@ -51,7 +51,7 @@ where
         fetcher: Arc<dyn PoolInfoFetching<Factory>>,
         factory_instance: &Instance<Web3Transport>,
         initial_pools: Vec<Factory::PoolInfo>,
-        start_sync_at_block: Option<u64>,
+        start_sync_at_block: Option<BlockNumberHash>,
     ) -> Self {
         let web3 = factory_instance.web3();
         let updater = Mutex::new(EventHandler::new(

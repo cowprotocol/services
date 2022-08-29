@@ -4,7 +4,6 @@ version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
-build = "build.rs"
 
 [lib]
 name = "orderbook"
@@ -25,16 +24,16 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-ethcontract = { version = "0.19.0", default-features = false }
+ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_"] }
+gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_"] }
 global-metrics = { path = "../global-metrics" }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
 maplit = "1.0"
 model = { path = "../model" }
 num = "0.4"
-number-conversions = { path = "../number-conversions" }
+number_conversions = { path = "../number_conversions" }
 primitive-types = { version = "0.10", features = ["fp-conversion"] }
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
@@ -56,7 +55,3 @@ secp256k1 = "0.21"
 mockall = "0.11"
 testlib = { path = "../testlib" }
 tokio = { version = "1.15", features = ["test-util"] }
-
-[build-dependencies]
-anyhow = "1.0"
-vergen = "7.4"
