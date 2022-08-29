@@ -254,12 +254,13 @@ async fn main() {
     .expect("failure creating solvers");
 
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&web3).await.unwrap(),
+            base_tokens.clone(),
+            settlement_contract.clone(),
+        ))
     } else {
         None
     };

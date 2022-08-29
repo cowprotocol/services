@@ -1,5 +1,8 @@
 use super::SettlementHandling;
-use crate::interactions::ZeroExInteraction;
+use crate::interactions::{
+    allowances::{AllowanceManager, AllowanceManaging, Allowances},
+    ZeroExInteraction,
+};
 use crate::liquidity::{Exchange, LimitOrder, Liquidity};
 use crate::settlement::SettlementEncoder;
 use anyhow::Result;
@@ -9,6 +12,7 @@ use model::TokenPair;
 use primitive_types::{H160, U256};
 use shared::baseline_solver::BaseTokens;
 use shared::zeroex_api::{Order, OrderRecord, OrdersQuery, ZeroExApi};
+use shared::Web3;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -17,11 +21,29 @@ pub struct ZeroExLiquidity {
     pub zeroex: IZeroEx,
     pub base_tokens: Arc<BaseTokens>,
     pub gpv2: GPv2Settlement,
+    pub allowance_manager: Box<dyn AllowanceManaging>,
 }
 
 type OrderBuckets = HashMap<(H160, H160), Vec<OrderRecord>>;
 
 impl ZeroExLiquidity {
+    pub fn new(
+        web3: Web3,
+        api: Arc<dyn ZeroExApi>,
+        zeroex: IZeroEx,
+        base_tokens: Arc<BaseTokens>,
+        gpv2: GPv2Settlement,
+    ) -> Self {
+        let allowance_manager = AllowanceManager::new(web3, gpv2.address());
+        Self {
+            api,
+            zeroex,
+            base_tokens,
+            gpv2,
+            allowance_manager: Box::new(allowance_manager),
+        }
+    }
+
     pub async fn get_liquidity(&self, user_orders: &[LimitOrder]) -> Result<Vec<Liquidity>> {
         let queries = &[
             // orders fillable by anyone
@@ -52,17 +74,31 @@ impl ZeroExLiquidity {
 
         let order_buckets = generate_order_buckets(zeroex_orders, relevant_pairs);
         let filtered_zeroex_orders = get_useful_orders(order_buckets, 5);
+        let tokens: HashSet<_> = filtered_zeroex_orders
+            .iter()
+            .map(|o| o.order.taker_token)
+            .collect();
+
+        let allowances = Arc::new(
+            self.allowance_manager
+                .get_allowances(tokens, self.zeroex.address())
+                .await?,
+        );
 
         let zeroex_liquidity_orders: Vec<_> = filtered_zeroex_orders
             .into_iter()
-            .flat_map(|order| self.record_into_liquidity(order))
+            .flat_map(|order| self.record_into_liquidity(order, allowances.clone()))
             .collect();
 
         Ok(zeroex_liquidity_orders)
     }
 
     /// Turns 0x OrderRecord into liquidity which solvers can use.
-    fn record_into_liquidity(&self, record: OrderRecord) -> Option<Liquidity> {
+    fn record_into_liquidity(
+        &self,
+        record: OrderRecord,
+        allowances: Arc<Allowances>,
+    ) -> Option<Liquidity> {
         let sell_amount: U256 = record.remaining_maker_amount().ok()?.into();
         if sell_amount.is_zero() || record.metadata.remaining_fillable_taker_amount == 0 {
             // filter out orders with 0 amounts to prevent errors in the solver
@@ -83,6 +119,7 @@ impl ZeroExLiquidity {
             settlement_handling: Arc::new(OrderSettlementHandler {
                 order: record.order,
                 zeroex: self.zeroex.clone(),
+                allowances,
             }),
             exchange: Exchange::ZeroEx,
         };
@@ -138,6 +175,7 @@ fn get_useful_orders(order_buckets: OrderBuckets, orders_per_type: usize) -> Vec
 struct OrderSettlementHandler {
     order: Order,
     zeroex: IZeroEx,
+    allowances: Arc<Allowances>,
 }
 
 impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
@@ -145,6 +183,10 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
         if executed_amount > u128::MAX.into() {
             anyhow::bail!("0x only supports executed amounts of size u128");
         }
+        encoder.append_to_execution_plan(
+            self.allowances
+                .approve_token(self.order.taker_token, executed_amount)?,
+        );
         encoder.append_to_execution_plan(ZeroExInteraction {
             taker_token_fill_amount: executed_amount.as_u128(),
             order: self.order.clone(),
@@ -157,6 +199,8 @@ impl SettlementHandling<LimitOrder> for OrderSettlementHandler {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::{interactions::allowances::Approval, settlement::Interaction};
+    use maplit::hashmap;
     use shared::zeroex_api::OrderMetadata;
 
     fn get_relevant_pairs(token_a: H160, token_b: H160) -> HashSet<TokenPair> {
@@ -283,5 +327,75 @@ pub mod tests {
         assert_eq!(filtered_zeroex_orders[0].order.taker_amount, 1_000);
         // Second item in the list will be on the basis of remaining_fillable_taker_amount
         assert_eq!(filtered_zeroex_orders[1].order.taker_amount, 10_000_000);
+    }
+
+    #[tokio::test]
+    async fn interaction_encodes_approval_when_insufficient() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = shared::dummy_contract!(IZeroEx, H160::default());
+        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 99.into() });
+        let order = Order {
+            taker_amount: 100,
+            taker_token: sell_token,
+            ..Default::default()
+        };
+        let handler = OrderSettlementHandler {
+            order: order.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        handler.encode(100.into(), &mut encoder).unwrap();
+        let [_, interactions, _] = encoder.finish().interactions;
+        assert_eq!(
+            interactions,
+            [
+                Approval::Approve {
+                    token: sell_token,
+                    spender: zeroex.address(),
+                }
+                .encode(),
+                ZeroExInteraction {
+                    order,
+                    taker_token_fill_amount: 100,
+                    zeroex
+                }
+                .encode(),
+            ]
+            .concat(),
+        );
+    }
+
+    #[tokio::test]
+    async fn interaction_encodes_no_approval_when_sufficient() {
+        let sell_token = H160::from_low_u64_be(1);
+        let zeroex = shared::dummy_contract!(IZeroEx, H160::default());
+        let allowances = Allowances::new(zeroex.address(), hashmap! { sell_token => 100.into() });
+        let order = Order {
+            taker_amount: 100,
+            taker_token: sell_token,
+            ..Default::default()
+        };
+        let handler = OrderSettlementHandler {
+            order: order.clone(),
+            zeroex: zeroex.clone(),
+            allowances: Arc::new(allowances),
+        };
+        let mut encoder = SettlementEncoder::default();
+        handler.encode(100.into(), &mut encoder).unwrap();
+        let [_, interactions, _] = encoder.finish().interactions;
+        assert_eq!(
+            interactions,
+            [
+                Approval::AllowanceSufficient.encode(),
+                ZeroExInteraction {
+                    order,
+                    taker_token_fill_amount: 100,
+                    zeroex
+                }
+                .encode(),
+            ]
+            .concat(),
+        );
     }
 }

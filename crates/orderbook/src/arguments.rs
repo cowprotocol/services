@@ -61,7 +61,7 @@ pub struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub skip_trace_api: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
@@ -91,14 +91,14 @@ pub struct Arguments {
     pub pool_cache_lru_size: usize,
 
     /// Enable EIP-1271 orders.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub enable_eip1271_orders: bool,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
     /// This flag can be removed once DDoS protection is implemented.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully updated in this many blocks attempting
@@ -232,7 +232,7 @@ pub struct Arguments {
     pub liquidity_order_owners: Vec<H160>,
 
     /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env)]
     pub enable_blockscout: bool,
 
     /// The API endpoint for the Balancer SOR API for solving.
