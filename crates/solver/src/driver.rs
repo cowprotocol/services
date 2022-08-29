@@ -92,7 +92,7 @@ impl Driver {
             market_makable_token_list,
         );
 
-        let settlement_rater = Box::new(SettlementRater {
+        let settlement_rater = Arc::new(SettlementRater {
             access_list_estimator: solution_submitter.access_list_estimator.clone(),
             settlement_contract: settlement_contract.clone(),
             web3: web3.clone(),
@@ -298,6 +298,7 @@ impl Driver {
             run: run_id,
             orders: orders.clone(),
             liquidity,
+            liquidity_fetch_block: current_block_during_liquidity_fetch,
             gas_price: gas_price.effective_gas_price(),
             deadline: Instant::now() + self.solver_time_limit,
             external_prices: external_prices.clone(),
