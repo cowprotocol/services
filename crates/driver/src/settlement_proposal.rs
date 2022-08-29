@@ -123,7 +123,7 @@ pub struct SettlementProposal {
     pub clearing_prices: HashMap<H160, U256>,
     pub trades: Vec<TradedOrder>,
     pub execution_plan: Vec<Arc<dyn InteractionProposal>>,
-    pub id: u64,
+    pub auction_id: u64,
 }
 
 impl SettlementProposal {
@@ -333,7 +333,7 @@ mod tests {
         .unwrap();
 
         let mut proposal = SettlementProposal {
-            id: 42,
+            auction_id: 42,
             clearing_prices: hashmap! {
                 token(2) => 100.into(), token(3) => 100.into(),
             },
