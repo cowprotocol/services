@@ -17,6 +17,7 @@ use ethcontract::{
     H160, H256, U256,
 };
 use futures::{FutureExt, TryFutureExt};
+use jsonrpc_core::types::Value;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
@@ -39,6 +40,11 @@ pub struct EdenApi {
 #[derive(Debug, Clone, Deserialize)]
 struct EdenSuccess {
     result: H256,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MultipleEdenSuccesses {
+    result: Vec<EdenSuccess>,
 }
 
 fn biggest_public_nonce(global_tx_pool: &GlobalTxPool, address: H160) -> Option<U256> {
@@ -70,7 +76,7 @@ impl EdenApi {
         })
     }
 
-    // When using `eth_sendSlotTx` method, we must use native Client because the response for this method
+    // When using `eth_sendSlotTxs` method, we must use native Client because the response for this method
     // is a non-standard json that can't be automatically deserialized when `Transport` is used.
     async fn submit_slot_transaction(
         &self,
@@ -82,7 +88,8 @@ impl EdenApi {
         };
         let params =
             serde_json::to_value(Bytes(raw_signed_transaction)).context("failed to serialize")?;
-        let request = helpers::build_request(1, "eth_sendSlotTx", vec![params]);
+        let request =
+            helpers::build_request(1, "eth_sendSlotTxs", vec![Value::Array(vec![params])]);
         tracing::debug!(?request, "sending Eden API request");
 
         let response = self
@@ -96,13 +103,15 @@ impl EdenApi {
             .await
             .context("failed converting to text")?;
         tracing::debug!(%response, "response from eden");
-        let response =
-            serde_json::from_str::<EdenSuccess>(&response).context("failed to deserialize")?;
+        let response = serde_json::from_str::<MultipleEdenSuccesses>(&response)
+            .context("failed to deserialize")?;
+        let handle = response
+            .result
+            .first()
+            .context("response did not contain a result")?
+            .result;
 
-        Ok(TransactionHandle {
-            tx_hash,
-            handle: response.result,
-        })
+        Ok(TransactionHandle { tx_hash, handle })
     }
 
     fn track_submission_success(
@@ -213,6 +222,23 @@ mod tests {
         let deserialized = serde_json::from_value::<EdenSuccess>(response).unwrap();
         assert_eq!(
             deserialized.result,
+            H256::from_str("41df922fd0d4766fcc02e161f8295ec28522f329ae487f14d811e4b64c8d6e31")
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn deserializes_send_slot_txs_response() {
+        // based on these docs: https://docs.edennetwork.io/for-traders/eden-relay/slot-transactions#example-response
+        let response = serde_json::json!({
+            "result": [{
+                "code": 200i64,
+                "result": "0x41df922fd0d4766fcc02e161f8295ec28522f329ae487f14d811e4b64c8d6e31",
+            }]
+        });
+        let deserialized = serde_json::from_value::<MultipleEdenSuccesses>(response).unwrap();
+        assert_eq!(
+            deserialized.result[0].result,
             H256::from_str("41df922fd0d4766fcc02e161f8295ec28522f329ae487f14d811e4b64c8d6e31")
                 .unwrap()
         );
