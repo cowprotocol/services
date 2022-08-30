@@ -17,6 +17,7 @@ use ethcontract::{
     H160, H256, U256,
 };
 use futures::{FutureExt, TryFutureExt};
+use jsonrpc_core::types::Value;
 use reqwest::{Client, IntoUrl, Url};
 use serde::Deserialize;
 use shared::{transport::http::HttpTransport, Web3, Web3Transport};
@@ -82,7 +83,8 @@ impl EdenApi {
         };
         let params =
             serde_json::to_value(Bytes(raw_signed_transaction)).context("failed to serialize")?;
-        let request = helpers::build_request(1, "eth_sendSlotTx", vec![params]);
+        let request =
+            helpers::build_request(1, "eth_sendSlotTxs", vec![Value::Array(vec![params])]);
         tracing::debug!(?request, "sending Eden API request");
 
         let response = self
