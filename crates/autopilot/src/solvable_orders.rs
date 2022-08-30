@@ -314,8 +314,8 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
                 result.push(order);
             } else {
                 tracing::debug!(
-                    "Filtering order {} because of insufficient allowance/balance",
-                    order.metadata.uid
+                    order_uid = ?order.metadata.uid,
+                    "filtered order because of insufficient allowance/balance",
                 );
             }
         }
