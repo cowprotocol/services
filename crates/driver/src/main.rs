@@ -27,14 +27,18 @@ use shared::{
 };
 use solver::{
     arguments::TransactionStrategyArg,
+    driver_logger::DriverLogger,
     interactions::allowances::AllowanceManager,
     liquidity::{
         balancer_v2::BalancerV2Liquidity, order_converter::OrderConverter,
         uniswap_v2::UniswapLikeLiquidity, uniswap_v3::UniswapV3Liquidity, zeroex::ZeroExLiquidity,
     },
     liquidity_collector::LiquidityCollector,
+    metrics::Metrics,
     settlement_access_list::AccessListEstimating,
+    settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
+    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -383,12 +387,13 @@ async fn build_auction_converter(
             .unwrap(),
         );
 
-        Some(ZeroExLiquidity {
-            api: zeroex_api,
-            zeroex: contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
-            base_tokens: base_tokens.clone(),
-            gpv2: common.settlement_contract.clone(),
-        })
+        Some(ZeroExLiquidity::new(
+            common.web3.clone(),
+            zeroex_api,
+            contracts::IZeroEx::deployed(&common.web3).await.unwrap(),
+            base_tokens.clone(),
+            common.settlement_contract.clone(),
+        ))
     } else {
         None
     };
@@ -483,6 +488,61 @@ async fn build_amm_artifacts(
     res
 }
 
+async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<Driver>, String)> {
+    let solvers = build_solvers(common, args).await;
+    let submitter = build_submitter(common, args).await;
+    let settlement_rater = Arc::new(SettlementRater {
+        access_list_estimator: common.access_list_estimator.clone(),
+        settlement_contract: common.settlement_contract.clone(),
+        web3: common.web3.clone(),
+    });
+    let auction_converter = build_auction_converter(common, args).await.unwrap();
+    let tenderly = args
+        .tenderly_url
+        .clone()
+        .zip(args.tenderly_api_key.clone())
+        .and_then(|(url, api_key)| TenderlyApi::new(url, common.client.clone(), &api_key).ok());
+    let metrics = Arc::new(Metrics::new().unwrap());
+
+    let settlement_ranker = Arc::new(SettlementRanker {
+        metrics: metrics.clone(),
+        settlement_rater: settlement_rater.clone(),
+        min_order_age: std::time::Duration::from_secs(30),
+        max_settlement_price_deviation: None,
+        token_list_restriction_for_price_checks: solver::settlement::PriceCheckTokens::All,
+    });
+    let logger = Arc::new(DriverLogger {
+        web3: common.web3.clone(),
+        network_id: common.network_id.clone(),
+        metrics,
+        settlement_contract: common.settlement_contract.clone(),
+        simulation_gas_limit: args.simulation_gas_limit,
+        tenderly,
+    });
+
+    solvers
+        .into_iter()
+        .map(|solver| {
+            let name = solver.name().to_string();
+            let driver = Arc::new(Driver {
+                solver: Arc::new(CommitRevealSolver::new(
+                    solver,
+                    common.gas_price_estimator.clone(),
+                    settlement_ranker.clone(),
+                    logger.clone(),
+                )),
+                submitter: submitter.clone(),
+                auction_converter: auction_converter.clone(),
+                block_stream: common.current_block_stream.clone(),
+                logger: logger.clone(),
+                settlement_rater: settlement_rater.clone(),
+                gas_price_estimator: common.gas_price_estimator.clone(),
+            });
+            (driver, name)
+        })
+        .collect()
+}
+
 #[tokio::main]
 async fn main() {
     let args = driver::arguments::Arguments::parse();
@@ -490,32 +550,6 @@ async fn main() {
     tracing::info!("running driver with validated arguments:\n{}", args);
     global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
     let common = init_common_components(&args).await;
-    let solvers = build_solvers(&common, &args).await;
-    let submitter = build_submitter(&common, &args).await;
-    let settlement_rater = Arc::new(SettlementRater {
-        access_list_estimator: common.access_list_estimator.clone(),
-        settlement_contract: common.settlement_contract.clone(),
-        web3: common.web3.clone(),
-    });
-    let auction_converter = build_auction_converter(&common, &args).await.unwrap();
-
-    let drivers = solvers
-        .into_iter()
-        .map(|solver| {
-            let name = solver.name().to_string();
-            let driver = Arc::new(Driver {
-                solver: Arc::new(CommitRevealSolver::new(
-                    solver,
-                    settlement_rater.clone(),
-                    common.gas_price_estimator.clone(),
-                )),
-                submitter: submitter.clone(),
-                auction_converter: auction_converter.clone(),
-                block_stream: common.current_block_stream.clone(),
-            });
-            (driver, name)
-        })
-        .collect();
 
     let (shutdown_sender, shutdown_receiver) = tokio::sync::oneshot::channel();
     let serve_api = serve_api(
@@ -523,7 +557,7 @@ async fn main() {
         async {
             let _ = shutdown_receiver.await;
         },
-        drivers,
+        build_drivers(&common, &args).await,
     );
 
     futures::pin_mut!(serve_api);

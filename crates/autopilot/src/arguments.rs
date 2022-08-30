@@ -32,7 +32,7 @@ pub struct Arguments {
     pub token_detector_fee_values: FeeValues,
 
     /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env)]
     pub enable_blockscout: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
@@ -47,7 +47,7 @@ pub struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub skip_trace_api: bool,
 
     /// The number of pairs that are automatically updated in the pool cache.
