@@ -19,8 +19,8 @@ use std::{
 /// Determines how much time a solver has to compute solutions for an incoming `Auction`.
 const RUN_DURATION: Duration = Duration::from_secs(15);
 
-#[async_trait::async_trait]
 #[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
 pub trait AuctionConverting: Send + Sync {
     async fn convert_auction(&self, model: AuctionModel, block: u64) -> Result<Auction>;
 }
