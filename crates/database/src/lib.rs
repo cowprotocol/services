@@ -59,6 +59,7 @@ pub async fn clear_DANGER(pool: &PgPool) -> sqlx::Result<()> {
 
 pub type Address = ByteArray<20>;
 pub type AppId = ByteArray<32>;
+pub type BlockHash = ByteArray<32>;
 pub type TransactionHash = ByteArray<32>;
 pub type OrderUid = ByteArray<56>;
 

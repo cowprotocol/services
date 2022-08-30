@@ -552,6 +552,7 @@ mod tests {
                 &[(
                     EventIndex {
                         block_number: i,
+                        block_hash: ByteArray([i as u8; 32]),
                         log_index: 0,
                     },
                     Event::Trade(Trade {
@@ -621,6 +622,7 @@ mod tests {
             let events = [(
                 EventIndex {
                     block_number,
+                    block_hash: ByteArray([block_number as u8; 32]),
                     log_index: 0,
                 },
                 Event::PreSignature(PreSignature {
@@ -682,6 +684,7 @@ mod tests {
             &[(
                 EventIndex {
                     block_number: 0,
+                    block_hash: ByteArray([0; 32]),
                     log_index: 0,
                 },
                 Event::Trade(Trade {
@@ -702,6 +705,7 @@ mod tests {
             &[(
                 EventIndex {
                     block_number: 0,
+                    block_hash: ByteArray([0; 32]),
                     log_index: 0,
                 },
                 Event::Invalidation(Invalidation {
@@ -723,6 +727,7 @@ mod tests {
             &[(
                 EventIndex {
                     block_number: 0,
+                    block_hash: ByteArray([0; 32]),
                     log_index: 0,
                 },
                 Event::Trade(Trade {
@@ -816,6 +821,7 @@ mod tests {
             (
                 EventIndex {
                     block_number,
+                    block_hash: ByteArray([block_number as u8; 32]),
                     log_index,
                 },
                 Event::Trade(Trade {
@@ -828,6 +834,7 @@ mod tests {
             (
                 EventIndex {
                     block_number,
+                    block_hash: ByteArray([block_number as u8; 32]),
                     log_index,
                 },
                 Event::Settlement(Settlement {
@@ -887,6 +894,7 @@ mod tests {
         let event = (
             EventIndex {
                 block_number: 0,
+                block_hash: ByteArray([0; 32]),
                 log_index: 0,
             },
             Event::Settlement(Default::default()),
@@ -896,6 +904,7 @@ mod tests {
         let event = (
             EventIndex {
                 block_number: 3,
+                block_hash: ByteArray([3; 32]),
                 log_index: 0,
             },
             Event::Settlement(Default::default()),

@@ -12,7 +12,7 @@ use database::{
     events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
     OrderUid,
 };
-use ethcontract::{Event as EthContractEvent, EventMetadata};
+use ethcontract::{Event as EthContractEvent, EventMetadata, H256};
 use number_conversions::u256_to_big_decimal;
 use shared::event_handling::{BlockNumberHash, EventStoring};
 use std::convert::TryInto;
@@ -48,7 +48,7 @@ impl EventStoring<ContractEvent> for Postgres {
             .start_timer();
 
         let mut con = self.0.acquire().await?;
-        let block_number = database::events::last_block(&mut con)
+        let (block_number, block_hash) = database::events::last_block(&mut con)
             .await
             .context("block_number_of_most_recent_event failed")?;
 
@@ -56,7 +56,7 @@ impl EventStoring<ContractEvent> for Postgres {
             block_number
                 .try_into()
                 .context("block number is negative")?,
-            None, //todo
+            Some(H256(block_hash.0)),
         ))
     }
 
@@ -101,6 +101,7 @@ impl EventStoring<ContractEvent> for Postgres {
 fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     EventIndex {
         block_number: meta.block_number as i64,
+        block_hash: ByteArray(meta.block_hash.0),
         log_index: meta.log_index as i64,
     }
 }
