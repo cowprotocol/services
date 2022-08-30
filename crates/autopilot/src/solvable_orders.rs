@@ -239,7 +239,7 @@ async fn filter_invalid_signature_orders(
                 if let Err(err) = validations.next().unwrap() {
                     tracing::warn!(
                         order_uid =% order.metadata.uid, ?err,
-                        "filtering EIP-1271 order as signature became invalid"
+                        "filtered order because of invalid EIP-1271 signature"
                     );
                     return false;
                 }
