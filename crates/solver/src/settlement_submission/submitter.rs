@@ -478,6 +478,11 @@ impl<'a> Submitter<'a> {
                 let previous_gas_price = previous_gas_price
                     .bump(GAS_PRICE_BUMP.powi(tx_consecutively_underpriced))
                     .ceil();
+                tracing::debug!(
+                    ?previous_gas_price,
+                    tx_consecutively_underpriced,
+                    "minimum gas price"
+                );
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
@@ -511,8 +516,10 @@ impl<'a> Submitter<'a> {
                         submitter = %submitter_name, ?err,
                         "submission failed",
                     );
-                    if err.to_string().contains("underpriced") {
+                    let err = err.to_string();
+                    if err.contains("underpriced") || err.contains("already known") {
                         tx_consecutively_underpriced += 1;
+                        tracing::debug!(tx_consecutively_underpriced, "bump gas price exponent");
                     } else {
                         tx_consecutively_underpriced = 1;
                     }
