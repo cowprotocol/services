@@ -192,6 +192,9 @@ pub struct Submitter<'a> {
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
     submitted_transactions: SubTxPoolRef,
+    /// If this flag is enabled we try to mitigate submission errors caused by transactions
+    /// which look like they threw an error but actually ended up in the mempool.
+    compensate_for_lost_transactions: bool,
 }
 
 impl<'a> Submitter<'a> {
@@ -202,6 +205,7 @@ impl<'a> Submitter<'a> {
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
+        compensate_for_lost_transactions: bool,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -210,6 +214,7 @@ impl<'a> Submitter<'a> {
             gas_price_estimator,
             access_list_estimator,
             submitted_transactions,
+            compensate_for_lost_transactions,
         })
     }
 }
@@ -394,6 +399,10 @@ impl<'a> Submitter<'a> {
         let mut access_list: Option<AccessList> = None;
 
         loop {
+            if !self.compensate_for_lost_transactions {
+                tx_consecutively_underpriced = 1;
+            }
+
             tracing::debug!("entered loop with submitter: {}", submitter_name);
 
             let submission_status = self
@@ -751,6 +760,7 @@ mod tests {
             &gas_price_estimator,
             access_list_estimator.as_ref(),
             submitted_transactions,
+            false,
         )
         .unwrap();
 

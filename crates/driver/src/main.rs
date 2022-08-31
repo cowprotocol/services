@@ -291,6 +291,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator: common.access_list_estimator.clone(),
+        compensate_for_lost_transactions: args.compensate_for_lost_transactions,
     })
 }
 

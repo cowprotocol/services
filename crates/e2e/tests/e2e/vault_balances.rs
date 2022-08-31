@@ -189,6 +189,7 @@ async fn vault_balances(web3: Web3) {
                 .await
                 .unwrap(),
             ),
+            compensate_for_lost_transactions: false,
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
