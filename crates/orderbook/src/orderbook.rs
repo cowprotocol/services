@@ -6,7 +6,7 @@ use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
 use model::{
-    auction::Auction,
+    auction::AuctionWithId,
     order::{Order, OrderCancellation, OrderCreation, OrderStatus, OrderUid},
     DomainSeparator,
 };
@@ -263,7 +263,7 @@ impl Orderbook {
         self.database.orders_for_tx(hash).await
     }
 
-    pub async fn get_auction(&self) -> Result<Option<Auction>> {
+    pub async fn get_auction(&self) -> Result<Option<AuctionWithId>> {
         let auction = match self.database.most_recent_auction().await? {
             Some(auction) => auction,
             None => {
@@ -277,7 +277,7 @@ impl Orderbook {
             .number
             .ok_or_else(|| anyhow!("no block number"))?
             .as_u64();
-        let age_in_blocks = current_block.saturating_sub(auction.block);
+        let age_in_blocks = current_block.saturating_sub(auction.auction.block);
         if age_in_blocks > self.solvable_orders_max_update_age_blocks {
             tracing::warn!("current auction is out of date");
             return Ok(None);

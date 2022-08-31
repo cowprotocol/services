@@ -173,12 +173,10 @@ impl SolvableOrdersCache {
         let auction = Auction {
             block,
             latest_settlement_block: db_solvable_orders.latest_settlement_block,
-            next_solver_competition: self.database.next_solver_competition().await?,
             orders: orders.clone(),
             prices,
         };
-
-        self.database.replace_current_auction(&auction).await?;
+        let _id = self.database.replace_current_auction(&auction).await?;
         *self.cache.lock().unwrap() = Inner {
             orders: SolvableOrders {
                 orders,
