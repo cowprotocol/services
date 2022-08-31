@@ -18,8 +18,8 @@ pub fn get_solvable_orders(
             Result::<_, Infallible>::Ok(convert_json_response(result.map(|auction| {
                 auction
                     .map(|auction| model::SolvableOrders {
-                        orders: auction.orders,
-                        latest_settlement_block: auction.latest_settlement_block,
+                        orders: auction.auction.orders,
+                        latest_settlement_block: auction.auction.latest_settlement_block,
                     })
                     .unwrap_or_default()
             })))
