@@ -1,5 +1,5 @@
 use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
-use anyhow::{Context, Error, Result};
+use anyhow::{ensure, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::H256;
@@ -30,7 +30,7 @@ where
     block_retriever: B,
     contract: C,
     store: S,
-    last_handled_block: Option<BlockNumberHash>,
+    last_handled_blocks: Vec<BlockNumberHash>,
 }
 
 /// `EventStoring` is used by `EventHandler` for the purpose of giving the user freedom
@@ -58,7 +58,7 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
-    async fn last_event_block(&self) -> Result<BlockNumberHash>;
+    async fn last_event_blocks(&self) -> Result<Vec<BlockNumberHash>>;
 }
 
 pub trait EventRetrieving {
@@ -82,7 +82,7 @@ where
             block_retriever,
             contract,
             store,
-            last_handled_block: start_sync_at_block,
+            last_handled_blocks: vec![start_sync_at_block.unwrap()], //todo remove unwrap
         }
     }
 
@@ -91,47 +91,41 @@ where
     }
 
     pub fn last_handled_block(&self) -> Option<BlockNumberHash> {
-        self.last_handled_block
+        self.last_handled_blocks.last().cloned()
     }
 
-    async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
-        // Instead of using only the most recent event block from the db we also store the last
-        // handled block in self so that during long times of no events we do not query needlessly
-        // large block ranges.
-        let (last_handled_block_number, last_handled_block_hash) = match self.last_handled_block {
-            Some(block) => block,
-            None => self.store.last_event_block().await?,
-        };
-        let current_block = self.block_retriever.current_block().await?;
-        let current_block_number = current_block
-            .number
-            .context("missing block number")?
-            .as_u64();
-        let from_block = if Some(current_block.parent_hash) == last_handled_block_hash {
-            // no reorg
-            (last_handled_block_number, last_handled_block_hash)
+    async fn event_block_range(
+        &self,
+    ) -> Result<(RangeInclusive<BlockNumber>, Vec<BlockNumberHash>)> {
+        let current_blocks = self.block_retriever.current_blocks().await?;
+        let handled_blocks = if self.last_handled_blocks.is_empty() {
+            self.store.last_event_blocks().await?
         } else {
-            (
-                last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
-                None,
-            )
+            self.last_handled_blocks.clone()
         };
 
+        let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
+
         anyhow::ensure!(
-            from_block.0 <= current_block_number,
+            block_range.start().0 <= block_range.end().0,
             format!(
                 "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-                current_block_number, MAX_REORG_BLOCK_COUNT, last_handled_block_number
+                block_range.end().0,
+                MAX_REORG_BLOCK_COUNT,
+                block_range.start().0
             )
         );
-        Ok(BlockNumber::Specific(from_block)
-            ..=BlockNumber::Latest((current_block_number, current_block.hash)))
+        Ok((
+            BlockNumber::Specific(block_range.start().clone())
+                ..=BlockNumber::Latest(block_range.end().clone()),
+            current_blocks,
+        ))
     }
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let range = self.event_block_range().await?;
+        let (range, current_blocks) = self.event_block_range().await?;
         tracing::debug!("updating events in block range {:?}", range);
         let events = self
             .past_events(&range)
@@ -182,7 +176,7 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
-        self.last_handled_block = Some(range.end().to_value());
+        self.last_handled_blocks = current_blocks;
         Ok(())
     }
 
@@ -200,6 +194,32 @@ where
             .await?
             .map_err(Error::from))
     }
+}
+
+fn detect_reorg_path(
+    handled_blocks: &Vec<BlockNumberHash>,
+    current_blocks: &Vec<BlockNumberHash>,
+) -> Result<RangeInclusive<BlockNumberHash>> {
+    ensure!(!handled_blocks.is_empty() && !current_blocks.is_empty());
+
+    for current_block in current_blocks.iter().rev() {
+        for handled_block in handled_blocks.iter().rev() {
+            if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
+                // found the same block in both lists, now we know the common ancestor
+                return Ok(current_block.clone()..=current_blocks.last().unwrap().clone());
+            }
+        }
+    }
+
+    //cant figure out the reorg, fallback to regular 25 blocks reorg
+    Ok((
+        handled_blocks
+            .last()
+            .unwrap()
+            .0
+            .saturating_sub(MAX_REORG_BLOCK_COUNT),
+        None,
+    )..=current_blocks.last().unwrap().clone())
 }
 
 #[async_trait::async_trait]

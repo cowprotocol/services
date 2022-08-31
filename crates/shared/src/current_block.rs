@@ -1,4 +1,4 @@
-use crate::Web3;
+use crate::{event_handling::BlockNumberHash, Web3};
 use anyhow::{anyhow, Context as _, Result};
 use primitive_types::H256;
 use std::time::Duration;
@@ -89,6 +89,7 @@ pub fn block_number(block: &Block) -> Result<u64> {
 #[async_trait::async_trait]
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
+    async fn current_blocks(&self) -> Result<Vec<BlockNumberHash>>;
     async fn current_block_number(&self) -> Result<u64>;
 }
 
@@ -104,6 +105,10 @@ where
             .await
             .context("failed to get current block")?
             .ok_or_else(|| anyhow!("no current block"))
+    }
+
+    async fn current_blocks(&self) -> Result<Vec<BlockNumberHash>> {
+        Ok(vec![]) //todo
     }
 
     async fn current_block_number(&self) -> Result<u64> {

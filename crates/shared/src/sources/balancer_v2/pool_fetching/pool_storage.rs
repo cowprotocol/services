@@ -165,14 +165,15 @@ where
         }
     }
 
-    pub fn last_event_block(&self) -> BlockNumberHash {
+    pub fn last_event_blocks(&self) -> Vec<BlockNumberHash> {
         // Technically we could keep this updated more effectively in a field on balancer pools,
         // but the maintenance seems like more overhead that needs to be tested.
-        self.pools
+        vec![self
+            .pools
             .values()
             .map(|pool| pool.common().block_created)
             .max()
-            .unwrap_or_default()
+            .unwrap_or_default()] //todo
     }
 }
 
@@ -211,8 +212,8 @@ where
         Ok(())
     }
 
-    async fn last_event_block(&self) -> Result<BlockNumberHash> {
-        Ok(self.last_event_block())
+    async fn last_event_blocks(&self) -> Result<Vec<BlockNumberHash>> {
+        Ok(self.last_event_blocks())
     }
 }
 
