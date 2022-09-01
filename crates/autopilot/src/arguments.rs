@@ -1,5 +1,8 @@
 use primitive_types::{H160, U256};
-use shared::{arguments::display_option, bad_token::token_owner_finder::FeeValues};
+use shared::{
+    arguments::display_option,
+    bad_token::token_owner_finder::{liquidity::FeeValues, TokenOwnerFindingStrategy},
+};
 use std::{net::SocketAddr, time::Duration};
 use url::Url;
 
@@ -31,11 +34,11 @@ pub struct Arguments {
     /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
     /// detection.
     #[clap(long, env, default_value = "static", arg_enum)]
-    pub token_detector_fee_values: FeeValues,
+    pub uniswapv3_token_owner_finder_fee_values: FeeValues,
 
-    /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env)]
-    pub enable_blockscout: bool,
+    /// The token owner finding strategies to use.
+    #[clap(long, env, use_value_delimiter = true, arg_enum)]
+    pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[clap(
@@ -130,10 +133,10 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
         writeln!(
             f,
-            "token_detector_fee_values: {:?}",
-            self.token_detector_fee_values
+            "uniswapv3_token_owner_finder_fee_values: {:?}",
+            self.uniswapv3_token_owner_finder_fee_values
         )?;
-        writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
+        writeln!(f, "token_owner_finders: {:?}", self.token_owner_finders)?;
         writeln!(
             f,
             "token_quality_cache_expiry: {:?}",
