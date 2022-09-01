@@ -521,7 +521,7 @@ impl<'a> Submitter<'a> {
                     );
                     let err = err.to_string();
                     if err.contains("underpriced") || err.contains("already known") {
-                        allowed_gas_price_bumps = std::cmp::max(
+                        allowed_gas_price_bumps = std::cmp::min(
                             allowed_gas_price_bumps + 1,
                             self.max_gas_price_bumps as i32,
                         );
