@@ -192,9 +192,7 @@ pub struct Submitter<'a> {
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
     submitted_transactions: SubTxPoolRef,
-    /// If this flag is enabled we try to mitigate submission errors caused by transactions
-    /// which look like they threw an error but actually ended up in the mempool.
-    compensate_for_lost_transactions: bool,
+    max_gas_price_bumps: u8,
 }
 
 impl<'a> Submitter<'a> {
@@ -205,7 +203,7 @@ impl<'a> Submitter<'a> {
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
-        compensate_for_lost_transactions: bool,
+        max_gas_price_bumps: u8,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -214,7 +212,7 @@ impl<'a> Submitter<'a> {
             gas_price_estimator,
             access_list_estimator,
             submitted_transactions,
-            compensate_for_lost_transactions,
+            max_gas_price_bumps,
         })
     }
 }
@@ -386,7 +384,7 @@ impl<'a> Submitter<'a> {
         let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        let mut tx_consecutively_underpriced = 1;
+        let mut allowed_gas_price_bumps = 1i32;
 
         tracing::debug!(
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
@@ -399,10 +397,6 @@ impl<'a> Submitter<'a> {
         let mut access_list: Option<AccessList> = None;
 
         loop {
-            if !self.compensate_for_lost_transactions {
-                tx_consecutively_underpriced = 1;
-            }
-
             tracing::debug!("entered loop with submitter: {}", submitter_name);
 
             let submission_status = self
@@ -465,7 +459,7 @@ impl<'a> Submitter<'a> {
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_gas_price)) = transactions.last() {
                     let gas_price = previous_gas_price
-                        .bump(GAS_PRICE_BUMP.powi(tx_consecutively_underpriced))
+                        .bump(GAS_PRICE_BUMP.powi(allowed_gas_price_bumps))
                         .ceil();
                     match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
@@ -485,11 +479,11 @@ impl<'a> Submitter<'a> {
                 // replace the supposedly not submitted tx. To get out of that issue the new gas price
                 // has to be bumped by `GAS_PRICE_BUMP * 2` in order to replace the stuck tx.
                 let previous_gas_price = previous_gas_price
-                    .bump(GAS_PRICE_BUMP.powi(tx_consecutively_underpriced))
+                    .bump(GAS_PRICE_BUMP.powi(allowed_gas_price_bumps))
                     .ceil();
                 tracing::debug!(
                     ?previous_gas_price,
-                    tx_consecutively_underpriced,
+                    allowed_gas_price_bumps,
                     "minimum gas price"
                 );
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
@@ -518,7 +512,7 @@ impl<'a> Submitter<'a> {
                         "submitted transaction",
                     );
                     transactions.push((handle, gas_price));
-                    tx_consecutively_underpriced = 1;
+                    allowed_gas_price_bumps = 1;
                 }
                 Err(err) => {
                     tracing::warn!(
@@ -527,10 +521,13 @@ impl<'a> Submitter<'a> {
                     );
                     let err = err.to_string();
                     if err.contains("underpriced") || err.contains("already known") {
-                        tx_consecutively_underpriced += 1;
-                        tracing::debug!(tx_consecutively_underpriced, "bump gas price exponent");
+                        allowed_gas_price_bumps = std::cmp::max(
+                            allowed_gas_price_bumps + 1,
+                            self.max_gas_price_bumps as i32,
+                        );
+                        tracing::debug!(allowed_gas_price_bumps, "bump gas price exponent");
                     } else {
-                        tx_consecutively_underpriced = 1;
+                        allowed_gas_price_bumps = 1;
                     }
                 }
             }
@@ -760,7 +757,7 @@ mod tests {
             &gas_price_estimator,
             access_list_estimator.as_ref(),
             submitted_transactions,
-            false,
+            1,
         )
         .unwrap();
 

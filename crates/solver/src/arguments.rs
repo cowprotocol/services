@@ -271,11 +271,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "15000000")]
     pub simulation_gas_limit: u128,
 
-    /// It looks like sometimes transaction submission throw errors but the transaction actually
-    /// ends up in the mempool which can cause errors for subsequent submissions. If
-    /// `compensate_for_lost_transactions` is enabled the submission logic tries its best to work around that issue.
-    #[clap(long, env)]
-    pub compensate_for_lost_transactions: bool,
+    /// Configures how often the gas price of a transaction may be increased by the minimum amount
+    /// compared to the previsouly failing transaction to eventually bring it on chain.
+    #[clap(long, env, default_value = "1")]
+    pub max_gas_price_bumps: u8,
 
     /// In order to protect against malicious solvers, the driver will check that settlements prices do not
     /// exceed a max price deviation compared to the external prices of the driver, if this optional value is set.
@@ -384,11 +383,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
-        writeln!(
-            f,
-            "compensate_for_lost_transactions: {}",
-            self.compensate_for_lost_transactions
-        )?;
+        writeln!(f, "max_gas_price_bumps: {}", self.max_gas_price_bumps)?;
         write!(f, "max_settlement_price_deviation: ")?;
         display_option(&self.max_settlement_price_deviation, f)?;
         writeln!(f)?;

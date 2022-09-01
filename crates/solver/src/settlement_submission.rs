@@ -106,7 +106,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub compensate_for_lost_transactions: bool,
+    pub max_gas_price_bumps: u8,
 }
 
 pub struct StrategyArgs {
@@ -198,7 +198,7 @@ impl SolutionSubmitter {
                             &gas_price_estimator,
                             self.access_list_estimator.as_ref(),
                             strategy_args.sub_tx_pool.clone(),
-                            self.compensate_for_lost_transactions
+                            self.max_gas_price_bumps
                         )?;
                         submitter.submit(settlement.clone(), params).await
                     }

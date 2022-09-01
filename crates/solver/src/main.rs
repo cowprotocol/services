@@ -418,7 +418,7 @@ async fn main() {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
-        compensate_for_lost_transactions: args.compensate_for_lost_transactions,
+        max_gas_price_bumps: args.max_gas_price_bumps,
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
