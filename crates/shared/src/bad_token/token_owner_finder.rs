@@ -5,18 +5,33 @@ use self::{
     blockscout::BlockscoutTokenOwnerFinder,
     liquidity::{BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder},
 };
-use crate::{baseline_solver::BaseTokens, sources::uniswap_v2::pair_provider::PairProvider};
+use crate::{
+    baseline_solver::BaseTokens, ethcontract_error::EthcontractErrorType,
+    sources::uniswap_v2::pair_provider::PairProvider, transport::MAX_BATCH_SIZE, Web3,
+    Web3CallBatch,
+};
 use anyhow::Result;
-use contracts::{BalancerV2Vault, IUniswapV3Factory};
+use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
+use ethcontract::U256;
+use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
 use std::sync::Arc;
+
+/// This trait abstracts various sources for proposing token owner candidates which are likely, but
+/// not guaranteed, to have some token balance.
+#[async_trait::async_trait]
+pub trait TokenOwnerProposing: Send + Sync {
+    /// Find candidate addresses that might own the token.
+    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
+}
 
 /// To detect bad tokens we need to find some address on the network that owns the token so that we
 /// can use it in our simulations.
 #[async_trait::async_trait]
 pub trait TokenOwnerFinding: Send + Sync {
-    /// Find candidate addresses that might own the token.
-    async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>>;
+    /// Find an addresses with at least `min_balance` of tokens and return it, along with its
+    /// actual balance.
+    async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>>;
 }
 
 /// Support token owner finding strategies.
@@ -45,6 +60,7 @@ impl TokenOwnerFindingStrategy {
 /// Initializes a set of token owner finders.
 #[allow(clippy::too_many_arguments)]
 pub async fn init(
+    web3: Web3,
     finders: Option<&[TokenOwnerFindingStrategy]>,
     pair_providers: &[PairProvider],
     base_tokens: &BaseTokens,
@@ -54,18 +70,18 @@ pub async fn init(
     uniswapv3_fee_values: FeeValues,
     client: &reqwest::Client,
     chain_id: u64,
-) -> Result<Vec<Arc<dyn TokenOwnerFinding>>> {
+) -> Result<Arc<dyn TokenOwnerFinding>> {
     let finders =
         finders.unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_chain(chain_id));
     tracing::debug!(?finders, "initializing token owner finders");
 
-    let mut result = Vec::<Arc<dyn TokenOwnerFinding>>::new();
+    let mut proposers = Vec::<Arc<dyn TokenOwnerProposing>>::new();
 
     if finders.contains(&TokenOwnerFindingStrategy::Liquidity) {
-        result.extend(
+        proposers.extend(
             pair_providers
                 .iter()
-                .map(|provider| -> Arc<dyn TokenOwnerFinding> {
+                .map(|provider| -> Arc<dyn TokenOwnerProposing> {
                     Arc::new(UniswapLikePairProviderFinder {
                         inner: provider.clone(),
                         base_tokens: base_tokens.tokens().iter().copied().collect(),
@@ -73,10 +89,10 @@ pub async fn init(
                 }),
         );
         if let Some(contract) = vault {
-            result.push(Arc::new(BalancerVaultFinder(contract.clone())));
+            proposers.push(Arc::new(BalancerVaultFinder(contract.clone())));
         }
         if let Some(contract) = uniswapv3_factory {
-            result.push(Arc::new(
+            proposers.push(Arc::new(
                 UniswapV3Finder::new(
                     contract.clone(),
                     base_tokens.tokens().iter().copied().collect(),
@@ -89,11 +105,86 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        result.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
+        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
             client.clone(),
             chain_id,
         )?));
     }
 
-    Ok(result)
+    Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
+}
+
+/// A `TokenOwnerFinding` implementation that queries a node with proposed owner candidates from an
+/// internal list of `TokenOwnerProposing` implementations.
+pub struct TokenOwnerFinder {
+    pub web3: Web3,
+    pub proposers: Vec<Arc<dyn TokenOwnerProposing>>,
+}
+
+impl TokenOwnerFinder {
+    /// Stream of addresses that might own the token.
+    fn candidate_owners(&self, token: H160) -> impl Stream<Item = H160> + '_ {
+        // Combine the results of all finders into a single stream.
+        let streams = self.proposers.iter().map(|finder| {
+            futures::stream::once(finder.find_candidate_owners(token))
+                .filter_map(|result| async {
+                    match result {
+                        Ok(inner) => Some(futures::stream::iter(inner)),
+                        Err(err) => {
+                            tracing::warn!(?err, "token owner proposing failed");
+                            None
+                        }
+                    }
+                })
+                .flatten()
+                .boxed()
+        });
+        futures::stream::select_all(streams)
+    }
+}
+
+#[async_trait::async_trait]
+impl TokenOwnerFinding for TokenOwnerFinder {
+    async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>> {
+        let instance = ERC20::at(&self.web3, token);
+
+        // We use a stream with ready_chunks so that we can start with the addresses of fast
+        // TokenOwnerFinding implementations first without having to wait for slow ones.
+        let stream = self.candidate_owners(token).ready_chunks(MAX_BATCH_SIZE);
+        futures::pin_mut!(stream);
+
+        while let Some(chunk) = stream.next().await {
+            let mut batch = Web3CallBatch::new(self.web3.transport().clone());
+            let futures = chunk
+                .iter()
+                .map(|&address| {
+                    let balance = instance.balance_of(address).batch_call(&mut batch);
+                    async move {
+                        let balance = match balance.await {
+                            Ok(balance) => balance,
+                            Err(err) if EthcontractErrorType::is_contract_err(&err) => {
+                                U256::default()
+                            }
+                            Err(err) => return Err(err),
+                        };
+
+                        Ok((address, balance))
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            batch.execute_all(MAX_BATCH_SIZE).await;
+            let balances = futures::future::try_join_all(futures).await?;
+
+            if let Some(largest_holder) = balances
+                .into_iter()
+                .filter(|(_, balance)| *balance >= min_balance)
+                .max_by_key(|(_, balance)| *balance)
+            {
+                return Ok(Some(largest_holder));
+            }
+        }
+
+        Ok(None)
+    }
 }

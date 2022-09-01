@@ -160,7 +160,8 @@ pub async fn main(args: arguments::Arguments) {
     allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let finders = token_owner_finder::init(
+    let finder = token_owner_finder::init(
+        web3.clone(),
         args.token_owner_finders.as_deref(),
         &pair_providers,
         &base_tokens,
@@ -176,7 +177,7 @@ pub async fn main(args: arguments::Arguments) {
 
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
-        finders,
+        finder,
         settlement_contract: settlement_contract.address(),
     };
     let caching_detector = CachingDetector::new(
