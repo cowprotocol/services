@@ -90,12 +90,8 @@ pub fn block_number(block: &Block) -> Result<u64> {
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
-    /// gets nmb_of_blocks consecutive blocks starting from block_number acting as a `Latest` block
-    async fn block_history(
-        &self,
-        block_number: BlockId,
-        nmb_of_blocks: u64,
-    ) -> Result<Vec<BlockNumberHash>>;
+    /// gets latest `length` blocks
+    async fn current_blocks(&self, length: u64) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
@@ -121,13 +117,9 @@ where
             .as_u64())
     }
 
-    /// gets nmb_of_blocks consecutive blocks starting from block_number acting as a `Latest` block
-    async fn block_history(
-        &self,
-        _block_number: BlockId,
-        _nmb_of_blocks: u64,
-    ) -> Result<Vec<BlockNumberHash>> {
-        Ok(vec![]) //todo
+    /// gets latest `length` blocks
+    async fn current_blocks(&self, _length: u64) -> Result<Vec<BlockNumberHash>> {
+        Ok(vec![])
     }
 }
 

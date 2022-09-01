@@ -2,10 +2,10 @@ use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
 use anyhow::{ensure, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
+use ethcontract::H256;
 use ethcontract::{
     dyns::DynTransport, BlockNumber as Web3BlockNumber, Event as EthcontractEvent, EventMetadata,
 };
-use ethcontract::{BlockId, H256};
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::ops::RangeInclusive;
 use tokio::sync::Mutex;
@@ -99,19 +99,10 @@ where
     ) -> Result<(RangeInclusive<BlockNumber>, Vec<BlockNumberHash>)> {
         let current_blocks = self
             .block_retriever
-            .block_history(
-                BlockId::Number(Web3BlockNumber::Latest),
-                MAX_REORG_BLOCK_COUNT,
-            )
+            .current_blocks(MAX_REORG_BLOCK_COUNT)
             .await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
-            let last_handled_block = self.store.last_event_block().await?;
-            self.block_retriever
-                .block_history(
-                    BlockId::Number(Web3BlockNumber::Number(last_handled_block.0.into())),
-                    MAX_REORG_BLOCK_COUNT,
-                )
-                .await?
+            vec![self.store.last_event_block().await?]
         } else {
             self.last_handled_blocks.clone()
         };
@@ -213,8 +204,11 @@ fn detect_reorg_path(
 ) -> Result<RangeInclusive<BlockNumberHash>> {
     ensure!(!handled_blocks.is_empty() && !current_blocks.is_empty());
 
-    for current_block in current_blocks.iter().rev() {
-        for handled_block in handled_blocks.iter().rev() {
+    // in most cases, current_blocks = handled_blocks + 1 newest block
+    // therefore, is it more efficient to put the handled_blocks in outer loop,
+    // so everything finishes in only two iterations.
+    for handled_block in handled_blocks.iter().rev() {
+        for current_block in current_blocks.iter().rev() {
             if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
                 // found the same block in both lists, now we know the common ancestor
                 return Ok(*current_block..=*current_blocks.last().unwrap());
