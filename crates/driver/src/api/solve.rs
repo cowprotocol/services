@@ -23,14 +23,15 @@ pub fn post_solve(
 ) -> impl Filter<Extract = (ApiReply,), Error = Rejection> + Clone {
     post_solve_request(prefix).and_then(move |auction: Auction| {
         let driver = driver.clone();
+        let auction_id = auction.next_solver_competition;
         async move {
             let result = driver.on_auction_started(auction.clone()).await;
             if let Err(err) = &result {
-                tracing::warn!(?err, ?auction, "post_solve error");
+                tracing::warn!(?err, "post_solve error");
             }
             Result::<_, Infallible>::Ok(convert_json_response(result))
         }
-        .instrument(tracing::info_span!("solver", name = prefix))
+        .instrument(tracing::info_span!("solve", solver = prefix, auction_id))
     })
 }
 
@@ -49,7 +50,10 @@ impl IntoWarpReply for SolveError {
                 error("Route not yet implemented", "try again later"),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
-            Self::Other(err) => err.into_warp_reply(),
+            Self::Other(err) => with_status(
+                error("InternalServerError", err.to_string()),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
         }
     }
 }
