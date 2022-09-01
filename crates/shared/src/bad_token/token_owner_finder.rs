@@ -174,12 +174,12 @@ impl TokenOwnerFinding for TokenOwnerFinder {
             batch.execute_all(MAX_BATCH_SIZE).await;
             let balances = futures::future::try_join_all(futures).await?;
 
-            if let Some(largest_holder) = balances
+            if let Some(holder) = balances
                 .into_iter()
                 .filter_map(|(address, balance)| Some((address, balance?)))
                 .find(|(_, balance)| *balance >= min_balance)
             {
-                return Ok(Some(largest_holder));
+                return Ok(Some(holder));
             }
         }
 
