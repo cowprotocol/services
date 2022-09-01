@@ -86,7 +86,8 @@ impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
     pub fn defaults_for_chain(chain_id: u64) -> &'static [Self] {
         match chain_id {
-            1 | 100 => &[Self::Liquidity, Self::Blockscout],
+            1 => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            100 => &[Self::Liquidity, Self::Blockscout],
             _ => &[Self::Liquidity],
         }
     }
