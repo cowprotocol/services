@@ -23,7 +23,7 @@ use solver::{
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
-use std::{sync::Arc, time::Duration};
+use std::{num::NonZeroU8, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 const TRADER: [u8; 32] = [1; 32];
@@ -276,7 +276,7 @@ async fn smart_contract_orders(web3: Web3) {
                 .await
                 .unwrap(),
             ),
-            max_gas_price_bumps: 1,
+            max_gas_price_bumps: NonZeroU8::new(1).unwrap(),
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),

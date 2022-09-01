@@ -32,6 +32,7 @@ use primitive_types::{H256, U256};
 use shared::{Web3, Web3Transport};
 use std::{
     fmt,
+    num::NonZeroU8,
     time::{Duration, Instant},
 };
 use web3::types::{AccessList, TransactionReceipt, U64};
@@ -192,7 +193,7 @@ pub struct Submitter<'a> {
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
     submitted_transactions: SubTxPoolRef,
-    max_gas_price_bumps: u8,
+    max_gas_price_bumps: NonZeroU8,
 }
 
 impl<'a> Submitter<'a> {
@@ -203,7 +204,7 @@ impl<'a> Submitter<'a> {
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
-        max_gas_price_bumps: u8,
+        max_gas_price_bumps: NonZeroU8,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -523,7 +524,7 @@ impl<'a> Submitter<'a> {
                     if err.contains("underpriced") || err.contains("already known") {
                         allowed_gas_price_bumps = std::cmp::min(
                             allowed_gas_price_bumps + 1,
-                            self.max_gas_price_bumps as i32,
+                            self.max_gas_price_bumps.get() as i32,
                         );
                         tracing::debug!(allowed_gas_price_bumps, "bump gas price exponent");
                     } else {
@@ -757,7 +758,7 @@ mod tests {
             &gas_price_estimator,
             access_list_estimator.as_ref(),
             submitted_transactions,
-            1,
+            NonZeroU8::new(1).unwrap(),
         )
         .unwrap();
 

@@ -5,7 +5,7 @@ use crate::{
 use primitive_types::H160;
 use reqwest::Url;
 use shared::arguments::{display_list, display_option, display_secret_option};
-use std::time::Duration;
+use std::{num::NonZeroU8, time::Duration};
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -274,7 +274,7 @@ pub struct Arguments {
     /// Configures how often the gas price of a transaction may be increased by the minimum amount
     /// compared to the previously failing transaction to eventually bring it on chain.
     #[clap(long, env, default_value = "1")]
-    pub max_gas_price_bumps: u8,
+    pub max_gas_price_bumps: NonZeroU8,
 
     /// In order to protect against malicious solvers, the driver will check that settlements prices do not
     /// exceed a max price deviation compared to the external prices of the driver, if this optional value is set.

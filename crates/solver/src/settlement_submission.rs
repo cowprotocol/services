@@ -17,6 +17,7 @@ use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
     collections::HashMap,
+    num::NonZeroU8,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -106,7 +107,7 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub max_gas_price_bumps: u8,
+    pub max_gas_price_bumps: NonZeroU8,
 }
 
 pub struct StrategyArgs {

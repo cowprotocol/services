@@ -9,7 +9,11 @@ use solver::{
     arguments::TransactionStrategyArg, settlement_access_list::AccessListEstimatorType,
     solver::ExternalSolverArg,
 };
-use std::{net::SocketAddr, num::NonZeroU64, time::Duration};
+use std::{
+    net::SocketAddr,
+    num::{NonZeroU64, NonZeroU8},
+    time::Duration,
+};
 use tracing::level_filters::LevelFilter;
 
 #[derive(clap::Parser)]
@@ -143,7 +147,7 @@ pub struct Arguments {
     /// Configures how often the gas price of a transaction may be increased by the minimum amount
     /// compared to the previously failing transaction to eventually bring it on chain.
     #[clap(long, env, default_value = "1")]
-    pub max_gas_price_bumps: u8,
+    pub max_gas_price_bumps: NonZeroU8,
 
     /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
     #[clap(
