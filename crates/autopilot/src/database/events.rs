@@ -41,7 +41,7 @@ pub fn contract_to_db_events(
 
 #[async_trait::async_trait]
 impl EventStoring<ContractEvent> for Postgres {
-    async fn last_event_blocks(&self) -> Result<Vec<BlockNumberHash>> {
+    async fn last_event_block(&self) -> Result<BlockNumberHash> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["last_event_block"])
@@ -52,12 +52,12 @@ impl EventStoring<ContractEvent> for Postgres {
             .await
             .context("block_number_of_most_recent_event failed")?;
 
-        Ok(vec![(
+        Ok((
             block_number
                 .try_into()
                 .context("block number is negative")?,
             Some(H256(block_hash.0)),
-        )]) //todo
+        ))
     }
 
     async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {

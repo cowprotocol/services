@@ -2,10 +2,10 @@ use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
 use anyhow::{ensure, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
-use ethcontract::H256;
 use ethcontract::{
     dyns::DynTransport, BlockNumber as Web3BlockNumber, Event as EthcontractEvent, EventMetadata,
 };
+use ethcontract::{BlockId, H256};
 use futures::{Stream, StreamExt, TryStreamExt};
 use std::ops::RangeInclusive;
 use tokio::sync::Mutex;
@@ -58,7 +58,7 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
-    async fn last_event_blocks(&self) -> Result<Vec<BlockNumberHash>>;
+    async fn last_event_block(&self) -> Result<BlockNumberHash>;
 }
 
 pub trait EventRetrieving {
@@ -97,9 +97,21 @@ where
     async fn event_block_range(
         &self,
     ) -> Result<(RangeInclusive<BlockNumber>, Vec<BlockNumberHash>)> {
-        let current_blocks = self.block_retriever.current_blocks().await?;
+        let current_blocks = self
+            .block_retriever
+            .block_history(
+                BlockId::Number(Web3BlockNumber::Latest),
+                MAX_REORG_BLOCK_COUNT,
+            )
+            .await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
-            self.store.last_event_blocks().await?
+            let last_handled_block = self.store.last_event_block().await?;
+            self.block_retriever
+                .block_history(
+                    BlockId::Number(Web3BlockNumber::Number(last_handled_block.0.into())),
+                    MAX_REORG_BLOCK_COUNT,
+                )
+                .await?
         } else {
             self.last_handled_blocks.clone()
         };
@@ -117,8 +129,7 @@ where
             )
         );
         Ok((
-            BlockNumber::Specific(block_range.start().clone())
-                ..=BlockNumber::Latest(block_range.end().clone()),
+            BlockNumber::Specific(*block_range.start())..=BlockNumber::Latest(*block_range.end()),
             current_blocks,
         ))
     }
@@ -206,7 +217,7 @@ fn detect_reorg_path(
         for handled_block in handled_blocks.iter().rev() {
             if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
                 // found the same block in both lists, now we know the common ancestor
-                return Ok(current_block.clone()..=current_blocks.last().unwrap().clone());
+                return Ok(*current_block..=*current_blocks.last().unwrap());
             }
         }
     }
@@ -219,7 +230,7 @@ fn detect_reorg_path(
             .0
             .saturating_sub(MAX_REORG_BLOCK_COUNT),
         None,
-    )..=current_blocks.last().unwrap().clone())
+    )..=*current_blocks.last().unwrap())
 }
 
 #[async_trait::async_trait]
