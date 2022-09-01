@@ -4,8 +4,10 @@ use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
 use shared::{
-    arguments::display_option, bad_token::token_owner_finder::FeeValues,
-    price_estimation::PriceEstimatorType, rate_limiter::RateLimitingStrategy,
+    arguments::{display_list, display_option},
+    bad_token::token_owner_finder::FeeValues,
+    price_estimation::PriceEstimatorType,
+    rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -247,29 +249,29 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "db_url: SECRET")?;
         writeln!(
             f,
-            "min_order_validity_period: {:?}",
-            self.min_order_validity_period
+            "min_order_validity_period: {}s",
+            self.min_order_validity_period.as_secs_f64()
         )?;
         writeln!(
             f,
-            "max_order_validity_period: {:?}",
-            self.max_order_validity_period
+            "max_order_validity_period: {}s",
+            self.max_order_validity_period.as_secs_f64()
         )?;
         writeln!(
             f,
-            "eip1271_onchain_quote_validity_second: {:?}",
-            self.eip1271_onchain_quote_validity_seconds
+            "eip1271_onchain_quote_validity_second: {}s",
+            self.eip1271_onchain_quote_validity_seconds.as_secs_f64()
         )?;
         writeln!(
             f,
-            "presign_onchain_quote_validity_second: {:?}",
-            self.presign_onchain_quote_validity_seconds
+            "presign_onchain_quote_validity_second: {}s",
+            self.presign_onchain_quote_validity_seconds.as_secs_f64()
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {:?}",
-            self.token_quality_cache_expiry
+            "token_quality_cache_expiry: {}s",
+            self.token_quality_cache_expiry.as_secs_f64()
         )?;
         writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
@@ -279,28 +281,26 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
         writeln!(
             f,
-            "solvable_orders_max_update_age_blocks: {:?}",
+            "solvable_orders_max_update_age_blocks: {}",
             self.solvable_orders_max_update_age_blocks,
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        writeln!(
+        display_list(
             f,
-            "partner_additional_fee_factors: {:?}",
+            "partner_additional_fee_factors",
             self.partner_additional_fee_factors
+                .iter()
+                .map(|(k, v)| format!("{k:?}: {v}")),
         )?;
         writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
-        write!(f, "quasimodo_solver_url: ")?;
-        display_option(&self.quasimodo_solver_url, f)?;
-        writeln!(f)?;
-        write!(f, "yearn_solver_url: ")?;
-        display_option(&self.yearn_solver_url, f)?;
-        writeln!(f)?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age_secs: {}s",
+            self.native_price_cache_max_age_secs.as_secs_f64()
         )?;
         writeln!(
             f,
@@ -312,18 +312,22 @@ impl std::fmt::Display for Arguments {
             "native_price_estimators: {:?}",
             self.native_price_estimators
         )?;
-        write!(f, "amount_to_estimate_prices_with: ")?;
-        display_option(&self.amount_to_estimate_prices_with, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
         writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
         writeln!(
             f,
             "fast_price_estimation_results_required: {}",
             self.fast_price_estimation_results_required
         )?;
-        write!(f, "price_estimation_rate_limiter: ")?;
-        display_option(&self.price_estimation_rate_limiter, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "price_estimation_rate_limites",
+            &self.price_estimation_rate_limiter,
+        )?;
         writeln!(
             f,
             "token_detector_fee_values: {:?}",
@@ -335,9 +339,7 @@ impl std::fmt::Display for Arguments {
             self.liquidity_order_owners
         )?;
         writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
-        write!(f, "balancer_sor_url: ")?;
-        display_option(&self.balancer_sor_url, f)?;
-        writeln!(f)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         Ok(())
     }
 }

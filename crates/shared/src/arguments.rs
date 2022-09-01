@@ -169,22 +169,39 @@ pub struct Arguments {
     pub liquidity_fetcher_max_age_update: Duration,
 }
 
-pub fn display_option(option: &Option<impl Display>, f: &mut Formatter<'_>) -> std::fmt::Result {
+pub fn display_secret_option<T>(
+    f: &mut Formatter<'_>,
+    name: &str,
+    option: &Option<T>,
+) -> std::fmt::Result {
+    display_option(f, name, &option.as_ref().map(|_| "SECRET"))
+}
+
+pub fn display_option(
+    f: &mut Formatter<'_>,
+    name: &str,
+    option: &Option<impl Display>,
+) -> std::fmt::Result {
+    write!(f, "{name}: ")?;
     match option {
-        Some(display) => write!(f, "{}", display),
-        None => write!(f, "None"),
+        Some(display) => writeln!(f, "{}", display),
+        None => writeln!(f, "None"),
     }
 }
 
-pub fn display_list<T>(iter: impl Iterator<Item = T>, f: &mut Formatter<'_>) -> std::fmt::Result
+pub fn display_list<T>(
+    f: &mut Formatter<'_>,
+    name: &str,
+    iter: impl IntoIterator<Item = T>,
+) -> std::fmt::Result
 where
     T: Display,
 {
-    write!(f, "[")?;
+    write!(f, "{name}: [")?;
     for t in iter {
-        write!(f, "{}, ", t)?;
+        write!(f, "{t}, ")?;
     }
-    write!(f, "]")?;
+    writeln!(f, "]")?;
     Ok(())
 }
 
@@ -195,16 +212,9 @@ impl Display for Arguments {
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
+        writeln!(f, "http_timeout: {}s", self.http_timeout.as_secs_f64())?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
-        writeln!(
-            f,
-            "blocknative_api_key: {}",
-            self.blocknative_api_key
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
         writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
         writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
@@ -220,43 +230,19 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {:?}",
-            self.pool_cache_delay_between_retries_seconds
+            "pool_cache_delay_between_retries_seconds: {}s",
+            self.pool_cache_delay_between_retries_seconds.as_secs_f64()
         )?;
         writeln!(
             f,
-            "block_stream_poll_interval_seconds: {:?}",
-            self.block_stream_poll_interval_seconds
+            "block_stream_poll_interval_seconds: {}s",
+            self.block_stream_poll_interval_seconds.as_secs_f64(),
         )?;
-        writeln!(
-            f,
-            "paraswap_partner: {}",
-            self.paraswap_partner
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
-        writeln!(
-            f,
-            "disabled_paraswap_dexs: {:?}",
-            self.disabled_paraswap_dexs
-        )?;
-        write!(f, "paraswap_rate_limiter: ")?;
-        display_option(&self.paraswap_rate_limiter, f)?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "zeroex_url: {}",
-            self.zeroex_url.as_deref().unwrap_or("None")
-        )?;
-        writeln!(
-            f,
-            "zeroex_api_key: {}",
-            self.zeroex_api_key
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_secret_option(f, "paraswap_partner: {}", &self.paraswap_partner)?;
+        display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
+        display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
+        display_option(f, "zeroex_url", &self.zeroex_url)?;
+        display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
         writeln!(
             f,
             "quasimodo_uses_internal_buffers: {}",
@@ -268,33 +254,24 @@ impl Display for Arguments {
             self.mip_uses_internal_buffers
         )?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
-        writeln!(
+        display_list(
             f,
-            "disabled_one_inch_protocols: {:?}",
-            self.disabled_one_inch_protocols
+            "disabled_one_inch_protocols",
+            &self.disabled_one_inch_protocols,
         )?;
         writeln!(f, "one_inch_url: {}", self.one_inch_url)?;
-        write!(f, "one_inch_referrer_address: ")?;
-        display_option(&self.one_inch_referrer_address.map(|a| format!("{a:?}")), f)?;
-        writeln!(f)?;
-        writeln!(
+        display_option(
             f,
-            "disabled_zeroex_sources: {:?}",
-            self.disabled_zeroex_sources
+            "one_inch_referrer_address",
+            &self.one_inch_referrer_address.map(|a| format!("{a:?}")),
         )?;
+        display_list(f, "disabled_zeroex_sources", &self.disabled_zeroex_sources)?;
         writeln!(
             f,
             "balancer_pool_deny_list: {:?}",
             self.balancer_pool_deny_list
         )?;
-        writeln!(
-            f,
-            "solver_competition_auth: {}",
-            self.solver_competition_auth
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_secret_option(f, "solver_competition_auth", &self.solver_competition_auth)?;
         Ok(())
     }
 }

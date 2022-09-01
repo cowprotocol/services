@@ -4,7 +4,7 @@ use crate::{
 };
 use primitive_types::H160;
 use reqwest::Url;
-use shared::arguments::{display_list, display_option};
+use shared::arguments::{display_list, display_option, display_secret_option};
 use std::time::Duration;
 
 #[derive(clap::Parser)]
@@ -294,15 +294,34 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
         writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
         writeln!(f, "solver_account: {:?}", self.solver_account)?;
-        writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
-        writeln!(f, "settle_interval: {:?}", self.settle_interval)?;
+        writeln!(
+            f,
+            "target_confirm_time: {}s",
+            self.target_confirm_time.as_secs_f64()
+        )?;
+        writeln!(
+            f,
+            "settle_interval: {}s",
+            self.settle_interval.as_secs_f64()
+        )?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "solver_accounts: {:?}", self.solver_accounts)?;
-        writeln!(f, "external_solvers: {:?}", self.external_solvers)?;
-        writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
+        display_list(
+            f,
+            "external_solvers",
+            self.external_solvers
+                .iter()
+                .flatten()
+                .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
+        )?;
+        writeln!(f, "min_order_age: {}s", self.min_order_age.as_secs_f64())?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
-        writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
+        writeln!(
+            f,
+            "solver_time_limit: {}",
+            self.solver_time_limit.as_secs_f64()
+        )?;
         writeln!(
             f,
             "market_makable_token_list: {}",
@@ -316,23 +335,12 @@ impl std::fmt::Display for Arguments {
         writeln!(
             f,
             "access_list_estimators: {:?}",
-            self.access_list_estimators
+            &self.access_list_estimators
         )?;
-        write!(f, "tenderly_url: ")?;
-        display_option(&self.tenderly_url, f)?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "tenderly_api_key: {}",
-            self.tenderly_api_key
-                .as_deref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
-        write!(f, "flashbots_api_url: ")?;
-        display_list(self.flashbots_api_url.iter(), f)?;
-        writeln!(f)?;
+        display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
         writeln!(
             f,
             "max_additional_eden_tip: {}",
@@ -340,8 +348,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "max_submission_seconds: {:?}",
-            self.max_submission_seconds
+            "max_submission_seconds: {}s",
+            self.max_submission_seconds.as_secs_f64()
         )?;
         writeln!(
             f,
@@ -350,17 +358,19 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "submission_retry_interval_seconds: {:?}",
-            self.submission_retry_interval_seconds
+            "submission_retry_interval_seconds: {}s",
+            self.submission_retry_interval_seconds.as_secs_f64()
         )?;
         writeln!(
             f,
-            "additional_tip_percentage: {}",
+            "additional_tip_percentage: {}%",
             self.additional_tip_percentage
         )?;
-        write!(f, "transaction_submission_nodes: ")?;
-        display_list(self.transaction_submission_nodes.iter(), f)?;
-        writeln!(f)?;
+        display_list(
+            f,
+            "transaction_submission_nodes",
+            &self.transaction_submission_nodes,
+        )?;
         writeln!(
             f,
             "disable_high_risk_public_mempool_transactions: {}",
@@ -378,9 +388,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
-        write!(f, "max_settlement_price_deviation: ")?;
-        display_option(&self.max_settlement_price_deviation, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "max_settlement_price_deviation",
+            &self.max_settlement_price_deviation,
+        )?;
         writeln!(
             f,
             "token_list_restriction_for_price_checks: {:?}",

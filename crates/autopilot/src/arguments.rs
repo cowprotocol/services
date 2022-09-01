@@ -28,6 +28,8 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
+    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
+    /// detection.
     #[clap(long, env, default_value = "static", arg_enum)]
     pub token_detector_fee_values: FeeValues,
 
@@ -134,24 +136,24 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {:?}",
-            self.token_quality_cache_expiry
+            "token_quality_cache_expiry: {}s",
+            self.token_quality_cache_expiry.as_secs_f64()
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        write!(f, "balancer_sor_url: ")?;
-        write!(f, "price_estimation_rate_limiter: ")?;
-        display_option(&self.price_estimation_rate_limiter, f)?;
-        writeln!(f)?;
-        write!(f, "amount_to_estimate_prices_with: ")?;
-        display_option(&self.amount_to_estimate_prices_with, f)?;
-        writeln!(f)?;
-        write!(f, "quasimodo_solver_url: ")?;
-        display_option(&self.quasimodo_solver_url, f)?;
-        writeln!(f)?;
-        write!(f, "yearn_solver_url: ")?;
-        display_option(&self.yearn_solver_url, f)?;
-        writeln!(f)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(
+            f,
+            "price_estimation_rate_limiter",
+            &self.price_estimation_rate_limiter,
+        )?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
             "native_price_estimators: {:?}",
@@ -159,13 +161,13 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {:?}",
-            self.native_price_cache_max_age_secs
+            "native_price_cache_max_age_secs: {}s",
+            self.native_price_cache_max_age_secs.as_secs_f64()
         )?;
         writeln!(
             f,
-            "min_order_validity_period: {:?}",
-            self.min_order_validity_period
+            "min_order_validity_period: {}s",
+            self.min_order_validity_period.as_secs_f64()
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         Ok(())
