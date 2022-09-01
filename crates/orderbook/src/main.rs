@@ -86,12 +86,6 @@ async fn main() {
         "".to_string(),
     ));
     let web3 = web3::Web3::new(transport);
-    let current_block = web3
-        .eth()
-        .block_number()
-        .await
-        .expect("block_number")
-        .as_u64();
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -188,16 +182,13 @@ async fn main() {
     };
 
     let finder = token_owner_finder::init(
+        &args.token_owner_finder,
         web3.clone(),
-        args.token_owner_finders.as_deref(),
+        chain_id,
         &pair_providers,
-        &base_tokens,
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
-        current_block,
-        args.uniswapv3_token_owner_finder_fee_values,
-        &client,
-        chain_id,
+        &base_tokens,
     )
     .await
     .expect("failed to initialize token owner finders");

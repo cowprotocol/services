@@ -6,16 +6,20 @@ use self::{
     liquidity::{BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder},
 };
 use crate::{
-    baseline_solver::BaseTokens, ethcontract_error::EthcontractErrorType,
-    sources::uniswap_v2::pair_provider::PairProvider, transport::MAX_BATCH_SIZE, Web3,
-    Web3CallBatch,
+    arguments::duration_from_seconds, baseline_solver::BaseTokens,
+    ethcontract_error::EthcontractErrorType, sources::uniswap_v2::pair_provider::PairProvider,
+    transport::MAX_BATCH_SIZE, Web3, Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
 use ethcontract::U256;
 use futures::{Stream, StreamExt as _};
 use primitive_types::H160;
-use std::sync::Arc;
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::Arc,
+    time::Duration,
+};
 
 /// This trait abstracts various sources for proposing token owner candidates which are likely, but
 /// not guaranteed, to have some token balance.
@@ -32,6 +36,38 @@ pub trait TokenOwnerFinding: Send + Sync {
     /// Find an addresses with at least `min_balance` of tokens and return it, along with its
     /// actual balance.
     async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>>;
+}
+
+/// Arguments related to the token owner finder.
+#[derive(clap::Parser)]
+pub struct Arguments {
+    /// The token owner finding strategies to use.
+    #[clap(long, env, use_value_delimiter = true, arg_enum)]
+    pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
+
+    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
+    /// detection.
+    #[clap(long, env, default_value = "static", arg_enum)]
+    pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
+
+    /// Token owner finder-specific timeout configuration.
+    ///
+    /// This is a separate configuration flag because token holder APIs can sometimes take a long
+    /// time to complete (Blockscout will take up to 30 seconds sometimes). We still want these
+    /// longer requests to finish as bad token detection results are cached for a while and faster
+    /// token proposers aren't slowed down by slower ones.
+    #[clap(
+        long,
+        default_value = "45",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub token_owner_finder_http_timeout: Duration,
+}
+
+impl Arguments {
+    fn http_client(&self) -> reqwest::Client {
+        crate::http_client(self.token_owner_finder_http_timeout)
+    }
 }
 
 /// Support token owner finding strategies.
@@ -57,22 +93,39 @@ impl TokenOwnerFindingStrategy {
     }
 }
 
+impl Display for Arguments {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "token_owner_finders: {:?}", self.token_owner_finders)?;
+        writeln!(
+            f,
+            "token_owner_finder_uniswap_v3_fee_values: {:?}",
+            self.token_owner_finder_uniswap_v3_fee_values
+        )?;
+        writeln!(
+            f,
+            "token_owner_finder_http_timeout: {:?}",
+            self.token_owner_finders
+        )?;
+
+        Ok(())
+    }
+}
+
 /// Initializes a set of token owner finders.
 #[allow(clippy::too_many_arguments)]
 pub async fn init(
+    args: &Arguments,
     web3: Web3,
-    finders: Option<&[TokenOwnerFindingStrategy]>,
+    chain_id: u64,
     pair_providers: &[PairProvider],
-    base_tokens: &BaseTokens,
     vault: Option<&BalancerV2Vault>,
     uniswapv3_factory: Option<&IUniswapV3Factory>,
-    current_block: u64,
-    uniswapv3_fee_values: FeeValues,
-    client: &reqwest::Client,
-    chain_id: u64,
+    base_tokens: &BaseTokens,
 ) -> Result<Arc<dyn TokenOwnerFinding>> {
-    let finders =
-        finders.unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_chain(chain_id));
+    let finders = args
+        .token_owner_finders
+        .as_deref()
+        .unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_chain(chain_id));
     tracing::debug!(?finders, "initializing token owner finders");
 
     let mut proposers = Vec::<Arc<dyn TokenOwnerProposing>>::new();
@@ -96,8 +149,7 @@ pub async fn init(
                 UniswapV3Finder::new(
                     contract.clone(),
                     base_tokens.tokens().iter().copied().collect(),
-                    current_block,
-                    uniswapv3_fee_values,
+                    args.token_owner_finder_uniswap_v3_fee_values,
                 )
                 .await?,
             ));
@@ -106,7 +158,7 @@ pub async fn init(
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
         proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
-            client.clone(),
+            args.http_client(),
             chain_id,
         )?));
     }

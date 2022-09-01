@@ -582,7 +582,6 @@ mod tests {
                     UniswapV3Finder::new(
                         IUniswapV3Factory::deployed(&web3).await.unwrap(),
                         base_tokens.to_vec(),
-                        web3.eth().block_number().await.unwrap().as_u64(),
                         FeeValues::Dynamic,
                     )
                     .await
@@ -622,9 +621,8 @@ mod tests {
         let base_tokens = vec![testlib::tokens::WETH];
         let settlement = contracts::GPv2Settlement::deployed(&web3).await.unwrap();
         let factory = IUniswapV3Factory::deployed(&web3).await.unwrap();
-        let current_block = web3.eth().block_number().await.unwrap().as_u64();
         let univ3 = Arc::new(
-            UniswapV3Finder::new(factory, base_tokens, current_block, FeeValues::Dynamic)
+            UniswapV3Finder::new(factory, base_tokens, FeeValues::Dynamic)
                 .await
                 .unwrap(),
         );
