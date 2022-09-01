@@ -22,7 +22,11 @@ pub type RatedSolverSettlement = (Arc<dyn Solver>, RatedSettlement, Option<Acces
 pub struct SimulationDetails {
     pub settlement: Settlement,
     pub solver: Arc<dyn Solver>,
+    /// Which storage the settlement tries to access. Contains `None` if some error happened while
+    /// estimating the access list.
     pub access_list: Option<AccessList>,
+    /// The outcome of the simulation. Contains either how much gas the settlement used or the
+    /// reason why the transaction reverted during the simulation.
     pub gas_estimate: Result<U256, ExecutionError>,
 }
 
@@ -37,6 +41,8 @@ pub trait SettlementRating: Send + Sync {
         gas_price: GasPrice1559,
     ) -> Result<(Vec<RatedSolverSettlement>, Vec<SettlementWithError>)>;
 
+    /// Simulates the settlements and returns the gas used (or reason for revert) as well as
+    /// the access list for each settlement.
     async fn simulate_settlements(
         &self,
         settlements: Vec<SolverSettlement>,

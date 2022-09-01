@@ -4,8 +4,10 @@ use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
 use shared::{
-    arguments::display_option, bad_token::token_owner_finder::FeeValues,
-    price_estimation::PriceEstimatorType, rate_limiter::RateLimitingStrategy,
+    arguments::display_option,
+    bad_token::token_owner_finder::{liquidity::FeeValues, TokenOwnerFindingStrategy},
+    price_estimation::PriceEstimatorType,
+    rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -219,9 +221,6 @@ pub struct Arguments {
     #[clap(long, env, verbatim_doc_comment)]
     pub price_estimation_rate_limiter: Option<RateLimitingStrategy>,
 
-    #[clap(long, env, default_value = "static", arg_enum)]
-    pub token_detector_fee_values: FeeValues,
-
     /// The configured addresses whose orders should be considered liquidity and
     /// not regular user orders.
     ///
@@ -231,9 +230,14 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub liquidity_order_owners: Vec<H160>,
 
-    /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env)]
-    pub enable_blockscout: bool,
+    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
+    /// detection.
+    #[clap(long, env, default_value = "static", arg_enum)]
+    pub uniswapv3_token_owner_finder_fee_values: FeeValues,
+
+    /// The token owner finding strategies to use.
+    #[clap(long, env, use_value_delimiter = true, arg_enum)]
+    pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
 
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
@@ -326,15 +330,15 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "token_detector_fee_values: {:?}",
-            self.token_detector_fee_values
-        )?;
-        writeln!(
-            f,
             "liquidity_order_owners: {:?}",
             self.liquidity_order_owners
         )?;
-        writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
+        writeln!(
+            f,
+            "uniswapv3_token_owner_finder_fee_values: {:?}",
+            self.uniswapv3_token_owner_finder_fee_values
+        )?;
+        writeln!(f, "token_owner_finders: {:?}", self.token_owner_finders)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         Ok(())
     }

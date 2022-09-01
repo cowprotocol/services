@@ -21,10 +21,7 @@ use shared::{
         cache::CachingDetector,
         instrumented::InstrumentedBadTokenDetectorExt,
         list_based::{ListBasedDetector, UnknownTokenStrategy},
-        token_owner_finder::{
-            blockscout::BlockscoutTokenOwnerFinder, BalancerVaultFinder, TokenOwnerFinding,
-            UniswapLikePairProviderFinder, UniswapV3Finder,
-        },
+        token_owner_finder,
         trace_call::TraceCallDetector,
     },
     balancer_sor_api::DefaultBalancerSorApi,
@@ -185,39 +182,25 @@ async fn main() {
     allowed_tokens.push(BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let mut finders: Vec<Arc<dyn TokenOwnerFinding>> = pair_providers
-        .into_iter()
-        .map(|provider| -> Arc<dyn TokenOwnerFinding> {
-            Arc::new(UniswapLikePairProviderFinder {
-                inner: provider,
-                base_tokens: base_tokens.tokens().iter().copied().collect(),
-            })
-        })
-        .collect();
-    if let Some(contract) = &vault {
-        finders.push(Arc::new(BalancerVaultFinder(contract.clone())));
-    }
     let uniswapv3_factory = match IUniswapV3Factory::deployed(&web3).await {
         Err(DeployError::NotFound(_)) => None,
         other => Some(other.unwrap()),
     };
-    if let Some(contract) = uniswapv3_factory {
-        finders.push(Arc::new(
-            UniswapV3Finder::new(
-                contract,
-                base_tokens.tokens().iter().copied().collect(),
-                current_block,
-                args.token_detector_fee_values,
-            )
-            .await
-            .expect("create uniswapv3 finder"),
-        ));
-    }
-    if args.enable_blockscout {
-        if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
-            finders.push(Arc::new(finder));
-        }
-    }
+
+    let finders = token_owner_finder::init(
+        args.token_owner_finders.as_deref(),
+        &pair_providers,
+        &base_tokens,
+        vault.as_ref(),
+        uniswapv3_factory.as_ref(),
+        current_block,
+        args.uniswapv3_token_owner_finder_fee_values,
+        &client,
+        chain_id,
+    )
+    .await
+    .expect("failed to initialize token owner finders");
+
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
         finders,
