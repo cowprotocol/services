@@ -18,7 +18,7 @@ A simple example script that uses the API to place random orders can be found in
 The order book service itself uses PostgreSQL as a backend to persist orders.
 In addition to connecting the http api to the database it also checks order validity based on the block time, trade events, erc20 funding and approval so that solvers can query only valid orders.
 
-Multiple concurrent `orderbook`s can run at the same time, allowing 
+Multiple concurrent `orderbook`s can run at the same time, allowing the user-facing API to scale horizontally with increased traffic.
 
 ## Autopilot
 
