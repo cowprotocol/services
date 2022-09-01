@@ -89,9 +89,10 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Liquidity) {
-        if let Ok(finder) = BlockscoutTokenOwnerFinder::try_with_network(client.clone(), chain_id) {
-            result.push(Arc::new(finder));
-        }
+        result.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
+            client.clone(),
+            chain_id,
+        )?));
     }
 
     Ok(result)
