@@ -26,8 +26,9 @@ use shared::{
     baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
 };
 use single_order_solver::{SingleOrderSolver, SingleOrderSolving};
-use std::str::FromStr;
 use std::{
+    fmt::{self, Debug, Formatter},
+    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -168,10 +169,19 @@ pub enum SolverType {
     BalancerSor,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum SolverAccountArg {
     PrivateKey(PrivateKey),
     Address(H160),
+}
+
+impl Debug for SolverAccountArg {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match self {
+            SolverAccountArg::PrivateKey(k) => write!(f, "PrivateKey({:?})", k.public_address()),
+            SolverAccountArg::Address(a) => write!(f, "Address({a:?})"),
+        }
+    }
 }
 
 impl SolverAccountArg {

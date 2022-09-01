@@ -18,6 +18,15 @@ A simple example script that uses the API to place random orders can be found in
 The order book service itself uses PostgreSQL as a backend to persist orders.
 In addition to connecting the http api to the database it also checks order validity based on the block time, trade events, erc20 funding and approval so that solvers can query only valid orders.
 
+Multiple concurrent `orderbook`s can run at the same time, allowing the user-facing API to scale horizontally with increased traffic.
+
+## Autopilot
+
+The `autopilot` crate is responsible for driving the protocol forward.
+Concretely, it is responsible for "cutting" new auctions (i.e. determining auction boundries and which orders are to be included, as well as various parameters important for settlement objective value computation).
+
+The `autopilot` connects to the same PostgreSQL database as the `orderbook` and uses it to query orders as well as storing the most recent auction and settlement competition.
+
 ## Solver
 
 The `solver` crate is responsible for submitting on chain settlements based on the orders it gets from the order book and other liquidity sources like Balancer or Uniswap pools.
@@ -31,11 +40,18 @@ It can can also interact with a more advanced, Gnosis internal, closed source so
 
 ## Other Crates
 
-Several pieces of functionality are shared between the order book and the solver. They live in other crates in the cargo workspace.
+There are additional crates that live in the cargo workspace.
 
+- `alerter` provides a custom alerter binary that looks at the current orderbook and counts metrics for orders that should be solved but aren't
 - `contract` provides _[ethcontract-rs](https://github.com/gnosis/ethcontract-rs)_ based smart contract bindings
+- `database` provides the shared database and storage layer logic shared between the `autopilot` and `orderbook`
+- `driver` an in-development binary that intends to replace the `solver`; it has a slightly different design that allows co-location with external solvers
+- `e2e` end-to-end tests
+- `global-metrics` metrics initialization shared across all crates
 - `model` provides the serialization model for orders in the order book api
+- `number_conversions` numerical conversions between 256-bit integers and various arbitrarilily sized integer types
 - `shared` provides other shared functionality between the solver and order book
+- `testlib` shared helpers for writing unit and end-to-end tests
 
 ## Testing
 
@@ -149,6 +165,7 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
 ## Running the Services Locally
 
 ### Prerequisites
+
 Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
 Because services are only run on Mainnet, Rinkeby, Görli, and Gnosis Chain you need to select one of those.
@@ -166,6 +183,7 @@ Run an `autopilot` with:
 ```sh
 cargo run --bin autopilot -- \
   --skip-event-sync \
+  --skip-trace-api \
   --node-url <YOUR_NODE_URL>
 ```
 
