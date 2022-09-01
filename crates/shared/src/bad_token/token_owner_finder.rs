@@ -57,6 +57,7 @@ pub async fn init(
 ) -> Result<Vec<Arc<dyn TokenOwnerFinding>>> {
     let finders =
         finders.unwrap_or_else(|| TokenOwnerFindingStrategy::defaults_for_chain(chain_id));
+    tracing::debug!(?finders, "initializing token owner finders");
 
     let mut result = Vec::<Arc<dyn TokenOwnerFinding>>::new();
 
