@@ -141,7 +141,7 @@ pub struct Arguments {
     pub simulation_gas_limit: u128,
 
     /// Configures how often the gas price of a transaction may be increased by the minimum amount
-    /// compared to the previsouly failing transaction to eventually bring it on chain.
+    /// compared to the previously failing transaction to eventually bring it on chain.
     #[clap(long, env, default_value = "1")]
     pub max_gas_price_bumps: u8,
 
