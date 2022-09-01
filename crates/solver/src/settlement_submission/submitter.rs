@@ -478,7 +478,7 @@ impl<'a> Submitter<'a> {
                 // Sometimes a tx gets successfully submitted but the API returns an error. When that
                 // happens the gas price computation will return a gas price which is not big enough to
                 // replace the supposedly not submitted tx. To get out of that issue the new gas price
-                // has to be bumped by `GAS_PRICE_BUMP * 2` in order to replace the stuck tx.
+                // has to be bumped by at least `GAS_PRICE_BUMP ^ 2` in order to replace the stuck tx.
                 let previous_gas_price = previous_gas_price
                     .bump(GAS_PRICE_BUMP.powi(allowed_gas_price_bumps))
                     .ceil();
