@@ -198,8 +198,11 @@ where
     T: Display,
 {
     write!(f, "{name}: [")?;
-    for t in iter {
-        write!(f, "{t}, ")?;
+    for (i, t) in iter.into_iter().enumerate() {
+        if i != 0 {
+            f.write_str(", ")?;
+        }
+        write!(f, "{t}")?;
     }
     writeln!(f, "]")?;
     Ok(())
@@ -212,7 +215,7 @@ impl Display for Arguments {
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "http_timeout: {}s", self.http_timeout.as_secs_f64())?;
+        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
@@ -230,15 +233,15 @@ impl Display for Arguments {
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {}s",
-            self.pool_cache_delay_between_retries_seconds.as_secs_f64()
+            "pool_cache_delay_between_retries_seconds: {:?}",
+            self.pool_cache_delay_between_retries_seconds
         )?;
         writeln!(
             f,
-            "block_stream_poll_interval_seconds: {}s",
-            self.block_stream_poll_interval_seconds.as_secs_f64(),
+            "block_stream_poll_interval_seconds: {:?}",
+            self.block_stream_poll_interval_seconds,
         )?;
-        display_secret_option(f, "paraswap_partner: {}", &self.paraswap_partner)?;
+        display_secret_option(f, "paraswap_partner", &self.paraswap_partner)?;
         display_list(f, "disabled_paraswap_dexs", &self.disabled_paraswap_dexs)?;
         display_option(f, "paraswap_rate_limiter", &self.paraswap_rate_limiter)?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;

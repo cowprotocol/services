@@ -293,17 +293,16 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
         writeln!(f, "cow_dex_ag_solver_url: {}", self.cow_dex_ag_solver_url)?;
         writeln!(f, "balancer_sor_url: {}", self.balancer_sor_url)?;
-        writeln!(f, "solver_account: {:?}", self.solver_account)?;
-        writeln!(
+        display_option(
             f,
-            "target_confirm_time: {}s",
-            self.target_confirm_time.as_secs_f64()
+            "solver_account",
+            &self
+                .solver_account
+                .as_ref()
+                .map(|account| format!("{account:?}")),
         )?;
-        writeln!(
-            f,
-            "settle_interval: {}s",
-            self.settle_interval.as_secs_f64()
-        )?;
+        writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
+        writeln!(f, "settle_interval: {:?}", self.settle_interval)?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "solver_accounts: {:?}", self.solver_accounts)?;
         display_list(
@@ -314,14 +313,10 @@ impl std::fmt::Display for Arguments {
                 .flatten()
                 .map(|solver| format!("{}|{}|{:?}", solver.name, solver.url, solver.account)),
         )?;
-        writeln!(f, "min_order_age: {}s", self.min_order_age.as_secs_f64())?;
+        writeln!(f, "min_order_age: {:?}", self.min_order_age)?;
         writeln!(f, "metrics_port: {}", self.metrics_port)?;
         writeln!(f, "max_merged_settlements: {}", self.max_merged_settlements)?;
-        writeln!(
-            f,
-            "solver_time_limit: {}",
-            self.solver_time_limit.as_secs_f64()
-        )?;
+        writeln!(f, "solver_time_limit: {:?}", self.solver_time_limit)?;
         writeln!(
             f,
             "market_makable_token_list: {}",
@@ -348,8 +343,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "max_submission_seconds: {}s",
-            self.max_submission_seconds.as_secs_f64()
+            "max_submission_seconds: {:?}",
+            self.max_submission_seconds
         )?;
         writeln!(
             f,
@@ -358,8 +353,8 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "submission_retry_interval_seconds: {}s",
-            self.submission_retry_interval_seconds.as_secs_f64()
+            "submission_retry_interval_seconds: {:?}",
+            self.submission_retry_interval_seconds
         )?;
         writeln!(
             f,

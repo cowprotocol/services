@@ -136,8 +136,8 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {}s",
-            self.token_quality_cache_expiry.as_secs_f64()
+            "token_quality_cache_expiry: {:?}",
+            self.token_quality_cache_expiry
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
@@ -161,13 +161,13 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {}s",
-            self.native_price_cache_max_age_secs.as_secs_f64()
+            "native_price_cache_max_age_secs: {:?}",
+            self.native_price_cache_max_age_secs
         )?;
         writeln!(
             f,
-            "min_order_validity_period: {}s",
-            self.min_order_validity_period.as_secs_f64()
+            "min_order_validity_period: {:?}",
+            self.min_order_validity_period
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
         Ok(())

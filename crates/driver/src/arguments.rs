@@ -265,7 +265,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "http_timeout: {}s", self.http_timeout.as_secs_f64())?;
+        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         display_list(
             f,
@@ -308,24 +308,20 @@ impl std::fmt::Display for Arguments {
         display_option(f, "tenderly_url", &self.tenderly_url)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
+        writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(
             f,
-            "target_confirm_time: {}s",
-            self.target_confirm_time.as_secs_f64()
+            "max_submission_seconds: {:?}",
+            self.max_submission_seconds
         )?;
         writeln!(
             f,
-            "max_submission_seconds: {}s",
-            self.max_submission_seconds.as_secs_f64()
-        )?;
-        writeln!(
-            f,
-            "submission_retry_interval_seconds: {}",
-            self.submission_retry_interval_seconds.as_secs_f64()
+            "submission_retry_interval_seconds: {:?}",
+            self.submission_retry_interval_seconds
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
-        display_secret_option(f, "blocknative_api_key: {}", &self.blocknative_api_key)?;
+        display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
         writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
         writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
@@ -341,13 +337,13 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "pool_cache_delay_between_retries_seconds: {}",
-            self.pool_cache_delay_between_retries_seconds.as_secs_f64()
+            "pool_cache_delay_between_retries_seconds: {:?}",
+            self.pool_cache_delay_between_retries_seconds
         )?;
         writeln!(
             f,
-            "block_stream_poll_interval_seconds: {}",
-            self.block_stream_poll_interval_seconds.as_secs_f64()
+            "block_stream_poll_interval_seconds: {:?}",
+            self.block_stream_poll_interval_seconds
         )?;
         writeln!(f, "balancer_factories: {:?}", self.balancer_factories)?;
         writeln!(
@@ -357,11 +353,11 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(
             f,
-            "liquidity_fetcher_max_age_update: {}",
-            self.liquidity_fetcher_max_age_update.as_secs_f64()
+            "liquidity_fetcher_max_age_update: {:?}",
+            self.liquidity_fetcher_max_age_update
         )?;
         display_option(f, "zeroex_url", &self.zeroex_url)?;
-        display_secret_option(f, "zeroex_api_key: {}", &self.zeroex_api_key)?;
+        display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
         Ok(())
     }
 }

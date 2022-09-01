@@ -4,10 +4,8 @@ use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
 use shared::{
-    arguments::{display_list, display_option},
-    bad_token::token_owner_finder::FeeValues,
-    price_estimation::PriceEstimatorType,
-    rate_limiter::RateLimitingStrategy,
+    arguments::display_option, bad_token::token_owner_finder::FeeValues,
+    price_estimation::PriceEstimatorType, rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -249,29 +247,29 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "db_url: SECRET")?;
         writeln!(
             f,
-            "min_order_validity_period: {}s",
-            self.min_order_validity_period.as_secs_f64()
+            "min_order_validity_period: {:?}",
+            self.min_order_validity_period
         )?;
         writeln!(
             f,
-            "max_order_validity_period: {}s",
-            self.max_order_validity_period.as_secs_f64()
+            "max_order_validity_period: {:?}",
+            self.max_order_validity_period
         )?;
         writeln!(
             f,
-            "eip1271_onchain_quote_validity_second: {}s",
-            self.eip1271_onchain_quote_validity_seconds.as_secs_f64()
+            "eip1271_onchain_quote_validity_second: {:?}",
+            self.eip1271_onchain_quote_validity_seconds
         )?;
         writeln!(
             f,
-            "presign_onchain_quote_validity_second: {}s",
-            self.presign_onchain_quote_validity_seconds.as_secs_f64()
+            "presign_onchain_quote_validity_second: {:?}",
+            self.presign_onchain_quote_validity_seconds
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(
             f,
-            "token_quality_cache_expiry: {}s",
-            self.token_quality_cache_expiry.as_secs_f64()
+            "token_quality_cache_expiry: {:?}",
+            self.token_quality_cache_expiry
         )?;
         writeln!(f, "unsupported_tokens: {:?}", self.unsupported_tokens)?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
@@ -287,20 +285,18 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
         writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
         writeln!(f, "fee_factor: {}", self.fee_factor)?;
-        display_list(
+        writeln!(
             f,
-            "partner_additional_fee_factors",
+            "partner_additional_fee_factors: {:?}",
             self.partner_additional_fee_factors
-                .iter()
-                .map(|(k, v)| format!("{k:?}: {v}")),
         )?;
         writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
-            "native_price_cache_max_age_secs: {}s",
-            self.native_price_cache_max_age_secs.as_secs_f64()
+            "native_price_cache_max_age_secs: {:?}",
+            self.native_price_cache_max_age_secs
         )?;
         writeln!(
             f,
