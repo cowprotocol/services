@@ -28,11 +28,13 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub unsupported_tokens: Vec<H160>,
 
+    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
+    /// detection.
     #[clap(long, env, default_value = "static", arg_enum)]
     pub token_detector_fee_values: FeeValues,
 
     /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env)]
     pub enable_blockscout: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
@@ -47,7 +49,7 @@ pub struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub skip_trace_api: bool,
 
     /// The number of pairs that are automatically updated in the pool cache.
@@ -139,19 +141,19 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
-        write!(f, "balancer_sor_url: ")?;
-        write!(f, "price_estimation_rate_limiter: ")?;
-        display_option(&self.price_estimation_rate_limiter, f)?;
-        writeln!(f)?;
-        write!(f, "amount_to_estimate_prices_with: ")?;
-        display_option(&self.amount_to_estimate_prices_with, f)?;
-        writeln!(f)?;
-        write!(f, "quasimodo_solver_url: ")?;
-        display_option(&self.quasimodo_solver_url, f)?;
-        writeln!(f)?;
-        write!(f, "yearn_solver_url: ")?;
-        display_option(&self.yearn_solver_url, f)?;
-        writeln!(f)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
+        display_option(
+            f,
+            "price_estimation_rate_limiter",
+            &self.price_estimation_rate_limiter,
+        )?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
             "native_price_estimators: {:?}",

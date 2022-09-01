@@ -1,7 +1,7 @@
 use primitive_types::{H160, H256};
 use reqwest::Url;
 use shared::{
-    arguments::{display_list, display_option, duration_from_seconds},
+    arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
     gas_price_estimation::GasEstimatorType,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
@@ -267,9 +267,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "node_url: {}", self.node_url)?;
         writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
-        write!(f, "transaction_submission_nodes: ")?;
-        display_list(self.transaction_submission_nodes.iter(), f)?;
-        writeln!(f)?;
+        display_list(
+            f,
+            "transaction_submission_nodes",
+            &self.transaction_submission_nodes,
+        )?;
         writeln!(
             f,
             "disable_high_risk_public_mempool_transactions: {}",
@@ -292,9 +294,7 @@ impl std::fmt::Display for Arguments {
             "additional_tip_percentage: {}",
             self.additional_tip_percentage
         )?;
-        write!(f, "flashbots_api_url: ")?;
-        display_list(self.flashbots_api_url.iter(), f)?;
-        writeln!(f)?;
+        display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
         writeln!(
             f,
             "max_additional_flashbots_tip: {}",
@@ -305,17 +305,8 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             self.access_list_estimators
         )?;
-        write!(f, "tenderly_url: ")?;
-        display_option(&self.tenderly_url, f)?;
-        writeln!(f)?;
-        writeln!(
-            f,
-            "tenderly_api_key: {}",
-            self.tenderly_api_key
-                .as_deref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(
@@ -330,14 +321,7 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
-        writeln!(
-            f,
-            "blocknative_api_key: {}",
-            self.blocknative_api_key
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;
         writeln!(f, "baseline_sources: {:?}", self.baseline_sources)?;
         writeln!(f, "pool_cache_blocks: {}", self.pool_cache_blocks)?;
@@ -372,19 +356,8 @@ impl std::fmt::Display for Arguments {
             "liquidity_fetcher_max_age_update: {:?}",
             self.liquidity_fetcher_max_age_update
         )?;
-        writeln!(
-            f,
-            "zeroex_url: {}",
-            self.zeroex_url.as_deref().unwrap_or("None")
-        )?;
-        writeln!(
-            f,
-            "zeroex_api_key: {}",
-            self.zeroex_api_key
-                .as_ref()
-                .map(|_| "SECRET")
-                .unwrap_or("None")
-        )?;
+        display_option(f, "zeroex_url", &self.zeroex_url)?;
+        display_secret_option(f, "zeroex_api_key", &self.zeroex_api_key)?;
         Ok(())
     }
 }

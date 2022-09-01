@@ -61,7 +61,7 @@ pub struct Arguments {
     /// Don't use the trace_callMany api that only some nodes support to check whether a token
     /// should be denied.
     /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub skip_trace_api: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
@@ -91,14 +91,14 @@ pub struct Arguments {
     pub pool_cache_lru_size: usize,
 
     /// Enable EIP-1271 orders.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub enable_eip1271_orders: bool,
 
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
     /// This flag can be removed once DDoS protection is implemented.
-    #[clap(long, env, parse(try_from_str), default_value = "false")]
+    #[clap(long, env)]
     pub enable_presign_orders: bool,
 
     /// If solvable orders haven't been successfully updated in this many blocks attempting
@@ -232,7 +232,7 @@ pub struct Arguments {
     pub liquidity_order_owners: Vec<H160>,
 
     /// Use Blockscout as a TokenOwnerFinding implementation.
-    #[clap(long, env, default_value = "true")]
+    #[clap(long, env)]
     pub enable_blockscout: bool,
 
     /// The API endpoint for the Balancer SOR API for solving.
@@ -279,7 +279,7 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
         writeln!(
             f,
-            "solvable_orders_max_update_age_blocks: {:?}",
+            "solvable_orders_max_update_age_blocks: {}",
             self.solvable_orders_max_update_age_blocks,
         )?;
         writeln!(f, "fee_discount: {}", self.fee_discount)?;
@@ -291,12 +291,8 @@ impl std::fmt::Display for Arguments {
             self.partner_additional_fee_factors
         )?;
         writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
-        write!(f, "quasimodo_solver_url: ")?;
-        display_option(&self.quasimodo_solver_url, f)?;
-        writeln!(f)?;
-        write!(f, "yearn_solver_url: ")?;
-        display_option(&self.yearn_solver_url, f)?;
-        writeln!(f)?;
+        display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
+        display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
             f,
             "native_price_cache_max_age_secs: {:?}",
@@ -312,18 +308,22 @@ impl std::fmt::Display for Arguments {
             "native_price_estimators: {:?}",
             self.native_price_estimators
         )?;
-        write!(f, "amount_to_estimate_prices_with: ")?;
-        display_option(&self.amount_to_estimate_prices_with, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "amount_to_estimate_prices_with",
+            &self.amount_to_estimate_prices_with,
+        )?;
         writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
         writeln!(
             f,
             "fast_price_estimation_results_required: {}",
             self.fast_price_estimation_results_required
         )?;
-        write!(f, "price_estimation_rate_limiter: ")?;
-        display_option(&self.price_estimation_rate_limiter, f)?;
-        writeln!(f)?;
+        display_option(
+            f,
+            "price_estimation_rate_limites",
+            &self.price_estimation_rate_limiter,
+        )?;
         writeln!(
             f,
             "token_detector_fee_values: {:?}",
@@ -335,9 +335,7 @@ impl std::fmt::Display for Arguments {
             self.liquidity_order_owners
         )?;
         writeln!(f, "enable_blockscout: {}", self.enable_blockscout)?;
-        write!(f, "balancer_sor_url: ")?;
-        display_option(&self.balancer_sor_url, f)?;
-        writeln!(f)?;
+        display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         Ok(())
     }
 }

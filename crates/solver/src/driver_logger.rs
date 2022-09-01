@@ -174,9 +174,10 @@ impl DriverLogger {
                     );
                     // split warning into separate logs so that the messages aren't too long.
                     tracing::warn!(
-                        "{} settlement failure for: \n{:#?}",
+                        "{} settlement failure for: \n{:#?}\n{}",
                         solver.name(),
                         settlement,
+                        error_at_earlier_block
                     );
 
                     metrics.settlement_simulation_failed(solver.name());

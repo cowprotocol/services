@@ -239,7 +239,7 @@ async fn filter_invalid_signature_orders(
                 if let Err(err) = validations.next().unwrap() {
                     tracing::warn!(
                         order_uid =% order.metadata.uid, ?err,
-                        "filtering EIP-1271 order as signature became invalid"
+                        "filtered order because of invalid EIP-1271 signature"
                     );
                     return false;
                 }
@@ -312,6 +312,11 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             if let Some(balance) = remaining_balance.checked_sub(needed_balance) {
                 remaining_balance = balance;
                 result.push(order);
+            } else {
+                tracing::debug!(
+                    order_uid = ?order.metadata.uid,
+                    "filtered order because of insufficient allowance/balance",
+                );
             }
         }
     }
