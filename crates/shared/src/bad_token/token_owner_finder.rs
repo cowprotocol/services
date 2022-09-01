@@ -161,10 +161,8 @@ impl TokenOwnerFinding for TokenOwnerFinder {
                     let balance = instance.balance_of(address).batch_call(&mut batch);
                     async move {
                         let balance = match balance.await {
-                            Ok(balance) => balance,
-                            Err(err) if EthcontractErrorType::is_contract_err(&err) => {
-                                U256::default()
-                            }
+                            Ok(balance) => Some(balance),
+                            Err(err) if EthcontractErrorType::is_contract_err(&err) => None,
                             Err(err) => return Err(err),
                         };
 
@@ -178,8 +176,8 @@ impl TokenOwnerFinding for TokenOwnerFinder {
 
             if let Some(largest_holder) = balances
                 .into_iter()
-                .filter(|(_, balance)| *balance >= min_balance)
-                .max_by_key(|(_, balance)| *balance)
+                .filter_map(|(address, balance)| Some((address, balance?)))
+                .find(|(_, balance)| *balance >= min_balance)
             {
                 return Ok(Some(largest_holder));
             }
