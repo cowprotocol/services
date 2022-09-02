@@ -158,6 +158,7 @@ pub async fn main(args: arguments::Arguments) {
         &args.token_owner_finder,
         web3.clone(),
         chain_id,
+        &client,
         &pair_providers,
         vault.as_ref(),
         uniswapv3_factory.as_ref(),

@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use super::TokenOwnerProposing;
 use anyhow::{bail, Result};
 use ethcontract::H160;
@@ -8,13 +10,27 @@ use serde::Deserialize;
 
 const BASE: &str = "https://blockscout.com/";
 
+// Blockscout uses a custom timeout because their api is often slow. We would like those requests
+// to finish even if slow as bad token detection results are cached for a while and faster
+// TokenOwnerFinding implementations are not slowed down by slower ones.
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(45);
+
 pub struct BlockscoutTokenOwnerFinder {
     client: Client,
     base: Url,
+    timeout: Duration,
 }
 
 impl BlockscoutTokenOwnerFinder {
     pub fn try_with_network(client: Client, network_id: u64) -> Result<Self> {
+        Self::try_with_network_and_timeout(client, network_id, DEFAULT_TIMEOUT)
+    }
+
+    pub fn try_with_network_and_timeout(
+        client: Client,
+        network_id: u64,
+        timeout: Duration,
+    ) -> Result<Self> {
         let network = match network_id {
             1 => "eth/",
             100 => "xdai/",
@@ -29,6 +45,7 @@ impl BlockscoutTokenOwnerFinder {
                 .expect("Invalid Blockscout URL Segement")
                 .join("mainnet/api")
                 .expect("Invalid Blockscout URL Segement"),
+            timeout,
         })
     }
 
@@ -41,7 +58,7 @@ impl BlockscoutTokenOwnerFinder {
 
         tracing::debug!(%url, "Querying Blockscout API");
 
-        let response = self.client.get(url).send().await?;
+        let response = self.client.get(url).timeout(self.timeout).send().await?;
         let status = response.status();
         let status_result = response.error_for_status_ref().map(|_| ());
         let body = response.text().await?;

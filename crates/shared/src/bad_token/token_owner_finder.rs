@@ -50,24 +50,9 @@ pub struct Arguments {
     #[clap(long, env, default_value = "static", arg_enum)]
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
-    /// Token owner finder-specific timeout configuration.
-    ///
-    /// This is a separate configuration flag because token holder APIs can sometimes take a long
-    /// time to complete (Blockscout will take up to 30 seconds sometimes). We still want these
-    /// longer requests to finish as bad token detection results are cached for a while and faster
-    /// token proposers aren't slowed down by slower ones.
-    #[clap(
-        long,
-        default_value = "45",
-        parse(try_from_str = duration_from_seconds),
-    )]
-    pub token_owner_finder_http_timeout: Duration,
-}
-
-impl Arguments {
-    fn http_client(&self) -> reqwest::Client {
-        crate::http_client(self.token_owner_finder_http_timeout)
-    }
+    /// Override the Blockscout token owner finder-specific timeout configuration.
+    #[clap(long, parse(try_from_str = duration_from_seconds), default_value = "45")]
+    pub blockscout_http_timeout: Duration,
 }
 
 /// Support token owner finding strategies.
@@ -117,6 +102,7 @@ pub async fn init(
     args: &Arguments,
     web3: Web3,
     chain_id: u64,
+    client: &reqwest::Client,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault>,
     uniswapv3_factory: Option<&IUniswapV3Factory>,
@@ -157,9 +143,10 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
-            args.http_client(),
+        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network_and_timeout(
+            client.clone(),
             chain_id,
+            args.blockscout_http_timeout,
         )?));
     }
 
