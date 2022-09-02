@@ -1,5 +1,3 @@
-use std::time::Duration;
-
 use super::TokenOwnerProposing;
 use anyhow::{bail, Result};
 use ethcontract::H160;
@@ -7,6 +5,7 @@ use prometheus::IntCounterVec;
 use prometheus_metric_storage::MetricStorage;
 use reqwest::{Client, Url};
 use serde::Deserialize;
+use std::time::Duration;
 
 const BASE: &str = "https://blockscout.com/";
 

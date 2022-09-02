@@ -143,11 +143,13 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network_and_timeout(
-            client.clone(),
-            chain_id,
-            args.blockscout_http_timeout,
-        )?));
+        proposers.push(Arc::new(
+            BlockscoutTokenOwnerFinder::try_with_network_and_timeout(
+                client.clone(),
+                chain_id,
+                args.blockscout_http_timeout,
+            )?,
+        ));
     }
 
     Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
