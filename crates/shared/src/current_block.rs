@@ -1,12 +1,13 @@
 use crate::{event_handling::BlockNumberHash, Web3};
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
+    helpers,
     types::{BlockId, BlockNumber},
-    Transport,
+    BatchTransport, Transport,
 };
 
 pub type Block = web3::types::Block<H256>;
@@ -95,11 +96,7 @@ pub trait BlockRetrieving {
 }
 
 #[async_trait::async_trait]
-impl<T> BlockRetrieving for web3::Web3<T>
-where
-    T: Transport + Send + Sync,
-    T::Out: Send,
-{
+impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<Block> {
         self.eth()
             .block(BlockId::Number(BlockNumber::Latest))
@@ -117,16 +114,51 @@ where
             .as_u64())
     }
 
-    /// gets latest `length` blocks
-    async fn current_blocks(&self, _length: u64) -> Result<Vec<BlockNumberHash>> {
-        Ok(vec![])
+    /// get latest `length` blocks
+    /// if successful, function guarantees `length` blocks in Result (does not return partial results)
+    /// `Latest` block is the last element of the vector
+    async fn current_blocks(&self, length: u64) -> Result<Vec<BlockNumberHash>> {
+        ensure!(length > 0, "empty block list requested");
+        let current_block_number = self.current_block_number().await?;
+
+        let include_txs = helpers::serialize(&false);
+        let mut batch_request = Vec::with_capacity(length as usize);
+        for i in (0..length).rev() {
+            let num = helpers::serialize(&BlockNumber::Number(
+                (current_block_number.saturating_sub(i)).into(),
+            ));
+            let request = self
+                .transport()
+                .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
+            batch_request.push(request);
+        }
+
+        // send_batch guarantees the size and order of the responses to match the requests
+        let mut batch_response = self
+            .transport()
+            .send_batch(batch_request.iter().cloned())
+            .await?
+            .into_iter();
+
+        batch_request
+            .into_iter()
+            .map(|_req| match batch_response.next().unwrap() {
+                Ok(response) => serde_json::from_value::<web3::types::Block<H256>>(response)
+                    .context("unexpected response format")
+                    .and_then(|response| match response.number {
+                        Some(number) => Ok((number.as_u64(), response.hash)),
+                        None => Err(anyhow!("missing block number")),
+                    }),
+                Err(err) => Err(anyhow!("web3 error: {}", err)),
+            })
+            .collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::create_test_transport;
+    use crate::transport::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
 
     // cargo test current_block -- --ignored --nocapture
@@ -144,5 +176,16 @@ mod tests {
             let block = stream.next().await.unwrap();
             println!("new block number {}", block.number.unwrap().as_u64());
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn current_blocks_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let blocks = web3.current_blocks(0).await;
+        assert!(blocks.is_err());
+        let blocks = web3.current_blocks(5).await.unwrap();
+        dbg!(blocks);
     }
 }
