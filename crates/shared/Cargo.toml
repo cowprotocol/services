@@ -34,7 +34,7 @@ maplit = "1.0"
 mockall = "0.11"
 model = { path = "../model" }
 num = { version = "0.4", features = ["serde"] }
-number_conversions = { path = "../number_conversions" }
+number-conversions = { path = "../number-conversions" }
 primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }

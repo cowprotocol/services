@@ -183,7 +183,7 @@ dependencies = [
  "maplit",
  "mockall",
  "model",
- "number_conversions",
+ "number-conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -782,7 +782,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number_conversions",
+ "number-conversions",
  "primitive-types",
  "reqwest",
  "serde",
@@ -1933,7 +1933,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "number_conversions"
+name = "number-conversions"
 version = "0.1.0"
 dependencies = [
  "anyhow",
@@ -2037,7 +2037,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number_conversions",
+ "number-conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -2791,7 +2791,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number_conversions",
+ "number-conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
@@ -2869,7 +2869,7 @@ dependencies = [
  "mockall",
  "model",
  "num",
- "number_conversions",
+ "number-conversions",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
