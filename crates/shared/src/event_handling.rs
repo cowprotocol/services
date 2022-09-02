@@ -82,7 +82,12 @@ where
             block_retriever,
             contract,
             store,
-            last_handled_blocks: vec![start_sync_at_block.unwrap()], //todo remove unwrap
+            last_handled_blocks: {
+                match start_sync_at_block {
+                    Some(block) => vec![block],
+                    None => vec![],
+                }
+            },
         }
     }
 
@@ -97,15 +102,29 @@ where
     async fn event_block_range(
         &self,
     ) -> Result<(RangeInclusive<BlockNumber>, Vec<BlockNumberHash>)> {
-        let current_blocks = self
-            .block_retriever
-            .current_blocks(MAX_REORG_BLOCK_COUNT)
-            .await?;
+        let current_block = self.block_retriever.current_block().await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             vec![self.store.last_event_block().await?]
         } else {
             self.last_handled_blocks.clone()
         };
+
+        let current_block_number = current_block.number.context("missing number")?.as_u64();
+        let last_handled_block_hash = handled_blocks.last().unwrap().1.context("missing hash")?;
+
+        // handle special case which happens most of the time (no reorg, just one new block is added)
+        if current_block.parent_hash == last_handled_block_hash {
+            let current_block = (current_block_number, current_block.hash);
+            return Ok((
+                (BlockNumber::Latest(current_block)..=BlockNumber::Latest(current_block)),
+                vec![current_block],
+            ));
+        }
+
+        let current_blocks = self
+            .block_retriever
+            .current_blocks(current_block_number, MAX_REORG_BLOCK_COUNT)
+            .await?;
 
         let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
 
@@ -127,7 +146,7 @@ where
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let (range, current_blocks) = self.event_block_range().await?;
+        let (range, replacement_blocks) = self.event_block_range().await?;
         tracing::debug!("updating events in block range {:?}", range);
         let events = self
             .past_events(&range)
@@ -178,7 +197,22 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
-        self.last_handled_blocks = current_blocks;
+
+        if !replacement_blocks.is_empty() {
+            // delete forked blocks
+            self.last_handled_blocks
+                .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
+            // append new canonical blocks
+            self.last_handled_blocks
+                .extend(replacement_blocks.into_iter());
+            // cap number of blocks to MAX_REORG_BLOCK_COUNT
+            self.last_handled_blocks = self.last_handled_blocks[self
+                .last_handled_blocks
+                .len()
+                .saturating_sub(MAX_REORG_BLOCK_COUNT as usize)
+                ..self.last_handled_blocks.len()]
+                .to_vec();
+        }
         Ok(())
     }
 

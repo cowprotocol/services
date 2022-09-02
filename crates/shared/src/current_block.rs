@@ -92,7 +92,7 @@ pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
     /// gets latest `length` blocks
-    async fn current_blocks(&self, length: u64) -> Result<Vec<BlockNumberHash>>;
+    async fn current_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
@@ -116,17 +116,18 @@ impl BlockRetrieving for Web3 {
 
     /// get latest `length` blocks
     /// if successful, function guarantees `length` blocks in Result (does not return partial results)
-    /// `Latest` block is the last element of the vector
-    async fn current_blocks(&self, length: u64) -> Result<Vec<BlockNumberHash>> {
-        ensure!(length > 0, "empty block list requested");
-        let current_block_number = self.current_block_number().await?;
+    /// `last_block` block is at the end of the resulting vector
+    async fn current_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
+        ensure!(
+            length > 0 && last_block > 0 && last_block >= length,
+            "invalid input"
+        );
 
         let include_txs = helpers::serialize(&false);
         let mut batch_request = Vec::with_capacity(length as usize);
         for i in (0..length).rev() {
-            let num = helpers::serialize(&BlockNumber::Number(
-                (current_block_number.saturating_sub(i)).into(),
-            ));
+            let num =
+                helpers::serialize(&BlockNumber::Number((last_block.saturating_sub(i)).into()));
             let request = self
                 .transport()
                 .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
@@ -183,9 +184,15 @@ mod tests {
     async fn current_blocks_test() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-        let blocks = web3.current_blocks(0).await;
+        let current_block = web3.current_block().await.unwrap();
+        let blocks = web3
+            .current_blocks(current_block.number.unwrap().as_u64(), 0)
+            .await;
         assert!(blocks.is_err());
-        let blocks = web3.current_blocks(5).await.unwrap();
+        let blocks = web3
+            .current_blocks(current_block.number.unwrap().as_u64(), 5)
+            .await
+            .unwrap();
         dbg!(blocks);
     }
 }
