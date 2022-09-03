@@ -113,7 +113,7 @@ impl Error {
 #[derive(MetricStorage, Clone, Debug)]
 #[metric(subsystem = "ethplorer_token_owner_finding")]
 struct Metrics {
-    /// Tracks number of "ok" or "err" responses from blockscout.
+    /// Tracks number of "ok" or "err" responses from ethplorer.
     #[metric(labels("result"))]
     results: IntCounterVec,
 }
