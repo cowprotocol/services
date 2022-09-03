@@ -1,8 +1,8 @@
 pub mod buffered;
 pub mod dummy;
+pub mod extensions;
 pub mod http;
 pub mod mock;
-pub mod extensions;
 
 use self::http::HttpTransport;
 use crate::Web3Transport;
