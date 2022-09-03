@@ -18,6 +18,8 @@ pub struct EthplorerTokenOwnerFinder {
     /// The low tiers for Ethplorer have very aggressive rate limiting, so be sure to setup a rate
     /// limiter for Ethplorer requests.
     rate_limiter: Option<RateLimiter>,
+
+    metrics: &'static Metrics,
 }
 
 impl EthplorerTokenOwnerFinder {
@@ -32,6 +34,7 @@ impl EthplorerTokenOwnerFinder {
             base: Url::try_from(BASE).unwrap(),
             api_key: api_key.unwrap_or_else(|| FREE_API_KEY.to_owned()),
             rate_limiter: None,
+            metrics: Metrics::instance(global_metrics::get_metric_storage_registry())?,
         })
     }
 
@@ -121,10 +124,7 @@ struct Metrics {
 #[async_trait::async_trait]
 impl TokenOwnerProposing for EthplorerTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
-        let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
-            .unwrap()
-            .results;
-
+        let metric = &self.metrics.results;
         let result = self.query_owners(token).await;
         match &result {
             Ok(_) => metric.with_label_values(&["ok"]).inc(),
