@@ -39,9 +39,7 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use std::{sync::Arc, time::Duration};
 
@@ -61,12 +59,7 @@ pub async fn main(args: arguments::Arguments) {
     let db_metrics = crate::database::database_metrics(db.clone());
 
     let client = shared::http_client(args.shared.http_timeout);
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url.clone(),
-        "".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&client, &args.shared.node_url, "base");
 
     let current_block_stream = shared::current_block::current_block_stream(
         web3.clone(),
@@ -167,8 +160,12 @@ pub async fn main(args: arguments::Arguments) {
     .await
     .expect("failed to initialize token owner finders");
 
+    let tracing_web3 = match &args.tracing_node_url {
+        Some(tracing_node_url) => shared::web3(&client, tracing_node_url, "trace"),
+        None => web3.clone(),
+    };
     let trace_call_detector = TraceCallDetector {
-        web3: web3.clone(),
+        web3: tracing_web3,
         finder,
         settlement_contract: settlement_contract.address(),
     };

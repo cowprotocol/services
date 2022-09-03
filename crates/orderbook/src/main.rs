@@ -60,9 +60,7 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
@@ -80,12 +78,7 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url.clone(),
-        "".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&client, &args.shared.node_url, "base");
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -194,8 +187,12 @@ async fn main() {
     .await
     .expect("failed to initialize token owner finders");
 
+    let tracing_web3 = match &args.tracing_node_url {
+        Some(tracing_node_url) => shared::web3(&client, tracing_node_url, "trace"),
+        None => web3.clone(),
+    };
     let trace_call_detector = TraceCallDetector {
-        web3: web3.clone(),
+        web3: tracing_web3,
         finder,
         settlement_contract: settlement_contract.address(),
     };

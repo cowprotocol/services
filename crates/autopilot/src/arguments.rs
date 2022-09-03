@@ -11,6 +11,11 @@ pub struct Arguments {
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
 
+    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
+    /// to be used exclusively for tracing calls.
+    #[clap(long, env)]
+    pub tracing_node_url: Option<Url>,
+
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
@@ -118,6 +123,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
         write!(f, "{}", self.token_owner_finder)?;
+        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
