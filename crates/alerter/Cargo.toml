@@ -1,7 +1,9 @@
 [package]
 name = "alerter"
 version = "0.1.0"
+authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 anyhow = "1.0"
