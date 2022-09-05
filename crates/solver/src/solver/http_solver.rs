@@ -13,7 +13,7 @@ use buffers::{BufferRetrievalError, BufferRetrieving};
 use ethcontract::{errors::ExecutionError, Account, U256};
 use futures::{join, lock::Mutex};
 use maplit::{btreemap, hashset};
-use model::{order::OrderKind, solver_competition::SolverCompetitionId};
+use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
 use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
@@ -92,7 +92,7 @@ impl HttpSolver {
 
     async fn prepare_model(
         &self,
-        auction_id: SolverCompetitionId,
+        auction_id: AuctionId,
         run_id: u64,
         orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,

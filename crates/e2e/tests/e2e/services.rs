@@ -306,8 +306,8 @@ pub async fn wait_for_solvable_orders(client: &Client, minimum: usize) -> Result
                 .await?;
             match response.status() {
                 StatusCode::OK => {
-                    let auction: model::auction::Auction = response.json().await?;
-                    if auction.orders.len() >= minimum {
+                    let auction: model::auction::AuctionWithId = response.json().await?;
+                    if auction.auction.orders.len() >= minimum {
                         return Ok(());
                     }
                 }

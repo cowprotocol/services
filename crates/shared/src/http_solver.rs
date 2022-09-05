@@ -1,5 +1,5 @@
 use crate::http_client::response_body_with_size_limit;
-use ::model::solver_competition::SolverCompetitionId;
+use ::model::auction::AuctionId;
 use anyhow::{anyhow, ensure, Context, Result};
 use reqwest::header::{self, HeaderValue};
 use reqwest::{Client, Url};
@@ -182,7 +182,7 @@ impl HttpSolverApi for DefaultHttpSolverApi {
 }
 
 impl DefaultHttpSolverApi {
-    fn generate_instance_name(&self, auction_id: SolverCompetitionId) -> String {
+    fn generate_instance_name(&self, auction_id: AuctionId) -> String {
         let now = chrono::Utc::now();
         format!(
             "{}_{}_{}_{}",
