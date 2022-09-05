@@ -1,4 +1,5 @@
 pub mod blockscout;
+pub mod ethplorer;
 pub mod liquidity;
 
 use self::{
@@ -6,8 +7,10 @@ use self::{
     liquidity::{BalancerVaultFinder, FeeValues, UniswapLikePairProviderFinder, UniswapV3Finder},
 };
 use crate::{
-    arguments::duration_from_seconds, baseline_solver::BaseTokens,
-    ethcontract_error::EthcontractErrorType, sources::uniswap_v2::pair_provider::PairProvider,
+    arguments::duration_from_seconds,
+    bad_token::token_owner_finder::ethplorer::EthplorerTokenOwnerFinder,
+    baseline_solver::BaseTokens, ethcontract_error::EthcontractErrorType,
+    rate_limiter::RateLimitingStrategy, sources::uniswap_v2::pair_provider::PairProvider,
     transport::MAX_BATCH_SIZE, Web3, Web3CallBatch,
 };
 use anyhow::Result;
@@ -53,6 +56,14 @@ pub struct Arguments {
     /// Override the Blockscout token owner finder-specific timeout configuration.
     #[clap(long, parse(try_from_str = duration_from_seconds), default_value = "45")]
     pub blockscout_http_timeout: Duration,
+
+    /// The Ethplorer token holder API key.
+    pub ethplorer_api_key: Option<String>,
+
+    /// Token owner finding rate limiting strategy. See --price-estimation-rate-limiter
+    /// documentation for format details.
+    #[clap(long, env)]
+    pub token_owner_finder_rate_limiter: Option<RateLimitingStrategy>,
 }
 
 /// Support token owner finding strategies.
@@ -66,13 +77,17 @@ pub enum TokenOwnerFindingStrategy {
 
     /// Use the Blockscout token holder API to find token holders.
     Blockscout,
+
+    /// Use the Ethplorer token holder API.
+    Ethplorer,
 }
 
 impl TokenOwnerFindingStrategy {
     /// Returns the default set of token owner finding strategies.
     pub fn defaults_for_chain(chain_id: u64) -> &'static [Self] {
         match chain_id {
-            1 | 100 => &[Self::Liquidity, Self::Blockscout],
+            1 => &[Self::Liquidity, Self::Blockscout, Self::Ethplorer],
+            100 => &[Self::Liquidity, Self::Blockscout],
             _ => &[Self::Liquidity],
         }
     }
@@ -150,6 +165,18 @@ pub async fn init(
                 args.blockscout_http_timeout,
             )?,
         ));
+    }
+
+    if finders.contains(&TokenOwnerFindingStrategy::Ethplorer) {
+        let mut ethplorer = EthplorerTokenOwnerFinder::try_with_network(
+            client.clone(),
+            args.ethplorer_api_key.clone(),
+            chain_id,
+        )?;
+        if let Some(strategy) = args.token_owner_finder_rate_limiter.clone() {
+            ethplorer.with_rate_limiter(strategy);
+        }
+        proposers.push(Arc::new(ethplorer));
     }
 
     Ok(Arc::new(TokenOwnerFinder { web3, proposers }))
