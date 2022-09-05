@@ -111,12 +111,6 @@ pub async fn main(args: arguments::Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let current_block = web3
-        .eth()
-        .block_number()
-        .await
-        .expect("block_number")
-        .as_u64();
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
@@ -160,23 +154,22 @@ pub async fn main(args: arguments::Arguments) {
     allowed_tokens.push(model::order::BUY_ETH_ADDRESS);
     let unsupported_tokens = args.unsupported_tokens.clone();
 
-    let finders = token_owner_finder::init(
-        args.token_owner_finders.as_deref(),
+    let finder = token_owner_finder::init(
+        &args.token_owner_finder,
+        web3.clone(),
+        chain_id,
+        &client,
         &pair_providers,
-        &base_tokens,
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
-        current_block,
-        args.uniswapv3_token_owner_finder_fee_values,
-        &client,
-        chain_id,
+        &base_tokens,
     )
     .await
     .expect("failed to initialize token owner finders");
 
     let trace_call_detector = TraceCallDetector {
         web3: web3.clone(),
-        finders,
+        finder,
         settlement_contract: settlement_contract.address(),
     };
     let caching_detector = CachingDetector::new(

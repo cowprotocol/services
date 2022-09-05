@@ -52,7 +52,7 @@ mod tests {
     #[tokio::test]
     async fn test_no_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
-        handler.expect_save().returning(|_| Ok(1));
+        handler.expect_save().returning(|_| Ok(()));
 
         let filter = post(Arc::new(handler), None);
         let body = serde_json::to_vec(&SolverCompetition::default()).unwrap();
@@ -64,14 +64,12 @@ mod tests {
             .body(body.clone());
         let response = request.reply(&filter).await;
         assert_eq!(response.status(), StatusCode::CREATED);
-        let response: u64 = serde_json::from_slice(response.body()).unwrap();
-        assert_eq!(response, 1);
     }
 
     #[tokio::test]
     async fn test_auth() {
         let mut handler = MockSolverCompetitionStoring::new();
-        handler.expect_save().times(1).returning(|_| Ok(1));
+        handler.expect_save().times(1).returning(|_| Ok(()));
 
         let filter = post(Arc::new(handler), Some("auth".to_string()));
         let body = serde_json::to_vec(&SolverCompetition::default()).unwrap();
@@ -91,7 +89,5 @@ mod tests {
             .body(body);
         let response = request_.reply(&filter).await;
         assert_eq!(response.status(), StatusCode::CREATED);
-        let response: u64 = serde_json::from_slice(response.body()).unwrap();
-        assert_eq!(response, 1);
     }
 }

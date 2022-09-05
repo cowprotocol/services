@@ -20,9 +20,11 @@ use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use futures::future::join_all;
 use gas_estimation::GasPriceEstimating;
-use model::solver_competition::CompetitionAuction;
-use model::solver_competition::{
-    self, Objective, SolverCompetition, SolverCompetitionId, SolverSettlement,
+use model::{
+    auction::AuctionWithId,
+    solver_competition::{
+        self, CompetitionAuction, Objective, SolverCompetition, SolverSettlement,
+    },
 };
 use num::{rational::Ratio, BigInt, BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
@@ -179,52 +181,23 @@ impl Driver {
             .await
             .context("error retrieving current auction")?;
 
-        let id = auction.next_solver_competition;
+        let id = auction.id;
         let run = self.next_run_id();
 
         // extra function so that we can add span information
-        let stored_competition_info = self
-            .single_auction(auction, run)
+        self.single_auction(auction, run)
             .instrument(tracing::info_span!("auction", id, run))
             .await?;
-        if stored_competition_info {
-            self.wait_for_competition_id_to_change(id).await;
-        }
         Ok(())
     }
 
-    // Wait for the auction to notice that we submitted competition info and update the next id.
-    // Otherwise there is a chance that we use the same id again.
-    async fn wait_for_competition_id_to_change(&self, previous: SolverCompetitionId) {
-        let wait_for_id_to_change = async {
-            tracing::debug!("waiting for auction competition id to change");
-            loop {
-                tokio::time::sleep(Duration::from_secs(1)).await;
-                let auction = match self.api.get_auction().await {
-                    Ok(auction) => auction,
-                    Err(_) => continue,
-                };
-                if auction.next_solver_competition != previous {
-                    tracing::debug!("auction competition id has changed");
-                    break;
-                }
-            }
-        };
-        if (tokio::time::timeout(Duration::from_secs(10), wait_for_id_to_change).await).is_err() {
-            tracing::warn!(
-                "auction competition id didn't change in time after submitting competition info"
-            );
-        }
-    }
-
     /// Returns whether a settlement was attempted and thus a solver competition info stored.
-    async fn single_auction(
-        &mut self,
-        mut auction: model::auction::Auction,
-        run_id: u64,
-    ) -> Result<bool> {
+    async fn single_auction(&mut self, auction: AuctionWithId, run_id: u64) -> Result<()> {
         let start = Instant::now();
         tracing::debug!("starting single run");
+
+        let auction_id = auction.id;
+        let mut auction = auction.auction;
 
         let current_block_during_liquidity_fetch =
             current_block::block_number(&self.block_stream.borrow())?;
@@ -282,7 +255,7 @@ impl Driver {
         self.metrics.liquidity_fetched(&liquidity);
 
         if !auction_preprocessing::has_at_least_one_user_order(&orders) {
-            return Ok(false);
+            return Ok(());
         }
 
         let gas_price = self
@@ -292,9 +265,8 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
-        let next_solver_competition = auction.next_solver_competition;
         let auction = Auction {
-            id: auction.next_solver_competition,
+            id: auction_id,
             run: run_id,
             orders: orders.clone(),
             liquidity,
@@ -324,6 +296,7 @@ impl Driver {
 
         // Report solver competition data to the api.
         let mut solver_competition = SolverCompetition {
+            auction_id,
             gas_price: gas_price.effective_gas_price(),
             auction_start_block,
             liquidity_collected_block: current_block_during_liquidity_fetch,
@@ -369,7 +342,6 @@ impl Driver {
                 .collect(),
         };
 
-        let mut stored_solver_competition = false;
         if let Some((winning_solver, mut winning_settlement, _)) = rated_settlements.pop() {
             winning_settlement.settlement = self
                 .post_processing_pipeline
@@ -416,9 +388,7 @@ impl Driver {
                     .map(|(solver, settlement, _)| (solver, settlement))
                     .collect(),
             );
-            self.send_solver_competition(next_solver_competition, solver_competition)
-                .await;
-            stored_solver_competition = true;
+            self.send_solver_competition(solver_competition).await;
         }
         // Happens after settlement submission so that we do not delay it.
         self.logger.report_simulation_errors(
@@ -426,7 +396,7 @@ impl Driver {
             current_block_during_liquidity_fetch,
             gas_price,
         );
-        Ok(stored_solver_competition)
+        Ok(())
     }
 
     /// Marks all orders in the winning settlement as "in flight".
@@ -447,19 +417,9 @@ impl Driver {
         id
     }
 
-    async fn send_solver_competition(
-        &self,
-        expected_id: SolverCompetitionId,
-        body: SolverCompetition,
-    ) {
+    async fn send_solver_competition(&self, body: SolverCompetition) {
         match self.api.send_solver_competition(&body).await {
-            Ok(id) if id == expected_id => tracing::info!("stored solver competition"),
-            Ok(actual_id) => {
-                tracing::warn!(
-                    %expected_id, %actual_id,
-                    "stored solver competition with unexpected ID",
-                );
-            }
+            Ok(()) => tracing::debug!("stored solver competition"),
             Err(err) => tracing::warn!(?err, "failed to send solver competition"),
         }
     }

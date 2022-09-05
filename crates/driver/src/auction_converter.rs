@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use gas_estimation::GasPriceEstimating;
-use model::auction::Auction as AuctionModel;
+use model::auction::AuctionWithId as AuctionModel;
 use primitive_types::H160;
 use shared::recent_block_cache::Block;
 use solver::{
@@ -52,6 +52,8 @@ impl AuctionConverter {
 #[async_trait::async_trait]
 impl AuctionConverting for AuctionConverter {
     async fn convert_auction(&self, auction: AuctionModel, block: u64) -> Result<Auction> {
+        let auction_id = auction.id;
+        let auction = auction.auction;
         let run = self.run.fetch_add(1, Ordering::SeqCst);
         let orders = auction
             .orders
@@ -102,7 +104,7 @@ impl AuctionConverting for AuctionConverter {
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
         Ok(Auction {
-            id: auction.next_solver_competition,
+            id: auction_id,
             run,
             orders,
             liquidity,
@@ -202,11 +204,13 @@ mod tests {
             order_converter,
         );
         let mut model = AuctionModel {
-            block: 1,
-            latest_settlement_block: 2,
-            next_solver_competition: 3,
-            orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
-            prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+            id: 3,
+            auction: model::auction::Auction {
+                block: 1,
+                latest_settlement_block: 2,
+                orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
+                prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
+            },
         };
 
         let auction = converter.convert_auction(model.clone(), 3).await.unwrap();
@@ -242,8 +246,8 @@ mod tests {
         assert_eq!(auction.run, 1);
 
         // auction has to include at least 1 user order
-        model.orders = vec![order(1, 2, false)];
-        model.orders[0].metadata.is_liquidity_order = true;
+        model.auction.orders = vec![order(1, 2, false)];
+        model.auction.orders[0].metadata.is_liquidity_order = true;
         assert!(converter.convert_auction(model, 3).await.is_err());
     }
 }

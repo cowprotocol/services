@@ -1,6 +1,6 @@
 use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::Result;
-use model::solver_competition::SolverCompetitionId;
+use model::auction::AuctionId;
 use primitive_types::H256;
 use reqwest::StatusCode;
 use shared::api::{convert_json_response, IntoWarpReply};
@@ -8,7 +8,7 @@ use std::{convert::Infallible, sync::Arc};
 use warp::{reply::with_status, Filter, Rejection};
 
 fn request_id() -> impl Filter<Extract = (Identifier,), Error = Rejection> + Clone {
-    warp::path!("solver_competition" / SolverCompetitionId)
+    warp::path!("solver_competition" / AuctionId)
         .and(warp::get())
         .map(Identifier::Id)
 }

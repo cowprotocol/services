@@ -15,9 +15,11 @@ pub fn get_solvable_orders(
         let orderbook = orderbook.clone();
         async move {
             let result = orderbook.get_auction().await;
-            Result::<_, Infallible>::Ok(convert_json_response(
-                result.map(|auction| auction.map(|auction| auction.orders).unwrap_or_default()),
-            ))
+            Result::<_, Infallible>::Ok(convert_json_response(result.map(|auction| {
+                auction
+                    .map(|auction| auction.auction.orders)
+                    .unwrap_or_default()
+            })))
         }
     })
 }
