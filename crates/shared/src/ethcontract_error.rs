@@ -15,6 +15,13 @@ impl EthcontractErrorType {
             _ => Self::Contract,
         }
     }
+
+    /// Returns true if the specified error is a contract error.
+    ///
+    /// This is short hand for calling `classify` and checking it returns a `Contract` variant.
+    pub fn is_contract_err(err: &MethodError) -> bool {
+        matches!(Self::classify(err), Self::Contract)
+    }
 }
 
 // Create an arbitrary error. Useful for testing.

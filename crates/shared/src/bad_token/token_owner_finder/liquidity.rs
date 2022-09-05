@@ -1,6 +1,6 @@
 //! Module containing liquidity-based token owner finding implementations.
 
-use super::TokenOwnerFinding;
+use super::TokenOwnerProposing;
 use crate::{
     event_handling::MAX_REORG_BLOCK_COUNT,
     sources::{uniswap_v2::pair_provider::PairProvider, uniswap_v3_pair_provider},
@@ -16,7 +16,7 @@ pub struct UniswapLikePairProviderFinder {
 }
 
 #[async_trait::async_trait]
-impl TokenOwnerFinding for UniswapLikePairProviderFinder {
+impl TokenOwnerProposing for UniswapLikePairProviderFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
         Ok(self
             .base_tokens
@@ -31,7 +31,7 @@ impl TokenOwnerFinding for UniswapLikePairProviderFinder {
 pub struct BalancerVaultFinder(pub BalancerV2Vault);
 
 #[async_trait::async_trait]
-impl TokenOwnerFinding for BalancerVaultFinder {
+impl TokenOwnerProposing for BalancerVaultFinder {
     async fn find_candidate_owners(&self, _: H160) -> Result<Vec<H160>> {
         Ok(vec![self.0.address()])
     }
@@ -93,7 +93,7 @@ impl UniswapV3Finder {
 }
 
 #[async_trait::async_trait]
-impl TokenOwnerFinding for UniswapV3Finder {
+impl TokenOwnerProposing for UniswapV3Finder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
         Ok(self
             .base_tokens

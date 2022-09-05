@@ -1,3 +1,4 @@
+use super::TokenOwnerProposing;
 use anyhow::{bail, Result};
 use ethcontract::H160;
 use prometheus::IntCounterVec;
@@ -5,8 +6,6 @@ use prometheus_metric_storage::MetricStorage;
 use reqwest::{Client, Url};
 use serde::Deserialize;
 use std::time::Duration;
-
-use super::TokenOwnerFinding;
 
 const BASE: &str = "https://blockscout.com/";
 // Blockscout uses a custom timeout because their api is often slow. We would like those requests
@@ -86,7 +85,7 @@ struct Metrics {
 }
 
 #[async_trait::async_trait]
-impl TokenOwnerFinding for BlockscoutTokenOwnerFinder {
+impl TokenOwnerProposing for BlockscoutTokenOwnerFinder {
     async fn find_candidate_owners(&self, token: H160) -> Result<Vec<H160>> {
         let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
             .unwrap()
