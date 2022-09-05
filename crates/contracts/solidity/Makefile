@@ -29,11 +29,12 @@ endef
 export ARTIFACTTEMPLATE
 $(ARTIFACTDIR)/%.json: $(TARGETDIR)/%.abi
 	@echo jq "'...'" '>' $@
-	@echo "$$ARTIFACTTEMPLATE" | jq \
-		--argjson ABI   '$(shell cat $(TARGETDIR)/$*.abi)' \
-		--arg     BIN   '0x$(shell cat $(TARGETDIR)/$*.bin | head -n1)' \
-		--arg     BINRT '0x$(shell cat $(TARGETDIR)/$*.bin-runtime | head -n1)' \
-		'.abi=$$ABI | .bytecode=$$BIN | .deployedBytecode=$$BINRT' \
+	@echo "$$ARTIFACTTEMPLATE" \
+		| jq -c \
+			--argjson ABI   '$(shell cat $(TARGETDIR)/$*.abi)' \
+			--arg     BIN   '0x$(shell cat $(TARGETDIR)/$*.bin | head -n1)' \
+			--arg     BINRT '0x$(shell cat $(TARGETDIR)/$*.bin-runtime | head -n1)' \
+			'.abi=$$ABI | .bytecode=$$BIN | .deployedBytecode=$$BINRT' \
 		> $@
 
 $(TARGETDIR)/%.abi: %.sol
