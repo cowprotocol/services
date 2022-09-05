@@ -5,7 +5,7 @@ These contracts provide bytecode that is used by the services, either with `eth_
 
 ## Building
 
-The compiled ABI and bytecodes are compiled and commited into the repository.
+The generated ABI and bytecodes are compiled and committed into the repository.
 This makes it easier to build the services repository without additional steps, and the bytecode here is not expected to change often.
 
 That being said, if changes to the contracts were made, then you need to rebuild them and commit the updated artifacts to the repository.
