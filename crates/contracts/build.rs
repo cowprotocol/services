@@ -350,6 +350,8 @@ fn main() {
             .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
+
+    generate_contract("Placeholder");
 }
 
 fn generate_contract(name: &str) {
