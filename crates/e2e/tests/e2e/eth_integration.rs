@@ -278,5 +278,5 @@ async fn eth_integration(web3: Web3) {
     solvable_orders_cache.update(0).await.unwrap();
 
     let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.orders.is_empty());
+    assert!(auction.auction.orders.is_empty());
 }

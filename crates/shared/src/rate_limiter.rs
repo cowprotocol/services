@@ -211,6 +211,16 @@ impl RateLimiter {
     }
 }
 
+/// Shared module with common back-off checks.
+pub mod back_off {
+    use reqwest::Response;
+
+    /// Determines if the HTTP response indicates that the API should back off for a while.
+    pub fn on_http_429(response: &Result<Response, reqwest::Error>) -> bool {
+        matches!(response, Ok(response) if response.status() == 429)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,7 +13,7 @@ use contracts::{BalancerV2Vault, GPv2Settlement};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{Account, PrivateKey, H160, U256};
 use http_solver::{buffers::BufferRetriever, HttpSolver};
-use model::solver_competition::SolverCompetitionId;
+use model::auction::AuctionId;
 use naive_solver::NaiveSolver;
 use num::BigRational;
 use oneinch_solver::OneInchSolver;
@@ -79,11 +79,9 @@ pub trait Solver: Send + Sync + 'static {
 /// A batch auction for a solver to produce a settlement for.
 #[derive(Clone, Debug)]
 pub struct Auction {
-    /// An ID that identifies the unique solver competition that is executing.
-    ///
     /// Note that multiple consecutive driver runs may use the same ID if the
     /// previous run was unable to find a settlement.
-    pub id: SolverCompetitionId,
+    pub id: AuctionId,
 
     /// An ID that identifies a driver run.
     ///

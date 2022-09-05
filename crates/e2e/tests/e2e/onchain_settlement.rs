@@ -283,7 +283,7 @@ async fn onchain_settlement(web3: Web3) {
     solvable_orders_cache.update(0).await.unwrap();
 
     let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.orders.is_empty());
+    assert!(auction.auction.orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();
