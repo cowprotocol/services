@@ -1,6 +1,5 @@
 //! Module containing Ethereum RPC extension methods.
 
-use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use web3::{
@@ -11,42 +10,37 @@ use web3::{
     Transport,
 };
 
-/// Ethereum RPC extension methods that are not part of the JSON RPC standard
-/// but commonly implemented by nodes.
-#[derive(Debug, Clone)]
-pub struct EthExt<T> {
-    transport: T,
-}
-
-impl<T: Transport> EthExt<T> {
-    pub async fn call(
+/// Web3 convenience extension trait.
+pub trait EthExt<T>
+where
+    T: Transport,
+{
+    fn call_with_state_overrides(
         &self,
         call: CallRequest,
         block: BlockId,
         overrides: HashMap<H160, StateOverride>,
-    ) -> Result<Bytes, web3::Error> {
+    ) -> CallFuture<Bytes, T::Out>;
+}
+
+impl<T> EthExt<T> for web3::api::Eth<T>
+where
+    T: Transport,
+{
+    fn call_with_state_overrides(
+        &self,
+        call: CallRequest,
+        block: BlockId,
+        overrides: HashMap<H160, StateOverride>,
+    ) -> CallFuture<Bytes, T::Out> {
         let call = helpers::serialize(&call);
         let block = helpers::serialize(&block);
         let overrides = helpers::serialize(&overrides);
 
         CallFuture::new(
-            self.transport
+            self.transport()
                 .execute("eth_call", vec![call, block, overrides]),
         )
-        .await
-    }
-}
-
-impl<T: Transport> Namespace<T> for EthExt<T> {
-    fn new(transport: T) -> Self
-    where
-        Self: Sized,
-    {
-        EthExt { transport }
-    }
-
-    fn transport(&self) -> &T {
-        &self.transport
     }
 }
 
@@ -77,22 +71,6 @@ pub struct StateOverride {
     pub state_diff: Option<HashMap<H256, U256>>,
 }
 
-/// Web3 convenience extension trait.
-pub trait Web3EthExt<T> {
-    fn eth_ext(&self) -> EthExt<T>;
-}
-
-impl<T> Web3EthExt<T> for web3::Web3<T>
-where
-    T: Transport,
-{
-    fn eth_ext(&self) -> EthExt<T> {
-        EthExt {
-            transport: self.transport().clone(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,8 +87,8 @@ mod tests {
 
         let address = addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE");
         let output = web3
-            .eth_ext()
-            .call(
+            .eth()
+            .call_with_state_overrides(
                 CallRequest {
                     to: Some(address),
                     ..Default::default()
