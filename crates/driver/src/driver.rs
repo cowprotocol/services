@@ -4,7 +4,10 @@ use crate::{
     commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
 };
 use anyhow::{Context, Error, Result};
-use futures::StreamExt;
+use futures::{
+    future::FutureExt as _,
+    {stream::Stream, StreamExt},
+};
 use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
 use primitive_types::H256;
@@ -16,7 +19,7 @@ use solver::{
     settlement_rater::{SettlementRating, SimulationDetails},
     settlement_submission::{SolutionSubmitter, SubmissionError},
 };
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
 
 pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
@@ -133,4 +136,55 @@ impl Driver {
         .await
         .map(|receipt| receipt.transaction_hash)
     }
+}
+
+/// Polls the `producer` for new work and buffers only the most recent one. Whenever a
+/// computational task finishes a new one will be started with the most recently buffered work.
+/// Returns the most recent output from a computational task when the `deadline` has been reached.
+async fn last_completed<T, W, B, P, D>(build_task: B, producer: P, deadline: D) -> Option<T>
+where
+    B: Fn(W) -> Pin<Box<dyn Future<Output = T> + Send>>,
+    P: Stream<Item = W>,
+    D: Future<Output = ()>,
+    T: Send,
+    W: Send,
+{
+    futures::pin_mut!(producer);
+    futures::pin_mut!(deadline);
+
+    let mut result = None;
+    let mut next_work = None;
+
+    let mut currently_computing = false;
+    // initialize with future that does nothing and can be dropped safely
+    let mut current_task = futures::future::pending().fuse().boxed();
+
+    loop {
+        tokio::select! {
+            r = &mut current_task => {
+                result = Some(r);
+                if let Some(work) = next_work.take() {
+                    current_task = build_task(work);
+                }
+            }
+            new_work = producer.next() => {
+                match (new_work, currently_computing) {
+                    (Some(work), true) => {
+                        next_work = Some(work);
+                    }
+                    (Some(work), false) => {
+                        current_task = build_task(work);
+                        currently_computing = true;
+                    }
+                    // stream terminated and there is no compuration going on => return early
+                    (None, true) => break,
+                    // stream terminated but we might still get a result from the current
+                    // computation => do nothing
+                    (None, false) => ()
+                };
+            }
+            _ = &mut deadline => break,
+        }
+    }
+    result
 }
