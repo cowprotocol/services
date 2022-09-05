@@ -4,9 +4,7 @@ use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
 use shared::{
-    arguments::display_option,
-    bad_token::token_owner_finder::{liquidity::FeeValues, TokenOwnerFindingStrategy},
-    price_estimation::PriceEstimatorType,
+    arguments::display_option, bad_token::token_owner_finder, price_estimation::PriceEstimatorType,
     rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
@@ -15,6 +13,9 @@ use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Durati
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub token_owner_finder: token_owner_finder::Arguments,
 
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
@@ -230,15 +231,6 @@ pub struct Arguments {
     #[clap(long, env, use_value_delimiter = true)]
     pub liquidity_order_owners: Vec<H160>,
 
-    /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
-    /// detection.
-    #[clap(long, env, default_value = "static", arg_enum)]
-    pub uniswapv3_token_owner_finder_fee_values: FeeValues,
-
-    /// The token owner finding strategies to use.
-    #[clap(long, env, use_value_delimiter = true, arg_enum)]
-    pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
-
     /// The API endpoint for the Balancer SOR API for solving.
     #[clap(long, env)]
     pub balancer_sor_url: Option<Url>,
@@ -247,6 +239,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.token_owner_finder)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(
@@ -333,12 +326,6 @@ impl std::fmt::Display for Arguments {
             "liquidity_order_owners: {:?}",
             self.liquidity_order_owners
         )?;
-        writeln!(
-            f,
-            "uniswapv3_token_owner_finder_fee_values: {:?}",
-            self.uniswapv3_token_owner_finder_fee_values
-        )?;
-        writeln!(f, "token_owner_finders: {:?}", self.token_owner_finders)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         Ok(())
     }

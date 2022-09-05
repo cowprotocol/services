@@ -111,12 +111,6 @@ pub async fn main(args: arguments::Arguments) {
         .await
         .expect("Failed to retrieve network version ID");
     let network_name = shared::network::network_name(&network, chain_id);
-    let current_block = web3
-        .eth()
-        .block_number()
-        .await
-        .expect("block_number")
-        .as_u64();
 
     let signature_validator = Arc::new(Web3SignatureValidator::new(web3.clone()));
 
@@ -161,16 +155,14 @@ pub async fn main(args: arguments::Arguments) {
     let unsupported_tokens = args.unsupported_tokens.clone();
 
     let finder = token_owner_finder::init(
+        &args.token_owner_finder,
         web3.clone(),
-        args.token_owner_finders.as_deref(),
+        chain_id,
+        &client,
         &pair_providers,
-        &base_tokens,
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
-        current_block,
-        args.uniswapv3_token_owner_finder_fee_values,
-        &client,
-        chain_id,
+        &base_tokens,
     )
     .await
     .expect("failed to initialize token owner finders");
