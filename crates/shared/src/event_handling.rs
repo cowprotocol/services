@@ -198,6 +198,7 @@ where
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
 
+        track_block_range(&format!("range_{}", replacement_blocks.len()));
         if !replacement_blocks.is_empty() {
             // delete forked blocks
             self.last_handled_blocks
@@ -349,4 +350,20 @@ macro_rules! impl_event_retrieving {
             }
         }
     };
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "event_handler")]
+struct Metrics {
+    /// Tracks how many blocks were replaced/added in each call to EventHandler
+    #[metric(labels("range"))]
+    block_ranges: prometheus::IntCounterVec,
+}
+
+fn track_block_range(range: &str) {
+    Metrics::instance(global_metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .block_ranges
+        .with_label_values(&[range])
+        .inc();
 }
