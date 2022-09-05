@@ -145,7 +145,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn test_blockscout_token_finding_mainnet() {
+    async fn token_finding_mainnet() {
         let finder =
             EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, 1).unwrap();
         let owners = finder
@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn test_blockscout_token_finding_no_owners() {
+    async fn returns_no_owners_on_invalid_token() {
         let finder =
             EthplorerTokenOwnerFinder::try_with_network(Client::default(), None, 1).unwrap();
         let owners = finder
