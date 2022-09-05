@@ -1,7 +1,9 @@
 [package]
 name = "database"
 version = "0.1.0"
+authors = ["Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 bigdecimal = "0.3"

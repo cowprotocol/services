@@ -729,6 +729,10 @@ components:
         A batch auction for solving.
       type: object
       properties:
+        id:
+          type: integer
+          description: |
+            The unique identifier of the auction. Increment whenever the backend creates a new auction.
         block:
           type: integer
           description: |
@@ -1105,10 +1109,14 @@ components:
         with.
       type: object
       properties:
+        auctionId:
+          type: integer
+          description: The id of the auction the competition info is for.
         transactionHash:
           nullable: true
           allOf:
             - $ref: "#/components/schemas/TransactionHash"
+          description: The hash of the transaction that the winning solution of this info was submitted in.
         gasPrice:
           type: number
           description: gas price used for ranking solutions

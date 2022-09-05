@@ -2,11 +2,11 @@ use super::Postgres;
 use crate::solver_competition::{Identifier, LoadSolverCompetitionError, SolverCompetitionStoring};
 use anyhow::{Context, Result};
 use database::byte_array::ByteArray;
-use model::solver_competition::{SolverCompetition, SolverCompetitionId};
+use model::solver_competition::SolverCompetition;
 
 #[async_trait::async_trait]
 impl SolverCompetitionStoring for Postgres {
-    async fn save(&self, data: SolverCompetition) -> Result<SolverCompetitionId> {
+    async fn save(&self, data: SolverCompetition) -> Result<()> {
         let _timer = super::Metrics::get()
             .database_queries
             .with_label_values(&["save_solver_competition"])
@@ -14,14 +14,15 @@ impl SolverCompetitionStoring for Postgres {
 
         let tx_hash = data.transaction_hash.map(|h256| ByteArray(h256.0));
         let mut ex = self.pool.acquire().await?;
-        let id = database::solver_competition::save(
+        database::solver_competition::save(
             &mut ex,
-            &serde_json::to_value(data)?,
+            data.auction_id,
+            &serde_json::to_value(&data)?,
             tx_hash.as_ref(),
         )
         .await
         .context("failed to insert solver competition")?;
-        Ok(id)
+        Ok(())
     }
 
     async fn load(&self, id: Identifier) -> Result<SolverCompetition, LoadSolverCompetitionError> {
@@ -60,6 +61,7 @@ mod tests {
         database::clear_DANGER(&db.pool).await.unwrap();
 
         let expected = SolverCompetition {
+            auction_id: 0,
             gas_price: 1.,
             auction_start_block: 2,
             liquidity_collected_block: 3,
@@ -77,8 +79,8 @@ mod tests {
                 call_data: vec![1, 2],
             }],
         };
-        let id = db.save(expected.clone()).await.unwrap();
-        let actual = db.load(Identifier::Id(id)).await.unwrap();
+        db.save(expected.clone()).await.unwrap();
+        let actual = db.load(Identifier::Id(0)).await.unwrap();
         assert_eq!(expected, actual);
     }
 

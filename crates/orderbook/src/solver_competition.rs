@@ -1,12 +1,13 @@
 //! Manage solver competition data received by the driver through a private spi.
 
 use anyhow::Result;
-use model::solver_competition::{SolverCompetition, SolverCompetitionId};
+use database::auction::AuctionId;
+use model::solver_competition::SolverCompetition;
 use primitive_types::H256;
 use thiserror::Error;
 
 pub enum Identifier {
-    Id(SolverCompetitionId),
+    Id(AuctionId),
     Transaction(H256),
 }
 
@@ -15,7 +16,7 @@ pub enum Identifier {
 #[async_trait::async_trait]
 pub trait SolverCompetitionStoring: Send + Sync {
     /// Saves a new solver competition entry and returns its ID.
-    async fn save(&self, model: SolverCompetition) -> Result<SolverCompetitionId>;
+    async fn save(&self, model: SolverCompetition) -> Result<()>;
 
     /// Retrieves a solver competition entry by ID.
     ///

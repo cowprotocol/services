@@ -5,7 +5,7 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use gas_estimation::GasPriceEstimating;
-use model::auction::Auction;
+use model::auction::AuctionWithId;
 use primitive_types::H256;
 use shared::current_block::{block_number, CurrentBlockStream};
 use solver::{
@@ -32,7 +32,7 @@ impl Driver {
     /// for the solver.
     pub async fn on_auction_started(
         &self,
-        auction: Auction,
+        auction: AuctionWithId,
     ) -> Result<SettlementSummary, SolveError> {
         let fetch_liquidity_from_block = block_number(&self.block_stream.borrow())?;
         let auction = self

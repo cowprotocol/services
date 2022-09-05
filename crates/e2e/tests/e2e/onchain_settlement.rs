@@ -25,7 +25,7 @@ use solver::{
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
-use std::{sync::Arc, time::Duration};
+use std::{num::NonZeroU8, sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 const TRADER_A_PK: [u8; 32] =
@@ -250,6 +250,7 @@ async fn onchain_settlement(web3: Web3) {
                 .await
                 .unwrap(),
             ),
+            max_gas_price_bumps: NonZeroU8::new(1).unwrap(),
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
@@ -282,7 +283,7 @@ async fn onchain_settlement(web3: Web3) {
     solvable_orders_cache.update(0).await.unwrap();
 
     let auction = create_orderbook_api().get_auction().await.unwrap();
-    assert!(auction.orders.is_empty());
+    assert!(auction.auction.orders.is_empty());
 
     // Drive again to ensure we can continue solution finding
     driver.single_run().await.unwrap();

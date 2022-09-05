@@ -6,7 +6,6 @@ use database::{
         BuyTokenDestination as DbBuyTokenDestination, OrderKind as DbOrderKind,
         SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
     },
-    solver_competition::SolverCompetitionId,
 };
 use futures::{StreamExt, TryStreamExt};
 use model::{
@@ -61,18 +60,6 @@ impl Postgres {
         let id = database::auction::save(&mut ex, &data).await?;
         ex.commit().await?;
         Ok(id)
-    }
-
-    pub async fn next_solver_competition(&self) -> Result<SolverCompetitionId> {
-        let _timer = super::Metrics::get()
-            .database_queries
-            .with_label_values(&["next_solver_competition"])
-            .start_timer();
-
-        let mut ex = self.0.acquire().await.map_err(anyhow::Error::from)?;
-        database::solver_competition::next_solver_competition(&mut ex)
-            .await
-            .context("failed to get next solver competition ID")
     }
 }
 
