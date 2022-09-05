@@ -187,28 +187,23 @@ async fn main() {
     .await
     .expect("failed to initialize token owner finders");
 
-    let tracing_web3 = match &args.tracing_node_url {
-        Some(tracing_node_url) => shared::web3(&client, tracing_node_url, "trace"),
-        None => web3.clone(),
-    };
-    let trace_call_detector = TraceCallDetector {
-        web3: tracing_web3,
-        finder,
-        settlement_contract: settlement_contract.address(),
-    };
-    let caching_detector = CachingDetector::new(
-        Box::new(trace_call_detector),
-        args.token_quality_cache_expiry,
-    );
+    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
+        Box::new(CachingDetector::new(
+            Box::new(TraceCallDetector {
+                web3: shared::web3(&client, tracing_node_url, "trace"),
+                finder,
+                settlement_contract: settlement_contract.address(),
+            }),
+            args.token_quality_cache_expiry,
+        ))
+    });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
             allowed_tokens,
             unsupported_tokens,
-            if args.skip_trace_api {
-                UnknownTokenStrategy::Allow
-            } else {
-                UnknownTokenStrategy::Forward(Box::new(caching_detector))
-            },
+            trace_call_detector
+                .map(|detector| UnknownTokenStrategy::Forward(detector))
+                .unwrap_or(UnknownTokenStrategy::Allow),
         )
         .instrumented(),
     );

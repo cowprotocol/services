@@ -66,12 +66,6 @@ pub struct Arguments {
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
 
-    /// Don't use the trace_callMany api that only some nodes support to check whether a token
-    /// should be denied.
-    /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env)]
-    pub skip_trace_api: bool,
-
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[clap(
         long,
@@ -268,7 +262,6 @@ impl std::fmt::Display for Arguments {
             "presign_onchain_quote_validity_second: {:?}",
             self.presign_onchain_quote_validity_seconds
         )?;
-        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(
             f,
             "token_quality_cache_expiry: {:?}",

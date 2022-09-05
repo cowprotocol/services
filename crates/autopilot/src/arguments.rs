@@ -45,12 +45,6 @@ pub struct Arguments {
     )]
     pub token_quality_cache_expiry: Duration,
 
-    /// Don't use the trace_callMany api that only some nodes support to check whether a token
-    /// should be denied.
-    /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env)]
-    pub skip_trace_api: bool,
-
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
     pub pool_cache_lru_size: usize,
@@ -134,7 +128,6 @@ impl std::fmt::Display for Arguments {
             "token_quality_cache_expiry: {:?}",
             self.token_quality_cache_expiry
         )?;
-        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(

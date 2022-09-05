@@ -183,7 +183,6 @@ Run an `autopilot` with:
 ```sh
 cargo run --bin autopilot -- \
   --skip-event-sync \
-  --skip-trace-api \
   --node-url <YOUR_NODE_URL>
 ```
 
@@ -197,11 +196,11 @@ Run an `orderbook` on `localhost:8080` with:
 
 ```sh
 cargo run --bin orderbook -- \
-  --skip-trace-api \
   --node-url <YOUR_NODE_URL>
 ```
 
-`--skip-trace-api` will make the orderbook compatible with more ethereum nodes. If your node supports `trace_callMany` you can drop this argument.
+If your node supports `trace_callMany`, or you have an additional node with tracing support, consider also specifying `--tracing-node-url <YOUR_NODE_URL>`.
+This will enable the tracing-based bad token detection.
 
 Note: Current version of the code does not compile under Windows OS. Context and workaround are [here](https://github.com/cowprotocol/services/issues/226).
 
