@@ -25,6 +25,7 @@ use submitter::{
     DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
     TransactionHandle, TransactionSubmitting,
 };
+use tracing::Instrument;
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -201,7 +202,12 @@ impl SolutionSubmitter {
                             strategy_args.sub_tx_pool.clone(),
                             self.max_gas_price_bumps
                         )?;
-                        submitter.submit(settlement.clone(), params).await
+                        submitter.submit(settlement.clone(), params)
+                            .instrument(tracing::info_span!(
+                                "submission",
+                                name = strategy_args.submit_api.name().as_str()
+                            ))
+                            .await
                     }
                     .boxed()
                 })
