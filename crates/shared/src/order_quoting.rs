@@ -5,8 +5,8 @@ use super::price_estimation::{
 };
 use crate::{
     conversions::order_kind_from,
-    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
+    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
@@ -244,6 +244,29 @@ impl Default for QuoteData {
             expiration: Utc.timestamp(0, 0),
             quote_kind: QuoteKind::Standard,
         }
+    }
+}
+
+impl TryFrom<QuoteRow> for QuoteData {
+    type Error = anyhow::Error;
+
+    fn try_from(row: QuoteRow) -> Result<QuoteData> {
+        Ok(QuoteData {
+            sell_token: H160(row.sell_token.0),
+            buy_token: H160(row.buy_token.0),
+            quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
+                .context("quoted sell amount is not a valid U256")?,
+            quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
+                .context("quoted buy amount is not a valid U256")?,
+            fee_parameters: FeeParameters {
+                gas_amount: row.gas_amount,
+                gas_price: row.gas_price,
+                sell_token_price: row.sell_token_price,
+            },
+            kind: order_kind_from(row.order_kind),
+            expiration: row.expiration_timestamp,
+            quote_kind: row.quote_kind,
+        })
     }
 }
 

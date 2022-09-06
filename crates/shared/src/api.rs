@@ -1,6 +1,6 @@
 use crate::{
     order_quoting::{CalculateQuoteError, OrderQuoteError},
-    order_validation::PartialValidationError,
+    order_validation::{PartialValidationError, ValidationError},
     price_estimation::PriceEstimationError,
 };
 use anyhow::{Error as anyhowError, Result};
@@ -217,6 +217,94 @@ impl IntoWarpReply for PartialValidationError {
             ),
             Self::Other(err) => with_status(
                 internal_error(err.context("partial_validation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    }
+}
+
+impl IntoWarpReply for ValidationError {
+    fn into_warp_reply(self) -> ApiReply {
+        match self {
+            Self::Partial(pre) => pre.into_warp_reply(),
+            Self::QuoteNotFound => with_status(
+                error(
+                    "QuoteNotFound",
+                    "could not find quote with the specified ID",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidQuote => with_status(
+                error(
+                    "InvalidQuote",
+                    "the quote with the specified ID does not match the order",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::PriceForQuote(err) => err.into_warp_reply(),
+            Self::MissingFrom => with_status(
+                error(
+                    "MissingFrom",
+                    "From address must be specified for on-chain signature",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::WrongOwner(owner) => with_status(
+                error(
+                    "WrongOwner",
+                    format!("Address recovered from signature {owner} does not match from address"),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientBalance => with_status(
+                error(
+                    "InsufficientBalance",
+                    "order owner must have funds worth at least x in his account",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientAllowance => with_status(
+                error(
+                    "InsufficientAllowance",
+                    "order owner must give allowance to VaultRelayer",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidSignature => with_status(
+                error("InvalidSignature", "invalid signature"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InsufficientFee => with_status(
+                error("InsufficientFee", "Order does not include sufficient fee"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::SellAmountOverflow => with_status(
+                error(
+                    "SellAmountOverflow",
+                    "Sell amount + fee amount must fit in U256",
+                ),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+            Self::TransferSimulationFailed => with_status(
+                error(
+                    "TransferSimulationFailed",
+                    "sell token cannot be transferred",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ZeroAmount => with_status(
+                error("ZeroAmount", "Buy or sell amount is zero."),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::IncompatibleSigningScheme => with_status(
+                error(
+                    "IncompatibleSigningScheme",
+                    "Signing scheme is not compatible with order placement method.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => with_status(
+                internal_error(err.context("order_validation")),
                 StatusCode::INTERNAL_SERVER_ERROR,
             ),
         }
