@@ -1,5 +1,5 @@
 use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
-use anyhow::{ensure, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::H256;
@@ -225,11 +225,9 @@ where
 }
 
 fn detect_reorg_path(
-    handled_blocks: &Vec<BlockNumberHash>,
-    current_blocks: &Vec<BlockNumberHash>,
+    handled_blocks: &[BlockNumberHash],
+    current_blocks: &[BlockNumberHash],
 ) -> Result<RangeInclusive<u64>> {
-    ensure!(!handled_blocks.is_empty() && !current_blocks.is_empty());
-
     // in most cases, current_blocks = handled_blocks + 1 newest block
     // therefore, is it more efficient to put the handled_blocks in outer loop,
     // so everything finishes in only two iterations.
@@ -245,10 +243,10 @@ fn detect_reorg_path(
     //cant figure out the reorg, fallback to regular 25 blocks reorg
     let start_index = handled_blocks
         .last()
-        .unwrap()
+        .context("empty handled_blocks")?
         .0
         .saturating_sub(MAX_REORG_BLOCK_COUNT);
-    let end_index = current_blocks.last().unwrap().0;
+    let end_index = current_blocks.last().context("empty current_blocks")?.0;
     Ok(start_index..=end_index)
 }
 
