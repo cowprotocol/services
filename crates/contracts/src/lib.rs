@@ -27,6 +27,7 @@ include_contracts! {
     BaoswapRouter;
     CowProtocolToken;
     CowProtocolVirtualToken;
+    CoWSwapOnchainOrders;
     ERC1271SignatureValidator;
     ERC20;
     ERC20Mintable;

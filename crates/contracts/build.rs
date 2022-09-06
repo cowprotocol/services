@@ -18,6 +18,9 @@ fn main() {
     // - https://doc.rust-lang.org/cargo/reference/build-scripts.html#cargorerun-if-changedpath
     println!("cargo:rerun-if-changed=build.rs");
 
+    generate_contract_with_config("CoWSwapOnchainOrders", |builder| {
+        builder.contract_mod_override("cowswap_onchain_orders")
+    });
     generate_contract_with_config("BalancerV2Authorizer", |builder| {
         builder.contract_mod_override("balancer_v2_authorizer")
     });
