@@ -68,16 +68,6 @@ pub enum Strategy {
     CustomNodes,
 }
 
-impl Strategy {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Strategy::Eden => "eden",
-            Strategy::Flashbots => "flashbots",
-            Strategy::CustomNodes => "custom_nodes",
-        }
-    }
-}
-
 impl fmt::Display for Strategy {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)

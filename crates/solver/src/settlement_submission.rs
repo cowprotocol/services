@@ -240,7 +240,7 @@ impl SolutionSubmitter {
             .submit(settlement, params)
             .instrument(tracing::info_span!(
                 "submission",
-                name = strategy_args.submit_api.name().as_str(),
+                name = %strategy_args.submit_api.name(),
                 i = index
             ))
             .await
