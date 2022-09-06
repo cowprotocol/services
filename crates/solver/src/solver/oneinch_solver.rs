@@ -207,7 +207,10 @@ mod tests {
     use ethcontract::{Web3, H160, U256};
     use futures::FutureExt as _;
     use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind};
+    use model::{
+        auction::Order,
+        order::{OrderData, OrderKind},
+    };
     use shared::{
         conversions::U256Ext as _,
         dummy_contract,

@@ -9,7 +9,7 @@ use crate::{
 };
 use anyhow::Result;
 use itertools::Itertools;
-use model::order::{Order, OrderKind};
+use model::{auction::Order, order::OrderKind};
 use num::{rational::Ratio, BigInt, BigRational, One, Signed, Zero};
 use primitive_types::{H160, U256};
 use shared::conversions::U256Ext as _;
@@ -18,7 +18,7 @@ use std::{
     ops::{Mul, Sub},
 };
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Trade {
     pub order: Order,
     pub sell_token_index: usize,
@@ -26,13 +26,13 @@ pub struct Trade {
     pub scaled_unsubsidized_fee: U256,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct OrderTrade {
     pub trade: Trade,
     pub buy_token_index: usize,
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct LiquidityOrderTrade {
     pub trade: Trade,
     pub buy_token_offset_index: usize,

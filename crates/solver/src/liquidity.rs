@@ -10,7 +10,7 @@ use anyhow::Result;
 #[cfg(test)]
 use derivative::Derivative;
 #[cfg(test)]
-use model::order::Order;
+use model::auction::Order;
 use model::{order::OrderKind, TokenPair};
 use num::{rational::Ratio, BigRational};
 use primitive_types::{H160, U256};

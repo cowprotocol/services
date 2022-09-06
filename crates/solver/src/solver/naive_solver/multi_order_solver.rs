@@ -333,10 +333,7 @@ mod tests {
     };
     use liquidity::tests::CapturingSettlementHandler;
     use maplit::hashmap;
-    use model::{
-        order::{Order, OrderData},
-        TokenPair,
-    };
+    use model::{auction::Order, order::OrderData, TokenPair};
     use num::rational::Ratio;
     use once_cell::sync::OnceCell;
     use shared::{baseline_solver::BaselineSolvable, sources::uniswap_v2::pool_fetching::Pool};

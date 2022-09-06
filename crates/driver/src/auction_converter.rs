@@ -59,12 +59,8 @@ impl AuctionConverting for AuctionConverter {
             .orders
             .into_iter()
             .filter_map(|order| {
-                let uid = order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
-                    Ok(mut order)
-                        if order.buy_amount != 0.into() && order.sell_amount != 0.into() =>
-                    {
-                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
+                    Ok(order) if order.buy_amount != 0.into() && order.sell_amount != 0.into() => {
                         Some(order)
                     }
                     Err(err) => {
@@ -127,7 +123,8 @@ mod tests {
     use gas_estimation::GasPrice1559;
     use maplit::btreemap;
     use model::{
-        order::{Order, OrderData, OrderMetadata, BUY_ETH_ADDRESS},
+        auction::{Order, OrderMetadata},
+        order::{OrderData, BUY_ETH_ADDRESS},
         TokenPair,
     };
     use num::rational::{BigRational, Ratio};
@@ -166,7 +163,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 full_fee_amount: 100.into(),
-                executed_buy_amount: if with_error { 100u8 } else { 1u8 }.into(),
+                executed_amount: if with_error { 100u8 } else { 1u8 }.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -214,7 +211,6 @@ mod tests {
                 latest_settlement_block: 2,
                 orders: vec![order(1, 2, false), order(2, 3, false), order(1, 3, true)],
                 prices: btreemap! { token(2) => U256::exp10(18), token(3) => U256::exp10(18) },
-                rewards: Default::default(),
             },
         };
 

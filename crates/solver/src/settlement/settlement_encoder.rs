@@ -5,7 +5,7 @@ use crate::{
     settlement::trade_surplus_in_native_token,
 };
 use anyhow::{bail, ensure, Context as _, Result};
-use model::order::{Order, OrderKind};
+use model::{auction::Order, order::OrderKind};
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
 use primitive_types::{H160, U256};
@@ -544,7 +544,7 @@ pub mod tests {
     use contracts::WETH9;
     use ethcontract::Bytes;
     use maplit::hashmap;
-    use model::order::{OrderBuilder, OrderData};
+    use model::order::OrderData;
     use shared::dummy_contract;
 
     #[test]
@@ -612,19 +612,26 @@ pub mod tests {
             token(1) => 10.into(),
         });
 
-        let order01 = OrderBuilder::default()
-            .with_sell_token(token(0))
-            .with_sell_amount(30.into())
-            .with_buy_token(token(1))
-            .with_buy_amount(10.into())
-            .build();
-
-        let order10 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(10.into())
-            .with_buy_token(token(0))
-            .with_buy_amount(20.into())
-            .build();
+        let order01 = Order {
+            data: OrderData {
+                sell_token: token(0),
+                sell_amount: 30.into(),
+                buy_token: token(1),
+                buy_amount: 10.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let order10 = Order {
+            data: OrderData {
+                sell_token: token(1),
+                sell_amount: 10.into(),
+                buy_token: token(0),
+                buy_amount: 20.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         assert!(settlement.add_trade(order01, 10.into(), 0.into()).is_ok());
         assert!(settlement
@@ -654,12 +661,16 @@ pub mod tests {
         let mut settlement = SettlementEncoder::new(maplit::hashmap! {
             token(1) => 9.into(),
         });
-        let order01 = OrderBuilder::default()
-            .with_sell_token(token(0))
-            .with_sell_amount(30.into())
-            .with_buy_token(token(1))
-            .with_buy_amount(10.into())
-            .build();
+        let order01 = Order {
+            data: OrderData {
+                sell_token: token(0),
+                sell_amount: 30.into(),
+                buy_token: token(1),
+                buy_amount: 10.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         assert!(settlement
             .add_liquidity_order_trade(order01.clone(), 10.into(), 0.into())
             .is_ok());
@@ -798,18 +809,26 @@ pub mod tests {
         let weth = dummy_contract!(WETH9, H160::zero());
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
         let mut encoder0 = SettlementEncoder::new(prices);
-        let mut order13 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
-        let mut order12 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(23.into())
-            .with_buy_token(token(2))
-            .with_buy_amount(11.into())
-            .build();
+        let mut order13 = Order {
+            data: OrderData {
+                sell_token: token(1),
+                sell_amount: 33.into(),
+                buy_token: token(3),
+                buy_amount: 11.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut order12 = Order {
+            data: OrderData {
+                sell_token: token(1),
+                sell_amount: 23.into(),
+                buy_token: token(2),
+                buy_amount: 11.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         order13.metadata.uid.0[0] = 0;
         order12.metadata.uid.0[0] = 2;
         encoder0.add_trade(order13, 11.into(), 0.into()).unwrap();
@@ -824,18 +843,26 @@ pub mod tests {
 
         let prices = hashmap! { token(2) => 2.into(), token(4) => 4.into() };
         let mut encoder1 = SettlementEncoder::new(prices);
-        let mut order24 = OrderBuilder::default()
-            .with_sell_token(token(2))
-            .with_sell_amount(44.into())
-            .with_buy_token(token(4))
-            .with_buy_amount(22.into())
-            .build();
-        let mut order23 = OrderBuilder::default()
-            .with_sell_token(token(2))
-            .with_sell_amount(19.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
+        let mut order24 = Order {
+            data: OrderData {
+                sell_token: token(2),
+                sell_amount: 44.into(),
+                buy_token: token(4),
+                buy_amount: 22.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut order23 = Order {
+            data: OrderData {
+                sell_token: token(2),
+                sell_amount: 19.into(),
+                buy_token: token(3),
+                buy_amount: 11.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         order24.metadata.uid.0[0] = 1;
         order23.metadata.uid.0[0] = 4;
         encoder1.add_trade(order24, 22.into(), 0.into()).unwrap();
@@ -956,13 +983,16 @@ pub mod tests {
     #[test]
     fn merge_fails_because_trade_used_twice() {
         let prices = hashmap! { token(1) => 1.into(), token(3) => 3.into() };
-        let order13 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
-
+        let order13 = Order {
+            data: OrderData {
+                sell_token: token(1),
+                sell_amount: 33.into(),
+                buy_token: token(3),
+                buy_amount: 11.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         let mut encoder0 = SettlementEncoder::new(prices.clone());
         encoder0
             .add_trade(order13.clone(), 11.into(), 0.into())
@@ -981,12 +1011,16 @@ pub mod tests {
 
         let mut encoder = SettlementEncoder::new(prices);
 
-        let order_1_3 = OrderBuilder::default()
-            .with_sell_token(token(1))
-            .with_sell_amount(33.into())
-            .with_buy_token(token(3))
-            .with_buy_amount(11.into())
-            .build();
+        let order_1_3 = Order {
+            data: OrderData {
+                sell_token: token(1),
+                sell_amount: 33.into(),
+                buy_token: token(3),
+                buy_amount: 11.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
         encoder.add_trade(order_1_3, 11.into(), 0.into()).unwrap();
 
         let weth = dummy_contract!(WETH9, token(2));

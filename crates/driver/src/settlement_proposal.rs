@@ -1,6 +1,6 @@
 use crate::commit_reveal::SettlementSummary;
 use anyhow::{Context, Result};
-use model::order::{Order, OrderKind};
+use model::{auction::Order, order::OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::{H160, U256};
 use shared::{
@@ -287,7 +287,10 @@ impl SettlementProposal {
 mod tests {
     use super::*;
     use maplit::hashmap;
-    use model::order::{OrderData, OrderMetadata, OrderUid};
+    use model::{
+        auction::OrderMetadata,
+        order::{OrderData, OrderUid},
+    };
     use num::FromPrimitive;
 
     fn r(u: u128) -> BigRational {

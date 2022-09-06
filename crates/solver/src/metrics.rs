@@ -4,7 +4,7 @@ use crate::{
 };
 use anyhow::Result;
 use ethcontract::U256;
-use model::order::Order;
+use model::auction::Order;
 use prometheus::{
     Gauge, Histogram, HistogramOpts, HistogramVec, IntCounter, IntCounterVec, IntGaugeVec, Opts,
 };

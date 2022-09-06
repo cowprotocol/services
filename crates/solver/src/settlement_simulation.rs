@@ -256,7 +256,7 @@ mod tests {
     use contracts::{BalancerV2Vault, IUniswapLikeRouter, UniswapV2Router02, WETH9};
     use ethcontract::{Account, PrivateKey};
     use maplit::hashmap;
-    use model::{order::Order, TokenPair};
+    use model::{auction::Order, TokenPair};
     use num::{rational::Ratio, BigRational};
     use serde_json::json;
     use shared::{

@@ -41,7 +41,7 @@ mod tests {
     use super::*;
     use crate::settlement::{OrderTrade, Trade};
     use maplit::hashmap;
-    use model::order::{Order, OrderData};
+    use model::{auction::Order, order::OrderData};
     use primitive_types::H160;
     use shared::token_list::Token;
     use std::collections::HashMap;

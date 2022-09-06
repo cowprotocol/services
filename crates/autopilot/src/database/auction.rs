@@ -3,21 +3,18 @@ use anyhow::{anyhow, Context, Result};
 use database::{
     auction::AuctionId,
     orders::{
-        BuyTokenDestination as DbBuyTokenDestination, SellTokenSource as DbSellTokenSource,
-        SigningScheme as DbSigningScheme,
+        BuyTokenDestination as DbBuyTokenDestination, OrderKind as DbOrderKind,
+        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
     },
 };
 use futures::{StreamExt, TryStreamExt};
 use model::{
     app_id::AppId,
-    auction::Auction,
-    order::{
-        BuyTokenDestination, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
-        SellTokenSource,
-    },
+    auction::{Auction, Order, OrderMetadata},
+    order::{BuyTokenDestination, OrderData, OrderUid, SellTokenSource},
     signature::{Signature, SigningScheme},
 };
-use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256};
+use number_conversions::big_decimal_to_u256;
 use primitive_types::H160;
 
 pub struct SolvableOrders {
@@ -117,31 +114,20 @@ impl Postgres {
 }
 
 fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Order> {
-    let status = OrderStatus::Open;
     let metadata = OrderMetadata {
         creation_date: order.creation_timestamp,
         owner: H160(order.owner.0),
         uid: OrderUid(order.uid.0),
-        available_balance: Default::default(),
-        executed_buy_amount: big_decimal_to_big_uint(&order.sum_buy)
-            .context("executed buy amount is not an unsigned integer")?,
-        executed_sell_amount: big_decimal_to_big_uint(&order.sum_sell)
-            .context("executed sell amount is not an unsigned integer")?,
-        // Executed fee amounts and sell amounts before fees are capped by
-        // order's fee and sell amounts, and thus can always fit in a `U256`
-        // - as it is limited by the order format.
-        executed_sell_amount_before_fees: big_decimal_to_u256(&(order.sum_sell - &order.sum_fee))
-            .context(
-            "executed sell amount before fees does not fit in a u256",
-        )?,
-        executed_fee_amount: big_decimal_to_u256(&order.sum_fee)
-            .context("executed fee amount is not a valid u256")?,
-        invalidated: order.invalidated,
-        status,
-        settlement_contract: H160(order.settlement_contract.0),
+        executed_amount: big_decimal_to_u256(&match order.kind {
+            DbOrderKind::Buy => order.sum_buy,
+            DbOrderKind::Sell => order.sum_sell - order.sum_fee,
+        })
+        .context("executed_amount does not fit into u256")?,
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
         is_liquidity_order: order.is_liquidity_order,
+        // not retrieved by this query
+        reward: 0.,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),

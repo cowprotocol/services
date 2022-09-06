@@ -170,9 +170,13 @@ mod tests {
         test::account,
     };
     use contracts::{GPv2Settlement, WETH9};
-    use ethcontract::{futures::FutureExt as _, Web3, H160, U256};
+    use ethcontract::{Web3, H160, U256};
+    use futures::FutureExt;
     use mockall::{predicate::*, Sequence};
-    use model::order::{Order, OrderData, OrderKind};
+    use model::{
+        auction::Order,
+        order::{OrderData, OrderKind},
+    };
     use shared::{
         transport::{create_env_test_transport, create_test_transport},
         zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse},

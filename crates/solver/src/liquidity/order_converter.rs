@@ -3,7 +3,7 @@ use crate::{interactions::UnwrapWethInteraction, settlement::SettlementEncoder};
 use anyhow::Result;
 use contracts::WETH9;
 use ethcontract::U256;
-use model::order::{Order, BUY_ETH_ADDRESS};
+use model::{auction::Order, order::BUY_ETH_ADDRESS};
 use std::sync::Arc;
 
 pub struct OrderConverter {
@@ -42,6 +42,7 @@ impl OrderConverter {
                 * self.fee_objective_scaling_factor,
         );
         let is_liquidity_order = order.metadata.is_liquidity_order;
+        let reward = order.metadata.reward;
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.data.sell_token,
@@ -60,8 +61,7 @@ impl OrderConverter {
                 is_liquidity_order,
             }),
             exchange: Exchange::GnosisProtocol,
-            // TODO: It would be nicer to set this here too but we need #529 first.
-            reward: 0.,
+            reward,
         })
     }
 }
@@ -114,7 +114,10 @@ pub mod tests {
     use crate::settlement::tests::assert_settlement_encoded_with;
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{OrderData, OrderKind, OrderMetadata};
+    use model::{
+        auction::OrderMetadata,
+        order::{OrderData, OrderKind},
+    };
     use shared::dummy_contract;
 
     #[test]
@@ -353,7 +356,7 @@ pub mod tests {
                     ..Default::default()
                 },
                 metadata: OrderMetadata {
-                    executed_sell_amount_before_fees: 5.into(),
+                    executed_amount: 5.into(),
                     full_fee_amount: 40.into(),
                     ..Default::default()
                 },

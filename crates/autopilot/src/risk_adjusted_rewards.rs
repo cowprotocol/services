@@ -12,7 +12,7 @@ use anyhow::{ensure, Context, Result};
 use database::orders::Quote;
 use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
-use model::order::{Order, OrderUid};
+use model::{auction::Order, order::OrderUid};
 use primitive_types::H160;
 use shared::price_estimation::native::NativePriceEstimating;
 

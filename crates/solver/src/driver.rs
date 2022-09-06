@@ -231,12 +231,8 @@ impl Driver {
             .orders
             .into_iter()
             .filter_map(|order| {
-                let uid = order.metadata.uid;
                 match self.order_converter.normalize_limit_order(order) {
-                    Ok(mut order) => {
-                        order.reward = auction.rewards.get(&uid).copied().unwrap_or(0.);
-                        Some(order)
-                    }
+                    Ok(order) => Some(order),
                     Err(err) => {
                         // This should never happen unless we are getting malformed
                         // orders from the API - so raise an alert if this happens.
@@ -272,7 +268,6 @@ impl Driver {
             .context("failed to estimate gas price")?;
         tracing::debug!("solving with gas price of {:?}", gas_price);
 
-        let rewards = auction.rewards;
         let auction = Auction {
             id: auction_id,
             run: run_id,
@@ -374,9 +369,11 @@ impl Driver {
 
             // Note that order_trades doesn't include liquidity orders.
             for trade in winning_settlement.settlement.encoder.order_trades() {
-                let uid = &trade.trade.order.metadata.uid;
-                if let Some(reward) = rewards.get(uid) {
-                    solver_competition.rewards.push((*uid, *reward));
+                let reward = trade.trade.order.metadata.reward;
+                if reward > 0. {
+                    solver_competition
+                        .rewards
+                        .push((trade.trade.order.metadata.uid, reward));
                 }
             }
 

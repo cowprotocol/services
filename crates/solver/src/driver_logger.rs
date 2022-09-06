@@ -13,7 +13,7 @@ use anyhow::{Context, Result};
 use contracts::GPv2Settlement;
 use gas_estimation::GasPrice1559;
 use itertools::Itertools;
-use model::order::{Order, OrderKind};
+use model::auction::Order;
 use num::{BigRational, ToPrimitive};
 use primitive_types::H256;
 use shared::{tenderly_api::TenderlyApi, Web3};
@@ -63,10 +63,7 @@ impl DriverLogger {
         {
             let mut group = group.into_iter().peekable();
             let order = &group.peek().unwrap().order;
-            let was_already_filled = match order.data.kind {
-                OrderKind::Buy => &order.metadata.executed_buy_amount,
-                OrderKind::Sell => &order.metadata.executed_sell_amount,
-            } > &0u8.into();
+            let was_already_filled = order.metadata.executed_amount > 0u8.into();
             let is_getting_filled = group.any(|trade| !trade.executed_amount.is_zero());
             if !was_already_filled && is_getting_filled {
                 traded_orders.push(order.clone());

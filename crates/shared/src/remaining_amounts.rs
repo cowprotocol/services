@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use model::order::{Order, OrderKind};
+use model::{auction::Order, order::OrderKind};
 use primitive_types::U256;
 
 /// Calculates the remaining amounts for an order.
@@ -35,17 +35,11 @@ impl Remaining {
     }
 
     pub fn from_order(order: &Order) -> Result<Self> {
-        let (total, executed) = match order.data.kind {
-            OrderKind::Buy => (
-                order.data.buy_amount,
-                number_conversions::big_uint_to_u256(&order.metadata.executed_buy_amount)
-                    .context("buy order executed amount overflows a u256")?,
-            ),
-            OrderKind::Sell => (
-                order.data.sell_amount,
-                order.metadata.executed_sell_amount_before_fees,
-            ),
+        let total = match order.data.kind {
+            OrderKind::Buy => order.data.buy_amount,
+            OrderKind::Sell => order.data.sell_amount,
         };
+        let executed = order.metadata.executed_amount;
         if order.data.partially_fillable {
             Self::from_partially_fillable(total, executed)
         } else {
@@ -65,8 +59,7 @@ impl Remaining {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use model::order::{OrderData, OrderMetadata};
-    use num::BigUint;
+    use model::{auction::OrderMetadata, order::OrderData};
 
     #[test]
     fn computes_remaining_order_amounts() {
@@ -103,7 +96,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 0.into(),
+                executed_amount: 0.into(),
                 full_fee_amount: 13.into(),
                 ..Default::default()
             },
@@ -125,7 +118,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 90.into(),
+                executed_amount: 90.into(),
                 full_fee_amount: 200.into(),
                 ..Default::default()
             },
@@ -146,7 +139,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_buy_amount: 9_u32.into(),
+                executed_amount: 9_u32.into(),
                 full_fee_amount: 200.into(),
                 ..Default::default()
             },
@@ -176,22 +169,6 @@ mod tests {
         let remaining = Remaining::from_order(&order).unwrap();
         assert!(remaining.remaining(U256::MAX).is_err());
 
-        // Partially filled order overflowing executed amount.
-        let order = Order {
-            data: OrderData {
-                buy_amount: U256::MAX,
-                kind: OrderKind::Buy,
-                partially_fillable: true,
-                ..Default::default()
-            },
-            metadata: OrderMetadata {
-                executed_buy_amount: BigUint::from(1_u8) << 256,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-        assert!(Remaining::from_order(&order).is_err());
-
         // Partially filled order that has executed more than its maximum.
         let order = Order {
             data: OrderData {
@@ -201,7 +178,7 @@ mod tests {
                 ..Default::default()
             },
             metadata: OrderMetadata {
-                executed_sell_amount_before_fees: 2.into(),
+                executed_amount: 2.into(),
                 ..Default::default()
             },
             ..Default::default()

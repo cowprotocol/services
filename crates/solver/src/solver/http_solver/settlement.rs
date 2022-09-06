@@ -9,7 +9,10 @@ use crate::{
 };
 use anyhow::{anyhow, Context as _, Result};
 use ethcontract::Bytes;
-use model::order::{Order, OrderKind, OrderMetadata};
+use model::{
+    auction::{Order, OrderMetadata},
+    order::OrderKind,
+};
 use primitive_types::{H160, U256};
 use shared::http_solver::model::*;
 use std::{
@@ -252,7 +255,6 @@ fn convert_foreign_liquidity_orders(
                     // These fields do not seem to be used at all for order
                     // encoding, so we just use the default values.
                     uid: Default::default(),
-                    settlement_contract: Default::default(),
                     // For other metdata fields, the default value is correct.
                     ..Default::default()
                 },

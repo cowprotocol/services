@@ -141,7 +141,7 @@ impl DomainSeparator {
 #[derive(Clone, Debug, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SolvableOrders {
-    pub orders: Vec<order::Order>,
+    pub orders: Vec<auction::Order>,
     pub latest_settlement_block: u64,
 }
 

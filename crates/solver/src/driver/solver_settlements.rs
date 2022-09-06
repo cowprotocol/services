@@ -175,7 +175,10 @@ mod tests {
     };
     use chrono::{offset::Utc, DateTime, Duration, Local};
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, OrderUid};
+    use model::{
+        auction::{Order, OrderMetadata},
+        order::{OrderData, OrderKind, OrderUid},
+    };
     use num::{BigRational, One as _};
     use primitive_types::{H160, U256};
     use std::{collections::HashSet, ops::Sub};

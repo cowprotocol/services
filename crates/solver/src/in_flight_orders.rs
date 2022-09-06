@@ -1,10 +1,9 @@
 use crate::settlement::{Settlement, TradeExecution};
 use itertools::Itertools;
 use model::{
-    auction::Auction,
-    order::{Order, OrderKind, OrderUid},
+    auction::{Auction, Order},
+    order::{OrderKind, OrderUid},
 };
-use number_conversions::u256_to_big_uint;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 #[derive(Debug, Clone)]
@@ -18,11 +17,10 @@ impl PartiallyFilledOrder {
         let mut updated_order = self.order.clone();
 
         for trade in &self.in_flight_trades {
-            updated_order.metadata.executed_buy_amount += u256_to_big_uint(&trade.buy_amount);
-            updated_order.metadata.executed_sell_amount +=
-                u256_to_big_uint(&(trade.sell_amount + trade.fee_amount));
-            updated_order.metadata.executed_sell_amount_before_fees += trade.sell_amount;
-            updated_order.metadata.executed_fee_amount += trade.fee_amount;
+            updated_order.metadata.executed_amount += match self.order.data.kind {
+                OrderKind::Buy => trade.buy_amount,
+                OrderKind::Sell => trade.sell_amount,
+            };
         }
 
         updated_order
@@ -71,18 +69,15 @@ impl InFlightOrders {
             } else if in_flight.contains(uid) {
                 // fill-or-kill orders can only be used once and there is already a trade in flight
                 // for this one => Modify it such that it gets filtered out in the next step.
-                order.metadata.executed_buy_amount = u256_to_big_uint(&order.data.buy_amount);
-                order.metadata.executed_sell_amount_before_fees = order.data.sell_amount;
+                order.metadata.executed_amount = match order.data.kind {
+                    OrderKind::Buy => order.data.buy_amount,
+                    OrderKind::Sell => order.data.sell_amount,
+                };
             }
         });
         auction.orders.retain(|order| match order.data.kind {
-            OrderKind::Sell => {
-                u256_to_big_uint(&order.data.sell_amount)
-                    > u256_to_big_uint(&order.metadata.executed_sell_amount_before_fees)
-            }
-            OrderKind::Buy => {
-                u256_to_big_uint(&order.data.buy_amount) > order.metadata.executed_buy_amount
-            }
+            OrderKind::Sell => order.data.sell_amount > order.metadata.executed_amount,
+            OrderKind::Buy => order.data.buy_amount > order.metadata.executed_amount,
         });
         in_flight
     }
@@ -114,7 +109,10 @@ mod tests {
     use super::*;
     use crate::settlement::{LiquidityOrderTrade, OrderTrade, SettlementEncoder, Trade};
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata};
+    use model::{
+        auction::OrderMetadata,
+        order::{OrderData, OrderKind},
+    };
     use primitive_types::H160;
 
     #[test]
@@ -142,11 +140,7 @@ mod tests {
         let mut partially_fillable_1 = fill_or_kill.clone();
         partially_fillable_1.data.partially_fillable = true;
         partially_fillable_1.metadata.uid = OrderUid::from_integer(2);
-        partially_fillable_1.metadata.executed_buy_amount = 30u8.into();
-        partially_fillable_1.metadata.executed_sell_amount = 30u8.into();
-        partially_fillable_1
-            .metadata
-            .executed_sell_amount_before_fees = 30u8.into();
+        partially_fillable_1.metadata.executed_amount = 30u8.into();
 
         // a different partially fillable order 30% filled
         let mut partially_fillable_2 = partially_fillable_1.clone();
@@ -225,12 +219,7 @@ mod tests {
         // drop order 1 because it's fill-or-kill and there is already one trade in flight
         // keep order 2 and reduce remaning executable amount by trade amounts currently in flight
         assert_eq!(filtered[1].metadata.uid, OrderUid::from_integer(3));
-        assert_eq!(filtered[1].metadata.executed_buy_amount, 50u8.into());
-        assert_eq!(filtered[1].metadata.executed_sell_amount, 50u8.into());
-        assert_eq!(
-            filtered[1].metadata.executed_sell_amount_before_fees,
-            50u8.into()
-        );
+        assert_eq!(filtered[1].metadata.executed_amount, 50u8.into());
         // drop order 3 because in flight orders filled the remaining executable amount
 
         auction.block = 1;
@@ -239,11 +228,7 @@ mod tests {
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].metadata.uid, OrderUid::from_integer(0));
         assert_eq!(filtered[1].metadata.uid, OrderUid::from_integer(3));
-        assert_eq!(filtered[1].metadata.executed_buy_amount, 50u8.into());
-        assert_eq!(
-            filtered[1].metadata.executed_sell_amount_before_fees,
-            50u8.into()
-        );
+        assert_eq!(filtered[1].metadata.executed_amount, 50u8.into());
 
         auction.latest_settlement_block = 1;
         let filtered = update_and_get_filtered_orders(&auction);
@@ -253,7 +238,7 @@ mod tests {
     }
 
     #[test]
-    fn test_order_is_not_excluded_when_min_buy_amount_is_reached() {
+    fn test_order_is_not_excluded_when_partially_filled() {
         let order = Order {
             data: OrderData {
                 sell_token: H160::from_low_u64_be(0),
@@ -266,9 +251,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid: OrderUid::from_integer(1),
-                // Only half filled but min buy amount already reached
-                executed_sell_amount: 50u8.into(),
-                executed_buy_amount: 100u8.into(),
+                executed_amount: 50u8.into(),
                 ..Default::default()
             },
             ..Default::default()
@@ -296,9 +279,7 @@ mod tests {
             },
             metadata: OrderMetadata {
                 uid: OrderUid::from_integer(1),
-                // Filled with a lot of surplus (only needed to sell half of maxSellAmount)
-                executed_sell_amount: 50u8.into(),
-                executed_buy_amount: 100u8.into(),
+                executed_amount: 100u8.into(),
                 ..Default::default()
             },
             ..Default::default()

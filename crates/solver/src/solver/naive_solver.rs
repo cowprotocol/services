@@ -124,7 +124,10 @@ mod tests {
     use crate::liquidity::{order_converter::OrderConverter, tests::CapturingSettlementHandler};
     use ethcontract::H160;
     use maplit::hashmap;
-    use model::order::{Order, OrderData, OrderKind, OrderMetadata, BUY_ETH_ADDRESS};
+    use model::{
+        auction::{Order, OrderMetadata},
+        order::{OrderData, OrderKind, BUY_ETH_ADDRESS},
+    };
     use num::rational::Ratio;
     use shared::addr;
 

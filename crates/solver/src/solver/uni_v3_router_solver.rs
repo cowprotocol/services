@@ -107,7 +107,7 @@ impl SingleOrderSolving for UniV3RouterSolver {
 mod tests {
     use super::*;
     use contracts::WETH9;
-    use model::order::{Order, OrderData};
+    use model::{auction::Order, order::OrderData};
 
     #[tokio::test]
     #[ignore]

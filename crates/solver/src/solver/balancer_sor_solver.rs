@@ -228,7 +228,7 @@ mod tests {
     use crate::interactions::allowances::{AllowanceManager, Approval, MockAllowanceManaging};
     use ethcontract::{H160, H256};
     use mockall::predicate::*;
-    use model::order::{Order, OrderData};
+    use model::{auction::Order, order::OrderData};
     use reqwest::Client;
     use shared::{
         addr,
