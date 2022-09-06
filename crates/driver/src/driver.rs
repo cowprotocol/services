@@ -185,7 +185,6 @@ where
     loop {
         futures::select_biased! {
             _ = &mut deadline => {
-                println!("deadline reached");
                 break
             }
             new_work = producer.next() => {
