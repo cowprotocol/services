@@ -18,8 +18,9 @@ pub struct OnchainOrderPlacementRow {
 }
 
 pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = "\
-                (SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders);";
+    const QUERY: &str = r#"
+        SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders;
+    "#;
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
@@ -49,9 +50,13 @@ async fn insert_onchain_order(
     index: &EventIndex,
     event: &OnchainOrderPlacement,
 ) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "\
-        INSERT INTO onchain_placed_orders (uid, sender, is_reorged, block_number, log_index) VALUES ($1, $2, false, $3, $4) \
-        ON CONFLICT (uid) DO UPDATE SET is_reorged = false, sender = $2, block_number = $3, log_index = $4;";
+    const QUERY: &str = r#"
+        INSERT INTO onchain_placed_orders
+            (uid, sender, is_reorged, block_number, log_index)
+        VALUES ($1, $2, false, $3, $4)
+        ON CONFLICT (uid) DO UPDATE SET
+            is_reorged = false, sender = $2, block_number = $3, log_index = $4;
+    "#;
     sqlx::query(QUERY)
         .bind(event.order_uid)
         .bind(&event.sender)

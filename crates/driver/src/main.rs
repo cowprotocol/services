@@ -21,9 +21,7 @@ use shared::{
         BaselineSource,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
@@ -69,12 +67,7 @@ struct CommonComponents {
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
     let client = shared::http_client(args.http_timeout);
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.node_url.clone(),
-        "base".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&client, &args.node_url, "base");
     let network_id = web3
         .net()
         .version()
@@ -189,14 +182,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         .transaction_submission_nodes
         .iter()
         .enumerate()
-        .map(|(index, url)| {
-            let transport = Web3Transport::new(HttpTransport::new(
-                client.clone(),
-                url.clone(),
-                index.to_string(),
-            ));
-            (web3::Web3::new(transport), url)
-        })
+        .map(|(index, url)| (shared::web3(client, url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node

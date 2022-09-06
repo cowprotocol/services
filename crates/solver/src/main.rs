@@ -19,9 +19,7 @@ use shared::{
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use solver::{
     arguments::TransactionStrategyArg,
@@ -58,12 +56,7 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url,
-        "base".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&client, &args.shared.node_url, "base");
     let chain_id = web3
         .eth()
         .chain_id()
@@ -305,14 +298,7 @@ async fn main() {
         .transaction_submission_nodes
         .into_iter()
         .enumerate()
-        .map(|(index, url)| {
-            let transport = Web3Transport::new(HttpTransport::new(
-                client.clone(),
-                url.clone(),
-                index.to_string(),
-            ));
-            (web3::Web3::new(transport), url)
-        })
+        .map(|(index, url)| (shared::web3(&client, &url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
