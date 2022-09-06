@@ -68,6 +68,8 @@ impl Driver {
 
     /// Keeps solving the given auction with the most recent liquidity at that time or until the
     /// auction deadline is reached.
+    /// This function uses a `WatchStream` to get notified about new blocks which will start with
+    /// yielding the current block immediately.
     async fn solve_until_deadline(
         auction: AuctionWithId,
         solver: Arc<dyn CommitRevealSolving>,
