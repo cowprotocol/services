@@ -1,5 +1,6 @@
 pub mod buffered;
 pub mod dummy;
+pub mod extensions;
 pub mod http;
 pub mod mock;
 

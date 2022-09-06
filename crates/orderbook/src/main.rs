@@ -60,9 +60,7 @@ use shared::{
         BaselineSource, PoolAggregator,
     },
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
-    transport::http::HttpTransport,
     zeroex_api::DefaultZeroExApi,
-    Web3Transport,
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::task;
@@ -80,12 +78,7 @@ async fn main() {
 
     let client = shared::http_client(args.shared.http_timeout);
 
-    let transport = Web3Transport::new(HttpTransport::new(
-        client.clone(),
-        args.shared.node_url.clone(),
-        "".to_string(),
-    ));
-    let web3 = web3::Web3::new(transport);
+    let web3 = shared::web3(&client, &args.shared.node_url, "base");
     let settlement_contract = GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
@@ -194,24 +187,23 @@ async fn main() {
     .await
     .expect("failed to initialize token owner finders");
 
-    let trace_call_detector = TraceCallDetector {
-        web3: web3.clone(),
-        finder,
-        settlement_contract: settlement_contract.address(),
-    };
-    let caching_detector = CachingDetector::new(
-        Box::new(trace_call_detector),
-        args.token_quality_cache_expiry,
-    );
+    let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
+        Box::new(CachingDetector::new(
+            Box::new(TraceCallDetector {
+                web3: shared::web3(&client, tracing_node_url, "trace"),
+                finder,
+                settlement_contract: settlement_contract.address(),
+            }),
+            args.token_quality_cache_expiry,
+        ))
+    });
     let bad_token_detector = Arc::new(
         ListBasedDetector::new(
             allowed_tokens,
             unsupported_tokens,
-            if args.skip_trace_api {
-                UnknownTokenStrategy::Allow
-            } else {
-                UnknownTokenStrategy::Forward(Box::new(caching_detector))
-            },
+            trace_call_detector
+                .map(|detector| UnknownTokenStrategy::Forward(detector))
+                .unwrap_or(UnknownTokenStrategy::Allow),
         )
         .instrumented(),
     );

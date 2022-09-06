@@ -17,6 +17,11 @@ pub struct Arguments {
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
 
+    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
+    /// to be used exclusively for tracing calls.
+    #[clap(long, env)]
+    pub tracing_node_url: Option<Url>,
+
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
 
@@ -60,12 +65,6 @@ pub struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
-
-    /// Don't use the trace_callMany api that only some nodes support to check whether a token
-    /// should be denied.
-    /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env)]
-    pub skip_trace_api: bool,
 
     /// The amount of time in seconds a classification of a token into good or bad is valid for.
     #[clap(
@@ -240,6 +239,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
         write!(f, "{}", self.token_owner_finder)?;
+        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(
@@ -262,7 +262,6 @@ impl std::fmt::Display for Arguments {
             "presign_onchain_quote_validity_second: {:?}",
             self.presign_onchain_quote_validity_seconds
         )?;
-        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(
             f,
             "token_quality_cache_expiry: {:?}",
