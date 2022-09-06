@@ -10,6 +10,13 @@ use model::{
 use num::{rational::Ratio, BigInt, BigRational};
 use primitive_types::U256;
 
+pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {
+    match kind {
+        OrderKind::Buy => DbOrderKind::Buy,
+        OrderKind::Sell => DbOrderKind::Sell,
+    }
+}
+
 pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
     match kind {
         DbOrderKind::Buy => OrderKind::Buy,

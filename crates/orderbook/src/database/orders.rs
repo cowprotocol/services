@@ -3,25 +3,25 @@ use anyhow::{anyhow, Context as _, Result};
 use chrono::{DateTime, Utc};
 use database::{
     byte_array::ByteArray,
-    orders::{
-        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
-        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
-    },
+    orders::{FullOrder, OrderKind as DbOrderKind},
 };
 use ethcontract::H256;
 use futures::{stream::TryStreamExt, FutureExt, StreamExt};
 use model::{
     app_id::AppId,
-    order::{
-        BuyTokenDestination, Order, OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid,
-        SellTokenSource,
-    },
-    signature::{Signature, SigningScheme},
+    order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
+    signature::Signature,
 };
 use num::Zero;
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
-use shared::order_quoting::Quote;
+use shared::{
+    conversions::{
+        buy_token_destination_from, buy_token_destination_into, order_kind_from, order_kind_into,
+        sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
+    },
+    order_quoting::Quote,
+};
 use sqlx::{types::BigDecimal, Connection, PgConnection};
 use std::convert::TryInto;
 
@@ -51,68 +51,6 @@ pub trait OrderStoring: Send + Sync {
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
-}
-
-pub fn order_kind_into(kind: OrderKind) -> DbOrderKind {
-    match kind {
-        OrderKind::Buy => DbOrderKind::Buy,
-        OrderKind::Sell => DbOrderKind::Sell,
-    }
-}
-
-pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
-    match kind {
-        DbOrderKind::Buy => OrderKind::Buy,
-        DbOrderKind::Sell => OrderKind::Sell,
-    }
-}
-
-fn sell_token_source_into(source: SellTokenSource) -> DbSellTokenSource {
-    match source {
-        SellTokenSource::Erc20 => DbSellTokenSource::Erc20,
-        SellTokenSource::Internal => DbSellTokenSource::Internal,
-        SellTokenSource::External => DbSellTokenSource::External,
-    }
-}
-
-fn sell_token_source_from(source: DbSellTokenSource) -> SellTokenSource {
-    match source {
-        DbSellTokenSource::Erc20 => SellTokenSource::Erc20,
-        DbSellTokenSource::Internal => SellTokenSource::Internal,
-        DbSellTokenSource::External => SellTokenSource::External,
-    }
-}
-
-fn buy_token_destination_into(destination: BuyTokenDestination) -> DbBuyTokenDestination {
-    match destination {
-        BuyTokenDestination::Erc20 => DbBuyTokenDestination::Erc20,
-        BuyTokenDestination::Internal => DbBuyTokenDestination::Internal,
-    }
-}
-
-fn buy_token_destination_from(destination: DbBuyTokenDestination) -> BuyTokenDestination {
-    match destination {
-        DbBuyTokenDestination::Erc20 => BuyTokenDestination::Erc20,
-        DbBuyTokenDestination::Internal => BuyTokenDestination::Internal,
-    }
-}
-
-fn signing_scheme_into(scheme: SigningScheme) -> DbSigningScheme {
-    match scheme {
-        SigningScheme::Eip712 => DbSigningScheme::Eip712,
-        SigningScheme::EthSign => DbSigningScheme::EthSign,
-        SigningScheme::Eip1271 => DbSigningScheme::Eip1271,
-        SigningScheme::PreSign => DbSigningScheme::PreSign,
-    }
-}
-
-fn signing_scheme_from(scheme: DbSigningScheme) -> SigningScheme {
-    match scheme {
-        DbSigningScheme::Eip712 => SigningScheme::Eip712,
-        DbSigningScheme::EthSign => SigningScheme::EthSign,
-        DbSigningScheme::Eip1271 => SigningScheme::Eip1271,
-        DbSigningScheme::PreSign => SigningScheme::PreSign,
-    }
 }
 
 #[derive(Debug)]
@@ -409,6 +347,16 @@ mod tests {
     use super::*;
     use chrono::Duration;
     use database::byte_array::ByteArray;
+    use database::orders::{
+        BuyTokenDestination as DbBuyTokenDestination, FullOrder, OrderKind as DbOrderKind,
+        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+    };
+    use model::{
+        order::{
+             Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
+        },
+        signature::{Signature, SigningScheme},
+    };
     use std::sync::atomic::{AtomicI64, Ordering};
 
     #[test]

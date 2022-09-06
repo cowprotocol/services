@@ -1,4 +1,4 @@
-use super::{orders::order_kind_into, Postgres};
+use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use database::{
@@ -7,7 +7,10 @@ use database::{
 };
 use model::quote::QuoteId;
 use number_conversions::u256_to_big_decimal;
-use shared::order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring};
+use shared::{
+    conversions::order_kind_into,
+    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+};
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {
