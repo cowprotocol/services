@@ -4,10 +4,7 @@ use crate::{
     commit_reveal::{CommitRevealSolverAdapter, CommitRevealSolving, SettlementSummary},
 };
 use anyhow::{Context, Error, Result};
-use futures::{
-    future::{FusedFuture, FutureExt},
-    stream::{FusedStream, StreamExt},
-};
+use futures::StreamExt;
 use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
 use primitive_types::H256;
@@ -20,7 +17,6 @@ use solver::{
     settlement_submission::{SolutionSubmitter, SubmissionError},
 };
 use std::{
-    pin::Pin,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -42,13 +38,14 @@ impl Driver {
         &self,
         auction: AuctionWithId,
     ) -> Result<SettlementSummary, SolveError> {
+        // TODO get deadline from autopilot auction
+        let deadline = Instant::now() + Duration::from_secs(25);
         Self::solve_until_deadline(
             auction,
             self.solver.clone(),
             self.auction_converter.clone(),
             self.block_stream.clone(),
-            // TODO get deadline from autopilot auction
-            Instant::now() + Duration::from_secs(25),
+            deadline,
         )
         .await
         .map_err(SolveError::from)
@@ -66,10 +63,11 @@ impl Driver {
         solver.commit(auction).await
     }
 
-    /// Keeps solving the given auction with the most recent liquidity at that time or until the
-    /// auction deadline is reached.
+    /// Keeps solving the auction in a loop with the latest known liquidity until the `deadline`
+    /// has been reached or the `block_stream` terminates.
     /// This function uses a `WatchStream` to get notified about new blocks which will start with
-    /// yielding the current block immediately.
+    /// yielding the current block immediately and will skip intermediate blocks if it observed
+    /// multiple blocks while computing a result.
     async fn solve_until_deadline(
         auction: AuctionWithId,
         solver: Arc<dyn CommitRevealSolving>,
@@ -77,27 +75,32 @@ impl Driver {
         block_stream: CurrentBlockStream,
         deadline: Instant,
     ) -> Result<SettlementSummary> {
-        last_completed(
-            |block| {
-                Box::pin(
-                    Self::compute_solution_for_block(
-                        auction.clone(),
-                        block,
-                        converter.clone(),
-                        solver.clone(),
-                    )
-                    .fuse(),
-                )
-            },
-            into_stream(block_stream).fuse(),
-            tokio::time::sleep_until(deadline.into()).fuse(),
-        )
-        .await
-        .unwrap_or_else(|| {
-            Err(anyhow::anyhow!(
-                "could not compute a result before the deadline"
-            ))
-        })
+        let compute_solutions = into_stream(block_stream.clone()).then(|block| {
+            Self::compute_solution_for_block(
+                auction.clone(),
+                block,
+                converter.clone(),
+                solver.clone(),
+            )
+        });
+        let timeout = tokio::time::sleep_until(deadline.into());
+        tokio::pin!(timeout, compute_solutions);
+
+        let mut current_solution = Err(anyhow::anyhow!("reached the deadline without a result"));
+        loop {
+            tokio::select! {
+                new_solution = compute_solutions.next() => {
+                    match new_solution {
+                        Some(result) => {
+                            tracing::debug!(?result, "computed new result");
+                            current_solution = result;
+                        },
+                        None => return current_solution
+                    }
+                },
+                _ = &mut timeout => return current_solution
+            }
+        }
     }
 
     /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
@@ -158,65 +161,6 @@ impl Driver {
     }
 }
 
-/// Polls the `producer` for new work and buffers only the most recent one. Whenever a
-/// computational task finishes a new one will be started with the most recently buffered work.
-/// Returns the most recent output from a computational task when the `deadline` has been reached.
-async fn last_completed<T, W, B, P, D>(build_task: B, producer: P, deadline: D) -> Option<T>
-where
-    B: Fn(W) -> Pin<Box<dyn FusedFuture<Output = T> + Send>>,
-    P: FusedStream<Item = W>,
-    D: FusedFuture<Output = ()>,
-    T: Send,
-    W: Send,
-{
-    futures::pin_mut!(producer);
-    futures::pin_mut!(deadline);
-
-    let mut result = None;
-    let mut next_work = None;
-
-    let create_pending_future = || {
-        Box::pin(futures::future::pending::<T>().fuse())
-            as Pin<Box<dyn FusedFuture<Output = _> + Send>>
-    };
-
-    let mut currently_computing = false;
-    // initialize with future that does nothing and can be dropped safely
-    let mut current_task = create_pending_future();
-
-    loop {
-        futures::select_biased! {
-            _ = &mut deadline => {
-                break
-            }
-            new_work = producer.next() => {
-                match (new_work, currently_computing) {
-                    (Some(new_work), true) => next_work = Some(new_work),
-                    (Some(new_work), false) => current_task = build_task(new_work),
-                    (None, false) => break,
-                    (None, true) => ()
-                };
-                // either we are currently computing or we created a new task to work on
-                currently_computing = true;
-            }
-            r = &mut current_task => {
-                result = Some(r);
-                let (new_task, is_computing) = match (next_work.take(), producer.is_terminated()) {
-                    // start on the buffered work
-                    (Some(work), _) => (build_task(work), true),
-                    // wait for producer to give us more work
-                    (None, false) => (create_pending_future(), false),
-                    // no work left and producer terminated => return early
-                    (None, true) => break,
-                };
-                current_task = new_task;
-                currently_computing = is_computing;
-            }
-        }
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,7 +171,7 @@ mod tests {
         sync::Arc,
         time::{Duration, Instant},
     };
-    use tokio::{sync::watch::channel, time::sleep};
+    use tokio::sync::watch::channel;
 
     fn block(number: Option<u64>) -> Block {
         Block {
@@ -326,8 +270,6 @@ mod tests {
                     // there is no great place to trigger the next block so let's do it here
                     tx.send(block(Some(2))).unwrap();
                     tx.send(block(Some(3))).unwrap();
-                    // yield this thread such that the block stream can see the new blocks
-                    sleep(Duration::from_millis(10)).await;
                     anyhow::bail!("failed to solve auction")
                 }
                 .boxed()
