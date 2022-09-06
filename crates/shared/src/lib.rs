@@ -37,10 +37,12 @@ pub mod univ3_router_api;
 pub mod web3_traits;
 pub mod zeroex_api;
 
+use self::transport::http::HttpTransport;
 use ethcontract::{
     batch::CallBatch,
     dyns::{DynTransport, DynWeb3},
 };
+use reqwest::{Client, Url};
 use std::{
     future::Future,
     time::{Duration, Instant},
@@ -57,6 +59,16 @@ pub fn http_client(timeout: Duration) -> reqwest::Client {
         .user_agent("cowprotocol-services/2.0.0")
         .build()
         .unwrap()
+}
+
+/// Create a Web3 instance.
+pub fn web3(client: &Client, url: &Url, name: impl ToString) -> Web3 {
+    let transport = Web3Transport::new(HttpTransport::new(
+        client.clone(),
+        url.clone(),
+        name.to_string(),
+    ));
+    Web3::new(transport)
 }
 
 /// Run a future and callback with the time the future took. The call back can for example log the

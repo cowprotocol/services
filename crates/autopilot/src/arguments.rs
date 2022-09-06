@@ -11,6 +11,11 @@ pub struct Arguments {
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
 
+    /// A tracing Ethereum node URL to connect to, allowing a separate node URL
+    /// to be used exclusively for tracing calls.
+    #[clap(long, env)]
+    pub tracing_node_url: Option<Url>,
+
     #[clap(long, env, default_value = "0.0.0.0:9589")]
     pub metrics_address: SocketAddr,
 
@@ -39,12 +44,6 @@ pub struct Arguments {
         parse(try_from_str = shared::arguments::duration_from_seconds),
     )]
     pub token_quality_cache_expiry: Duration,
-
-    /// Don't use the trace_callMany api that only some nodes support to check whether a token
-    /// should be denied.
-    /// Note that if a node does not support the api we still use the less accurate call api.
-    #[clap(long, env)]
-    pub skip_trace_api: bool,
 
     /// The number of pairs that are automatically updated in the pool cache.
     #[clap(long, env, default_value = "200")]
@@ -118,6 +117,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
         write!(f, "{}", self.token_owner_finder)?;
+        display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;
@@ -128,7 +128,6 @@ impl std::fmt::Display for Arguments {
             "token_quality_cache_expiry: {:?}",
             self.token_quality_cache_expiry
         )?;
-        writeln!(f, "skip_trace_api: {}", self.skip_trace_api)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
         display_option(f, "balancer_sor_url", &self.balancer_sor_url)?;
         display_option(
