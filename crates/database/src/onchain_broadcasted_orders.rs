@@ -18,8 +18,9 @@ pub struct OnchainOrderPlacementRow {
 }
 
 pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
-    const QUERY: &str = "\
-                (SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders);";
+    const QUERY: &str = r#"
+        SELECT COALESCE(MAX(block_number), 0) FROM onchain_placed_orders;
+    "#;
     sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
