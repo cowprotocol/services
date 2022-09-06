@@ -1,3 +1,4 @@
+use super::post_quote::OrderQuoteErrorWrapper;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{
@@ -58,7 +59,8 @@ pub fn get_fee_info(
                     },
                     ..Default::default()
                 })
-                .await;
+                .await
+                .map_err(OrderQuoteErrorWrapper);
             Result::<_, Infallible>::Ok(convert_json_response(response.map(|response| FeeInfo {
                 expiration_date: response.expiration,
                 amount: response.quote.fee_amount,

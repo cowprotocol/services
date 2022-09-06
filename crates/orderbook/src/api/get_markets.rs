@@ -1,3 +1,4 @@
+use crate::api::post_quote::OrderQuoteErrorWrapper;
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{
@@ -104,7 +105,8 @@ pub fn get_amount_estimate(
                     side,
                     ..Default::default()
                 })
-                .await;
+                .await
+                .map_err(OrderQuoteErrorWrapper);
             Result::<_, Infallible>::Ok(convert_json_response(response.map(|response| {
                 AmountEstimateResult {
                     amount: match query.kind {
