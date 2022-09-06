@@ -49,7 +49,7 @@ pub trait EventStoring<T>: Send + Sync {
     async fn replace_events(
         &mut self,
         events: Vec<EthcontractEvent<T>>,
-        range: RangeInclusive<BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()>;
 
     /// Returns ok, on successful execution, otherwise an appropriate error
@@ -99,9 +99,7 @@ where
         self.last_handled_blocks.last().cloned()
     }
 
-    async fn event_block_range(
-        &self,
-    ) -> Result<(RangeInclusive<BlockNumber>, Vec<BlockNumberHash>)> {
+    async fn event_block_range(&self) -> Result<(RangeInclusive<u64>, Vec<BlockNumberHash>)> {
         let current_block = self.block_retriever.current_block().await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             vec![self.store.last_event_block().await?]
@@ -115,10 +113,7 @@ where
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
             let current_block = (current_block_number, current_block.hash);
-            return Ok((
-                (BlockNumber::Latest(current_block)..=BlockNumber::Latest(current_block)),
-                vec![current_block],
-            ));
+            return Ok(((current_block.0..=current_block.0), vec![current_block]));
         }
 
         let current_blocks = self
@@ -129,19 +124,16 @@ where
         let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
 
         anyhow::ensure!(
-            block_range.start().0 <= block_range.end().0,
+            block_range.start() <= block_range.end(),
             format!(
                 "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-                block_range.end().0,
+                block_range.end(),
                 MAX_REORG_BLOCK_COUNT,
-                block_range.start().0
+                block_range.start()
             )
         );
-        Ok((
-            BlockNumber::Specific(*block_range.start())..=BlockNumber::Latest(*block_range.end()),
-            current_blocks,
-        ))
+        Ok((block_range, current_blocks))
     }
 
     /// Get new events from the contract and insert them into the database.
@@ -219,13 +211,13 @@ where
 
     async fn past_events(
         &self,
-        block_range: &RangeInclusive<BlockNumber>,
+        block_range: &RangeInclusive<u64>,
     ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>>, ExecutionError> {
         Ok(self
             .contract
             .get_events()
-            .from_block((*block_range.start()).block_number())
-            .to_block((*block_range.end()).block_number())
+            .from_block(Web3BlockNumber::Number((*block_range.start()).into()))
+            .to_block(Web3BlockNumber::Number((*block_range.end()).into()))
             .block_page_size(500)
             .query_paginated()
             .await?
@@ -236,7 +228,7 @@ where
 fn detect_reorg_path(
     handled_blocks: &Vec<BlockNumberHash>,
     current_blocks: &Vec<BlockNumberHash>,
-) -> Result<RangeInclusive<BlockNumberHash>> {
+) -> Result<RangeInclusive<u64>> {
     ensure!(!handled_blocks.is_empty() && !current_blocks.is_empty());
 
     // in most cases, current_blocks = handled_blocks + 1 newest block
@@ -246,20 +238,19 @@ fn detect_reorg_path(
         for current_block in current_blocks.iter().rev() {
             if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
                 // found the same block in both lists, now we know the common ancestor
-                return Ok(*current_block..=*current_blocks.last().unwrap());
+                return Ok(current_block.0..=current_blocks.last().unwrap().0);
             }
         }
     }
 
     //cant figure out the reorg, fallback to regular 25 blocks reorg
-    Ok((
-        handled_blocks
-            .last()
-            .unwrap()
-            .0
-            .saturating_sub(MAX_REORG_BLOCK_COUNT),
-        None,
-    )..=*current_blocks.last().unwrap())
+    let start_index = handled_blocks
+        .last()
+        .unwrap()
+        .0
+        .saturating_sub(MAX_REORG_BLOCK_COUNT);
+    let end_index = current_blocks.last().unwrap().0;
+    Ok(start_index..=end_index)
 }
 
 #[async_trait::async_trait]
