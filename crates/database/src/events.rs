@@ -35,7 +35,7 @@ pub struct PreSignature {
     pub signed: bool,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
 pub struct EventIndex {
     pub block_number: i64,
     pub log_index: i64,
