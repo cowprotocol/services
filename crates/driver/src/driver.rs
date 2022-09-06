@@ -56,7 +56,7 @@ impl Driver {
 
     /// Computes a solution with the liquidity collected from a given block.
     async fn compute_solution_for_block(
-        auction: Auction,
+        auction: AuctionWithId,
         block: Block,
         converter: Arc<dyn AuctionConverting>,
         solver: Arc<dyn CommitRevealSolving>,
@@ -69,7 +69,7 @@ impl Driver {
     /// Keeps solving the given auction with the most recent liquidity at that time or until the
     /// auction deadline is reached.
     async fn solve_until_deadline(
-        auction: Auction,
+        auction: AuctionWithId,
         solver: Arc<dyn CommitRevealSolving>,
         converter: Arc<dyn AuctionConverting>,
         block_stream: CurrentBlockStream,
