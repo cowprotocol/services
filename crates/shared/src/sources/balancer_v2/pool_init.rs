@@ -3,12 +3,14 @@
 //! This module contains a component used to initialize Balancer pool registries
 //! with existing data in order to reduce the "cold start" time of the service.
 
+use crate::Web3;
+
 use super::graph_api::{BalancerSubgraphClient, RegisteredPools};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use contracts::BalancerV2Vault;
 use ethcontract::{
     common::{contract::Network, DeploymentInformation},
-    Contract,
+    BlockId, BlockNumber, Contract,
 };
 
 #[async_trait::async_trait]
@@ -20,13 +22,16 @@ pub trait PoolInitializing: Send + Sync {
 ///
 /// This can be used to index all pools from events instead of relying on the
 /// Balancer subgraph for example.
-pub struct EmptyPoolInitializer(u64);
+pub struct EmptyPoolInitializer {
+    chain_id: u64,
+    web3: Web3,
+}
 
 impl EmptyPoolInitializer {
     /// Creates a new empty pool initializer for the specified chain ID.
     #[cfg(test)]
-    pub fn for_chain(chain_id: u64) -> Self {
-        Self(chain_id)
+    pub fn for_chain(chain_id: u64, web3: Web3) -> Self {
+        Self { chain_id, web3 }
     }
 }
 
@@ -34,9 +39,19 @@ impl EmptyPoolInitializer {
 impl PoolInitializing for EmptyPoolInitializer {
     async fn initialize_pools(&self) -> Result<RegisteredPools> {
         let fetched_block_number =
-            deployment_block(BalancerV2Vault::raw_contract(), self.0).await?;
+            deployment_block(BalancerV2Vault::raw_contract(), self.chain_id).await?;
+        let fetched_block_hash = self
+            .web3
+            .eth()
+            .block(BlockId::Number(BlockNumber::Number(
+                fetched_block_number.into(),
+            )))
+            .await?
+            .context("missing block")?
+            .hash
+            .context("missing hash")?;
         Ok(RegisteredPools {
-            fetched_block_number: (fetched_block_number, None),
+            fetched_block_number: (fetched_block_number, fetched_block_hash),
             ..Default::default()
         })
     }
@@ -81,23 +96,43 @@ async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
+    use ethcontract::H256;
+
     use super::*;
+    use crate::transport::create_env_test_transport;
 
     #[tokio::test]
+    #[ignore]
     async fn initializes_empty_pools() {
-        let initializer = EmptyPoolInitializer(4);
+        let transport = create_env_test_transport(); //for rinkeby
+        let web3 = Web3::new(transport);
+        let initializer = EmptyPoolInitializer { chain_id: 4, web3 };
         assert_eq!(
             initializer.initialize_pools().await.unwrap(),
             RegisteredPools {
-                fetched_block_number: (8441702, None),
+                fetched_block_number: (
+                    8441702,
+                    H256::from_str(
+                        "0xb97e739fd41be0d109163047099f04b1b03657befea31ec4f2adcb714e532f1e"
+                    )
+                    .unwrap()
+                ),
                 ..Default::default()
             }
         );
     }
 
     #[tokio::test]
+    #[ignore]
     async fn empty_initializer_errors_on_missing_deployment() {
-        let initializer = EmptyPoolInitializer(999);
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let initializer = EmptyPoolInitializer {
+            chain_id: 999,
+            web3,
+        };
         assert!(initializer.initialize_pools().await.is_err());
     }
 }

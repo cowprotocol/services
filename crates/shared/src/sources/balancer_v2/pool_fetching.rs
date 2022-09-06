@@ -482,7 +482,7 @@ mod tests {
         println!("Indexing events for chain {}", chain_id);
         crate::tracing::initialize_for_tests("warn,shared=debug");
 
-        let pool_initializer = EmptyPoolInitializer::for_chain(chain_id);
+        let pool_initializer = EmptyPoolInitializer::for_chain(chain_id, web3.clone());
         let token_infos = TokenInfoFetcher { web3: web3.clone() };
         let contracts =
             BalancerContracts::new(&web3, BalancerFactoryKind::value_variants().to_vec())

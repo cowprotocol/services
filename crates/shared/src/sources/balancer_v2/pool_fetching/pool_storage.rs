@@ -203,7 +203,7 @@ where
 
             self.index_pool_creation(
                 pool_created,
-                (event_meta.block_number, Some(event_meta.block_hash)),
+                (event_meta.block_number, event_meta.block_hash),
             )
             .await?;
         }
@@ -231,7 +231,7 @@ mod tests {
         Vec<H160>,
         Vec<H160>,
         Vec<Bfp>,
-        Vec<(PoolCreated, (u64, Option<H256>))>,
+        Vec<(PoolCreated, (u64, H256))>,
     );
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
         let pool_ids: Vec<H256> = (start..=end)
@@ -244,13 +244,13 @@ mod tests {
             .map(|i| H160::from_low_u64_be(i as u64))
             .collect();
         let weights: Vec<Bfp> = (start..=end + 1).map(|i| Bfp::from_wei(i.into())).collect();
-        let creation_events: Vec<(PoolCreated, (u64, Option<H256>))> = (start..=end)
+        let creation_events: Vec<(PoolCreated, (u64, H256))> = (start..=end)
             .map(|i| {
                 (
                     PoolCreated {
                         pool: pool_addresses[i],
                     },
-                    (i as u64, Some(H256::from_low_u64_be(i as u64))),
+                    (i as u64, H256::from_low_u64_be(i as u64)),
                 )
             })
             .collect();
@@ -268,7 +268,7 @@ mod tests {
                         address: H160([1; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, Some(H256::from_low_u64_be(0))),
+                        block_created: (0, H256::from_low_u64_be(0)),
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -281,7 +281,7 @@ mod tests {
                         address: H160([2; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x77; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, Some(H256::from_low_u64_be(0))),
+                        block_created: (0, H256::from_low_u64_be(0)),
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -295,7 +295,7 @@ mod tests {
                         address: H160([3; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x77; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, Some(H256::from_low_u64_be(0))),
+                        block_created: (0, H256::from_low_u64_be(0)),
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -354,10 +354,7 @@ mod tests {
 
         // Note that it is never expected that blocks for events will differ,
         // but in this test block_created for the pool is the first block it receives.
-        assert_eq!(
-            pool_store.last_event_block(),
-            (2, Some(H256::from_low_u64_be(2)))
-        );
+        assert_eq!(pool_store.last_event_block(), (2, H256::from_low_u64_be(2)));
         assert_eq!(
             pool_store.pools_by_token.get(&tokens[0]).unwrap(),
             &hashset! { pool_ids[0] }
@@ -384,7 +381,7 @@ mod tests {
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
-                        block_created: (i as _, Some(H256::from_low_u64_be(i as _))),
+                        block_created: (i as _, H256::from_low_u64_be(i as _)),
                     },
                     weights: vec![weights[i], weights[i + 1]],
                 },
@@ -428,7 +425,7 @@ mod tests {
                 address: H160::from_low_u64_be(42),
                 tokens: vec![H160::from_low_u64_be(808)],
                 scaling_exponents: vec![0],
-                block_created: (3, Some(H256::from_low_u64_be(3))),
+                block_created: (3, H256::from_low_u64_be(3)),
             },
             weights: vec![Bfp::from_wei(1337.into())],
         };
@@ -459,10 +456,7 @@ mod tests {
         // Make sure that we indexed all the initial events, and replace
         assert_eq!(
             pool_store.last_event_block(),
-            (
-                end_block as u64,
-                Some(H256::from_low_u64_be(end_block as u64))
-            )
+            (end_block as u64, H256::from_low_u64_be(end_block as u64))
         );
         pool_store.remove_pools_newer_than_block(3);
         pool_store
@@ -480,7 +474,7 @@ mod tests {
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
-                        block_created: (i as u64, Some(H256::from_low_u64_be(i as u64))),
+                        block_created: (i as u64, H256::from_low_u64_be(i as u64)),
                     },
                     weights: vec![weights[i], weights[i + 1]],
                 },
@@ -550,7 +544,7 @@ mod tests {
                     id: pool_ids[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],
-                    block_created: (0, Some(H256::from_low_u64_be(0))),
+                    block_created: (0, H256::from_low_u64_be(0)),
                     address: pool_addresses[i],
                 },
                 weights: vec![],

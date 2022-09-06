@@ -99,7 +99,7 @@ impl BalancerSubgraphClient {
         }
 
         Ok(RegisteredPools {
-            fetched_block_number: (block_number, Some(block_number_hash)),
+            fetched_block_number: (block_number, block_number_hash),
             pools,
         })
     }
@@ -433,7 +433,7 @@ mod tests {
                 pool(H160([1; 20]), 2),
                 pool(H160([2; 20]), 3),
             ],
-            fetched_block_number: (42, Some(H256::from_low_u64_be(42))),
+            fetched_block_number: (42, H256::from_low_u64_be(42)),
         };
 
         assert_eq!(
@@ -444,13 +444,13 @@ mod tests {
                         pool(H160([1; 20]), 1),
                         pool(H160([1; 20]), 2),
                     ],
-                    fetched_block_number: (42, Some(H256::from_low_u64_be(42))),
+                    fetched_block_number: (42, H256::from_low_u64_be(42)),
                 },
                 H160([2; 20]) => RegisteredPools {
                     pools: vec![
                         pool(H160([2; 20]), 3),
                     ],
-                    fetched_block_number: (42, Some(H256::from_low_u64_be(42))),
+                    fetched_block_number: (42, H256::from_low_u64_be(42)),
                 },
             }
         )

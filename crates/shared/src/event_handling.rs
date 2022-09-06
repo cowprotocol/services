@@ -15,11 +15,7 @@ pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
-/// Block hash is optional since it is not always needed. For example, when we define a range of blocks,
-/// block hash is important for range.end() block because that one is used to be stored in `last_handled_block`
-/// and used in the next iterations, while for range.start() block is irrelevant, therefore, we don't want to spend
-/// additional rpc calls just to satisfy the form.
-pub type BlockNumberHash = (u64, Option<H256>);
+pub type BlockNumberHash = (u64, H256);
 
 pub struct EventHandler<B, C, S>
 where
@@ -108,11 +104,14 @@ where
         };
 
         let current_block_number = current_block.number.context("missing number")?.as_u64();
-        let last_handled_block_hash = handled_blocks.last().unwrap().1.context("missing hash")?;
+        let last_handled_block_hash = handled_blocks.last().unwrap().1;
 
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
-            let current_block = (current_block_number, current_block.hash);
+            let current_block = (
+                current_block_number,
+                current_block.hash.context("missing hash")?,
+            );
             return Ok(((current_block.0..=current_block.0), vec![current_block]));
         }
 

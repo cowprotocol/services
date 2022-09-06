@@ -398,7 +398,7 @@ mod tests {
             token_infos: Arc::new(token_infos),
         };
         let pool_info = pool_info_fetcher
-            .fetch_common_pool_info(pool.address(), (1337, Some(H256::from_low_u64_be(1337))))
+            .fetch_common_pool_info(pool.address(), (1337, H256::from_low_u64_be(1337)))
             .await
             .unwrap();
 
@@ -409,7 +409,7 @@ mod tests {
                 address: pool.address(),
                 tokens: tokens.to_vec(),
                 scaling_exponents: vec![0, 0, 12],
-                block_created: (1337, Some(H256::from_low_u64_be(1337))),
+                block_created: (1337, H256::from_low_u64_be(1337)),
             }
         );
     }
@@ -452,7 +452,7 @@ mod tests {
             address: pool.address(),
             tokens: tokens.to_vec(),
             scaling_exponents: scaling_exponents.to_vec(),
-            block_created: (1337, Some(H256::from_low_u64_be(1337))),
+            block_created: (1337, H256::from_low_u64_be(1337)),
         };
 
         let pool_state = {
@@ -524,7 +524,7 @@ mod tests {
             address: pool.address(),
             tokens: tokens.to_vec(),
             scaling_exponents: vec![0, 0, 0],
-            block_created: (1337, Some(H256::from_low_u64_be(1337))),
+            block_created: (1337, H256::from_low_u64_be(1337)),
         };
 
         let pool_state = {
@@ -560,7 +560,7 @@ mod tests {
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 scaling_exponents: vec![0, 0, 12],
-                block_created: (1337, Some(H256::from_low_u64_be(1337))),
+                block_created: (1337, H256::from_low_u64_be(1337)),
             },
             weights: vec![bfp!("0.5"), bfp!("0.25"), bfp!("0.25")],
         };
@@ -821,13 +821,13 @@ mod tests {
         };
 
         assert_eq!(
-            PoolInfo::from_graph_data(&pool, (42, Some(H256::from_low_u64_be(42)))).unwrap(),
+            PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).unwrap(),
             PoolInfo {
                 id: H256([4; 32]),
                 address: H160([3; 20]),
                 tokens: vec![H160([0x33; 20]), H160([0x44; 20])],
                 scaling_exponents: vec![15, 0],
-                block_created: (42, Some(H256::from_low_u64_be(42))),
+                block_created: (42, H256::from_low_u64_be(42)),
             }
         );
     }
@@ -846,7 +846,7 @@ mod tests {
                 weight: Some("1.337".parse().unwrap()),
             }],
         };
-        assert!(PoolInfo::from_graph_data(&pool, (42, Some(H256::from_low_u64_be(42)))).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).is_err());
     }
 
     #[test]
@@ -870,7 +870,7 @@ mod tests {
                 },
             ],
         };
-        assert!(PoolInfo::from_graph_data(&pool, (42, Some(H256::from_low_u64_be(42)))).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).is_err());
     }
 
     #[test]

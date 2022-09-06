@@ -56,7 +56,7 @@ impl EventStoring<ContractEvent> for Postgres {
             block_number
                 .try_into()
                 .context("block number is negative")?,
-            Some(H256(block_hash.0)),
+            H256(block_hash.0),
         ))
     }
 
