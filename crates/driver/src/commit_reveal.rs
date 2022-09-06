@@ -32,8 +32,8 @@ pub struct SettlementSummary {
     pub auction_id: i64,
 }
 
-#[cfg_attr(test, mockall::automock)]
 #[async_trait::async_trait]
+#[cfg_attr(test, mockall::automock)]
 pub trait CommitRevealSolving: Send + Sync {
     /// Calculates a solution for a given `Auction` but does **not** disclose secret details.
     async fn commit(&self, auction: Auction) -> Result<SettlementSummary>;
