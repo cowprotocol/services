@@ -5,8 +5,8 @@ use crate::{
 };
 use anyhow::{Context, Error, Result};
 use futures::{
-    future::FutureExt as _,
-    {stream::Stream, StreamExt},
+    future::{FusedFuture, FutureExt},
+    stream::{FusedStream, StreamExt},
 };
 use gas_estimation::GasPriceEstimating;
 use model::auction::AuctionWithId;
@@ -19,7 +19,11 @@ use solver::{
     settlement_rater::{SettlementRating, SimulationDetails},
     settlement_submission::{SolutionSubmitter, SubmissionError},
 };
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    pin::Pin,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 pub struct Driver {
     pub solver: Arc<dyn CommitRevealSolving>,
@@ -38,9 +42,16 @@ impl Driver {
         &self,
         auction: AuctionWithId,
     ) -> Result<SettlementSummary, SolveError> {
-        self.solve_until_deadline(auction)
-            .await
-            .map_err(SolveError::from)
+        Self::solve_until_deadline(
+            auction,
+            self.solver.clone(),
+            self.auction_converter.clone(),
+            self.block_stream.clone(),
+            // TODO get deadline from autopilot auction
+            Instant::now() + Duration::from_secs(25),
+        )
+        .await
+        .map_err(SolveError::from)
     }
 
     /// Computes a solution with the liquidity collected from a given block.
@@ -57,25 +68,34 @@ impl Driver {
 
     /// Keeps solving the given auction with the most recent liquidity at that time or until the
     /// auction deadline is reached.
-    async fn solve_until_deadline(&self, auction: Auction) -> Result<SettlementSummary> {
-        // TODO get deadline from autopilot auction
-        let timeout = tokio::time::sleep(tokio::time::Duration::from_secs(25));
-        let block_stream = into_stream(self.block_stream.clone());
+    async fn solve_until_deadline(
+        auction: Auction,
+        solver: Arc<dyn CommitRevealSolving>,
+        converter: Arc<dyn AuctionConverting>,
+        block_stream: CurrentBlockStream,
+        deadline: Instant,
+    ) -> Result<SettlementSummary> {
         last_completed(
             |block| {
-                Self::compute_solution_for_block(
-                    auction.clone(),
-                    block,
-                    self.auction_converter.clone(),
-                    self.solver.clone(),
+                Box::pin(
+                    Self::compute_solution_for_block(
+                        auction.clone(),
+                        block,
+                        converter.clone(),
+                        solver.clone(),
+                    )
+                    .fuse(),
                 )
-                .boxed()
             },
-            block_stream,
-            timeout,
+            into_stream(block_stream).fuse(),
+            tokio::time::sleep_until(deadline.into()).fuse(),
         )
         .await
-        .unwrap_or_else(|| Err(anyhow::anyhow!("could not compute a solution in time")))
+        .unwrap_or_else(|| {
+            Err(anyhow::anyhow!(
+                "could not compute a result before the deadline"
+            ))
+        })
     }
 
     /// Validates that the `Settlement` satisfies expected fairness and correctness properties.
@@ -141,9 +161,9 @@ impl Driver {
 /// Returns the most recent output from a computational task when the `deadline` has been reached.
 async fn last_completed<T, W, B, P, D>(build_task: B, producer: P, deadline: D) -> Option<T>
 where
-    B: Fn(W) -> Pin<Box<dyn Future<Output = T> + Send>>,
-    P: Stream<Item = W>,
-    D: Future<Output = ()>,
+    B: Fn(W) -> Pin<Box<dyn FusedFuture<Output = T> + Send>>,
+    P: FusedStream<Item = W>,
+    D: FusedFuture<Output = ()>,
     T: Send,
     W: Send,
 {
@@ -153,36 +173,263 @@ where
     let mut result = None;
     let mut next_work = None;
 
+    let create_pending_future = || {
+        Box::pin(futures::future::pending::<T>().fuse())
+            as Pin<Box<dyn FusedFuture<Output = _> + Send>>
+    };
+
     let mut currently_computing = false;
     // initialize with future that does nothing and can be dropped safely
-    let mut current_task = futures::future::pending().fuse().boxed();
+    let mut current_task = create_pending_future();
 
     loop {
-        tokio::select! {
-            r = &mut current_task => {
-                result = Some(r);
-                if let Some(work) = next_work.take() {
-                    current_task = build_task(work);
-                }
+        futures::select_biased! {
+            _ = &mut deadline => {
+                println!("deadline reached");
+                break
             }
             new_work = producer.next() => {
                 match (new_work, currently_computing) {
-                    (Some(work), true) => {
-                        next_work = Some(work);
-                    }
-                    (Some(work), false) => {
-                        current_task = build_task(work);
-                        currently_computing = true;
-                    }
-                    // stream terminated and there is no compuration going on => return early
-                    (None, true) => break,
-                    // stream terminated but we might still get a result from the current
-                    // computation => do nothing
-                    (None, false) => ()
+                    (Some(new_work), true) => next_work = Some(new_work),
+                    (Some(new_work), false) => current_task = build_task(new_work),
+                    (None, false) => break,
+                    (None, true) => ()
                 };
+                // either we are currently computing or we created a new task to work on
+                currently_computing = true;
             }
-            _ = &mut deadline => break,
+            r = &mut current_task => {
+                result = Some(r);
+                let (new_task, is_computing) = match (next_work.take(), producer.is_terminated()) {
+                    // start on the buffered work
+                    (Some(work), _) => (build_task(work), true),
+                    // wait for producer to give us more work
+                    (None, false) => (create_pending_future(), false),
+                    // no work left and producer terminated => return early
+                    (None, true) => break,
+                };
+                current_task = new_task;
+                currently_computing = is_computing;
+            }
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{auction_converter::MockAuctionConverting, commit_reveal::MockCommitRevealSolving};
+    use futures::FutureExt;
+    use shared::current_block::Block;
+    use std::{
+        sync::Arc,
+        time::{Duration, Instant},
+    };
+    use tokio::{sync::watch::channel, time::sleep};
+
+    fn block(number: Option<u64>) -> Block {
+        Block {
+            number: number.map(|n| n.into()),
+            ..Default::default()
+        }
+    }
+
+    fn deadline(milliseconds_from_now: u64) -> Instant {
+        Instant::now() + Duration::from_millis(milliseconds_from_now)
+    }
+
+    #[tokio::test]
+    async fn no_block_number_results_in_error() {
+        let (_tx, rx) = channel(block(None));
+        let converter = MockAuctionConverting::new();
+        let solver = MockCommitRevealSolving::new();
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(10),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().to_string(), "no block number");
+    }
+
+    #[tokio::test]
+    async fn propagates_error_from_auction_conversion() {
+        let (_tx, rx) = channel(block(Some(1)));
+        let mut converter = MockAuctionConverting::new();
+        converter
+            .expect_convert_auction()
+            .returning(|_, _| async { anyhow::bail!("failed to convert auction") }.boxed());
+        let solver = MockCommitRevealSolving::new();
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(10),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().to_string(), "failed to convert auction");
+    }
+
+    #[tokio::test]
+    async fn propagates_error_from_auction_solving() {
+        let (_tx, rx) = channel(block(Some(1)));
+        let mut converter = MockAuctionConverting::new();
+        converter
+            .expect_convert_auction()
+            .returning(|_, _| async { Ok(Default::default()) }.boxed());
+        let mut solver = MockCommitRevealSolving::new();
+        solver
+            .expect_commit()
+            .returning(|_| async { Err(anyhow::anyhow!("failed to solve auction")) }.boxed());
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(10),
+        )
+        .await;
+
+        assert_eq!(result.unwrap_err().to_string(), "failed to solve auction");
+    }
+
+    #[tokio::test]
+    async fn follow_up_computations_use_the_latest_block() {
+        let (tx, rx) = channel(block(Some(1)));
+        let mut converter = MockAuctionConverting::new();
+        converter
+            .expect_convert_auction()
+            .returning(|_, block| {
+                async move {
+                    Ok(solver::solver::Auction {
+                        liquidity_fetch_block: block,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            })
+            .times(2);
+
+        let mut solver = MockCommitRevealSolving::new();
+        solver
+            .expect_commit()
+            .return_once(move |auction| {
+                assert_eq!(auction.liquidity_fetch_block, 1);
+                async move {
+                    // there is no great place to trigger the next block so let's do it here
+                    tx.send(block(Some(2))).unwrap();
+                    tx.send(block(Some(3))).unwrap();
+                    // yield this thread such that the block stream can see the new blocks
+                    sleep(Duration::from_millis(10)).await;
+                    anyhow::bail!("failed to solve auction")
+                }
+                .boxed()
+            })
+            .times(1);
+        solver
+            .expect_commit()
+            .returning(|auction| {
+                assert_eq!(auction.liquidity_fetch_block, 3);
+                async { Ok(Default::default()) }.boxed()
+            })
+            .times(1);
+
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(100),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, SettlementSummary::default());
+    }
+
+    #[tokio::test]
+    async fn first_computation_starts_with_the_latest_block() {
+        let (tx, rx) = channel(block(Some(1)));
+        tx.send(block(Some(2))).unwrap();
+        let mut converter = MockAuctionConverting::new();
+        converter
+            .expect_convert_auction()
+            .returning(|_, block| {
+                async move {
+                    Ok(solver::solver::Auction {
+                        liquidity_fetch_block: block,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            })
+            .times(1);
+
+        let mut solver = MockCommitRevealSolving::new();
+        solver
+            .expect_commit()
+            .return_once(move |auction| {
+                assert_eq!(auction.liquidity_fetch_block, 2);
+                async move { Ok(Default::default()) }.boxed()
+            })
+            .times(1);
+
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(10),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, SettlementSummary::default());
+    }
+
+    #[tokio::test]
+    async fn solving_can_end_early_when_stream_terminates() {
+        let start = Instant::now();
+        let (tx, rx) = channel(block(Some(1)));
+        let mut converter = MockAuctionConverting::new();
+        converter
+            .expect_convert_auction()
+            .returning(|_, block| {
+                async move {
+                    Ok(solver::solver::Auction {
+                        liquidity_fetch_block: block,
+                        ..Default::default()
+                    })
+                }
+                .boxed()
+            })
+            .times(1);
+
+        let mut solver = MockCommitRevealSolving::new();
+        solver
+            .expect_commit()
+            .return_once(move |auction| {
+                assert_eq!(auction.liquidity_fetch_block, 1);
+                // drop sender to terminate the block stream while computing a result
+                drop(tx);
+                async move { Ok(Default::default()) }.boxed()
+            })
+            .times(1);
+
+        let result = Driver::solve_until_deadline(
+            Default::default(),
+            Arc::new(solver),
+            Arc::new(converter),
+            rx.clone(),
+            deadline(1_000),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result, SettlementSummary::default());
+        assert!(start.elapsed().as_millis() < 100);
+    }
 }
