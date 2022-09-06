@@ -1,10 +1,11 @@
-use crate::order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler};
 use anyhow::Result;
 use model::quote::OrderQuoteRequest;
-use serde_json::json;
-use shared::api::{self, convert_json_response, rich_error, IntoWarpReply};
+use shared::{
+    api::{self, convert_json_response},
+    order_quoting::QuoteHandler,
+};
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection};
+use warp::{Filter, Rejection};
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("quote")
@@ -27,49 +28,17 @@ pub fn post_quote(
     })
 }
 
-impl IntoWarpReply for CalculateQuoteError {
-    fn into_warp_reply(self) -> super::ApiReply {
-        match self {
-            Self::Price(err) => err.into_warp_reply(),
-            Self::SellAmountDoesNotCoverFee { fee_amount } => warp::reply::with_status(
-                rich_error(
-                    "SellAmountDoesNotCoverFee",
-                    "The sell amount for the sell order is lower than the fee.",
-                    json!({ "fee_amount": fee_amount }),
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::Other(err) => err.into_warp_reply(),
-        }
-    }
-}
-
-impl IntoWarpReply for OrderQuoteError {
-    fn into_warp_reply(self) -> super::ApiReply {
-        match self {
-            Self::Validation(err) => err.into_warp_reply(),
-            Self::CalculateQuote(err) => err.into_warp_reply(),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::anyhow;
-    use chrono::{DateTime, NaiveDateTime, Utc};
     use ethcontract::{H160, U256};
     use model::{
         app_id::AppId,
         order::{BuyTokenDestination, SellTokenSource},
-        quote::{
-            OrderQuote, OrderQuoteResponse, OrderQuoteSide, PriceQuality, QuoteSigningScheme,
-            SellAmount, Validity,
-        },
+        quote::{OrderQuoteSide, PriceQuality, QuoteSigningScheme, SellAmount, Validity},
     };
     use serde_json::json;
-    use shared::api::response_body;
-    use warp::{test::request, Reply};
+    use warp::test::request;
 
     #[test]
     fn deserializes_sell_after_fees_quote_request() {
@@ -221,52 +190,5 @@ mod tests {
             .header("content-type", "application/json")
             .json(&request_payload);
         assert!(request.filter(&filter).await.is_err());
-    }
-
-    #[tokio::test]
-    async fn post_quote_response_ok() {
-        let quote = OrderQuote {
-            sell_token: Default::default(),
-            buy_token: Default::default(),
-            receiver: None,
-            sell_amount: Default::default(),
-            buy_amount: Default::default(),
-            valid_to: 0,
-            app_data: Default::default(),
-            fee_amount: Default::default(),
-            kind: Default::default(),
-            partially_fillable: false,
-            sell_token_balance: Default::default(),
-            buy_token_balance: Default::default(),
-        };
-        let order_quote_response = OrderQuoteResponse {
-            quote,
-            from: H160::zero(),
-            expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
-            id: Some(0),
-        };
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
-            order_quote_response.clone(),
-        ))
-        .into_response();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
-        let expected = serde_json::to_value(order_quote_response).unwrap();
-        assert_eq!(body, expected);
-    }
-
-    #[tokio::test]
-    async fn post_quote_response_err() {
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Err(
-            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error"))),
-        ))
-        .into_response();
-        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
-        let body = response_body(response).await;
-        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
-        let expected_error = json!({"errorType": "InternalServerError", "description": ""});
-        assert_eq!(body, expected_error);
-        // There are many other FeeAndQuoteErrors, but writing a test for each would follow the same pattern as this.
     }
 }

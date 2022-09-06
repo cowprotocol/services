@@ -1,11 +1,4 @@
-use super::{
-    orders::{order_kind_from, order_kind_into},
-    Postgres,
-};
-use crate::{
-    fee_subsidy::FeeParameters,
-    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
-};
+use super::{orders::order_kind_into, Postgres};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use database::{
@@ -13,31 +6,8 @@ use database::{
     quotes::{Quote as QuoteRow, QuoteSearchParameters as DbQuoteSearchParameters},
 };
 use model::quote::QuoteId;
-use number_conversions::{big_decimal_to_u256, u256_to_big_decimal};
-use primitive_types::H160;
-
-impl TryFrom<QuoteRow> for QuoteData {
-    type Error = anyhow::Error;
-
-    fn try_from(row: QuoteRow) -> Result<QuoteData> {
-        Ok(QuoteData {
-            sell_token: H160(row.sell_token.0),
-            buy_token: H160(row.buy_token.0),
-            quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
-                .context("quoted sell amount is not a valid U256")?,
-            quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
-                .context("quoted buy amount is not a valid U256")?,
-            fee_parameters: FeeParameters {
-                gas_amount: row.gas_amount,
-                gas_price: row.gas_price,
-                sell_token_price: row.sell_token_price,
-            },
-            kind: order_kind_from(row.order_kind),
-            expiration: row.expiration_timestamp,
-            quote_kind: row.quote_kind,
-        })
-    }
-}
+use number_conversions::u256_to_big_decimal;
+use shared::order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring};
 
 #[async_trait::async_trait]
 impl QuoteStoring for Postgres {

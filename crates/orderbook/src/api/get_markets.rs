@@ -1,4 +1,3 @@
-use crate::order_quoting::QuoteHandler;
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{
@@ -6,7 +5,10 @@ use model::{
     quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
 };
 use serde::{Deserialize, Serialize};
-use shared::api::{convert_json_response, ApiReply};
+use shared::{
+    api::{convert_json_response, ApiReply},
+    order_quoting::QuoteHandler,
+};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{Filter, Rejection};
 

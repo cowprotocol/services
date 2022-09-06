@@ -1,18 +1,16 @@
 pub mod api;
 pub mod arguments;
 pub mod database;
-pub mod fee_subsidy;
-pub mod order_quoting;
-pub mod order_validation;
 pub mod orderbook;
 pub mod solver_competition;
 
 use crate::database::trades::TradeRetrieving;
-use crate::{order_quoting::QuoteHandler, orderbook::Orderbook};
+use crate::orderbook::Orderbook;
 use anyhow::{anyhow, Context as _, Result};
 use contracts::GPv2Settlement;
 use futures::Future;
 use model::DomainSeparator;
+use shared::order_quoting::QuoteHandler;
 use solver_competition::SolverCompetitionStoring;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::{task, task::JoinHandle};

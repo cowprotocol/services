@@ -1,4 +1,8 @@
-use crate::price_estimation::PriceEstimationError;
+use crate::{
+    order_quoting::{CalculateQuoteError, OrderQuoteError},
+    order_validation::PartialValidationError,
+    price_estimation::PriceEstimationError,
+};
 use anyhow::{Error as anyhowError, Result};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{
@@ -123,6 +127,102 @@ impl IntoWarpReply for anyhowError {
     }
 }
 
+impl IntoWarpReply for CalculateQuoteError {
+    fn into_warp_reply(self) -> ApiReply {
+        match self {
+            Self::Price(err) => err.into_warp_reply(),
+            Self::SellAmountDoesNotCoverFee { fee_amount } => warp::reply::with_status(
+                rich_error(
+                    "SellAmountDoesNotCoverFee",
+                    "The sell amount for the sell order is lower than the fee.",
+                    serde_json::json!({ "fee_amount": fee_amount }),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => err.into_warp_reply(),
+        }
+    }
+}
+
+impl IntoWarpReply for OrderQuoteError {
+    fn into_warp_reply(self) -> ApiReply {
+        match self {
+            Self::Validation(err) => err.into_warp_reply(),
+            Self::CalculateQuote(err) => err.into_warp_reply(),
+        }
+    }
+}
+
+impl IntoWarpReply for PartialValidationError {
+    fn into_warp_reply(self) -> ApiReply {
+        match self {
+            Self::UnsupportedBuyTokenDestination(dest) => with_status(
+                error("UnsupportedBuyTokenDestination", format!("Type {dest:?}")),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedSellTokenSource(src) => with_status(
+                error("UnsupportedSellTokenSource", format!("Type {src:?}")),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedOrderType => with_status(
+                error(
+                    "UnsupportedOrderType",
+                    "This order type is currently not supported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Forbidden => with_status(
+                error("Forbidden", "Forbidden, your account is deny-listed"),
+                StatusCode::FORBIDDEN,
+            ),
+            Self::InsufficientValidTo => with_status(
+                error(
+                    "InsufficientValidTo",
+                    "validTo is not far enough in the future",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::ExcessiveValidTo => with_status(
+                error("ExcessiveValidTo", "validTo is too far into the future"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::TransferEthToContract => with_status(
+                error(
+                    "TransferEthToContract",
+                    "Sending Ether to smart contract wallets is currently not supported",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::InvalidNativeSellToken => with_status(
+                error(
+                    "InvalidNativeSellToken",
+                    "The chain's native token (Ether/xDai) cannot be used as the sell token",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::SameBuyAndSellToken => with_status(
+                error(
+                    "SameBuyAndSellToken",
+                    "Buy token is the same as the sell token.",
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedSignature => with_status(
+                error("UnsupportedSignature", "signing scheme is not supported"),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::UnsupportedToken(token) => with_status(
+                error("UnsupportedToken", format!("Token address {token:?}")),
+                StatusCode::BAD_REQUEST,
+            ),
+            Self::Other(err) => with_status(
+                internal_error(err.context("partial_validation")),
+                StatusCode::INTERNAL_SERVER_ERROR,
+            ),
+        }
+    }
+}
+
 pub async fn response_body(response: warp::hyper::Response<warp::hyper::Body>) -> Vec<u8> {
     let mut body = response.into_body();
     let mut result = Vec::new();
@@ -239,6 +339,10 @@ impl IntoWarpReply for PriceEstimationError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use anyhow::anyhow;
+    use chrono::{DateTime, NaiveDateTime, Utc};
+    use model::quote::{OrderQuote, OrderQuoteResponse};
+    use primitive_types::H160;
     use serde::ser;
     use serde_json::json;
 
@@ -298,5 +402,52 @@ mod tests {
                 "description": "bar",
             })
         );
+    }
+
+    #[tokio::test]
+    async fn post_quote_response_ok() {
+        let quote = OrderQuote {
+            sell_token: Default::default(),
+            buy_token: Default::default(),
+            receiver: None,
+            sell_amount: Default::default(),
+            buy_amount: Default::default(),
+            valid_to: 0,
+            app_data: Default::default(),
+            fee_amount: Default::default(),
+            kind: Default::default(),
+            partially_fillable: false,
+            sell_token_balance: Default::default(),
+            buy_token_balance: Default::default(),
+        };
+        let order_quote_response = OrderQuoteResponse {
+            quote,
+            from: H160::zero(),
+            expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
+            id: Some(0),
+        };
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
+            order_quote_response.clone(),
+        ))
+        .into_response();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response_body(response).await;
+        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let expected = serde_json::to_value(order_quote_response).unwrap();
+        assert_eq!(body, expected);
+    }
+
+    #[tokio::test]
+    async fn post_quote_response_err() {
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Err(
+            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error"))),
+        ))
+        .into_response();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = response_body(response).await;
+        let body: serde_json::Value = serde_json::from_slice(body.as_slice()).unwrap();
+        let expected_error = json!({"errorType": "InternalServerError", "description": ""});
+        assert_eq!(body, expected_error);
+        // There are many other FeeAndQuoteErrors, but writing a test for each would follow the same pattern as this.
     }
 }

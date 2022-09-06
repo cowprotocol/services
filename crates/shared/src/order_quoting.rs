@@ -1,10 +1,16 @@
-use crate::{
-    fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
-    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+use super::price_estimation::{
+    self,
+    native::{native_single_estimate, NativePriceEstimating},
+    single_estimate, PriceEstimating, PriceEstimationError,
 };
-use anyhow::Result;
+use crate::{
+    conversions::order_kind_from,
+    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+    fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
+};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
-use database::quotes::QuoteKind;
+use database::quotes::{Quote as QuoteRow, QuoteKind};
 use ethcontract::{H160, U256};
 use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
@@ -16,11 +22,7 @@ use model::{
         QuoteSigningScheme, SellAmount,
     },
 };
-use shared::price_estimation::{
-    self,
-    native::{native_single_estimate, NativePriceEstimating},
-    single_estimate, PriceEstimating, PriceEstimationError,
-};
+use number_conversions::big_decimal_to_u256;
 use std::sync::Arc;
 use thiserror::Error;
 

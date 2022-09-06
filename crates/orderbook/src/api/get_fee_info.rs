@@ -1,4 +1,3 @@
-use crate::order_quoting::QuoteHandler;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use model::{
@@ -9,6 +8,7 @@ use model::{
 use primitive_types::{H160, U256};
 use serde::{Deserialize, Serialize};
 use shared::api::{convert_json_response, ApiReply};
+use shared::order_quoting::QuoteHandler;
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
