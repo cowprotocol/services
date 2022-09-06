@@ -24,7 +24,7 @@ use model::{
 };
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
     /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the

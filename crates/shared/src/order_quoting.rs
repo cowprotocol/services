@@ -664,16 +664,16 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
 mod tests {
     use super::*;
     use crate::fee_subsidy::Subsidy;
+    use crate::{
+        gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+    };
     use chrono::Utc;
     use ethcontract::H160;
     use futures::StreamExt as _;
     use gas_estimation::GasPrice1559;
     use mockall::{predicate::eq, Sequence};
     use model::{quote::Validity, time};
-    use shared::{
-        gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
-    };
     use std::sync::Mutex;
 
     #[test]
