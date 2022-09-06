@@ -207,12 +207,12 @@ where
             self.last_handled_blocks
                 .extend(replacement_blocks.into_iter());
             // cap number of blocks to MAX_REORG_BLOCK_COUNT
-            self.last_handled_blocks = self.last_handled_blocks[self
+            let start_index = self
                 .last_handled_blocks
                 .len()
-                .saturating_sub(MAX_REORG_BLOCK_COUNT as usize)
-                ..self.last_handled_blocks.len()]
-                .to_vec();
+                .saturating_sub(MAX_REORG_BLOCK_COUNT as usize);
+            self.last_handled_blocks =
+                self.last_handled_blocks[start_index..self.last_handled_blocks.len()].to_vec();
         }
         Ok(())
     }
