@@ -6,7 +6,7 @@
 use crate::Web3;
 
 use super::graph_api::{BalancerSubgraphClient, RegisteredPools};
-use anyhow::{anyhow, bail, Result, Context};
+use anyhow::{anyhow, bail, Context, Result};
 use contracts::BalancerV2Vault;
 use ethcontract::{
     common::{contract::Network, DeploymentInformation},

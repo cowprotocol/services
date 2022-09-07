@@ -17,7 +17,7 @@
 //!     on token pairs.
 
 use crate::{
-    event_handling::EventStoring,
+    event_handling::{BlockNumber, EventStoring},
     sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
 };
 use anyhow::{anyhow, Result};
@@ -184,11 +184,11 @@ where
     async fn replace_events(
         &mut self,
         events: Vec<Event<BasePoolFactoryEvent>>,
-        range: RangeInclusive<u64>,
+        range: RangeInclusive<BlockNumber>,
     ) -> Result<()> {
         tracing::debug!("replacing {} events for block {:?}", events.len(), range);
 
-        self.remove_pools_newer_than_block(*range.start());
+        self.remove_pools_newer_than_block(range.start().to_u64());
         self.append_events(events).await
     }
 
