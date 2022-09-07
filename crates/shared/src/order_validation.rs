@@ -1423,12 +1423,7 @@ mod tests {
         let quote_id = Some(42);
         order_quoter
             .expect_find_quote()
-            .with(
-                eq(quote_id),
-                eq(
-                    quote_search_parameters.clone(),
-                ),
-            )
+            .with(eq(quote_id), eq(quote_search_parameters.clone()))
             .returning(move |_, _| Ok(quote_data.clone()));
 
         let quote = get_quote_and_check_fee(
