@@ -641,11 +641,7 @@ mod tests {
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{
-        app_id::AppId,
-        order::OrderBuilder,
-        signature::{EcdsaSignature, EcdsaSigningScheme},
-    };
+    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
     use secp256k1::ONE_KEY;
 
     #[test]
