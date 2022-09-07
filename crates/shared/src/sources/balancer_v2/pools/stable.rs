@@ -3,7 +3,6 @@
 use super::{common, FactoryIndexing, PoolIndexing};
 use crate::{
     conversions::U256Ext as _,
-    event_handling::BlockNumberHash,
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
@@ -23,7 +22,7 @@ pub struct PoolInfo {
 }
 
 impl PoolIndexing for PoolInfo {
-    fn from_graph_data(pool: &PoolData, block_created: BlockNumberHash) -> Result<Self> {
+    fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
         Ok(PoolInfo {
             common: common::PoolInfo::for_type(PoolType::Stable, pool, block_created)?,
         })
@@ -183,7 +182,7 @@ mod tests {
                     .values()
                     .map(|token| token.scaling_exponent)
                     .collect(),
-                block_created: (1337, H256::from_low_u64_be(1337)),
+                block_created: 1337,
             },
         };
         let common_pool_state = common::PoolState {
@@ -239,7 +238,7 @@ mod tests {
             ],
         };
 
-        assert!(PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
     }
 
     #[test]

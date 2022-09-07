@@ -15,7 +15,7 @@ pub mod weighted;
 pub mod weighted_2token;
 
 use super::graph_api::PoolData;
-use crate::{event_handling::BlockNumberHash, Web3CallBatch};
+use crate::Web3CallBatch;
 use anyhow::Result;
 use ethcontract::{BlockId, H256};
 use futures::future::BoxFuture;
@@ -123,7 +123,7 @@ pub trait FactoryIndexing: Send + Sync + 'static {
 /// Required information needed for indexing pools.
 pub trait PoolIndexing: Clone + Send + Sync + 'static {
     /// Creates a new instance from a pool
-    fn from_graph_data(pool: &PoolData, block_created: BlockNumberHash) -> Result<Self>
+    fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self>
     where
         Self: Sized;
 

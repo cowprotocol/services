@@ -373,7 +373,9 @@ where
     let initial_pools = registered_pools
         .pools
         .iter()
-        .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number))
+        .map(|pool| {
+            Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number.0)
+        })
         .collect::<Result<_>>()?;
     let start_sync_at_block = Some(registered_pools.fetched_block_number);
 

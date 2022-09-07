@@ -6,7 +6,7 @@
 use crate::Web3;
 
 use super::graph_api::{BalancerSubgraphClient, RegisteredPools};
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{anyhow, bail, Result, Context};
 use contracts::BalancerV2Vault;
 use ethcontract::{
     common::{contract::Network, DeploymentInformation},
@@ -96,12 +96,10 @@ async fn deployment_block(contract: &Contract, chain_id: u64) -> Result<u64> {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
-    use ethcontract::H256;
-
     use super::*;
     use crate::transport::create_env_test_transport;
+    use ethcontract::H256;
+    use std::str::FromStr;
 
     #[tokio::test]
     #[ignore]

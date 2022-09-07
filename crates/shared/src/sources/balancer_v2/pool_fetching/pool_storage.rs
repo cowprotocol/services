@@ -17,7 +17,7 @@
 //!     on token pairs.
 
 use crate::{
-    event_handling::{BlockNumberHash, EventStoring},
+    event_handling::EventStoring,
     sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
 };
 use anyhow::{anyhow, Result};
@@ -66,7 +66,7 @@ where
             },
             |mut storage, pool| {
                 storage.initial_fetched_block =
-                    cmp::max(storage.initial_fetched_block, pool.common().block_created.0);
+                    cmp::max(storage.initial_fetched_block, pool.common().block_created);
                 storage.insert_pool(pool);
 
                 storage
@@ -125,7 +125,7 @@ where
     pub async fn index_pool_creation(
         &mut self,
         pool_creation: PoolCreated,
-        block_created: BlockNumberHash,
+        block_created: u64,
     ) -> Result<()> {
         let pool = self
             .pool_info_fetcher
@@ -151,7 +151,7 @@ where
 
         let num_pools = self.pools.len();
         self.pools
-            .retain(|_, pool| pool.common().block_created.0 < block);
+            .retain(|_, pool| pool.common().block_created < block);
 
         if num_pools == self.pools.len() {
             // We didnt' actually remove any pools, so no need to rebuild the
@@ -170,7 +170,7 @@ where
         // but the maintenance seems like more overhead that needs to be tested.
         self.pools
             .values()
-            .map(|pool| pool.common().block_created.0)
+            .map(|pool| pool.common().block_created)
             .max()
             .unwrap_or_default()
     }
@@ -196,16 +196,14 @@ where
         tracing::debug!("inserting {} events", events.len());
 
         for event in events {
-            let event_meta = event
+            let block_created = event
                 .meta
-                .ok_or_else(|| anyhow!("event missing metadata"))?;
+                .ok_or_else(|| anyhow!("event missing metadata"))?
+                .block_number;
             let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
 
-            self.index_pool_creation(
-                pool_created,
-                (event_meta.block_number, event_meta.block_hash),
-            )
-            .await?;
+            self.index_pool_creation(pool_created, block_created)
+                .await?;
         }
 
         Ok(())
@@ -231,7 +229,7 @@ mod tests {
         Vec<H160>,
         Vec<H160>,
         Vec<Bfp>,
-        Vec<(PoolCreated, (u64, H256))>,
+        Vec<(PoolCreated, u64)>,
     );
     fn pool_init_data(start: usize, end: usize) -> PoolInitData {
         let pool_ids: Vec<H256> = (start..=end)
@@ -244,13 +242,13 @@ mod tests {
             .map(|i| H160::from_low_u64_be(i as u64))
             .collect();
         let weights: Vec<Bfp> = (start..=end + 1).map(|i| Bfp::from_wei(i.into())).collect();
-        let creation_events: Vec<(PoolCreated, (u64, H256))> = (start..=end)
+        let creation_events: Vec<(PoolCreated, u64)> = (start..=end)
             .map(|i| {
                 (
                     PoolCreated {
                         pool: pool_addresses[i],
                     },
-                    (i as u64, H256::from_low_u64_be(i as u64)),
+                    i as u64,
                 )
             })
             .collect();
@@ -268,7 +266,7 @@ mod tests {
                         address: H160([1; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, H256::from_low_u64_be(0)),
+                        block_created: 0,
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -281,7 +279,7 @@ mod tests {
                         address: H160([2; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x33; 20]), H160([0x77; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, H256::from_low_u64_be(0)),
+                        block_created: 0,
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -295,7 +293,7 @@ mod tests {
                         address: H160([3; 20]),
                         tokens: vec![H160([0x11; 20]), H160([0x77; 20])],
                         scaling_exponents: vec![0, 0],
-                        block_created: (0, H256::from_low_u64_be(0)),
+                        block_created: 0,
                     },
                     weights: vec![
                         Bfp::from_wei(500_000_000_000_000_000u128.into()),
@@ -381,7 +379,7 @@ mod tests {
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
-                        block_created: (i as _, H256::from_low_u64_be(i as _)),
+                        block_created: i as _,
                     },
                     weights: vec![weights[i], weights[i + 1]],
                 },
@@ -425,7 +423,7 @@ mod tests {
                 address: H160::from_low_u64_be(42),
                 tokens: vec![H160::from_low_u64_be(808)],
                 scaling_exponents: vec![0],
-                block_created: (3, H256::from_low_u64_be(3)),
+                block_created: 3,
             },
             weights: vec![Bfp::from_wei(1337.into())],
         };
@@ -471,7 +469,7 @@ mod tests {
                         address: pool_addresses[i],
                         tokens: vec![tokens[i], tokens[i + 1]],
                         scaling_exponents: vec![0, 0],
-                        block_created: (i as u64, H256::from_low_u64_be(i as u64)),
+                        block_created: i as u64,
                     },
                     weights: vec![weights[i], weights[i + 1]],
                 },
@@ -513,7 +511,7 @@ mod tests {
             .pools_by_token
             .get(&new_pool.common.tokens[0])
             .is_some());
-        assert_eq!(pool_store.last_event_block(), new_pool.common.block_created.0);
+        assert_eq!(pool_store.last_event_block(), new_pool.common.block_created);
     }
 
     #[test]
@@ -541,7 +539,7 @@ mod tests {
                     id: pool_ids[i],
                     tokens: tokens[i..n].to_owned(),
                     scaling_exponents: vec![],
-                    block_created: (0, H256::from_low_u64_be(0)),
+                    block_created: 0,
                     address: pool_addresses[i],
                 },
                 weights: vec![],

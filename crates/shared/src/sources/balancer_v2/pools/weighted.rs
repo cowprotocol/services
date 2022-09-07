@@ -2,7 +2,6 @@
 
 use super::{common, FactoryIndexing, PoolIndexing};
 use crate::{
-    event_handling::BlockNumberHash,
     sources::balancer_v2::{
         graph_api::{PoolData, PoolType},
         swap::fixed_point::Bfp,
@@ -34,7 +33,7 @@ pub struct TokenState {
 }
 
 impl PoolIndexing for PoolInfo {
-    fn from_graph_data(pool: &PoolData, block_created: BlockNumberHash) -> Result<Self> {
+    fn from_graph_data(pool: &PoolData, block_created: u64) -> Result<Self> {
         Ok(PoolInfo {
             common: common::PoolInfo::for_type(PoolType::Weighted, pool, block_created)?,
             weights: pool
@@ -132,14 +131,14 @@ mod tests {
         };
 
         assert_eq!(
-            PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).unwrap(),
+            PoolInfo::from_graph_data(&pool, 42).unwrap(),
             PoolInfo {
                 common: common::PoolInfo {
                     id: H256([2; 32]),
                     address: H160([1; 20]),
                     tokens: vec![H160([0x11; 20]), H160([0x22; 20])],
                     scaling_exponents: vec![17, 16],
-                    block_created: (42, H256::from_low_u64_be(42)),
+                    block_created: 42,
                 },
                 weights: vec![
                     Bfp::from_wei(1_337_000_000_000_000_000u128.into()),
@@ -171,7 +170,7 @@ mod tests {
             ],
         };
 
-        assert!(PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, 42).is_err());
     }
 
     #[tokio::test]
@@ -192,7 +191,7 @@ mod tests {
                 tokens: vec![H160([1; 20]), H160([2; 20]), H160([3; 20])],
                 address: pool.address(),
                 scaling_exponents: vec![0, 0, 0],
-                block_created: (42, H256::from_low_u64_be(42)),
+                block_created: 42,
             })
             .await
             .unwrap();
@@ -228,7 +227,7 @@ mod tests {
                     .values()
                     .map(|token| token.scaling_exponent)
                     .collect(),
-                block_created: (1337, H256::from_low_u64_be(1337)),
+                block_created: 1337,
             },
             weights: weights.to_vec(),
         };
