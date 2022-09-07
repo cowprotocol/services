@@ -1,7 +1,4 @@
-use crate::{
-    database::orders::{InsertionError, OrderStoring},
-    order_validation::{OrderValidating, ValidationError},
-};
+use crate::database::orders::{InsertionError, OrderStoring};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
@@ -11,7 +8,11 @@ use model::{
     DomainSeparator,
 };
 use primitive_types::H160;
-use shared::{current_block::CurrentBlockStream, metrics::LivenessChecking};
+use shared::{
+    current_block::CurrentBlockStream,
+    metrics::LivenessChecking,
+    order_validation::{OrderValidating, ValidationError},
+};
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -308,7 +309,7 @@ impl LivenessChecking for Orderbook {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{database::orders::MockOrderStoring, order_validation::MockOrderValidating};
+    use crate::database::orders::MockOrderStoring;
     use ethcontract::H160;
     use mockall::predicate::eq;
     use model::{
@@ -316,6 +317,7 @@ mod tests {
         order::{OrderData, OrderMetadata},
         signature::Signature,
     };
+    use shared::order_validation::MockOrderValidating;
 
     #[tokio::test]
     #[ignore]

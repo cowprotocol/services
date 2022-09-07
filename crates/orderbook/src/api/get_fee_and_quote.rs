@@ -1,4 +1,4 @@
-use crate::order_quoting::QuoteHandler;
+use crate::api::post_quote::OrderQuoteErrorWrapper;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use ethcontract::{H160, U256};
@@ -8,6 +8,7 @@ use model::{
 };
 use serde::{Deserialize, Serialize};
 use shared::api::{convert_json_response, ApiReply};
+use shared::order_quoting::QuoteHandler;
 use std::{convert::Infallible, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -126,7 +127,8 @@ pub fn get_fee_and_quote_sell(
                 quotes
                     .calculate_quote(&query.into())
                     .await
-                    .map(SellResponse::from),
+                    .map(SellResponse::from)
+                    .map_err(OrderQuoteErrorWrapper),
             ))
         }
     })
@@ -142,7 +144,8 @@ pub fn get_fee_and_quote_buy(
                 quotes
                     .calculate_quote(&query.into())
                     .await
-                    .map(BuyResponse::from),
+                    .map(BuyResponse::from)
+                    .map_err(OrderQuoteErrorWrapper),
             ))
         }
     })

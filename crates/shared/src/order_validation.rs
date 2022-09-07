@@ -1,6 +1,13 @@
-use crate::order_quoting::{
-    CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
-    QuoteSearchParameters,
+use crate::{
+    account_balances::{BalanceFetching, TransferSimulationError},
+    bad_token::BadTokenDetecting,
+    order_quoting::{
+        CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
+        QuoteSearchParameters,
+    },
+    price_estimation::PriceEstimationError,
+    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
+    web3_traits::CodeFetching,
 };
 use anyhow::anyhow;
 use contracts::WETH9;
@@ -15,16 +22,9 @@ use model::{
     signature::{hashed_eip712_message, Signature, SigningScheme, VerificationError},
     DomainSeparator,
 };
-use shared::{
-    account_balances::{BalanceFetching, TransferSimulationError},
-    bad_token::BadTokenDetecting,
-    price_estimation::PriceEstimationError,
-    signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    web3_traits::CodeFetching,
-};
 use std::{collections::HashSet, sync::Arc, time::Duration};
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderValidating: Send + Sync {
     /// Partial (aka Pre-) Validation is aimed at catching malformed order data during the
@@ -618,7 +618,15 @@ fn convert_signing_scheme_into_quote_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::order_quoting::MockOrderQuoting;
+    use crate::{
+        account_balances::MockBalanceFetching,
+        bad_token::{MockBadTokenDetecting, TokenQuality},
+        dummy_contract,
+        order_quoting::MockOrderQuoting,
+        rate_limiter::RateLimiterError,
+        signature_validator::MockSignatureValidating,
+        web3_traits::MockCodeFetching,
+    };
     use anyhow::anyhow;
     use chrono::Utc;
     use ethcontract::web3::signing::SecretKeyRef;
@@ -630,14 +638,6 @@ mod tests {
         signature::{EcdsaSignature, EcdsaSigningScheme},
     };
     use secp256k1::ONE_KEY;
-    use shared::{
-        account_balances::MockBalanceFetching,
-        bad_token::{MockBadTokenDetecting, TokenQuality},
-        dummy_contract,
-        rate_limiter::RateLimiterError,
-        signature_validator::MockSignatureValidating,
-        web3_traits::MockCodeFetching,
-    };
 
     #[test]
     fn minimum_balance_() {
