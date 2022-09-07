@@ -127,7 +127,10 @@ where
 
         let current_blocks = self
             .block_retriever
-            .preceding_blocks(current_block_number, MAX_REORG_BLOCK_COUNT)
+            .preceding_blocks(
+                current_block_number,
+                std::cmp::min(current_block_number + 1, MAX_REORG_BLOCK_COUNT),
+            )
             .await?;
 
         let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
