@@ -8,7 +8,7 @@ use database::{
 use model::quote::QuoteId;
 use number_conversions::u256_to_big_decimal;
 use shared::{
-    conversions::order_kind_into,
+    db_order_conversions::order_kind_into,
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
 

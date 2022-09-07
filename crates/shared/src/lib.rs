@@ -9,6 +9,7 @@ pub mod balancer_sor_api;
 pub mod baseline_solver;
 pub mod conversions;
 pub mod current_block;
+pub mod db_order_conversions;
 pub mod ethcontract_error;
 pub mod event_handling;
 pub mod fee_subsidy;

@@ -16,7 +16,7 @@ use num::Zero;
 use number_conversions::{big_decimal_to_big_uint, big_decimal_to_u256, u256_to_big_decimal};
 use primitive_types::H160;
 use shared::{
-    conversions::{
+    db_order_conversions::{
         buy_token_destination_from, buy_token_destination_into, order_kind_from, order_kind_into,
         sell_token_source_from, sell_token_source_into, signing_scheme_from, signing_scheme_into,
     },

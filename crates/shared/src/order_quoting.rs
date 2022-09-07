@@ -4,7 +4,7 @@ use super::price_estimation::{
     single_estimate, PriceEstimating, PriceEstimationError,
 };
 use crate::{
-    conversions::order_kind_from,
+    db_order_conversions::order_kind_from,
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
     order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
