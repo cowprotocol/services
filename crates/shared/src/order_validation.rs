@@ -627,11 +627,11 @@ pub fn convert_signing_scheme_into_quote_kind(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::order_quoting::MockOrderQuoting;
     use crate::{
         account_balances::MockBalanceFetching,
         bad_token::{MockBadTokenDetecting, TokenQuality},
         dummy_contract,
+        order_quoting::MockOrderQuoting,
         rate_limiter::RateLimiterError,
         signature_validator::MockSignatureValidating,
         web3_traits::MockCodeFetching,
@@ -641,7 +641,11 @@ mod tests {
     use ethcontract::web3::signing::SecretKeyRef;
     use maplit::hashset;
     use mockall::predicate::{always, eq};
-    use model::{app_id::AppId, order::OrderBuilder, signature::EcdsaSigningScheme};
+    use model::{
+        app_id::AppId,
+        order::OrderBuilder,
+        signature::{EcdsaSignature, EcdsaSigningScheme},
+    };
     use secp256k1::ONE_KEY;
 
     #[test]
