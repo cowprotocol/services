@@ -517,6 +517,18 @@ paths:
                 $ref: "#/components/schemas/SolverCompetitionResponse"
         404:
           description: No competition information available for this tx hash.
+  /api/v1/version:
+    get:
+      summary: Information about the current deployed version of the API
+      description: |
+        Returns the git commit hash, branch name and release tag (code: https://github.com/cowprotocol/services).
+      responses:
+        200:
+          description: version info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VersionResponse"
 components:
   schemas:
     TransactionHash:
@@ -1168,3 +1180,17 @@ components:
         callData:
           description: hex encoded transaction calldata
           type: string
+    VersionResponse:
+      description: |
+        The version of the codebase that is currently running.
+      type: object
+      properties:
+        branch:
+          type: string
+          description: the git branch name at the time of build
+        commit:
+          type: string
+          description: the git commit hash at the time of build
+        version:
+          type: string
+          description: the git tagged version (if any) at the time of the build
