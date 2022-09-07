@@ -92,7 +92,7 @@ pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
     /// gets latest `length` blocks
-    async fn current_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>>;
+    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
@@ -117,7 +117,7 @@ impl BlockRetrieving for Web3 {
     /// get latest `length` blocks
     /// if successful, function guarantees `length` blocks in Result (does not return partial results)
     /// `last_block` block is at the end of the resulting vector
-    async fn current_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
+    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
         ensure!(
             length > 0 && last_block > 0 && last_block >= length,
             "invalid input"
@@ -135,15 +135,11 @@ impl BlockRetrieving for Web3 {
         }
 
         // send_batch guarantees the size and order of the responses to match the requests
-        let mut batch_response = self
-            .transport()
+        self.transport()
             .send_batch(batch_request.iter().cloned())
             .await?
-            .into_iter();
-
-        batch_request
             .into_iter()
-            .map(|_req| match batch_response.next().unwrap() {
+            .map(|response| match response {
                 Ok(response) => serde_json::from_value::<web3::types::Block<H256>>(response)
                     .context("unexpected response format")
                     .and_then(|response| {
@@ -188,11 +184,15 @@ mod tests {
         let web3 = Web3::new(transport);
         let current_block = web3.current_block().await.unwrap();
         let blocks = web3
-            .current_blocks(current_block.number.unwrap().as_u64(), 0)
+            .preceding_blocks(current_block.number.unwrap().as_u64(), 0)
             .await;
         assert!(blocks.is_err());
+        let blocks = web3.preceding_blocks(0, 0).await;
+        assert!(blocks.is_err());
+        let blocks = web3.preceding_blocks(1, 2).await;
+        assert!(blocks.is_err());
         let blocks = web3
-            .current_blocks(current_block.number.unwrap().as_u64(), 5)
+            .preceding_blocks(current_block.number.unwrap().as_u64(), 5)
             .await
             .unwrap();
         dbg!(blocks);
