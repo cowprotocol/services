@@ -54,7 +54,7 @@ pub trait EventStoring<T>: Send + Sync {
     /// * `events` the contract events to be appended by the implementer
     async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
 
-    async fn last_event_block(&self) -> Result<BlockNumberHash>;
+    async fn last_event_block(&self) -> Result<u64>;
 }
 
 pub trait EventRetrieving {
@@ -98,7 +98,12 @@ where
     async fn event_block_range(&self) -> Result<(RangeInclusive<u64>, Vec<BlockNumberHash>)> {
         let current_block = self.block_retriever.current_block().await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
-            vec![self.store.last_event_block().await?]
+            // since we don't want `Store` to be responsible for hashes, here we just get
+            // block number and get the `safe` block from it - this is done only on first init
+            let last_handled_block = self.store.last_event_block().await?;
+            self.block_retriever
+                .preceding_blocks(last_handled_block.saturating_sub(MAX_REORG_BLOCK_COUNT), 1)
+                .await?
         } else {
             self.last_handled_blocks.clone()
         };

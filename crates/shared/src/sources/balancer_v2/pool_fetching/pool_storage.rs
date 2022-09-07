@@ -165,12 +165,12 @@ where
         }
     }
 
-    pub fn last_event_block(&self) -> BlockNumberHash {
+    pub fn last_event_block(&self) -> u64 {
         // Technically we could keep this updated more effectively in a field on balancer pools,
         // but the maintenance seems like more overhead that needs to be tested.
         self.pools
             .values()
-            .map(|pool| pool.common().block_created)
+            .map(|pool| pool.common().block_created.0)
             .max()
             .unwrap_or_default()
     }
@@ -211,7 +211,7 @@ where
         Ok(())
     }
 
-    async fn last_event_block(&self) -> Result<BlockNumberHash> {
+    async fn last_event_block(&self) -> Result<u64> {
         Ok(self.last_event_block())
     }
 }
@@ -354,7 +354,7 @@ mod tests {
 
         // Note that it is never expected that blocks for events will differ,
         // but in this test block_created for the pool is the first block it receives.
-        assert_eq!(pool_store.last_event_block(), (2, H256::from_low_u64_be(2)));
+        assert_eq!(pool_store.last_event_block(), 2);
         assert_eq!(
             pool_store.pools_by_token.get(&tokens[0]).unwrap(),
             &hashset! { pool_ids[0] }
@@ -454,10 +454,7 @@ mod tests {
         }
 
         // Make sure that we indexed all the initial events, and replace
-        assert_eq!(
-            pool_store.last_event_block(),
-            (end_block as u64, H256::from_low_u64_be(end_block as u64))
-        );
+        assert_eq!(pool_store.last_event_block(), end_block as u64);
         pool_store.remove_pools_newer_than_block(3);
         pool_store
             .index_pool_creation(new_creation, new_pool.common.block_created)
@@ -516,7 +513,7 @@ mod tests {
             .pools_by_token
             .get(&new_pool.common.tokens[0])
             .is_some());
-        assert_eq!(pool_store.last_event_block(), new_pool.common.block_created);
+        assert_eq!(pool_store.last_event_block(), new_pool.common.block_created.0);
     }
 
     #[test]

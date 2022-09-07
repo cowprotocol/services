@@ -1,4 +1,4 @@
-use crate::{Address, BlockHash, OrderUid, PgTransaction, TransactionHash};
+use crate::{Address, OrderUid, PgTransaction, TransactionHash};
 use sqlx::{types::BigDecimal, Executor, PgConnection};
 
 #[derive(Clone, Debug)]
@@ -38,14 +38,17 @@ pub struct PreSignature {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct EventIndex {
     pub block_number: i64,
-    pub block_hash: BlockHash,
     pub log_index: i64,
 }
 
-pub async fn last_block(ex: &mut PgConnection) -> Result<(i64, BlockHash), sqlx::Error> {
-    const QUERY: &str =
-        "SELECT block_number, block_hash FROM blocks ORDER_BY block_number DESC LIMIT 1;";
-    sqlx::query_as(QUERY).fetch_one(ex).await
+pub async fn last_block(ex: &mut PgConnection) -> Result<i64, sqlx::Error> {
+    const QUERY: &str = "\
+            SELECT GREATEST( \
+                (SELECT COALESCE(MAX(block_number), 0) FROM trades), \
+                (SELECT COALESCE(MAX(block_number), 0) FROM settlements), \
+                (SELECT COALESCE(MAX(block_number), 0) FROM invalidations), \
+                (SELECT COALESCE(MAX(block_number), 0) FROM presignature_events));";
+    sqlx::query_scalar(QUERY).fetch_one(ex).await
 }
 
 pub async fn delete(
@@ -68,10 +71,6 @@ pub async fn delete(
     ex.execute(sqlx::query(QUERY_PRESIGNATURES).bind(delete_from_block_number))
         .await?;
 
-    const QUERY_BLOCKS: &str = "DELETE FROM blocks WHERE block_number >= $1;";
-    ex.execute(sqlx::query(QUERY_BLOCKS).bind(delete_from_block_number))
-        .await?;
-
     Ok(())
 }
 
@@ -89,7 +88,6 @@ pub async fn append(
             Event::Settlement(event) => insert_settlement(ex, index, event).await?,
             Event::PreSignature(event) => insert_presignature(ex, index, event).await?,
         };
-        insert_block(ex, index.block_number, index.block_hash).await?;
     }
     Ok(())
 }
@@ -171,25 +169,8 @@ async fn insert_presignature(
     Ok(())
 }
 
-async fn insert_block(
-    ex: &mut PgConnection,
-    block_number: i64,
-    block_hash: BlockHash,
-) -> Result<(), sqlx::Error> {
-    const QUERY: &str = "INSERT INTO blocks (block_number, block_hash) VALUES ($1, $2) \
-         ON CONFLICT DO NOTHING;";
-    sqlx::query(QUERY)
-        .bind(block_number)
-        .bind(block_hash)
-        .execute(ex)
-        .await?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::byte_array::ByteArray;
-
     use super::*;
     use sqlx::Connection;
 
@@ -200,13 +181,10 @@ mod tests {
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
 
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 0);
-        assert_eq!(last_block_hash, ByteArray([0; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 0);
 
         let mut event_index = EventIndex {
             block_number: 1,
-            block_hash: ByteArray([1; 32]),
             log_index: 0,
         };
         append(
@@ -215,57 +193,40 @@ mod tests {
         )
         .await
         .unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 1);
-        assert_eq!(last_block_hash, ByteArray([1; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 1);
 
         event_index.block_number = 2;
-        event_index.block_hash = ByteArray([2; 32]);
         append(&mut db, &[(event_index, Event::Trade(Default::default()))])
             .await
             .unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 2);
-        assert_eq!(last_block_hash, ByteArray([2; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 2);
 
         event_index.block_number = 3;
-        event_index.block_hash = ByteArray([3; 32]);
         append(
             &mut db,
             &[(event_index, Event::PreSignature(Default::default()))],
         )
         .await
         .unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 3);
-        assert_eq!(last_block_hash, ByteArray([3; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 3);
 
         event_index.block_number = 4;
-        event_index.block_hash = ByteArray([4; 32]);
         append(
             &mut db,
             &[(event_index, Event::Settlement(Default::default()))],
         )
         .await
         .unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 4);
-        assert_eq!(last_block_hash, ByteArray([4; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 4);
 
         delete(&mut db, 5).await.unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 4);
-        assert_eq!(last_block_hash, ByteArray([4; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 4);
 
         delete(&mut db, 3).await.unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 2);
-        assert_eq!(last_block_hash, ByteArray([2; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 2);
 
         delete(&mut db, 0).await.unwrap();
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 0);
-        assert_eq!(last_block_hash, ByteArray([0; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 0);
     }
 
     #[tokio::test]
@@ -280,7 +241,6 @@ mod tests {
                 &[(
                     EventIndex {
                         block_number: 2,
-                        block_hash: ByteArray([2; 32]),
                         log_index,
                     },
                     event,
@@ -295,8 +255,6 @@ mod tests {
             append(&mut db, 2, Event::Settlement(Default::default())).await;
             append(&mut db, 3, Event::PreSignature(Default::default())).await;
         }
-        let (last_block_number, last_block_hash) = last_block(&mut db).await.unwrap();
-        assert_eq!(last_block_number, 2);
-        assert_eq!(last_block_hash, ByteArray([2; 32]));
+        assert_eq!(last_block(&mut db).await.unwrap(), 2);
     }
 }

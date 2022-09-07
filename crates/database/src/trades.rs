@@ -149,7 +149,6 @@ mod tests {
         assert_trades(&mut db, None, None, &[]).await;
         let event_index_a = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 0,
         };
         let trade_a =
@@ -158,7 +157,6 @@ mod tests {
 
         let event_index_b = EventIndex {
             block_number: 1,
-            block_hash: ByteArray([1; 32]),
             log_index: 0,
         };
         let trade_b =
@@ -177,7 +175,6 @@ mod tests {
 
         let event_index_0 = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 0,
         };
         let trade_0 =
@@ -185,7 +182,6 @@ mod tests {
 
         let event_index_1 = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 1,
         };
         let trade_1 =
@@ -207,7 +203,6 @@ mod tests {
 
         let event_index_0 = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 0,
         };
         let trade_0 =
@@ -215,7 +210,6 @@ mod tests {
 
         let event_index_1 = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 1,
         };
         let trade_1 =
@@ -237,7 +231,6 @@ mod tests {
 
         let event_index = EventIndex {
             block_number: 0,
-            block_hash: ByteArray([0; 32]),
             log_index: 0,
         };
         add_trade(&mut db, owners[0], order_ids[0], event_index, None).await;
@@ -285,7 +278,6 @@ mod tests {
             &mut db,
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 4,
             },
             Default::default(),
@@ -299,7 +291,6 @@ mod tests {
             order_ids[0],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 0,
             },
             Some(settlement.transaction_hash),
@@ -313,7 +304,6 @@ mod tests {
             order_ids[1],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 1,
             },
             Some(settlement.transaction_hash),
@@ -336,7 +326,6 @@ mod tests {
             &mut db,
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 4,
             },
             Default::default(),
@@ -350,7 +339,6 @@ mod tests {
             order_ids[0],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 0,
             },
             Some(settlement.transaction_hash),
@@ -363,7 +351,6 @@ mod tests {
             order_ids[1],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 1,
             },
             Some(settlement.transaction_hash),
@@ -387,7 +374,6 @@ mod tests {
             &mut db,
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 1,
             },
             Default::default(),
@@ -398,7 +384,6 @@ mod tests {
             &mut db,
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 3,
             },
             Default::default(),
@@ -412,7 +397,6 @@ mod tests {
             order_ids[0],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 0,
             },
             Some(settlement_a.transaction_hash),
@@ -426,7 +410,6 @@ mod tests {
             order_ids[1],
             EventIndex {
                 block_number: 0,
-                block_hash: ByteArray([0; 32]),
                 log_index: 2,
             },
             Some(settlement_b.transaction_hash),
