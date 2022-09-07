@@ -3,22 +3,22 @@ info:
   version: 0.0.1
   title: Order Book API
 servers:
-  - description: Mainnet (Staging)
-    url: https://barn.api.cow.fi/mainnet
   - description: Mainnet (Prod)
     url: https://api.cow.fi/mainnet
-  - description: Rinkeby (Staging)
-    url: https://barn.api.cow.fi/rinkeby
+  - description: Mainnet (Staging)
+    url: https://barn.api.cow.fi/mainnet
   - description: Rinkeby (Prod)
     url: https://api.cow.fi/rinkeby
-  - description: Görli (Staging)
-    url: https://barn.api.cow.fi/goerli
+  - description: Rinkeby (Staging)
+    url: https://barn.api.cow.fi/rinkeby
   - description: Görli (Prod)
     url: https://api.cow.fi/goerli
-  - description: Gnosis Chain (Staging)
-    url: https://barn.api.cow.fi/xdai
+  - description: Görli (Staging)
+    url: https://barn.api.cow.fi/goerli
   - description: Gnosis Chain (Prod)
     url: https://api.cow.fi/xdai
+  - description: Gnosis Chain (Staging)
+    url: https://barn.api.cow.fi/xdai
   - description: Local
     url: http://localhost:8080
 paths:
