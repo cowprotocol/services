@@ -1,12 +1,13 @@
-use crate::Web3;
-use anyhow::{anyhow, Context as _, Result};
+use crate::{event_handling::BlockNumberHash, Web3};
+use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::time::Duration;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
+    helpers,
     types::{BlockId, BlockNumber},
-    Transport,
+    BatchTransport, Transport,
 };
 
 pub type Block = web3::types::Block<H256>;
@@ -90,14 +91,12 @@ pub fn block_number(block: &Block) -> Result<u64> {
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
+    /// gets latest `length` blocks
+    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
-impl<T> BlockRetrieving for web3::Web3<T>
-where
-    T: Transport + Send + Sync,
-    T::Out: Send,
-{
+impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<Block> {
         self.eth()
             .block(BlockId::Number(BlockNumber::Latest))
@@ -114,12 +113,51 @@ where
             .context("failed to get current block number")?
             .as_u64())
     }
+
+    /// get latest `length` blocks
+    /// if successful, function guarantees `length` blocks in Result (does not return partial results)
+    /// `last_block` block is at the end of the resulting vector
+    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
+        ensure!(
+            length > 0 && last_block > 0 && last_block >= length,
+            "invalid input"
+        );
+
+        let include_txs = helpers::serialize(&false);
+        let mut batch_request = Vec::with_capacity(length as usize);
+        for i in (0..length).rev() {
+            let num =
+                helpers::serialize(&BlockNumber::Number((last_block.saturating_sub(i)).into()));
+            let request = self
+                .transport()
+                .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
+            batch_request.push(request);
+        }
+
+        // send_batch guarantees the size and order of the responses to match the requests
+        self.transport()
+            .send_batch(batch_request.iter().cloned())
+            .await?
+            .into_iter()
+            .map(|response| match response {
+                Ok(response) => serde_json::from_value::<web3::types::Block<H256>>(response)
+                    .context("unexpected response format")
+                    .and_then(|response| {
+                        Ok((
+                            response.number.context("missing block number")?.as_u64(),
+                            response.hash.context("missing hash")?,
+                        ))
+                    }),
+                Err(err) => Err(anyhow!("web3 error: {}", err)),
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::create_test_transport;
+    use crate::transport::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
 
     // cargo test current_block -- --ignored --nocapture
@@ -137,5 +175,26 @@ mod tests {
             let block = stream.next().await.unwrap();
             println!("new block number {}", block.number.unwrap().as_u64());
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn current_blocks_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let current_block = web3.current_block().await.unwrap();
+        let blocks = web3
+            .preceding_blocks(current_block.number.unwrap().as_u64(), 0)
+            .await;
+        assert!(blocks.is_err());
+        let blocks = web3.preceding_blocks(0, 0).await;
+        assert!(blocks.is_err());
+        let blocks = web3.preceding_blocks(1, 2).await;
+        assert!(blocks.is_err());
+        let blocks = web3
+            .preceding_blocks(current_block.number.unwrap().as_u64(), 5)
+            .await
+            .unwrap();
+        dbg!(blocks);
     }
 }

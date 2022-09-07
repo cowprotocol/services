@@ -165,7 +165,7 @@ mod tests {
                     .values()
                     .map(|token| token.common.scaling_exponent)
                     .collect(),
-                block_created: (1337, Some(H256::from_low_u64_be(1337))),
+                block_created: (1337, H256::from_low_u64_be(1337)),
             },
         };
         let common_pool_state = common::PoolState {
@@ -219,7 +219,7 @@ mod tests {
                 address: pool.address(),
                 tokens: vec![H160([1; 20]), H160([1; 20])],
                 scaling_exponents: vec![0, 0],
-                block_created: (1337, Some(H256::from_low_u64_be(1337))),
+                block_created: (1337, H256::from_low_u64_be(1337)),
             },
         };
         let common_pool_state = common::PoolState {
@@ -277,6 +277,6 @@ mod tests {
             ],
         };
 
-        assert!(PoolInfo::from_graph_data(&pool, (42, Some(H256::from_low_u64_be(42)))).is_err());
+        assert!(PoolInfo::from_graph_data(&pool, (42, H256::from_low_u64_be(42))).is_err());
     }
 }

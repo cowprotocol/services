@@ -439,7 +439,7 @@ pub async fn main(args: arguments::Arguments) {
             .map(|block| {
                 (
                     block.number.expect("number must exist").as_u64(),
-                    block.hash,
+                    block.hash.expect("hash must exist"),
                 )
             })
     } else {

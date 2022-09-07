@@ -15,11 +15,7 @@ pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 
-/// Block hash is optional since it is not always needed. For example, when we define a range of blocks,
-/// block hash is important for range.end() block because that one is used to be stored in `last_handled_block`
-/// and used in the next iterations, while for range.start() block is irrelevant, therefore, we don't want to spend
-/// additional rpc calls just to satisfy the form.
-pub type BlockNumberHash = (u64, Option<H256>);
+pub type BlockNumberHash = (u64, H256);
 
 pub struct EventHandler<B, C, S>
 where
@@ -30,7 +26,7 @@ where
     block_retriever: B,
     contract: C,
     store: S,
-    last_handled_block: Option<BlockNumberHash>,
+    last_handled_blocks: Vec<BlockNumberHash>,
 }
 
 /// `EventStoring` is used by `EventHandler` for the purpose of giving the user freedom
@@ -49,7 +45,7 @@ pub trait EventStoring<T>: Send + Sync {
     async fn replace_events(
         &mut self,
         events: Vec<EthcontractEvent<T>>,
-        range: RangeInclusive<BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()>;
 
     /// Returns ok, on successful execution, otherwise an appropriate error
@@ -82,7 +78,12 @@ where
             block_retriever,
             contract,
             store,
-            last_handled_block: start_sync_at_block,
+            last_handled_blocks: {
+                match start_sync_at_block {
+                    Some(block) => vec![block],
+                    None => vec![],
+                }
+            },
         }
     }
 
@@ -91,47 +92,52 @@ where
     }
 
     pub fn last_handled_block(&self) -> Option<BlockNumberHash> {
-        self.last_handled_block
+        self.last_handled_blocks.last().cloned()
     }
 
-    async fn event_block_range(&self) -> Result<RangeInclusive<BlockNumber>> {
-        // Instead of using only the most recent event block from the db we also store the last
-        // handled block in self so that during long times of no events we do not query needlessly
-        // large block ranges.
-        let (last_handled_block_number, last_handled_block_hash) = match self.last_handled_block {
-            Some(block) => block,
-            None => self.store.last_event_block().await?,
-        };
+    async fn event_block_range(&self) -> Result<(RangeInclusive<u64>, Vec<BlockNumberHash>)> {
         let current_block = self.block_retriever.current_block().await?;
-        let current_block_number = current_block
-            .number
-            .context("missing block number")?
-            .as_u64();
-        let from_block = if Some(current_block.parent_hash) == last_handled_block_hash {
-            // no reorg
-            (last_handled_block_number, last_handled_block_hash)
+        let handled_blocks = if self.last_handled_blocks.is_empty() {
+            vec![self.store.last_event_block().await?]
         } else {
-            (
-                last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
-                None,
-            )
+            self.last_handled_blocks.clone()
         };
 
+        let current_block_number = current_block.number.context("missing number")?.as_u64();
+        let last_handled_block_hash = handled_blocks.last().unwrap().1;
+
+        // handle special case which happens most of the time (no reorg, just one new block is added)
+        if current_block.parent_hash == last_handled_block_hash {
+            let current_block = (
+                current_block_number,
+                current_block.hash.context("missing hash")?,
+            );
+            return Ok(((current_block.0..=current_block.0), vec![current_block]));
+        }
+
+        let current_blocks = self
+            .block_retriever
+            .preceding_blocks(current_block_number, MAX_REORG_BLOCK_COUNT)
+            .await?;
+
+        let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
+
         anyhow::ensure!(
-            from_block.0 <= current_block_number,
+            block_range.start() <= block_range.end(),
             format!(
                 "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-                current_block_number, MAX_REORG_BLOCK_COUNT, last_handled_block_number
+                block_range.end(),
+                MAX_REORG_BLOCK_COUNT,
+                block_range.start()
             )
         );
-        Ok(BlockNumber::Specific(from_block)
-            ..=BlockNumber::Latest((current_block_number, current_block.hash)))
+        Ok((block_range, current_blocks))
     }
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let range = self.event_block_range().await?;
+        let (range, replacement_blocks) = self.event_block_range().await?;
         tracing::debug!("updating events in block range {:?}", range);
         let events = self
             .past_events(&range)
@@ -182,24 +188,65 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
-        self.last_handled_block = Some(range.end().to_value());
+
+        track_block_range(&format!("range_{}", replacement_blocks.len()));
+        if !replacement_blocks.is_empty() {
+            // delete forked blocks
+            self.last_handled_blocks
+                .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
+            // append new canonical blocks
+            self.last_handled_blocks
+                .extend(replacement_blocks.into_iter());
+            // cap number of blocks to MAX_REORG_BLOCK_COUNT
+            let start_index = self
+                .last_handled_blocks
+                .len()
+                .saturating_sub(MAX_REORG_BLOCK_COUNT as usize);
+            self.last_handled_blocks = self.last_handled_blocks[start_index..].to_vec();
+        }
         Ok(())
     }
 
     async fn past_events(
         &self,
-        block_range: &RangeInclusive<BlockNumber>,
+        block_range: &RangeInclusive<u64>,
     ) -> Result<impl Stream<Item = Result<EthcontractEvent<C::Event>>>, ExecutionError> {
         Ok(self
             .contract
             .get_events()
-            .from_block((*block_range.start()).block_number())
-            .to_block((*block_range.end()).block_number())
+            .from_block(Web3BlockNumber::Number((*block_range.start()).into()))
+            .to_block(Web3BlockNumber::Number((*block_range.end()).into()))
             .block_page_size(500)
             .query_paginated()
             .await?
             .map_err(Error::from))
     }
+}
+
+fn detect_reorg_path(
+    handled_blocks: &[BlockNumberHash],
+    current_blocks: &[BlockNumberHash],
+) -> Result<RangeInclusive<u64>> {
+    // in most cases, current_blocks = handled_blocks + 1 newest block
+    // therefore, is it more efficient to put the handled_blocks in outer loop,
+    // so everything finishes in only two iterations.
+    for handled_block in handled_blocks.iter().rev() {
+        for current_block in current_blocks.iter().rev() {
+            if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
+                // found the same block in both lists, now we know the common ancestor
+                return Ok(current_block.0..=current_blocks.last().unwrap().0);
+            }
+        }
+    }
+
+    //cant figure out the reorg, fallback to regular 25 blocks reorg
+    let start_index = handled_blocks
+        .last()
+        .context("empty handled_blocks")?
+        .0
+        .saturating_sub(MAX_REORG_BLOCK_COUNT);
+    let end_index = current_blocks.last().context("empty current_blocks")?.0;
+    Ok(start_index..=end_index)
 }
 
 #[async_trait::async_trait]
@@ -290,4 +337,20 @@ macro_rules! impl_event_retrieving {
             }
         }
     };
+}
+
+#[derive(prometheus_metric_storage::MetricStorage, Clone, Debug)]
+#[metric(subsystem = "event_handler")]
+struct Metrics {
+    /// Tracks how many blocks were replaced/added in each call to EventHandler
+    #[metric(labels("range"))]
+    block_ranges: prometheus::IntCounterVec,
+}
+
+fn track_block_range(range: &str) {
+    Metrics::instance(global_metrics::get_metric_storage_registry())
+        .expect("unexpected error getting metrics instance")
+        .block_ranges
+        .with_label_values(&[range])
+        .inc();
 }
