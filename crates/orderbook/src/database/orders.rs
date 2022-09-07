@@ -352,9 +352,7 @@ mod tests {
         SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
     };
     use model::{
-        order::{
-             Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
-        },
+        order::{Order, OrderData, OrderMetadata, OrderStatus, OrderUid},
         signature::{Signature, SigningScheme},
     };
     use std::sync::atomic::{AtomicI64, Ordering};
