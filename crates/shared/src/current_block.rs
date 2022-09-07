@@ -146,11 +146,11 @@ impl BlockRetrieving for Web3 {
             .map(|_req| match batch_response.next().unwrap() {
                 Ok(response) => serde_json::from_value::<web3::types::Block<H256>>(response)
                     .context("unexpected response format")
-                    .and_then(|response| match response.number {
-                        Some(number) => {
-                            Ok((number.as_u64(), response.hash.context("missing hash")?))
-                        }
-                        None => Err(anyhow!("missing block number")),
+                    .and_then(|response| {
+                        Ok((
+                            response.number.context("missing block number")?.as_u64(),
+                            response.hash.context("missing hash")?,
+                        ))
                     }),
                 Err(err) => Err(anyhow!("web3 error: {}", err)),
             })

@@ -202,8 +202,7 @@ where
                 .last_handled_blocks
                 .len()
                 .saturating_sub(MAX_REORG_BLOCK_COUNT as usize);
-            self.last_handled_blocks =
-                self.last_handled_blocks[start_index..self.last_handled_blocks.len()].to_vec();
+            self.last_handled_blocks = self.last_handled_blocks[start_index..].to_vec();
         }
         Ok(())
     }
