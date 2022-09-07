@@ -119,8 +119,10 @@ impl BlockRetrieving for Web3 {
     /// `last_block` block is at the end of the resulting vector
     async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
         ensure!(
-            length > 0 && last_block > 0 && last_block >= length,
-            "invalid input"
+            length > 0 && last_block + 1 >= length,
+            "invalid input, last block {}, length {}",
+            last_block,
+            length
         );
 
         let include_txs = helpers::serialize(&false);
@@ -189,12 +191,12 @@ mod tests {
         assert!(blocks.is_err());
         let blocks = web3.preceding_blocks(0, 0).await;
         assert!(blocks.is_err());
-        let blocks = web3.preceding_blocks(1, 2).await;
-        assert!(blocks.is_err());
+        assert_eq!(web3.preceding_blocks(0, 1).await.unwrap().len(), 1);
         let blocks = web3
             .preceding_blocks(current_block.number.unwrap().as_u64(), 5)
             .await
             .unwrap();
+        assert_eq!(blocks.len(), 5);
         dbg!(blocks);
     }
 }
