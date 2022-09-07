@@ -230,11 +230,7 @@ impl<'a> Submitter<'a> {
         let nonce = self.nonce().await?;
         let name = self.submit_api.name();
 
-        tracing::debug!(
-            "starting solution submission at nonce {} with submitter {}",
-            nonce,
-            name
-        );
+        tracing::debug!("starting solution submission at nonce {}", nonce);
 
         self.submitted_transactions.remove_older_than(nonce);
 
@@ -266,15 +262,15 @@ impl<'a> Submitter<'a> {
 
         let fallback_result = tokio::select! {
             method_error = submit_future.fuse() => {
-                tracing::debug!("stopping submission for {} because simulation failed: {:?}", name, method_error);
+                tracing::debug!("stopping submission because simulation failed: {:?}", method_error);
                 Err(method_error)
             },
             new_nonce = nonce_future.fuse() => {
-                tracing::debug!("stopping submission for {} because account nonce changed to {}", name, new_nonce);
+                tracing::debug!("stopping submission because account nonce changed to {}", new_nonce);
                 Ok(None)
             },
             _ = deadline_future.fuse() => {
-                tracing::debug!("stopping submission for {} because deadline has been reached. cancelling last submitted transaction...", name);
+                tracing::debug!("stopping submission because deadline has been reached. cancelling last submitted transaction...");
 
                 if let Some((_, gas_price)) = transactions.last() {
                     let gas_price = gas_price.bump(GAS_PRICE_BUMP).ceil();
@@ -313,9 +309,8 @@ impl<'a> Submitter<'a> {
             let tx_to_propagate_deadline = Instant::now() + MINED_TX_PROPAGATE_TIME;
 
             tracing::debug!(
-                "waiting up to {} seconds for {} to see if a transaction was mined",
+                "waiting up to {} seconds to see if a transaction was mined",
                 MINED_TX_PROPAGATE_TIME.as_secs(),
-                name
             );
 
             let transactions = transactions
@@ -328,7 +323,7 @@ impl<'a> Submitter<'a> {
                     find_mined_transaction(&self.contract.raw_instance().web3(), &transactions)
                         .await
                 {
-                    tracing::debug!("{} found mined transaction {:?}", name, receipt);
+                    tracing::debug!("found mined transaction {:?}", receipt);
                     track_mined_transactions(&format!("{name}"));
                     return status(receipt);
                 }
@@ -339,7 +334,7 @@ impl<'a> Submitter<'a> {
             }
         }
 
-        tracing::debug!("{} did not find any mined transaction", name);
+        tracing::debug!("did not find any mined transaction");
         fallback_result
             .transpose()
             .unwrap_or(Err(SubmissionError::Timeout))
@@ -382,14 +377,12 @@ impl<'a> Submitter<'a> {
         params: &SubmitterParams,
         transactions: &mut Vec<(TransactionHandle, GasPrice1559)>,
     ) -> SubmissionError {
-        let submitter_name = self.submit_api.name();
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
         let mut allowed_gas_price_bumps = 1i32;
 
         tracing::debug!(
-            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter: {}",
-            submitter_name
+            "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
         );
 
         // Try to find submitted transaction from previous submission loop (with the same address and nonce)
@@ -398,18 +391,14 @@ impl<'a> Submitter<'a> {
         let mut access_list: Option<AccessList> = None;
 
         loop {
-            tracing::debug!("entered loop with submitter: {}", submitter_name);
+            tracing::debug!("entered loop with submitter");
 
             let submission_status = self
                 .submit_api
                 .submission_status(&settlement, &params.network_id);
             let estimator = match submission_status {
                 SubmissionLoopStatus::Disabled(reason) => {
-                    tracing::debug!(
-                        "strategy {} temporarily disabled, reason: {:?}",
-                        submitter_name,
-                        reason
-                    );
+                    tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
                 SubmissionLoopStatus::Enabled(AdditionalTip::Off) => self
@@ -496,30 +485,23 @@ impl<'a> Submitter<'a> {
             }
 
             tracing::debug!(
-                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}, submitter name: {}",
+                "creating transaction with gas price (base_fee={}, max_fee={}, tip={}), gas estimate {}",
                 gas_price.base_fee_per_gas,
                 gas_price.max_fee_per_gas,
                 gas_price.max_priority_fee_per_gas,
                 params.gas_estimate,
-                submitter_name,
             );
 
             // execute transaction
 
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
-                    tracing::debug!(
-                        submitter = %submitter_name, ?handle,
-                        "submitted transaction",
-                    );
+                    tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
                     allowed_gas_price_bumps = 1;
                 }
                 Err(err) => {
-                    tracing::warn!(
-                        submitter = %submitter_name, ?err,
-                        "submission failed",
-                    );
+                    tracing::warn!(?err, "submission failed",);
                     let err = err.to_string();
                     if err.contains("underpriced") || err.contains("already known") {
                         allowed_gas_price_bumps = std::cmp::min(

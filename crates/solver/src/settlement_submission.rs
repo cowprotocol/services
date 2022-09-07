@@ -25,6 +25,7 @@ use submitter::{
     DisabledReason, Strategy, Submitter, SubmitterGasPriceEstimator, SubmitterParams,
     TransactionHandle, TransactionSubmitting,
 };
+use tracing::Instrument;
 use web3::types::TransactionReceipt;
 
 const ESTIMATE_GAS_LIMIT_FACTOR: f64 = 1.2;
@@ -159,50 +160,16 @@ impl SolutionSubmitter {
             let mut futures = self
                 .transaction_strategies
                 .iter()
-                .map(|strategy| {
-                    async {
-                        // Needed so that the compiler understands that we don't
-                        // want to move `strategy` into the closure but use a
-                        // reference to it.
-                        #[allow(clippy::borrow_deref_ref)]
-                        match &*strategy {
-                            TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
-                                if !matches!(account, Account::Offline(..)) {
-                                    return Err(SubmissionError::from(anyhow!(
-                                        "Submission to private network requires offline account for signing"
-                                    )));
-                                }
-                            }
-                            TransactionStrategy::CustomNodes(_) => {}
-                            TransactionStrategy::DryRun => unreachable!(),
-                        };
-
-                        let strategy_args = strategy.strategy_args().expect("unreachable code executed");
-                        let params = SubmitterParams {
-                            target_confirm_time: self.target_confirm_time,
-                            gas_estimate,
-                            deadline: Some(Instant::now() + self.max_confirm_time),
-                            retry_interval: self.retry_interval,
-                            network_id: network_id.clone(),
-                        };
-                        let gas_price_estimator = SubmitterGasPriceEstimator {
-                            inner: self.gas_price_estimator.as_ref(),
-                            gas_price_cap: self.gas_price_cap,
-                            additional_tip_percentage_of_max_fee: Some(strategy_args.additional_tip_percentage_of_max_fee),
-                            max_additional_tip: Some(strategy_args.max_additional_tip),
-                            pending_gas_price: None,
-                        };
-                        let submitter = Submitter::new(
-                            &self.contract,
-                            &account,
-                            strategy_args.submit_api.as_ref(),
-                            &gas_price_estimator,
-                            self.access_list_estimator.as_ref(),
-                            strategy_args.sub_tx_pool.clone(),
-                            self.max_gas_price_bumps
-                        )?;
-                        submitter.submit(settlement.clone(), params).await
-                    }
+                .enumerate()
+                .map(|(i, strategy)| {
+                    self.settle_with_strategy(
+                        strategy,
+                        &account,
+                        gas_estimate,
+                        network_id.clone(),
+                        settlement.clone(),
+                        i,
+                    )
                     .boxed()
                 })
                 .collect::<Vec<_>>();
@@ -220,6 +187,63 @@ impl SolutionSubmitter {
                 }
             }
         }
+    }
+
+    async fn settle_with_strategy(
+        &self,
+        strategy: &TransactionStrategy,
+        account: &Account,
+        gas_estimate: U256,
+        network_id: String,
+        settlement: Settlement,
+        index: usize,
+    ) -> Result<TransactionReceipt, SubmissionError> {
+        match strategy {
+            TransactionStrategy::Eden(_) | TransactionStrategy::Flashbots(_) => {
+                if !matches!(account, Account::Offline(..)) {
+                    return Err(SubmissionError::from(anyhow!(
+                        "Submission to private network requires offline account for signing"
+                    )));
+                }
+            }
+            TransactionStrategy::CustomNodes(_) => {}
+            TransactionStrategy::DryRun => unreachable!(),
+        };
+
+        let strategy_args = strategy.strategy_args().expect("unreachable code executed");
+        let params = SubmitterParams {
+            target_confirm_time: self.target_confirm_time,
+            gas_estimate,
+            deadline: Some(Instant::now() + self.max_confirm_time),
+            retry_interval: self.retry_interval,
+            network_id,
+        };
+        let gas_price_estimator = SubmitterGasPriceEstimator {
+            inner: self.gas_price_estimator.as_ref(),
+            gas_price_cap: self.gas_price_cap,
+            additional_tip_percentage_of_max_fee: Some(
+                strategy_args.additional_tip_percentage_of_max_fee,
+            ),
+            max_additional_tip: Some(strategy_args.max_additional_tip),
+            pending_gas_price: None,
+        };
+        let submitter = Submitter::new(
+            &self.contract,
+            account,
+            strategy_args.submit_api.as_ref(),
+            &gas_price_estimator,
+            self.access_list_estimator.as_ref(),
+            strategy_args.sub_tx_pool.clone(),
+            self.max_gas_price_bumps,
+        )?;
+        submitter
+            .submit(settlement, params)
+            .instrument(tracing::info_span!(
+                "submission",
+                name = %strategy_args.submit_api.name(),
+                i = index
+            ))
+            .await
     }
 }
 
