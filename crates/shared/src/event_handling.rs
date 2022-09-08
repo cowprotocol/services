@@ -157,7 +157,7 @@ where
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let (range, replacement_blocks) = self.event_block_range().await?;
+        let (range, mut replacement_blocks) = self.event_block_range().await?;
         tracing::debug!("updating events in block range {:?}", range);
         let events = self
             .past_events(&range)
@@ -214,6 +214,21 @@ where
             // delete forked blocks
             self.last_handled_blocks
                 .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
+
+            // There are nodes A and B
+            // We ask for a `Latest` block from A, but that block might not yet be received 
+            // by B because of the block propagation delay.
+            // If we, at the same time, ask for events from B with `Latest` block included in the range, 
+            // B will answer with empty event list for the `Latest` block.
+            // In this case, we must not consider `Latest` as a safely handled block 
+            // (we must not put it in a `last_handled_blocks`). The only way to be sure the 
+            // `Latest` block is properly seen by B is if B returns at least one event for `Latest` block.
+            let last_event_block = self.store.last_event_block().await?;
+            if last_event_block != replacement_blocks.last().unwrap().0 {
+                // if there is no event stored from last block from `replacement_blocks`
+                // don't consider that last block as safely handled
+                replacement_blocks.pop();
+            }
             // append new canonical blocks
             self.last_handled_blocks
                 .extend(replacement_blocks.into_iter());
