@@ -1,10 +1,16 @@
+use super::price_estimation::{
+    self,
+    native::{native_single_estimate, NativePriceEstimating},
+    single_estimate, PriceEstimating, PriceEstimationError,
+};
 use crate::{
+    db_order_conversions::order_kind_from,
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
     order_validation::{OrderValidating, PartialValidationError, PreOrderData},
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
-use database::quotes::QuoteKind;
+use database::quotes::{Quote as QuoteRow, QuoteKind};
 use ethcontract::{H160, U256};
 use futures::TryFutureExt as _;
 use gas_estimation::GasPriceEstimating;
@@ -16,11 +22,7 @@ use model::{
         QuoteSigningScheme, SellAmount,
     },
 };
-use shared::price_estimation::{
-    self,
-    native::{native_single_estimate, NativePriceEstimating},
-    single_estimate, PriceEstimating, PriceEstimationError,
-};
+use number_conversions::big_decimal_to_u256;
 use std::sync::Arc;
 use thiserror::Error;
 
@@ -242,6 +244,29 @@ impl Default for QuoteData {
             expiration: Utc.timestamp(0, 0),
             quote_kind: QuoteKind::Standard,
         }
+    }
+}
+
+impl TryFrom<QuoteRow> for QuoteData {
+    type Error = anyhow::Error;
+
+    fn try_from(row: QuoteRow) -> Result<QuoteData> {
+        Ok(QuoteData {
+            sell_token: H160(row.sell_token.0),
+            buy_token: H160(row.buy_token.0),
+            quoted_sell_amount: big_decimal_to_u256(&row.sell_amount)
+                .context("quoted sell amount is not a valid U256")?,
+            quoted_buy_amount: big_decimal_to_u256(&row.buy_amount)
+                .context("quoted buy amount is not a valid U256")?,
+            fee_parameters: FeeParameters {
+                gas_amount: row.gas_amount,
+                gas_price: row.gas_price,
+                sell_token_price: row.sell_token_price,
+            },
+            kind: order_kind_from(row.order_kind),
+            expiration: row.expiration_timestamp,
+            quote_kind: row.quote_kind,
+        })
     }
 }
 
@@ -639,16 +664,16 @@ impl From<&OrderQuoteRequest> for QuoteParameters {
 mod tests {
     use super::*;
     use crate::fee_subsidy::Subsidy;
+    use crate::{
+        gas_price_estimation::FakeGasPriceEstimator,
+        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
+    };
     use chrono::Utc;
     use ethcontract::H160;
     use futures::StreamExt as _;
     use gas_estimation::GasPrice1559;
     use mockall::{predicate::eq, Sequence};
     use model::{quote::Validity, time};
-    use shared::{
-        gas_price_estimation::FakeGasPriceEstimator,
-        price_estimation::{native::MockNativePriceEstimating, MockPriceEstimating},
-    };
     use std::sync::Mutex;
 
     #[test]

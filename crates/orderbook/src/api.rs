@@ -17,8 +17,9 @@ mod replace_order;
 mod version;
 
 use crate::solver_competition::SolverCompetitionStoring;
-use crate::{database::trades::TradeRetrieving, order_quoting::QuoteHandler, orderbook::Orderbook};
+use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
 use shared::api::{error, finalize_router, internal_error, ApiReply};
+use shared::order_quoting::QuoteHandler;
 use std::sync::Arc;
 use warp::{Filter, Rejection, Reply};
 

@@ -1,8 +1,8 @@
-use crate::fee_subsidy::cow_token::SubsidyTiers;
 use anyhow::{anyhow, Context, Result};
 use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
+use shared::fee_subsidy::cow_token::SubsidyTiers;
 use shared::{
     arguments::display_option, bad_token::token_owner_finder, price_estimation::PriceEstimatorType,
     rate_limiter::RateLimitingStrategy,
