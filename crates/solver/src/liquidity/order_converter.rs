@@ -31,23 +31,26 @@ impl OrderConverter {
             order.data.buy_token
         };
 
-        let remaining = order.remaining_amounts()?;
+        let remaining = shared::remaining_amounts::Remaining::from_order(&order)?;
 
         // The reported fee amount that is used for objective computation is the
         // order's full full amount scaled by a constant factor.
         let scaled_fee_amount = U256::from_f64_lossy(
-            remaining.full_fee_amount.to_f64_lossy() * self.fee_objective_scaling_factor,
+            remaining
+                .remaining(order.metadata.full_fee_amount)?
+                .to_f64_lossy()
+                * self.fee_objective_scaling_factor,
         );
         let is_liquidity_order = order.metadata.is_liquidity_order;
         Ok(LimitOrder {
             id: order.metadata.uid.to_string(),
             sell_token: order.data.sell_token,
             buy_token,
-            sell_amount: remaining.sell_amount,
-            buy_amount: remaining.buy_amount,
+            sell_amount: remaining.remaining(order.data.sell_amount)?,
+            buy_amount: remaining.remaining(order.data.buy_amount)?,
             kind: order.data.kind,
             partially_fillable: order.data.partially_fillable,
-            unscaled_subsidized_fee: remaining.fee_amount,
+            unscaled_subsidized_fee: remaining.remaining(order.data.fee_amount)?,
             scaled_unsubsidized_fee: scaled_fee_amount,
             is_liquidity_order,
             settlement_handling: Arc::new(OrderSettlementHandler {

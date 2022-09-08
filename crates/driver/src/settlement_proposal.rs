@@ -60,7 +60,13 @@ impl TradedOrder {
     /// prices.
     fn execution(&self, clearing_prices: &HashMap<H160, U256>) -> Result<TradeExecution> {
         verify_executed_amount(&self.order, self.executed_amount)?;
-        let remaining = self.order.remaining_amounts()?;
+        let remaining = shared::remaining_amounts::Remaining::from_order(&self.order)?;
+        let remaining_sell = remaining
+            .remaining(self.order.data.sell_amount)
+            .context("remaining sell")?;
+        let remaining_buy = remaining
+            .remaining(self.order.data.buy_amount)
+            .context("remaining buy")?;
 
         let sell_price = clearing_prices
             .get(&self.order.data.sell_token)
@@ -108,8 +114,7 @@ impl TradedOrder {
         };
 
         anyhow::ensure!(
-            execution.sell_amount <= remaining.sell_amount
-                && execution.buy_amount >= remaining.buy_amount,
+            execution.sell_amount <= remaining_sell && execution.buy_amount >= remaining_buy,
             "limit prices not respected"
         );
 
@@ -148,20 +153,17 @@ impl SettlementProposal {
         let mut encoder = SettlementEncoder::new(self.clearing_prices);
 
         for trade in self.trades {
-            let remaining_amounts = trade.order.remaining_amounts()?;
+            let remaining = shared::remaining_amounts::Remaining::from_order(&trade.order)?;
+            let remaining_fee = remaining.remaining(trade.order.data.fee_amount)?;
 
             if trade.order.metadata.is_liquidity_order {
                 encoder.add_liquidity_order_trade(
                     trade.order,
                     trade.executed_amount,
-                    remaining_amounts.fee_amount,
+                    remaining_fee,
                 )?;
             } else {
-                encoder.add_trade(
-                    trade.order,
-                    trade.executed_amount,
-                    remaining_amounts.fee_amount,
-                )?;
+                encoder.add_trade(trade.order, trade.executed_amount, remaining_fee)?;
             }
         }
 

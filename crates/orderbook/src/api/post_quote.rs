@@ -1,10 +1,13 @@
-use crate::order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler};
+use super::create_order::PartialValidationErrorWrapper;
 use anyhow::Result;
 use model::quote::OrderQuoteRequest;
-use serde_json::json;
-use shared::api::{self, convert_json_response, rich_error, IntoWarpReply};
+use reqwest::StatusCode;
+use shared::{
+    api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply},
+    order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
+};
 use std::{convert::Infallible, sync::Arc};
-use warp::{hyper::StatusCode, Filter, Rejection};
+use warp::{Filter, Rejection};
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("quote")
@@ -18,7 +21,10 @@ pub fn post_quote(
     post_quote_request().and_then(move |request: OrderQuoteRequest| {
         let quotes = quotes.clone();
         async move {
-            let result = quotes.calculate_quote(&request).await;
+            let result = quotes
+                .calculate_quote(&request)
+                .await
+                .map_err(OrderQuoteErrorWrapper);
             if let Err(err) = &result {
                 tracing::warn!(?err, ?request, "post_quote error");
             }
@@ -27,28 +33,37 @@ pub fn post_quote(
     })
 }
 
-impl IntoWarpReply for CalculateQuoteError {
-    fn into_warp_reply(self) -> super::ApiReply {
-        match self {
-            Self::Price(err) => err.into_warp_reply(),
-            Self::SellAmountDoesNotCoverFee { fee_amount } => warp::reply::with_status(
-                rich_error(
-                    "SellAmountDoesNotCoverFee",
-                    "The sell amount for the sell order is lower than the fee.",
-                    json!({ "fee_amount": fee_amount }),
-                ),
-                StatusCode::BAD_REQUEST,
-            ),
-            Self::Other(err) => err.into_warp_reply(),
+#[derive(Debug)]
+pub struct OrderQuoteErrorWrapper(pub OrderQuoteError);
+impl IntoWarpReply for OrderQuoteErrorWrapper {
+    fn into_warp_reply(self) -> ApiReply {
+        match self.0 {
+            OrderQuoteError::Validation(err) => {
+                PartialValidationErrorWrapper(err).into_warp_reply()
+            }
+            OrderQuoteError::CalculateQuote(err) => {
+                CalculateQuoteErrorWrapper(err).into_warp_reply()
+            }
         }
     }
 }
 
-impl IntoWarpReply for OrderQuoteError {
-    fn into_warp_reply(self) -> super::ApiReply {
-        match self {
-            Self::Validation(err) => err.into_warp_reply(),
-            Self::CalculateQuote(err) => err.into_warp_reply(),
+pub struct CalculateQuoteErrorWrapper(CalculateQuoteError);
+impl IntoWarpReply for CalculateQuoteErrorWrapper {
+    fn into_warp_reply(self) -> ApiReply {
+        match self.0 {
+            CalculateQuoteError::Price(err) => err.into_warp_reply(),
+            CalculateQuoteError::SellAmountDoesNotCoverFee { fee_amount } => {
+                warp::reply::with_status(
+                    rich_error(
+                        "SellAmountDoesNotCoverFee",
+                        "The sell amount for the sell order is lower than the fee.",
+                        serde_json::json!({ "fee_amount": fee_amount }),
+                    ),
+                    StatusCode::BAD_REQUEST,
+                )
+            }
+            CalculateQuoteError::Other(err) => err.into_warp_reply(),
         }
     }
 }
@@ -67,8 +82,12 @@ mod tests {
             SellAmount, Validity,
         },
     };
+    use reqwest::StatusCode;
     use serde_json::json;
-    use shared::api::response_body;
+    use shared::{
+        api::response_body,
+        order_quoting::{CalculateQuoteError, OrderQuoteError},
+    };
     use warp::{test::request, Reply};
 
     #[test]
@@ -245,7 +264,7 @@ mod tests {
             expiration: DateTime::<Utc>::from_utc(NaiveDateTime::from_timestamp(0, 0), Utc),
             id: Some(0),
         };
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Ok(
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Ok(
             order_quote_response.clone(),
         ))
         .into_response();
@@ -258,8 +277,10 @@ mod tests {
 
     #[tokio::test]
     async fn post_quote_response_err() {
-        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteError>(Err(
-            OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(anyhow!("Uh oh - error"))),
+        let response = convert_json_response::<OrderQuoteResponse, OrderQuoteErrorWrapper>(Err(
+            OrderQuoteErrorWrapper(OrderQuoteError::CalculateQuote(CalculateQuoteError::Other(
+                anyhow!("Uh oh - error"),
+            ))),
         ))
         .into_response();
         assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);

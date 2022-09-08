@@ -3,20 +3,17 @@ use anyhow::{anyhow, Result};
 use autopilot::solvable_orders::SolvableOrdersCache;
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
-use orderbook::{
-    database::Postgres,
-    fee_subsidy::Subsidy,
-    order_quoting::{OrderQuoter, QuoteHandler},
-    order_validation::{OrderValidator, SignatureConfiguration},
-    orderbook::Orderbook,
-};
+use orderbook::{database::Postgres, orderbook::Orderbook};
 use reqwest::{Client, StatusCode};
 use shared::{
     account_balances::Web3BalanceFetcher,
     bad_token::list_based::ListBasedDetector,
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    fee_subsidy::Subsidy,
     maintenance::ServiceMaintenance,
+    order_quoting::{OrderQuoter, QuoteHandler},
+    order_validation::{OrderValidator, SignatureConfiguration},
     price_estimation::baseline::BaselinePriceEstimator,
     price_estimation::native::NativePriceEstimator,
     price_estimation::sanitized::SanitizedPriceEstimator,
