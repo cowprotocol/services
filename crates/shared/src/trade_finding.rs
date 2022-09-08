@@ -4,7 +4,7 @@
 pub mod zeroex;
 
 use crate::price_estimation::Query;
-use ethcontract::U256;
+use ethcontract::{H160, U256};
 use thiserror::Error;
 
 /// Find a trade for a token pair.
@@ -18,9 +18,19 @@ pub trait TradeFinding: Send + Sync + 'static {
 }
 
 /// A trade.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
+    pub approval_spender: Option<H160>,
+    pub interaction: Interaction,
+}
+
+/// Data for a raw GPv2 interaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Interaction {
+    pub target: H160,
+    pub value: U256,
     pub data: Vec<u8>,
 }
 
