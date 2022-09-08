@@ -27,7 +27,7 @@ pub struct Trade {
 }
 
 /// Data for a raw GPv2 interaction.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Interaction {
     pub target: H160,
     pub value: U256,

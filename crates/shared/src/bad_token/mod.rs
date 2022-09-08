@@ -3,6 +3,7 @@ pub mod instrumented;
 pub mod list_based;
 pub mod token_owner_finder;
 pub mod trace_call;
+pub mod roundtrip;
 
 use anyhow::Result;
 use primitive_types::H160;
