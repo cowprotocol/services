@@ -98,3 +98,43 @@ pub enum TradeError {
     #[error(transparent)]
     Other(#[from] anyhow::Error),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use hex_literal::hex;
+
+    #[test]
+    fn encode_trade_to_interactions() {
+        let trade = Trade {
+            out_amount: Default::default(),
+            gas_estimate: 0,
+            approval: Some((H160([0xdd; 20]), H160([0xee; 20]))),
+            interaction: Interaction {
+                target: H160([0xaa; 20]),
+                value: 42.into(),
+                data: vec![1, 2, 3, 4],
+            },
+        };
+
+        assert_eq!(
+            trade.encode(),
+            [
+                vec![(
+                    H160([0xdd; 20]),
+                    U256::zero(),
+                    Bytes(
+                        hex!(
+                            "095ea7b3
+                             000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+                             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+                        )
+                        .to_vec()
+                    ),
+                )],
+                vec![(H160([0xaa; 20]), U256::from(42), Bytes(vec![1, 2, 3, 4]))],
+                vec![],
+            ]
+        );
+    }
+}
