@@ -78,7 +78,6 @@ pub struct StateOverride {
 mod tests {
     use super::*;
     use crate::{transport::create_env_test_transport, Web3};
-    use hex_literal::hex;
     use maplit::hashmap;
     use web3::types::BlockNumber;
 
@@ -100,17 +99,14 @@ mod tests {
                 hashmap! {
                     address => StateOverride {
                         // EVM program to just return 32 bytes from 0 to 31
-                        code: Some(Bytes(
-                            hex!(
-                                "7f 000102030405060708090a0b0c0d0e0f
-                                    101112131415161718191a1b1c1d1e1f
-                                 60 00
-                                 52
-                                 60 20
-                                 60 00
-                                 f3"
-                            )
-                            .to_vec(),
+                        code: Some(bytes!(
+                            "7f 000102030405060708090a0b0c0d0e0f
+                                101112131415161718191a1b1c1d1e1f
+                             60 00
+                             52
+                             60 20
+                             60 00
+                             f3"
                         )),
                         ..Default::default()
                     },

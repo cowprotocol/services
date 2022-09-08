@@ -2,6 +2,7 @@
 
 use crate::{http_client::HttpClientFactory, transport::extensions::StateOverrides};
 use anyhow::Result;
+use model::bytes_hex::BytesHex;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     Url,
@@ -137,6 +138,15 @@ pub struct SimulationResponse {
 pub struct Transaction {
     pub status: bool,
     pub gas_used: u64,
+    pub call_trace: Vec<CallTrace>,
+}
+
+#[serde_with::serde_as]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CallTrace {
+    #[serde_as(as = "Option<BytesHex>")]
+    pub output: Option<Vec<u8>>,
+    pub error: Option<String>,
 }
 
 // Had to introduce copy of the web3 AccessList because tenderly responds with snake_case fields
