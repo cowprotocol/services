@@ -299,7 +299,7 @@ async fn create_aggregate_pool_fetcher(
     contracts: &BalancerContracts,
 ) -> Result<Aggregate> {
     let registered_pools = pool_initializer.initialize_pools().await?;
-    let fetched_block_number = registered_pools.fetched_block_number;
+    let fetched_block = registered_pools.fetched_block;
     let mut registered_pools_by_factory = registered_pools.group_by_factory();
 
     macro_rules! registry {
@@ -315,7 +315,7 @@ async fn create_aggregate_pool_fetcher(
                 $instance,
                 registered_pools_by_factory
                     .remove(&$instance.address())
-                    .unwrap_or_else(|| RegisteredPools::empty(fetched_block_number)),
+                    .unwrap_or_else(|| RegisteredPools::empty(fetched_block)),
             )?
         }};
     }
@@ -373,11 +373,9 @@ where
     let initial_pools = registered_pools
         .pools
         .iter()
-        .map(|pool| {
-            Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block_number.0)
-        })
+        .map(|pool| Factory::PoolInfo::from_graph_data(pool, registered_pools.fetched_block.0))
         .collect::<Result<_>>()?;
-    let start_sync_at_block = Some(registered_pools.fetched_block_number);
+    let start_sync_at_block = Some(registered_pools.fetched_block);
 
     Ok(Box::new(Registry::new(
         Arc::new(PoolInfoFetcher::new(vault, factory, token_infos)),
@@ -512,7 +510,7 @@ mod tests {
         let fetched_pools_by_id = pool_fetcher
             .fetch_pools(
                 subgraph_token_pairs,
-                Block::Number(subgraph_pools.fetched_block_number.0),
+                Block::Number(subgraph_pools.fetched_block.0),
             )
             .await
             .unwrap()

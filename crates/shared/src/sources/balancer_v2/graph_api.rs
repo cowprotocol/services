@@ -58,7 +58,7 @@ impl BalancerSubgraphClient {
         use self::pools_query::*;
 
         let block_number = self.get_safe_block().await?;
-        let block_number_hash = self
+        let block_hash = self
             .web3
             .eth()
             .block(U64::from(block_number).into())
@@ -99,7 +99,7 @@ impl BalancerSubgraphClient {
         }
 
         Ok(RegisteredPools {
-            fetched_block_number: (block_number, block_number_hash),
+            fetched_block: (block_number, block_hash),
             pools,
         })
     }
@@ -125,9 +125,9 @@ impl BalancerSubgraphClient {
 /// Result of the registered stable pool query.
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct RegisteredPools {
-    /// The block number that the data was fetched, and for which the registered
+    /// The block number and hash that the data was fetched, and for which the registered
     /// weighted pools can be considered up to date.
-    pub fetched_block_number: BlockNumberHash,
+    pub fetched_block: BlockNumberHash,
     /// The registered Pools
     pub pools: Vec<PoolData>,
 }
@@ -135,23 +135,23 @@ pub struct RegisteredPools {
 impl RegisteredPools {
     /// Creates an empty collection of registered pools for the specified block
     /// number.
-    pub fn empty(fetched_block_number: BlockNumberHash) -> Self {
+    pub fn empty(fetched_block: BlockNumberHash) -> Self {
         Self {
-            fetched_block_number,
+            fetched_block,
             ..Default::default()
         }
     }
 
     /// Groups registered pools by factory addresses.
     pub fn group_by_factory(self) -> HashMap<H160, RegisteredPools> {
-        let fetched_block_number = self.fetched_block_number;
+        let fetched_block = self.fetched_block;
         self.pools
             .into_iter()
             .fold(HashMap::new(), |mut grouped, pool| {
                 grouped
                     .entry(pool.factory)
                     .or_insert(RegisteredPools {
-                        fetched_block_number,
+                        fetched_block,
                         ..Default::default()
                     })
                     .pools
@@ -433,7 +433,7 @@ mod tests {
                 pool(H160([1; 20]), 2),
                 pool(H160([2; 20]), 3),
             ],
-            fetched_block_number: (42, H256::from_low_u64_be(42)),
+            fetched_block: (42, H256::from_low_u64_be(42)),
         };
 
         assert_eq!(
@@ -444,13 +444,13 @@ mod tests {
                         pool(H160([1; 20]), 1),
                         pool(H160([1; 20]), 2),
                     ],
-                    fetched_block_number: (42, H256::from_low_u64_be(42)),
+                    fetched_block: (42, H256::from_low_u64_be(42)),
                 },
                 H160([2; 20]) => RegisteredPools {
                     pools: vec![
                         pool(H160([2; 20]), 3),
                     ],
-                    fetched_block_number: (42, H256::from_low_u64_be(42)),
+                    fetched_block: (42, H256::from_low_u64_be(42)),
                 },
             }
         )
@@ -469,7 +469,7 @@ mod tests {
             println!(
                 "Retrieved {} total pools at block {:?}",
                 result.pools.len(),
-                result.fetched_block_number,
+                result.fetched_block,
             );
 
             let grouped_by_factory = result.pools.into_iter().fold(

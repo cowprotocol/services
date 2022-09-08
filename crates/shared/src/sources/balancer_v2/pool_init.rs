@@ -51,7 +51,7 @@ impl PoolInitializing for EmptyPoolInitializer {
             .hash
             .context("missing hash")?;
         Ok(RegisteredPools {
-            fetched_block_number: (fetched_block_number, fetched_block_hash),
+            fetched_block: (fetched_block_number, fetched_block_hash),
             ..Default::default()
         })
     }
@@ -63,7 +63,7 @@ impl PoolInitializing for BalancerSubgraphClient {
         let registered_pools = self.get_registered_pools().await?;
         tracing::debug!(
             "initialized registered pools: block = {:?}, pools = {}",
-            registered_pools.fetched_block_number,
+            registered_pools.fetched_block,
             registered_pools.pools.len()
         );
 

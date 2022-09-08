@@ -245,7 +245,7 @@ fn detect_reorg_path(
     // so everything finishes in only two iterations.
     for handled_block in handled_blocks.iter().rev() {
         for current_block in current_blocks.iter().rev() {
-            if current_block.0 == handled_block.0 && current_block.1 == handled_block.1 {
+            if current_block == handled_block {
                 // found the same block in both lists, now we know the common ancestor
                 return Ok(BlockNumber::Specific(current_block.0)
                     ..=BlockNumber::Latest(current_blocks.last().unwrap().0));
