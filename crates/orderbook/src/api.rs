@@ -14,6 +14,7 @@ mod get_user_orders;
 mod post_quote;
 pub mod post_solver_competition;
 mod replace_order;
+mod version;
 
 use crate::solver_competition::SolverCompetitionStoring;
 use crate::{database::trades::TradeRetrieving, orderbook::Orderbook};
@@ -84,6 +85,9 @@ pub fn handle_all_routes(
         post_solver_competition::post(solver_competition, solver_competition_auth)
             .map(|result| (result, "v1/solver_competition"))
             .boxed();
+    let version = version::version()
+        .map(|result| (result, "v1/version"))
+        .boxed();
 
     let routes_v1 = warp::path!("api" / "v1" / ..)
         .and(
@@ -117,6 +121,8 @@ pub fn handle_all_routes(
                 .or(get_solver_competition)
                 .unify()
                 .or(post_solver_competition)
+                .unify()
+                .or(version)
                 .unify(),
         )
         .untuple_one()
