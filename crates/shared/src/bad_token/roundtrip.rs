@@ -147,7 +147,7 @@ mod tests {
                 )],
                 vec![interaction(
                     uniswap_router.methods().swap_tokens_for_exact_tokens(
-                        amount_usdc, // amountOut
+                        amount_usdc,   // amountOut
                         amount_native, // amountInMax
                         vec![weth.address(), usdc.address()],
                         settlement,
