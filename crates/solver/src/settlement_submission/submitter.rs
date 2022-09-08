@@ -365,12 +365,12 @@ impl<'a> Submitter<'a> {
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
         );
 
-        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
-
         let mut access_list: Option<AccessList> = None;
 
         loop {
+            // Try to find submitted transaction from previous submission loop (with the same address and nonce)
+            let pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
+
             tracing::debug!("entered loop with submitter");
 
             let submission_status = self
@@ -464,7 +464,6 @@ impl<'a> Submitter<'a> {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
-                    pending_gas_price = Some(gas_price);
                 }
                 Err(err) => {
                     tracing::warn!(?err, "submission failed");
