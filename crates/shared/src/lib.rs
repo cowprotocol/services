@@ -34,6 +34,7 @@ pub mod signature_validator;
 pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;
+pub mod tenderly_api;
 pub mod token_info;
 pub mod token_list;
 pub mod trace_many;

@@ -12,7 +12,7 @@ use crate::{
     settlement_post_processing::PostProcessingPipeline,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation::{self, TenderlyApi},
+    settlement_simulation,
     settlement_submission::{SolutionSubmitter, SubmissionError},
     solver::{Auction, Solver, SolverRunError, Solvers},
 };
@@ -31,6 +31,7 @@ use primitive_types::{H160, U256};
 use shared::{
     current_block::{self, CurrentBlockStream},
     recent_block_cache::Block,
+    tenderly_api::TenderlyApi,
     token_list::TokenList,
     Web3,
 };
@@ -84,7 +85,7 @@ impl Driver {
         fee_objective_scaling_factor: f64,
         max_settlement_price_deviation: Option<Ratio<BigInt>>,
         token_list_restriction_for_price_checks: PriceCheckTokens,
-        tenderly: Option<TenderlyApi>,
+        tenderly: Option<Arc<dyn TenderlyApi>>,
     ) -> Self {
         let post_processing_pipeline = PostProcessingPipeline::new(
             native_token,
