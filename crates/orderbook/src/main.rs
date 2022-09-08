@@ -6,14 +6,7 @@ use contracts::{
 use ethcontract::errors::DeployError;
 use model::{order::BUY_ETH_ADDRESS, DomainSeparator};
 use orderbook::{
-    database::Postgres,
-    fee_subsidy::{
-        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
-    },
-    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
-    order_validation::{OrderValidator, SignatureConfiguration},
-    orderbook::Orderbook,
-    serve_api, verify_deployed_contract_constants,
+    database::Postgres, orderbook::Orderbook, serve_api, verify_deployed_contract_constants,
 };
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -27,12 +20,17 @@ use shared::{
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
     current_block::current_block_stream,
+    fee_subsidy::{
+        config::FeeSubsidyConfiguration, cow_token::CowSubsidy, FeeSubsidies, FeeSubsidizing,
+    },
     gas_price::InstrumentedGasEstimator,
     http_solver::{DefaultHttpSolverApi, Objective, SolverConfig},
     maintenance::ServiceMaintenance,
     metrics::{serve_metrics, DEFAULT_METRICS_PORT},
     network::network_name,
     oneinch_api::OneInchClientImpl,
+    order_quoting::{Forget, OrderQuoter, QuoteHandler, QuoteStoring},
+    order_validation::{OrderValidator, SignatureConfiguration},
     paraswap_api::DefaultParaswapApi,
     price_estimation::{
         balancer_sor::BalancerSor,

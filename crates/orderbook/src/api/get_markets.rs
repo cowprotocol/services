@@ -1,4 +1,4 @@
-use crate::order_quoting::QuoteHandler;
+use crate::api::post_quote::OrderQuoteErrorWrapper;
 use anyhow::{anyhow, Result};
 use ethcontract::{H160, U256};
 use model::{
@@ -6,7 +6,10 @@ use model::{
     quote::{OrderQuoteRequest, OrderQuoteSide, SellAmount},
 };
 use serde::{Deserialize, Serialize};
-use shared::api::{convert_json_response, ApiReply};
+use shared::{
+    api::{convert_json_response, ApiReply},
+    order_quoting::QuoteHandler,
+};
 use std::{convert::Infallible, str::FromStr, sync::Arc};
 use warp::{Filter, Rejection};
 
@@ -102,7 +105,8 @@ pub fn get_amount_estimate(
                     side,
                     ..Default::default()
                 })
-                .await;
+                .await
+                .map_err(OrderQuoteErrorWrapper);
             Result::<_, Infallible>::Ok(convert_json_response(response.map(|response| {
                 AmountEstimateResult {
                     amount: match query.kind {
