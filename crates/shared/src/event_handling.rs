@@ -108,7 +108,7 @@ where
                 .await?
                 .saturating_sub(MAX_REORG_BLOCK_COUNT);
             self.block_retriever
-                .preceding_blocks(RangeInclusive::new(
+                .blocks(RangeInclusive::new(
                     last_handled_block_safe,
                     last_handled_block_safe,
                 ))
@@ -134,7 +134,7 @@ where
 
         let current_blocks = self
             .block_retriever
-            .preceding_blocks(RangeInclusive::new(
+            .blocks(RangeInclusive::new(
                 current_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
                 current_block_number,
             ))

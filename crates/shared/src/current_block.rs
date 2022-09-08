@@ -91,8 +91,7 @@ pub fn block_number(block: &Block) -> Result<u64> {
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
-    /// gets latest `length` blocks
-    async fn preceding_blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
@@ -114,10 +113,9 @@ impl BlockRetrieving for Web3 {
             .as_u64())
     }
 
-    /// get latest `length` blocks
-    /// if successful, function guarantees `length` blocks in Result (does not return partial results)
-    /// `last_block` block is at the end of the resulting vector
-    async fn preceding_blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
+    /// get blocks defined by the range (inclusive)
+    /// if successful, function guarantees full range of blocks in Result (does not return partial results)
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
         ensure!(range.start() <= range.end(), "invalid range");
 
         let include_txs = helpers::serialize(&false);
@@ -182,18 +180,18 @@ mod tests {
 
         // check invalid input
         let range = RangeInclusive::new(6, 5);
-        let blocks = web3.preceding_blocks(range).await;
+        let blocks = web3.blocks(range).await;
         assert!(blocks.is_err());
 
         // single block
         let range = RangeInclusive::new(5, 5);
-        let blocks = web3.preceding_blocks(range).await.unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks.last().unwrap().0, 5);
 
         // multiple blocks
         let range = RangeInclusive::new(5, 8);
-        let blocks = web3.preceding_blocks(range).await.unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
         assert_eq!(blocks.last().unwrap().0, 8);
         assert_eq!(blocks.first().unwrap().0, 5);
@@ -205,7 +203,7 @@ mod tests {
             current_block_number.saturating_sub(length),
             current_block_number,
         );
-        let blocks = web3.preceding_blocks(range).await.unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);
         assert_eq!(blocks.first().unwrap().0, 0);
