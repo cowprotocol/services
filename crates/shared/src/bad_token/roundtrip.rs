@@ -2,12 +2,12 @@
 //! in order to determine whether or not it is valid.
 
 use crate::{
-    trade_finding::Interaction,
+    trade_finding::{convert_interactions, Interaction},
     transport::extensions::{StateOverride, StateOverrides},
 };
 use anyhow::Result;
 use contracts::support::Trader;
-use ethcontract::{Bytes, H160, U256};
+use ethcontract::{H160, U256};
 use std::{collections::HashMap, iter};
 use web3::types::CallRequest;
 
@@ -47,7 +47,7 @@ impl Roundtrip {
         let state_overrides = iter::once((
             trader.address(),
             StateOverride {
-                code: Some(Trader::raw_contract().deployed_bytecode.to_bytes().unwrap()),
+                code: Some(deployed_bytecode!(Trader)),
                 balance: Some(self.amount_native),
                 ..Default::default()
             },
@@ -75,46 +75,11 @@ impl Roundtrip {
     }
 }
 
-type EncodedInteraction = (H160, U256, Bytes<Vec<u8>>);
-
-fn convert_interactions(interactions: &[Vec<Interaction>; 3]) -> [Vec<EncodedInteraction>; 3] {
-    let conv = |interactions: &[Interaction]| -> Vec<EncodedInteraction> {
-        interactions
-            .iter()
-            .map(|interaction| {
-                (
-                    interaction.target,
-                    interaction.value,
-                    Bytes(interaction.data.clone()),
-                )
-            })
-            .collect()
-    };
-
-    [
-        conv(&interactions[0]),
-        conv(&interactions[1]),
-        conv(&interactions[2]),
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use contracts::{UniswapV2Router02, ERC20, WETH9};
-    use ethcontract::{dyns::DynMethodBuilder, tokens::Tokenize};
     use maplit::hashmap;
-
-    fn interaction<R>(method: DynMethodBuilder<R>) -> Interaction
-    where
-        R: Tokenize,
-    {
-        Interaction {
-            target: method.tx.to.unwrap(),
-            value: method.tx.value.unwrap_or_default(),
-            data: method.tx.data.unwrap().0,
-        }
-    }
 
     #[test]
     fn roundtrip_abi_encoding() {
@@ -135,11 +100,11 @@ mod tests {
             amount_native,
             amount_token: amount_usdc,
             native_2_token: [
-                vec![interaction(
+                vec![Interaction::from_call(
                     weth.methods()
                         .approve(uniswap_router.address(), U256::max_value()),
                 )],
-                vec![interaction(
+                vec![Interaction::from_call(
                     uniswap_router.methods().swap_tokens_for_exact_tokens(
                         amount_usdc,   // amountOut
                         amount_native, // amountInMax
@@ -151,11 +116,11 @@ mod tests {
                 vec![],
             ],
             token_2_native: [
-                vec![interaction(
+                vec![Interaction::from_call(
                     usdc.methods()
                         .approve(uniswap_router.address(), U256::max_value()),
                 )],
-                vec![interaction(
+                vec![Interaction::from_call(
                     uniswap_router.methods().swap_exact_tokens_for_tokens(
                         amount_usdc,  // amountIn
                         U256::zero(), // amountOutMin
@@ -252,7 +217,7 @@ mod tests {
             overrides,
             hashmap! {
                 trader => StateOverride {
-                    code: Some(Trader::raw_contract().deployed_bytecode.to_bytes().unwrap()),
+                    code: Some(deployed_bytecode!(Trader)),
                     balance: Some(amount_native),
                     ..Default::default()
                 },

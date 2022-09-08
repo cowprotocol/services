@@ -4,7 +4,8 @@
 pub mod zeroex;
 
 use crate::price_estimation::Query;
-use ethcontract::{H160, U256};
+use contracts::ERC20;
+use ethcontract::{contract::MethodBuilder, tokens::Tokenize, web3::Transport, Bytes, H160, U256};
 use thiserror::Error;
 
 /// Find a trade for a token pair.
@@ -22,8 +23,27 @@ pub trait TradeFinding: Send + Sync + 'static {
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
-    pub approval_spender: Option<H160>,
+    pub approval: Option<(H160, H160)>,
     pub interaction: Interaction,
+}
+
+impl Trade {
+    /// Converts a trade into a set of interactions for settlements.
+    pub fn encode(&self) -> SettlementInteractions {
+        let pre_interactions = match self.approval {
+            Some((token, spender)) => {
+                let token = dummy_contract!(ERC20, token);
+                vec![
+                    Interaction::from_call(token.methods().approve(spender, U256::max_value()))
+                        .encode(),
+                ]
+            }
+            None => vec![],
+        };
+        let intra_interactions = vec![self.interaction.encode()];
+
+        [pre_interactions, intra_interactions, vec![]]
+    }
 }
 
 /// Data for a raw GPv2 interaction.
@@ -32,6 +52,39 @@ pub struct Interaction {
     pub target: H160,
     pub value: U256,
     pub data: Vec<u8>,
+}
+
+impl Interaction {
+    pub fn from_call<T, R>(method: MethodBuilder<T, R>) -> Interaction
+    where
+        T: Transport,
+        R: Tokenize,
+    {
+        Interaction {
+            target: method.tx.to.unwrap(),
+            value: method.tx.value.unwrap_or_default(),
+            data: method.tx.data.unwrap().0,
+        }
+    }
+
+    pub fn encode(&self) -> EncodedInteraction {
+        (self.target, self.value, Bytes(self.data.clone()))
+    }
+}
+
+pub type SettlementInteractions = [Vec<EncodedInteraction>; 3];
+pub type EncodedInteraction = (H160, U256, Bytes<Vec<u8>>);
+
+pub fn convert_interactions(interactions: &[Vec<Interaction>; 3]) -> SettlementInteractions {
+    [
+        convert_interaction_group(&interactions[0]),
+        convert_interaction_group(&interactions[1]),
+        convert_interaction_group(&interactions[2]),
+    ]
+}
+
+pub fn convert_interaction_group(interactions: &[Interaction]) -> Vec<EncodedInteraction> {
+    interactions.iter().map(Interaction::encode).collect()
 }
 
 #[derive(Error, Debug)]
