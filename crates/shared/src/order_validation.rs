@@ -1651,43 +1651,22 @@ mod tests {
             ..Default::default()
         };
 
-        // *** SELL ORDERS ***
         // at market price
         assert!(!is_order_outside_market_price(
-            &U256::from_dec_str("100").unwrap(),
-            &U256::from_dec_str("100").unwrap(),
+            &"100".into(),
+            &"100".into(),
             &quote,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
-            &U256::from_dec_str("100").unwrap(),
-            &U256::from_dec_str("99").unwrap(),
+            &"100".into(),
+            &"90".into(),
             &quote,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
-            &U256::from_dec_str("100").unwrap(),
-            &U256::from_dec_str("1000").unwrap(),
-            &quote
-        ));
-
-        // *** BUY ORDERS ***
-        // at market price
-        assert!(!is_order_outside_market_price(
-            &U256::from_dec_str("100").unwrap(),
-            &U256::from_dec_str("100").unwrap(),
-            &quote,
-        ));
-        // willing to sell more than market price
-        assert!(!is_order_outside_market_price(
-            &U256::from_dec_str("101").unwrap(),
-            &U256::from_dec_str("100").unwrap(),
-            &quote,
-        ));
-        // wanting to sell less than market price
-        assert!(is_order_outside_market_price(
-            &U256::from_dec_str("1").unwrap(),
-            &U256::from_dec_str("100").unwrap(),
+            &"100".into(),
+            &"1000".into(),
             &quote
         ));
     }
