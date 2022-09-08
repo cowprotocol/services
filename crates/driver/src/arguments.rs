@@ -9,11 +9,7 @@ use solver::{
     arguments::TransactionStrategyArg, settlement_access_list::AccessListEstimatorType,
     solver::ExternalSolverArg,
 };
-use std::{
-    net::SocketAddr,
-    num::{NonZeroU64, NonZeroU8},
-    time::Duration,
-};
+use std::{net::SocketAddr, num::NonZeroU64, time::Duration};
 use tracing::level_filters::LevelFilter;
 
 #[derive(clap::Parser)]
@@ -143,11 +139,6 @@ pub struct Arguments {
     /// but at the same time we don't restrict solutions sizes too much
     #[clap(long, env, default_value = "15000000")]
     pub simulation_gas_limit: u128,
-
-    /// Configures how often the gas price of a transaction may be increased by the minimum amount
-    /// compared to the previously failing transaction to eventually bring it on chain.
-    #[clap(long, env, default_value = "1")]
-    pub max_gas_price_bumps: NonZeroU8,
 
     /// The target confirmation time in seconds for settlement transactions used to estimate gas price.
     #[clap(
@@ -317,7 +308,6 @@ impl std::fmt::Display for Arguments {
         display_option(f, "tenderly_url", &self.tenderly_url)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
-        writeln!(f, "max_gas_price_bumps: {}", self.max_gas_price_bumps)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;
         writeln!(
             f,

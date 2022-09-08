@@ -23,7 +23,7 @@ use solver::{
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
-use std::{num::NonZeroU8, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use web3::signing::SecretKeyRef;
 
 const TRADER_BUY_ETH_A_PK: [u8; 32] = [1; 32];
@@ -245,7 +245,6 @@ async fn eth_integration(web3: Web3) {
                 .await
                 .unwrap(),
             ),
-            max_gas_price_bumps: NonZeroU8::new(1).unwrap(),
         },
         create_orderbook_api(),
         create_order_converter(&web3, contracts.weth.address()),
