@@ -55,6 +55,8 @@ include_contracts! {
 
 pub mod support {
     include_contracts! {
+        AnyoneAuthenticator;
+        PhonyERC20;
         Trader;
     }
 }
@@ -179,6 +181,8 @@ mod tests {
             }};
         }
 
+        assert_has_bytecode!(support::AnyoneAuthenticator);
+        assert_has_bytecode!(support::PhonyERC20);
         assert_has_bytecode!(support::Trader);
     }
 }

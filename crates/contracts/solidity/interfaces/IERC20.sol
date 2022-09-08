@@ -11,6 +11,11 @@ interface IERC20 {
     function transferFrom(address, address, uint256) external returns (bool);
 }
 
+/// @title Mintable token interface
+interface IMintableERC20 is IERC20 {
+    function mint(address, uint256) external returns (bool);
+}
+
 /// @title Native token interface
 interface INativeERC20 is IERC20 {
     function withdraw(uint256) external;
