@@ -452,7 +452,13 @@ impl OrderValidating for OrderValidator {
         // are not intended to be filled immediately and so need to be treated
         // slightly differently by the protocol.
         let is_liquidity_order = match &quote {
-            Some(quote) if is_order_outside_market_price(&order.data, quote) => {
+            Some(quote)
+                if is_order_outside_market_price(
+                    &quote_parameters.sell_amount,
+                    &quote_parameters.buy_amount,
+                    quote,
+                ) =>
+            {
                 let order_uid = order.data.uid(domain_separator, &owner);
                 tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
                 true
@@ -588,8 +594,8 @@ pub async fn get_quote_and_check_fee(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
-    order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
+fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
+    sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 
 fn convert_signing_scheme_into_quote_signing_scheme(
@@ -1645,67 +1651,22 @@ mod tests {
             ..Default::default()
         };
 
-        // *** SELL ORDERS ***
         // at market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"100".into(),
             &quote,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 99.into(), // 1% slippage
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"90".into(),
             &quote,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 1000.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            &quote
-        ));
-
-        // *** BUY ORDERS ***
-        // at market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // willing to sell more than market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 101.into(), // 1% slippage
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // wanting to sell less than market price
-        assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 1.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"1000".into(),
             &quote
         ));
     }
