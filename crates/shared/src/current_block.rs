@@ -1,7 +1,7 @@
 use crate::{event_handling::BlockNumberHash, Web3};
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
-use std::time::Duration;
+use std::{ops::RangeInclusive, time::Duration};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
@@ -92,7 +92,7 @@ pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
     async fn current_block_number(&self) -> Result<u64>;
     /// gets latest `length` blocks
-    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>>;
+    async fn preceding_blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
@@ -117,19 +117,13 @@ impl BlockRetrieving for Web3 {
     /// get latest `length` blocks
     /// if successful, function guarantees `length` blocks in Result (does not return partial results)
     /// `last_block` block is at the end of the resulting vector
-    async fn preceding_blocks(&self, last_block: u64, length: u64) -> Result<Vec<BlockNumberHash>> {
-        ensure!(
-            length > 0 && last_block + 1 >= length,
-            "invalid input, last block {}, length {}",
-            last_block,
-            length
-        );
+    async fn preceding_blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
+        ensure!(range.start() <= range.end(), "invalid range");
 
         let include_txs = helpers::serialize(&false);
-        let mut batch_request = Vec::with_capacity(length as usize);
-        for i in (0..length).rev() {
-            let num =
-                helpers::serialize(&BlockNumber::Number((last_block.saturating_sub(i)).into()));
+        let mut batch_request = Vec::with_capacity((range.end() - range.start() + 1) as usize);
+        for i in range {
+            let num = helpers::serialize(&BlockNumber::Number(i.into()));
             let request = self
                 .transport()
                 .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
@@ -161,6 +155,7 @@ mod tests {
     use super::*;
     use crate::transport::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
+    use num::Saturating;
 
     // cargo test current_block -- --ignored --nocapture
     #[tokio::test]
@@ -184,19 +179,35 @@ mod tests {
     async fn current_blocks_test() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
-        let current_block = web3.current_block().await.unwrap();
-        let blocks = web3
-            .preceding_blocks(current_block.number.unwrap().as_u64(), 0)
-            .await;
+
+        // check invalid input
+        let range = RangeInclusive::new(6, 5);
+        let blocks = web3.preceding_blocks(range).await;
         assert!(blocks.is_err());
-        let blocks = web3.preceding_blocks(0, 0).await;
-        assert!(blocks.is_err());
-        assert_eq!(web3.preceding_blocks(0, 1).await.unwrap().len(), 1);
-        let blocks = web3
-            .preceding_blocks(current_block.number.unwrap().as_u64(), 5)
-            .await
-            .unwrap();
-        assert_eq!(blocks.len(), 5);
-        dbg!(blocks);
+
+        // single block
+        let range = RangeInclusive::new(5, 5);
+        let blocks = web3.preceding_blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.last().unwrap().0, 5);
+
+        // multiple blocks
+        let range = RangeInclusive::new(5, 8);
+        let blocks = web3.preceding_blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 4);
+        assert_eq!(blocks.last().unwrap().0, 8);
+        assert_eq!(blocks.first().unwrap().0, 5);
+
+        // shortened blocks
+        let current_block_number = 5;
+        let length = 25;
+        let range = RangeInclusive::new(
+            current_block_number.saturating_sub(length),
+            current_block_number,
+        );
+        let blocks = web3.preceding_blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 6);
+        assert_eq!(blocks.last().unwrap().0, 5);
+        assert_eq!(blocks.first().unwrap().0, 0);
     }
 }

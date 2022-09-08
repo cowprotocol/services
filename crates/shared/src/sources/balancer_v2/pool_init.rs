@@ -110,7 +110,7 @@ mod tests {
         assert_eq!(
             initializer.initialize_pools().await.unwrap(),
             RegisteredPools {
-                fetched_block_number: (
+                fetched_block: (
                     8441702,
                     H256::from_str(
                         "0xb97e739fd41be0d109163047099f04b1b03657befea31ec4f2adcb714e532f1e"

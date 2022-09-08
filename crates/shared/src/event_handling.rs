@@ -102,9 +102,16 @@ where
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             // since we don't want `Store` to be responsible for hashes, here we just get
             // block number and get the `safe` block from it - this is done only on first init
-            let last_handled_block = self.store.last_event_block().await?;
+            let last_handled_block_safe = self
+                .store
+                .last_event_block()
+                .await?
+                .saturating_sub(MAX_REORG_BLOCK_COUNT);
             self.block_retriever
-                .preceding_blocks(last_handled_block.saturating_sub(MAX_REORG_BLOCK_COUNT), 1)
+                .preceding_blocks(RangeInclusive::new(
+                    last_handled_block_safe,
+                    last_handled_block_safe,
+                ))
                 .await?
         } else {
             self.last_handled_blocks.clone()
@@ -127,10 +134,10 @@ where
 
         let current_blocks = self
             .block_retriever
-            .preceding_blocks(
+            .preceding_blocks(RangeInclusive::new(
+                current_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
                 current_block_number,
-                std::cmp::min(current_block_number + 1, MAX_REORG_BLOCK_COUNT),
-            )
+            ))
             .await?;
 
         let block_range = detect_reorg_path(&current_blocks, &handled_blocks)?;
