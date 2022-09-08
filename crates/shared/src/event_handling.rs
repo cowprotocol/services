@@ -216,12 +216,12 @@ where
                 .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
 
             // There are nodes A and B
-            // We ask for a `Latest` block from A, but that block might not yet be received 
+            // We ask for a `Latest` block from A, but that block might not yet be received
             // by B because of the block propagation delay.
-            // If we, at the same time, ask for events from B with `Latest` block included in the range, 
+            // If we, at the same time, ask for events from B with `Latest` block included in the range,
             // B will answer with empty event list for the `Latest` block.
-            // In this case, we must not consider `Latest` as a safely handled block 
-            // (we must not put it in a `last_handled_blocks`). The only way to be sure the 
+            // In this case, we must not consider `Latest` as a safely handled block
+            // (we must not put it in a `last_handled_blocks`). The only way to be sure the
             // `Latest` block is properly seen by B is if B returns at least one event for `Latest` block.
             let last_event_block = self.store.last_event_block().await?;
             if last_event_block != replacement_blocks.last().unwrap().0 {
