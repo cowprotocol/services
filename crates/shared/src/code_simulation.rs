@@ -11,7 +11,7 @@ use web3::types::{BlockNumber, CallRequest};
 
 /// Simulate a call with state overrides.
 #[async_trait::async_trait]
-pub trait CodeSimulating {
+pub trait CodeSimulating: Send + Sync + 'static {
     async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>>;
 }
 
@@ -29,14 +29,25 @@ impl CodeSimulating for Web3 {
 pub struct TenderlyCodeSimlator {
     tenderly: Arc<dyn TenderlyApi>,
     network_id: String,
+    save: bool,
+    save_if_fails: bool,
 }
 
 impl TenderlyCodeSimlator {
-    pub fn new(tenderly: Arc<dyn TenderlyApi>, network_id: String) -> Self {
+    pub fn new(tenderly: Arc<dyn TenderlyApi>, network_id: impl ToString) -> Self {
         Self {
             tenderly,
-            network_id,
+            network_id: network_id.to_string(),
+            save: false,
+            save_if_fails: false,
         }
+    }
+
+    /// Configure the Tenderly code simulator to save simulations.
+    pub fn save(mut self, on_success: bool, on_failure: bool) -> Self {
+        self.save = on_success;
+        self.save_if_fails = on_failure;
+        self
     }
 }
 
@@ -47,7 +58,7 @@ impl CodeSimulating for TenderlyCodeSimlator {
             .tenderly
             .simulate(SimulationRequest {
                 network_id: self.network_id.clone(),
-                from: call.to.unwrap_or_default(),
+                from: call.from.unwrap_or_default(),
                 to: call.to.unwrap_or_default(),
                 input: call.data.unwrap_or_default().0,
                 gas: call.gas.map(|g| g.as_u64()),
@@ -55,6 +66,8 @@ impl CodeSimulating for TenderlyCodeSimlator {
                 value: call.value,
                 simulation_kind: Some(SimulationKind::Quick),
                 state_objects: Some(overrides),
+                save: Some(self.save),
+                save_if_fails: Some(self.save_if_fails),
                 ..Default::default()
             })
             .await?;

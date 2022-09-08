@@ -144,6 +144,7 @@ pub struct Transaction {
 #[serde_with::serde_as]
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CallTrace {
+    #[serde(default)]
     #[serde_as(as = "Option<BytesHex>")]
     pub output: Option<Vec<u8>>,
     pub error: Option<String>,
