@@ -36,6 +36,7 @@ pub mod token_info;
 pub mod token_list;
 pub mod trace_many;
 pub mod tracing;
+pub mod trade_finding;
 pub mod transport;
 pub mod univ3_router_api;
 pub mod web3_traits;

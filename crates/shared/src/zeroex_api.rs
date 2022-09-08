@@ -283,7 +283,7 @@ pub struct SwapResponse {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait ZeroExApi: Send + Sync {
-    /// Retrieve a swap for the specified parameters from the 1Inch API.
+    /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
