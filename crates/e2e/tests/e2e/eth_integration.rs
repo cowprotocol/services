@@ -40,6 +40,7 @@ async fn local_node_eth_integration() {
 
 async fn eth_integration(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");

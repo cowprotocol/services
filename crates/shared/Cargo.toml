@@ -58,4 +58,5 @@ web3 = { version = "0.18", default-features = false }
 [dev-dependencies]
 flate2 = "1.0"
 regex = "1.5"
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 testlib = { path = "../testlib" }

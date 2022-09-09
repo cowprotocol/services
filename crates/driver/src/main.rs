@@ -534,6 +534,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
 async fn main() {
     let args = driver::arguments::Arguments::parse();
     shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with validated arguments:\n{}", args);
     global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
     let common = init_common_components(&args).await;
