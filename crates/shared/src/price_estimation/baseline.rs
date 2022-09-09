@@ -375,6 +375,7 @@ mod tests {
         assert!(single_estimate(
             &estimator,
             &Query {
+                from: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 1.into(),
@@ -408,6 +409,7 @@ mod tests {
         assert!(single_estimate(
             &estimator,
             &Query {
+                from: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 1.into(),
@@ -448,6 +450,7 @@ mod tests {
         assert!(single_estimate(
             &estimator,
             &Query {
+                from: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 100.into(),
@@ -459,6 +462,7 @@ mod tests {
         assert!(single_estimate(
             &estimator,
             &Query {
+                from: None,
                 sell_token: token_a,
                 buy_token: token_b,
                 in_amount: 100.into(),
@@ -513,6 +517,7 @@ mod tests {
         );
 
         let query = Query {
+            from: None,
             sell_token: token_a,
             buy_token: token_b,
             in_amount: 100.into(),
@@ -526,6 +531,7 @@ mod tests {
         );
 
         let query = Query {
+            from: None,
             sell_token: token_b,
             buy_token: token_a,
             in_amount: 100.into(),
@@ -570,6 +576,7 @@ mod tests {
             let intermediate = single_estimate(
                 &estimator,
                 &Query {
+                    from: None,
                     sell_token: token_a,
                     buy_token: token_b,
                     in_amount: 1.into(),
@@ -583,6 +590,7 @@ mod tests {
             let direct = single_estimate(
                 &estimator,
                 &Query {
+                    from: None,
                     sell_token: token_b,
                     buy_token: token_a,
                     in_amount: 10.into(),
@@ -645,6 +653,7 @@ mod tests {
                 single_estimate(
                     &estimator,
                     &Query {
+                        from: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: 10.into(),
@@ -671,6 +680,7 @@ mod tests {
                 single_estimate(
                     &estimator,
                     &Query {
+                        from: None,
                         sell_token: sell,
                         buy_token: buy,
                         in_amount: 10.into(),
@@ -720,6 +730,7 @@ mod tests {
 
         let gas_price = 1000000000000000.0;
         let query = Query {
+            from: None,
             sell_token: token_a,
             buy_token: token_c,
             in_amount: 10u128.pow(19).into(),
