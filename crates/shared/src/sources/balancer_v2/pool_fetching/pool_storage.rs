@@ -174,23 +174,6 @@ where
             .max()
             .unwrap_or_default()
     }
-}
-
-#[async_trait::async_trait]
-impl<Factory> EventStoring<BasePoolFactoryEvent> for PoolStorage<Factory>
-where
-    Factory: FactoryIndexing,
-{
-    async fn replace_events(
-        &mut self,
-        events: Vec<Event<BasePoolFactoryEvent>>,
-        range: RangeInclusive<u64>,
-    ) -> Result<()> {
-        tracing::debug!("replacing {} events for block {:?}", events.len(), range);
-
-        self.remove_pools_newer_than_block(*range.start());
-        self.append_events(events).await
-    }
 
     async fn append_events(&mut self, events: Vec<Event<BasePoolFactoryEvent>>) -> Result<()> {
         tracing::debug!("inserting {} events", events.len());
@@ -207,6 +190,23 @@ where
         }
 
         Ok(())
+    }
+}
+
+#[async_trait::async_trait]
+impl<Factory> EventStoring<BasePoolFactoryEvent> for PoolStorage<Factory>
+where
+    Factory: FactoryIndexing,
+{
+    async fn replace_events(
+        &mut self,
+        events: Vec<Event<BasePoolFactoryEvent>>,
+        range: RangeInclusive<u64>,
+    ) -> Result<()> {
+        tracing::debug!("replacing {} events for block {:?}", events.len(), range);
+
+        self.remove_pools_newer_than_block(*range.start());
+        self.append_events(events).await
     }
 
     async fn last_event_block(&self) -> Result<u64> {

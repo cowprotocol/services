@@ -42,12 +42,6 @@ pub trait EventStoring<T>: Send + Sync {
         range: RangeInclusive<u64>,
     ) -> Result<()>;
 
-    /// Returns ok, on successful execution, otherwise an appropriate error
-    ///
-    /// # Arguments
-    /// * `events` the contract events to be appended by the implementer
-    async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
-
     async fn last_event_block(&self) -> Result<u64>;
 }
 
