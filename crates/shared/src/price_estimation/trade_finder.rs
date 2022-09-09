@@ -290,8 +290,6 @@ mod slippage {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
-
     use super::*;
     use crate::{
         code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
@@ -305,6 +303,7 @@ mod tests {
     };
     use hex_literal::hex;
     use mockall::predicate;
+    use std::sync::Mutex;
 
     #[test]
     fn decodes_trader_settle_output() {
@@ -609,11 +608,6 @@ mod tests {
             ..Default::default()
         };
 
-        // (
-        //     0,
-        //     [-100, 200],
-        //     [0, 0],
-        // )
         let output = Arc::new(Mutex::new(bytes!("")));
 
         let mut finder = MockTradeFinding::new();
@@ -649,6 +643,12 @@ mod tests {
         assert_output!(is_err: "");
 
         // Mising trader balances
+        //
+        // (
+        //     0,
+        //     [0],
+        //     [0, 0],
+        // )
         assert_output!(
             is_err:
             "0000000000000000000000000000000000000000000000000000000000000000
@@ -658,10 +658,16 @@ mod tests {
              0000000000000000000000000000000000000000000000000000000000000000
              0000000000000000000000000000000000000000000000000000000000000002
              0000000000000000000000000000000000000000000000000000000000000000
-             0000000000000000000000000000000000000000000000000000000000000003"
+             0000000000000000000000000000000000000000000000000000000000000000"
         );
 
         // Mising settlement balances
+        //
+        // (
+        //     0,
+        //     [0, 0],
+        //     [0],
+        // )
         assert_output!(
             is_err:
             "0000000000000000000000000000000000000000000000000000000000000000
