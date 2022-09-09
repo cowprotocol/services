@@ -116,7 +116,12 @@ impl BlockRetrieving for Web3 {
     /// get blocks defined by the range (inclusive)
     /// if successful, function guarantees full range of blocks in Result (does not return partial results)
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
-        ensure!(range.start() <= range.end(), "invalid range");
+        ensure!(
+            range.start() <= range.end(),
+            "invalid range: {} - {}",
+            range.start(),
+            range.end()
+        );
 
         let include_txs = helpers::serialize(&false);
         let mut batch_request = Vec::with_capacity((range.end() - range.start() + 1) as usize);
