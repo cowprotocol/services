@@ -18,11 +18,12 @@ cached = { version = "0.34", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
+database = { path = "../database" }
 derivative = "2.2"
 ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
 ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
 futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.0", features = ["web3_", "tokio_"] }
+gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_", "tokio_"] }
 global-metrics = { path = "../global-metrics" }
 hex = { version = "0.4", default-features = false }
 hex-literal = "0.3"
@@ -34,15 +35,16 @@ maplit = "1.0"
 mockall = "0.11"
 model = { path = "../model" }
 num = { version = "0.4", features = ["serde"] }
-number_conversions = { path = "../number_conversions" }
+number-conversions = { path = "../number-conversions" }
 primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-reqwest = { version = "0.11", features = ["gzip", "json"] }
+reqwest = { version = "0.11", features = ["cookies", "gzip", "json"] }
 scopeguard = "1.1.0"
 serde = "1.0"
 serde_json = "1.0"
 serde_with = { version = "1.11", default-features = false }
+secp256k1 = "0.21"
 thiserror = "1.0"
 time = { version = "0.3", features = ["macros"] }
 tokio = { version = "1.15", features = ["macros", "time"] }
