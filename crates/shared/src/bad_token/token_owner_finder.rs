@@ -10,8 +10,9 @@ use crate::{
     arguments::duration_from_seconds,
     bad_token::token_owner_finder::ethplorer::EthplorerTokenOwnerFinder,
     baseline_solver::BaseTokens, ethcontract_error::EthcontractErrorType,
-    rate_limiter::RateLimitingStrategy, sources::uniswap_v2::pair_provider::PairProvider,
-    transport::MAX_BATCH_SIZE, Web3, Web3CallBatch,
+    http_client::HttpClientFactory, rate_limiter::RateLimitingStrategy,
+    sources::uniswap_v2::pair_provider::PairProvider, transport::MAX_BATCH_SIZE, Web3,
+    Web3CallBatch,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, IUniswapV3Factory, ERC20};
@@ -117,7 +118,7 @@ pub async fn init(
     args: &Arguments,
     web3: Web3,
     chain_id: u64,
-    client: &reqwest::Client,
+    http_factory: &HttpClientFactory,
     pair_providers: &[PairProvider],
     vault: Option<&BalancerV2Vault>,
     uniswapv3_factory: Option<&IUniswapV3Factory>,
@@ -158,18 +159,15 @@ pub async fn init(
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Blockscout) {
-        proposers.push(Arc::new(
-            BlockscoutTokenOwnerFinder::try_with_network_and_timeout(
-                client.clone(),
-                chain_id,
-                args.blockscout_http_timeout,
-            )?,
-        ));
+        proposers.push(Arc::new(BlockscoutTokenOwnerFinder::try_with_network(
+            http_factory.configure(|builder| builder.timeout(args.blockscout_http_timeout)),
+            chain_id,
+        )?));
     }
 
     if finders.contains(&TokenOwnerFindingStrategy::Ethplorer) {
         let mut ethplorer = EthplorerTokenOwnerFinder::try_with_network(
-            client.clone(),
+            http_factory.create(),
             args.ethplorer_api_key.clone(),
             chain_id,
         )?;

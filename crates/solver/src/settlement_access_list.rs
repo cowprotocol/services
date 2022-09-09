@@ -2,9 +2,9 @@ use std::str::FromStr;
 
 use anyhow::{anyhow, ensure, Context, Result};
 use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Address, H160, H256};
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{IntoUrl, Url};
 use serde::Deserialize;
-use shared::Web3;
+use shared::{http_client::HttpClientFactory, Web3};
 use web3::{
     helpers,
     types::{AccessList, Bytes, CallRequest},
@@ -112,13 +112,13 @@ struct TenderlyAccessList {
 
 impl TenderlyAccessList {
     pub fn new(
+        http_factory: &HttpClientFactory,
         url: impl IntoUrl,
-        client: Client,
         api_key: &str,
         network_id: String,
     ) -> Result<Self> {
         Ok(Self {
-            tenderly: TenderlyApi::new(url, client, api_key)?,
+            tenderly: TenderlyApi::new(http_factory, url, api_key)?,
             network_id,
         })
     }
@@ -268,8 +268,8 @@ pub enum AccessListEstimatorType {
     Tenderly,
 }
 
-pub async fn create_priority_estimator(
-    client: &Client,
+pub fn create_priority_estimator(
+    http_factory: &HttpClientFactory,
     web3: &Web3,
     estimator_types: &[AccessListEstimatorType],
     tenderly_url: Option<Url>,
@@ -285,10 +285,10 @@ pub async fn create_priority_estimator(
             }
             AccessListEstimatorType::Tenderly => {
                 estimators.push(Box::new(TenderlyAccessList::new(
+                    http_factory,
                     tenderly_url
                         .clone()
                         .ok_or_else(|| anyhow!("Tenderly url is empty"))?,
-                    client.clone(),
                     &tenderly_api_key
                         .clone()
                         .ok_or_else(|| anyhow!("Tenderly api key is empty"))?,
@@ -329,9 +329,9 @@ mod tests {
     #[ignore]
     async fn tenderly_estimate_access_lists() {
         let tenderly_api = TenderlyAccessList::new(
+            &HttpClientFactory::default(),
             // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
             Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
-            Client::new(),
             &std::env::var("TENDERLY_API_KEY").unwrap(),
             "1".to_string(),
         )

@@ -18,8 +18,9 @@ use naive_solver::NaiveSolver;
 use num::BigRational;
 use oneinch_solver::OneInchSolver;
 use paraswap_solver::ParaswapSolver;
-use reqwest::{Client, Url};
+use reqwest::Url;
 use shared::balancer_sor_api::DefaultBalancerSorApi;
+use shared::http_client::HttpClientFactory;
 use shared::http_solver::{DefaultHttpSolverApi, SolverConfig};
 use shared::zeroex_api::ZeroExApi;
 use shared::{
@@ -251,7 +252,7 @@ pub fn create(
     paraswap_slippage_bps: u32,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
-    client: Client,
+    http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
     zeroex_slippage_bps: u32,
@@ -302,7 +303,7 @@ pub fn create(
                 network_name: network_id.clone(),
                 chain_id,
                 base: url,
-                client: client.clone(),
+                client: http_factory.create(),
                 config,
             },
             account,
@@ -370,7 +371,7 @@ pub fn create(
                         settlement_contract.clone(),
                         chain_id,
                         disabled_one_inch_protocols.clone(),
-                        client.clone(),
+                        http_factory.create(),
                         one_inch_url.clone(),
                         oneinch_slippage_bps,
                         oneinch_max_slippage_in_wei,
@@ -397,7 +398,7 @@ pub fn create(
                     token_info_fetcher.clone(),
                     paraswap_slippage_bps,
                     disabled_paraswap_dexs.clone(),
-                    client.clone(),
+                    http_factory.create(),
                     paraswap_partner.clone(),
                     None,
                 ))))),
@@ -411,7 +412,7 @@ pub fn create(
                             .clone(),
                         settlement_contract.clone(),
                         Arc::new(DefaultBalancerSorApi::new(
-                            client.clone(),
+                            http_factory.create(),
                             balancer_sor_url.clone(),
                             chain_id,
                         )?),

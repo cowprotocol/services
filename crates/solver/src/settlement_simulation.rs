@@ -17,7 +17,7 @@ use reqwest::{
     Client, IntoUrl, Url,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use shared::Web3;
+use shared::{http_client::HttpClientFactory, Web3};
 use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
@@ -281,19 +281,19 @@ pub struct BlockNumber {
 pub struct TenderlyApi {
     url: Url,
     client: Client,
-    header: HeaderMap,
 }
 
 impl TenderlyApi {
-    pub fn new(url: impl IntoUrl, client: Client, api_key: &str) -> Result<Self> {
+    pub fn new(http_factory: &HttpClientFactory, url: impl IntoUrl, api_key: &str) -> Result<Self> {
+        let mut api_key = HeaderValue::from_str(api_key)?;
+        api_key.set_sensitive(true);
+
+        let mut headers = HeaderMap::new();
+        headers.insert("x-access-key", api_key);
+
         Ok(Self {
+            client: http_factory.configure(|builder| builder.default_headers(headers)),
             url: url.into_url()?,
-            client,
-            header: {
-                let mut header = HeaderMap::new();
-                header.insert("x-access-key", HeaderValue::from_str(api_key)?);
-                header
-            },
         })
     }
 
@@ -303,7 +303,6 @@ impl TenderlyApi {
     {
         self.client
             .post(self.url.clone())
-            .headers(self.header.clone())
             .json(&body)
             .send()
             .await?
@@ -787,9 +786,9 @@ mod tests {
             H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
                 .unwrap();
         let tenderly_api = TenderlyApi::new(
+            &HttpClientFactory::default(),
             // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
             Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
-            Client::new(),
             &std::env::var("TENDERLY_API_KEY").unwrap(),
         )
         .unwrap();
