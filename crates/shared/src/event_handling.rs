@@ -131,7 +131,7 @@ where
             ))
             .await?;
 
-        Ok(detect_reorg_path(&current_blocks, &handled_blocks).to_vec())
+        Ok(detect_reorg_path(&handled_blocks, &current_blocks).to_vec())
     }
 
     /// Get new events from the contract and insert them into the database.
