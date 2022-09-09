@@ -105,6 +105,13 @@ where
         let current_block_number = current_block.number.context("missing number")?.as_u64();
         let current_block_hash = current_block.hash.context("missing hash")?;
         let (last_handled_block_number, last_handled_block_hash) = *handled_blocks.last().unwrap();
+        tracing::debug!(
+            "current block: {} - {:?}, last_handled_blocks: {} - {:?}",
+            current_block_number,
+            current_block_hash,
+            last_handled_block_number,
+            last_handled_block_hash
+        );
 
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
@@ -132,6 +139,11 @@ where
                 current_block_number,
             ))
             .await?;
+        tracing::debug!(
+            "current blocks: {:?} - {:?}",
+            current_blocks.first().unwrap(),
+            current_blocks.last().unwrap()
+        );
 
         Ok(detect_reorg_path(&handled_blocks, &current_blocks).to_vec())
     }
@@ -139,8 +151,17 @@ where
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
         let replacement_blocks = self.event_block_range().await?;
+        tracing::debug!(
+            "replacement_blocks before filtering: {:?}",
+            replacement_blocks
+        );
         let (replacement_blocks, events) = self.past_events(&replacement_blocks).await;
         track_block_range(&format!("range_{}", replacement_blocks.len()));
+        tracing::debug!(
+            "replacement_blocks after filtering: {:?}, events number: {}",
+            replacement_blocks,
+            events.len()
+        );
         if replacement_blocks.is_empty() {
             return Ok(());
         }
