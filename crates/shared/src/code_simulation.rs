@@ -10,6 +10,7 @@ use std::sync::Arc;
 use web3::types::{BlockNumber, CallRequest};
 
 /// Simulate a call with state overrides.
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait CodeSimulating: Send + Sync + 'static {
     async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>>;
