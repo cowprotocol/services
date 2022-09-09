@@ -4,13 +4,19 @@ use crate::{
 };
 use primitive_types::H160;
 use reqwest::Url;
-use shared::arguments::{display_list, display_option, display_secret_option};
+use shared::{
+    arguments::{display_list, display_option, display_secret_option},
+    http_client,
+};
 use std::{num::NonZeroU8, time::Duration};
 
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
 
     /// The API endpoint to fetch the orderbook
     #[clap(long, env, default_value = "http://localhost:8080")]
@@ -293,6 +299,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
         writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
