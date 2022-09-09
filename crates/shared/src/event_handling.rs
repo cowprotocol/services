@@ -422,9 +422,7 @@ mod tests {
 
     #[test]
     fn detect_reorg_path_test_reorg_no_common_ancestor() {
-        let handled_blocks = vec![
-            (2, H256::from_low_u64_be(20)),
-        ];
+        let handled_blocks = vec![(2, H256::from_low_u64_be(20))];
         let current_blocks = vec![
             (1, H256::from_low_u64_be(11)),
             (2, H256::from_low_u64_be(21)),
