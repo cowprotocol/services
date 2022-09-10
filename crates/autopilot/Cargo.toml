@@ -38,6 +38,7 @@ tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "sync", "ti
 tracing = "0.1"
 url = "2.2"
 web3 = { version = "0.18", default-features = false }
+unzip-n = "0.1.2"
 
 
 [dev-dependencies]

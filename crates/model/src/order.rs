@@ -7,7 +7,7 @@ use crate::{
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use derivative::Derivative;
 use hex_literal::hex;
@@ -227,20 +227,20 @@ impl OrderData {
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
     // keccak256("sell")
-    const KIND_SELL: [u8; 32] =
+    pub const KIND_SELL: [u8; 32] =
         hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
     // keccak256("buy")
-    const KIND_BUY: [u8; 32] =
+    pub const KIND_BUY: [u8; 32] =
         hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
 
     // keccak256("erc20")
-    const BALANCE_ERC20: [u8; 32] =
+    pub const BALANCE_ERC20: [u8; 32] =
         hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
     // keccak256("external")
-    const BALANCE_EXTERNAL: [u8; 32] =
+    pub const BALANCE_EXTERNAL: [u8; 32] =
         hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
     // keccak256("internal")
-    const BALANCE_INTERNAL: [u8; 32] =
+    pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
 
     pub fn hash_struct(&self) -> [u8; 32] {
@@ -564,6 +564,17 @@ impl OrderKind {
     }
 }
 
+impl TryFrom<[u8; 32]> for OrderKind {
+    type Error = anyhow::Error;
+    fn try_from(kind: [u8; 32]) -> Result<Self, Self::Error> {
+        match kind {
+            OrderData::KIND_SELL => Ok(OrderKind::Sell),
+            OrderData::KIND_BUY => Ok(OrderKind::Buy),
+            _ => Err(anyhow!("Order kind is not well defined")),
+        }
+    }
+}
+
 /// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(
     Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
@@ -580,6 +591,18 @@ pub enum SellTokenSource {
     External,
 }
 
+impl TryFrom<[u8; 32]> for SellTokenSource {
+    type Error = anyhow::Error;
+    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
+            OrderData::BALANCE_EXTERNAL => Ok(SellTokenSource::External),
+            OrderData::BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
+            _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+        }
+    }
+}
+
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
 #[derive(
     Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
@@ -592,6 +615,17 @@ pub enum BuyTokenDestination {
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
+}
+
+impl TryFrom<[u8; 32]> for BuyTokenDestination {
+    type Error = anyhow::Error;
+    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
+            OrderData::BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
+            _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+        }
+    }
 }
 
 pub fn debug_app_data(
