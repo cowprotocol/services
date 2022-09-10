@@ -666,6 +666,7 @@ mod tests {
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
     use shared::gas_price_estimation::FakeGasPriceEstimator;
+    use shared::http_client::HttpClientFactory;
     use shared::transport::create_env_test_transport;
     use tracing::level_filters::LevelFilter;
 
@@ -705,14 +706,13 @@ mod tests {
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
-                &Client::new(),
+                &HttpClientFactory::default(),
                 &web3,
                 &[AccessListEstimatorType::Web3],
                 None,
                 None,
                 "1".to_string(),
             )
-            .await
             .unwrap(),
         );
 
