@@ -409,9 +409,14 @@ fn extract_order_data_from_onchain_order_placement_event(
 
 #[cfg(test)]
 mod test {
+    use crate::database::onchain_order_events::ethflow_events::EthFlowOnchainOrderParser;
+
     use super::*;
     use contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement;
-    use database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement};
+    use database::{
+        byte_array::ByteArray, ethflow_orders::EthOrderPlacement,
+        onchain_broadcasted_orders::OnchainOrderPlacement,
+    };
     use ethcontract::{Bytes, EventMetadata, H160, H256, U256};
     use mockall::predicate::{always, eq};
     use model::{
@@ -428,6 +433,7 @@ mod test {
         },
         order_quoting::{FindQuoteError, MockOrderQuoting, Quote},
     };
+    use sqlx::PgPool;
 
     #[test]
     fn test_extract_order_data_from_onchain_order_placement_event() {
@@ -721,6 +727,125 @@ mod test {
                 block_number: 1,
                 log_index: 0i64
             }
+        );
+    }
+
+    #[tokio::test]
+    async fn extract_custom_and_general_order_data_matches_quotes_with_correct_events() {
+        let sell_token = H160::from([1; 20]);
+        let buy_token = H160::from([2; 20]);
+        let receiver = H160::from([3; 20]);
+        let sender = H160::from([4; 20]);
+        let sell_amount = U256::from_dec_str("10").unwrap();
+        let buy_amount = U256::from_dec_str("11").unwrap();
+        let valid_to = 1u32;
+        let app_data = ethcontract::tokens::Bytes([5u8; 32]);
+        let fee_amount = U256::from_dec_str("12").unwrap();
+        let owner = H160::from([6; 20]);
+        let order_placement = ContractOrderPlacement {
+            sender,
+            order: (
+                sell_token,
+                buy_token,
+                receiver,
+                sell_amount,
+                buy_amount,
+                valid_to,
+                app_data,
+                fee_amount,
+                Bytes(OrderData::KIND_SELL),
+                true,
+                Bytes(OrderData::BALANCE_ERC20),
+                Bytes(OrderData::BALANCE_ERC20),
+            ),
+            signature: (0u8, Bytes(owner.as_ref().into())),
+            data: ethcontract::Bytes(vec![
+                0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
+            ]),
+        };
+        let expected_user_valid_to = 16u32.pow(2) + 2;
+
+        let event_data_1 = EthContractEvent {
+            data: ContractEvent::OrderPlacement(order_placement.clone()),
+            meta: Some(EventMetadata {
+                // todo: Implement default for EvetMetadata
+                address: H160::zero(),
+                block_hash: H256::zero(),
+                block_number: 1,
+                transaction_hash: H256::zero(),
+                transaction_index: 0usize,
+                log_index: 0usize,
+                transaction_log_index: None,
+                log_type: None,
+            }),
+        };
+        let mut order_placement_2 = order_placement.clone();
+        order_placement_2.data = Bytes(Vec::new()); // not sufficient bytes. This will produce an error.
+        let event_data_2 = EthContractEvent {
+            data: ContractEvent::OrderPlacement(order_placement_2),
+            meta: Some(EventMetadata {
+                // todo: Implement default for EvetMetadata
+                address: H160::zero(),
+                block_hash: H256::zero(),
+                block_number: 3,
+                transaction_hash: H256::zero(),
+                transaction_index: 0usize,
+                log_index: 0usize,
+                transaction_log_index: None,
+                log_type: None,
+            }),
+        };
+        let domain_separator = DomainSeparator([7u8; 32]);
+        let mut order_quoter = MockOrderQuoting::new();
+        order_quoter
+            .expect_find_quote()
+            .returning(|_, _| Ok(Default::default()));
+        let onchain_order_parser = OnchainOrderParser {
+            db: Postgres(PgPool::connect_lazy("postgresql://").unwrap()),
+            quoter: Box::new(order_quoter),
+            // Todo: Mocking this trait would be nicer,
+            // but mockall and lifetime parameters are not easily compatible
+            custom_onchain_data_parser: Box::new(EthFlowOnchainOrderParser {}),
+            domain_separator,
+            settlement_contract: H160::zero(),
+        };
+        let result = onchain_order_parser
+            .extract_custom_and_general_order_data(vec![event_data_1.clone(), event_data_2.clone()])
+            .await
+            .unwrap();
+        let expected_order_data = OrderData {
+            sell_token,
+            buy_token,
+            receiver: Some(receiver),
+            sell_amount,
+            buy_amount,
+            valid_to,
+            app_data: AppId(app_data.0),
+            fee_amount,
+            kind: OrderKind::Sell,
+            partially_fillable: order_placement.order.9,
+            sell_token_balance: SellTokenSource::Erc20,
+            buy_token_balance: BuyTokenDestination::Erc20,
+        };
+        let expected_uid = expected_order_data.uid(&domain_separator, &owner);
+        let expected_ethflow_order = EthOrderPlacement {
+            uid: ByteArray(expected_uid.0),
+            valid_to: expected_user_valid_to as i64,
+        };
+        let expected_event_index = EventIndex {
+            block_number: 1,
+            log_index: 0,
+        };
+        assert_eq!(result.0, vec![expected_ethflow_order]);
+        assert_eq!(
+            result.1,
+            vec![(
+                expected_event_index,
+                OnchainOrderPlacement {
+                    order_uid: ByteArray(expected_uid.0),
+                    sender: ByteArray(sender.0),
+                }
+            )]
         );
     }
 }
