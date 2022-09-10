@@ -1,9 +1,6 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
-use autopilot::{
-    solvable_orders::SolvableOrdersCache,
- event_updater::GPv2SettlementContract,
-};
+use autopilot::{event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache};
 
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
