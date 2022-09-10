@@ -184,7 +184,7 @@ mod test {
             .unwrap();
         assert_eq!(result.len(), 1);
 
-        let mut order_placement_2 = order_placement.clone();
+        let mut order_placement_2 = order_placement;
         order_placement_2.data = Bytes(Vec::new()); // <- This will produce an error
         let event_data = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement_2),
