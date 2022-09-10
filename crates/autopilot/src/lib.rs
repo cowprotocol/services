@@ -3,7 +3,9 @@ pub mod database;
 pub mod event_updater;
 pub mod solvable_orders;
 
-use crate::{database::Postgres, solvable_orders::SolvableOrdersCache};
+use crate::{
+    database::Postgres, event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache,
+};
 use contracts::{BalancerV2Vault, IUniswapV3Factory, WETH9};
 use ethcontract::errors::DeployError;
 use shared::{
@@ -410,8 +412,9 @@ pub async fn main(args: arguments::Arguments) {
         None
     };
     let event_updater = Arc::new(event_updater::EventUpdater::new(
-        settlement_contract.clone(),
+        GPv2SettlementContract::new(settlement_contract.clone()),
         db.clone(),
+        settlement_contract.clone().raw_instance().web3(),
         sync_start,
     ));
 
