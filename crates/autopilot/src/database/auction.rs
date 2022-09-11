@@ -169,13 +169,6 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
     })
 }
 
-pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
-    match kind {
-        DbOrderKind::Buy => OrderKind::Buy,
-        DbOrderKind::Sell => OrderKind::Sell,
-    }
-}
-
 fn sell_token_source_from(source: DbSellTokenSource) -> SellTokenSource {
     match source {
         DbSellTokenSource::Erc20 => SellTokenSource::Erc20,
