@@ -77,6 +77,9 @@ pub trait CustomOnchainOrderParsing<
         custom_onchain_data: Vec<CustomEventDataForDB>,
     ) -> Result<()>;
 
+    // The following function is expected to not error on normal parsing errors
+    // Events for which a regular parsing error happens should just be dropped
+    // Errors that are unexpected / non-recoverable should be returned as errors
     fn parse_custom_event_data(
         &self,
         contract_events: &[EthContractEvent<ContractEvent>],
