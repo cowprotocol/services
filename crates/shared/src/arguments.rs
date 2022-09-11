@@ -1,12 +1,16 @@
 //! Contains command line arguments and related helpers that are shared between the binaries.
 use crate::{
+    fee_subsidy::cow_token::SubsidyTiers,
     gas_price_estimation::GasEstimatorType,
+    price_estimation::PriceEstimatorType,
     rate_limiter::RateLimitingStrategy,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
-use anyhow::{ensure, Context, Result};
+use anyhow::{anyhow, ensure, Context, Result};
 use ethcontract::{H160, H256, U256};
+use model::app_id::AppId;
 use std::{
+    collections::HashMap,
     fmt::{Display, Formatter},
     num::{NonZeroU64, ParseFloatError},
     str::FromStr,
@@ -47,6 +51,87 @@ pub struct Arguments {
         use_value_delimiter = true
     )]
     pub gas_estimators: Vec<GasEstimatorType>,
+
+    #[clap(
+        long,
+        env,
+        default_value = "Baseline",
+        arg_enum,
+        use_value_delimiter = true
+    )]
+    pub price_estimators: Vec<PriceEstimatorType>,
+
+    /// The configured addresses whose orders should be considered liquidity and
+    /// not regular user orders.
+    ///
+    /// These orders have special semantics such as not being considered in the
+    /// settlements objective funtion, not receiving any surplus, and being
+    /// allowed to place partially fillable orders.
+    #[clap(long, env, use_value_delimiter = true)]
+    pub liquidity_order_owners: Vec<H160>,
+
+    /// The time period an EIP1271-quote request is valid.
+    #[clap(
+        long,
+        env,
+        default_value = "600",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub eip1271_onchain_quote_validity_seconds: Duration,
+
+    /// The time period an PRESIGN-quote request is valid.
+    #[clap(
+        long,
+        env,
+        default_value = "600",
+        parse(try_from_str = duration_from_seconds),
+    )]
+    pub presign_onchain_quote_validity_seconds: Duration,
+
+    /// A flat fee discount denominated in the network's native token (i.e. Ether for Mainnet).
+    ///
+    /// Note that flat fee discounts are applied BEFORE any multiplicative factors from either
+    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    #[clap(long, env, default_value = "0")]
+    pub fee_discount: f64,
+
+    /// The minimum value for the discounted fee in the network's native token (i.e. Ether for
+    /// Mainnet).
+    ///
+    /// Note that this minimum is applied BEFORE any multiplicative factors from either
+    /// `--fee-factor` or `--partner-additional-fee-factors` configuration.
+    #[clap(long, env, default_value = "0")]
+    pub min_discounted_fee: f64,
+
+    /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
+    /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
+    #[clap(long, env, default_value = "1", parse(try_from_str = parse_unbounded_factor))]
+    pub fee_factor: f64,
+
+    /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
+    /// Should take the form of a json string as shown in the following example:
+    ///
+    /// '0x0000000000000000000000000000000000000000000000000000000000000000:0.5,$PROJECT_APP_ID:0.7'
+    ///
+    /// Furthermore, a value of
+    /// - 1 means no subsidy and is the default for all app_data not contained in this list.
+    /// - 0.5 means that this project pays only 50% of the estimated fees.
+    #[clap(
+        long,
+        env,
+        default_value = "",
+        parse(try_from_str = parse_partner_fee_factor),
+    )]
+    pub partner_additional_fee_factors: HashMap<AppId, f64>,
+
+    /// Used to configure how much of the regular fee a user should pay based on their
+    /// COW + VCOW balance in base units on the current network.
+    ///
+    /// The expected format is "10:0.75,150:0.5" for 2 subsidy tiers.
+    /// A balance of [10,150) COW will cause you to pay 75% of the regular fee and a balance of
+    /// [150, inf) COW will cause you to pay 50% of the regular fee.
+    #[clap(long, env)]
+    pub cow_fee_factors: Option<SubsidyTiers>,
 
     /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
     #[clap(long, env)]
@@ -319,5 +404,60 @@ impl FromStr for RateLimitingStrategy {
         let min_back_off = duration_from_seconds(min_back_off).context("parsing min_back_off")?;
         let max_back_off = duration_from_seconds(max_back_off).context("parsing max_back_off")?;
         Self::try_new(back_off_growth_factor, min_back_off, max_back_off)
+    }
+}
+
+/// Parses a comma separated list of colon separated values representing fee factors for AppIds.
+fn parse_partner_fee_factor(s: &str) -> Result<HashMap<AppId, f64>> {
+    let mut res = HashMap::default();
+    if s.is_empty() {
+        return Ok(res);
+    }
+    for pair_str in s.split(',') {
+        let mut split = pair_str.trim().split(':');
+        let key = split
+            .next()
+            .ok_or_else(|| anyhow!("missing AppId"))?
+            .trim()
+            .parse()
+            .context("failed to parse address")?;
+        let value = split
+            .next()
+            .ok_or_else(|| anyhow!("missing value"))?
+            .trim()
+            .parse::<f64>()
+            .context("failed to parse fee factor")?;
+        if split.next().is_some() {
+            return Err(anyhow!("Invalid pair lengths"));
+        }
+        res.insert(key, value);
+    }
+    Ok(res)
+}
+
+#[cfg(test)]
+mod test {
+    use maplit::hashmap;
+
+    use super::*;
+    #[test]
+    fn parse_partner_fee_factor_ok() {
+        let x = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        let y = "0x0101010101010101010101010101010101010101010101010101010101010101";
+        // without spaces
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}:0.5,{}:0.7", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+        );
+        // with spaces
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}: 0.5, {}: 0.7", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 0.5, AppId([1u8; 32]) => 0.7 }
+        );
+        // whole numbers
+        assert_eq!(
+            parse_partner_fee_factor(&format!("{}: 1, {}: 2", x, y)).unwrap(),
+            hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
+        );
     }
 }
