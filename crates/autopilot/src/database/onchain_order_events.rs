@@ -30,7 +30,7 @@ use shared::{
 use std::collections::HashMap;
 use unzip_n::unzip_n;
 
-unzip_n!(pub 3);
+unzip_n!(3);
 
 pub struct OnchainOrderParser<'a, T: Send + Sync, W: Send + Sync> {
     db: Postgres,
@@ -63,27 +63,32 @@ pub struct CustomParsedOnchaninData<T> {
 }
 
 #[async_trait::async_trait]
-pub trait CustomOnchainOrderParsing<'a, T: Send + Sync + Clone, W: Send + Sync>:
-    Send + Sync
+// CustomEventData generic stores the result of the custom event parsing
+// CustomEvenDataForDB generic contains the prepared data that will be appended to the database
+pub trait CustomOnchainOrderParsing<
+    'a,
+    CustomEventData: Send + Sync + Clone,
+    CustomEventDataForDB: Send + Sync,
+>: Send + Sync
 {
     async fn append_custom_order_info_to_db(
         &self,
         ex: &mut PgTransaction<'a>,
-        custom_onchain_data: Vec<W>,
+        custom_onchain_data: Vec<CustomEventDataForDB>,
     ) -> Result<()>;
 
     fn parse_custom_event_data(
         &self,
         contract_events: &[EthContractEvent<ContractEvent>],
-    ) -> Result<Vec<(EventIndex, CustomParsedOnchaninData<T>)>>;
+    ) -> Result<Vec<(EventIndex, CustomParsedOnchaninData<CustomEventData>)>>;
 
     fn customized_event_data_for_event_index(
         &self,
         event_index: &EventIndex,
         order: &Order,
-        hashmap: &HashMap<EventIndex, T>,
+        hashmap: &HashMap<EventIndex, CustomEventData>,
         onchain_order_placement: &OnchainOrderPlacement,
-    ) -> W;
+    ) -> CustomEventDataForDB;
 }
 
 #[async_trait::async_trait]
@@ -109,7 +114,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send> EventStoring<ContractEvent>
 
         let _timer = Metrics::get()
             .database_queries
-            .with_label_values(&["append_ethflow_order_events"])
+            .with_label_values(&["append_onchain_order_events"])
             .start_timer();
         let mut transaction = self.db.0.begin().await?;
 
@@ -252,8 +257,8 @@ async fn parse_general_onchain_order_placement_data(
                 domain_separator,
                 settlement_contract,
             )
-            .await;
-            Ok((meta_to_event_index(&meta), order_data?))
+            .await?;
+            Ok((meta_to_event_index(&meta), order_data))
         },
     );
     let onchain_order_placement_data = futures::future::join_all(futures).await;
@@ -377,10 +382,15 @@ fn extract_order_data_from_onchain_order_placement_event(
         _ => bail!("unreachable state while parsing owner"),
     };
 
+    let receiver = match order_placement.order.2 {
+        H160(bytes) if bytes == [0u8; 20] => None,
+        receiver => Some(receiver),
+    };
+
     let order_data = OrderData {
         sell_token: order_placement.order.0,
         buy_token: order_placement.order.1,
-        receiver: Some(order_placement.order.2),
+        receiver,
         sell_amount: order_placement.order.3,
         buy_amount: order_placement.order.4,
         valid_to: order_placement.order.5,
@@ -474,6 +484,8 @@ mod test {
         assert_eq!(signing_scheme, SigningScheme::Eip1271);
         assert_eq!(order_data, expected_order_data);
         assert_eq!(expected_uid, order_uid);
+
+        let receiver = H160::zero();
         let order_placement = ContractOrderPlacement {
             sender,
             order: (
@@ -493,11 +505,27 @@ mod test {
             signature: (1u8, Bytes(owner.as_ref().into())),
             ..Default::default()
         };
-        let (_, owner, signing_scheme, _) = extract_order_data_from_onchain_order_placement_event(
-            &order_placement,
-            domain_separator,
-        )
-        .unwrap();
+        let (order_data, owner, signing_scheme, _) =
+            extract_order_data_from_onchain_order_placement_event(
+                &order_placement,
+                domain_separator,
+            )
+            .unwrap();
+        let expected_order_data = OrderData {
+            sell_token,
+            buy_token,
+            receiver: None,
+            sell_amount,
+            buy_amount,
+            valid_to,
+            app_data: AppId(app_data.0),
+            fee_amount,
+            kind: OrderKind::Sell,
+            partially_fillable: order_placement.order.9,
+            sell_token_balance: SellTokenSource::Erc20,
+            buy_token_balance: BuyTokenDestination::Erc20,
+        };
+        assert_eq!(order_data, expected_order_data);
         assert_eq!(signing_scheme, SigningScheme::PreSign);
         assert_eq!(owner, sender);
     }
