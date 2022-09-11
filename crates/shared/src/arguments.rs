@@ -460,4 +460,23 @@ mod test {
             hashmap! { AppId([0u8; 32]) => 1., AppId([1u8; 32]) => 2. }
         );
     }
+
+    #[test]
+    fn parse_partner_fee_factor_err() {
+        assert!(parse_partner_fee_factor("0x1:0.5,0x2:0.7").is_err());
+        assert!(parse_partner_fee_factor("0x12:0.5,0x22:0.7").is_err());
+        assert!(parse_partner_fee_factor(
+            "0x0000000000000000000000000000000000000000000000000000000000000000:0.5:3"
+        )
+        .is_err());
+        assert!(parse_partner_fee_factor(
+            "0x0000000000000000000000000000000000000000000000000000000000000000:word"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn parse_partner_fee_factor_ok_on_empty() {
+        assert!(parse_partner_fee_factor("").unwrap().is_empty());
+    }
 }
