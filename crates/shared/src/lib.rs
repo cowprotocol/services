@@ -13,6 +13,7 @@ pub mod current_block;
 pub mod db_order_conversions;
 pub mod ethcontract_error;
 pub mod event_handling;
+pub mod event_storing_helpers;
 pub mod exit_process_on_panic;
 pub mod fee_subsidy;
 pub mod gas_price;
