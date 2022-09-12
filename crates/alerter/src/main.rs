@@ -316,6 +316,7 @@ struct Arguments {
 async fn main() {
     let args = Arguments::parse();
     shared::tracing::initialize("alerter=debug", tracing::Level::ERROR.into());
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running alerter with {:#?}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_alerter".to_string()), None);

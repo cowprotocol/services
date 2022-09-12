@@ -1,7 +1,6 @@
 use std::{
     panic::{self, PanicInfo},
     sync::atomic::{AtomicBool, Ordering},
-    thread,
 };
 use time::macros::format_description;
 use tracing::level_filters::LevelFilter;
@@ -38,7 +37,6 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
         )))
         .with_env_filter(env_filter)
         .with_ansi(atty::is(atty::Stream::Stdout));
-    // try_init failing indicates that the
     match stderr_threshold.into_level() {
         Some(threshold) => subscriber_builder
             .with_writer(
@@ -51,16 +49,15 @@ fn set_tracing_subscriber(env_filter: &str, stderr_threshold: LevelFilter) {
     }
 }
 
-// Sets a panic hook so panic information is logged in addition to the default panic printer.
+// Wrap the existing panic hook with tracing::error information that is logged before the existing
+// hook is called.
 fn set_panic_hook() {
     let default_hook = panic::take_hook();
     let hook = move |info: &PanicInfo| {
-        let thread = thread::current();
-        let thread_name = thread.name().unwrap_or("<unnamed>");
         // It is not possible for our custom hook to print a full backtrace on stable rust. To not
         // lose this information we call the default panic handler which prints the full backtrace.
         // The preceding log makes kibana consider this a multi line log message.
-        tracing::error!("thread '{}' {}:", thread_name, info);
+        tracing::error!("thread panic (message after this log):");
         default_hook(info);
     };
     panic::set_hook(Box::new(hook));
