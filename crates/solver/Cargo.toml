@@ -53,5 +53,6 @@ web3 = { version = "0.18", default-features = false }
 mockall = "0.11"
 
 [dev-dependencies]
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tracing-subscriber = "0.3"
 testlib = { path = "../testlib" }

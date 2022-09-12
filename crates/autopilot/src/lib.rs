@@ -17,6 +17,7 @@ use shared::{
     },
     balancer_sor_api::DefaultBalancerSorApi,
     baseline_solver::BaseTokens,
+    http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     metrics::LivenessChecking,
     oneinch_api::OneInchClientImpl,
@@ -58,8 +59,8 @@ pub async fn main(args: arguments::Arguments) {
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     let db_metrics = crate::database::database_metrics(db.clone());
 
-    let client = shared::http_client(args.shared.http_timeout);
-    let web3 = shared::web3(&client, &args.shared.node_url, "base");
+    let http_factory = HttpClientFactory::new(&args.http_client);
+    let web3 = shared::web3(&http_factory, &args.shared.node_url, "base");
 
     let current_block_stream = shared::current_block::current_block_stream(
         web3.clone(),
@@ -116,7 +117,7 @@ pub async fn main(args: arguments::Arguments) {
 
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
+            &http_factory,
             &web3,
             args.shared.gas_estimators.as_slice(),
             args.shared.blocknative_api_key.clone(),
@@ -151,7 +152,7 @@ pub async fn main(args: arguments::Arguments) {
         &args.token_owner_finder,
         web3.clone(),
         chain_id,
-        &client,
+        &http_factory,
         &pair_providers,
         vault.as_ref(),
         uniswapv3_factory.as_ref(),
@@ -163,7 +164,7 @@ pub async fn main(args: arguments::Arguments) {
     let trace_call_detector = args.tracing_node_url.as_ref().map(|tracing_node_url| {
         Box::new(CachingDetector::new(
             Box::new(TraceCallDetector {
-                web3: shared::web3(&client, tracing_node_url, "trace"),
+                web3: shared::web3(&http_factory, tracing_node_url, "trace"),
                 finder,
                 settlement_contract: settlement_contract.address(),
             }),
@@ -213,7 +214,7 @@ pub async fn main(args: arguments::Arguments) {
                 token_info_fetcher.clone(),
                 cache_config,
                 current_block_stream.clone(),
-                client.clone(),
+                http_factory.create(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )
@@ -229,7 +230,7 @@ pub async fn main(args: arguments::Arguments) {
             UniswapV3PoolFetcher::new(
                 chain_id,
                 args.shared.liquidity_fetcher_max_age_update,
-                client.clone(),
+                http_factory.create(),
             )
             .await
             .expect("failed to create UniswapV3 pool fetcher in orderbook"),
@@ -240,24 +241,27 @@ pub async fn main(args: arguments::Arguments) {
     };
     let zeroex_api = Arc::new(
         DefaultZeroExApi::new(
+            &http_factory,
             args.shared
                 .zeroex_url
                 .as_deref()
                 .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
             args.shared.zeroex_api_key.clone(),
-            client.clone(),
         )
         .unwrap(),
     );
-    let one_inch_api =
-        OneInchClientImpl::new(args.shared.one_inch_url.clone(), client.clone(), chain_id)
-            .map(Arc::new);
+    let one_inch_api = OneInchClientImpl::new(
+        args.shared.one_inch_url.clone(),
+        http_factory.create(),
+        chain_id,
+    )
+    .map(Arc::new);
     let instrumented = |inner: Box<dyn PriceEstimating>, name: String| {
         InstrumentedPriceEstimator::new(inner, name)
     };
-    let balancer_sor_api = args
-        .balancer_sor_url
-        .map(|url| Arc::new(DefaultBalancerSorApi::new(client.clone(), url, chain_id).unwrap()));
+    let balancer_sor_api = args.balancer_sor_url.map(|url| {
+        Arc::new(DefaultBalancerSorApi::new(http_factory.create(), url, chain_id).unwrap())
+    });
     let native_token_price_estimation_amount = args
         .amount_to_estimate_prices_with
         .or_else(|| {
@@ -284,7 +288,7 @@ pub async fn main(args: arguments::Arguments) {
                         network_name: network_name.to_string(),
                         chain_id,
                         base,
-                        client: client.clone(),
+                        client: http_factory.create(),
                         config: SolverConfig {
                             use_internal_buffers: Some(args.shared.quasimodo_uses_internal_buffers),
                             objective: Some(shared::http_solver::Objective::SurplusFeesCosts),
@@ -313,7 +317,7 @@ pub async fn main(args: arguments::Arguments) {
                 )),
                 PriceEstimatorType::Paraswap => Box::new(ParaswapPriceEstimator::new(
                     Arc::new(DefaultParaswapApi {
-                        client: client.clone(),
+                        client: http_factory.create(),
                         partner: args.shared.paraswap_partner.clone().unwrap_or_default(),
                         rate_limiter: args.shared.paraswap_rate_limiter.clone().map(|strategy| {
                             RateLimiter::from_strategy(strategy, "paraswap_api".into())

@@ -2,10 +2,9 @@ use anyhow::{anyhow, Context, Result};
 use model::app_id::AppId;
 use primitive_types::{H160, U256};
 use reqwest::Url;
-use shared::fee_subsidy::cow_token::SubsidyTiers;
 use shared::{
-    arguments::display_option, bad_token::token_owner_finder, price_estimation::PriceEstimatorType,
-    rate_limiter::RateLimitingStrategy,
+    arguments::display_option, bad_token::token_owner_finder, fee_subsidy::cow_token::SubsidyTiers,
+    http_client, price_estimation::PriceEstimatorType, rate_limiter::RateLimitingStrategy,
 };
 use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Duration};
 
@@ -13,6 +12,9 @@ use std::{collections::HashMap, net::SocketAddr, num::NonZeroUsize, time::Durati
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
@@ -238,6 +240,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
