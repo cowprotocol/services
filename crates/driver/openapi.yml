@@ -1,0 +1,93 @@
+openapi: 3.0.3
+info:
+  title: Solver API
+  description: |
+    The API implemented by Solvers to be queried by Autopilot.
+  version: 0.0.1
+paths:
+  /quote:
+    post:
+      summary: Get price estimation quote.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuoteRequest"
+      responses:
+        200:
+          description: Quote successfully created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuoteResponse"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+components:
+  schemas:
+    Address:
+      description: 20 byte Ethereum address encoded as a hex with `0x` prefix.
+      type: string
+      example: "0x6810e776880c02933d47db1b9fc05908e5386b96"
+    TokenAmount:
+      description: Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
+      type: string
+      example: "1234567890"
+    QuoteRequest:
+      description: Description of what price to estimate.
+      type: object
+      properties:
+        sell_token:
+          $ref: "#/components/schemas/Address"
+        buy_token:
+          $ref: "#/components/schemas/Address"
+        kind:
+          description: |
+            - `buy`: in_amount is in buy_token, out_amount is in sell_token
+            - `sell`: in_amount is in sell_token, out_amount is in buy_token
+          type: string
+          enum: ["buy", "sell"]
+        in_amount:
+          $ref: "#/components/schemas/TokenAmount"
+    QuoteResponse:
+      anyOf:
+      - description: |
+          Successful Quote
+
+          The Solver knows how to fill the request with these parameters.
+        type: object
+        properties:
+          out_amount:
+            $ref: "#/components/schemas/TokenAmount"
+          gas:
+            type: integer
+      - description: |
+          Unfillable Quote
+
+          This is not an error. The server handled the request correctly but could not create a
+          quote. For example, this Solver might not be aware of any liquidity between the tokens.
+        type: object
+        properties:
+          unfillable_reason:
+            type: string
+  responses:
+    BadRequest:
+      description: |
+        There is something wrong with the request.
+
+        Body potentially contains extra information.
+      content:
+        text/plain:
+          schema:
+            type: string
+    InternalServerError:
+      description: |
+        Something went wrong when handling the request.
+
+        Body potentially contains extra information.
+      content:
+        text/plain:
+          schema:
+            type: string
