@@ -88,7 +88,7 @@ impl AuctionConverting for AuctionConverter {
 
         let liquidity = self
             .liquidity_collector
-            .get_liquidity_for_orders(&orders, Block::Number(block))
+            .get_liquidity_for_orders(&orders, Block::Recent)
             .await?;
 
         let external_prices =
