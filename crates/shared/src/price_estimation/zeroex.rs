@@ -1,22 +1,10 @@
+use super::{trade_finder::TradeEstimator, PriceEstimateResult, PriceEstimating, Query};
 use crate::{
-    price_estimation::{
-        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
-        Query,
-    },
-    rate_limiter::RateLimiter,
-    request_sharing::RequestSharing,
-    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi},
+    rate_limiter::RateLimiter, trade_finding::zeroex::ZeroExTradeFinder, zeroex_api::ZeroExApi,
 };
-use futures::{future::BoxFuture, FutureExt, StreamExt};
-use model::order::OrderKind;
 use std::sync::Arc;
 
-pub struct ZeroExPriceEstimator {
-    api: Arc<dyn ZeroExApi>,
-    sharing: RequestSharing<Query, BoxFuture<'static, Result<SwapResponse, PriceEstimationError>>>,
-    excluded_sources: Vec<String>,
-    rate_limiter: Arc<RateLimiter>,
-}
+pub struct ZeroExPriceEstimator(TradeEstimator);
 
 impl ZeroExPriceEstimator {
     pub fn new(
@@ -24,45 +12,10 @@ impl ZeroExPriceEstimator {
         excluded_sources: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
     ) -> Self {
-        Self {
-            api,
-            sharing: Default::default(),
-            excluded_sources,
+        Self(TradeEstimator::new(
+            Arc::new(ZeroExTradeFinder::new(api, excluded_sources)),
             rate_limiter,
-        }
-    }
-
-    async fn estimate(&self, query: &Query) -> Result<Estimate, PriceEstimationError> {
-        let (sell_amount, buy_amount) = match query.kind {
-            OrderKind::Buy => (None, Some(query.in_amount)),
-            OrderKind::Sell => (Some(query.in_amount), None),
-        };
-
-        let swap_query = SwapQuery {
-            sell_token: query.sell_token,
-            buy_token: query.buy_token,
-            sell_amount,
-            buy_amount,
-            slippage_percentage: Default::default(),
-            excluded_sources: self.excluded_sources.clone(),
-            enable_slippage_protection: false,
-        };
-        let api = self.api.clone();
-        let swap_future = async move {
-            api.get_swap(swap_query)
-                .await
-                .map_err(|err| PriceEstimationError::Other(err.into()))
-        };
-        let swap_future = rate_limited(self.rate_limiter.clone(), swap_future);
-        let swap = self.sharing.shared(*query, swap_future.boxed()).await?;
-
-        Ok(Estimate {
-            out_amount: match query.kind {
-                OrderKind::Buy => swap.price.sell_amount,
-                OrderKind::Sell => swap.price.buy_amount,
-            },
-            gas: gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
-        })
+        ))
     }
 }
 
@@ -71,36 +24,29 @@ impl PriceEstimating for ZeroExPriceEstimator {
         &'a self,
         queries: &'a [Query],
     ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(queries.iter().all(|query| {
-            query.buy_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != model::order::BUY_ETH_ADDRESS
-                && query.sell_token != query.buy_token
-        }));
-
-        futures::stream::iter(queries)
-            .then(|query| self.estimate(query))
-            .enumerate()
-            .boxed()
+        self.0.estimates(queries)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::zeroex_api::{DefaultZeroExApi, PriceResponse};
-    use crate::zeroex_api::{MockZeroExApi, SwapResponse};
+    use crate::{
+        price_estimation::single_estimate,
+        zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
+    };
+    use model::order::OrderKind;
     use reqwest::Client;
 
     fn create_estimator(api: Arc<dyn ZeroExApi>) -> ZeroExPriceEstimator {
-        ZeroExPriceEstimator {
+        ZeroExPriceEstimator::new(
             api,
-            sharing: Default::default(),
-            excluded_sources: Default::default(),
-            rate_limiter: Arc::new(RateLimiter::from_strategy(
+            Default::default(),
+            Arc::new(RateLimiter::from_strategy(
                 Default::default(),
                 "test".into(),
             )),
-        }
+        )
     }
 
     #[tokio::test]
@@ -132,15 +78,17 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api));
 
-        let est = estimator
-            .estimate(&Query {
+        let est = single_estimate(
+            &estimator,
+            &Query {
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
                 kind: OrderKind::Sell,
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(est.out_amount, 1110165823572443613u64.into());
         assert!(est.gas > 111000);
@@ -175,15 +123,17 @@ mod tests {
 
         let estimator = create_estimator(Arc::new(zeroex_api));
 
-        let est = estimator
-            .estimate(&Query {
+        let est = single_estimate(
+            &estimator,
+            &Query {
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
                 kind: OrderKind::Buy,
-            })
-            .await
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(est.out_amount, 8986186353137488u64.into());
         assert!(est.gas > 111000);
@@ -198,14 +148,16 @@ mod tests {
         let zeroex_api = DefaultZeroExApi::with_default_url(Client::new());
         let estimator = create_estimator(Arc::new(zeroex_api));
 
-        let result = estimator
-            .estimate(&Query {
+        let result = single_estimate(
+            &estimator,
+            &Query {
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 10u128.pow(18).into(),
                 kind: OrderKind::Sell,
-            })
-            .await;
+            },
+        )
+        .await;
 
         dbg!(&result);
         let estimate = result.unwrap();

@@ -71,6 +71,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running order book with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_api".into()), None);
@@ -491,6 +492,7 @@ async fn main() {
         args.max_order_validity_period,
         SignatureConfiguration {
             eip1271: args.enable_eip1271_orders,
+            eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
             presign: args.enable_presign_orders,
         },
         bad_token_detector.clone(),

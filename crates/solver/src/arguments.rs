@@ -176,9 +176,13 @@ pub struct Arguments {
     #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The URL for tenderly transaction simulation.
+    /// The Tenderly user associated with the API key.
     #[clap(long, env)]
-    pub tenderly_url: Option<Url>,
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
 
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
@@ -344,7 +348,8 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             &self.access_list_estimators
         )?;
-        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_option(f, "tenderly_user", &self.tenderly_user)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;

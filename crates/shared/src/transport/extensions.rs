@@ -31,7 +31,7 @@ where
         &self,
         call: CallRequest,
         block: BlockId,
-        overrides: HashMap<H160, StateOverride>,
+        overrides: StateOverrides,
     ) -> CallFuture<Bytes, T::Out> {
         let call = helpers::serialize(&call);
         let block = helpers::serialize(&block);
@@ -43,6 +43,9 @@ where
         )
     }
 }
+
+/// State overrides.
+pub type StateOverrides = HashMap<H160, StateOverride>;
 
 /// State override object.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Deserialize, Serialize)]

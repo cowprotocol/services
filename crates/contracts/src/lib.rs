@@ -55,7 +55,7 @@ include_contracts! {
 
 pub mod support {
     include_contracts! {
-        Placeholder;
+        Trader;
     }
 }
 
@@ -179,6 +179,6 @@ mod tests {
             }};
         }
 
-        assert_has_bytecode!(support::Placeholder);
+        assert_has_bytecode!(support::Trader);
     }
 }
