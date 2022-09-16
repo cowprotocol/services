@@ -695,28 +695,16 @@ mod test {
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
-                // todo: Implement default for EvetMetadata
-                address: H160::zero(),
-                block_hash: H256::zero(),
                 block_number: 1,
-                transaction_hash: H256::zero(),
-                transaction_index: 0usize,
                 log_index: 0usize,
-                transaction_log_index: None,
-                log_type: None,
+                ..Default::default()
             }),
         };
         let mut event_data_2 = event_data_1.clone();
         event_data_2.meta = Some(EventMetadata {
-            // todo: Implement default for EvetMetadata
-            address: H160::zero(),
-            block_hash: H256::zero(),
             block_number: 2, // <-- different block number
-            transaction_hash: H256::zero(),
-            transaction_index: 0usize,
             log_index: 0usize,
-            transaction_log_index: None,
-            log_type: None,
+            ..Default::default()
         });
         let domain_separator = DomainSeparator([7u8; 32]);
         let settlement_contract = H160::from([8u8; 20]);
@@ -789,15 +777,9 @@ mod test {
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
-                // todo: Implement default for EvetMetadata
-                address: H160::zero(),
-                block_hash: H256::zero(),
                 block_number: 1,
-                transaction_hash: H256::zero(),
-                transaction_index: 0usize,
                 log_index: 0usize,
-                transaction_log_index: None,
-                log_type: None,
+                ..Default::default()
             }),
         };
         let mut order_placement_2 = order_placement.clone();
@@ -807,15 +789,9 @@ mod test {
         let event_data_2 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement_2),
             meta: Some(EventMetadata {
-                // todo: Implement default for EvetMetadata
-                address: H160::zero(),
-                block_hash: H256::zero(),
                 block_number: 3,
-                transaction_hash: H256::zero(),
-                transaction_index: 0usize,
                 log_index: 0usize,
-                transaction_log_index: None,
-                log_type: None,
+                ..Default::default()
             }),
         };
         let domain_separator = DomainSeparator([7u8; 32]);
