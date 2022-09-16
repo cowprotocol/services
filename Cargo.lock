@@ -180,6 +180,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "global-metrics",
+ "itertools",
  "maplit",
  "mockall",
  "model",
@@ -192,7 +193,6 @@ dependencies = [
  "sqlx",
  "tokio",
  "tracing",
- "unzip-n",
  "url",
  "web3",
 ]
@@ -3588,17 +3588,6 @@ name = "unicode_categories"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39ec24b3121d976906ece63c9daad25b85969647682eee313cb5779fdd69e14e"
-
-[[package]]
-name = "unzip-n"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2e7e85a0596447f0f2ac090e16bc4c516c6fe91771fb0c0ccf7fa3dae896b9c"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
 
 [[package]]
 name = "url"
