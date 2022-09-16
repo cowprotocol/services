@@ -105,12 +105,6 @@ mod tests {
     use ethcontract::{dyns::DynMethodBuilder, tokens::Tokenize};
     use maplit::hashmap;
 
-    macro_rules! bytes {
-        ($x:literal) => {
-            ::web3::types::Bytes(::hex_literal::hex!($x).to_vec())
-        };
-    }
-
     fn interaction<R>(method: DynMethodBuilder<R>) -> Interaction
     where
         R: Tokenize,
