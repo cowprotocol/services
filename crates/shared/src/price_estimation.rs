@@ -86,6 +86,8 @@ impl Clone for PriceEstimationError {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Default)]
 pub struct Query {
+    /// Optional `from` address that would be executing the query.
+    pub from: Option<H160>,
     pub sell_token: H160,
     pub buy_token: H160,
     /// For OrderKind::Sell amount is in sell_token and for OrderKind::Buy in buy_token.

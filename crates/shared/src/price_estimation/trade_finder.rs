@@ -108,7 +108,7 @@ impl TradeVerifier {
     }
 
     async fn verify(&self, query: Query, trade: Trade) -> Result<Estimate> {
-        let trader = dummy_contract!(Trader, Self::DEFAULT_TRADER);
+        let trader = dummy_contract!(Trader, query.from.unwrap_or(Self::DEFAULT_TRADER));
         let sell_token_code = self.code_fetcher.code(query.sell_token).await?;
 
         let (sell_amount, buy_amount) = match query.kind {
@@ -355,6 +355,7 @@ mod tests {
     async fn simulates_trades() {
         let authenticator = H160([0xa; 20]);
         let query = Query {
+            from: Some(H160([0x1; 20])),
             sell_token: H160([0x2; 20]),
             buy_token: H160([0x3; 20]),
             in_amount: 1_000_000_u128.into(),
@@ -384,7 +385,7 @@ mod tests {
         // )
         let call = CallRequest {
             from: Some(TradeVerifier::DEFAULT_ORIGIN),
-            to: Some(TradeVerifier::DEFAULT_TRADER),
+            to: query.from,
             gas: Some(TradeVerifier::DEFAULT_GAS.into()),
             data: Some(bytes!(
                 "299de750
@@ -414,7 +415,7 @@ mod tests {
             ..Default::default()
         };
         let overrides = hashmap! {
-            TradeVerifier::DEFAULT_TRADER => StateOverride {
+            query.from.unwrap() => StateOverride {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
@@ -491,6 +492,7 @@ mod tests {
     #[tokio::test]
     async fn adds_slippage_for_buy_trade() {
         let query = Query {
+            from: None,
             sell_token: H160([0x1; 20]),
             buy_token: H160([0x2; 20]),
             in_amount: 2_000_000_u128.into(),
@@ -598,6 +600,7 @@ mod tests {
     #[tokio::test]
     async fn traded_and_executed_amount_checks() {
         let query = Query {
+            from: None,
             sell_token: H160([0x1; 20]),
             buy_token: H160([0x2; 20]),
             in_amount: 100_u64.into(),
@@ -805,6 +808,7 @@ mod tests {
         let estimate = single_estimate(
             &estimator,
             &Query {
+                from: Some(addr!("A03be496e67Ec29bC62F01a428683D7F9c204930")),
                 sell_token: testlib::tokens::WETH,
                 buy_token: testlib::tokens::COW,
                 in_amount: 10u128.pow(18).into(),
