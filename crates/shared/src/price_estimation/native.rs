@@ -52,6 +52,7 @@ impl NativePriceEstimator {
 
     fn query(&self, token: &H160) -> Query {
         Query {
+            from: None,
             sell_token: *token,
             buy_token: self.native_token,
             in_amount: self.price_estimation_amount,
