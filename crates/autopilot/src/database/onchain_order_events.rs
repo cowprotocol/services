@@ -66,7 +66,7 @@ pub struct CustomParsedOnchainOrderData<T> {
 #[async_trait::async_trait]
 // The following trait allows to implement custom onchain order parsing for differently placed
 // orders. E.g. there will be a implementation for ethflow and presign orders.
-// For each of the customs types, the trait allows to implement parsing the on-chain data and 
+// For each of the customs types, the trait allows to implement parsing the on-chain data and
 // storing the event data
 
 // The generic EventData stores the result of the custom event parsing
@@ -802,7 +802,7 @@ mod test {
         };
         let mut order_placement_2 = order_placement.clone();
         // With the following operation, we will create an invalid event data, and hence the whole
-        // event parsing process will produce an error for this event. 
+        // event parsing process will produce an error for this event.
         order_placement_2.data = Bytes(Vec::new());
         let event_data_2 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement_2),
