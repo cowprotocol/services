@@ -1,17 +1,17 @@
-use std::str::FromStr;
-
 use anyhow::{anyhow, ensure, Context, Result};
-use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, Address, H160, H256};
-use reqwest::{IntoUrl, Url};
+use ethcontract::{dyns::DynTransport, transaction::TransactionBuilder, H160, H256};
 use serde::Deserialize;
-use shared::{http_client::HttpClientFactory, Web3};
+use shared::{
+    addr,
+    tenderly_api::{SimulationRequest, TenderlyApi},
+    Web3,
+};
+use std::sync::Arc;
 use web3::{
     helpers,
     types::{AccessList, Bytes, CallRequest},
     BatchTransport, Transport,
 };
-
-use crate::settlement_simulation::{TenderlyApi, TenderlyRequest};
 
 #[async_trait::async_trait]
 pub trait AccessListEstimating: Send + Sync {
@@ -104,47 +104,16 @@ impl AccessListEstimating for NodeAccessList {
     }
 }
 
-#[derive(Debug)]
 struct TenderlyAccessList {
-    tenderly: TenderlyApi,
+    tenderly: Arc<dyn TenderlyApi>,
     network_id: String,
 }
 
 impl TenderlyAccessList {
-    pub fn new(
-        http_factory: &HttpClientFactory,
-        url: impl IntoUrl,
-        api_key: &str,
-        network_id: String,
-    ) -> Result<Self> {
-        Ok(Self {
-            tenderly: TenderlyApi::new(http_factory, url, api_key)?,
-            network_id,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct TenderlyResponse {
-    generated_access_list: Vec<AccessListItem>,
-}
-
-// Had to introduce copy of the web3 AccessList because tenderly responds with snake_case fields
-// and tenderly storage_keys field does not exist if empty (it should be empty Vec instead)
-#[derive(Debug, Clone, Deserialize)]
-struct AccessListItem {
-    /// Accessed address
-    address: Address,
-    /// Accessed storage keys
-    #[serde(default)]
-    storage_keys: Vec<H256>,
-}
-
-impl From<AccessListItem> for web3::types::AccessListItem {
-    fn from(item: AccessListItem) -> Self {
+    pub fn new(tenderly: Arc<dyn TenderlyApi>, network_id: String) -> Self {
         Self {
-            address: item.address,
-            storage_keys: item.storage_keys,
+            tenderly,
+            network_id,
         }
     }
 }
@@ -160,27 +129,23 @@ impl AccessListEstimating for TenderlyAccessList {
             let input = input.0;
             let block_number = self.tenderly.block_number(&self.network_id).await?;
 
-            let request = TenderlyRequest {
+            let request = SimulationRequest {
                 network_id: self.network_id.clone(),
-                block_number: block_number.block_number,
+                block_number: Some(block_number),
                 from,
                 input,
                 to,
-                generate_access_list: true,
-                transaction_index: None,
-                gas: None,
+                generate_access_list: Some(true),
+                ..Default::default()
             };
 
-            let response = self.tenderly.send::<TenderlyResponse>(request).await?;
-            ensure!(
-                !response.generated_access_list.is_empty(),
-                "empty access list"
-            );
-            Ok(response
+            let response = self.tenderly.simulate(request).await?;
+            let access_list = response
                 .generated_access_list
-                .into_iter()
-                .map(Into::into)
-                .collect())
+                .context("missing access list")?;
+            ensure!(!access_list.is_empty(), "empty access list");
+
+            Ok(access_list.into_iter().map(Into::into).collect())
         }))
         .await)
     }
@@ -212,8 +177,7 @@ fn filter_access_list(access_list: AccessList) -> AccessList {
                 // `to` address is always warm, should not be put into access list
                 // this should be fixed with the latest Erigon release version
                 // https://github.com/ledgerwatch/erigon/pull/3453
-                && item.address
-                    != H160::from_str("0x9008d19f58aabd9ed0d60971565aa8510560ab41").unwrap()
+                && item.address != addr!("9008d19f58aabd9ed0d60971565aa8510560ab41")
                 && item
                     .storage_keys
                     .iter()
@@ -269,11 +233,9 @@ pub enum AccessListEstimatorType {
 }
 
 pub fn create_priority_estimator(
-    http_factory: &HttpClientFactory,
     web3: &Web3,
     estimator_types: &[AccessListEstimatorType],
-    tenderly_url: Option<Url>,
-    tenderly_api_key: Option<String>,
+    tenderly_api: Option<Arc<dyn TenderlyApi>>,
     network_id: String,
 ) -> Result<impl AccessListEstimating> {
     let mut estimators = Vec::<Box<dyn AccessListEstimating>>::new();
@@ -285,15 +247,11 @@ pub fn create_priority_estimator(
             }
             AccessListEstimatorType::Tenderly => {
                 estimators.push(Box::new(TenderlyAccessList::new(
-                    http_factory,
-                    tenderly_url
+                    tenderly_api
                         .clone()
-                        .ok_or_else(|| anyhow!("Tenderly url is empty"))?,
-                    &tenderly_api_key
-                        .clone()
-                        .ok_or_else(|| anyhow!("Tenderly api key is empty"))?,
+                        .ok_or_else(|| anyhow!("Tenderly API missing"))?,
                     network_id.clone(),
-                )?));
+                )));
             }
         }
     }
@@ -306,7 +264,7 @@ mod tests {
     use ethcontract::{Account, H160};
     use hex_literal::hex;
     use serde_json::json;
-    use shared::{transport::create_env_test_transport, Web3};
+    use shared::{tenderly_api::TenderlyHttpApi, transport::create_env_test_transport, Web3};
 
     fn example_tx() -> TransactionBuilder<DynTransport> {
         let http = create_env_test_transport();
@@ -328,14 +286,8 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn tenderly_estimate_access_lists() {
-        let tenderly_api = TenderlyAccessList::new(
-            &HttpClientFactory::default(),
-            // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
-            Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
-            &std::env::var("TENDERLY_API_KEY").unwrap(),
-            "1".to_string(),
-        )
-        .unwrap();
+        let tenderly_api =
+            TenderlyAccessList::new(TenderlyHttpApi::test_from_env(), "1".to_string());
 
         let tx = example_tx();
         let access_lists = tenderly_api.estimate_access_lists(&[tx]).await.unwrap();
@@ -376,36 +328,6 @@ mod tests {
             .unwrap();
         dbg!(access_lists);
     }
-
-    #[test]
-    fn serialize_deserialize_request() {
-        let request = TenderlyRequest {
-            network_id: "1".to_string(),
-            block_number: 14122310,
-            from: H160::from_slice(&hex!("e92f359e6f05564849afa933ce8f62b8007a1d5d")),
-            input: hex!("13d79a0b00000000000000000000000000000000000000000000").into(),
-            to: H160::from_slice(&hex!("9008d19f58aabd9ed0d60971565aa8510560ab41")),
-            generate_access_list: true,
-            transaction_index: None,
-            gas: None,
-        };
-
-        let json = json!({
-            "network_id": "1",
-            "block_number": 14122310,
-            "from": "0xe92f359e6f05564849afa933ce8f62b8007a1d5d",
-            "input": "0x13d79a0b00000000000000000000000000000000000000000000",
-            "to": "0x9008d19f58aabd9ed0d60971565aa8510560ab41",
-            "generate_access_list": true
-        });
-
-        assert_eq!(serde_json::to_value(&request).unwrap(), json);
-        assert_eq!(
-            serde_json::from_value::<TenderlyRequest>(json).unwrap(),
-            request
-        );
-    }
-
     #[test]
     fn filter_access_list_node() {
         let access_list = json!(
