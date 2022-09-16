@@ -202,30 +202,35 @@ mod tests {
     async fn works() {
         let queries = [
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: 1.into(),
                 kind: OrderKind::Sell,
             },
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(3),
                 buy_token: H160::from_low_u64_le(4),
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(5),
                 buy_token: H160::from_low_u64_le(6),
                 in_amount: 1.into(),
@@ -302,12 +307,14 @@ mod tests {
     async fn racing_estimator_returns_early() {
         let queries = [
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(0),
                 buy_token: H160::from_low_u64_le(1),
                 in_amount: 1.into(),
                 kind: OrderKind::Buy,
             },
             Query {
+                from: None,
                 sell_token: H160::from_low_u64_le(2),
                 buy_token: H160::from_low_u64_le(3),
                 in_amount: 1.into(),

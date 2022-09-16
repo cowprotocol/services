@@ -116,6 +116,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -172,6 +173,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -196,6 +198,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 10u128.pow(18).into(),
