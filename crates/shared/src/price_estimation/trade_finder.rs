@@ -139,7 +139,7 @@ impl TradeVerifier {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
-            // Override the CoW protoocl solver authenticator with one that
+            // Override the CoW protocol solver authenticator with one that
             // allows any address to solve
             self.authenticator => StateOverride {
                 code: Some(deployed_bytecode!(AnyoneAuthenticator)),
