@@ -354,6 +354,8 @@ fn main() {
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 
+    generate_contract("AnyoneAuthenticator");
+    generate_contract("PhonyERC20");
     generate_contract("Trader");
 }
 
