@@ -1,5 +1,5 @@
 use primitive_types::{H160, U256};
-use shared::{arguments::display_option, bad_token::token_owner_finder};
+use shared::{arguments::display_option, bad_token::token_owner_finder, http_client};
 use std::{net::SocketAddr, time::Duration};
 use url::Url;
 
@@ -7,6 +7,9 @@ use url::Url;
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
@@ -116,6 +119,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;

@@ -329,11 +329,10 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
 ///
 /// Returns `Err` on overflow.
 fn max_transfer_out_amount(order: &Order) -> Result<U256> {
-    let amounts = order.remaining_amounts()?;
-    amounts
-        .sell_amount
-        .checked_add(amounts.fee_amount)
-        .context("overflow computing maximum transfer out amount")
+    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
+    let sell = remaining.remaining(order.data.sell_amount)?;
+    let fee = remaining.remaining(order.data.fee_amount)?;
+    sell.checked_add(fee).context("add")
 }
 
 /// Keep updating the cache every N seconds or when an update notification happens.

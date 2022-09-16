@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers <dev@cow.fi>"]
 edition = "2021"
 license = "GPL-3.0-or-later"
+build = "build.rs"
 
 [lib]
 name = "orderbook"
@@ -55,3 +56,7 @@ secp256k1 = "0.21"
 mockall = "0.11"
 testlib = { path = "../testlib" }
 tokio = { version = "1.15", features = ["test-util"] }
+
+[build-dependencies]
+anyhow = "1.0"
+vergen = "7.4"

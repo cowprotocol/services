@@ -336,13 +336,20 @@ impl OrderValidating for OrderValidator {
         let signing_scheme = order.signature.scheme();
 
         if let Signature::Eip1271(signature) = &order.signature {
-            self.signature_validator
-                .validate_signature(SignatureCheck {
-                    signer: owner,
-                    hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
-                    signature: signature.to_owned(),
-                })
-                .await?;
+            if self
+                .signature_configuration
+                .eip1271_skip_creation_validation
+            {
+                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+            } else {
+                self.signature_validator
+                    .validate_signature(SignatureCheck {
+                        signer: owner,
+                        hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                        signature: signature.to_owned(),
+                    })
+                    .await?;
+            }
         }
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -452,7 +459,13 @@ impl OrderValidating for OrderValidator {
         // are not intended to be filled immediately and so need to be treated
         // slightly differently by the protocol.
         let is_liquidity_order = match &quote {
-            Some(quote) if is_order_outside_market_price(&order.data, quote) => {
+            Some(quote)
+                if is_order_outside_market_price(
+                    &quote_parameters.sell_amount,
+                    &quote_parameters.buy_amount,
+                    quote,
+                ) =>
+            {
                 let order_uid = order.data.uid(domain_separator, &owner);
                 tracing::debug!(%order_uid, ?owner, "order being flagged as outside market price");
                 true
@@ -473,9 +486,10 @@ impl OrderValidating for OrderValidator {
 }
 
 /// Signature configuration that is accepted by the orderbook.
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SignatureConfiguration {
     pub eip1271: bool,
+    pub eip1271_skip_creation_validation: bool,
     pub presign: bool,
 }
 
@@ -485,6 +499,7 @@ impl SignatureConfiguration {
     pub fn off_chain() -> Self {
         Self {
             eip1271: false,
+            eip1271_skip_creation_validation: false,
             presign: false,
         }
     }
@@ -493,6 +508,7 @@ impl SignatureConfiguration {
     pub fn all() -> Self {
         Self {
             eip1271: true,
+            eip1271_skip_creation_validation: false,
             presign: true,
         }
     }
@@ -588,8 +604,8 @@ pub async fn get_quote_and_check_fee(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_order_outside_market_price(order: &OrderData, quote: &Quote) -> bool {
-    order.sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(order.buy_amount)
+fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
+    sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 
 fn convert_signing_scheme_into_quote_signing_scheme(
@@ -987,7 +1003,31 @@ mod tests {
         };
 
         assert!(validator
-            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .await
+            .is_ok());
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: creation.from.unwrap(),
+                hash: order_hash,
+                signature: vec![1, 2, 3],
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let validator = OrderValidator {
+            signature_validator: Arc::new(signature_validator),
+            signature_configuration: SignatureConfiguration {
+                eip1271_skip_creation_validation: true,
+                ..SignatureConfiguration::all()
+            },
+            ..validator
+        };
+
+        assert!(validator
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await
             .is_ok());
     }
@@ -1645,67 +1685,22 @@ mod tests {
             ..Default::default()
         };
 
-        // *** SELL ORDERS ***
         // at market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"100".into(),
             &quote,
         ));
         // willing to buy less than market price
         assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 99.into(), // 1% slippage
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"90".into(),
             &quote,
         ));
         // wanting to buy more than market price
         assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 1000.into(),
-                kind: OrderKind::Sell,
-                ..Default::default()
-            },
-            &quote
-        ));
-
-        // *** BUY ORDERS ***
-        // at market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 100.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // willing to sell more than market price
-        assert!(!is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 101.into(), // 1% slippage
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
-            &quote,
-        ));
-        // wanting to sell less than market price
-        assert!(is_order_outside_market_price(
-            &OrderData {
-                sell_amount: 1.into(),
-                buy_amount: 100.into(),
-                kind: OrderKind::Buy,
-                ..Default::default()
-            },
+            &"100".into(),
+            &"1000".into(),
             &quote
         ));
     }

@@ -525,13 +525,13 @@ impl SettlementEncoder {
     }
 }
 
-pub fn verify_executed_amount(order: &Order, executed_amount: U256) -> Result<()> {
-    let remaining_amounts = order.remaining_amounts()?;
+pub fn verify_executed_amount(order: &Order, executed: U256) -> Result<()> {
+    let remaining = shared::remaining_amounts::Remaining::from_order(order)?;
     let valid_executed_amount = match (order.data.partially_fillable, order.data.kind) {
-        (true, OrderKind::Sell) => executed_amount <= remaining_amounts.sell_amount,
-        (true, OrderKind::Buy) => executed_amount <= remaining_amounts.buy_amount,
-        (false, OrderKind::Sell) => executed_amount == remaining_amounts.sell_amount,
-        (false, OrderKind::Buy) => executed_amount == remaining_amounts.buy_amount,
+        (true, OrderKind::Sell) => executed <= remaining.remaining(order.data.sell_amount)?,
+        (true, OrderKind::Buy) => executed <= remaining.remaining(order.data.buy_amount)?,
+        (false, OrderKind::Sell) => executed == remaining.remaining(order.data.sell_amount)?,
+        (false, OrderKind::Buy) => executed == remaining.remaining(order.data.buy_amount)?,
     };
     ensure!(valid_executed_amount, "invalid executed amount");
     Ok(())

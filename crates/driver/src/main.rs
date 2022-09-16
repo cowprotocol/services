@@ -6,10 +6,10 @@ use driver::{
     commit_reveal::CommitRevealSolver, driver::Driver,
 };
 use gas_estimation::GasPriceEstimating;
-use reqwest::Client;
 use shared::{
     baseline_solver::BaseTokens,
     current_block::{current_block_stream, CurrentBlockStream},
+    http_client::HttpClientFactory,
     http_solver::{DefaultHttpSolverApi, SolverConfig},
     maintenance::{Maintaining, ServiceMaintenance},
     recent_block_cache::CacheConfig,
@@ -52,7 +52,7 @@ use solver::{
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
 struct CommonComponents {
-    client: Client,
+    http_factory: HttpClientFactory,
     web3: shared::Web3,
     network_id: String,
     chain_id: u64,
@@ -66,8 +66,8 @@ struct CommonComponents {
 }
 
 async fn init_common_components(args: &Arguments) -> CommonComponents {
-    let client = shared::http_client(args.http_timeout);
-    let web3 = shared::web3(&client, &args.node_url, "base");
+    let http_factory = HttpClientFactory::new(&args.http_client);
+    let web3 = shared::web3(&http_factory, &args.node_url, "base");
     let network_id = web3
         .net()
         .version()
@@ -87,19 +87,18 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         .expect("couldn't load deployed native token");
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &client,
+            &http_factory,
             &web3,
             args.access_list_estimators.as_slice(),
             args.tenderly_url.clone(),
             args.tenderly_api_key.clone(),
             network_id.clone(),
         )
-        .await
         .expect("failed to create access list estimator"),
     );
     let gas_price_estimator = Arc::new(
         shared::gas_price_estimation::create_priority_estimator(
-            client.clone(),
+            &http_factory,
             &web3,
             args.gas_estimators.as_slice(),
             args.blocknative_api_key.clone(),
@@ -121,7 +120,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     });
 
     CommonComponents {
-        client,
+        http_factory,
         web3,
         network_id,
         chain_id,
@@ -155,7 +154,7 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
                     network_name: common.network_id.clone(),
                     chain_id: common.chain_id,
                     base: arg.url.clone(),
-                    client: common.client.clone(),
+                    client: common.http_factory.create(),
                     config: SolverConfig {
                         use_internal_buffers: Some(args.use_internal_buffers),
                         ..Default::default()
@@ -175,14 +174,14 @@ async fn build_solvers(common: &CommonComponents, args: &Arguments) -> Vec<Arc<d
 }
 
 async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<SolutionSubmitter> {
-    let client = &common.client;
+    let client = || common.http_factory.create();
     let web3 = &common.web3;
 
     let submission_nodes_with_url = args
         .transaction_submission_nodes
         .iter()
         .enumerate()
-        .map(|(index, url)| (shared::web3(client, url, index), url))
+        .map(|(index, url)| (shared::web3(&common.http_factory, url, index), url))
         .collect::<Vec<_>>();
     for (node, url) in &submission_nodes_with_url {
         let node_network_id = node
@@ -223,7 +222,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
                         EdenApi::new(
-                            client.clone(),
+                            client(),
                             args.eden_api_url.clone(),
                             submitted_transactions.clone(),
                         )
@@ -237,9 +236,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             TransactionStrategyArg::Flashbots => {
                 for flashbots_url in args.flashbots_api_url.clone() {
                     transaction_strategies.push(TransactionStrategy::Flashbots(StrategyArgs {
-                        submit_api: Box::new(
-                            FlashbotsApi::new(client.clone(), flashbots_url).unwrap(),
-                        ),
+                        submit_api: Box::new(FlashbotsApi::new(client(), flashbots_url).unwrap()),
                         max_additional_tip: args.max_additional_flashbot_tip,
                         additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
                         sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::Flashbots),
@@ -333,7 +330,7 @@ async fn build_auction_converter(
                     common.token_info_fetcher.clone(),
                     cache_config,
                     common.current_block_stream.clone(),
-                    common.client.clone(),
+                    common.http_factory.create(),
                     &contracts,
                     args.balancer_pool_deny_list.clone(),
                 )
@@ -365,11 +362,11 @@ async fn build_auction_converter(
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
         let zeroex_api = Arc::new(
             DefaultZeroExApi::new(
+                &common.http_factory,
                 args.zeroex_url
                     .as_deref()
                     .unwrap_or(DefaultZeroExApi::DEFAULT_URL),
                 args.zeroex_api_key.clone(),
-                common.client.clone(),
             )
             .unwrap(),
         );
@@ -390,7 +387,7 @@ async fn build_auction_converter(
             UniswapV3PoolFetcher::new(
                 common.chain_id,
                 args.liquidity_fetcher_max_age_update,
-                common.client.clone(),
+                common.http_factory.create(),
             )
             .await
             .expect("failed to create UniswapV3 pool fetcher in solver"),
@@ -488,7 +485,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         .tenderly_url
         .clone()
         .zip(args.tenderly_api_key.clone())
-        .and_then(|(url, api_key)| TenderlyApi::new(url, common.client.clone(), &api_key).ok());
+        .and_then(|(url, api_key)| TenderlyApi::new(&common.http_factory, url, &api_key).ok());
     let metrics = Arc::new(Metrics::new().unwrap());
 
     let settlement_ranker = Arc::new(SettlementRanker {
@@ -534,6 +531,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
 async fn main() {
     let args = driver::arguments::Arguments::parse();
     shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with validated arguments:\n{}", args);
     global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
     let common = init_common_components(&args).await;

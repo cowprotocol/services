@@ -39,7 +39,7 @@ number-conversions = { path = "../number-conversions" }
 primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-reqwest = { version = "0.11", features = ["gzip", "json"] }
+reqwest = { version = "0.11", features = ["cookies", "gzip", "json"] }
 scopeguard = "1.1.0"
 serde = "1.0"
 serde_json = "1.0"
