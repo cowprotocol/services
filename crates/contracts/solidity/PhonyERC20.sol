@@ -28,6 +28,8 @@ contract PhonyERC20 {
     /// addresses up to 0xffff are reserved for pre-compiles.
     address constant private IMPLEMENTATION = address(0x10000);
 
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
     // Make sure to forward all remaining calls to the actual ERC20
     // implementation.
     fallback() external payable {
@@ -128,6 +130,8 @@ contract PhonyERC20 {
             mapping(address => uint256) storage balances = _balancesSlot();
             balances[from] -= internalAmount;
             balances[to] += internalAmount;
+
+            emit Transfer(from, to, internalAmount);
         }
 
         realAmount = value - internalAmount;

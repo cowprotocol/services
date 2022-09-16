@@ -134,18 +134,25 @@ impl TradeVerifier {
             ..Default::default()
         };
         let overrides = hashmap! {
+            // Setup up our trader code that actually executes the settlement
             trader.address() => StateOverride {
                 code: Some(deployed_bytecode!(Trader)),
                 ..Default::default()
             },
+            // Override the CoW protocol solver authenticator with one that
+            // allows any address to solve
             self.authenticator => StateOverride {
                 code: Some(deployed_bytecode!(AnyoneAuthenticator)),
                 ..Default::default()
             },
+            // Override the sell token with a phony facade for minting tokens to
+            // the trader, so they have enough balance to execute the swap.
             query.sell_token => StateOverride {
                 code: Some(deployed_bytecode!(PhonyERC20)),
                 ..Default::default()
             },
+            // Include the original token implementation that the phony token
+            // facade can proxy to.
             Self::TOKEN_IMPLEMENTATION => StateOverride {
                 code: Some(sell_token_code),
                 ..Default::default()
@@ -160,7 +167,7 @@ impl TradeVerifier {
             .context("trade simulation output missing trader token balances")?;
         ensure!(
             trader_amounts == (sell_amount, buy_amount),
-            "mismatched amounts transferred to traders"
+            "mismatched amounts transferred to trader"
         );
 
         let (executed_sell_amount, executed_buy_amount) = output
@@ -285,11 +292,18 @@ mod slippage {
 mod tests {
     use super::*;
     use crate::{
-        code_simulation::TenderlyCodeSimulator, price_estimation::single_estimate,
-        tenderly_api::TenderlyHttpApi, trade_finding::zeroex::ZeroExTradeFinder,
-        transport::create_env_test_transport, zeroex_api::DefaultZeroExApi, Web3,
+        code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
+        price_estimation::single_estimate,
+        tenderly_api::TenderlyHttpApi,
+        trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding},
+        transport::create_env_test_transport,
+        web3_traits::MockCodeFetching,
+        zeroex_api::DefaultZeroExApi,
+        Web3,
     };
     use hex_literal::hex;
+    use mockall::predicate;
+    use std::sync::Mutex;
 
     #[test]
     fn decodes_trader_settle_output() {
@@ -338,6 +352,438 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn simulates_trades() {
+        let authenticator = H160([0xa; 20]);
+        let query = Query {
+            sell_token: H160([0x2; 20]),
+            buy_token: H160([0x3; 20]),
+            in_amount: 1_000_000_u128.into(),
+            kind: OrderKind::Sell,
+        };
+        let trade = Trade {
+            out_amount: 2_000_000_u128.into(),
+            gas_estimate: 133_700,
+            approval: None,
+            interaction: Interaction {
+                target: H160([0x7; 20]),
+                value: 0_u64.into(),
+                data: vec![1, 2, 3, 4],
+            },
+        };
+        let sell_token_code = bytes!("05060708");
+
+        // settle(
+        //     [0x0202..0202, 0x0303..0303],
+        //     [1_980_000, 1_000_000],
+        //     [
+        //         [],
+        //         [(0x0707..0707, 0, 0x01020304)],
+        //         [],
+        //     ],
+        //     1_000_000,
+        // )
+        let call = CallRequest {
+            from: Some(TradeVerifier::DEFAULT_ORIGIN),
+            to: Some(TradeVerifier::DEFAULT_TRADER),
+            gas: Some(TradeVerifier::DEFAULT_GAS.into()),
+            data: Some(bytes!(
+                "299de750
+                 0000000000000000000000000000000000000000000000000000000000000080
+                 00000000000000000000000000000000000000000000000000000000000000e0
+                 0000000000000000000000000000000000000000000000000000000000000140
+                 00000000000000000000000000000000000000000000000000000000000f4240
+                 0000000000000000000000000000000000000000000000000000000000000002
+                 0000000000000000000000000202020202020202020202020202020202020202
+                 0000000000000000000000000303030303030303030303030303030303030303
+                 0000000000000000000000000000000000000000000000000000000000000002
+                 00000000000000000000000000000000000000000000000000000000001e3660
+                 00000000000000000000000000000000000000000000000000000000000f4240
+                 0000000000000000000000000000000000000000000000000000000000000060
+                 0000000000000000000000000000000000000000000000000000000000000080
+                 0000000000000000000000000000000000000000000000000000000000000160
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000001
+                 0000000000000000000000000000000000000000000000000000000000000020
+                 0000000000000000000000000707070707070707070707070707070707070707
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000060
+                 0000000000000000000000000000000000000000000000000000000000000004
+                 0102030400000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000000"
+            )),
+            ..Default::default()
+        };
+        let overrides = hashmap! {
+            TradeVerifier::DEFAULT_TRADER => StateOverride {
+                code: Some(deployed_bytecode!(Trader)),
+                ..Default::default()
+            },
+            authenticator => StateOverride {
+                code: Some(deployed_bytecode!(AnyoneAuthenticator)),
+                ..Default::default()
+            },
+            query.sell_token => StateOverride {
+                code: Some(deployed_bytecode!(PhonyERC20)),
+                ..Default::default()
+            },
+            TradeVerifier::TOKEN_IMPLEMENTATION => StateOverride {
+                code: Some(sell_token_code.clone()),
+                ..Default::default()
+            },
+        };
+
+        // (
+        //     420_000,
+        //     [-1_000_000, 1_980_000],
+        //     [0, 19_000],
+        // )
+        let output = bytes!(
+            "00000000000000000000000000000000000000000000000000000000000668a0
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff0bdc0
+             00000000000000000000000000000000000000000000000000000000001e3660
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000004a38"
+        );
+
+        let mut finder = MockTradeFinding::new();
+        finder
+            .expect_get_trade()
+            .with(predicate::eq(query))
+            .returning({
+                let trade = trade.clone();
+                move |_| Ok(trade.clone())
+            });
+
+        let mut simulator = MockCodeSimulating::new();
+        simulator
+            .expect_simulate()
+            .with(predicate::eq(call), predicate::eq(overrides))
+            .returning(move |_, _| Ok(output.clone().0));
+
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher
+            .expect_code()
+            .with(predicate::eq(query.sell_token))
+            .returning({
+                let code = sell_token_code.clone();
+                move |_| Ok(code.clone())
+            });
+
+        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
+            TradeVerifier::new(Arc::new(simulator), Arc::new(code_fetcher), authenticator),
+        );
+
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
+
+        assert_eq!(
+            estimate,
+            Estimate {
+                out_amount: 1_999_000_u128.into(),
+                gas: 420_000,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn adds_slippage_for_buy_trade() {
+        let query = Query {
+            sell_token: H160([0x1; 20]),
+            buy_token: H160([0x2; 20]),
+            in_amount: 2_000_000_u128.into(),
+            kind: OrderKind::Buy,
+        };
+        let trade = Trade {
+            out_amount: 1_000_000_u128.into(),
+            ..Default::default()
+        };
+
+        // settle(
+        //     [0x0101..0101, 0x0202..0202],
+        //     [2_000_000, 1_010_000],
+        //     [
+        //         [],
+        //         [(0x0, 0, 0x)],
+        //         [],
+        //     ],
+        //     1_000_000,
+        // )
+        let call = CallRequest {
+            from: Some(TradeVerifier::DEFAULT_ORIGIN),
+            to: Some(TradeVerifier::DEFAULT_TRADER),
+            gas: Some(TradeVerifier::DEFAULT_GAS.into()),
+            data: Some(bytes!(
+                "299de750
+                 0000000000000000000000000000000000000000000000000000000000000080
+                 00000000000000000000000000000000000000000000000000000000000000e0
+                 0000000000000000000000000000000000000000000000000000000000000140
+                 00000000000000000000000000000000000000000000000000000000000f6950
+                 0000000000000000000000000000000000000000000000000000000000000002
+                 0000000000000000000000000101010101010101010101010101010101010101
+                 0000000000000000000000000202020202020202020202020202020202020202
+                 0000000000000000000000000000000000000000000000000000000000000002
+                 00000000000000000000000000000000000000000000000000000000001e8480
+                 00000000000000000000000000000000000000000000000000000000000f6950
+                 0000000000000000000000000000000000000000000000000000000000000060
+                 0000000000000000000000000000000000000000000000000000000000000080
+                 0000000000000000000000000000000000000000000000000000000000000140
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000001
+                 0000000000000000000000000000000000000000000000000000000000000020
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000060
+                 0000000000000000000000000000000000000000000000000000000000000000
+                 0000000000000000000000000000000000000000000000000000000000000000"
+            )),
+            ..Default::default()
+        };
+
+        // (
+        //     0,
+        //     [-1_010_000, 2_000_000],
+        //     [0, 0],
+        // )
+        let output = bytes!(
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff096b0
+             00000000000000000000000000000000000000000000000000000000001e8480
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        let mut finder = MockTradeFinding::new();
+        finder.expect_get_trade().returning({
+            let trade = trade.clone();
+            move |_| Ok(trade.clone())
+        });
+
+        let mut simulator = MockCodeSimulating::new();
+        simulator
+            .expect_simulate()
+            .with(predicate::eq(call), predicate::always())
+            .returning(move |_, _| Ok(output.clone().0));
+
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher
+            .expect_code()
+            .returning(|_| Ok(Default::default()));
+
+        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
+            TradeVerifier::new(
+                Arc::new(simulator),
+                Arc::new(code_fetcher),
+                Default::default(),
+            ),
+        );
+
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
+
+        assert_eq!(
+            estimate,
+            Estimate {
+                out_amount: 1_010_000_u128.into(),
+                gas: 0,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn traded_and_executed_amount_checks() {
+        let query = Query {
+            sell_token: H160([0x1; 20]),
+            buy_token: H160([0x2; 20]),
+            in_amount: 100_u64.into(),
+            kind: OrderKind::Sell,
+        };
+        let trade = Trade {
+            out_amount: 203_u64.into(),
+            ..Default::default()
+        };
+
+        let output = Arc::new(Mutex::new(bytes!("")));
+
+        let mut finder = MockTradeFinding::new();
+        finder
+            .expect_get_trade()
+            .returning(move |_| Ok(trade.clone()));
+
+        let mut simulator = MockCodeSimulating::new();
+        simulator.expect_simulate().returning({
+            let output = output.clone();
+            move |_, _| Ok(output.lock().unwrap().clone().0)
+        });
+
+        let mut code_fetcher = MockCodeFetching::new();
+        code_fetcher.expect_code().returning(|_| Ok(bytes!("")));
+
+        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test()).with_verifier(
+            TradeVerifier::new(
+                Arc::new(simulator),
+                Arc::new(code_fetcher),
+                Default::default(),
+            ),
+        );
+
+        macro_rules! assert_output {
+            ($check:ident: $x:literal) => {
+                *output.lock().unwrap() = bytes!($x);
+                assert!(single_estimate(&estimator, &query).await.$check());
+            };
+        }
+
+        // Cannot decode output
+        assert_output!(is_err: "");
+
+        // Mising trader balances
+        //
+        // (
+        //     0,
+        //     [0],
+        //     [0, 0],
+        // )
+        assert_output!(
+            is_err:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000a0
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        // Mising settlement balances
+        //
+        // (
+        //     0,
+        //     [0, 0],
+        //     [0],
+        // )
+        assert_output!(
+            is_err:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000001
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        // Executed the exact trade amounts.
+        //
+        // (
+        //     0,
+        //     [-100, 200],
+        //     [0, 3],
+        // )
+        assert_output!(
+            is_ok:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9c
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000003"
+        );
+
+        // Traded with positive slippage
+        //
+        // (
+        //     0,
+        //     [-100, 200],
+        //     [0, 10],
+        // )
+        assert_output!(
+            is_ok:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9c
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             000000000000000000000000000000000000000000000000000000000000000a"
+        );
+
+        // Traded with negative slippage
+        //
+        // (
+        //     0,
+        //     [-100, 200],
+        //     [0, -1],
+        // )
+        assert_output!(
+            is_ok:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9c
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+        );
+
+        // Trader balance changed by something other than the clearing amounts
+        // (even if it would be beneficial).
+        //
+        // (
+        //     0,
+        //     [-99, 200],
+        //     [0, 0],
+        // )
+        assert_output!(
+            is_err:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9d
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+
+        // Executed amount does not match trade (here, a sell trade for 100
+        // tokens only traded 99).
+        //
+        // (
+        //     0,
+        //     [-100, 200],
+        //     [1, 0],
+        // )
+        assert_output!(
+            is_err:
+            "0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000060
+             00000000000000000000000000000000000000000000000000000000000000c0
+             0000000000000000000000000000000000000000000000000000000000000002
+             ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff9d
+             00000000000000000000000000000000000000000000000000000000000000c8
+             0000000000000000000000000000000000000000000000000000000000000002
+             0000000000000000000000000000000000000000000000000000000000000000
+             0000000000000000000000000000000000000000000000000000000000000000"
+        );
+    }
+
+    #[tokio::test]
     #[ignore]
     async fn verified_zeroex_trade() {
         let web3 = Web3::new(create_env_test_transport());
@@ -360,7 +806,7 @@ mod tests {
             &estimator,
             &Query {
                 sell_token: testlib::tokens::WETH,
-                buy_token: testlib::tokens::GNO,
+                buy_token: testlib::tokens::COW,
                 in_amount: 10u128.pow(18).into(),
                 kind: OrderKind::Sell,
             },
@@ -369,7 +815,7 @@ mod tests {
         .unwrap();
 
         println!(
-            "1.0 WETH buys {} GNO, costing {} gas",
+            "1.0 WETH buys {} COW, costing {} gas",
             estimate.out_amount.to_f64_lossy() / 1e18,
             estimate.gas,
         );

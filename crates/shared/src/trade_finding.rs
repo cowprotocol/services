@@ -19,7 +19,7 @@ pub trait TradeFinding: Send + Sync + 'static {
 }
 
 /// A trade.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct Trade {
     pub out_amount: U256,
     pub gas_estimate: u64,
