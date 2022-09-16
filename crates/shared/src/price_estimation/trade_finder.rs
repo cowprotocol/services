@@ -285,7 +285,7 @@ mod slippage {
 mod tests {
     use super::*;
     use crate::{
-        code_simulation::TenderlyCodeSimlator, price_estimation::single_estimate,
+        code_simulation::TenderlyCodeSimulator, price_estimation::single_estimate,
         tenderly_api::TenderlyHttpApi, trade_finding::zeroex::ZeroExTradeFinder,
         transport::create_env_test_transport, zeroex_api::DefaultZeroExApi, Web3,
     };
@@ -343,7 +343,7 @@ mod tests {
         let web3 = Web3::new(create_env_test_transport());
 
         let tenderly_api = TenderlyHttpApi::test_from_env();
-        let simulator = TenderlyCodeSimlator::new(tenderly_api, 1).save(true, true);
+        let simulator = TenderlyCodeSimulator::new(tenderly_api, 1).save(true, true);
         let verifier = TradeVerifier::new(
             Arc::new(simulator),
             Arc::new(web3),

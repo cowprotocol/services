@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.17;
 
-import { IERC20, IMintableERC20, INativeERC20 } from "./interfaces/IERC20.sol";
+import { IERC20, IPhonyERC20, INativeERC20 } from "./interfaces/IERC20.sol";
 import { Interaction, Trade, SETTLEMENT } from "./interfaces/ISettlement.sol";
 import { Caller } from "./libraries/Caller.sol";
+import { Math } from "./libraries/Math.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
 
 /// @title A contract for impersonating a trader.
 contract Trader {
     using Caller for *;
+    using Math for *;
     using SafeERC20 for *;
 
     /// @dev Simulates a executing a trade with the CoW protocol settlement
@@ -30,7 +32,7 @@ contract Trader {
     /// settlement.
     /// @return traderBalances - the changes in balances of the trader (`this`)
     /// for all tokens specified in the `tokens` array.
-    /// @return traderBalances - the changes in balances of the CoW protocol
+    /// @return settlementBalances - the changes in balances of the CoW protocol
     /// settlement contract for all tokens specified in the `tokens` array.
     function settle(
         address[] calldata tokens,
@@ -43,15 +45,15 @@ contract Trader {
         int256[] memory settlementBalances
     ) {
         if (mint != 0) {
-            IMintableERC20(tokens[0]).mint(address(this), mint);
+            IPhonyERC20(tokens[0]).mintPhonyTokens(address(this), mint);
         }
         IERC20(tokens[0]).safeApprove(address(SETTLEMENT.vaultRelayer()), type(uint256).max);
 
         traderBalances = new int256[](tokens.length);
         settlementBalances = new int256[](tokens.length);
         for (uint256 i; i < tokens.length; ++i) {
-            traderBalances[i] = -int256(IERC20(tokens[i]).balanceOf(address(this)));
-            settlementBalances[i] = -int256(IERC20(tokens[i]).balanceOf(address(SETTLEMENT)));
+            traderBalances[i] = -IERC20(tokens[i]).balanceOf(address(this)).toInt();
+            settlementBalances[i] = -IERC20(tokens[i]).balanceOf(address(SETTLEMENT)).toInt();
         }
 
         Trade[] memory trades = new Trade[](1);
@@ -77,8 +79,8 @@ contract Trader {
         );
 
         for (uint256 i; i < tokens.length; ++i) {
-            traderBalances[i] += int256(IERC20(tokens[i]).balanceOf(address(this)));
-            settlementBalances[i] += int256(IERC20(tokens[i]).balanceOf(address(SETTLEMENT)));
+            traderBalances[i] += IERC20(tokens[i]).balanceOf(address(this)).toInt();
+            settlementBalances[i] += IERC20(tokens[i]).balanceOf(address(SETTLEMENT)).toInt();
         }
     }
 

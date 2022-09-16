@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.17;
 
 import { Caller } from "./libraries/Caller.sol";
 import { SafeERC20 } from "./libraries/SafeERC20.sol";
@@ -52,7 +52,7 @@ contract PhonyERC20 {
     /// sure to call the implementation's `transfer` function whenever possible,
     /// for as much token as possible.
     function transfer(address to, uint256 value) external returns (bool) {
-        uint256 realAmount = _transferInternal(msg.sender, to, value);
+        uint256 realAmount = _transferExcessInternally(msg.sender, to, value);
 
         if (realAmount > 0) {
             IMPLEMENTATION.doDelegatecall(abi.encodeCall(this.transfer, (to, realAmount)))
@@ -67,7 +67,7 @@ contract PhonyERC20 {
     /// the implementation ERC20 balance and fallback to using internal balances
     /// if needed.
     function transferFrom(address from, address to, uint256 value) external returns (bool) {
-        uint256 realAmount = _transferInternal(from, to, value);
+        uint256 realAmount = _transferExcessInternally(from, to, value);
 
         if (realAmount > 0) {
             IMPLEMENTATION.doDelegatecall(abi.encodeCall(this.transferFrom, (from, to, realAmount)))
@@ -77,7 +77,7 @@ contract PhonyERC20 {
         return true;
     }
 
-    function mint(address receiver, uint256 amount) external returns (bool) {
+    function mintPhonyTokens(address receiver, uint256 amount) external returns (bool) {
         _balancesSlot()[receiver] += amount;
         return true;
     }
@@ -112,7 +112,7 @@ contract PhonyERC20 {
     /// where they both want to transfer the maximum amount of implementation
     /// balance possible, but need to do so with different implementation
     /// transfer functions.
-    function _transferInternal(
+    function _transferExcessInternally(
         address from,
         address to,
         uint256 value

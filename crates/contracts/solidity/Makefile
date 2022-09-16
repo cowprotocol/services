@@ -1,7 +1,7 @@
 DOCKER := docker
 JQ     := jq
 
-SOLC     := ethereum/solc:0.8.16
+SOLC     := ethereum/solc:0.8.17
 SOLFLAGS := --overwrite --abi --bin --bin-runtime --metadata-hash none --optimize --optimize-runs 1000000
 
 TARGETDIR   := ../../../target/solidity
