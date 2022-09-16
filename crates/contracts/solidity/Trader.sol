@@ -25,6 +25,13 @@ contract Trader {
     /// @param mint - mint some sell token if this is a non-zero value. This
     /// requires that the sell token is mintable (which can be guaranteed by
     /// replacing its code with the `PhonyERC20` contract).
+    ///
+    /// @return gasUsed - the cumulative gas used for executing the simulated
+    /// settlement.
+    /// @return traderBalances - the changes in balances of the trader (`this`)
+    /// for all tokens specified in the `tokens` array.
+    /// @return traderBalances - the changes in balances of the CoW protocol
+    /// settlement contract for all tokens specified in the `tokens` array.
     function settle(
         address[] calldata tokens,
         uint256[] calldata clearingPrices,

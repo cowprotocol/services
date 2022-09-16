@@ -241,7 +241,7 @@ impl SettleOutput {
 
     fn trader_amounts(&self) -> Option<(U256, U256)> {
         Some((
-            self.trader_balances.get(0)?.wrapping_abs().into_raw(),
+            self.trader_balances.first()?.wrapping_abs().into_raw(),
             self.trader_balances.last()?.into_raw(),
         ))
     }
@@ -249,8 +249,8 @@ impl SettleOutput {
     fn executed_amounts(&self) -> Option<(U256, U256)> {
         Some((
             self.trader_balances
-                .get(0)?
-                .checked_add(*self.settlement_balances.get(0)?)?
+                .first()?
+                .checked_add(*self.settlement_balances.first()?)?
                 .wrapping_abs()
                 .into_raw(),
             self.trader_balances
