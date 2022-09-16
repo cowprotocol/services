@@ -1,6 +1,7 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
 
+pub mod oneinch;
 pub mod zeroex;
 
 use crate::price_estimation::Query;

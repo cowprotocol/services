@@ -1,6 +1,6 @@
 use crate::{
     oneinch_api::{
-        OneInchClient, ProtocolCache, RestResponse, SellOrderQuote, SellOrderQuoteQuery,
+        OneInchClient, OneInchError, ProtocolCache, SellOrderQuote, SellOrderQuoteQuery,
     },
     price_estimation::{
         gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
@@ -16,10 +16,8 @@ use std::sync::Arc;
 
 pub struct OneInchPriceEstimator {
     api: Arc<dyn OneInchClient>,
-    sharing: RequestSharing<
-        Query,
-        BoxFuture<'static, Result<RestResponse<SellOrderQuote>, PriceEstimationError>>,
-    >,
+    sharing:
+        RequestSharing<Query, BoxFuture<'static, Result<SellOrderQuote, PriceEstimationError>>>,
     disabled_protocols: Vec<String>,
     protocol_cache: ProtocolCache,
     rate_limiter: Arc<RateLimiter>,
@@ -48,23 +46,15 @@ impl OneInchPriceEstimator {
         let quote_future = async move {
             api.get_sell_order_quote(oneinch_query)
                 .await
-                .map_err(PriceEstimationError::Other)
+                .map_err(PriceEstimationError::from)
         };
         let quote_future = rate_limited(self.rate_limiter.clone(), quote_future);
         let quote = self.sharing.shared(*query, quote_future.boxed()).await?;
 
-        match quote {
-            RestResponse::Ok(quote) => Ok(Estimate {
-                out_amount: quote.to_token_amount,
-                gas: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
-            }),
-            RestResponse::Err(e) => {
-                if e.description == "insufficient liquidity" {
-                    return Err(PriceEstimationError::NoLiquidity);
-                }
-                Err(PriceEstimationError::Other(anyhow::anyhow!(e.description)))
-            }
-        }
+        Ok(Estimate {
+            out_amount: quote.to_token_amount,
+            gas: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
+        })
     }
 
     pub fn new(
@@ -107,6 +97,15 @@ impl PriceEstimating for OneInchPriceEstimator {
     }
 }
 
+impl From<OneInchError> for PriceEstimationError {
+    fn from(err: OneInchError) -> Self {
+        match err {
+            err if err.is_insuffucient_liquidity() => Self::NoLiquidity,
+            err => Self::Other(err.into()),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -139,7 +138,7 @@ mod tests {
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
         one_inch.expect_get_sell_order_quote().return_once(|_| {
-            Ok(RestResponse::<_>::Ok(SellOrderQuote {
+            Ok(SellOrderQuote {
                 from_token: Token {
                     address: testlib::tokens::WETH,
                 },
@@ -150,7 +149,7 @@ mod tests {
                 from_token_amount: 100_000_000_000_000_000u128.into(),
                 protocols: Vec::default(),
                 estimated_gas: 189_386,
-            }))
+            })
         });
 
         let estimator = create_estimator(one_inch);
@@ -201,10 +200,11 @@ mod tests {
             .expect_get_sell_order_quote()
             .times(1)
             .return_once(|_| {
-                Ok(RestResponse::<SellOrderQuote>::Err(RestError {
+                Err(RestError {
                     status_code: 500,
                     description: "Internal Server Error".to_string(),
-                }))
+                }
+                .into())
             });
 
         let estimator = create_estimator(one_inch);
@@ -221,7 +221,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string() == "Internal Server Error"
+            Err(PriceEstimationError::Other(e)) if e.to_string().contains("Internal Server Error")
         ));
     }
 
@@ -231,7 +231,7 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| Err(anyhow::anyhow!("malformed JSON")));
+            .return_once(|_| Err(anyhow::anyhow!("malformed JSON").into()));
 
         let estimator = create_estimator(one_inch);
 
