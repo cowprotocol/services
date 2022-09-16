@@ -51,6 +51,14 @@ pub async fn current_block_stream(
             if hash == previous_hash {
                 continue;
             }
+            let number = match block.number {
+                Some(number) => number.as_u64(),
+                None => {
+                    tracing::warn!("missing block number");
+                    continue;
+                }
+            };
+            tracing::debug!(%number, %hash, "new block");
             if sender.send(block.clone()).is_err() {
                 break;
             }

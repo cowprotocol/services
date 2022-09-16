@@ -2,7 +2,7 @@ use anyhow::{ensure, Result};
 use std::{
     fmt::{Display, Formatter},
     future::Future,
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 use thiserror::Error;
@@ -163,6 +163,14 @@ impl RateLimiter {
             strategy: Mutex::new(strategy),
             name,
         }
+    }
+
+    /// Create a testing rate limiter.
+    pub fn test() -> Arc<Self> {
+        Arc::new(RateLimiter::from_strategy(
+            Default::default(),
+            "test".into(),
+        ))
     }
 }
 

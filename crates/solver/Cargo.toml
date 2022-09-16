@@ -22,8 +22,8 @@ clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 derivative = "2.2"
 derive_more = "0.99"
-ethcontract = { version = "0.19.0", default-features = false }
-ethcontract-mock = { version = "0.19.0" }
+ethcontract = { version = "0.20.0", default-features = false }
+ethcontract-mock = { version = "0.20.0" }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_"] }
 global-metrics = { path = "../global-metrics" }
@@ -45,6 +45,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_with = { version = "1.11", default-features = false }
 shared = { path = "../shared" }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 strum = { version = "0.24", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "time", "test-util"] }
@@ -53,6 +54,5 @@ web3 = { version = "0.18", default-features = false }
 mockall = "0.11"
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tracing-subscriber = "0.3"
 testlib = { path = "../testlib" }
