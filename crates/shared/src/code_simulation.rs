@@ -26,33 +26,39 @@ impl CodeSimulating for Web3 {
     }
 }
 
-pub struct TenderlyCodeSimlator {
-    tenderly: Arc<dyn TenderlyApi>,
-    network_id: String,
-    save: bool,
-    save_if_fails: bool,
+#[derive(Default)]
+struct SaveConfiguration {
+    on_success: bool,
+    on_failure: bool,
 }
 
-impl TenderlyCodeSimlator {
+pub struct TenderlyCodeSimulator {
+    tenderly: Arc<dyn TenderlyApi>,
+    network_id: String,
+    save: SaveConfiguration,
+}
+
+impl TenderlyCodeSimulator {
     pub fn new(tenderly: Arc<dyn TenderlyApi>, network_id: impl ToString) -> Self {
         Self {
             tenderly,
             network_id: network_id.to_string(),
-            save: false,
-            save_if_fails: false,
+            save: SaveConfiguration::default(),
         }
     }
 
     /// Configure the Tenderly code simulator to save simulations.
     pub fn save(mut self, on_success: bool, on_failure: bool) -> Self {
-        self.save = on_success;
-        self.save_if_fails = on_failure;
+        self.save = SaveConfiguration {
+            on_success,
+            on_failure,
+        };
         self
     }
 }
 
 #[async_trait::async_trait]
-impl CodeSimulating for TenderlyCodeSimlator {
+impl CodeSimulating for TenderlyCodeSimulator {
     async fn simulate(&self, call: CallRequest, overrides: StateOverrides) -> Result<Vec<u8>> {
         let result = self
             .tenderly
@@ -66,8 +72,8 @@ impl CodeSimulating for TenderlyCodeSimlator {
                 value: call.value,
                 simulation_kind: Some(SimulationKind::Quick),
                 state_objects: Some(overrides),
-                save: Some(self.save),
-                save_if_fails: Some(self.save_if_fails),
+                save: Some(self.save.on_success),
+                save_if_fails: Some(self.save.on_failure),
                 ..Default::default()
             })
             .await?;
@@ -106,7 +112,7 @@ mod tests {
 
         for simulator in [
             Arc::new(web3) as Arc<dyn CodeSimulating>,
-            Arc::new(TenderlyCodeSimlator::new(
+            Arc::new(TenderlyCodeSimulator::new(
                 TenderlyHttpApi::test_from_env(),
                 network_id,
             )),
@@ -149,7 +155,7 @@ mod tests {
 
         for simulator in [
             Arc::new(web3) as Arc<dyn CodeSimulating>,
-            Arc::new(TenderlyCodeSimlator::new(
+            Arc::new(TenderlyCodeSimulator::new(
                 TenderlyHttpApi::test_from_env(),
                 network_id,
             )),
