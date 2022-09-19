@@ -232,12 +232,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(
-                            client(),
-                            args.eden_api_url.clone(),
-                            submitted_transactions.clone(),
-                        )
-                        .unwrap(),
+                        EdenApi::new(client(), args.eden_api_url.clone()).unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
