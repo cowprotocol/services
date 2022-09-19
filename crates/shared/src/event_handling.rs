@@ -109,11 +109,7 @@ where
 
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
-            let current_block = (
-                current_block_number,
-                current_block.hash.context("missing hash")?,
-            );
-            return Ok(vec![current_block]);
+            return Ok(vec![(current_block_number, current_block_hash)]);
         }
 
         // handle special case when no new block is added
