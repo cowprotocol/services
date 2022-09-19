@@ -741,7 +741,7 @@ mod test {
             }
         );
     }
-    
+
     #[tokio::test]
     async fn extract_custom_and_general_order_data_matches_quotes_with_correct_events() {
         let sell_token = H160::from([1; 20]);
