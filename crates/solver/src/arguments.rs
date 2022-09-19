@@ -415,6 +415,5 @@ pub enum TransactionStrategyArg {
     PublicMempool,
     Eden,
     Flashbots,
-    CustomNodes,
     DryRun,
 }
