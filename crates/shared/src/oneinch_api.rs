@@ -1,4 +1,4 @@
-//! 1]]Inch HTTP API client implementation.
+//! 1Inch HTTP API client implementation.
 //!
 //! For more information on the HTTP API, consult:
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
