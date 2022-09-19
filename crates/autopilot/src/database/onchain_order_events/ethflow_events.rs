@@ -91,7 +91,7 @@ fn convert_to_quote_id_and_user_valid_to(
 
 #[cfg(test)]
 mod test {
-    use ethcontract::{Bytes, EventMetadata, H160, H256, U256};
+    use ethcontract::{Bytes, EventMetadata, H160, U256};
     use model::order::OrderData;
 
     use super::*;
@@ -147,15 +147,9 @@ mod test {
         let event_data = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
-                // todo: implement default for EvetMetadata
-                address: H160::zero(),
-                block_hash: H256::zero(),
                 block_number: 1,
-                transaction_hash: H256::zero(),
-                transaction_index: 0usize,
                 log_index: 0usize,
-                transaction_log_index: None,
-                log_type: None,
+                ..Default::default()
             }),
         };
         let ethflow_onchain_order_parser = EthFlowOnchainOrderParser {};
@@ -169,15 +163,9 @@ mod test {
         let event_data = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement_2),
             meta: Some(EventMetadata {
-                // todo: implement default for EvetMetadata
-                address: H160::zero(),
-                block_hash: H256::zero(),
                 block_number: 1,
-                transaction_hash: H256::zero(),
-                transaction_index: 0usize,
                 log_index: 0usize,
-                transaction_log_index: None,
-                log_type: None,
+                ..Default::default()
             }),
         };
         let result = ethflow_onchain_order_parser
