@@ -64,7 +64,7 @@ pub enum SubmissionLoopStatus {
 pub enum Strategy {
     Eden,
     Flashbots,
-    CustomNodes,
+    PublicMempool,
 }
 
 impl fmt::Display for Strategy {

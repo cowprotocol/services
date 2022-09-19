@@ -207,7 +207,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             .unwrap();
         assert_eq!(
             node_network_id, common.network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -243,14 +243,14 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
                     submit_api: Box::new(CustomNodesApi::new(
                         submission_nodes.clone(),
                         args.disable_high_risk_public_mempool_transactions,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {

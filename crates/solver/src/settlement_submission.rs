@@ -115,10 +115,11 @@ pub struct StrategyArgs {
     pub additional_tip_percentage_of_max_fee: f64,
     pub sub_tx_pool: SubTxPoolRef,
 }
+
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
-    CustomNodes(StrategyArgs),
+    PublicMempool(StrategyArgs),
     DryRun,
 }
 
@@ -127,7 +128,7 @@ impl TransactionStrategy {
         match &self {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
-            TransactionStrategy::CustomNodes(args) => Some(args),
+            TransactionStrategy::PublicMempool(args) => Some(args),
             TransactionStrategy::DryRun => None,
         }
     }
@@ -204,7 +205,7 @@ impl SolutionSubmitter {
                     )));
                 }
             }
-            TransactionStrategy::CustomNodes(_) => {}
+            TransactionStrategy::PublicMempool(_) => {}
             TransactionStrategy::DryRun => unreachable!(),
         };
 
@@ -417,7 +418,7 @@ mod tests {
         let strategy = TransactionStrategy::Flashbots(StrategyArgs::default());
         assert!(strategy.strategy_args().is_some());
 
-        let strategy = TransactionStrategy::CustomNodes(StrategyArgs::default());
+        let strategy = TransactionStrategy::PublicMempool(StrategyArgs::default());
         assert!(strategy.strategy_args().is_some());
 
         let strategy = TransactionStrategy::DryRun;
@@ -430,7 +431,7 @@ mod tests {
         let nonce = U256::zero();
         let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
 
-        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::CustomNodes);
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::PublicMempool);
 
         submitted_transactions.update(sender, nonce, transactions);
         let entry = submitted_transactions.get(sender, nonce);

@@ -41,14 +41,14 @@ impl TransactionSubmitting for CustomNodesApi {
         &self,
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
-        tracing::debug!("Custom nodes submit transaction entered");
+        tracing::debug!("public mempool submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
             .iter()
             .enumerate()
             .map(|(i, node)| {
-                let label = format!("custom_nodes_{i}");
+                let label = format!("public_mempool_{i}");
                 let transaction_request = transaction_request.clone();
                 async move {
                     tracing::debug!(%label, "sending transaction...");
@@ -120,7 +120,7 @@ impl TransactionSubmitting for CustomNodesApi {
     }
 
     fn name(&self) -> Strategy {
-        Strategy::CustomNodes
+        Strategy::PublicMempool
     }
 }
 
