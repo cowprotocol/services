@@ -9,20 +9,22 @@ use database::{
 };
 use ethcontract::Event as EthContractEvent;
 use std::{collections::HashMap, convert::TryInto};
-use unzip_n::unzip_n;
 
-use super::{CustomOnchainOrderParsing, CustomParsedOnchaninData};
-
-unzip_n!(pub 3);
+use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
 pub struct EthFlowOnchainOrderParser {}
 
+#[derive(Copy, Debug, Clone)]
+struct EthFlowData {
+    user_valid_to: u32,
+}
+
 #[async_trait::async_trait]
-impl<'a> CustomOnchainOrderParsing<'a, u32, EthOrderPlacement> for EthFlowOnchainOrderParser {
+impl OnchainOrderParsing<EthFlowData, EthOrderPlacement> for EthFlowOnchainOrderParser {
     fn parse_custom_event_data(
         &self,
         contract_events: &[EthContractEvent<ContractEvent>],
-    ) -> Result<Vec<(EventIndex, CustomParsedOnchaninData<u32>)>> {
+    ) -> Result<Vec<(EventIndex, OnchainOrderCustomData<EthFlowData>)>> {
         contract_events
             .iter()
             .filter_map(|EthContractEvent { data, meta }| {
@@ -31,13 +33,12 @@ impl<'a> CustomOnchainOrderParsing<'a, u32, EthOrderPlacement> for EthFlowOnchai
                     None => return Some(Err(anyhow!("event without metadata"))),
                 };
                 let ContractEvent::OrderPlacement(event) = data;
-                let quote_and_valid_to_touple = convert_to_quote_id_and_user_valid_to(event);
-                match quote_and_valid_to_touple {
-                    Ok(touple) => Some(Ok((
+                match convert_to_quote_id_and_user_valid_to(event) {
+                    Ok((quote_id, user_valid_to)) => Some(Ok((
                         meta_to_event_index(meta),
-                        CustomParsedOnchaninData {
-                            quote_id: touple.0,
-                            additional_data: Some(touple.1),
+                        OnchainOrderCustomData {
+                            quote_id,
+                            additional_data: Some(EthFlowData { user_valid_to }),
                         },
                     ))),
                     Err(err) => {
@@ -52,7 +53,7 @@ impl<'a> CustomOnchainOrderParsing<'a, u32, EthOrderPlacement> for EthFlowOnchai
             .collect::<Result<Vec<_>>>()
     }
 
-    async fn append_custom_order_info_to_db(
+    async fn append_custom_order_info_to_db<'a>(
         &self,
         ex: &mut PgTransaction<'a>,
         custom_onchain_data: Vec<EthOrderPlacement>,
@@ -66,14 +67,14 @@ impl<'a> CustomOnchainOrderParsing<'a, u32, EthOrderPlacement> for EthFlowOnchai
         &self,
         event_index: &EventIndex,
         order: &Order,
-        hashmap: &HashMap<EventIndex, u32>,
+        hashmap: &HashMap<EventIndex, EthFlowData>,
         _onchain_order_placement: &OnchainOrderPlacement,
     ) -> EthOrderPlacement {
         EthOrderPlacement {
             uid: order.uid,
             // unwrap is allowed, as any missing event_index would have been filtered beforehand
             // by the implementation of the function parse_custom_event_data
-            valid_to: *hashmap.get(event_index).unwrap() as i64,
+            valid_to: hashmap.get(event_index).unwrap().user_valid_to as i64,
         }
     }
 }
@@ -81,31 +82,10 @@ impl<'a> CustomOnchainOrderParsing<'a, u32, EthOrderPlacement> for EthFlowOnchai
 fn convert_to_quote_id_and_user_valid_to(
     order_placement: &ContractOrderPlacement,
 ) -> Result<(i64, u32)> {
-    let user_valid_to_bytes = TryInto::<[u8; 4]>::try_into(
-        order_placement
-            .data
-            .0
-            .iter()
-            .take(4)
-            .copied()
-            .collect::<Vec<u8>>(),
-    )
-    .map_err(|err| anyhow!("Error while decoding user_valid_to data: {:?}", err))?;
-    println!("{:?}", user_valid_to_bytes);
-    let user_valid_to = u32::from_be_bytes(user_valid_to_bytes);
-    let quote_id_bytes = TryInto::<[u8; 8]>::try_into(
-        order_placement
-            .data
-            .0
-            .iter()
-            .skip(4)
-            .take(8)
-            .copied()
-            .collect::<Vec<u8>>(),
-    )
-    .map_err(|err| anyhow!("Error while decoding user_valid_to data: {:?}", err))?;
-
-    let quote_id = i64::from_be_bytes(quote_id_bytes);
+    let data = order_placement.data.0.as_slice();
+    anyhow::ensure!(data.len() == 12, "invalid data length");
+    let user_valid_to = u32::from_be_bytes(data[0..4].try_into().unwrap());
+    let quote_id = i64::from_be_bytes(data[4..12].try_into().unwrap());
     Ok((quote_id, user_valid_to))
 }
 
@@ -124,8 +104,8 @@ mod test {
             ]),
             ..Default::default()
         };
-        let expected_user_valid_to = 16u32.pow(2) + 2;
-        let expected_quote_id = 16i64.pow(8) * (16i64.pow(2) + 2) + 16i64.pow(2) + 2;
+        let expected_user_valid_to = 0x00_00_01_02;
+        let expected_quote_id = 0x00_00_01_02_00_00_01_02;
         let result = convert_to_quote_id_and_user_valid_to(&event_data).unwrap();
         assert_eq!(result.1, expected_user_valid_to);
         assert_eq!(result.0, expected_quote_id);

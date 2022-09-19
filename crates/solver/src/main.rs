@@ -18,6 +18,7 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     zeroex_api::DefaultZeroExApi,
@@ -32,7 +33,6 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
-    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -50,6 +50,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running solver with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_solver".into()), None);
@@ -386,13 +387,22 @@ async fn main() {
             }
         }
     }
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &http_factory,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -414,10 +424,6 @@ async fn main() {
         http_factory.create(),
         args.shared.solver_competition_auth,
     );
-    let tenderly = args
-        .tenderly_url
-        .zip(args.tenderly_api_key)
-        .and_then(|(url, api_key)| TenderlyApi::new(&http_factory, url, &api_key).ok());
 
     let mut driver = Driver::new(
         settlement_contract,
@@ -442,7 +448,7 @@ async fn main() {
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
-        tenderly,
+        tenderly_api,
     );
 
     let maintainer = ServiceMaintenance {

@@ -564,14 +564,11 @@ impl OrderKind {
     }
 }
 
-impl TryFrom<[u8; 32]> for OrderKind {
-    type Error = anyhow::Error;
-    fn try_from(kind: [u8; 32]) -> Result<Self, Self::Error> {
-        match kind {
-            OrderData::KIND_SELL => Ok(OrderKind::Sell),
-            OrderData::KIND_BUY => Ok(OrderKind::Buy),
-            _ => Err(anyhow!("Order kind is not well defined")),
-        }
+pub fn kind_from_contract_constant(kind: [u8; 32]) -> Result<OrderKind> {
+    match kind {
+        OrderData::KIND_SELL => Ok(OrderKind::Sell),
+        OrderData::KIND_BUY => Ok(OrderKind::Buy),
+        _ => Err(anyhow!("Order kind is not well defined")),
     }
 }
 
@@ -591,15 +588,12 @@ pub enum SellTokenSource {
     External,
 }
 
-impl TryFrom<[u8; 32]> for SellTokenSource {
-    type Error = anyhow::Error;
-    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
-        match bytes {
-            OrderData::BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
-            OrderData::BALANCE_EXTERNAL => Ok(SellTokenSource::External),
-            OrderData::BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
-            _ => Err(anyhow!("Order sellTokenSource is not well defined")),
-        }
+pub fn sell_token_source_from_contract_bytes(bytes: [u8; 32]) -> Result<SellTokenSource> {
+    match bytes {
+        OrderData::BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
+        OrderData::BALANCE_EXTERNAL => Ok(SellTokenSource::External),
+        OrderData::BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
+        _ => Err(anyhow!("Order sellTokenSource is not well defined")),
     }
 }
 
@@ -617,14 +611,11 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
-impl TryFrom<[u8; 32]> for BuyTokenDestination {
-    type Error = anyhow::Error;
-    fn try_from(bytes: [u8; 32]) -> Result<Self, Self::Error> {
-        match bytes {
-            OrderData::BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
-            OrderData::BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
-            _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
-        }
+pub fn buy_token_destination_from_contract_bytes(bytes: [u8; 32]) -> Result<BuyTokenDestination> {
+    match bytes {
+        OrderData::BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
+        OrderData::BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
+        _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
     }
 }
 

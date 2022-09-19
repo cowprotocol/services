@@ -98,6 +98,10 @@ pub struct Arguments {
     #[clap(long, env)]
     pub enable_eip1271_orders: bool,
 
+    /// Skip EIP-1271 order signature validation on creation.
+    #[clap(long, env)]
+    pub eip1271_skip_creation_validation: bool,
+
     /// Enable pre-sign orders. Pre-sign orders are accepted into the database without a valid
     /// signature, so this flag allows this feature to be turned off if malicious users are
     /// abusing the database by inserting a bunch of order rows that won't ever be valid.
@@ -275,6 +279,11 @@ impl std::fmt::Display for Arguments {
         writeln!(f, "allowed_tokens: {:?}", self.allowed_tokens)?;
         writeln!(f, "pool_cache_lru_size: {}", self.pool_cache_lru_size)?;
         writeln!(f, "enable_eip1271_orders: {}", self.enable_eip1271_orders)?;
+        writeln!(
+            f,
+            "eip1271_skip_creation_validation: {}",
+            self.eip1271_skip_creation_validation
+        )?;
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
         writeln!(
             f,

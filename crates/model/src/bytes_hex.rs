@@ -1,6 +1,7 @@
 //! Serialization of Vec<u8> to 0x prefixed hex string
 
 use serde::{de::Error, Deserialize, Deserializer, Serializer};
+use serde_with::{DeserializeAs, SerializeAs};
 use std::borrow::Cow;
 
 pub fn serialize<S, T>(bytes: T, serializer: S) -> Result<S::Ok, S::Error>
@@ -26,6 +27,29 @@ where
         .strip_prefix("0x")
         .ok_or_else(|| D::Error::custom("missing '0x' prefix"))?;
     hex::decode(hex_str).map_err(D::Error::custom)
+}
+
+pub struct BytesHex(());
+
+impl<T> SerializeAs<T> for BytesHex
+where
+    T: AsRef<[u8]>,
+{
+    fn serialize_as<S>(bytes: &T, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serialize(bytes, serializer)
+    }
+}
+
+impl<'de> DeserializeAs<'de, Vec<u8>> for BytesHex {
+    fn deserialize_as<D>(deserializer: D) -> Result<Vec<u8>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserialize(deserializer)
+    }
 }
 
 #[cfg(test)]

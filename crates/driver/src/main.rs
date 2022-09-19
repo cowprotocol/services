@@ -20,6 +20,7 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
     zeroex_api::DefaultZeroExApi,
 };
@@ -36,7 +37,6 @@ use solver::{
     settlement_access_list::AccessListEstimating,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
             custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
@@ -58,6 +58,7 @@ struct CommonComponents {
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     native_token_contract: WETH9,
+    tenderly_api: Option<Arc<dyn TenderlyApi>>,
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     order_converter: Arc<OrderConverter>,
@@ -85,13 +86,22 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &http_factory,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -126,6 +136,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         chain_id,
         settlement_contract,
         native_token_contract,
+        tenderly_api,
         access_list_estimator,
         gas_price_estimator,
         order_converter,
@@ -481,11 +492,6 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         web3: common.web3.clone(),
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
-    let tenderly = args
-        .tenderly_url
-        .clone()
-        .zip(args.tenderly_api_key.clone())
-        .and_then(|(url, api_key)| TenderlyApi::new(&common.http_factory, url, &api_key).ok());
     let metrics = Arc::new(Metrics::new().unwrap());
 
     let settlement_ranker = Arc::new(SettlementRanker {
@@ -501,7 +507,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         metrics,
         settlement_contract: common.settlement_contract.clone(),
         simulation_gas_limit: args.simulation_gas_limit,
-        tenderly,
+        tenderly: common.tenderly_api.clone(),
     });
 
     solvers
@@ -531,6 +537,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
 async fn main() {
     let args = driver::arguments::Arguments::parse();
     shared::tracing::initialize(args.log_filter.as_str(), args.log_stderr_threshold);
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running driver with validated arguments:\n{}", args);
     global_metrics::setup_metrics_registry(Some("gp_v2_driver".into()), None);
     let common = init_common_components(&args).await;
