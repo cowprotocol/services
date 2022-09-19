@@ -9,19 +9,14 @@
 //!   from the node
 
 use super::swap::fixed_point::Bfp;
-use crate::{
-    event_handling::{BlockNumberHash, MAX_REORG_BLOCK_COUNT},
-    subgraph::SubgraphClient,
-    Web3,
-};
-use anyhow::{bail, Context, Result};
+use crate::{event_handling::MAX_REORG_BLOCK_COUNT, subgraph::SubgraphClient};
+use anyhow::{bail, Result};
 use ethcontract::{H160, H256};
 use reqwest::Client;
 use serde::Deserialize;
 use serde_json::json;
 use serde_with::{serde_as, DisplayFromStr};
 use std::collections::HashMap;
-use web3::types::U64;
 
 /// The page size when querying pools.
 #[cfg(not(test))]
@@ -33,24 +28,22 @@ const QUERY_PAGE_SIZE: usize = 10;
 ///
 /// This client is not implemented to allow general GraphQL queries, but instead
 /// implements high-level methods that perform GraphQL queries under the hood.
-pub struct BalancerSubgraphClient {
-    pub graph: SubgraphClient,
-    pub web3: Web3,
-}
+pub struct BalancerSubgraphClient(SubgraphClient);
 
 impl BalancerSubgraphClient {
     /// Creates a new Balancer subgraph client for the specified chain ID.
-    pub fn for_chain(chain_id: u64, client: Client, web3: Web3) -> Result<Self> {
+    pub fn for_chain(chain_id: u64, client: Client) -> Result<Self> {
         let subgraph_name = match chain_id {
             1 => "balancer-v2",
             4 => "balancer-rinkeby-v2",
             5 => "balancer-goerli-v2",
             _ => bail!("unsupported chain {}", chain_id),
         };
-        Ok(BalancerSubgraphClient {
-            graph: SubgraphClient::new("balancer-labs", subgraph_name, client)?,
-            web3,
-        })
+        Ok(Self(SubgraphClient::new(
+            "balancer-labs",
+            subgraph_name,
+            client,
+        )?))
     }
 
     /// Retrieves the list of registered pools from the subgraph.
@@ -58,14 +51,6 @@ impl BalancerSubgraphClient {
         use self::pools_query::*;
 
         let block_number = self.get_safe_block().await?;
-        let block_hash = self
-            .web3
-            .eth()
-            .block(U64::from(block_number).into())
-            .await?
-            .context("missing block")?
-            .hash
-            .context("no hash in block - pending block")?;
 
         let mut pools = Vec::new();
         let mut last_id = H256::default();
@@ -75,7 +60,7 @@ impl BalancerSubgraphClient {
         // <https://thegraph.com/docs/graphql-api#pagination>
         loop {
             let page = self
-                .graph
+                .0
                 .query::<Data>(
                     QUERY,
                     Some(json_map! {
@@ -99,7 +84,7 @@ impl BalancerSubgraphClient {
         }
 
         Ok(RegisteredPools {
-            fetched_block: (block_number, block_hash),
+            fetched_block_number: block_number,
             pools,
         })
     }
@@ -112,7 +97,7 @@ impl BalancerSubgraphClient {
         // retrieve historic block hashes just from the subgraph (it always
         // returns `null`).
         Ok(self
-            .graph
+            .0
             .query::<block_number_query::Data>(block_number_query::QUERY, None)
             .await?
             .meta
@@ -125,9 +110,9 @@ impl BalancerSubgraphClient {
 /// Result of the registered stable pool query.
 #[derive(Debug, Default, Eq, PartialEq)]
 pub struct RegisteredPools {
-    /// The block number and hash that the data was fetched, and for which the registered
+    /// The block number that the data was fetched, and for which the registered
     /// weighted pools can be considered up to date.
-    pub fetched_block: BlockNumberHash,
+    pub fetched_block_number: u64,
     /// The registered Pools
     pub pools: Vec<PoolData>,
 }
@@ -135,23 +120,23 @@ pub struct RegisteredPools {
 impl RegisteredPools {
     /// Creates an empty collection of registered pools for the specified block
     /// number.
-    pub fn empty(fetched_block: BlockNumberHash) -> Self {
+    pub fn empty(fetched_block_number: u64) -> Self {
         Self {
-            fetched_block,
+            fetched_block_number,
             ..Default::default()
         }
     }
 
     /// Groups registered pools by factory addresses.
     pub fn group_by_factory(self) -> HashMap<H160, RegisteredPools> {
-        let fetched_block = self.fetched_block;
+        let fetched_block_number = self.fetched_block_number;
         self.pools
             .into_iter()
             .fold(HashMap::new(), |mut grouped, pool| {
                 grouped
                     .entry(pool.factory)
                     .or_insert(RegisteredPools {
-                        fetched_block,
+                        fetched_block_number,
                         ..Default::default()
                     })
                     .pools
@@ -259,9 +244,7 @@ mod block_number_query {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        sources::balancer_v2::swap::fixed_point::Bfp, transport::create_env_test_transport,
-    };
+    use crate::sources::balancer_v2::swap::fixed_point::Bfp;
     use ethcontract::{H160, H256};
     use maplit::hashmap;
     use std::collections::HashMap;
@@ -433,7 +416,7 @@ mod tests {
                 pool(H160([1; 20]), 2),
                 pool(H160([2; 20]), 3),
             ],
-            fetched_block: (42, H256::from_low_u64_be(42)),
+            fetched_block_number: 42,
         };
 
         assert_eq!(
@@ -444,13 +427,13 @@ mod tests {
                         pool(H160([1; 20]), 1),
                         pool(H160([1; 20]), 2),
                     ],
-                    fetched_block: (42, H256::from_low_u64_be(42)),
+                    fetched_block_number: 42,
                 },
                 H160([2; 20]) => RegisteredPools {
                     pools: vec![
                         pool(H160([2; 20]), 3),
                     ],
-                    fetched_block: (42, H256::from_low_u64_be(42)),
+                    fetched_block_number: 42,
                 },
             }
         )
@@ -462,14 +445,12 @@ mod tests {
         for (network_name, chain_id) in [("Mainnet", 1), ("Rinkeby", 4)] {
             println!("### {}", network_name);
 
-            let transport = create_env_test_transport();
-            let web3 = Web3::new(transport);
-            let client = BalancerSubgraphClient::for_chain(chain_id, Client::new(), web3).unwrap();
+            let client = BalancerSubgraphClient::for_chain(chain_id, Client::new()).unwrap();
             let result = client.get_registered_pools().await.unwrap();
             println!(
-                "Retrieved {} total pools at block {:?}",
+                "Retrieved {} total pools at block {}",
                 result.pools.len(),
-                result.fetched_block,
+                result.fetched_block_number,
             );
 
             let grouped_by_factory = result.pools.into_iter().fold(
