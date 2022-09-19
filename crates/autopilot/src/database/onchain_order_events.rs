@@ -58,7 +58,10 @@ impl<T: Send + Sync, W: Send + Sync> OnchainOrderParser<T, W> {
         }
     }
 }
-pub struct CustomParsedOnchainOrderData<T> {
+
+// The following struct describes the return type from the custom order parsing logic.
+// All parser must return a quote_id, as this is currently required by the protocol.
+pub struct OnchainOrderCustomData<T> {
     quote_id: i64,
     additional_data: Option<T>,
 }
@@ -90,7 +93,7 @@ pub trait OnchainOrderParsing<EventData: Send + Sync + Clone, EventDataForDB: Se
     fn parse_custom_event_data(
         &self,
         contract_events: &[EthContractEvent<ContractEvent>],
-    ) -> Result<Vec<(EventIndex, CustomParsedOnchainOrderData<EventData>)>>;
+    ) -> Result<Vec<(EventIndex, OnchainOrderCustomData<EventData>)>>;
 
     // This function allow to create the specific object that will be stored in the database
     // by the fn append_custo_order_info_to_db
@@ -386,10 +389,6 @@ fn convert_onchain_order_placement(
     Ok((onchain_order_placement_event, order))
 }
 
-fn convert_signature_data_to_owner(data: Vec<u8>) -> H160 {
-    H160::from_slice(&data[..20])
-}
-
 fn extract_order_data_from_onchain_order_placement_event(
     order_placement: &ContractOrderPlacement,
     domain_separator: DomainSeparator,
@@ -397,7 +396,7 @@ fn extract_order_data_from_onchain_order_placement_event(
     let (signing_scheme, owner) = match order_placement.signature.0 {
         0 => (
             SigningScheme::Eip1271,
-            convert_signature_data_to_owner(order_placement.signature.1 .0.clone()),
+            H160::from_slice(&order_placement.signature.1 .0[..20]),
         ),
         1 => (SigningScheme::PreSign, order_placement.sender),
         // Signatures can only be 0 and 1 by definition in the smart contrac:
@@ -808,7 +807,7 @@ mod test {
                         block_number: 1i64,
                         log_index: 0i64,
                     },
-                    CustomParsedOnchainOrderData {
+                    OnchainOrderCustomData {
                         quote_id: 0i64,
                         additional_data: Some(2u8),
                     },
