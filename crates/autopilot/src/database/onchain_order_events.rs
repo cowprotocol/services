@@ -257,25 +257,26 @@ async fn parse_general_onchain_order_placement_data(
 ) -> Vec<(EventIndex, OnchainOrderPlacement, Order)> {
     let futures = contract_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, quote_id)| async move {
-        let meta = match meta {
-            Some(meta) => meta,
-            None => return Err(anyhow!("event without metadata")),
-        };
-        let ContractEvent::OrderPlacement(event) = data;
-        let (order_data, owner, signing_scheme, order_uid) =
-            extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
-        let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
-        let order_data = convert_onchain_order_placement(
-            &event,
-            quote,
-            order_data,
-            signing_scheme,
-            order_uid,
-            owner,
-            settlement_contract,
-        )?;
-        Ok((meta_to_event_index(&meta), order_data))
-    });
+            let meta = match meta {
+                Some(meta) => meta,
+                None => return Err(anyhow!("event without metadata")),
+            };
+            let ContractEvent::OrderPlacement(event) = data;
+            let (order_data, owner, signing_scheme, order_uid) =
+                extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
+            let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
+            let order_data = convert_onchain_order_placement(
+                &event,
+                quote,
+                order_data,
+                signing_scheme,
+                order_uid,
+                owner,
+                settlement_contract,
+            )?;
+            Ok((meta_to_event_index(&meta), order_data))
+        },
+    );
     let onchain_order_placement_data: Vec<Result<(EventIndex, (OnchainOrderPlacement, Order))>> =
         stream::iter(futures).buffer_unordered(10).collect().await;
     onchain_order_placement_data
