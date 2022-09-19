@@ -4,13 +4,19 @@ use crate::{
 };
 use primitive_types::H160;
 use reqwest::Url;
-use shared::arguments::{display_list, display_option, display_secret_option};
+use shared::{
+    arguments::{display_list, display_option, display_secret_option},
+    http_client,
+};
 use std::time::Duration;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
     #[clap(flatten)]
     pub shared: shared::arguments::Arguments,
+
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
 
     /// The API endpoint to fetch the orderbook
     #[clap(long, env, default_value = "http://localhost:8080")]
@@ -170,9 +176,13 @@ pub struct Arguments {
     #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The URL for tenderly transaction simulation.
+    /// The Tenderly user associated with the API key.
     #[clap(long, env)]
-    pub tenderly_url: Option<Url>,
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
 
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
@@ -288,6 +298,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.http_client)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
         writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
@@ -332,7 +343,8 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             &self.access_list_estimators
         )?;
-        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_option(f, "tenderly_user", &self.tenderly_user)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;

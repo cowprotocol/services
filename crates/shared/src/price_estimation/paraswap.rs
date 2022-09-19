@@ -179,6 +179,7 @@ mod tests {
         let weth = testlib::tokens::WETH;
         let gno = testlib::tokens::GNO;
         let query = Query {
+            from: None,
             sell_token: weth,
             buy_token: gno,
             in_amount: 10u128.pow(18).into(),

@@ -13,7 +13,7 @@ use model::{
     signature::EcdsaSigningScheme,
 };
 use secp256k1::SecretKey;
-use shared::maintenance::Maintaining;
+use shared::{http_client::HttpClientFactory, maintenance::Maintaining};
 use shared::{sources::uniswap_v2::pool_fetching::PoolFetcher, Web3};
 use solver::{
     liquidity::uniswap_v2::UniswapLikeLiquidity,
@@ -43,6 +43,7 @@ async fn local_node_onchain_settlement() {
 
 async fn onchain_settlement(web3: Web3) {
     shared::tracing::initialize_for_tests("warn,orderbook=debug,solver=debug,autopilot=debug");
+    shared::exit_process_on_panic::set_panic_hook();
     let contracts = crate::deploy::deploy(&web3).await.expect("deploy");
 
     let accounts: Vec<Address> = web3.eth().accounts().await.expect("get accounts failed");
@@ -143,7 +144,8 @@ async fn onchain_settlement(web3: Web3) {
         ..
     } = OrderbookServices::new(&web3, &contracts).await;
 
-    let client = reqwest::Client::new();
+    let http_factory = HttpClientFactory::default();
+    let client = http_factory.create();
 
     let order_a = OrderBuilder::default()
         .with_sell_token(token_a.address())
@@ -240,14 +242,11 @@ async fn onchain_settlement(web3: Web3) {
             ],
             access_list_estimator: Arc::new(
                 create_priority_estimator(
-                    &client,
                     &web3,
                     &[AccessListEstimatorType::Web3],
                     None,
-                    None,
                     network_id,
                 )
-                .await
                 .unwrap(),
             ),
         },

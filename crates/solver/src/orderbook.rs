@@ -20,7 +20,12 @@ impl OrderBookApi {
 
     pub async fn get_auction(&self) -> Result<AuctionWithId> {
         let url = self.base.join("api/v1/auction")?;
-        let auction = self.client.get(url).send().await?.json().await?;
+        let response = self.client.get(url).send().await?;
+        if let Err(err) = response.error_for_status_ref() {
+            let body = response.text().await;
+            return Err(anyhow::Error::new(err).context(format!("body: {:?}", body)));
+        }
+        let auction = response.json().await?;
         Ok(auction)
     }
 

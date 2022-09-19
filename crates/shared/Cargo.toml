@@ -20,8 +20,8 @@ clap = { version = "3.1", features = ["derive", "env"] }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
 derivative = "2.2"
-ethcontract = { version = "0.19.0", default-features = false }
-ethcontract-mock = { version = "0.19.0", default-features = false }
+ethcontract = { version = "0.20.0", default-features = false }
+ethcontract-mock = { version = "0.20.0", default-features = false }
 futures = "0.3"
 gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_", "tokio_"] }
 global-metrics = { path = "../global-metrics" }
@@ -39,7 +39,7 @@ number-conversions = { path = "../number-conversions" }
 primitive-types = "0.10"
 prometheus = "0.13"
 prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-reqwest = { version = "0.11", features = ["gzip", "json"] }
+reqwest = { version = "0.11", features = ["cookies", "gzip", "json"] }
 scopeguard = "1.1.0"
 serde = "1.0"
 serde_json = "1.0"
@@ -58,4 +58,5 @@ web3 = { version = "0.18", default-features = false }
 [dev-dependencies]
 flate2 = "1.0"
 regex = "1.5"
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 testlib = { path = "../testlib" }

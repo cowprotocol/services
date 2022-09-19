@@ -4,14 +4,20 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::debug_bytes;
-use crate::solver_utils::{deserialize_decimal_f64, Slippage};
+use crate::{
+    debug_bytes,
+    http_client::HttpClientFactory,
+    solver_utils::{deserialize_decimal_f64, Slippage},
+};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
 use ethcontract::{H160, H256, U256};
 use model::u256_decimal;
-use reqwest::{Client, IntoUrl, Url};
+use reqwest::{
+    header::{HeaderMap, HeaderValue},
+    Client, IntoUrl, Url,
+};
 use serde::Deserialize;
 use std::collections::HashSet;
 use thiserror::Error;
@@ -283,7 +289,7 @@ pub struct SwapResponse {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait ZeroExApi: Send + Sync {
-    /// Retrieve a swap for the specified parameters from the 1Inch API.
+    /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
@@ -305,7 +311,6 @@ pub trait ZeroExApi: Send + Sync {
 pub struct DefaultZeroExApi {
     client: Client,
     base_url: Url,
-    api_key: Option<String>,
 }
 
 impl DefaultZeroExApi {
@@ -318,17 +323,41 @@ impl DefaultZeroExApi {
         addr!("Def1C0ded9bec7F1a1670819833240f027b25EfF");
 
     /// Create a new 0x HTTP API client with the specified base URL.
-    pub fn new(base_url: impl IntoUrl, api_key: Option<String>, client: Client) -> Result<Self> {
+    pub fn new(
+        http_factory: &HttpClientFactory,
+        base_url: impl IntoUrl,
+        api_key: Option<String>,
+    ) -> Result<Self> {
+        let client = match api_key {
+            Some(api_key) => {
+                let mut key = HeaderValue::from_str(&api_key)?;
+                key.set_sensitive(true);
+
+                let mut headers = HeaderMap::new();
+                headers.insert("0x-api-key", key);
+
+                http_factory.configure(|builder| builder.default_headers(headers))
+            }
+            None => http_factory.create(),
+        };
+
         Ok(Self {
             client,
             base_url: base_url.into_url().context("zeroex api url")?,
-            api_key,
         })
     }
 
     /// Create a new 0x HTTP API client using the default URL.
     pub fn with_default_url(client: Client) -> Self {
-        Self::new(Self::DEFAULT_URL, None, client).unwrap()
+        Self {
+            client,
+            base_url: Self::DEFAULT_URL.parse().unwrap(),
+        }
+    }
+
+    /// Create a 0x HTTP API client using the default URL and HTTP client.
+    pub fn test() -> Self {
+        Self::new(&HttpClientFactory::default(), Self::DEFAULT_URL, None).unwrap()
     }
 
     /// Retrieves specific page of current limit orders.
@@ -348,7 +377,7 @@ impl DefaultZeroExApi {
 
 impl Default for DefaultZeroExApi {
     fn default() -> Self {
-        Self::new(Self::DEFAULT_URL, None, Client::new()).unwrap()
+        Self::with_default_url(Client::new())
     }
 }
 
@@ -441,10 +470,7 @@ impl DefaultZeroExApi {
     ) -> Result<T, ZeroExResponseError> {
         tracing::debug!("Querying 0x API: {}", url);
 
-        let mut request = self.client.get(url.clone());
-        if let Some(key) = &self.api_key {
-            request = request.header("0x-api-key", key);
-        }
+        let request = self.client.get(url.clone());
         let response_text = request
             .send()
             .await
@@ -498,7 +524,8 @@ mod tests {
     async fn test_api_e2e_private() {
         let url = std::env::var("ZEROEX_URL").unwrap();
         let api_key = std::env::var("ZEROEX_API_KEY").unwrap();
-        let zeroex_client = DefaultZeroExApi::new(url, Some(api_key), Client::new()).unwrap();
+        let zeroex_client =
+            DefaultZeroExApi::new(&HttpClientFactory::default(), url, Some(api_key)).unwrap();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
@@ -548,8 +575,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders() {
-        let api =
-            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, None, Client::new()).unwrap();
+        let api = DefaultZeroExApi::default();
         let result = api.get_orders(&OrdersQuery::default()).await;
         dbg!(&result);
         assert!(result.is_ok());
@@ -558,8 +584,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn test_get_orders_paginated_with_empty_result() {
-        let api =
-            DefaultZeroExApi::new(DefaultZeroExApi::DEFAULT_URL, None, Client::new()).unwrap();
+        let api = DefaultZeroExApi::default();
         // `get_orders()` relies on `get_orders_with_pagination()` not producing and error instead
         // of an response with 0 records. To test that we request a page which should never have a
         // any records and check that it doesn't throw an error.

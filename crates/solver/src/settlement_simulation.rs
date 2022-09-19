@@ -7,17 +7,15 @@ use ethcontract::{
     dyns::{DynMethodBuilder, DynTransport},
     errors::ExecutionError,
     transaction::TransactionBuilder,
-    Account, Address,
+    Account,
 };
 use futures::FutureExt;
 use gas_estimation::GasPrice1559;
 use primitive_types::{H160, H256, U256};
-use reqwest::{
-    header::{HeaderMap, HeaderValue},
-    Client, IntoUrl, Url,
+use shared::{
+    tenderly_api::{SimulationRequest, TenderlyApi},
+    Web3,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use shared::Web3;
 use web3::types::{AccessList, BlockId};
 
 const SIMULATE_BATCH_SIZE: usize = 10;
@@ -124,19 +122,9 @@ pub async fn simulate_and_error_with_tenderly_link(
         .collect()
 }
 
-#[derive(Debug, Clone, Deserialize)]
-struct TenderlyResponse {
-    transaction: TenderlyTransaction,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct TenderlyTransaction {
-    gas_used: u64,
-}
-
 pub async fn simulate_before_after_access_list(
     web3: &Web3,
-    tenderly: &TenderlyApi,
+    tenderly: &dyn TenderlyApi,
     network_id: String,
     transaction_hash: H256,
 ) -> Result<f64> {
@@ -165,22 +153,18 @@ pub async fn simulate_before_after_access_list(
             .as_u64(),
     );
 
-    let request = TenderlyRequest {
+    let request = SimulationRequest {
         network_id,
-        block_number,
+        block_number: Some(block_number),
+        transaction_index: Some(transaction_index),
         from,
         input: transaction.input.0,
         to,
         gas: Some(transaction.gas.as_u64()),
-        generate_access_list: false,
-        transaction_index: Some(transaction_index),
+        ..Default::default()
     };
 
-    let gas_used_without_access_list = tenderly
-        .send::<TenderlyResponse>(request)
-        .await?
-        .transaction
-        .gas_used;
+    let gas_used_without_access_list = tenderly.simulate(request).await?.transaction.gas_used;
     let gas_used_with_access_list = web3
         .eth()
         .transaction_receipt(transaction_hash)
@@ -257,75 +241,6 @@ pub fn tenderly_link(
     )
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct TenderlyRequest {
-    pub network_id: String,
-    pub block_number: u64,
-    pub from: Address,
-    #[serde(with = "model::bytes_hex")]
-    pub input: Vec<u8>,
-    pub to: Address,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub gas: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transaction_index: Option<u64>,
-    pub generate_access_list: bool,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct BlockNumber {
-    pub block_number: u64,
-}
-
-#[derive(Debug)]
-pub struct TenderlyApi {
-    url: Url,
-    client: Client,
-    header: HeaderMap,
-}
-
-impl TenderlyApi {
-    pub fn new(url: impl IntoUrl, client: Client, api_key: &str) -> Result<Self> {
-        Ok(Self {
-            url: url.into_url()?,
-            client,
-            header: {
-                let mut header = HeaderMap::new();
-                header.insert("x-access-key", HeaderValue::from_str(api_key)?);
-                header
-            },
-        })
-    }
-
-    pub async fn send<T>(&self, body: TenderlyRequest) -> reqwest::Result<T>
-    where
-        T: DeserializeOwned,
-    {
-        self.client
-            .post(self.url.clone())
-            .headers(self.header.clone())
-            .json(&body)
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-    }
-
-    pub async fn block_number(&self, network_id: &str) -> reqwest::Result<BlockNumber> {
-        self.client
-            .get(format!(
-                "https://api.tenderly.co/api/v1/network/{}/block-number",
-                network_id
-            ))
-            .send()
-            .await?
-            .error_for_status()?
-            .json()
-            .await
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -343,6 +258,7 @@ mod tests {
     use serde_json::json;
     use shared::http_solver::model::SettledBatchAuctionModel;
     use shared::sources::balancer_v2::pools::{common::TokenState, stable::AmplificationParameter};
+    use shared::tenderly_api::TenderlyHttpApi;
     use shared::transport::create_env_test_transport;
     use std::str::FromStr;
     use std::sync::{Arc, Mutex};
@@ -786,16 +702,10 @@ mod tests {
         let transaction_hash =
             H256::from_str("e337fcd52afd6b98847baab279cda6c3980fcb185da9e959fd489ffd210eac60")
                 .unwrap();
-        let tenderly_api = TenderlyApi::new(
-            // http://api.tenderly.co/api/v1/account/<USER_NAME>/project/<PROJECT_NAME>/simulate
-            Url::parse(&std::env::var("TENDERLY_URL").unwrap()).unwrap(),
-            Client::new(),
-            &std::env::var("TENDERLY_API_KEY").unwrap(),
-        )
-        .unwrap();
+        let tenderly_api = TenderlyHttpApi::test_from_env();
         let gas_saved = simulate_before_after_access_list(
             &web3,
-            &tenderly_api,
+            &*tenderly_api,
             "1".to_string(),
             transaction_hash,
         )

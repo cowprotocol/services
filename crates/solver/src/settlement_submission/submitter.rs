@@ -625,18 +625,16 @@ fn track_mined_transactions(submitter: &str) {
 
 #[cfg(test)]
 mod tests {
-
-    use std::sync::Arc;
-
-    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
-
     use super::super::submitter::flashbots_api::FlashbotsApi;
     use super::*;
+    use crate::settlement_access_list::{create_priority_estimator, AccessListEstimatorType};
     use ethcontract::PrivateKey;
     use gas_estimation::blocknative::BlockNative;
     use reqwest::Client;
-    use shared::gas_price_estimation::FakeGasPriceEstimator;
-    use shared::transport::create_env_test_transport;
+    use shared::{
+        gas_price_estimation::FakeGasPriceEstimator, transport::create_env_test_transport,
+    };
+    use std::sync::Arc;
     use tracing::level_filters::LevelFilter;
 
     #[tokio::test]
@@ -675,14 +673,11 @@ mod tests {
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
-                &Client::new(),
                 &web3,
                 &[AccessListEstimatorType::Web3],
                 None,
-                None,
                 "1".to_string(),
             )
-            .await
             .unwrap(),
         );
 

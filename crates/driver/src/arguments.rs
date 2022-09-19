@@ -3,6 +3,7 @@ use reqwest::Url;
 use shared::{
     arguments::{display_list, display_option, display_secret_option, duration_from_seconds},
     gas_price_estimation::GasEstimatorType,
+    http_client,
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use solver::{
@@ -14,6 +15,9 @@ use tracing::level_filters::LevelFilter;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
+    #[clap(flatten)]
+    pub http_client: http_client::Arguments,
+
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
 
@@ -34,14 +38,6 @@ pub struct Arguments {
     /// The Ethereum node URL to connect to.
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
-
-    /// Timeout in seconds for all http requests.
-    #[clap(
-        long,
-        default_value = "10",
-        parse(try_from_str = duration_from_seconds),
-    )]
-    pub http_timeout: Duration,
 
     /// If solvers should use internal buffers to improve solution quality.
     #[clap(long, env)]
@@ -126,9 +122,13 @@ pub struct Arguments {
     #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The URL for tenderly transaction simulation.
+    /// The Tenderly user associated with the API key.
     #[clap(long, env)]
-    pub tenderly_url: Option<Url>,
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
 
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
@@ -260,12 +260,12 @@ pub struct Arguments {
 
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.http_client)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "solvers: {:?}", self.solvers)?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "use_internal_buffers: {}", self.use_internal_buffers)?;
         display_list(
             f,
@@ -305,7 +305,8 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             self.access_list_estimators
         )?;
-        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_option(f, "tenderly_user", &self.tenderly_project)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
         writeln!(f, "target_confirm_time: {:?}", self.target_confirm_time)?;

@@ -31,14 +31,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "http://localhost:8545")]
     pub node_url: Url,
 
-    /// Timeout in seconds for all http requests.
-    #[clap(
-        long,
-        default_value = "10",
-        parse(try_from_str = duration_from_seconds),
-    )]
-    pub http_timeout: Duration,
-
     /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
     /// fails. Individual estimators support different networks.
     /// `EthGasStation`: supports mainnet.
@@ -215,7 +207,6 @@ impl Display for Arguments {
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;
         writeln!(f, "node_url: {}", self.node_url)?;
-        writeln!(f, "http_timeout: {:?}", self.http_timeout)?;
         writeln!(f, "gas_estimators: {:?}", self.gas_estimators)?;
         display_secret_option(f, "blocknative_api_key", &self.blocknative_api_key)?;
         writeln!(f, "base_tokens: {:?}", self.base_tokens)?;

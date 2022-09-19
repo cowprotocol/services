@@ -7,6 +7,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running autopilot with validated arguments:\n{}", args);
     global_metrics::setup_metrics_registry(Some("gp_v2_autopilot".into()), None);
     autopilot::main(args).await;
