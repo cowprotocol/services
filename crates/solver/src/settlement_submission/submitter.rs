@@ -40,12 +40,11 @@ use web3::types::{AccessList, TransactionReceipt, U64};
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
 
+/// Error messages which suggest that the node is already aware of the submitted tx thus prompting
+/// us to increase the replacement gas price.
 const ALREADY_KNOWN: &[&str] = &[
     "Transaction gas price supplied is too low", //openethereum
-    "Transaction nonce is too low",              //openethereum
     "already known",                             //infura, erigon, eden
-    "nonce too low",                             //infura, erigon
-    "OldNonce",                                  //erigon
     "INTERNAL_ERROR: existing tx with same hash", //erigon
     "replacement transaction underpriced",       //eden
 ];
@@ -378,10 +377,10 @@ impl<'a> Submitter<'a> {
 
         let mut access_list: Option<AccessList> = None;
 
-        loop {
-            // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-            let pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
+        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
+        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
+        loop {
             tracing::debug!("entered loop with submitter");
 
             let submission_status = self
@@ -476,11 +475,18 @@ impl<'a> Submitter<'a> {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
+                    pending_gas_price = Some(gas_price);
                     track_submission_success(label, true);
                 }
                 Err(err) => {
                     let err = err.to_string();
                     if ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                        // This case means that the node is already aware of the tx although we
+                        // didn't get any confirmation in the form of a tx handle. If that happens
+                        // we simply set the current gas price as the pending gas price which means
+                        // we will only try submitting again when the gas price increased by
+                        // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
+                        pending_gas_price = Some(gas_price);
                         tracing::debug!(?err, "transaction already known");
                     } else {
                         tracing::warn!(?err, "submission failed");
