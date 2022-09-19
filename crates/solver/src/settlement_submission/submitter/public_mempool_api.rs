@@ -9,17 +9,6 @@ use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
 use shared::{Web3, Web3Transport};
 
-const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
-    "Transaction gas price supplied is too low", //openethereum
-    "Transaction nonce is too low",              //openethereum
-    "already known",                             //infura
-    "nonce too low",                             //infura
-    "OldNonce",                                  //erigon
-    "INTERNAL_ERROR: nonce too low",             //erigon
-    "INTERNAL_ERROR: existing tx with same hash", //erigon
-    "ALREADY_EXISTS: already known",             //erigon
-];
-
 #[derive(Clone)]
 pub struct PublicMempoolApi {
     nodes: Vec<Web3>,
@@ -77,23 +66,6 @@ impl TransactionSubmitting for PublicMempoolApi {
                     });
                 }
                 Err(err) => {
-                    if matches!(
-                        &err,
-                        web3::Error::Rpc(rpc_error)
-                            if ALREADY_KNOWN_TRANSACTION
-                                .iter()
-                                .any(|message| rpc_error.message.starts_with(message))
-                    ) {
-                        tracing::debug!(%label, ?transaction_request, "transaction already known");
-                        // error is not real error if transaction pool responded that received transaction is
-                        // already in the pool, meaning that the transaction was created successfully and we can
-                        // continue searching our futures for a successful node RPC response without incrementing
-                        // any error metrics...
-                    } else {
-                        tracing::warn!(?err, %label, "single submission node tx failed");
-                        super::track_submission_success(&label, false);
-                    }
-
                     if rest.is_empty() {
                         return Err(
                             anyhow::Error::from(err).context("all submission nodes tx failed")

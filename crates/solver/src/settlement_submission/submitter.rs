@@ -34,10 +34,21 @@ use std::{
     fmt,
     time::{Duration, Instant},
 };
+use strum::IntoStaticStr;
 use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
+
+const ALREADY_KNOWN: &[&str] = &[
+    "Transaction gas price supplied is too low", //openethereum
+    "Transaction nonce is too low",              //openethereum
+    "already known",                             //infura, erigon, eden
+    "nonce too low",                             //infura, erigon
+    "OldNonce",                                  //erigon
+    "INTERNAL_ERROR: existing tx with same hash", //erigon
+    "replacement transaction underpriced",       //eden
+];
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -60,7 +71,7 @@ pub enum SubmissionLoopStatus {
     Disabled(DisabledReason),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, IntoStaticStr)]
 pub enum Strategy {
     Eden,
     Flashbots,
@@ -460,13 +471,21 @@ impl<'a> Submitter<'a> {
 
             // execute transaction
 
+            let label: &'static str = self.submit_api.name().into();
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
+                    track_submission_success(label, true);
                 }
                 Err(err) => {
-                    tracing::warn!(?err, "submission failed");
+                    let err = err.to_string();
+                    if ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                        tracing::debug!(?err, "transaction already known");
+                    } else {
+                        tracing::warn!(?err, "submission failed");
+                        track_submission_success(label, false);
+                    }
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
