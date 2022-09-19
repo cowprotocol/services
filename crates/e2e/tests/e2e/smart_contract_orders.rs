@@ -22,7 +22,7 @@ use solver::{
     metrics::NoopMetrics,
     settlement_access_list::{create_priority_estimator, AccessListEstimatorType},
     settlement_submission::{
-        submitter::{custom_nodes_api::CustomNodesApi, Strategy},
+        submitter::{public_mempool_api::PublicMempoolApi, Strategy},
         GlobalTxPool, SolutionSubmitter, StrategyArgs,
     },
 };
@@ -263,7 +263,7 @@ async fn smart_contract_orders(web3: Web3) {
             retry_interval: Duration::from_secs(5),
             transaction_strategies: vec![
                 solver::settlement_submission::TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(vec![web3.clone()], false)),
+                    submit_api: Box::new(PublicMempoolApi::new(vec![web3.clone()], false)),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
                     sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),

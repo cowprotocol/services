@@ -35,7 +35,7 @@ use solver::{
     orderbook::OrderBookApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -357,7 +357,7 @@ async fn main() {
                     "missing transaction submission nodes"
                 );
                 transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
+                    submit_api: Box::new(PublicMempoolApi::new(
                         submission_nodes.clone(),
                         args.disable_high_risk_public_mempool_transactions,
                     )),

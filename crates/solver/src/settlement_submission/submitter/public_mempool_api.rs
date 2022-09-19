@@ -21,12 +21,12 @@ const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
 ];
 
 #[derive(Clone)]
-pub struct CustomNodesApi {
+pub struct PublicMempoolApi {
     nodes: Vec<Web3>,
     high_risk_disabled: bool,
 }
 
-impl CustomNodesApi {
+impl PublicMempoolApi {
     pub fn new(nodes: Vec<Web3>, high_risk_disabled: bool) -> Self {
         Self {
             nodes,
@@ -36,7 +36,7 @@ impl CustomNodesApi {
 }
 
 #[async_trait::async_trait]
-impl TransactionSubmitting for CustomNodesApi {
+impl TransactionSubmitting for PublicMempoolApi {
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
@@ -90,12 +90,14 @@ impl TransactionSubmitting for CustomNodesApi {
                         // continue searching our futures for a successful node RPC response without incrementing
                         // any error metrics...
                     } else {
-                        tracing::warn!(?err, %label, "single custom node tx failed");
+                        tracing::warn!(?err, %label, "single submission node tx failed");
                         super::track_submission_success(&label, false);
                     }
 
                     if rest.is_empty() {
-                        return Err(anyhow::Error::from(err).context("all custom nodes tx failed"));
+                        return Err(
+                            anyhow::Error::from(err).context("all submission nodes tx failed")
+                        );
                     }
                     futures = rest;
                 }
@@ -138,13 +140,13 @@ mod tests {
             settlement
         };
 
-        let submitter = CustomNodesApi::new(vec![], false);
+        let submitter = PublicMempoolApi::new(vec![], false);
         assert_eq!(
             submitter.submission_status(&high_risk_settlement, ""),
             SubmissionLoopStatus::Enabled(AdditionalTip::Off),
         );
 
-        let submitter = CustomNodesApi::new(vec![], true);
+        let submitter = PublicMempoolApi::new(vec![], true);
         assert_eq!(
             submitter.submission_status(&high_risk_settlement, ""),
             SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable),
