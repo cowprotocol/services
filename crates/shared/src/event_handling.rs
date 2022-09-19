@@ -42,6 +42,12 @@ pub trait EventStoring<T>: Send + Sync {
         range: RangeInclusive<u64>,
     ) -> Result<()>;
 
+    /// Returns ok, on successful execution, otherwise an appropriate error
+    ///
+    /// # Arguments
+    /// * `events` the contract events to be appended by the implementer
+    async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()>;
+
     async fn last_event_block(&self) -> Result<u64>;
 }
 
@@ -83,7 +89,7 @@ where
         self.last_handled_blocks.last().cloned()
     }
 
-    async fn event_block_range(&self) -> Result<Vec<BlockNumberHash>> {
+    async fn event_block_range(&self) -> Result<(Vec<BlockNumberHash>, bool)> {
         let current_block = self.block_retriever.current_block().await?;
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             // since we don't want `Store` to be responsible for hashes, here we just get
@@ -109,14 +115,16 @@ where
 
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
-            return Ok(vec![(current_block_number, current_block_hash)]);
+            let is_reorg = false;
+            return Ok((vec![(current_block_number, current_block_hash)], is_reorg));
         }
 
         // handle special case when no new block is added
         if (current_block_number, current_block_hash)
             == (last_handled_block_number, last_handled_block_hash)
         {
-            return Ok(vec![]);
+            let is_reorg = false;
+            return Ok((vec![], is_reorg));
         }
 
         // get all canonical blocks starting from a safe reorg block (last_handled_block_number-25)
@@ -135,12 +143,13 @@ where
             current_blocks.last().unwrap()
         );
 
-        Ok(detect_reorg_path(&handled_blocks, &current_blocks).to_vec())
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
+        Ok((replacement_blocks.to_vec(), is_reorg))
     }
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let replacement_blocks = self.event_block_range().await?;
+        let (replacement_blocks, is_reorg) = self.event_block_range().await?;
         tracing::debug!(
             "replacement_blocks before filtering: {:?}",
             replacement_blocks
@@ -160,11 +169,15 @@ where
             replacement_blocks.first().unwrap().0,
             replacement_blocks.last().unwrap().0,
         );
-        self.store.replace_events(events, range.clone()).await?;
+        if is_reorg {
+            self.store.replace_events(events, range.clone()).await?;
+            // delete forked blocks
+            self.last_handled_blocks
+                .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
+        } else {
+            self.store.append_events(events).await?;
+        }
 
-        // delete forked blocks
-        self.last_handled_blocks
-            .retain(|block| block.0 < replacement_blocks.first().unwrap().0);
         // append new canonical blocks
         self.last_handled_blocks
             .extend(replacement_blocks.into_iter());
@@ -202,7 +215,7 @@ where
 fn detect_reorg_path<'a>(
     handled_blocks: &[BlockNumberHash],
     current_blocks: &'a [BlockNumberHash],
-) -> &'a [BlockNumberHash] {
+) -> (&'a [BlockNumberHash], bool) {
     // in most cases, current_blocks = handled_blocks + 1 newest block
     // therefore, is it more efficient to put the handled_blocks in outer loop,
     // so everything finishes in only two iterations.
@@ -210,13 +223,15 @@ fn detect_reorg_path<'a>(
         for (i, current_block) in current_blocks.iter().enumerate().rev() {
             if current_block == handled_block {
                 // found the same block in both lists, now we know the common ancestor, don't include the ancestor
-                return &current_blocks[i + 1..];
+                let is_reorg = handled_block != handled_blocks.last().unwrap();
+                return (&current_blocks[i + 1..], is_reorg);
             }
         }
     }
 
     // reorg deeper than the EventHandler history (`handled_blocks`), return full list
-    current_blocks
+    let is_reorg = !handled_blocks.is_empty();
+    (current_blocks, is_reorg)
 }
 
 #[async_trait::async_trait]
@@ -298,16 +313,18 @@ mod tests {
     fn detect_reorg_path_test_both_empty() {
         let handled_blocks = vec![];
         let current_blocks = vec![];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert!(replacement_blocks.is_empty());
+        assert!(!is_reorg);
     }
 
     #[test]
     fn detect_reorg_path_test_handled_blocks_empty() {
         let handled_blocks = vec![];
         let current_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert_eq!(replacement_blocks, current_blocks);
+        assert!(!is_reorg);
     }
 
     #[test]
@@ -315,8 +332,9 @@ mod tests {
         // if the list are same, we return the common ancestor
         let handled_blocks = vec![(1, H256::from_low_u64_be(1))];
         let current_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert!(replacement_blocks.is_empty());
+        assert!(!is_reorg);
     }
 
     #[test]
@@ -326,9 +344,11 @@ mod tests {
             (1, H256::from_low_u64_be(1)),
             (2, H256::from_low_u64_be(2)),
             (3, H256::from_low_u64_be(3)),
+            (4, H256::from_low_u64_be(4)),
         ];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert_eq!(replacement_blocks, current_blocks[2..].to_vec());
+        assert!(!is_reorg);
     }
 
     #[test]
@@ -343,8 +363,9 @@ mod tests {
             (2, H256::from_low_u64_be(2)),
             (3, H256::from_low_u64_be(4)),
         ];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert_eq!(replacement_blocks, current_blocks[2..].to_vec());
+        assert!(is_reorg);
     }
 
     #[test]
@@ -355,7 +376,8 @@ mod tests {
             (2, H256::from_low_u64_be(21)),
             (3, H256::from_low_u64_be(31)),
         ];
-        let replacement_blocks = detect_reorg_path(&handled_blocks, &current_blocks);
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert_eq!(replacement_blocks, current_blocks);
+        assert!(is_reorg);
     }
 }

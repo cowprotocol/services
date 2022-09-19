@@ -54,6 +54,21 @@ impl EventStoring<ContractEvent> for Postgres {
         block_number.try_into().context("block number is negative")
     }
 
+    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["append_events"])
+            .start_timer();
+
+        let events = contract_to_db_events(events)?;
+        let mut transaction = self.0.begin().await?;
+        database::events::append(&mut transaction, &events)
+            .await
+            .context("append_events")?;
+        transaction.commit().await.context("commit")?;
+        Ok(())
+    }
+
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,

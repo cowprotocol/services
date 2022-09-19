@@ -174,23 +174,6 @@ where
             .max()
             .unwrap_or_default()
     }
-
-    async fn append_events(&mut self, events: Vec<Event<BasePoolFactoryEvent>>) -> Result<()> {
-        tracing::debug!("inserting {} events", events.len());
-
-        for event in events {
-            let block_created = event
-                .meta
-                .ok_or_else(|| anyhow!("event missing metadata"))?
-                .block_number;
-            let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
-
-            self.index_pool_creation(pool_created, block_created)
-                .await?;
-        }
-
-        Ok(())
-    }
 }
 
 #[async_trait::async_trait]
@@ -207,6 +190,23 @@ where
 
         self.remove_pools_newer_than_block(*range.start());
         self.append_events(events).await
+    }
+
+    async fn append_events(&mut self, events: Vec<Event<BasePoolFactoryEvent>>) -> Result<()> {
+        tracing::debug!("inserting {} events", events.len());
+
+        for event in events {
+            let block_created = event
+                .meta
+                .ok_or_else(|| anyhow!("event missing metadata"))?
+                .block_number;
+            let BasePoolFactoryEvent::PoolCreated(pool_created) = event.data;
+
+            self.index_pool_creation(pool_created, block_created)
+                .await?;
+        }
+
+        Ok(())
     }
 
     async fn last_event_block(&self) -> Result<u64> {
