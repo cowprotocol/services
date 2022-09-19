@@ -8,6 +8,7 @@ use database::{
     orders::Order, PgTransaction,
 };
 use ethcontract::{Event as EthContractEvent, H160};
+use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
     order::{
@@ -103,52 +104,9 @@ pub trait OnchainOrderParsing<EventData: Send + Sync + Clone, EventDataForDB: Se
 }
 
 #[async_trait::async_trait]
-impl<T: Sync + Send + Clone, W: Sync + Send> EventStoring<ContractEvent>
+impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     for OnchainOrderParser<T, W>
 {
-    async fn last_event_block(&self) -> Result<u64> {
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["last_event_block"])
-            .start_timer();
-
-        let mut con = self.db.0.acquire().await?;
-        let block_number = database::onchain_broadcasted_orders::last_block(&mut con)
-            .await
-            .context("block_number_of_most_recent_event failed")?;
-        block_number.try_into().context("block number is negative")
-    }
-
-    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
-        let (custom_order_data, broadcasted_order_data, orders) =
-            self.extract_custom_and_general_order_data(events).await?;
-
-        let _timer = Metrics::get()
-            .database_queries
-            .with_label_values(&["append_onchain_order_events"])
-            .start_timer();
-        let mut transaction = self.db.0.begin().await?;
-
-        database::onchain_broadcasted_orders::append(
-            &mut transaction,
-            broadcasted_order_data.as_slice(),
-        )
-        .await
-        .context("append_onchain_orders failed")?;
-
-        self.custom_onchain_data_parser
-            .append_custom_order_info_to_db(&mut transaction, custom_order_data)
-            .await
-            .context("append_custom_onchain_orders failed")?;
-
-        database::orders::insert_orders(&mut transaction, orders.as_slice())
-            .await
-            .context("insert_orders failed")?;
-
-        transaction.commit().await.context("commit")?;
-        Ok(())
-    }
-
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
@@ -189,6 +147,49 @@ impl<T: Sync + Send + Clone, W: Sync + Send> EventStoring<ContractEvent>
         transaction.commit().await.context("commit")?;
         Ok(())
     }
+
+    async fn append_events(&mut self, events: Vec<EthContractEvent<ContractEvent>>) -> Result<()> {
+        let (custom_order_data, broadcasted_order_data, orders) =
+            self.extract_custom_and_general_order_data(events).await?;
+
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["append_onchain_order_events"])
+            .start_timer();
+        let mut transaction = self.db.0.begin().await?;
+
+        database::onchain_broadcasted_orders::append(
+            &mut transaction,
+            broadcasted_order_data.as_slice(),
+        )
+        .await
+        .context("append_onchain_orders failed")?;
+
+        self.custom_onchain_data_parser
+            .append_custom_order_info_to_db(&mut transaction, custom_order_data)
+            .await
+            .context("append_custom_onchain_orders failed")?;
+
+        database::orders::insert_orders(&mut transaction, orders.as_slice())
+            .await
+            .context("insert_orders failed")?;
+
+        transaction.commit().await.context("commit")?;
+        Ok(())
+    }
+
+    async fn last_event_block(&self) -> Result<u64> {
+        let _timer = Metrics::get()
+            .database_queries
+            .with_label_values(&["last_event_block"])
+            .start_timer();
+
+        let mut con = self.db.0.acquire().await?;
+        let block_number = database::onchain_broadcasted_orders::last_block(&mut con)
+            .await
+            .context("block_number_of_most_recent_event failed")?;
+        block_number.try_into().context("block number is negative")
+    }
 }
 
 impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
@@ -223,7 +224,7 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
         }
         let onchain_order_data = parse_general_onchain_order_placement_data(
             &*self.quoter,
-            &events_and_quotes,
+            events_and_quotes,
             self.domain_separator,
             self.settlement_contract,
         )
@@ -250,33 +251,33 @@ impl<T: Send + Sync + Clone, W: Send + Sync> OnchainOrderParser<T, W> {
 
 async fn parse_general_onchain_order_placement_data(
     quoter: &dyn OrderQuoting,
-    contract_events_and_quotes_zipped: &[(EthContractEvent<ContractEvent>, i64)],
+    contract_events_and_quotes_zipped: Vec<(EthContractEvent<ContractEvent>, i64)>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
 ) -> Vec<(EventIndex, OnchainOrderPlacement, Order)> {
-    let futures = contract_events_and_quotes_zipped.iter().map(
+    let futures = contract_events_and_quotes_zipped.into_iter().map(
         |(EthContractEvent { data, meta }, quote_id)| async move {
-            let meta = match meta {
-                Some(meta) => meta,
-                None => return Err(anyhow!("event without metadata")),
-            };
-            let ContractEvent::OrderPlacement(event) = data;
-            let (order_data, owner, signing_scheme, order_uid) =
-                extract_order_data_from_onchain_order_placement_event(event, domain_separator)?;
-            let quote = get_quote(quoter, order_data, signing_scheme, event, quote_id).await?;
-            let order_data = convert_onchain_order_placement(
-                event,
-                quote,
-                order_data,
-                signing_scheme,
-                order_uid,
-                owner,
-                settlement_contract,
-            )?;
-            Ok((meta_to_event_index(meta), order_data))
-        },
-    );
-    let onchain_order_placement_data = futures::future::join_all(futures).await;
+        let meta = match meta {
+            Some(meta) => meta,
+            None => return Err(anyhow!("event without metadata")),
+        };
+        let ContractEvent::OrderPlacement(event) = data;
+        let (order_data, owner, signing_scheme, order_uid) =
+            extract_order_data_from_onchain_order_placement_event(&event, domain_separator)?;
+        let quote = get_quote(quoter, order_data, signing_scheme, &event, &quote_id).await?;
+        let order_data = convert_onchain_order_placement(
+            &event,
+            quote,
+            order_data,
+            signing_scheme,
+            order_uid,
+            owner,
+            settlement_contract,
+        )?;
+        Ok((meta_to_event_index(&meta), order_data))
+    });
+    let onchain_order_placement_data: Vec<Result<(EventIndex, (OnchainOrderPlacement, Order))>> =
+        stream::iter(futures).buffer_unordered(10).collect().await;
     onchain_order_placement_data
         .into_iter()
         .filter_map(|data| match data {
@@ -286,7 +287,7 @@ async fn parse_general_onchain_order_placement_data(
             }
             Ok((event, order_data)) => Some((event, order_data.0, order_data.1)),
         })
-        .collect::<Vec<_>>()
+        .collect()
 }
 
 async fn get_quote(
@@ -384,9 +385,8 @@ fn convert_onchain_order_placement(
     Ok((onchain_order_placement_event, order))
 }
 
-fn convert_signature_data_to_owner(data: Vec<u8>) -> Result<H160> {
-    let owner = H160::from_slice(&data[..20]);
-    Ok(owner)
+fn convert_signature_data_to_owner(data: Vec<u8>) -> H160 {
+    H160::from_slice(&data[..20])
 }
 
 fn extract_order_data_from_onchain_order_placement_event(
@@ -396,7 +396,7 @@ fn extract_order_data_from_onchain_order_placement_event(
     let (signing_scheme, owner) = match order_placement.signature.0 {
         0 => (
             SigningScheme::Eip1271,
-            convert_signature_data_to_owner(order_placement.signature.1 .0.clone())?,
+            convert_signature_data_to_owner(order_placement.signature.1 .0.clone()),
         ),
         1 => (SigningScheme::PreSign, order_placement.sender),
         // Signatures can only be 0 and 1 by definition in the smart contrac:
@@ -433,7 +433,7 @@ mod test {
     use super::*;
     use contracts::cowswap_onchain_orders::event_data::OrderPlacement as ContractOrderPlacement;
     use database::{byte_array::ByteArray, onchain_broadcasted_orders::OnchainOrderPlacement};
-    use ethcontract::{Bytes, EventMetadata, H160, H256, U256};
+    use ethcontract::{Bytes, EventMetadata, H160, U256};
     use mockall::predicate::{always, eq};
     use model::{
         app_id::AppId,
@@ -724,8 +724,7 @@ mod test {
             vec![
                 (event_data_1.clone(), quote_id_1),
                 (event_data_2.clone(), quote_id_2),
-            ]
-            .as_slice(),
+            ],
             domain_separator,
             settlement_contract,
         )
