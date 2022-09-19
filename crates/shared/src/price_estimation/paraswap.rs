@@ -50,8 +50,8 @@ impl ParaswapPriceEstimator {
         let price_query = PriceQuery {
             src_token: query.sell_token,
             dest_token: query.buy_token,
-            src_decimals: sell_decimals as usize,
-            dest_decimals: buy_decimals as usize,
+            src_decimals: sell_decimals,
+            dest_decimals: buy_decimals,
             amount: query.in_amount,
             side: match query.kind {
                 OrderKind::Buy => Side::Buy,
