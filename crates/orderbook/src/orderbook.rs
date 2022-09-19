@@ -278,9 +278,10 @@ impl Orderbook {
             .number
             .ok_or_else(|| anyhow!("no block number"))?
             .as_u64();
-        let age_in_blocks = current_block.saturating_sub(auction.auction.block);
+        let auction_block = auction.auction.block;
+        let age_in_blocks = current_block.saturating_sub(auction_block);
         if age_in_blocks > self.solvable_orders_max_update_age_blocks {
-            tracing::warn!("current auction is out of date");
+            tracing::warn!(%current_block, %auction_block, "current auction is out of date");
             return Ok(None);
         }
         Ok(Some(auction))

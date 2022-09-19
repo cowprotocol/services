@@ -109,6 +109,7 @@ mod tests {
         let gas = Arc::new(FixedGasPriceEstimator(1e7));
         let estimator = BalancerSor::new(api, rate_limiter, gas);
         let query = Query {
+            from: None,
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::DAI,
             in_amount: U256::from_f64_lossy(1e18),

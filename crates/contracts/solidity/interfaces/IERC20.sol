@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.16;
+pragma solidity ^0.8.17;
 
 /// @title ERC-20 token interface
 interface IERC20 {
@@ -9,6 +9,11 @@ interface IERC20 {
     function approve(address, uint256) external returns (bool);
     function transfer(address, uint256) external returns (bool);
     function transferFrom(address, address, uint256) external returns (bool);
+}
+
+/// @title Phony token interface
+interface IPhonyERC20 is IERC20 {
+    function mintPhonyTokens(address, uint256) external returns (bool);
 }
 
 /// @title Native token interface

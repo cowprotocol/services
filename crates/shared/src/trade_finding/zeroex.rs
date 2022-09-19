@@ -46,7 +46,7 @@ impl ZeroExTradeFinder {
                 OrderKind::Sell => swap.price.buy_amount,
             },
             gas_estimate: gas::SETTLEMENT_OVERHEAD + swap.price.estimated_gas,
-            approval_spender: Some(swap.price.allowance_target),
+            approval: Some((query.sell_token, swap.price.allowance_target)),
             interaction: Interaction {
                 target: swap.to,
                 value: swap.value,
@@ -116,6 +116,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -127,8 +128,8 @@ mod tests {
         assert_eq!(trade.out_amount, 1110165823572443613u64.into());
         assert!(trade.gas_estimate > 111000);
         assert_eq!(
-            trade.approval_spender,
-            Some(addr!("def1c0ded9bec7f1a1670819833240f027b25eff")),
+            trade.approval,
+            Some((weth, addr!("def1c0ded9bec7f1a1670819833240f027b25eff"))),
         );
         assert_eq!(
             trade.interaction,
@@ -172,6 +173,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 100000000000000000u64.into(),
@@ -196,6 +198,7 @@ mod tests {
 
         let trade = trader
             .get_trade(&Query {
+                from: None,
                 sell_token: weth,
                 buy_token: gno,
                 in_amount: 10u128.pow(18).into(),
