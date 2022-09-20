@@ -39,7 +39,7 @@ use solver::{
     settlement_rater::SettlementRater,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -207,7 +207,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             .unwrap();
         assert_eq!(
             node_network_id, common.network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -218,17 +218,6 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
     let mut transaction_strategies = vec![];
     for strategy in &args.transaction_strategy {
         match strategy {
-            TransactionStrategyArg::PublicMempool => {
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        vec![web3.clone()],
-                        args.disable_high_risk_public_mempool_transactions,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
-                }))
-            }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
@@ -249,19 +238,19 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     }))
                 }
             }
-            TransactionStrategyArg::CustomNodes => {
+            TransactionStrategyArg::PublicMempool => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(
                         submission_nodes.clone(),
                         args.disable_high_risk_public_mempool_transactions,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {

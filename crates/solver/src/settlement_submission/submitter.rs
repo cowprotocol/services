@@ -14,9 +14,9 @@
 // find the one that got mined (if any).
 
 mod common;
-pub mod custom_nodes_api;
 pub mod eden_api;
 pub mod flashbots_api;
+pub mod public_mempool_api;
 
 use super::{SubTxPoolRef, SubmissionError, ESTIMATE_GAS_LIMIT_FACTOR};
 use crate::{
@@ -64,7 +64,7 @@ pub enum SubmissionLoopStatus {
 pub enum Strategy {
     Eden,
     Flashbots,
-    CustomNodes,
+    PublicMempool,
 }
 
 impl fmt::Display for Strategy {
