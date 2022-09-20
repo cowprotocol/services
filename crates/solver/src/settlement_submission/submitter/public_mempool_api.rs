@@ -9,24 +9,13 @@ use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
 use shared::{Web3, Web3Transport};
 
-const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
-    "Transaction gas price supplied is too low", //openethereum
-    "Transaction nonce is too low",              //openethereum
-    "already known",                             //infura
-    "nonce too low",                             //infura
-    "OldNonce",                                  //erigon
-    "INTERNAL_ERROR: nonce too low",             //erigon
-    "INTERNAL_ERROR: existing tx with same hash", //erigon
-    "ALREADY_EXISTS: already known",             //erigon
-];
-
 #[derive(Clone)]
-pub struct CustomNodesApi {
+pub struct PublicMempoolApi {
     nodes: Vec<Web3>,
     high_risk_disabled: bool,
 }
 
-impl CustomNodesApi {
+impl PublicMempoolApi {
     pub fn new(nodes: Vec<Web3>, high_risk_disabled: bool) -> Self {
         Self {
             nodes,
@@ -36,19 +25,19 @@ impl CustomNodesApi {
 }
 
 #[async_trait::async_trait]
-impl TransactionSubmitting for CustomNodesApi {
+impl TransactionSubmitting for PublicMempoolApi {
     async fn submit_transaction(
         &self,
         tx: TransactionBuilder<Web3Transport>,
     ) -> Result<TransactionHandle> {
-        tracing::debug!("Custom nodes submit transaction entered");
+        tracing::debug!("public mempool submit transaction entered");
         let transaction_request = tx.build().now_or_never().unwrap().unwrap();
         let mut futures = self
             .nodes
             .iter()
             .enumerate()
             .map(|(i, node)| {
-                let label = format!("custom_nodes_{i}");
+                let label = format!("public_mempool_{i}");
                 let transaction_request = transaction_request.clone();
                 async move {
                     tracing::debug!(%label, "sending transaction...");
@@ -65,6 +54,7 @@ impl TransactionSubmitting for CustomNodesApi {
             })
             .collect::<Vec<_>>();
 
+        let mut errors = vec![];
         loop {
             let ((label, result), _, rest) = futures::future::select_all(futures).await;
             match result {
@@ -77,25 +67,23 @@ impl TransactionSubmitting for CustomNodesApi {
                     });
                 }
                 Err(err) => {
-                    if matches!(
-                        &err,
-                        web3::Error::Rpc(rpc_error)
-                            if ALREADY_KNOWN_TRANSACTION
-                                .iter()
-                                .any(|message| rpc_error.message.starts_with(message))
-                    ) {
-                        tracing::debug!(%label, ?transaction_request, "transaction already known");
-                        // error is not real error if transaction pool responded that received transaction is
-                        // already in the pool, meaning that the transaction was created successfully and we can
-                        // continue searching our futures for a successful node RPC response without incrementing
-                        // any error metrics...
-                    } else {
-                        tracing::warn!(?err, %label, "single custom node tx failed");
-                        super::track_submission_success(&label, false);
-                    }
+                    let err = err.to_string();
+
+                    // Collect all errors to allow caller to react to all of them.
+                    errors.push(format!("{label} failed to submit: {err}"));
+
+                    // Due to the highly decentralized nature of tx submission an error suggesting
+                    // that a tx was already mined or is underpriced is benign and should not be
+                    // reported to avoid triggering alerts unnecessarily.
+                    let is_benign_error = super::TX_ALREADY_MINED
+                        .iter()
+                        .chain(super::TX_ALREADY_KNOWN)
+                        .any(|msg| err.contains(msg));
+                    super::track_submission_success(&label, is_benign_error);
 
                     if rest.is_empty() {
-                        return Err(anyhow::Error::from(err).context("all custom nodes tx failed"));
+                        return Err(anyhow::anyhow!(errors.join("\n"))
+                            .context("all submission nodes failed"));
                     }
                     futures = rest;
                 }
@@ -120,7 +108,7 @@ impl TransactionSubmitting for CustomNodesApi {
     }
 
     fn name(&self) -> Strategy {
-        Strategy::CustomNodes
+        Strategy::PublicMempool
     }
 }
 
@@ -138,13 +126,13 @@ mod tests {
             settlement
         };
 
-        let submitter = CustomNodesApi::new(vec![], false);
+        let submitter = PublicMempoolApi::new(vec![], false);
         assert_eq!(
             submitter.submission_status(&high_risk_settlement, ""),
             SubmissionLoopStatus::Enabled(AdditionalTip::Off),
         );
 
-        let submitter = CustomNodesApi::new(vec![], true);
+        let submitter = PublicMempoolApi::new(vec![], true);
         assert_eq!(
             submitter.submission_status(&high_risk_settlement, ""),
             SubmissionLoopStatus::Disabled(DisabledReason::MevExtractable),
