@@ -224,7 +224,6 @@ impl SolutionSubmitter {
                 strategy_args.additional_tip_percentage_of_max_fee,
             ),
             max_additional_tip: Some(strategy_args.max_additional_tip),
-            pending_gas_price: None,
         };
         let submitter = Submitter::new(
             &self.contract,

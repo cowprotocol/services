@@ -120,20 +120,12 @@ pub struct SubmitterGasPriceEstimator<'a> {
     pub max_additional_tip: Option<f64>,
     /// Maximum max_fee_per_gas to pay for a transaction
     pub gas_price_cap: f64,
-    /// Gas price from pending transaction from previous submission loop
-    pub pending_gas_price: Option<GasPrice1559>,
 }
 
 impl SubmitterGasPriceEstimator<'_> {
     pub fn with_additional_tip(&self, max_additional_tip: Option<f64>) -> Self {
         Self {
             max_additional_tip,
-            ..*self
-        }
-    }
-    pub fn with_pending_gas_price(&self, pending_gas_price: Option<GasPrice1559>) -> Self {
-        Self {
-            pending_gas_price,
             ..*self
         }
     }
@@ -146,7 +138,7 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
         gas_limit: f64,
         time_limit: Duration,
     ) -> Result<GasPrice1559> {
-        let gas_price = match self.inner.estimate_with_limits(gas_limit, time_limit).await {
+        match self.inner.estimate_with_limits(gas_limit, time_limit).await {
             Ok(mut gas_price) if gas_price.max_fee_per_gas <= self.gas_price_cap => {
                 // boost miner tip to increase our chances of being included in a block
                 gas_price.max_priority_fee_per_gas +=
@@ -164,24 +156,18 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
                 self.gas_price_cap
             )),
             Err(err) => Err(err),
-        };
+        }
+    }
+}
 
-        // If pending gas price exist, return max(gas_price, pending_gas_price*1.125)
-        gas_price.map(|gas_price| match self.pending_gas_price {
-            Some(pending_gas_price) => {
-                tracing::debug!("found pending transaction: {:?}", pending_gas_price);
-                let pending_gas_price = pending_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                if gas_price.max_fee_per_gas >= pending_gas_price.max_fee_per_gas
-                    && gas_price.max_priority_fee_per_gas
-                        >= pending_gas_price.max_priority_fee_per_gas
-                {
-                    gas_price
-                } else {
-                    pending_gas_price
-                }
-            }
-            None => gas_price,
-        })
+/// Returns the bigger of the 2 passed gas prices.
+fn max_gas_price(a: GasPrice1559, b: GasPrice1559) -> GasPrice1559 {
+    if a.max_fee_per_gas >= b.max_fee_per_gas
+        && a.max_priority_fee_per_gas >= b.max_priority_fee_per_gas
+    {
+        a
+    } else {
+        b
     }
 }
 
@@ -379,12 +365,12 @@ impl<'a> Submitter<'a> {
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
         );
 
-        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
-
         let mut access_list: Option<AccessList> = None;
 
         loop {
+            // Try to find submitted transaction from previous submission loop (with the same address and nonce)
+            let pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
+
             tracing::debug!("entered loop with submitter");
 
             let submission_status = self
@@ -395,15 +381,13 @@ impl<'a> Submitter<'a> {
                     tracing::debug!("strategy temporarily disabled, reason: {:?}", reason);
                     return SubmissionError::from(anyhow!("strategy temporarily disabled"));
                 }
-                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => self
-                    .gas_price_estimator
-                    .with_additional_tip(None)
-                    .with_pending_gas_price(pending_gas_price),
-                SubmissionLoopStatus::Enabled(AdditionalTip::On) => self
-                    .gas_price_estimator
-                    .with_pending_gas_price(pending_gas_price),
+                SubmissionLoopStatus::Enabled(AdditionalTip::Off) => {
+                    self.gas_price_estimator.with_additional_tip(None)
+                }
+                SubmissionLoopStatus::Enabled(AdditionalTip::On) => {
+                    self.gas_price_estimator.clone()
+                }
             };
-            pending_gas_price = None;
             // Account for some buffer in the gas limit in case racing state changes result in slightly more heavy computation at execution time.
             let gas_limit = params.gas_estimate.to_f64_lossy() * ESTIMATE_GAS_LIMIT_FACTOR;
             let time_limit = target_confirm_time.saturating_duration_since(Instant::now());
@@ -441,8 +425,12 @@ impl<'a> Submitter<'a> {
             // simulate transaction
 
             if let Err(err) = method.clone().view().call().await {
-                if let Some((_, previous_gas_price)) = transactions.last() {
-                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                if let Some(previous_gas_price) = pending_gas_price {
+                    let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                    // When we want to cancel a tx we want to do it ASAP so we have to at least
+                    // match the current gas price as well as the minimum gas price required for
+                    // replacing the existing transaction.
+                    let gas_price = max_gas_price(replacement_price, gas_price);
                     match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
@@ -452,13 +440,10 @@ impl<'a> Submitter<'a> {
             }
 
             // if gas price has not increased enough, skip submitting the transaction.
-            if let Some(previous_gas_price) = transactions
-                .last()
-                .map(|(_, previous_gas_price)| previous_gas_price)
-            {
-                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
-                    || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
+            if let Some(previous_gas_price) = pending_gas_price {
+                let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
+                if gas_price.max_priority_fee_per_gas < replacement_price.max_priority_fee_per_gas
+                    || gas_price.max_fee_per_gas < replacement_price.max_fee_per_gas
                 {
                     tokio::time::sleep(params.retry_interval).await;
                     continue;
@@ -669,7 +654,6 @@ mod tests {
             max_additional_tip: Some(3.0),
             gas_price_cap: 100e9,
             additional_tip_percentage_of_max_fee: Some(0.05),
-            pending_gas_price: None,
         };
         let access_list_estimator = Arc::new(
             create_priority_estimator(
@@ -726,7 +710,6 @@ mod tests {
             additional_tip_percentage_of_max_fee: Some(5.),
             max_additional_tip: Some(10.),
             gas_price_cap: 0.,
-            pending_gas_price: None,
         };
 
         let gas_price_estimator = gas_price_estimator.with_additional_tip(None);
