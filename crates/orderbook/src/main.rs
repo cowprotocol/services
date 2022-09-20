@@ -454,7 +454,9 @@ async fn main() {
         CowSubsidy::new(
             token,
             vtoken,
-            args.shared_order_creation.cow_fee_factors.unwrap_or_default(),
+            args.shared_order_creation
+                .cow_fee_factors
+                .unwrap_or_default(),
         )
     });
 
@@ -462,8 +464,16 @@ async fn main() {
         fee_discount: args.shared_order_creation.fee_discount,
         min_discounted_fee: args.shared_order_creation.min_discounted_fee,
         fee_factor: args.shared_order_creation.fee_factor,
-        liquidity_order_owners: args.shared_order_creation.liquidity_order_owners.iter().copied().collect(),
-        partner_additional_fee_factors: args.shared_order_creation.partner_additional_fee_factors.clone(),
+        liquidity_order_owners: args
+            .shared_order_creation
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        partner_additional_fee_factors: args
+            .shared_order_creation
+            .partner_additional_fee_factors
+            .clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
@@ -482,8 +492,16 @@ async fn main() {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             storage,
-            chrono::Duration::from_std(args.shared_order_creation.eip1271_onchain_quote_validity_seconds).unwrap(),
-            chrono::Duration::from_std(args.shared_order_creation.presign_onchain_quote_validity_seconds).unwrap(),
+            chrono::Duration::from_std(
+                args.shared_order_creation
+                    .eip1271_onchain_quote_validity_seconds,
+            )
+            .unwrap(),
+            chrono::Duration::from_std(
+                args.shared_order_creation
+                    .presign_onchain_quote_validity_seconds,
+            )
+            .unwrap(),
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
@@ -493,7 +511,11 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.shared_order_creation.liquidity_order_owners.iter().copied().collect(),
+        args.shared_order_creation
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
         SignatureConfiguration {
