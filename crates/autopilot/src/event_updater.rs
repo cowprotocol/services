@@ -1,8 +1,5 @@
 use anyhow::Result;
-use contracts::{
-    cowswap_onchain_orders,
-    gpv2_settlement,
-};
+use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use ethcontract::dyns::DynWeb3;
 use shared::{
     event_handling::{EventHandler, EventRetrieving, EventStoring},
