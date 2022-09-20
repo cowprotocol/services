@@ -34,10 +34,28 @@ use std::{
     fmt,
     time::{Duration, Instant},
 };
+use strum::IntoStaticStr;
 use web3::types::{AccessList, TransactionReceipt, U64};
 
 /// Minimal gas price replacement factor
 const GAS_PRICE_BUMP: f64 = 1.125;
+
+/// Error messages which suggest that the node is already aware of the submitted tx thus prompting
+/// us to increase the replacement gas price.
+pub const TX_ALREADY_KNOWN: &[&str] = &[
+    "Transaction gas price supplied is too low", //openethereum
+    "already known",                             //infura, erigon, eden
+    "INTERNAL_ERROR: existing tx with same hash", //erigon
+    "replacement transaction underpriced",       //eden
+];
+
+/// Error messages suggesting that the transaction we tried to submit has already been mined
+/// because its nonce is suddenly too low.
+pub const TX_ALREADY_MINED: &[&str] = &[
+    "Transaction nonce is too low", //openethereum
+    "nonce too low",                //infura, erigon
+    "OldNonce",                     //erigon
+];
 
 /// Parameters for transaction submitting
 #[derive(Clone, Default)]
@@ -60,7 +78,7 @@ pub enum SubmissionLoopStatus {
     Disabled(DisabledReason),
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, IntoStaticStr)]
 pub enum Strategy {
     Eden,
     Flashbots,
@@ -367,10 +385,10 @@ impl<'a> Submitter<'a> {
 
         let mut access_list: Option<AccessList> = None;
 
-        loop {
-            // Try to find submitted transaction from previous submission loop (with the same address and nonce)
-            let pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
+        // Try to find submitted transaction from previous submission attempt (with the same address and nonce)
+        let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
+        loop {
             tracing::debug!("entered loop with submitter");
 
             let submission_status = self
@@ -460,13 +478,34 @@ impl<'a> Submitter<'a> {
 
             // execute transaction
 
+            let label: &'static str = self.submit_api.name().into();
             match self.submit_api.submit_transaction(method.tx).await {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
+                    pending_gas_price = Some(gas_price);
+                    track_submission_success(label, true);
                 }
                 Err(err) => {
-                    tracing::warn!(?err, "submission failed");
+                    let err = err.to_string();
+                    if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
+                        // Due to a race condition we sometimes notice too late that a tx was
+                        // already mined and submit once too often.
+                        tracing::debug!(?err, "transaction already mined");
+                        track_submission_success(label, true);
+                    } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                        // This case means that the node is already aware of the tx although we
+                        // didn't get any confirmation in the form of a tx handle. If that happens
+                        // we simply set the current gas price as the pending gas price which means
+                        // we will only try submitting again when the gas price increased by
+                        // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
+                        pending_gas_price = Some(gas_price);
+                        tracing::debug!(?err, "transaction already known");
+                        track_submission_success(label, true);
+                    } else {
+                        tracing::warn!(?err, "submission failed");
+                        track_submission_success(label, false);
+                    }
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
