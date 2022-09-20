@@ -101,8 +101,7 @@ impl TransactionSubmitting for EdenApi {
         };
 
         // try to submit with slot method
-        let result = self
-            .submit_slot_transaction(tx.clone())
+        self.submit_slot_transaction(tx.clone())
             .or_else(|err| async move {
                 // fallback to standard `eth_sendRawTransaction` if `eth_sendSlotTx` fails
                 // which can happens when we don't have a slot.
@@ -112,14 +111,7 @@ impl TransactionSubmitting for EdenApi {
                     .submit_raw_transaction(tx)
                     .await
             })
-            .await as Result<TransactionHandle>;
-
-        if let Err(error) = &result {
-            tracing::warn!(?error, "transaction submission error");
-        }
-        super::track_submission_success("eden", result.is_ok());
-
-        result
+            .await as Result<TransactionHandle>
     }
 
     async fn cancel_transaction(

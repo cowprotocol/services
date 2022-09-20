@@ -9,17 +9,6 @@ use ethcontract::transaction::{Transaction, TransactionBuilder};
 use futures::FutureExt;
 use shared::{Web3, Web3Transport};
 
-const ALREADY_KNOWN_TRANSACTION: &[&str] = &[
-    "Transaction gas price supplied is too low", //openethereum
-    "Transaction nonce is too low",              //openethereum
-    "already known",                             //infura
-    "nonce too low",                             //infura
-    "OldNonce",                                  //erigon
-    "INTERNAL_ERROR: nonce too low",             //erigon
-    "INTERNAL_ERROR: existing tx with same hash", //erigon
-    "ALREADY_EXISTS: already known",             //erigon
-];
-
 #[derive(Clone)]
 pub struct PublicMempoolApi {
     nodes: Vec<Web3>,
@@ -65,6 +54,7 @@ impl TransactionSubmitting for PublicMempoolApi {
             })
             .collect::<Vec<_>>();
 
+        let mut errors = vec![];
         loop {
             let ((label, result), _, rest) = futures::future::select_all(futures).await;
             match result {
@@ -77,27 +67,23 @@ impl TransactionSubmitting for PublicMempoolApi {
                     });
                 }
                 Err(err) => {
-                    if matches!(
-                        &err,
-                        web3::Error::Rpc(rpc_error)
-                            if ALREADY_KNOWN_TRANSACTION
-                                .iter()
-                                .any(|message| rpc_error.message.starts_with(message))
-                    ) {
-                        tracing::debug!(%label, ?transaction_request, "transaction already known");
-                        // error is not real error if transaction pool responded that received transaction is
-                        // already in the pool, meaning that the transaction was created successfully and we can
-                        // continue searching our futures for a successful node RPC response without incrementing
-                        // any error metrics...
-                    } else {
-                        tracing::warn!(?err, %label, "single submission node tx failed");
-                        super::track_submission_success(&label, false);
-                    }
+                    let err = err.to_string();
+
+                    // Collect all errors to allow caller to react to all of them.
+                    errors.push(format!("{label} failed to submit: {err}"));
+
+                    // Due to the highly decentralized nature of tx submission an error suggesting
+                    // that a tx was already mined or is underpriced is benign and should not be
+                    // reported to avoid triggering alerts unnecessarily.
+                    let is_benign_error = super::TX_ALREADY_MINED
+                        .iter()
+                        .chain(super::TX_ALREADY_KNOWN)
+                        .any(|msg| err.contains(msg));
+                    super::track_submission_success(&label, is_benign_error);
 
                     if rest.is_empty() {
-                        return Err(
-                            anyhow::Error::from(err).context("all submission nodes tx failed")
-                        );
+                        return Err(anyhow::anyhow!(errors.join("\n"))
+                            .context("all submission nodes failed"));
                     }
                     futures = rest;
                 }
