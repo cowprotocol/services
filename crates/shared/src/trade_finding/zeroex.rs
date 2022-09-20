@@ -3,12 +3,20 @@
 use super::{Interaction, Quote, Trade, TradeError, TradeFinding};
 use crate::{
     price_estimation::{gas, Query},
+    request_sharing::{BoxRequestSharing, BoxShared},
     zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
 };
+use futures::FutureExt as _;
 use model::order::OrderKind;
 use std::sync::Arc;
 
 pub struct ZeroExTradeFinder {
+    inner: Inner,
+    sharing: BoxRequestSharing<Query, Result<Trade, TradeError>>,
+}
+
+#[derive(Clone)]
+struct Inner {
     api: Arc<dyn ZeroExApi>,
     excluded_sources: Vec<String>,
 }
@@ -16,11 +24,33 @@ pub struct ZeroExTradeFinder {
 impl ZeroExTradeFinder {
     pub fn new(api: Arc<dyn ZeroExApi>, excluded_sources: Vec<String>) -> Self {
         Self {
-            api,
-            excluded_sources,
+            inner: Inner {
+                api,
+                excluded_sources,
+            },
+            sharing: Default::default(),
         }
     }
 
+    fn shared_quote(&self, query: &Query) -> BoxShared<Result<Trade, TradeError>> {
+        self.sharing.shared_or_else(*query, || {
+            let inner = self.inner.clone();
+            let query = *query;
+            async move {
+                // Force the future to not resolve immediately in testing. This
+                // allows us to test request sharing (since `mockall` traits
+                // resolve immediately).
+                #[cfg(test)]
+                tokio::time::sleep(Default::default()).await;
+
+                inner.quote(&query).await
+            }
+            .boxed()
+        })
+    }
+}
+
+impl Inner {
     async fn quote(&self, query: &Query) -> Result<Trade, TradeError> {
         let (sell_amount, buy_amount) = match query.kind {
             OrderKind::Buy => (None, Some(query.in_amount)),
@@ -59,7 +89,7 @@ impl ZeroExTradeFinder {
 #[async_trait::async_trait]
 impl TradeFinding for ZeroExTradeFinder {
     async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
-        let trade = self.quote(query).await?;
+        let trade = self.shared_quote(query).await?;
         Ok(Quote {
             out_amount: trade.out_amount,
             gas_estimate: trade.gas_estimate,
@@ -67,7 +97,7 @@ impl TradeFinding for ZeroExTradeFinder {
     }
 
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
-        self.quote(query).await
+        self.shared_quote(query).await
     }
 }
 
@@ -85,10 +115,7 @@ mod tests {
     use reqwest::Client;
 
     fn create_trader(api: Arc<dyn ZeroExApi>) -> ZeroExTradeFinder {
-        ZeroExTradeFinder {
-            api,
-            excluded_sources: Default::default(),
-        }
+        ZeroExTradeFinder::new(api, Default::default())
     }
 
     #[tokio::test]
@@ -193,6 +220,21 @@ mod tests {
         assert_eq!(trade.out_amount, 8986186353137488u64.into());
         assert!(trade.gas_estimate > 111000);
         assert_eq!(trade.interaction.data, [5, 6, 7, 8]);
+    }
+
+    #[tokio::test]
+    async fn shares_quotes() {
+        let mut zeroex_api = MockZeroExApi::new();
+        zeroex_api
+            .expect_get_swap()
+            .return_once(|_| Ok(Default::default()));
+
+        let trader = create_trader(Arc::new(zeroex_api));
+
+        let query = Query::default();
+        let result = futures::try_join!(trader.get_quote(&query), trader.get_trade(&query));
+
+        assert!(result.is_ok());
     }
 
     #[tokio::test]
