@@ -19,39 +19,11 @@ use std::{
 use tracing::level_filters::LevelFilter;
 use url::Url;
 
+// The following arguments are used to configure the order creation process
+// The arguments are shared between the orderbook crate and the autopilot crate,
+// as both crates can create orders
 #[derive(clap::Parser)]
-pub struct Arguments {
-    #[clap(
-        long,
-        env,
-        default_value = "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,shared::transport::http=info"
-    )]
-    pub log_filter: String,
-
-    #[clap(long, env, default_value = "error", parse(try_from_str))]
-    pub log_stderr_threshold: LevelFilter,
-
-    /// The Ethereum node URL to connect to.
-    #[clap(long, env, default_value = "http://localhost:8545")]
-    pub node_url: Url,
-
-    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
-    /// fails. Individual estimators support different networks.
-    /// `EthGasStation`: supports mainnet.
-    /// `GasNow`: supports mainnet.
-    /// `GnosisSafe`: supports mainnet, rinkeby and goerli.
-    /// `Web3`: supports every network.
-    /// `Native`: supports every network.
-    #[clap(
-        long,
-        env,
-        default_value = "Web3",
-        arg_enum,
-        ignore_case = true,
-        use_value_delimiter = true
-    )]
-    pub gas_estimators: Vec<GasEstimatorType>,
-
+pub struct OrderCreationArguments {
     #[clap(
         long,
         env,
@@ -132,6 +104,39 @@ pub struct Arguments {
     /// [150, inf) COW will cause you to pay 50% of the regular fee.
     #[clap(long, env)]
     pub cow_fee_factors: Option<SubsidyTiers>,
+}
+#[derive(clap::Parser)]
+pub struct Arguments {
+    #[clap(
+        long,
+        env,
+        default_value = "warn,autopilot=debug,driver=debug,orderbook=debug,solver=debug,shared=debug,shared::transport::http=info"
+    )]
+    pub log_filter: String,
+
+    #[clap(long, env, default_value = "error", parse(try_from_str))]
+    pub log_stderr_threshold: LevelFilter,
+
+    /// The Ethereum node URL to connect to.
+    #[clap(long, env, default_value = "http://localhost:8545")]
+    pub node_url: Url,
+
+    /// Which gas estimators to use. Multiple estimators are used in sequence if a previous one
+    /// fails. Individual estimators support different networks.
+    /// `EthGasStation`: supports mainnet.
+    /// `GasNow`: supports mainnet.
+    /// `GnosisSafe`: supports mainnet, rinkeby and goerli.
+    /// `Web3`: supports every network.
+    /// `Native`: supports every network.
+    #[clap(
+        long,
+        env,
+        default_value = "Web3",
+        arg_enum,
+        ignore_case = true,
+        use_value_delimiter = true
+    )]
+    pub gas_estimators: Vec<GasEstimatorType>,
 
     /// BlockNative requires api key to work. Optional since BlockNative could be skipped in gas estimators.
     #[clap(long, env)]
@@ -285,6 +290,36 @@ where
     Ok(())
 }
 
+impl Display for OrderCreationArguments {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        writeln!(
+            f,
+            "eip1271_onchain_quote_validity_second: {:?}",
+            self.eip1271_onchain_quote_validity_seconds
+        )?;
+        writeln!(
+            f,
+            "presign_onchain_quote_validity_second: {:?}",
+            self.presign_onchain_quote_validity_seconds
+        )?;
+        writeln!(f, "fee_discount: {}", self.fee_discount)?;
+        writeln!(f, "min_discounted_fee: {}", self.min_discounted_fee)?;
+        writeln!(f, "fee_factor: {}", self.fee_factor)?;
+        writeln!(
+            f,
+            "partner_additional_fee_factors: {:?}",
+            self.partner_additional_fee_factors
+        )?;
+        writeln!(f, "cow_fee_factors: {:?}", self.cow_fee_factors)?;
+        writeln!(f, "price_estimators: {:?}", self.price_estimators)?;
+        writeln!(
+            f,
+            "liquidity_order_owners: {:?}",
+            self.liquidity_order_owners
+        )?;
+        Ok(())
+    }
+}
 // We have a custom Display implementation so that we can log the arguments on start up without
 // leaking any potentially secret values.
 impl Display for Arguments {
