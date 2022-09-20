@@ -226,13 +226,6 @@ impl OrderData {
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
-    // keccak256("sell")
-    pub const KIND_SELL: [u8; 32] =
-        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
-    // keccak256("buy")
-    pub const KIND_BUY: [u8; 32] =
-        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
-
     // keccak256("erc20")
     pub const BALANCE_ERC20: [u8; 32] =
         hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
@@ -257,8 +250,8 @@ impl OrderData {
         hash_data[224..256].copy_from_slice(&self.app_data.0);
         self.fee_amount.to_big_endian(&mut hash_data[256..288]);
         hash_data[288..320].copy_from_slice(match self.kind {
-            OrderKind::Sell => &Self::KIND_SELL,
-            OrderKind::Buy => &Self::KIND_BUY,
+            OrderKind::Sell => &OrderKind::SELL,
+            OrderKind::Buy => &OrderKind::BUY,
         });
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(match self.sell_token_balance {
@@ -555,6 +548,13 @@ pub enum OrderKind {
 }
 
 impl OrderKind {
+    // keccak256("sell")
+    pub const SELL: [u8; 32] =
+        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
+    // keccak256("buy")
+    pub const BUY: [u8; 32] =
+        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
+
     /// Returns a the order kind as a string label that can be used in metrics.
     pub fn label(&self) -> &'static str {
         match self {
@@ -562,15 +562,15 @@ impl OrderKind {
             Self::Sell => "sell",
         }
     }
-}
-
-pub fn kind_from_contract_constant(kind: [u8; 32]) -> Result<OrderKind> {
-    match kind {
-        OrderData::KIND_SELL => Ok(OrderKind::Sell),
-        OrderData::KIND_BUY => Ok(OrderKind::Buy),
-        _ => Err(anyhow!("Order kind is not well defined")),
+    pub fn from_contract_bytes(kind: [u8; 32]) -> Result<Self> {
+        match kind {
+            Self::SELL => Ok(OrderKind::Sell),
+            Self::BUY => Ok(OrderKind::Buy),
+            _ => Err(anyhow!("Order kind is not well defined")),
+        }
     }
 }
+
 
 /// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(
@@ -588,12 +588,14 @@ pub enum SellTokenSource {
     External,
 }
 
-pub fn sell_token_source_from_contract_bytes(bytes: [u8; 32]) -> Result<SellTokenSource> {
-    match bytes {
-        OrderData::BALANCE_INTERNAL => Ok(SellTokenSource::Internal),
-        OrderData::BALANCE_EXTERNAL => Ok(SellTokenSource::External),
-        OrderData::BALANCE_ERC20 => Ok(SellTokenSource::Erc20),
-        _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+impl SellTokenSource {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_EXTERNAL => Ok(Self::External),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+        }
     }
 }
 
@@ -611,11 +613,13 @@ pub enum BuyTokenDestination {
     Internal,
 }
 
-pub fn buy_token_destination_from_contract_bytes(bytes: [u8; 32]) -> Result<BuyTokenDestination> {
-    match bytes {
-        OrderData::BALANCE_INTERNAL => Ok(BuyTokenDestination::Internal),
-        OrderData::BALANCE_ERC20 => Ok(BuyTokenDestination::Erc20),
-        _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+impl BuyTokenDestination {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+        }
     }
 }
 

@@ -92,7 +92,7 @@ fn convert_to_quote_id_and_user_valid_to(
 #[cfg(test)]
 mod test {
     use ethcontract::{Bytes, EventMetadata, H160, U256};
-    use model::order::OrderData;
+    use model::order::{OrderData, OrderKind};
 
     use super::*;
 
@@ -134,7 +134,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 true,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
