@@ -30,19 +30,23 @@ use shared::{
 };
 use std::collections::HashMap;
 
-pub struct OnchainOrderParser<T: Send + Sync, W: Send + Sync> {
+pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
     quoter: Box<dyn OrderQuoting>,
-    custom_onchain_data_parser: Box<dyn OnchainOrderParsing<T, W>>,
+    custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
 }
 
-impl<T: Send + Sync, W: Send + Sync> OnchainOrderParser<T, W> {
+impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
+where
+    EventData: Send + Sync,
+    EventRow: Send + Sync,
+{
     pub fn new(
         db: Postgres,
         quoter: Box<dyn OrderQuoting>,
-        custom_onchain_data_parser: Box<dyn OnchainOrderParsing<T, W>>,
+        custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
     ) -> Self {
