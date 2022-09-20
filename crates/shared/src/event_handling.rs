@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::H256;
 use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
+use futures::future;
 use std::ops::RangeInclusive;
 use tokio::sync::Mutex;
 
@@ -196,15 +197,24 @@ where
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
-        for block in blocks {
-            match self.contract.get_events().block_hash(block.1).query().await {
+        for (i, result) in future::join_all(
+            blocks
+                .iter()
+                .map(|block| self.contract.get_events().block_hash(block.1).query()),
+        )
+        .await
+        .into_iter()
+        .enumerate()
+        {
+            match result {
                 Ok(e) => {
-                    blocks_filtered.push(*block);
+                    blocks_filtered.push(blocks[i]);
                     events.extend(e.into_iter());
                 }
                 Err(_) => return (blocks_filtered, events),
             }
         }
+
         (blocks_filtered, events)
     }
 }
@@ -308,6 +318,48 @@ fn track_block_range(range: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{transport::create_env_test_transport, Web3};
+    use contracts::{gpv2_settlement, GPv2Settlement};
+    use std::str::FromStr;
+
+    impl_event_retrieving! {
+        pub GPv2SettlementContract for gpv2_settlement
+    }
+
+    /// Simple event storage for testing purposes of EventHandler
+    struct EventStorage<T> {
+        events: Vec<EthcontractEvent<T>>,
+    }
+
+    #[async_trait::async_trait]
+    impl<T> EventStoring<T> for EventStorage<T>
+    where
+        T: Send + Sync,
+    {
+        async fn replace_events(
+            &mut self,
+            events: Vec<EthcontractEvent<T>>,
+            range: RangeInclusive<u64>,
+        ) -> Result<()> {
+            self.events
+                .retain(|event| event.meta.clone().unwrap().block_number < *range.start());
+            self.append_events(events).await?;
+            Ok(())
+        }
+
+        async fn append_events(&mut self, events: Vec<EthcontractEvent<T>>) -> Result<()> {
+            self.events.extend(events.into_iter());
+            Ok(())
+        }
+
+        async fn last_event_block(&self) -> Result<u64> {
+            Ok(self
+                .events
+                .last()
+                .map(|event| event.meta.clone().unwrap().block_number)
+                .unwrap_or_default())
+        }
+    }
 
     #[test]
     fn detect_reorg_path_test_both_empty() {
@@ -379,5 +431,47 @@ mod tests {
         let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &current_blocks);
         assert_eq!(replacement_blocks, current_blocks);
         assert!(is_reorg);
+    }
+
+    #[tokio::test]
+    async fn past_events_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+        let contract = GPv2Settlement::deployed(&web3).await.unwrap();
+        let storage = EventStorage { events: vec![] };
+        let blocks = vec![
+            (
+                15575559,
+                H256::from_str(
+                    "0xa21ba3de6ac42185aa2b21e37cd63ff1572b763adff7e828f86590df1d1be118",
+                )
+                .unwrap(),
+            ),
+            (
+                15575560,
+                H256::from_str(
+                    "0x5a737331194081e99b73d7a8b7a2ccff84e0aff39fa0e39aca0b660f3d6694c4",
+                )
+                .unwrap(),
+            ),
+            (
+                15575561,
+                H256::from_str(
+                    "0xe91ec1a5a795c0739d99a60ac1df37cdf90b6c75c8150ace1cbad5b21f473b75", //WRONG HASH!
+                )
+                .unwrap(),
+            ),
+            (
+                15575562,
+                H256::from_str(
+                    "0xac1ca15622f17c62004de1f746728d4051103d8b7e558d39fd9fcec4d3348937",
+                )
+                .unwrap(),
+            ),
+        ];
+        let event_handler =
+            EventHandler::new(web3, GPv2SettlementContract(contract), storage, None);
+        let (replacement_blocks, _) = event_handler.past_events(&blocks).await;
+        assert_eq!(replacement_blocks, blocks[..2]);
     }
 }
