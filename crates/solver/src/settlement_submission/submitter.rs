@@ -488,7 +488,11 @@ impl<'a> Submitter<'a> {
                 }
                 Err(err) => {
                     let err = err.to_string();
-                    if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                    if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
+                        // Due to a race condition we sometimes notice too late that a tx was
+                        // already mined and submit once too often.
+                        tracing::debug!(?err, "transaction already mined");
+                    } else if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
                         // This case means that the node is already aware of the tx although we
                         // didn't get any confirmation in the form of a tx handle. If that happens
                         // we simply set the current gas price as the pending gas price which means
@@ -496,10 +500,6 @@ impl<'a> Submitter<'a> {
                         // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
                         pending_gas_price = Some(gas_price);
                         tracing::debug!(?err, "transaction already known");
-                    } else if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
-                        // Due to a race condition we sometimes notice too late that a tx was
-                        // already mined and submit once too often.
-                        tracing::debug!(?err, "transaction already mined");
                     } else {
                         tracing::warn!(?err, "submission failed");
                         track_submission_success(label, false);
