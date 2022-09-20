@@ -1,13 +1,13 @@
 use crate::{
     account_balances::{BalanceFetching, TransferSimulationError},
     bad_token::BadTokenDetecting,
+    code_fetching::CodeFetching,
     order_quoting::{
         CalculateQuoteError, FindQuoteError, OrderQuoting, Quote, QuoteParameters,
         QuoteSearchParameters,
     },
     price_estimation::PriceEstimationError,
     signature_validator::{SignatureCheck, SignatureValidating, SignatureValidationError},
-    web3_traits::CodeFetching,
 };
 use anyhow::anyhow;
 use contracts::WETH9;
@@ -646,11 +646,11 @@ mod tests {
     use crate::{
         account_balances::MockBalanceFetching,
         bad_token::{MockBadTokenDetecting, TokenQuality},
+        code_fetching::MockCodeFetching,
         dummy_contract,
         order_quoting::MockOrderQuoting,
         rate_limiter::RateLimiterError,
         signature_validator::MockSignatureValidating,
-        web3_traits::MockCodeFetching,
     };
     use anyhow::anyhow;
     use chrono::Utc;

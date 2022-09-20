@@ -5,12 +5,12 @@ use super::{
     rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
 };
 use crate::{
+    code_fetching::CodeFetching,
     code_simulation::CodeSimulating,
     rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     trade_finding::{Trade, TradeError, TradeFinding},
     transport::extensions::StateOverride,
-    web3_traits::CodeFetching,
 };
 use anyhow::{ensure, Context as _, Result};
 use contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader};
@@ -297,12 +297,12 @@ mod slippage {
 mod tests {
     use super::*;
     use crate::{
+        code_fetching::MockCodeFetching,
         code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
         price_estimation::single_estimate,
         tenderly_api::TenderlyHttpApi,
         trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding, Quote},
         transport::create_env_test_transport,
-        web3_traits::MockCodeFetching,
         zeroex_api::DefaultZeroExApi,
         Web3,
     };
