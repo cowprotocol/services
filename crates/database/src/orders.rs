@@ -108,6 +108,13 @@ impl Default for Order {
     }
 }
 
+pub async fn insert_orders(ex: &mut PgConnection, orders: &[Order]) -> Result<(), sqlx::Error> {
+    for order in orders {
+        insert_order(ex, order).await?;
+    }
+    Ok(())
+}
+
 pub async fn insert_order(ex: &mut PgConnection, order: &Order) -> Result<(), sqlx::Error> {
     const QUERY: &str = r#"
 INSERT INTO orders (
