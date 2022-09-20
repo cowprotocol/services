@@ -449,7 +449,7 @@ pub struct Protocols {
 // Mockable version of API Client
 #[mockall::automock]
 #[async_trait::async_trait]
-pub trait OneInchClient: Send + Sync {
+pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
     async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
 
