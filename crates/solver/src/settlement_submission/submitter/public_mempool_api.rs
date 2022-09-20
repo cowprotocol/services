@@ -81,6 +81,10 @@ impl TransactionSubmitting for PublicMempoolApi {
                         .any(|msg| err.contains(msg));
                     super::track_submission_success(&label, is_benign_error);
 
+                    if !is_benign_error {
+                        tracing::warn!(?err, %label, "single submission node tx failed");
+                    }
+
                     if rest.is_empty() {
                         return Err(anyhow::anyhow!(errors.join("\n"))
                             .context("all submission nodes failed"));
