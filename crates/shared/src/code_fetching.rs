@@ -54,7 +54,6 @@ impl CachedCodeFetcher {
             }
         }
 
-        dbg!(address);
         let code = self.inner.code(address).await?;
         let result = handle(&code);
         self.cache.lock().unwrap().cache_set(address, code);
