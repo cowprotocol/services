@@ -271,7 +271,7 @@ impl TryFrom<QuoteRow> for QuoteData {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
     /// Computes a quote for the specified order paramters.
