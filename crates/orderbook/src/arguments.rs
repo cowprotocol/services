@@ -164,6 +164,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
+        write!(f, "{}", self.shared_order_creation)?;
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
