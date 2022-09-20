@@ -1,7 +1,7 @@
 use anyhow::Result;
 use contracts::{
-    cowswap_onchain_orders::{self},
-    gpv2_settlement::{self},
+    cowswap_onchain_orders,
+    gpv2_settlement,
 };
 use ethcontract::dyns::DynWeb3;
 use shared::{

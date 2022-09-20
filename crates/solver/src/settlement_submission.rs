@@ -17,7 +17,6 @@ use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
     collections::HashMap,
-    num::NonZeroU8,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -108,7 +107,6 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub max_gas_price_bumps: NonZeroU8,
 }
 
 pub struct StrategyArgs {
@@ -117,10 +115,11 @@ pub struct StrategyArgs {
     pub additional_tip_percentage_of_max_fee: f64,
     pub sub_tx_pool: SubTxPoolRef,
 }
+
 pub enum TransactionStrategy {
     Eden(StrategyArgs),
     Flashbots(StrategyArgs),
-    CustomNodes(StrategyArgs),
+    PublicMempool(StrategyArgs),
     DryRun,
 }
 
@@ -129,7 +128,7 @@ impl TransactionStrategy {
         match &self {
             TransactionStrategy::Eden(args) => Some(args),
             TransactionStrategy::Flashbots(args) => Some(args),
-            TransactionStrategy::CustomNodes(args) => Some(args),
+            TransactionStrategy::PublicMempool(args) => Some(args),
             TransactionStrategy::DryRun => None,
         }
     }
@@ -206,7 +205,7 @@ impl SolutionSubmitter {
                     )));
                 }
             }
-            TransactionStrategy::CustomNodes(_) => {}
+            TransactionStrategy::PublicMempool(_) => {}
             TransactionStrategy::DryRun => unreachable!(),
         };
 
@@ -234,7 +233,6 @@ impl SolutionSubmitter {
             &gas_price_estimator,
             self.access_list_estimator.as_ref(),
             strategy_args.sub_tx_pool.clone(),
-            self.max_gas_price_bumps,
         )?;
         submitter
             .submit(settlement, params)
@@ -420,7 +418,7 @@ mod tests {
         let strategy = TransactionStrategy::Flashbots(StrategyArgs::default());
         assert!(strategy.strategy_args().is_some());
 
-        let strategy = TransactionStrategy::CustomNodes(StrategyArgs::default());
+        let strategy = TransactionStrategy::PublicMempool(StrategyArgs::default());
         assert!(strategy.strategy_args().is_some());
 
         let strategy = TransactionStrategy::DryRun;
@@ -433,7 +431,7 @@ mod tests {
         let nonce = U256::zero();
         let transactions: Vec<(TransactionHandle, GasPrice1559)> = Default::default();
 
-        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::CustomNodes);
+        let submitted_transactions = GlobalTxPool::default().add_sub_pool(Strategy::PublicMempool);
 
         submitted_transactions.update(sender, nonce, transactions);
         let entry = submitted_transactions.get(sender, nonce);
