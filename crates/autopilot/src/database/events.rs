@@ -92,7 +92,7 @@ impl EventStoring<ContractEvent> for Postgres {
     }
 }
 
-fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
+pub fn meta_to_event_index(meta: &EventMetadata) -> EventIndex {
     EventIndex {
         block_number: meta.block_number as i64,
         log_index: meta.log_index as i64,
