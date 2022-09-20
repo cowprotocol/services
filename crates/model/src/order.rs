@@ -571,7 +571,6 @@ impl OrderKind {
     }
 }
 
-
 /// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(
     Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
