@@ -32,7 +32,6 @@ use primitive_types::{H256, U256};
 use shared::{Web3, Web3Transport};
 use std::{
     fmt,
-    num::NonZeroU8,
     time::{Duration, Instant},
 };
 use web3::types::{AccessList, TransactionReceipt, U64};
@@ -193,7 +192,6 @@ pub struct Submitter<'a> {
     gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
     access_list_estimator: &'a dyn AccessListEstimating,
     submitted_transactions: SubTxPoolRef,
-    max_gas_price_bumps: NonZeroU8,
 }
 
 impl<'a> Submitter<'a> {
@@ -204,7 +202,6 @@ impl<'a> Submitter<'a> {
         gas_price_estimator: &'a SubmitterGasPriceEstimator<'a>,
         access_list_estimator: &'a dyn AccessListEstimating,
         submitted_transactions: SubTxPoolRef,
-        max_gas_price_bumps: NonZeroU8,
     ) -> Result<Self> {
         Ok(Self {
             contract,
@@ -213,7 +210,6 @@ impl<'a> Submitter<'a> {
             gas_price_estimator,
             access_list_estimator,
             submitted_transactions,
-            max_gas_price_bumps,
         })
     }
 }
@@ -379,8 +375,6 @@ impl<'a> Submitter<'a> {
     ) -> SubmissionError {
         let target_confirm_time = Instant::now() + params.target_confirm_time;
 
-        let mut allowed_gas_price_bumps = 1i32;
-
         tracing::debug!(
             "submit_with_increasing_gas_prices_until_simulation_fails entered with submitter",
         );
@@ -448,9 +442,7 @@ impl<'a> Submitter<'a> {
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some((_, previous_gas_price)) = transactions.last() {
-                    let gas_price = previous_gas_price
-                        .bump(GAS_PRICE_BUMP.powi(allowed_gas_price_bumps))
-                        .ceil();
+                    let gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
                     match self.cancel_transaction(&gas_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
@@ -464,18 +456,7 @@ impl<'a> Submitter<'a> {
                 .last()
                 .map(|(_, previous_gas_price)| previous_gas_price)
             {
-                // Sometimes a tx gets successfully submitted but the API returns an error. When that
-                // happens the gas price computation will return a gas price which is not big enough to
-                // replace the supposedly not submitted tx. To get out of that issue the new gas price
-                // has to be bumped by at least `GAS_PRICE_BUMP ^ 2` in order to replace the stuck tx.
-                let previous_gas_price = previous_gas_price
-                    .bump(GAS_PRICE_BUMP.powi(allowed_gas_price_bumps))
-                    .ceil();
-                tracing::debug!(
-                    ?previous_gas_price,
-                    allowed_gas_price_bumps,
-                    "minimum gas price"
-                );
+                let previous_gas_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
                 if gas_price.max_priority_fee_per_gas < previous_gas_price.max_priority_fee_per_gas
                     || gas_price.max_fee_per_gas < previous_gas_price.max_fee_per_gas
                 {
@@ -498,20 +479,9 @@ impl<'a> Submitter<'a> {
                 Ok(handle) => {
                     tracing::debug!(?handle, "submitted transaction",);
                     transactions.push((handle, gas_price));
-                    allowed_gas_price_bumps = 1;
                 }
                 Err(err) => {
-                    tracing::warn!(?err, "submission failed",);
-                    let err = err.to_string();
-                    if err.contains("underpriced") || err.contains("already known") {
-                        allowed_gas_price_bumps = std::cmp::min(
-                            allowed_gas_price_bumps + 1,
-                            self.max_gas_price_bumps.get() as i32,
-                        );
-                        tracing::debug!(allowed_gas_price_bumps, "bump gas price exponent");
-                    } else {
-                        allowed_gas_price_bumps = 1;
-                    }
+                    tracing::warn!(?err, "submission failed");
                 }
             }
             tokio::time::sleep(params.retry_interval).await;
@@ -735,7 +705,6 @@ mod tests {
             &gas_price_estimator,
             access_list_estimator.as_ref(),
             submitted_transactions,
-            NonZeroU8::new(1).unwrap(),
         )
         .unwrap();
 

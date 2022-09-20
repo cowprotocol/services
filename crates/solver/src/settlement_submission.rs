@@ -17,7 +17,6 @@ use primitive_types::{H256, U256};
 use shared::Web3;
 use std::{
     collections::HashMap,
-    num::NonZeroU8,
     sync::{Arc, Mutex},
     time::{Duration, Instant},
 };
@@ -108,7 +107,6 @@ pub struct SolutionSubmitter {
     pub retry_interval: Duration,
     pub gas_price_cap: f64,
     pub transaction_strategies: Vec<TransactionStrategy>,
-    pub max_gas_price_bumps: NonZeroU8,
 }
 
 pub struct StrategyArgs {
@@ -234,7 +232,6 @@ impl SolutionSubmitter {
             &gas_price_estimator,
             self.access_list_estimator.as_ref(),
             strategy_args.sub_tx_pool.clone(),
-            self.max_gas_price_bumps,
         )?;
         submitter
             .submit(settlement, params)
