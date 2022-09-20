@@ -1,3 +1,5 @@
+mod ethflow_events;
+
 use super::{events::meta_to_event_index, Metrics, Postgres};
 use anyhow::{anyhow, bail, Context, Result};
 use contracts::cowswap_onchain_orders::{
