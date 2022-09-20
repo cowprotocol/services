@@ -385,7 +385,7 @@ impl<'a> Submitter<'a> {
 
         let mut access_list: Option<AccessList> = None;
 
-        // Try to find submitted transaction from previous submission loop (with the same address and nonce)
+        // Try to find submitted transaction from previous submission attempt (with the same address and nonce)
         let mut pending_gas_price = transactions.last().cloned().map(|(_, gas_price)| gas_price);
 
         loop {
