@@ -42,11 +42,19 @@ const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Error messages which suggest that the node is already aware of the submitted tx thus prompting
 /// us to increase the replacement gas price.
-const ALREADY_KNOWN: &[&str] = &[
+const TX_ALREADY_KNOWN: &[&str] = &[
     "Transaction gas price supplied is too low", //openethereum
     "already known",                             //infura, erigon, eden
     "INTERNAL_ERROR: existing tx with same hash", //erigon
     "replacement transaction underpriced",       //eden
+];
+
+/// Error messages suggesting that the transaction we tried to submit has already been mined
+/// because its nonce is suddenly too low.
+const TX_ALREAD_MINED: &[&str] = &[
+    "Transaction nonce is too low", //openethereum
+    "nonce too low",                //infura, erigon
+    "OldNonce",                     //erigon
 ];
 
 /// Parameters for transaction submitting
@@ -480,7 +488,7 @@ impl<'a> Submitter<'a> {
                 }
                 Err(err) => {
                     let err = err.to_string();
-                    if ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
+                    if TX_ALREADY_KNOWN.iter().any(|msg| err.contains(msg)) {
                         // This case means that the node is already aware of the tx although we
                         // didn't get any confirmation in the form of a tx handle. If that happens
                         // we simply set the current gas price as the pending gas price which means
@@ -488,6 +496,10 @@ impl<'a> Submitter<'a> {
                         // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
                         pending_gas_price = Some(gas_price);
                         tracing::debug!(?err, "transaction already known");
+                    } else if TX_ALREAD_MINED.iter().any(|msg| err.contains(msg)) {
+                        // Due to a race condition we sometimes notice too late that a tx was
+                        // already mined and submit once too often.
+                        tracing::debug!(?err, "transaction already mined");
                     } else {
                         tracing::warn!(?err, "submission failed");
                         track_submission_success(label, false);
