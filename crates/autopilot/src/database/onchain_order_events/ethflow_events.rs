@@ -15,7 +15,7 @@ use super::{OnchainOrderCustomData, OnchainOrderParsing};
 pub struct EthFlowOnchainOrderParser {}
 
 #[derive(Copy, Debug, Clone)]
-struct EthFlowData {
+pub struct EthFlowData {
     user_valid_to: u32,
 }
 

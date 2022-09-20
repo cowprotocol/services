@@ -9,6 +9,9 @@ pub struct Arguments {
     pub shared: shared::arguments::Arguments,
 
     #[clap(flatten)]
+    pub shared_order_creation: shared::arguments::OrderCreationArguments,
+
+    #[clap(flatten)]
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]

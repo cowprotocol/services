@@ -87,9 +87,14 @@ pub async fn main(args: arguments::Arguments) {
     let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
-    let ethflow_order_contract = contracts::CoWSwapOnchainOrders::at(
+    // The events from the ethflow are read with the more generic contract
+    // interface called CoWSwapOnchainOrders. Since the contract is deployed
+    // on all networks with the same address, we hardcode it here:
+    // Todo: Once we depend on the EThflow contract, we can switch the initializaiton
+    // to a better variant: contracts::EthflowContract::deployed(&web3)
+    let cowswap_onchain_order_contract_for_eth_flow = contracts::CoWSwapOnchainOrders::at(
         &web3,
-        "53571341fd59736d51804eea393fdb0a8cd9e88a".parse().unwrap(),
+        "31172bb2b5f97e8e89cf3376495d7bc7252f5a53".parse().unwrap(),
     );
     let vault_relayer = settlement_contract
         .vault_relayer()
@@ -462,15 +467,25 @@ pub async fn main(args: arguments::Arguments) {
         CowSubsidy::new(
             token,
             vtoken,
-            args.shared.cow_fee_factors.unwrap_or_default(),
+            args.shared_order_creation
+                .cow_fee_factors
+                .unwrap_or_default(),
         )
     });
     let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.shared.fee_discount,
-        min_discounted_fee: args.shared.min_discounted_fee,
-        fee_factor: args.shared.fee_factor,
-        liquidity_order_owners: args.shared.liquidity_order_owners.iter().copied().collect(),
-        partner_additional_fee_factors: args.shared.partner_additional_fee_factors.clone(),
+        fee_discount: args.shared_order_creation.fee_discount,
+        min_discounted_fee: args.shared_order_creation.min_discounted_fee,
+        fee_factor: args.shared_order_creation.fee_factor,
+        liquidity_order_owners: args
+            .shared_order_creation
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        partner_additional_fee_factors: args
+            .shared_order_creation
+            .partner_additional_fee_factors
+            .clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
@@ -488,7 +503,7 @@ pub async fn main(args: arguments::Arguments) {
             .clone()
     };
     let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-        args.shared
+        args.shared_order_creation
             .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
@@ -501,8 +516,16 @@ pub async fn main(args: arguments::Arguments) {
         gas_price_estimator,
         fee_subsidy,
         database.clone(),
-        chrono::Duration::from_std(args.shared.eip1271_onchain_quote_validity_seconds).unwrap(),
-        chrono::Duration::from_std(args.shared.presign_onchain_quote_validity_seconds).unwrap(),
+        chrono::Duration::from_std(
+            args.shared_order_creation
+                .eip1271_onchain_quote_validity_seconds,
+        )
+        .unwrap(),
+        chrono::Duration::from_std(
+            args.shared_order_creation
+                .presign_onchain_quote_validity_seconds,
+        )
+        .unwrap(),
     );
     let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
     let onchain_order_event_parser = OnchainOrderParser::new(
@@ -513,9 +536,12 @@ pub async fn main(args: arguments::Arguments) {
         settlement_contract.address(),
     );
     let broadcaster_event_updater = Arc::new(EventUpdater::new(
-        CoWSwapOnchainOrdersContract::new(ethflow_order_contract.clone()),
+        CoWSwapOnchainOrdersContract::new(cowswap_onchain_order_contract_for_eth_flow.clone()),
         onchain_order_event_parser,
-        ethflow_order_contract.clone().raw_instance().web3(),
+        cowswap_onchain_order_contract_for_eth_flow
+            .clone()
+            .raw_instance()
+            .web3(),
         sync_start,
     ));
 
