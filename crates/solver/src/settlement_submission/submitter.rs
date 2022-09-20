@@ -42,7 +42,7 @@ const GAS_PRICE_BUMP: f64 = 1.125;
 
 /// Error messages which suggest that the node is already aware of the submitted tx thus prompting
 /// us to increase the replacement gas price.
-const TX_ALREADY_KNOWN: &[&str] = &[
+pub const TX_ALREADY_KNOWN: &[&str] = &[
     "Transaction gas price supplied is too low", //openethereum
     "already known",                             //infura, erigon, eden
     "INTERNAL_ERROR: existing tx with same hash", //erigon
@@ -51,7 +51,7 @@ const TX_ALREADY_KNOWN: &[&str] = &[
 
 /// Error messages suggesting that the transaction we tried to submit has already been mined
 /// because its nonce is suddenly too low.
-const TX_ALREAD_MINED: &[&str] = &[
+pub const TX_ALREADY_MINED: &[&str] = &[
     "Transaction nonce is too low", //openethereum
     "nonce too low",                //infura, erigon
     "OldNonce",                     //erigon
@@ -496,7 +496,7 @@ impl<'a> Submitter<'a> {
                         // GAS_PRICE_BUMP again thus avoiding repeated "tx underpriced" errors.
                         pending_gas_price = Some(gas_price);
                         tracing::debug!(?err, "transaction already known");
-                    } else if TX_ALREAD_MINED.iter().any(|msg| err.contains(msg)) {
+                    } else if TX_ALREADY_MINED.iter().any(|msg| err.contains(msg)) {
                         // Due to a race condition we sometimes notice too late that a tx was
                         // already mined and submit once too often.
                         tracing::debug!(?err, "transaction already mined");

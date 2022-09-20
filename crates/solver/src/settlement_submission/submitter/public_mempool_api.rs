@@ -54,6 +54,7 @@ impl TransactionSubmitting for PublicMempoolApi {
             })
             .collect::<Vec<_>>();
 
+        let mut errors = vec![];
         loop {
             let ((label, result), _, rest) = futures::future::select_all(futures).await;
             match result {
@@ -66,10 +67,23 @@ impl TransactionSubmitting for PublicMempoolApi {
                     });
                 }
                 Err(err) => {
+                    let err = err.to_string();
+
+                    // Collect all errors to allow caller to react to all of them.
+                    errors.push(format!("{label} failed to submit: {err}"));
+
+                    // Due to the highly decentralized nature of tx submission an error suggesting
+                    // that a tx was already mined or is underpriced is benign and should not be
+                    // reported to avoid triggering alerts unnecessarily.
+                    let is_benign_error = super::TX_ALREADY_MINED
+                        .iter()
+                        .chain(super::TX_ALREADY_KNOWN)
+                        .any(|msg| err.contains(msg));
+                    super::track_submission_success(&label, is_benign_error);
+
                     if rest.is_empty() {
-                        return Err(
-                            anyhow::Error::from(err).context("all submission nodes tx failed")
-                        );
+                        return Err(anyhow::anyhow!(errors.join("\n"))
+                            .context("all submission nodes failed"));
                     }
                     futures = rest;
                 }
