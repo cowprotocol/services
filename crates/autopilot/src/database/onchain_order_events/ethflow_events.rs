@@ -12,7 +12,7 @@ use std::{collections::HashMap, convert::TryInto};
 
 use super::{OnchainOrderCustomData, OnchainOrderParsing};
 
-pub struct EthFlowOnchainOrderParser {}
+pub struct EthFlowOnchainOrderParser;
 
 #[derive(Copy, Debug, Clone)]
 struct EthFlowData {
