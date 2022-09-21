@@ -9,13 +9,17 @@ pub struct Arguments {
     pub shared: shared::arguments::Arguments,
 
     #[clap(flatten)]
-    pub shared_order_creation: shared::arguments::OrderCreationArguments,
+    pub order_quoting: shared::arguments::OrderQuotingArguments,
 
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
 
     #[clap(flatten)]
     pub token_owner_finder: token_owner_finder::Arguments,
+
+    /// Address of the ethflow contract
+    #[clap(long, env, default_value = "31172bb2b5f97e8e89cf3376495d7bc7252f5a53")]
+    pub ethflow_contract: H160,
 
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
@@ -125,6 +129,7 @@ impl std::fmt::Display for Arguments {
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
+        writeln!(f, "ethflow contract: {}", self.ethflow_contract)?;
         writeln!(f, "metrics_address: {}", self.metrics_address)?;
         writeln!(f, "db_url: SECRET")?;
         writeln!(f, "skip_event_sync: {}", self.skip_event_sync)?;

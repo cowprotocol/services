@@ -87,15 +87,12 @@ pub async fn main(args: arguments::Arguments) {
     let settlement_contract = contracts::GPv2Settlement::deployed(&web3)
         .await
         .expect("Couldn't load deployed settlement");
-    // The events from the ethflow are read with the more generic contract
-    // interface called CoWSwapOnchainOrders. Since the contract is deployed
-    // on all networks with the same address, we hardcode it here:
+    // The events from the ethflow contract are read with the more generic contract
+    // interface called CoWSwapOnchainOrders.
     // Todo: Once we depend on the EThflow contract, we can switch the initializaiton
     // to a better variant: contracts::EthflowContract::deployed(&web3)
-    let cowswap_onchain_order_contract_for_eth_flow = contracts::CoWSwapOnchainOrders::at(
-        &web3,
-        "31172bb2b5f97e8e89cf3376495d7bc7252f5a53".parse().unwrap(),
-    );
+    let cowswap_onchain_order_contract_for_eth_flow =
+        contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
     let vault_relayer = settlement_contract
         .vault_relayer()
         .call()
@@ -467,25 +464,20 @@ pub async fn main(args: arguments::Arguments) {
         CowSubsidy::new(
             token,
             vtoken,
-            args.shared_order_creation
-                .cow_fee_factors
-                .unwrap_or_default(),
+            args.order_quoting.cow_fee_factors.unwrap_or_default(),
         )
     });
     let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.shared_order_creation.fee_discount,
-        min_discounted_fee: args.shared_order_creation.min_discounted_fee,
-        fee_factor: args.shared_order_creation.fee_factor,
+        fee_discount: args.order_quoting.fee_discount,
+        min_discounted_fee: args.order_quoting.min_discounted_fee,
+        fee_factor: args.order_quoting.fee_factor,
         liquidity_order_owners: args
-            .shared_order_creation
+            .order_quoting
             .liquidity_order_owners
             .iter()
             .copied()
             .collect(),
-        partner_additional_fee_factors: args
-            .shared_order_creation
-            .partner_additional_fee_factors
-            .clone(),
+        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
@@ -503,7 +495,7 @@ pub async fn main(args: arguments::Arguments) {
             .clone()
     };
     let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-        args.shared_order_creation
+        args.order_quoting
             .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
@@ -516,16 +508,10 @@ pub async fn main(args: arguments::Arguments) {
         gas_price_estimator,
         fee_subsidy,
         database.clone(),
-        chrono::Duration::from_std(
-            args.shared_order_creation
-                .eip1271_onchain_quote_validity_seconds,
-        )
-        .unwrap(),
-        chrono::Duration::from_std(
-            args.shared_order_creation
-                .presign_onchain_quote_validity_seconds,
-        )
-        .unwrap(),
+        chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+            .unwrap(),
+        chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+            .unwrap(),
     );
     let custom_ethflow_order_parser = EthFlowOnchainOrderParser {};
     let onchain_order_event_parser = OnchainOrderParser::new(
