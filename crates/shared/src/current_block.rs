@@ -68,7 +68,7 @@ pub async fn current_block_stream(
             };
 
             if !updated_current_block_with_new_block(current_block_number.as_ref(), number) {
-                tracing::error!("new block number is too old");
+                tracing::error!(new_block = number, "new block number is too old");
                 continue;
             }
 
