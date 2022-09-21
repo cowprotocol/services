@@ -402,14 +402,16 @@ async fn main() {
     };
 
     let price_estimator = Arc::new(sanitized(Box::new(CompetitionPriceEstimator::new(
-        args.price_estimators
+        args.order_quoting
+            .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
     ))));
 
     let fast_price_estimator = Arc::new(sanitized(Box::new(RacingCompetitionPriceEstimator::new(
-        args.price_estimators
+        args.order_quoting
+            .price_estimators
             .iter()
             .map(|estimator| get_or_create_base_estimator(*estimator))
             .collect(),
@@ -449,15 +451,24 @@ async fn main() {
     };
     let cow_subsidy = cow_tokens.map(|(token, vtoken)| {
         tracing::debug!("using cow token contracts for subsidy");
-        CowSubsidy::new(token, vtoken, args.cow_fee_factors.unwrap_or_default())
+        CowSubsidy::new(
+            token,
+            vtoken,
+            args.order_quoting.cow_fee_factors.unwrap_or_default(),
+        )
     });
 
     let fee_subsidy_config = Arc::new(FeeSubsidyConfiguration {
-        fee_discount: args.fee_discount,
-        min_discounted_fee: args.min_discounted_fee,
-        fee_factor: args.fee_factor,
-        liquidity_order_owners: args.liquidity_order_owners.iter().copied().collect(),
-        partner_additional_fee_factors: args.partner_additional_fee_factors.clone(),
+        fee_discount: args.order_quoting.fee_discount,
+        min_discounted_fee: args.order_quoting.min_discounted_fee,
+        fee_factor: args.order_quoting.fee_factor,
+        liquidity_order_owners: args
+            .order_quoting
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
+        partner_additional_fee_factors: args.order_quoting.partner_additional_fee_factors.clone(),
     }) as Arc<dyn FeeSubsidizing>;
 
     let fee_subsidy = match cow_subsidy {
@@ -476,8 +487,10 @@ async fn main() {
             gas_price_estimator.clone(),
             fee_subsidy.clone(),
             storage,
-            chrono::Duration::from_std(args.eip1271_onchain_quote_validity_seconds).unwrap(),
-            chrono::Duration::from_std(args.presign_onchain_quote_validity_seconds).unwrap(),
+            chrono::Duration::from_std(args.order_quoting.eip1271_onchain_quote_validity_seconds)
+                .unwrap(),
+            chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
+                .unwrap(),
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
@@ -487,7 +500,11 @@ async fn main() {
         Box::new(web3.clone()),
         native_token.clone(),
         args.banned_users.iter().copied().collect(),
-        args.liquidity_order_owners.iter().copied().collect(),
+        args.order_quoting
+            .liquidity_order_owners
+            .iter()
+            .copied()
+            .collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
         SignatureConfiguration {
