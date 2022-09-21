@@ -2,7 +2,10 @@ use crate::{event_handling::MAX_REORG_BLOCK_COUNT, Web3};
 use anyhow::{anyhow, Context as _, Result};
 use primitive_types::H256;
 use std::{
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 use tokio::sync::watch;
@@ -34,7 +37,7 @@ pub async fn current_block_stream(
         .number
         .ok_or_else(|| anyhow!("missing number"))?;
 
-    let current_block_number = Arc::new(Mutex::new(first_number.as_u64()));
+    let current_block_number = Arc::new(AtomicU64::new(first_number.as_u64()));
 
     let (sender, receiver) = watch::channel(first_block);
 
@@ -67,8 +70,7 @@ pub async fn current_block_stream(
                 }
             };
 
-            if !updated_current_block_with_new_block(current_block_number.as_ref(), number) {
-                tracing::error!(new_block = number, "new block number is too old");
+            if !block_number_increased(current_block_number.as_ref(), number) {
                 continue;
             }
 
@@ -138,17 +140,22 @@ where
     }
 }
 
-/// Determines if a new block is recent enough that it would warrant informing the system about it.
-/// This is used to protect against receiving very old blocks after the load balancer switched to a
-/// different node that is stuck in the past. The new block is allowed to be at most
-/// `MAX_REORG_BLOCK_COUNT` blocks older than the current block to still get notified about reorgs.
-fn updated_current_block_with_new_block(current_block: &Mutex<u64>, new_block: u64) -> bool {
-    let mut block_guard = current_block.lock().unwrap();
-    if new_block >= (*block_guard).saturating_sub(MAX_REORG_BLOCK_COUNT) {
-        // new block is within reorg depth -> update current block
-        *block_guard = new_block;
+/// Only updates the current block if the new block number is strictly bigger than the current one.
+/// Emits error logs when the new block number differs by more than `MAX_REORG_BLOCK_COUNT` from
+/// the current block number.
+fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
+    let current_block = current_block.fetch_max(new_block, Ordering::SeqCst);
+    if new_block > current_block + MAX_REORG_BLOCK_COUNT {
+        tracing::error!(new_block, "received a block that is suspiciously far ahead");
         true
+    } else if new_block > current_block {
+        tracing::debug!(new_block, "received a block that is reasonably far ahead");
+        true
+    } else if new_block > current_block.saturating_sub(MAX_REORG_BLOCK_COUNT) {
+        tracing::warn!(new_block, "received a slightly outdated block");
+        false
     } else {
+        tracing::error!(new_block, "received a vastly outdated block");
         false
     }
 }
@@ -159,7 +166,6 @@ mod tests {
     use crate::transport::create_test_transport;
     use futures::StreamExt;
 
-    // cargo test current_block -- --ignored --nocapture
     #[tokio::test]
     #[ignore]
     async fn mainnet() {
@@ -178,32 +184,31 @@ mod tests {
 
     #[test]
     fn more_recent_block_gets_propagated() {
-        let current_block = Mutex::new(100);
-        assert!(updated_current_block_with_new_block(&current_block, 101));
-        assert_eq!(*current_block.lock().unwrap(), 101);
+        let current_block = AtomicU64::new(100);
+        assert!(block_number_increased(&current_block, 101));
+        assert_eq!(current_block.load(Ordering::SeqCst), 101);
+
+        let current_block = AtomicU64::new(100);
+        assert!(block_number_increased(
+            &current_block,
+            100 + MAX_REORG_BLOCK_COUNT + 1
+        ));
+        assert_eq!(
+            current_block.load(Ordering::SeqCst),
+            100 + MAX_REORG_BLOCK_COUNT + 1
+        );
     }
 
     #[test]
-    fn block_within_reorg_depth_gets_propagated() {
-        let current_block = Mutex::new(100);
-        assert!(updated_current_block_with_new_block(&current_block, 100));
-        assert_eq!(*current_block.lock().unwrap(), 100);
+    fn outdated_block_does_not_get_propagated() {
+        let current_block = AtomicU64::new(100);
+        assert!(!block_number_increased(&current_block, 100));
+        assert_eq!(current_block.load(Ordering::SeqCst), 100);
 
-        let current_block = Mutex::new(100);
-        assert!(updated_current_block_with_new_block(
+        assert!(!block_number_increased(
             &current_block,
-            100 - MAX_REORG_BLOCK_COUNT
+            100 - MAX_REORG_BLOCK_COUNT - 1
         ));
-        assert_eq!(*current_block.lock().unwrap(), 100 - MAX_REORG_BLOCK_COUNT);
-    }
-
-    #[test]
-    fn vastly_outdated_block_does_not_get_propagated() {
-        let current_block = Mutex::new(100);
-        assert!(!updated_current_block_with_new_block(
-            &current_block,
-            100 - (MAX_REORG_BLOCK_COUNT + 1)
-        ));
-        assert_eq!(*current_block.lock().unwrap(), 100);
+        assert_eq!(current_block.load(Ordering::SeqCst), 100);
     }
 }
