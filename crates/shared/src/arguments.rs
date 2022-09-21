@@ -23,7 +23,7 @@ use url::Url;
 // The arguments are shared between the orderbook crate and the autopilot crate,
 // as both crates can create orders
 #[derive(clap::Parser)]
-pub struct OrderCreationArguments {
+pub struct OrderQuotingArguments {
     #[clap(
         long,
         env,
@@ -290,7 +290,7 @@ where
     Ok(())
 }
 
-impl Display for OrderCreationArguments {
+impl Display for OrderQuotingArguments {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         writeln!(
             f,

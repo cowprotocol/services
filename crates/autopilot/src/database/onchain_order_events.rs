@@ -13,10 +13,7 @@ use ethcontract::{Event as EthContractEvent, H160};
 use futures::{stream, StreamExt};
 use itertools::multiunzip;
 use model::{
-    order::{
-        buy_token_destination_from_contract_bytes, kind_from_contract_constant,
-        sell_token_source_from_contract_bytes, OrderUid,
-    },
+    order::{BuyTokenDestination, OrderKind, OrderUid, SellTokenSource},
     signature::SigningScheme,
     DomainSeparator,
     {app_id::AppId, order::OrderData},
@@ -35,19 +32,23 @@ use shared::{
 };
 use std::collections::HashMap;
 
-pub struct OnchainOrderParser<T: Send + Sync, W: Send + Sync> {
+pub struct OnchainOrderParser<EventData: Send + Sync, EventRow: Send + Sync> {
     db: Postgres,
     quoter: Box<dyn OrderQuoting>,
-    custom_onchain_data_parser: Box<dyn OnchainOrderParsing<T, W>>,
+    custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
     domain_separator: DomainSeparator,
     settlement_contract: H160,
 }
 
-impl<T: Send + Sync, W: Send + Sync> OnchainOrderParser<T, W> {
+impl<EventData, EventRow> OnchainOrderParser<EventData, EventRow>
+where
+    EventData: Send + Sync,
+    EventRow: Send + Sync,
+{
     pub fn new(
         db: Postgres,
         quoter: Box<dyn OrderQuoting>,
-        custom_onchain_data_parser: Box<dyn OnchainOrderParsing<T, W>>,
+        custom_onchain_data_parser: Box<dyn OnchainOrderParsing<EventData, EventRow>>,
         domain_separator: DomainSeparator,
         settlement_contract: H160,
     ) -> Self {
@@ -61,30 +62,35 @@ impl<T: Send + Sync, W: Send + Sync> OnchainOrderParser<T, W> {
     }
 }
 
-// The following struct describes the return type from the custom order parsing logic.
-// All parser must return a quote_id, as this is currently required by the protocol.
+// The following struct describes the return type from the custom order parsing
+// logic. All parser must return a quote_id, as this is currently required by
+// the protocol.
 pub struct OnchainOrderCustomData<T> {
     quote_id: i64,
     additional_data: Option<T>,
 }
 
-#[cfg_attr(test, mockall::automock)]
-#[async_trait::async_trait]
-// The following trait allows to implement custom onchain order parsing for differently placed
-// orders. E.g. there will be a implementation for ethflow and presign orders.
-// For each of the customs types, the trait allows to implement parsing the on-chain data and
-// storing the event data
+// The following trait allows to implement custom onchain order parsing for
+// differently placed orders. E.g., there will be a implementation for ethflow
+// and presign orders. For each of the customs types, the trait allows to
+// implement parsing the on-chain data and storing the event data
 
 // The generic EventData stores the result of the custom event parsing
-// The generic EvenDataForDB contains the prepared data that will be appended to the database
-pub trait OnchainOrderParsing<EventData: Send + Sync + Clone, EventDataForDB: Send + Sync>:
-    Send + Sync
+// The generic EvenDataForDB contains the prepared data that will be appended
+// to the database
+#[cfg_attr(test, mockall::automock)]
+#[async_trait::async_trait]
+pub trait OnchainOrderParsing<EventData, EventRow>: Send + Sync
+where
+    EventData: Send + Sync + Clone,
+    EventRow: Send + Sync,
 {
-    // This function allows each implementaiton to store custom data to the database
+    // This function allows each implementaiton to store custom data to the
+    // database
     async fn append_custom_order_info_to_db<'a>(
         &self,
         ex: &mut PgTransaction<'a>,
-        custom_onchain_data: Vec<EventDataForDB>,
+        custom_onchain_data: Vec<EventRow>,
     ) -> Result<()>;
 
     // This function allows to parse each event contract differently
@@ -97,15 +103,15 @@ pub trait OnchainOrderParsing<EventData: Send + Sync + Clone, EventDataForDB: Se
         contract_events: &[EthContractEvent<ContractEvent>],
     ) -> Result<Vec<(EventIndex, OnchainOrderCustomData<EventData>)>>;
 
-    // This function allow to create the specific object that will be stored in the database
-    // by the fn append_custo_order_info_to_db
+    // This function allow to create the specific object that will be stored in
+    // the database by the fn append_custo_order_info_to_db
     fn customized_event_data_for_event_index(
         &self,
         event_index: &EventIndex,
         order: &Order,
         hashmap: &HashMap<EventIndex, EventData>,
         onchain_order_placement: &OnchainOrderPlacement,
-    ) -> EventDataForDB;
+    ) -> EventRow;
 }
 
 #[async_trait::async_trait]
@@ -421,10 +427,10 @@ fn extract_order_data_from_onchain_order_placement_event(
         valid_to: order_placement.order.5,
         app_data: AppId(order_placement.order.6 .0),
         fee_amount: order_placement.order.7,
-        kind: kind_from_contract_constant(order_placement.order.8 .0)?,
+        kind: OrderKind::from_contract_bytes(order_placement.order.8 .0)?,
         partially_fillable: order_placement.order.9,
-        sell_token_balance: sell_token_source_from_contract_bytes(order_placement.order.10 .0)?,
-        buy_token_balance: buy_token_destination_from_contract_bytes(order_placement.order.11 .0)?,
+        sell_token_balance: SellTokenSource::from_contract_bytes(order_placement.order.10 .0)?,
+        buy_token_balance: BuyTokenDestination::from_contract_bytes(order_placement.order.11 .0)?,
     };
     let order_uid = order_data.uid(&domain_separator, &owner);
     Ok((order_data, owner, signing_scheme, order_uid))
@@ -476,7 +482,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 true,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
@@ -523,7 +529,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 true,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
@@ -593,7 +599,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 false,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
@@ -683,7 +689,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 true,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
@@ -765,7 +771,7 @@ mod test {
                 valid_to,
                 app_data,
                 fee_amount,
-                Bytes(OrderData::KIND_SELL),
+                Bytes(OrderKind::SELL),
                 true,
                 Bytes(OrderData::BALANCE_ERC20),
                 Bytes(OrderData::BALANCE_ERC20),
