@@ -1,7 +1,10 @@
-use crate::Web3;
+use crate::{event_handling::MAX_REORG_BLOCK_COUNT, Web3};
 use anyhow::{anyhow, Context as _, Result};
 use primitive_types::H256;
-use std::time::Duration;
+use std::{
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
@@ -27,6 +30,11 @@ pub async fn current_block_stream(
 ) -> Result<watch::Receiver<Block>> {
     let first_block = web3.current_block().await?;
     let first_hash = first_block.hash.ok_or_else(|| anyhow!("missing hash"))?;
+    let first_number = first_block
+        .number
+        .ok_or_else(|| anyhow!("missing number"))?;
+
+    let current_block_number = Arc::new(Mutex::new(first_number.as_u64()));
 
     let (sender, receiver) = watch::channel(first_block);
 
@@ -58,6 +66,12 @@ pub async fn current_block_stream(
                     continue;
                 }
             };
+
+            if !updated_current_block_with_new_block(current_block_number.as_ref(), number) {
+                tracing::error!("new block number is too old");
+                continue;
+            }
+
             tracing::debug!(%number, %hash, "new block");
             if sender.send(block.clone()).is_err() {
                 break;
@@ -124,6 +138,21 @@ where
     }
 }
 
+/// Determines if a new block is recent enough that it would warrant informing the system about it.
+/// This is used to protect against receiving very old blocks after the load balancer switched to a
+/// different node that is stuck in the past. The new block is allowed to be at most
+/// `MAX_REORG_BLOCK_COUNT` blocks older than the current block to still get notified about reorgs.
+fn updated_current_block_with_new_block(current_block: &Mutex<u64>, new_block: u64) -> bool {
+    let mut block_guard = current_block.lock().unwrap();
+    if new_block >= (*block_guard).saturating_sub(MAX_REORG_BLOCK_COUNT) {
+        // new block is within reorg depth -> update current block
+        *block_guard = new_block;
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,5 +174,36 @@ mod tests {
             let block = stream.next().await.unwrap();
             println!("new block number {}", block.number.unwrap().as_u64());
         }
+    }
+
+    #[test]
+    fn more_recent_block_gets_propagated() {
+        let current_block = Mutex::new(100);
+        assert!(updated_current_block_with_new_block(&current_block, 101));
+        assert_eq!(*current_block.lock().unwrap(), 101);
+    }
+
+    #[test]
+    fn block_within_reorg_depth_gets_propagated() {
+        let current_block = Mutex::new(100);
+        assert!(updated_current_block_with_new_block(&current_block, 100));
+        assert_eq!(*current_block.lock().unwrap(), 100);
+
+        let current_block = Mutex::new(100);
+        assert!(updated_current_block_with_new_block(
+            &current_block,
+            100 - MAX_REORG_BLOCK_COUNT
+        ));
+        assert_eq!(*current_block.lock().unwrap(), 100 - MAX_REORG_BLOCK_COUNT);
+    }
+
+    #[test]
+    fn vastly_outdated_block_does_not_get_propagated() {
+        let current_block = Mutex::new(100);
+        assert!(!updated_current_block_with_new_block(
+            &current_block,
+            100 - (MAX_REORG_BLOCK_COUNT + 1)
+        ));
+        assert_eq!(*current_block.lock().unwrap(), 100);
     }
 }
