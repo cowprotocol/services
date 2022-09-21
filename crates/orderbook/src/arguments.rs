@@ -12,7 +12,7 @@ pub struct Arguments {
     pub shared: shared::arguments::Arguments,
 
     #[clap(flatten)]
-    pub order_creation: shared::arguments::OrderQuotingArguments,
+    pub order_quoting: shared::arguments::OrderQuotingArguments,
 
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
@@ -164,7 +164,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
-        write!(f, "{}", self.order_creation)?;
+        write!(f, "{}", self.order_quoting)?;
         write!(f, "{}", self.http_client)?;
         write!(f, "{}", self.token_owner_finder)?;
         display_option(f, "tracing_node_url", &self.tracing_node_url)?;
