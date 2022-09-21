@@ -91,9 +91,10 @@ fn convert_to_quote_id_and_user_valid_to(
 
 #[cfg(test)]
 mod test {
-    use super::*;
     use ethcontract::{Bytes, EventMetadata, H160, U256};
     use model::order::{OrderData, OrderKind};
+
+    use super::*;
 
     #[test]
     pub fn test_convert_to_quote_id_and_user_valid_to() {

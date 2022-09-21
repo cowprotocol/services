@@ -571,14 +571,6 @@ impl OrderKind {
     }
 }
 
-pub fn kind_from_contract_constant(kind: [u8; 32]) -> Result<OrderKind> {
-    match kind {
-        OrderKind::SELL => Ok(OrderKind::Sell),
-        OrderKind::BUY => Ok(OrderKind::Buy),
-        _ => Err(anyhow!("Order kind is not well defined")),
-    }
-}
-
 /// Source from which the sellAmount should be drawn upon order fulfilment
 #[derive(
     Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
