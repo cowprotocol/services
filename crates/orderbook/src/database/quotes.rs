@@ -1,14 +1,9 @@
 use super::Postgres;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use database::{
-    byte_array::ByteArray,
-    quotes::{Quote as QuoteRow, QuoteSearchParameters as DbQuoteSearchParameters},
-};
 use model::quote::QuoteId;
-use number_conversions::u256_to_big_decimal;
 use shared::{
-    db_order_conversions::order_kind_into,
+    event_storing_helpers::{create_db_search_parameters, create_quote_row},
     order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
 };
 
@@ -21,19 +16,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let row = QuoteRow {
-            id: Default::default(),
-            sell_token: ByteArray(data.sell_token.0),
-            buy_token: ByteArray(data.buy_token.0),
-            sell_amount: u256_to_big_decimal(&data.quoted_sell_amount),
-            buy_amount: u256_to_big_decimal(&data.quoted_buy_amount),
-            gas_amount: data.fee_parameters.gas_amount,
-            gas_price: data.fee_parameters.gas_price,
-            sell_token_price: data.fee_parameters.sell_token_price,
-            order_kind: order_kind_into(data.kind),
-            expiration_timestamp: data.expiration,
-            quote_kind: data.quote_kind,
-        };
+        let row = create_quote_row(data);
         let id = database::quotes::save(&mut ex, &row).await?;
         Ok(Some(id))
     }
@@ -60,16 +43,7 @@ impl QuoteStoring for Postgres {
             .start_timer();
 
         let mut ex = self.pool.acquire().await?;
-        let params = DbQuoteSearchParameters {
-            sell_token: ByteArray(params.sell_token.0),
-            buy_token: ByteArray(params.buy_token.0),
-            sell_amount_0: u256_to_big_decimal(&params.sell_amount),
-            sell_amount_1: u256_to_big_decimal(&(params.sell_amount + params.fee_amount)),
-            buy_amount: u256_to_big_decimal(&params.buy_amount),
-            kind: order_kind_into(params.kind),
-            expiration,
-            quote_kind: params.quote_kind,
-        };
+        let params = create_db_search_parameters(params, expiration);
         let quote = database::quotes::find(&mut ex, &params)
             .await
             .context("failed finding quote by parameters")?;
