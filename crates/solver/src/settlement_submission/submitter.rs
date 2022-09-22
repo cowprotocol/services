@@ -178,17 +178,6 @@ impl GasPriceEstimating for SubmitterGasPriceEstimator<'_> {
     }
 }
 
-/// Returns the bigger of the 2 passed gas prices.
-fn max_gas_price(a: GasPrice1559, b: GasPrice1559) -> GasPrice1559 {
-    if a.max_fee_per_gas >= b.max_fee_per_gas
-        && a.max_priority_fee_per_gas >= b.max_priority_fee_per_gas
-    {
-        a
-    } else {
-        b
-    }
-}
-
 pub struct Submitter<'a> {
     contract: &'a GPv2Settlement,
     account: &'a Account,
@@ -444,12 +433,11 @@ impl<'a> Submitter<'a> {
 
             if let Err(err) = method.clone().view().call().await {
                 if let Some(previous_gas_price) = pending_gas_price {
+                    // We only match the replacement gas price because we don't care about the
+                    // cancellation actually being mined as long as it successfully replaces the
+                    // original transaction in the mempool.
                     let replacement_price = previous_gas_price.bump(GAS_PRICE_BUMP).ceil();
-                    // When we want to cancel a tx we want to do it ASAP so we have to at least
-                    // match the current gas price as well as the minimum gas price required for
-                    // replacing the existing transaction.
-                    let gas_price = max_gas_price(replacement_price, gas_price);
-                    match self.cancel_transaction(&gas_price, nonce).await {
+                    match self.cancel_transaction(&replacement_price, nonce).await {
                         Ok(handle) => transactions.push((handle, gas_price)),
                         Err(err) => tracing::warn!("cancellation failed: {:?}", err),
                     }
