@@ -149,13 +149,11 @@ where
         );
         ensure!(
             !range.is_empty(),
-            format!(
-                "current block number according to node is {} which is more than {} blocks in the \
+            "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-                range.end(),
-                MAX_REORG_BLOCK_COUNT,
-                range.start()
-            )
+            range.end(),
+            MAX_REORG_BLOCK_COUNT,
+            range.start()
         );
 
         let (history_range, latest_range) = split_range(range)?;
