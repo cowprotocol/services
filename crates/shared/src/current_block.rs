@@ -1,4 +1,4 @@
-use crate::{event_handling::MAX_REORG_BLOCK_COUNT, Web3};
+use crate::Web3;
 use anyhow::{anyhow, Context as _, Result};
 use primitive_types::H256;
 use std::{
@@ -140,24 +140,30 @@ where
     }
 }
 
+#[derive(prometheus_metric_storage::MetricStorage)]
+pub struct Metrics {
+    /// How much a new block number differs from the current block number.
+    #[metric(buckets(0., 1., 2., 4., 8., 25.), labels("sign"))]
+    block_stream_update_delta: prometheus::HistogramVec,
+}
+
 /// Only updates the current block if the new block number is strictly bigger than the current one.
-/// Emits error logs when the new block number differs by more than `MAX_REORG_BLOCK_COUNT` from
-/// the current block number.
+/// Updates metrics about the difference of the new block number compared to the current block.
 fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
     let current_block = current_block.fetch_max(new_block, Ordering::SeqCst);
-    if new_block > current_block + MAX_REORG_BLOCK_COUNT {
-        tracing::error!(new_block, "received a block that is suspiciously far ahead");
-        true
-    } else if new_block > current_block {
-        tracing::debug!(new_block, "received a block that is reasonably far ahead");
-        true
-    } else if new_block > current_block.saturating_sub(MAX_REORG_BLOCK_COUNT) {
-        tracing::warn!(new_block, "received a slightly outdated block");
-        false
+    let metrics = &Metrics::instance(global_metrics::get_metric_storage_registry())
+        .unwrap()
+        .block_stream_update_delta;
+
+    let delta = i128::from(new_block) - i128::from(current_block);
+    let delta_abs = (delta as f64).abs();
+    if delta < 0 {
+        metrics.with_label_values(&["negative"]).observe(delta_abs);
     } else {
-        tracing::error!(new_block, "received a vastly outdated block");
-        false
+        metrics.with_label_values(&["positive"]).observe(delta_abs);
     }
+
+    new_block > current_block
 }
 
 #[cfg(test)]
@@ -187,16 +193,6 @@ mod tests {
         let current_block = AtomicU64::new(100);
         assert!(block_number_increased(&current_block, 101));
         assert_eq!(current_block.load(Ordering::SeqCst), 101);
-
-        let current_block = AtomicU64::new(100);
-        assert!(block_number_increased(
-            &current_block,
-            100 + MAX_REORG_BLOCK_COUNT + 1
-        ));
-        assert_eq!(
-            current_block.load(Ordering::SeqCst),
-            100 + MAX_REORG_BLOCK_COUNT + 1
-        );
     }
 
     #[test]
@@ -205,10 +201,7 @@ mod tests {
         assert!(!block_number_increased(&current_block, 100));
         assert_eq!(current_block.load(Ordering::SeqCst), 100);
 
-        assert!(!block_number_increased(
-            &current_block,
-            100 - MAX_REORG_BLOCK_COUNT - 1
-        ));
+        assert!(!block_number_increased(&current_block, 99));
         assert_eq!(current_block.load(Ordering::SeqCst), 100);
     }
 }
