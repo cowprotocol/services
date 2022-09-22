@@ -157,7 +157,7 @@ fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
 
     let delta = i128::from(new_block) - i128::from(current_block);
     let delta_abs = (delta as f64).abs();
-    if delta < 0 {
+    if delta <= 0 {
         metrics.with_label_values(&["negative"]).observe(delta_abs);
     } else {
         metrics.with_label_values(&["positive"]).observe(delta_abs);
