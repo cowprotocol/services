@@ -647,6 +647,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn past_events_by_block_hashes_test() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
@@ -689,6 +690,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore]
     async fn update_events_test() {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
