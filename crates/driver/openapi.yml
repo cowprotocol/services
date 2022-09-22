@@ -39,9 +39,9 @@ components:
       description: Description of what price to estimate.
       type: object
       properties:
-        sell_token:
+        sellToken:
           $ref: "#/components/schemas/Address"
-        buy_token:
+        buyToken:
           $ref: "#/components/schemas/Address"
         kind:
           description: |
@@ -63,9 +63,9 @@ components:
           `sell`.
         type: object
         properties:
-          sell_amount:
+          sellAmount:
             $ref: "#/components/schemas/TokenAmount"
-          buy_amount:
+          buyAmount:
             $ref: "#/components/schemas/TokenAmount"
           gas:
             type: integer
