@@ -9,6 +9,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
-ethcontract-mock = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter" }
+ethcontract = { version = "0.21.0", default-features = false }
+ethcontract-mock = { version = "0.21.0" }
 hex-literal = "0.3"

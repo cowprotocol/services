@@ -16,7 +16,7 @@ contracts = { path = "../contracts" }
 chrono = "0.4"
 criterion = "0.3"
 database = { path = "../database" }
-ethcontract = { git = "https://github.com/gnosis/ethcontract-rs.git", branch = "add-blockhash-to-event-filter", default-features = false }
+ethcontract = { version = "0.21.0", default-features = false }
 hex-literal = "0.3"
 lazy_static = "1.4"
 maplit = "1.0"
