@@ -286,8 +286,8 @@ pub struct SwapResponse {
 }
 
 /// Abstract 0x API. Provides a mockable implementation.
-#[mockall::automock]
 #[async_trait::async_trait]
+#[mockall::automock]
 pub trait ZeroExApi: Send + Sync {
     /// Retrieve a swap for the specified parameters from the 0x API.
     ///

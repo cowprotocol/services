@@ -166,6 +166,7 @@ mod tests {
     use crate::liquidity::LimitOrder;
     use crate::test::account;
     use contracts::{GPv2Settlement, WETH9};
+    use ethcontract::futures::FutureExt as _;
     use ethcontract::{Web3, H160, U256};
     use mockall::predicate::*;
     use mockall::Sequence;
@@ -267,18 +268,21 @@ mod tests {
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: U256::from_dec_str("100").unwrap(),
-                    buy_amount: U256::from_dec_str("91").unwrap(),
-                    allowance_target,
-                    price: 0.91_f64,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: hex::decode("00").unwrap(),
-                value: U256::from_dec_str("0").unwrap(),
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: U256::from_dec_str("100").unwrap(),
+                        buy_amount: U256::from_dec_str("91").unwrap(),
+                        allowance_target,
+                        price: 0.91_f64,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: hex::decode("00").unwrap(),
+                    value: U256::from_dec_str("0").unwrap(),
+                })
+            }
+            .boxed()
         });
 
         allowance_fetcher
@@ -407,18 +411,21 @@ mod tests {
 
         let allowance_target = shared::addr!("def1c0ded9bec7f1a1670819833240f027b25eff");
         client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: U256::from_dec_str("100").unwrap(),
-                    buy_amount: U256::from_dec_str("91").unwrap(),
-                    allowance_target,
-                    price: 13.121_002_575_170_278_f64,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: hex::decode("").unwrap(),
-                value: U256::from_dec_str("0").unwrap(),
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: U256::from_dec_str("100").unwrap(),
+                        buy_amount: U256::from_dec_str("91").unwrap(),
+                        allowance_target,
+                        price: 13.121_002_575_170_278_f64,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: hex::decode("").unwrap(),
+                    value: U256::from_dec_str("0").unwrap(),
+                })
+            }
+            .boxed()
         });
 
         // On first invocation no prior allowance, then max allowance set.
@@ -483,19 +490,22 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         let mut client = MockZeroExApi::new();
-        client.expect_get_swap().returning(move |_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 1000.into(),
-                    buy_amount: 5000.into(),
-                    allowance_target: shared::addr!("0000000000000000000000000000000000000000"),
-                    price: 0.,
-                    estimated_gas: Default::default(),
-                },
-                to: shared::addr!("0000000000000000000000000000000000000000"),
-                data: vec![],
-                value: 0.into(),
-            })
+        client.expect_get_swap().returning(|_| {
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 1000.into(),
+                        buy_amount: 5000.into(),
+                        allowance_target: shared::addr!("0000000000000000000000000000000000000000"),
+                        price: 0.,
+                        estimated_gas: Default::default(),
+                    },
+                    to: shared::addr!("0000000000000000000000000000000000000000"),
+                    data: vec![],
+                    value: 0.into(),
+                })
+            }
+            .boxed()
         });
 
         let mut allowance_fetcher = Box::new(MockAllowanceManaging::new());

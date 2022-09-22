@@ -36,16 +36,7 @@ impl ZeroExTradeFinder {
         self.sharing.shared_or_else(*query, || {
             let inner = self.inner.clone();
             let query = *query;
-            async move {
-                // Force the future to not resolve immediately in testing. This
-                // allows us to test request sharing (since `mockall` traits
-                // resolve immediately).
-                #[cfg(test)]
-                tokio::time::sleep(Default::default()).await;
-
-                inner.quote(&query).await
-            }
-            .boxed()
+            async move { inner.quote(&query).await }.boxed()
         })
     }
 }
@@ -113,6 +104,7 @@ mod tests {
     use crate::zeroex_api::{DefaultZeroExApi, PriceResponse};
     use crate::zeroex_api::{MockZeroExApi, SwapResponse};
     use reqwest::Client;
+    use std::time::Duration;
 
     fn create_trader(api: Arc<dyn ZeroExApi>) -> ZeroExTradeFinder {
         ZeroExTradeFinder::new(api, Default::default())
@@ -130,18 +122,21 @@ mod tests {
         //     slippagePercentage=0&\
         //     sellAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 100000000000000000u64.into(),
-                    buy_amount: 1110165823572443613u64.into(),
-                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    price: 11.101_658_235_724_436,
-                    estimated_gas: 111000,
-                },
-                to: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                value: 42.into(),
-                data: vec![1, 2, 3, 4],
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 100000000000000000u64.into(),
+                        buy_amount: 1110165823572443613u64.into(),
+                        allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 11.101_658_235_724_436,
+                        estimated_gas: 111000,
+                    },
+                    to: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                    value: 42.into(),
+                    data: vec![1, 2, 3, 4],
+                })
+            }
+            .boxed()
         });
 
         let weth = testlib::tokens::WETH;
@@ -188,17 +183,20 @@ mod tests {
         //     slippagePercentage=0&\
         //     buyAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 8986186353137488u64.into(),
-                    buy_amount: 100000000000000000u64.into(),
-                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    price: 0.089_861_863_531_374_87,
-                    estimated_gas: 111000,
-                },
-                data: vec![5, 6, 7, 8],
-                ..Default::default()
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 8986186353137488u64.into(),
+                        buy_amount: 100000000000000000u64.into(),
+                        allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 0.089_861_863_531_374_87,
+                        estimated_gas: 111000,
+                    },
+                    data: vec![5, 6, 7, 8],
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         let weth = testlib::tokens::WETH;
@@ -225,9 +223,13 @@ mod tests {
     #[tokio::test]
     async fn shares_quotes() {
         let mut zeroex_api = MockZeroExApi::new();
-        zeroex_api
-            .expect_get_swap()
-            .return_once(|_| Ok(Default::default()));
+        zeroex_api.expect_get_swap().return_once(|_| {
+            async move {
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                Ok(Default::default())
+            }
+            .boxed()
+        });
 
         let trader = create_trader(Arc::new(zeroex_api));
 
