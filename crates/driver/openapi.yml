@@ -7,7 +7,7 @@ info:
 paths:
   /quote:
     post:
-      summary: Get price estimation quote.
+      description: Get price estimation quote.
       requestBody:
         required: true
         content:
@@ -25,6 +25,65 @@ paths:
           $ref: "#/components/responses/BadRequest"
         500:
           $ref: "#/components/responses/InternalServerError"
+  /solve:
+    post:
+      description: |
+        Solve the passed in auction.
+
+        The response contains the objective value of the solution the Solver is able to find but not
+        the calldata. This facilitates solvers that work with an RFQ system. When Autopilot decides
+        the winner of the of the auction it prompts the corresponding solver to execute its solution
+        through the execute endpoint.
+
+        The Solver should respond quickly enough so that the caller of the endpoint receives the
+        response within the deadline indicated in the request. This includes taking into account
+        network delay.
+
+        Autopilot will call this endpoint at most once for the same auction id and the following
+        call will have a larger id.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SolveRequest"
+      responses:
+        200:
+          description: Auction successfully solved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SolveResponse"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
+  /execute:
+    post:
+      description: |
+        Execute the previously solved auction on chain.
+
+        The auction that should be executed is identified through its id and was recently returned
+        by this Solver's solve endpoint.
+
+        By accepting the execute request the Solver promises to execute the solution on chain immediately.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteRequest"
+      responses:
+        200:
+          description: Execution accepted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecuteResponse"
+        400:
+          $ref: "#/components/responses/BadRequest"
+        500:
+          $ref: "#/components/responses/InternalServerError"
 components:
   schemas:
     Address:
@@ -35,6 +94,25 @@ components:
       description: Amount of an ERC20 token. 256 bit unsigned integer in decimal notation.
       type: string
       example: "1234567890"
+    Auction:
+      description: |
+        Auction information.
+
+        Contains `id`, `orders`, `prices` from the order book api's auction endpoint.
+
+        TODO: Document the object here. Do we need `block` and `latestSettlementBlock`?
+      type: object
+    BigUint:
+      description: A big unsigned integer encoded in decimal.
+      type: string
+      example: "1234567890"
+    OrderUID:
+      description: |
+        Unique identifier for the order: 56 bytes encoded as hex with `0x` prefix.
+        Bytes 0 to 32 are the order digest, bytes 30 to 52 the owner address
+        and bytes 52..56 valid to,
+      type: string
+      example: "0x30cff40d9f60caa68a37f0ee73253ad6ad72b45580c945fe3ab67596476937197854163b1b0d24e77dca702b97b5cc33e0f83dcb626122a6"
     QuoteRequest:
       description: Description of what price to estimate.
       type: object
@@ -76,8 +154,107 @@ components:
           quote. For example, this Solver might not be aware of any liquidity between the tokens.
         type: object
         properties:
-          unfillable_reason:
+          unfillableReason:
             type: string
+    SolveRequest:
+      description: Request to the solve endpoint.
+      type: object
+      properties:
+        auction:
+          $ref: "#/components/schemas/Auction"
+        deadline:
+          description: |
+            The time until which the caller expects a response.
+
+            Encoded as ISO 8601 UTC.
+          type: string
+          example: "2020-12-03T18:35:18.814523Z"
+    SolveResponse:
+      description: Response of the solve endpoint.
+      type: object
+      properties:
+        objective:
+          description: |
+            The objective value of the solution.
+
+            `null` indicates that solving was successful but no solution was found.
+          type: number
+          nullable: true
+        signature:
+          description: |
+            Signature confirming that the Solver promised to have this solution for this auction.
+
+            TODO: Decide what is signed and how it is signed.
+          type: string
+    ExecuteRequest:
+      description: Request to the execute endpoint.
+      type: object
+      properties:
+        auctionId:
+          description: Id of the auction that should be executed.
+          type: integer
+    ExecuteResponse:
+      description: Response of the execute endpoint.
+      type: object
+      properties:
+        account:
+          description: The address that executes the transaction.
+          $ref: "#/components/schemas/Address"
+        nonce:
+          description: The nonce of the transaction.
+          type: integer
+        clearingPrices:
+          description: |
+            Mapping of hex token address to price.
+
+            The prices of tokens for settled user orders as passed to the settlement contract.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BigUint"
+        trades:
+          description: executed orders
+          type: array
+          items:
+            type: object
+            properties:
+              uid:
+                $ref: "#/components/schemas/OrderUID"
+              executedAmount:
+                $ref: "#/components/schemas/BigUint"
+        internalizedInteractions:
+          type: array
+          items:
+            type: object
+            description: |
+              An internalized interaction is an interaction that could have executed on chain but
+              was instead handled through the settlement contract's buffers to save gas. The
+              information included here allows reconstructing the interaction so that it can be
+              checked for validity.
+            properties:
+              calldata:
+                description: hex encoded
+                type: string
+                example: "0x01"
+              inputs:
+                description: Mapping of hex token address to amount.
+                type: object
+                additionalProperties:
+                    $ref: "#/components/schemas/BigUint"
+              outputs:
+                description: Mapping of token address to amount.
+                type: object
+                additionalProperties:
+                    $ref: "#/components/schemas/BigUint"
+        calldata:
+          description: hex encoded
+          type: string
+          example: "0x01"
+        signature:
+          description: |
+            Signature confirming that the Solver promised to execute this auction.
+
+            TODO: Decide what is signed and how it is signed.
+          type: string
   responses:
     BadRequest:
       description: |
