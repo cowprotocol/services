@@ -45,8 +45,8 @@ components:
           $ref: "#/components/schemas/Address"
         kind:
           description: |
-            - `buy`: in_amount is in buy_token, out_amount is in sell_token
-            - `sell`: in_amount is in sell_token, out_amount is in buy_token
+            - `buy`: amount is in buy_token, out_amount is in sell_token
+            - `sell`: amount is in sell_token, out_amount is in buy_token
           type: string
           enum: ["buy", "sell"]
         amount:
