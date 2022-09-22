@@ -45,6 +45,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_with = { version = "1.11", default-features = false }
 shared = { path = "../shared" }
+sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 strum = { version = "0.24", features = ["derive"] }
 thiserror = "1.0"
 tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "time", "test-util"] }
@@ -53,6 +54,5 @@ web3 = { version = "0.18", default-features = false }
 mockall = "0.11"
 
 [dev-dependencies]
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
 tracing-subscriber = "0.3"
 testlib = { path = "../testlib" }
