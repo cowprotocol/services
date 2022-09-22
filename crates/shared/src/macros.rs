@@ -15,6 +15,13 @@ macro_rules! bfp {
 }
 
 #[macro_export]
+macro_rules! bytes {
+    ($x:literal) => {
+        ::ethcontract::web3::types::Bytes(::hex_literal::hex!($x).to_vec())
+    };
+}
+
+#[macro_export]
 macro_rules! json_map {
     ($($key:expr => $value:expr),* $(,)?) => {{
         #[allow(unused_mut)]
@@ -30,5 +37,15 @@ macro_rules! json_map {
 macro_rules! dummy_contract {
     ($contract:ident, $addr:expr) => {
         $contract::at(&$crate::transport::dummy::web3(), $addr.into())
+    };
+}
+
+#[macro_export]
+macro_rules! deployed_bytecode {
+    ($contract:ty) => {
+        <$contract>::raw_contract()
+            .deployed_bytecode
+            .to_bytes()
+            .unwrap()
     };
 }

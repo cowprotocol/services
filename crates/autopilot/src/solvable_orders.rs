@@ -366,11 +366,13 @@ async fn update_task(
         let start = Instant::now();
         match cache.update(block).await {
             Ok(()) => tracing::debug!(
+                %block,
                 "updated solvable orders in {}s",
                 start.elapsed().as_secs_f32()
             ),
             Err(err) => tracing::error!(
                 ?err,
+                %block,
                 "failed to update solvable orders in {}s",
                 start.elapsed().as_secs_f32()
             ),

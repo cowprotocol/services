@@ -4,7 +4,7 @@ use crate::{
     metrics::SolverMetrics,
     settlement::Settlement,
     settlement_simulation::{
-        simulate_and_error_with_tenderly_link, simulate_before_after_access_list, TenderlyApi,
+        simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
     },
     settlement_submission::SubmissionError,
     solver::{SettlementWithError, Solver},
@@ -16,7 +16,7 @@ use itertools::Itertools;
 use model::order::{Order, OrderKind};
 use num::{BigRational, ToPrimitive};
 use primitive_types::H256;
-use shared::Web3;
+use shared::{tenderly_api::TenderlyApi, Web3};
 use std::sync::Arc;
 use tracing::{Instrument as _, Span};
 use web3::types::{AccessList, TransactionReceipt};
@@ -24,7 +24,7 @@ use web3::types::{AccessList, TransactionReceipt};
 pub struct DriverLogger {
     pub metrics: Arc<dyn SolverMetrics>,
     pub web3: Web3,
-    pub tenderly: Option<TenderlyApi>,
+    pub tenderly: Option<Arc<dyn TenderlyApi>>,
     pub network_id: String,
     pub settlement_contract: GPv2Settlement,
     pub simulation_gas_limit: u128,
@@ -34,7 +34,7 @@ impl DriverLogger {
     pub async fn metric_access_list_gas_saved(&self, transaction_hash: H256) -> Result<()> {
         let gas_saved = simulate_before_after_access_list(
             &self.web3,
-            self.tenderly.as_ref().context("tenderly disabled")?,
+            self.tenderly.as_deref().context("tenderly disabled")?,
             self.network_id.clone(),
             transaction_hash,
         )

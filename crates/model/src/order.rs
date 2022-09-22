@@ -7,7 +7,7 @@ use crate::{
     u256_decimal::{self, DecimalU256},
     DomainSeparator, TokenPair,
 };
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use chrono::{offset::Utc, DateTime, NaiveDateTime};
 use derivative::Derivative;
 use hex_literal::hex;
@@ -226,21 +226,14 @@ impl OrderData {
     pub const TYPE_HASH: [u8; 32] =
         hex!("d5a25ba2e97094ad7d83dc28a6572da797d6b3e7fc6663bd93efb789fc17e489");
 
-    // keccak256("sell")
-    const KIND_SELL: [u8; 32] =
-        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
-    // keccak256("buy")
-    const KIND_BUY: [u8; 32] =
-        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
-
     // keccak256("erc20")
-    const BALANCE_ERC20: [u8; 32] =
+    pub const BALANCE_ERC20: [u8; 32] =
         hex!("5a28e9363bb942b639270062aa6bb295f434bcdfc42c97267bf003f272060dc9");
     // keccak256("external")
-    const BALANCE_EXTERNAL: [u8; 32] =
+    pub const BALANCE_EXTERNAL: [u8; 32] =
         hex!("abee3b73373acd583a130924aad6dc38cfdc44ba0555ba94ce2ff63980ea0632");
     // keccak256("internal")
-    const BALANCE_INTERNAL: [u8; 32] =
+    pub const BALANCE_INTERNAL: [u8; 32] =
         hex!("4ac99ace14ee0a5ef932dc609df0943ab7ac16b7583634612f8dc35a4289a6ce");
 
     pub fn hash_struct(&self) -> [u8; 32] {
@@ -257,8 +250,8 @@ impl OrderData {
         hash_data[224..256].copy_from_slice(&self.app_data.0);
         self.fee_amount.to_big_endian(&mut hash_data[256..288]);
         hash_data[288..320].copy_from_slice(match self.kind {
-            OrderKind::Sell => &Self::KIND_SELL,
-            OrderKind::Buy => &Self::KIND_BUY,
+            OrderKind::Sell => &OrderKind::SELL,
+            OrderKind::Buy => &OrderKind::BUY,
         });
         hash_data[351] = self.partially_fillable as u8;
         hash_data[352..384].copy_from_slice(match self.sell_token_balance {
@@ -555,11 +548,25 @@ pub enum OrderKind {
 }
 
 impl OrderKind {
+    // keccak256("sell")
+    pub const SELL: [u8; 32] =
+        hex!("f3b277728b3fee749481eb3e0b3b48980dbbab78658fc419025cb16eee346775");
+    // keccak256("buy")
+    pub const BUY: [u8; 32] =
+        hex!("6ed88e868af0a1983e3886d5f3e95a2fafbd6c3450bc229e27342283dc429ccc");
+
     /// Returns a the order kind as a string label that can be used in metrics.
     pub fn label(&self) -> &'static str {
         match self {
             Self::Buy => "buy",
             Self::Sell => "sell",
+        }
+    }
+    pub fn from_contract_bytes(kind: [u8; 32]) -> Result<Self> {
+        match kind {
+            Self::SELL => Ok(OrderKind::Sell),
+            Self::BUY => Ok(OrderKind::Buy),
+            _ => Err(anyhow!("Order kind is not well defined")),
         }
     }
 }
@@ -580,6 +587,17 @@ pub enum SellTokenSource {
     External,
 }
 
+impl SellTokenSource {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_EXTERNAL => Ok(Self::External),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order sellTokenSource is not well defined")),
+        }
+    }
+}
+
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
 #[derive(
     Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
@@ -592,6 +610,16 @@ pub enum BuyTokenDestination {
     Erc20,
     /// Pay trade proceeds as a Vault internal balance transfer
     Internal,
+}
+
+impl BuyTokenDestination {
+    pub fn from_contract_bytes(bytes: [u8; 32]) -> Result<Self> {
+        match bytes {
+            OrderData::BALANCE_INTERNAL => Ok(Self::Internal),
+            OrderData::BALANCE_ERC20 => Ok(Self::Erc20),
+            _ => Err(anyhow!("Order buyTokenDestination is not well defined")),
+        }
+    }
 }
 
 pub fn debug_app_data(

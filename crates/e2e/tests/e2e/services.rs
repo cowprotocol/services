@@ -1,6 +1,6 @@
 use crate::deploy::Contracts;
 use anyhow::{anyhow, Result};
-use autopilot::solvable_orders::SolvableOrdersCache;
+use autopilot::{event_updater::GPv2SettlementContract, solvable_orders::SolvableOrdersCache};
 use contracts::{ERC20Mintable, GnosisSafe, GnosisSafeCompatibilityFallbackHandler, WETH9};
 use ethcontract::{Bytes, H160, H256, U256};
 use orderbook::{database::Postgres, orderbook::Orderbook};
@@ -176,8 +176,9 @@ impl OrderbookServices {
             .unwrap();
         database::clear_DANGER(&api_db.pool).await.unwrap();
         let event_updater = Arc::new(autopilot::event_updater::EventUpdater::new(
-            contracts.gp_settlement.clone(),
+            GPv2SettlementContract::new(contracts.gp_settlement.clone()),
             autopilot_db.clone(),
+            contracts.gp_settlement.clone().raw_instance().web3(),
             None,
         ));
         let pair_provider = uniswap_pair_provider(contracts);

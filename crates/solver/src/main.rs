@@ -18,6 +18,7 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher},
     token_list::TokenList,
     zeroex_api::DefaultZeroExApi,
@@ -32,10 +33,9 @@ use solver::{
     liquidity_collector::LiquidityCollector,
     metrics::Metrics,
     orderbook::OrderBookApi,
-    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -50,6 +50,7 @@ async fn main() {
         args.shared.log_filter.as_str(),
         args.shared.log_stderr_threshold,
     );
+    shared::exit_process_on_panic::set_panic_hook();
     tracing::info!("running solver with validated arguments:\n{}", args);
 
     global_metrics::setup_metrics_registry(Some("gp_v2_solver".into()), None);
@@ -318,7 +319,7 @@ async fn main() {
             .unwrap();
         assert_eq!(
             node_network_id, network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -329,26 +330,10 @@ async fn main() {
     let mut transaction_strategies = vec![];
     for strategy in args.transaction_strategy {
         match strategy {
-            TransactionStrategyArg::PublicMempool => {
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        vec![web3.clone()],
-                        args.disable_high_risk_public_mempool_transactions,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
-                }))
-            }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(
-                            http_factory.create(),
-                            args.eden_api_url.clone(),
-                            submitted_transactions.clone(),
-                        )
-                        .unwrap(),
+                        EdenApi::new(http_factory.create(), args.eden_api_url.clone()).unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
@@ -367,19 +352,19 @@ async fn main() {
                     }))
                 }
             }
-            TransactionStrategyArg::CustomNodes => {
+            TransactionStrategyArg::PublicMempool => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(
                         submission_nodes.clone(),
                         args.disable_high_risk_public_mempool_transactions,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {
@@ -387,13 +372,22 @@ async fn main() {
             }
         }
     }
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &http_factory,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -408,17 +402,12 @@ async fn main() {
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator,
-        max_gas_price_bumps: args.max_gas_price_bumps,
     };
     let api = OrderBookApi::new(
         args.orderbook_url,
         http_factory.create(),
         args.shared.solver_competition_auth,
     );
-    let tenderly = args
-        .tenderly_url
-        .zip(args.tenderly_api_key)
-        .and_then(|(url, api_key)| TenderlyApi::new(&http_factory, url, &api_key).ok());
 
     let mut driver = Driver::new(
         settlement_contract,
@@ -443,7 +432,7 @@ async fn main() {
         args.max_settlement_price_deviation
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
-        tenderly,
+        tenderly_api,
     );
 
     let maintainer = ServiceMaintenance {

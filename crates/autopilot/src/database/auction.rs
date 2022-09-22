@@ -3,8 +3,8 @@ use anyhow::{anyhow, Context, Result};
 use database::{
     auction::AuctionId,
     orders::{
-        BuyTokenDestination as DbBuyTokenDestination, OrderKind as DbOrderKind,
-        SellTokenSource as DbSellTokenSource, SigningScheme as DbSigningScheme,
+        BuyTokenDestination as DbBuyTokenDestination, SellTokenSource as DbSellTokenSource,
+        SigningScheme as DbSigningScheme,
     },
 };
 use futures::{StreamExt, TryStreamExt};
@@ -12,7 +12,7 @@ use model::{
     app_id::AppId,
     auction::Auction,
     order::{
-        BuyTokenDestination, Order, OrderData, OrderKind, OrderMetadata, OrderStatus, OrderUid,
+        BuyTokenDestination, Order, OrderData, OrderMetadata, OrderStatus, OrderUid,
         SellTokenSource,
     },
     signature::{Signature, SigningScheme},
@@ -23,6 +23,59 @@ use primitive_types::H160;
 pub struct SolvableOrders {
     pub orders: Vec<Order>,
     pub latest_settlement_block: u64,
+}
+use chrono::{DateTime, Utc};
+use model::quote::QuoteId;
+use shared::{
+    db_order_conversions::order_kind_from,
+    event_storing_helpers::{create_db_search_parameters, create_quote_row},
+    order_quoting::{QuoteData, QuoteSearchParameters, QuoteStoring},
+};
+
+#[async_trait::async_trait]
+impl QuoteStoring for Postgres {
+    async fn save(&self, data: QuoteData) -> Result<Option<QuoteId>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["save_quote"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        let row = create_quote_row(data);
+        let id = database::quotes::save(&mut ex, &row).await?;
+        Ok(Some(id))
+    }
+
+    async fn get(&self, id: QuoteId) -> Result<Option<QuoteData>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["get_quote"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        let quote = database::quotes::get(&mut ex, id).await?;
+        quote.map(TryFrom::try_from).transpose()
+    }
+
+    async fn find(
+        &self,
+        params: QuoteSearchParameters,
+        expiration: DateTime<Utc>,
+    ) -> Result<Option<(QuoteId, QuoteData)>> {
+        let _timer = super::Metrics::get()
+            .database_queries
+            .with_label_values(&["find_quote"])
+            .start_timer();
+
+        let mut ex = self.0.acquire().await?;
+        let params = create_db_search_parameters(params, expiration);
+        let quote = database::quotes::find(&mut ex, &params)
+            .await
+            .context("failed finding quote by parameters")?;
+        quote
+            .map(|quote| Ok((quote.id, quote.try_into()?)))
+            .transpose()
+    }
 }
 
 impl Postgres {
@@ -114,13 +167,6 @@ fn full_order_into_model_order(order: database::orders::FullOrder) -> Result<Ord
         data,
         signature,
     })
-}
-
-pub fn order_kind_from(kind: DbOrderKind) -> OrderKind {
-    match kind {
-        DbOrderKind::Buy => OrderKind::Buy,
-        DbOrderKind::Sell => OrderKind::Sell,
-    }
 }
 
 fn sell_token_source_from(source: DbSellTokenSource) -> SellTokenSource {

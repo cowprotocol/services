@@ -513,6 +513,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
+                from: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount1,
@@ -533,6 +534,7 @@ mod tests {
 
         let result = estimator
             .estimate(&Query {
+                from: None,
                 sell_token: t1.1,
                 buy_token: t2.1,
                 in_amount: amount2,
