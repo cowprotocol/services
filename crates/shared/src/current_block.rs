@@ -157,7 +157,7 @@ fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
 
     let delta = (i128::from(new_block) - i128::from(current_block)) as f64;
     if delta <= 0. {
-        tracing::warn!(delta, new_block, "ignored new block number");
+        tracing::debug!(delta, new_block, "ignored new block number");
         metric.with_label_values(&["negative"]).observe(delta.abs());
     } else {
         tracing::debug!(delta, new_block, "increased current block number");
