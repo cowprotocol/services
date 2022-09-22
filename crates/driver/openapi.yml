@@ -49,7 +49,7 @@ components:
             - `sell`: in_amount is in sell_token, out_amount is in buy_token
           type: string
           enum: ["buy", "sell"]
-        in_amount:
+        amount:
           $ref: "#/components/schemas/TokenAmount"
     QuoteResponse:
       anyOf:
@@ -57,9 +57,15 @@ components:
           Successful Quote
 
           The Solver knows how to fill the request with these parameters.
+
+          If the request was of type `buy` then the response's buy amount has the same value as the
+          request's amount and the sell amount was filled in by the server. Vice versa for type
+          `sell`.
         type: object
         properties:
-          out_amount:
+          sell_amount:
+            $ref: "#/components/schemas/TokenAmount"
+          buy_amount:
             $ref: "#/components/schemas/TokenAmount"
           gas:
             type: integer
