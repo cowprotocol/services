@@ -20,6 +20,7 @@ use shared::{
         uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         BaselineSource,
     },
+    tenderly_api::{TenderlyApi, TenderlyHttpApi},
     token_info::{CachedTokenInfoFetcher, TokenInfoFetcher, TokenInfoFetching},
     zeroex_api::DefaultZeroExApi,
 };
@@ -36,10 +37,9 @@ use solver::{
     settlement_access_list::AccessListEstimating,
     settlement_ranker::SettlementRanker,
     settlement_rater::SettlementRater,
-    settlement_simulation::TenderlyApi,
     settlement_submission::{
         submitter::{
-            custom_nodes_api::CustomNodesApi, eden_api::EdenApi, flashbots_api::FlashbotsApi,
+            eden_api::EdenApi, flashbots_api::FlashbotsApi, public_mempool_api::PublicMempoolApi,
             Strategy,
         },
         GlobalTxPool, SolutionSubmitter, StrategyArgs, TransactionStrategy,
@@ -58,6 +58,7 @@ struct CommonComponents {
     chain_id: u64,
     settlement_contract: contracts::GPv2Settlement,
     native_token_contract: WETH9,
+    tenderly_api: Option<Arc<dyn TenderlyApi>>,
     access_list_estimator: Arc<dyn AccessListEstimating>,
     gas_price_estimator: Arc<dyn GasPriceEstimating>,
     order_converter: Arc<OrderConverter>,
@@ -85,13 +86,22 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
     let native_token_contract = WETH9::deployed(&web3)
         .await
         .expect("couldn't load deployed native token");
+    let tenderly_api = Some(()).and_then(|_| {
+        Some(Arc::new(
+            TenderlyHttpApi::new(
+                &http_factory,
+                args.tenderly_user.as_deref()?,
+                args.tenderly_project.as_deref()?,
+                args.tenderly_api_key.as_deref()?,
+            )
+            .expect("failed to create Tenderly API"),
+        ) as Arc<dyn TenderlyApi>)
+    });
     let access_list_estimator = Arc::new(
         solver::settlement_access_list::create_priority_estimator(
-            &http_factory,
             &web3,
             args.access_list_estimators.as_slice(),
-            args.tenderly_url.clone(),
-            args.tenderly_api_key.clone(),
+            tenderly_api.clone(),
             network_id.clone(),
         )
         .expect("failed to create access list estimator"),
@@ -126,6 +136,7 @@ async fn init_common_components(args: &Arguments) -> CommonComponents {
         chain_id,
         settlement_contract,
         native_token_contract,
+        tenderly_api,
         access_list_estimator,
         gas_price_estimator,
         order_converter,
@@ -196,7 +207,7 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             .unwrap();
         assert_eq!(
             node_network_id, common.network_id,
-            "network id of custom node doesn't match main node"
+            "network id of submission node doesn't match main node"
         );
     }
     let submission_nodes = submission_nodes_with_url
@@ -207,26 +218,10 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
     let mut transaction_strategies = vec![];
     for strategy in &args.transaction_strategy {
         match strategy {
-            TransactionStrategyArg::PublicMempool => {
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
-                        vec![web3.clone()],
-                        args.disable_high_risk_public_mempool_transactions,
-                    )),
-                    max_additional_tip: 0.,
-                    additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
-                }))
-            }
             TransactionStrategyArg::Eden => {
                 transaction_strategies.push(TransactionStrategy::Eden(StrategyArgs {
                     submit_api: Box::new(
-                        EdenApi::new(
-                            client(),
-                            args.eden_api_url.clone(),
-                            submitted_transactions.clone(),
-                        )
-                        .unwrap(),
+                        EdenApi::new(client(), args.eden_api_url.clone()).unwrap(),
                     ),
                     max_additional_tip: args.max_additional_eden_tip,
                     additional_tip_percentage_of_max_fee: args.additional_tip_percentage,
@@ -243,19 +238,19 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
                     }))
                 }
             }
-            TransactionStrategyArg::CustomNodes => {
+            TransactionStrategyArg::PublicMempool => {
                 assert!(
                     !submission_nodes.is_empty(),
                     "missing transaction submission nodes"
                 );
-                transaction_strategies.push(TransactionStrategy::CustomNodes(StrategyArgs {
-                    submit_api: Box::new(CustomNodesApi::new(
+                transaction_strategies.push(TransactionStrategy::PublicMempool(StrategyArgs {
+                    submit_api: Box::new(PublicMempoolApi::new(
                         submission_nodes.clone(),
                         args.disable_high_risk_public_mempool_transactions,
                     )),
                     max_additional_tip: 0.,
                     additional_tip_percentage_of_max_fee: 0.,
-                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::CustomNodes),
+                    sub_tx_pool: submitted_transactions.add_sub_pool(Strategy::PublicMempool),
                 }))
             }
             TransactionStrategyArg::DryRun => {
@@ -274,7 +269,6 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
         gas_price_cap: args.gas_price_cap,
         transaction_strategies,
         access_list_estimator: common.access_list_estimator.clone(),
-        max_gas_price_bumps: args.max_gas_price_bumps,
     })
 }
 
@@ -481,11 +475,6 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         web3: common.web3.clone(),
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
-    let tenderly = args
-        .tenderly_url
-        .clone()
-        .zip(args.tenderly_api_key.clone())
-        .and_then(|(url, api_key)| TenderlyApi::new(&common.http_factory, url, &api_key).ok());
     let metrics = Arc::new(Metrics::new().unwrap());
 
     let settlement_ranker = Arc::new(SettlementRanker {
@@ -501,7 +490,7 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
         metrics,
         settlement_contract: common.settlement_contract.clone(),
         simulation_gas_limit: args.simulation_gas_limit,
-        tenderly,
+        tenderly: common.tenderly_api.clone(),
     });
 
     solvers

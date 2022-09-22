@@ -8,7 +8,7 @@ use shared::{
     arguments::{display_list, display_option, display_secret_option},
     http_client,
 };
-use std::{num::NonZeroU8, time::Duration};
+use std::time::Duration;
 
 #[derive(clap::Parser)]
 pub struct Arguments {
@@ -176,9 +176,13 @@ pub struct Arguments {
     #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
-    /// The URL for tenderly transaction simulation.
+    /// The Tenderly user associated with the API key.
     #[clap(long, env)]
-    pub tenderly_url: Option<Url>,
+    pub tenderly_user: Option<String>,
+
+    /// The Tenderly project associated with the API key.
+    #[clap(long, env)]
+    pub tenderly_project: Option<String>,
 
     /// Tenderly requires api key to work. Optional since Tenderly could be skipped in access lists estimators.
     #[clap(long, env)]
@@ -277,11 +281,6 @@ pub struct Arguments {
     #[clap(long, env, default_value = "15000000")]
     pub simulation_gas_limit: u128,
 
-    /// Configures how often the gas price of a transaction may be increased by the minimum amount
-    /// compared to the previously failing transaction to eventually bring it on chain.
-    #[clap(long, env, default_value = "1")]
-    pub max_gas_price_bumps: NonZeroU8,
-
     /// In order to protect against malicious solvers, the driver will check that settlements prices do not
     /// exceed a max price deviation compared to the external prices of the driver, if this optional value is set.
     /// The max deviation value should be provided as a float percentage value. E.g. for a max price deviation
@@ -344,7 +343,8 @@ impl std::fmt::Display for Arguments {
             "access_list_estimators: {:?}",
             &self.access_list_estimators
         )?;
-        display_option(f, "tenderly_url", &self.tenderly_url)?;
+        display_option(f, "tenderly_user", &self.tenderly_user)?;
+        display_option(f, "tenderly_project", &self.tenderly_project)?;
         display_secret_option(f, "tenderly_api_key", &self.tenderly_api_key)?;
         writeln!(f, "eden_api_url: {}", self.eden_api_url)?;
         display_list(f, "flashbots_api_url", &self.flashbots_api_url)?;
@@ -395,7 +395,6 @@ impl std::fmt::Display for Arguments {
         )?;
         writeln!(f, "weth_unwrap_factor: {}", self.weth_unwrap_factor)?;
         writeln!(f, "simulation_gas_limit: {}", self.simulation_gas_limit)?;
-        writeln!(f, "max_gas_price_bumps: {}", self.max_gas_price_bumps)?;
         display_option(
             f,
             "max_settlement_price_deviation",
@@ -416,6 +415,5 @@ pub enum TransactionStrategyArg {
     PublicMempool,
     Eden,
     Flashbots,
-    CustomNodes,
     DryRun,
 }

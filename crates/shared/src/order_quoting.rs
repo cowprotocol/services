@@ -132,6 +132,7 @@ impl QuoteParameters {
         };
 
         price_estimation::Query {
+            from: Some(self.from),
             sell_token: self.sell_token,
             buy_token: self.buy_token,
             in_amount,
@@ -270,7 +271,7 @@ impl TryFrom<QuoteRow> for QuoteData {
     }
 }
 
-#[cfg_attr(test, mockall::automock)]
+#[mockall::automock]
 #[async_trait::async_trait]
 pub trait OrderQuoting: Send + Sync {
     /// Computes a quote for the specified order paramters.
@@ -725,6 +726,7 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
+                    from: Some(H160([3; 20])),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -837,6 +839,7 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
+                    from: Some(H160([3; 20])),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 100.into(),
@@ -952,6 +955,7 @@ mod tests {
             .expect_estimates()
             .withf(|q| {
                 q == [price_estimation::Query {
+                    from: Some(H160([3; 20])),
                     sell_token: H160([1; 20]),
                     buy_token: H160([2; 20]),
                     in_amount: 42.into(),

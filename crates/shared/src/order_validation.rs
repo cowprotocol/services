@@ -336,13 +336,20 @@ impl OrderValidating for OrderValidator {
         let signing_scheme = order.signature.scheme();
 
         if let Signature::Eip1271(signature) = &order.signature {
-            self.signature_validator
-                .validate_signature(SignatureCheck {
-                    signer: owner,
-                    hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
-                    signature: signature.to_owned(),
-                })
-                .await?;
+            if self
+                .signature_configuration
+                .eip1271_skip_creation_validation
+            {
+                tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+            } else {
+                self.signature_validator
+                    .validate_signature(SignatureCheck {
+                        signer: owner,
+                        hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
+                        signature: signature.to_owned(),
+                    })
+                    .await?;
+            }
         }
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
@@ -479,9 +486,10 @@ impl OrderValidating for OrderValidator {
 }
 
 /// Signature configuration that is accepted by the orderbook.
-#[derive(Debug, Eq, PartialEq, Default)]
+#[derive(Debug, Eq, PartialEq)]
 pub struct SignatureConfiguration {
     pub eip1271: bool,
+    pub eip1271_skip_creation_validation: bool,
     pub presign: bool,
 }
 
@@ -491,6 +499,7 @@ impl SignatureConfiguration {
     pub fn off_chain() -> Self {
         Self {
             eip1271: false,
+            eip1271_skip_creation_validation: false,
             presign: false,
         }
     }
@@ -499,6 +508,7 @@ impl SignatureConfiguration {
     pub fn all() -> Self {
         Self {
             eip1271: true,
+            eip1271_skip_creation_validation: false,
             presign: true,
         }
     }
@@ -594,7 +604,7 @@ pub async fn get_quote_and_check_fee(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
+pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
     sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 
@@ -993,7 +1003,31 @@ mod tests {
         };
 
         assert!(validator
-            .validate_and_construct_order(creation, &domain_separator, Default::default())
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
+            .await
+            .is_ok());
+
+        let mut signature_validator = MockSignatureValidating::new();
+        signature_validator
+            .expect_validate_signature()
+            .with(eq(SignatureCheck {
+                signer: creation.from.unwrap(),
+                hash: order_hash,
+                signature: vec![1, 2, 3],
+            }))
+            .returning(|_| Err(SignatureValidationError::Invalid));
+
+        let validator = OrderValidator {
+            signature_validator: Arc::new(signature_validator),
+            signature_configuration: SignatureConfiguration {
+                eip1271_skip_creation_validation: true,
+                ..SignatureConfiguration::all()
+            },
+            ..validator
+        };
+
+        assert!(validator
+            .validate_and_construct_order(creation.clone(), &domain_separator, Default::default())
             .await
             .is_ok());
     }

@@ -4,9 +4,11 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::debug_bytes;
-use crate::http_client::HttpClientFactory;
-use crate::solver_utils::{deserialize_decimal_f64, Slippage};
+use crate::{
+    debug_bytes,
+    http_client::HttpClientFactory,
+    solver_utils::{deserialize_decimal_f64, Slippage},
+};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
@@ -287,7 +289,7 @@ pub struct SwapResponse {
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait ZeroExApi: Send + Sync {
-    /// Retrieve a swap for the specified parameters from the 1Inch API.
+    /// Retrieve a swap for the specified parameters from the 0x API.
     ///
     /// See [`/swap/v1/quote`](https://0x.org/docs/api#get-swapv1quote).
     async fn get_swap(&self, query: SwapQuery) -> Result<SwapResponse, ZeroExResponseError>;
@@ -351,6 +353,11 @@ impl DefaultZeroExApi {
             client,
             base_url: Self::DEFAULT_URL.parse().unwrap(),
         }
+    }
+
+    /// Create a 0x HTTP API client using the default URL and HTTP client.
+    pub fn test() -> Self {
+        Self::new(&HttpClientFactory::default(), Self::DEFAULT_URL, None).unwrap()
     }
 
     /// Retrieves specific page of current limit orders.

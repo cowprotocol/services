@@ -1,32 +1,36 @@
 use anyhow::Result;
-use contracts::{
-    gpv2_settlement::{self, Event as ContractEvent},
-    GPv2Settlement,
-};
+use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use ethcontract::dyns::DynWeb3;
 use shared::{
-    event_handling::{EventHandler, EventStoring},
+    event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
+    Web3,
 };
 use tokio::sync::Mutex;
 
-pub struct EventUpdater<Database: EventStoring<ContractEvent>>(
-    Mutex<EventHandler<DynWeb3, GPv2SettlementContract, Database>>,
-);
+pub struct EventUpdater<
+    Database: EventStoring<<W as EventRetrieving>::Event>,
+    W: EventRetrieving + Send + Sync,
+>(Mutex<EventHandler<DynWeb3, W, Database>>);
 
 impl_event_retrieving! {
     pub GPv2SettlementContract for gpv2_settlement
 }
 
-impl<Database> EventUpdater<Database>
+impl_event_retrieving! {
+    pub CoWSwapOnchainOrdersContract for cowswap_onchain_orders
+}
+
+impl<Database, W> EventUpdater<Database, W>
 where
-    Database: EventStoring<ContractEvent>,
+    Database: EventStoring<<W as EventRetrieving>::Event>,
+    W: EventRetrieving + Send + Sync,
 {
-    pub fn new(contract: GPv2Settlement, db: Database, start_sync_at_block: Option<u64>) -> Self {
+    pub fn new(contract: W, db: Database, web3: Web3, start_sync_at_block: Option<u64>) -> Self {
         Self(Mutex::new(EventHandler::new(
-            contract.raw_instance().web3(),
-            GPv2SettlementContract(contract),
+            web3,
+            contract,
             db,
             start_sync_at_block,
         )))
@@ -34,9 +38,10 @@ where
 }
 
 #[async_trait::async_trait]
-impl<Database> Maintaining for EventUpdater<Database>
+impl<Database, W> Maintaining for EventUpdater<Database, W>
 where
-    Database: EventStoring<ContractEvent>,
+    Database: EventStoring<<W>::Event>,
+    W: EventRetrieving + Send + Sync,
 {
     async fn run_maintenance(&self) -> Result<()> {
         self.0.run_maintenance().await
