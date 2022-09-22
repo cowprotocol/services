@@ -151,16 +151,17 @@ pub struct Metrics {
 /// Updates metrics about the difference of the new block number compared to the current block.
 fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
     let current_block = current_block.fetch_max(new_block, Ordering::SeqCst);
-    let metrics = &Metrics::instance(global_metrics::get_metric_storage_registry())
+    let metric = &Metrics::instance(global_metrics::get_metric_storage_registry())
         .unwrap()
         .block_stream_update_delta;
 
-    let delta = i128::from(new_block) - i128::from(current_block);
-    let delta_abs = (delta as f64).abs();
-    if delta <= 0 {
-        metrics.with_label_values(&["negative"]).observe(delta_abs);
+    let delta = (i128::from(new_block) - i128::from(current_block)) as f64;
+    if delta <= 0. {
+        tracing::warn!(delta, new_block, "ignored new block number");
+        metric.with_label_values(&["negative"]).observe(delta.abs());
     } else {
-        metrics.with_label_values(&["positive"]).observe(delta_abs);
+        tracing::debug!(delta, new_block, "increased current block number");
+        metric.with_label_values(&["positive"]).observe(delta.abs());
     }
 
     new_block > current_block
