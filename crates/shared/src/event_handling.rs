@@ -1,8 +1,10 @@
-use crate::{current_block::BlockRetrieving, maintenance::Maintaining};
+use crate::{
+    current_block::{BlockNumberHash, BlockRetrieving},
+    maintenance::Maintaining,
+};
 use anyhow::{ensure, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
-use ethcontract::H256;
 use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
 use futures::{future, Stream, StreamExt, TryStreamExt};
 use std::ops::RangeInclusive;
@@ -16,8 +18,6 @@ const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // of avoiding the need for history fetch of block events, since history fetch is less
 // efficient than latest block fetch
 const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
-
-pub type BlockNumberHash = (u64, H256);
 
 /// General idea behind the algorithm:
 /// 1. Use `last_handled_blocks` as an indicator of the begining of the block range that needs to be updated
@@ -509,7 +509,7 @@ mod tests {
     use super::*;
     use crate::{transport::create_env_test_transport, Web3};
     use contracts::{gpv2_settlement, GPv2Settlement};
-    use ethcontract::BlockNumber;
+    use ethcontract::{BlockNumber, H256};
     use std::str::FromStr;
 
     impl_event_retrieving! {

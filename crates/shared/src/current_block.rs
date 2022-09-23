@@ -1,4 +1,4 @@
-use crate::{event_handling::BlockNumberHash, Web3};
+use crate::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::ops::RangeInclusive;
@@ -18,6 +18,7 @@ use web3::{
 };
 
 pub type Block = web3::types::Block<H256>;
+pub type BlockNumberHash = (u64, H256);
 
 /// Creates a cloneable stream that yields the current block whenever it changes.
 ///

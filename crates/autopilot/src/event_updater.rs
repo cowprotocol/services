@@ -2,7 +2,8 @@ use anyhow::Result;
 use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use ethcontract::dyns::DynWeb3;
 use shared::{
-    event_handling::{BlockNumberHash, EventHandler, EventRetrieving, EventStoring},
+    current_block::BlockNumberHash,
+    event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
     Web3,

@@ -3,8 +3,9 @@
 
 use super::{internal::InternalPoolFetching, pool_storage::PoolStorage};
 use crate::{
+    current_block::BlockNumberHash,
     ethcontract_error::EthcontractErrorType,
-    event_handling::{BlockNumberHash, EventHandler},
+    event_handling::EventHandler,
     impl_event_retrieving,
     maintenance::Maintaining,
     recent_block_cache::Block,
