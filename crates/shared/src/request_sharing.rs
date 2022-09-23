@@ -48,7 +48,7 @@ where
     /// Note that futures do nothing util polled so merely creating the response future is not
     /// expensive.
     pub fn shared(&self, request: Request, future: Fut) -> Shared<Fut> {
-        self.shared_or_else(request, move || future)
+        self.shared_or_else(request, move |_| future)
     }
 
     /// Returns an existing in flight future or creates and uses a new future from the specified
@@ -58,7 +58,7 @@ where
     /// helpful when creating futures is non trivial (such as cloning a large vector).
     pub fn shared_or_else<F>(&self, request: Request, future: F) -> Shared<Fut>
     where
-        F: FnOnce() -> Fut,
+        F: FnOnce(&Request) -> Fut,
     {
         let mut in_flight = self.in_flight.lock().unwrap();
 
@@ -84,7 +84,7 @@ where
             return existing;
         }
 
-        let shared = future().shared();
+        let shared = future(&request).shared();
         // unwrap because downgrade only returns None if the Shared has already completed which
         // cannot be the case because we haven't polled it yet.
         in_flight.push((request, shared.downgrade().unwrap()));

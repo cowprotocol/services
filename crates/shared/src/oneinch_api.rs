@@ -451,7 +451,7 @@ impl std::fmt::Debug for Transaction {
     }
 }
 /// Approve spender response.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct Spender {
     pub address: H160,
 }
@@ -474,8 +474,8 @@ pub struct Protocols {
 }
 
 // Mockable version of API Client
-#[mockall::automock]
 #[async_trait::async_trait]
+#[mockall::automock]
 pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
     async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
@@ -623,6 +623,7 @@ impl Default for ProtocolCache {
 mod tests {
     use super::*;
     use crate::addr;
+    use futures::FutureExt as _;
 
     #[test]
     fn slippage_rounds_percentage() {
@@ -1201,9 +1202,12 @@ mod tests {
         let mut api = MockOneInchClient::new();
         // only 1 API call when calling get_allowed_protocols 2 times
         api.expect_get_liquidity_sources().times(1).returning(|| {
-            Ok(Protocols {
-                protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
-            })
+            async {
+                Ok(Protocols {
+                    protocols: vec!["PMM1".into(), "UNISWAP_V3".into()],
+                })
+            }
+            .boxed()
         });
 
         let cache = ProtocolCache::default();
