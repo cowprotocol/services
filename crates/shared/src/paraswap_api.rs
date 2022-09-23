@@ -17,9 +17,9 @@ use thiserror::Error;
 const BASE_URL: &str = "https://apiv5.paraswap.io";
 
 /// Mockable implementation of the API for unit test
-#[mockall::automock]
 #[async_trait::async_trait]
-pub trait ParaswapApi: Send + Sync {
+#[mockall::automock]
+pub trait ParaswapApi: Send + Sync + 'static {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
