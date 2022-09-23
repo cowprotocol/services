@@ -132,7 +132,7 @@ mod tests {
     };
     use reqwest::Client;
 
-    fn create_trade_finder<T: OneInchClient + 'static>(api: T) -> OneInchTradeFinder {
+    fn create_trade_finder<T: OneInchClient>(api: T) -> OneInchTradeFinder {
         OneInchTradeFinder::new(Arc::new(api), Vec::default(), None)
     }
 
