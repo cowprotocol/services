@@ -18,6 +18,19 @@ pub struct OneInchTradeFinder {
 }
 
 impl OneInchTradeFinder {
+    pub fn new(
+        api: Arc<dyn OneInchClient>,
+        disabled_protocols: Vec<String>,
+        referrer_address: Option<H160>,
+    ) -> Self {
+        Self {
+            api,
+            disabled_protocols,
+            protocol_cache: ProtocolCache::default(),
+            referrer_address,
+        }
+    }
+
     async fn verify_query_and_get_protocols(
         &self,
         query: &Query,
@@ -87,19 +100,6 @@ impl OneInchTradeFinder {
                 data: swap.tx.data,
             },
         })
-    }
-
-    pub fn new(
-        api: Arc<dyn OneInchClient>,
-        disabled_protocols: Vec<String>,
-        referrer_address: Option<H160>,
-    ) -> Self {
-        Self {
-            api,
-            disabled_protocols,
-            protocol_cache: ProtocolCache::default(),
-            referrer_address,
-        }
     }
 }
 
