@@ -172,7 +172,7 @@ where
             block_range.start()
         );
 
-        let (history_range, latest_range) = split_range(block_range)?;
+        let (history_range, latest_range) = split_range(block_range);
         tracing::debug!(
             "history range {:?}, latest_range {:?}",
             history_range,
@@ -412,25 +412,18 @@ fn detect_reorg_path<'a>(
 
 /// Splits range into two disjuctive consecutive ranges, second one containing last (up to)
 /// MAX_BLOCKS_QUERIED elements, first one containing the rest (if any)
-fn split_range(
-    range: RangeInclusive<u64>,
-) -> Result<(Option<RangeInclusive<u64>>, RangeInclusive<u64>)> {
-    ensure!(
-        MAX_BLOCKS_QUERIED > 0,
-        "MAX_BLOCKS_QUERIED must be greater than zero"
-    );
-
+fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, RangeInclusive<u64>) {
     let start = range.start();
     let end = range.end();
 
-    Ok(if end.saturating_sub(*start) > MAX_BLOCKS_QUERIED {
+    if end.saturating_sub(*start) > MAX_BLOCKS_QUERIED {
         (
             Some(RangeInclusive::new(*start, end - MAX_BLOCKS_QUERIED)),
             RangeInclusive::new(end - MAX_BLOCKS_QUERIED + 1, *end),
         )
     } else {
         (None, range)
-    })
+    }
 }
 
 #[async_trait::async_trait]
@@ -633,35 +626,35 @@ mod tests {
     #[test]
     fn split_range_test_empty_range() {
         let range = RangeInclusive::new(1, 0);
-        let (history_range, latest_range) = split_range(range.clone()).unwrap();
+        let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_equal() {
         let range = RangeInclusive::new(0, 0);
-        let (history_range, latest_range) = split_range(range.clone()).unwrap();
+        let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries() {
         let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED);
-        let (history_range, latest_range) = split_range(range.clone()).unwrap();
+        let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries_minus_one() {
         let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED - 1);
-        let (history_range, latest_range) = split_range(range.clone()).unwrap();
+        let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries_plus_one() {
         let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED + 1);
-        let (history_range, latest_range) = split_range(range).unwrap();
+        let (history_range, latest_range) = split_range(range);
         assert_eq!(history_range, Some(RangeInclusive::new(0, 1)));
         assert_eq!(latest_range, RangeInclusive::new(2, 51));
     }
