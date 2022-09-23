@@ -16,7 +16,15 @@ use thiserror::Error;
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait TradeFinding: Send + Sync + 'static {
+    async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError>;
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError>;
+}
+
+/// A quote.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Quote {
+    pub out_amount: U256,
+    pub gas_estimate: u64,
 }
 
 /// A trade.

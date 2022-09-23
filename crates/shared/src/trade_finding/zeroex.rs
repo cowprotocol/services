@@ -1,6 +1,6 @@
 //! A 0x-based trade finder.
 
-use super::{Interaction, Trade, TradeError, TradeFinding};
+use super::{Interaction, Quote, Trade, TradeError, TradeFinding};
 use crate::{
     price_estimation::{gas, Query},
     zeroex_api::{SwapQuery, ZeroExApi, ZeroExResponseError},
@@ -58,6 +58,14 @@ impl ZeroExTradeFinder {
 
 #[async_trait::async_trait]
 impl TradeFinding for ZeroExTradeFinder {
+    async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError> {
+        let trade = self.quote(query).await?;
+        Ok(Quote {
+            out_amount: trade.out_amount,
+            gas_estimate: trade.gas_estimate,
+        })
+    }
+
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError> {
         self.quote(query).await
     }
