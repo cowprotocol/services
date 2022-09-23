@@ -13,7 +13,7 @@ use crate::{
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
 };
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use contracts::GPv2Settlement;
 use derivative::Derivative;
 use ethcontract::{Account, Bytes};
@@ -23,12 +23,10 @@ use num::{BigRational, FromPrimitive, ToPrimitive};
 use primitive_types::{H160, U256};
 use reqwest::Client;
 use reqwest::Url;
-use shared::conversions::U256Ext;
-use shared::oneinch_api::{
-    OneInchClient, OneInchClientImpl, ProtocolCache, RestError, RestResponse, Swap, SwapQuery,
-};
+use shared::oneinch_api::{OneInchClient, OneInchClientImpl, ProtocolCache, Swap, SwapQuery};
 use shared::solver_utils::Slippage;
 use shared::Web3;
+use shared::{conversions::U256Ext, oneinch_api::OneInchError};
 use std::fmt::{self, Display, Formatter};
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
@@ -47,15 +45,6 @@ pub struct OneInchSolver {
     /// how much slippage in wei we allow per trade
     max_slippage_in_wei: Option<U256>,
     referrer_address: Option<H160>,
-}
-
-impl From<RestError> for SettlementError {
-    fn from(error: RestError) -> Self {
-        SettlementError {
-            inner: anyhow!(error.description),
-            retryable: matches!(error.status_code, 500),
-        }
-    }
 }
 
 impl OneInchSolver {
@@ -165,13 +154,13 @@ impl OneInchSolver {
         );
 
         tracing::debug!("querying 1Inch swap api with {:?}", query);
-        let swap = match self.client.get_swap(query).await? {
-            RestResponse::Ok(swap) => swap,
-            RestResponse::Err(error) if error.description == "insufficient liquidity" => {
+        let swap = match self.client.get_swap(query).await {
+            Ok(swap) => swap,
+            Err(error) if error.is_insuffucient_liquidity() => {
                 // This means the order cannot get matched which shouldn't be treated as an error.
                 return Ok(None);
             }
-            RestResponse::Err(error) => return Err((error).into()),
+            Err(error) => return Err(error.into()),
         };
 
         if !execution_respects_order(&order, swap.from_token_amount, swap.to_token_amount) {
@@ -242,6 +231,16 @@ impl SingleOrderSolving for OneInchSolver {
 impl Display for OneInchSolver {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "OneInchSolver")
+    }
+}
+
+impl From<OneInchError> for SettlementError {
+    fn from(err: OneInchError) -> Self {
+        let retryable = matches!(&err, OneInchError::Api(err) if err.status_code == 500);
+        SettlementError {
+            inner: err.into(),
+            retryable,
+        }
     }
 }
 
@@ -360,11 +359,11 @@ mod tests {
             })
         });
         client.expect_get_swap().returning(|_| {
-            Ok(RestResponse::Ok(Swap {
+            Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 99.into(),
                 ..Default::default()
-            }))
+            })
         });
 
         allowance_fetcher
@@ -446,11 +445,11 @@ mod tests {
         });
         client.expect_get_swap().times(1).returning(|query| {
             assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
-            Ok(RestResponse::Ok(Swap {
+            Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            }))
+            })
         });
 
         let solver = OneInchSolver {
@@ -486,11 +485,11 @@ mod tests {
             .expect_get_spender()
             .returning(move || Ok(Spender { address: spender }));
         client.expect_get_swap().returning(|_| {
-            Ok(RestResponse::Ok(Swap {
+            Ok(Swap {
                 from_token_amount: 100.into(),
                 to_token_amount: 100.into(),
                 ..Default::default()
-            }))
+            })
         });
 
         // On first invocation no prior allowance, then max allowance set.
