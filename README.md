@@ -23,20 +23,20 @@ Multiple concurrent `orderbook`s can run at the same time, allowing the user-fac
 ## Autopilot
 
 The `autopilot` crate is responsible for driving the protocol forward.
-Concretely, it is responsible for "cutting" new auctions (i.e. determining auction boundries and which orders are to be included, as well as various parameters important for settlement objective value computation).
+Concretely, it is responsible for "cutting" new auctions (i.e. determining auction boundaries and which orders are to be included, as well as various parameters important for settlement objective value computation).
 
 The `autopilot` connects to the same PostgreSQL database as the `orderbook` and uses it to query orders as well as storing the most recent auction and settlement competition.
 
 ## Solver
 
-The `solver` crate is responsible for submitting on chain settlements based on the orders it gets from the order book and other liquidity sources like Balancer or Uniswap pools.
+The `solver` crate is responsible for submitting on-chain settlements based on the orders it gets from the order book and other liquidity sources like Balancer or Uniswap pools.
 
 It implements a few settlement strategies directly in Rust:
 
 - Naive Solver: Can match to overlapping opposing orders (e.g. DAI for WETH & WETH for DAI) with one another settling the excess with Uniswap
 - Uniswap Baseline: Same path finding as used by the Uniswap frontend (settling orders individually instead of batching them together)
 
-It can can also interact with a more advanced, Gnosis internal, closed source solver which tries to settle all orders using the combinatorial optimization formulations described in [Multi-Token Batch Auctions with Uniform Clearing Price](https://github.com/gnosis/dex-research/blob/master/BatchAuctionOptimization/batchauctions.pdf)
+It can also interact with a more advanced, Gnosis internal, closed source solver which tries to settle all orders using the combinatorial optimization formulations described in [Multi-Token Batch Auctions with Uniform Clearing Price](https://github.com/gnosis/dex-research/blob/master/BatchAuctionOptimization/batchauctions.pdf)
 
 ## Other Crates
 
@@ -49,7 +49,7 @@ There are additional crates that live in the cargo workspace.
 - `e2e` end-to-end tests
 - `global-metrics` metrics initialization shared across all crates
 - `model` provides the serialization model for orders in the order book api
-- `number_conversions` numerical conversions between 256-bit integers and various arbitrarilily sized integer types
+- `number_conversions` numerical conversions between 256-bit integers and various arbitrarily sized integer types
 - `shared` provides other shared functionality between the solver and order book
 - `testlib` shared helpers for writing unit and end-to-end tests
 
@@ -166,13 +166,13 @@ Due to the RPC calls the services issue `Ganache` is incompatible, so we will us
 
 ### Prerequisites
 
-Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
+Reading the state of the blockchain requires issuing RPC calls to an ethereum node. This can be a testnet you are running locally, some "real" node you have access to or the most convenient thing is to use a third-party service like [infura](https://infura.io/) to get access to an ethereum node which we recommend.
 After you made a free infura account they offer you "endpoints" for the mainnet and different testnets. We will refer those as `node-urls`.
 Because services are only run on Mainnet, Rinkeby, Görli, and Gnosis Chain you need to select one of those.
 
 Note that the `node-url` is sensitive data. The `orderbook` and `solver` executables allow you to pass it with the `--node-url` parameter. This is very convenient for our examples but to minimize the possibility of sharing this information by accident you should consider setting the `NODE_URL` environment variable so you don't have to pass the `--node-url` argument to the executables.
 
-To avoid confusion during your tests, always double check that the token and account addresses you use actually correspond to the network of the `node-url` you are running the executables with.
+To avoid confusion during your tests, always double-check that the token and account addresses you use actually correspond to the network of the `node-url` you are running the executables with.
 
 ### Autopilot
 
@@ -219,7 +219,7 @@ cargo run -p solver -- \
 
 `--transaction-strategy DryRun` will make the solver only print the solution but not submit it on-chain. This command is absolutely safe and will not use any funds.
 
-The `solver-account` is responsible for signing transactions. Solutions for settlements need to come from an address the settlement contract trusts in order to make the contract actually consider the solution. If we pass a public address, like we do here, the solver only pretends to be use it for testing purposes. To actually submit transactions on behalf of a solver account you would have to pass a private key of an account the settlement contract trusts instead. Adding your personal solver account is quite involved and requires you to get in touch with the team, so we are using this public solver address for now.
+The `solver-account` is responsible for signing transactions. Solutions for settlements need to come from an address the settlement contract trusts in order to make the contract actually consider the solution. If we pass a public address, like we do here, the solver only pretends to be used for testing purposes. To actually submit transactions on behalf of a solver account you would have to pass a private key of an account the settlement contract trusts instead. Adding your personal solver account is quite involved and requires you to get in touch with the team, so we are using this public solver address for now.
 
 To make things more interesting and see some real orders you can connect the `solver` to our real `orderbook` service. There are several orderbooks for production and staging environments on different networks. Find the `orderbook-url` corresponding to your `node-url` which suits your purposes and connect your solver to it with `--orderbook-url <URL>`.
 

@@ -604,7 +604,7 @@ pub async fn get_quote_and_check_fee(
 ///
 /// Note that this check only looks at the order's limit price and the market
 /// price and is independent of amounts or trade direction.
-fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
+pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quote: &Quote) -> bool {
     sell_amount.full_mul(quote.buy_amount) < quote.sell_amount.full_mul(*buy_amount)
 }
 

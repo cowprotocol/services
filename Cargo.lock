@@ -180,6 +180,7 @@ dependencies = [
  "futures",
  "gas-estimation",
  "global-metrics",
+ "itertools",
  "maplit",
  "mockall",
  "model",

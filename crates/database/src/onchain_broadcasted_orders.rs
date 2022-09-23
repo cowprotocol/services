@@ -2,7 +2,7 @@ use super::events::EventIndex;
 use crate::{Address, OrderUid, PgTransaction};
 use sqlx::{Executor, PgConnection};
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct OnchainOrderPlacement {
     pub order_uid: OrderUid,
     pub sender: Address,
