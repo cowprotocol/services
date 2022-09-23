@@ -12,6 +12,9 @@ use tokio::sync::Mutex;
 pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
+// MAX_BLOCKS_QUERIED is bigger than MAX_REORG_BLOCK_COUNT to increase the chances
+// of avoiding the need for history fetch of block events, since history fetch is less
+// efficient than latest block fetch
 const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
 
 pub type BlockNumberHash = (u64, H256);
