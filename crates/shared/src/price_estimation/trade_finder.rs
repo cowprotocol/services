@@ -5,12 +5,12 @@ use super::{
     rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError, Query,
 };
 use crate::{
+    code_fetching::CodeFetching,
     code_simulation::CodeSimulating,
     rate_limiter::RateLimiter,
     request_sharing::RequestSharing,
     trade_finding::{Trade, TradeError, TradeFinding},
     transport::extensions::StateOverride,
-    web3_traits::CodeFetching,
 };
 use anyhow::{ensure, Context as _, Result};
 use contracts::support::{AnyoneAuthenticator, PhonyERC20, Trader};
@@ -74,16 +74,21 @@ impl TradeEstimator {
 
 impl Inner {
     async fn estimate(self, query: Query) -> Result<Estimate, PriceEstimationError> {
-        let trade = self.finder.get_trade(&query).await?;
         match self.verifier {
-            Some(verifier) => verifier
-                .verify(query, trade)
-                .await
-                .map_err(PriceEstimationError::Other),
-            None => Ok(Estimate {
-                out_amount: trade.out_amount,
-                gas: trade.gas_estimate,
-            }),
+            Some(verifier) => {
+                let trade = self.finder.get_trade(&query).await?;
+                verifier
+                    .verify(query, trade)
+                    .await
+                    .map_err(PriceEstimationError::Other)
+            }
+            None => {
+                let quote = self.finder.get_quote(&query).await?;
+                Ok(Estimate {
+                    out_amount: quote.out_amount,
+                    gas: quote.gas_estimate,
+                })
+            }
         }
     }
 }
@@ -292,12 +297,12 @@ mod slippage {
 mod tests {
     use super::*;
     use crate::{
+        code_fetching::MockCodeFetching,
         code_simulation::{MockCodeSimulating, TenderlyCodeSimulator},
         price_estimation::single_estimate,
         tenderly_api::TenderlyHttpApi,
-        trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding},
+        trade_finding::{zeroex::ZeroExTradeFinder, Interaction, MockTradeFinding, Quote},
         transport::create_env_test_transport,
-        web3_traits::MockCodeFetching,
         zeroex_api::DefaultZeroExApi,
         Web3,
     };
@@ -593,6 +598,42 @@ mod tests {
             Estimate {
                 out_amount: 1_010_000_u128.into(),
                 gas: 0,
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn estimates_with_quote_without_verifier() {
+        let query = Query {
+            from: Some(H160([0x1; 20])),
+            sell_token: H160([0x2; 20]),
+            buy_token: H160([0x3; 20]),
+            in_amount: 1_000_000_u128.into(),
+            kind: OrderKind::Sell,
+        };
+        let quote = Quote {
+            out_amount: 2_000_000_u128.into(),
+            gas_estimate: 133_700,
+        };
+
+        let mut finder = MockTradeFinding::new();
+        finder
+            .expect_get_quote()
+            .with(predicate::eq(query))
+            .returning({
+                let quote = quote.clone();
+                move |_| Ok(quote.clone())
+            });
+
+        let estimator = TradeEstimator::new(Arc::new(finder), RateLimiter::test());
+
+        let estimate = single_estimate(&estimator, &query).await.unwrap();
+
+        assert_eq!(
+            estimate,
+            Estimate {
+                out_amount: 2_000_000_u128.into(),
+                gas: 133_700,
             }
         );
     }

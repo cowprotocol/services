@@ -187,10 +187,10 @@ impl ParaswapSolver {
     }
 }
 
-fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<usize> {
+fn decimals(token_info: &HashMap<H160, TokenInfo>, token: &H160) -> Result<u8> {
     token_info
         .get(token)
-        .and_then(|info| info.decimals.map(usize::from))
+        .and_then(|info| info.decimals)
         .ok_or_else(|| anyhow!("decimals for token {:?} not found", token))
 }
 

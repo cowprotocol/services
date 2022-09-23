@@ -7,6 +7,7 @@ pub mod arguments;
 pub mod bad_token;
 pub mod balancer_sor_api;
 pub mod baseline_solver;
+pub mod code_fetching;
 pub mod code_simulation;
 pub mod conversions;
 pub mod current_block;
@@ -44,7 +45,6 @@ pub mod tracing;
 pub mod trade_finding;
 pub mod transport;
 pub mod univ3_router_api;
-pub mod web3_traits;
 pub mod zeroex_api;
 
 use self::{http_client::HttpClientFactory, transport::http::HttpTransport};

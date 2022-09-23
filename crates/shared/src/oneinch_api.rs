@@ -5,15 +5,18 @@
 //! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
 //! uses EIP 1559 gas prices.
 use crate::solver_utils::Slippage;
-use anyhow::{ensure, Context, Result};
+use anyhow::{ensure, Result};
 use cached::{Cached, TimedCache};
 use ethcontract::{H160, U256};
 use model::u256_decimal;
 use reqwest::{Client, IntoUrl, Url};
-use serde::Deserialize;
-use std::fmt::{self, Display, Formatter};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use serde::{de::DeserializeOwned, Deserialize};
+use std::{
+    fmt::{self, Display, Formatter},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use thiserror::Error;
 
 /// Parts to split a swap.
 ///
@@ -324,7 +327,34 @@ pub enum RestResponse<T> {
     Err(RestError),
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default)]
+#[derive(Debug, Error)]
+pub enum OneInchError {
+    #[error("1Inch API error: {0}")]
+    Api(#[from] RestError),
+    #[error(transparent)]
+    Other(#[from] anyhow::Error),
+}
+
+impl OneInchError {
+    pub fn is_insuffucient_liquidity(&self) -> bool {
+        matches!(self, Self::Api(err) if err.description == "insufficient liquidity")
+    }
+}
+
+impl From<reqwest::Error> for OneInchError {
+    fn from(err: reqwest::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
+impl From<serde_json::Error> for OneInchError {
+    fn from(err: serde_json::Error) -> Self {
+        Self::Other(err.into())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Default, Error)]
+#[error("1Inch API error ({status_code}): {description}")]
 #[serde(rename_all = "camelCase")]
 pub struct RestError {
     pub status_code: u32,
@@ -419,21 +449,21 @@ pub struct Protocols {
 // Mockable version of API Client
 #[mockall::automock]
 #[async_trait::async_trait]
-pub trait OneInchClient: Send + Sync {
+pub trait OneInchClient: Send + Sync + 'static {
     /// Retrieves a swap for the specified parameters from the 1Inch API.
-    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>>;
+    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError>;
 
     /// Quotes a sell order with the 1Inch API.
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
-    ) -> Result<RestResponse<SellOrderQuote>>;
+    ) -> Result<SellOrderQuote, OneInchError>;
 
     /// Retrieves the address of the spender to use for token approvals.
-    async fn get_spender(&self) -> Result<Spender>;
+    async fn get_spender(&self) -> Result<Spender, OneInchError>;
 
     /// Retrieves a list of the on-chain protocols supported by 1Inch.
-    async fn get_liquidity_sources(&self) -> Result<Protocols>;
+    async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError>;
 }
 
 /// 1Inch API Client implementation.
@@ -467,18 +497,18 @@ impl OneInchClientImpl {
 
 #[async_trait::async_trait]
 impl OneInchClient for OneInchClientImpl {
-    async fn get_swap(&self, query: SwapQuery) -> Result<RestResponse<Swap>> {
+    async fn get_swap(&self, query: SwapQuery) -> Result<Swap, OneInchError> {
         logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
     async fn get_sell_order_quote(
         &self,
         query: SellOrderQuoteQuery,
-    ) -> Result<RestResponse<SellOrderQuote>> {
+    ) -> Result<SellOrderQuote, OneInchError> {
         logged_query(&self.client, query.into_url(&self.base_url, self.chain_id)).await
     }
 
-    async fn get_spender(&self) -> Result<Spender> {
+    async fn get_spender(&self) -> Result<Spender, OneInchError> {
         let endpoint = format!("v4.1/{}/approve/spender", self.chain_id);
         let url = self
             .base_url
@@ -487,7 +517,7 @@ impl OneInchClient for OneInchClientImpl {
         logged_query(&self.client, url).await
     }
 
-    async fn get_liquidity_sources(&self) -> Result<Protocols> {
+    async fn get_liquidity_sources(&self) -> Result<Protocols, OneInchError> {
         let endpoint = format!("v4.1/{}/liquidity-sources", self.chain_id);
         let url = self
             .base_url
@@ -497,14 +527,17 @@ impl OneInchClient for OneInchClientImpl {
     }
 }
 
-async fn logged_query<D>(client: &Client, url: Url) -> Result<D>
+async fn logged_query<D>(client: &Client, url: Url) -> Result<D, OneInchError>
 where
-    D: for<'de> Deserialize<'de>,
+    D: DeserializeOwned,
 {
     tracing::debug!("Query 1inch API for url {}", url);
     let response = client.get(url).send().await?.text().await;
     tracing::debug!("Response from 1inch API: {:?}", response);
-    serde_json::from_str(&response?).context("1inch result parsing failed")
+    match serde_json::from_str::<RestResponse<D>>(&response?)? {
+        RestResponse::Ok(result) => Ok(result),
+        RestResponse::Err(err) => Err(err.into()),
+    }
 }
 
 #[derive(Debug, Clone)]
