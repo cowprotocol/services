@@ -18,11 +18,9 @@ use crate::{
     recent_block_cache::Block,
     request_sharing::RequestSharing,
     sources::{
-        balancer_v2::{
-            pools::common::compute_scaling_rate, BalancerPoolFetcher, BalancerPoolFetching,
-        },
-        uniswap_v2::pool_fetching::PoolFetching,
-        uniswap_v3::pool_fetching::{PoolFetching as UniswapV3PoolFetching, UniswapV3PoolFetcher},
+        balancer_v2::{pools::common::compute_scaling_rate, BalancerPoolFetching},
+        uniswap_v2::pool_fetching::PoolFetching as UniswapV2PoolFetching,
+        uniswap_v3::pool_fetching::PoolFetching as UniswapV3PoolFetching,
     },
     token_info::TokenInfoFetching,
 };
@@ -44,9 +42,9 @@ pub struct HttpPriceEstimator {
         Query,
         BoxFuture<'static, Result<SettledBatchAuctionModel, PriceEstimationError>>,
     >,
-    pools: Arc<dyn PoolFetching>,
-    balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-    uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
+    pools: Arc<dyn UniswapV2PoolFetching>,
+    balancer_pools: Option<Arc<dyn BalancerPoolFetching>>,
+    uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
     token_info: Arc<dyn TokenInfoFetching>,
     gas_info: Arc<dyn GasPriceEstimating>,
     native_token: H160,
@@ -59,9 +57,9 @@ impl HttpPriceEstimator {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         api: Arc<dyn HttpSolverApi>,
-        pools: Arc<dyn PoolFetching>,
-        balancer_pools: Option<Arc<BalancerPoolFetcher>>,
-        uniswap_v3_pools: Option<Arc<UniswapV3PoolFetcher>>,
+        pools: Arc<dyn UniswapV2PoolFetching>,
+        balancer_pools: Option<Arc<dyn BalancerPoolFetching>>,
+        uniswap_v3_pools: Option<Arc<dyn UniswapV3PoolFetching>>,
         token_info: Arc<dyn TokenInfoFetching>,
         gas_info: Arc<dyn GasPriceEstimating>,
         native_token: H160,
@@ -377,8 +375,6 @@ impl PriceEstimating for HttpPriceEstimator {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
     use crate::{
         current_block::current_block_stream,
@@ -390,9 +386,12 @@ mod tests {
         price_estimation::Query,
         recent_block_cache::CacheConfig,
         sources::{
-            balancer_v2::{pool_fetching::BalancerContracts, BalancerFactoryKind},
+            balancer_v2::{
+                pool_fetching::BalancerContracts, BalancerFactoryKind, BalancerPoolFetcher,
+            },
             uniswap_v2,
             uniswap_v2::{pool_cache::PoolCache, pool_fetching::test_util::FakePoolFetcher},
+            uniswap_v3::pool_fetching::UniswapV3PoolFetcher,
         },
         token_info::{MockTokenInfoFetching, TokenInfoFetcher},
         transport::http::HttpTransport,
@@ -405,6 +404,7 @@ mod tests {
     use maplit::hashmap;
     use model::order::OrderKind;
     use reqwest::Client;
+    use std::collections::HashMap;
     use url::Url;
 
     #[tokio::test]
