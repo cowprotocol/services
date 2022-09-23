@@ -2,6 +2,7 @@
 //! for a specified token pair and amount.
 
 pub mod oneinch;
+pub mod paraswap;
 pub mod zeroex;
 
 use crate::price_estimation::Query;

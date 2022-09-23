@@ -6,8 +6,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use mockall::*;
-
 const MAX_BATCH_SIZE: usize = 100;
 
 #[cfg_attr(test, derive(Eq, PartialEq))]
@@ -21,7 +19,7 @@ pub struct TokenInfoFetcher {
     pub web3: Web3,
 }
 
-#[automock]
+#[mockall::automock]
 #[async_trait]
 pub trait TokenInfoFetching: Send + Sync {
     /// Retrieves all token information.
