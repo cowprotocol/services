@@ -61,6 +61,12 @@ pub trait EventRetrieving {
     fn get_events(&self) -> AllEventsBuilder<DynTransport, Self::Event>;
 }
 
+struct EventRange {
+    history_range: Option<RangeInclusive<u64>>,
+    latest_blocks: Vec<BlockNumberHash>,
+    is_reorg: bool,
+}
+
 impl<B, C, S> EventHandler<B, C, S>
 where
     B: BlockRetrieving,
@@ -99,9 +105,7 @@ where
     /// 1. Optional block number range for fetching reorg safe history (if it's needed)
     /// 2. List of block numbers with hashes for fetching reorg unsafe blocks
     /// 3. Bool indicator if reorg happened for reorg unsafe blocks
-    async fn event_block_range(
-        &self,
-    ) -> Result<(Option<RangeInclusive<u64>>, Vec<BlockNumberHash>, bool)> {
+    async fn event_block_range(&self) -> Result<EventRange> {
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
             self.block_retriever
@@ -124,39 +128,39 @@ where
 
         // handle special case which happens most of the time (no reorg, just one new block is added)
         if current_block.parent_hash == last_handled_block_hash {
-            return Ok((
-                None,                                             // history range
-                vec![(current_block_number, current_block_hash)], // latest blocks
-                false,                                            // is reorg
-            ));
+            return Ok(EventRange {
+                history_range: None,
+                latest_blocks: vec![(current_block_number, current_block_hash)],
+                is_reorg: false,
+            });
         }
 
         // handle special case when no new block is added
         if (current_block_number, current_block_hash)
             == (last_handled_block_number, last_handled_block_hash)
         {
-            return Ok((
-                None,   // history range
-                vec![], // latest blocks
-                false,  // is reorg
-            ));
+            return Ok(EventRange {
+                history_range: None,
+                latest_blocks: vec![],
+                is_reorg: false,
+            });
         }
 
         // full range of blocks which are considered for event update
-        let range = RangeInclusive::new(
+        let block_range = RangeInclusive::new(
             last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
             current_block_number,
         );
         ensure!(
-            !range.is_empty(),
+            !block_range.is_empty(),
             "current block number according to node is {} which is more than {} blocks in the \
                  past compared to last handled block {}",
-            range.end(),
+            block_range.end(),
             MAX_REORG_BLOCK_COUNT,
-            range.start()
+            block_range.start()
         );
 
-        let (history_range, latest_range) = split_range(range)?;
+        let (history_range, latest_range) = split_range(block_range)?;
         tracing::debug!(
             "history range {:?}, latest_range {:?}",
             history_range,
@@ -188,17 +192,21 @@ where
             is_reorg
         );
 
-        Ok((history_range, latest_blocks, is_reorg))
+        Ok(EventRange {
+            history_range,
+            latest_blocks,
+            is_reorg,
+        })
     }
 
     /// Get new events from the contract and insert them into the database.
     pub async fn update_events(&mut self) -> Result<()> {
-        let (history_range, latest_blocks, is_reorg) = self.event_block_range().await?;
+        let event_range = self.event_block_range().await?;
 
-        if let Some(range) = history_range {
+        if let Some(range) = event_range.history_range {
             self.update_events_from_old_blocks(range).await?;
         }
-        self.update_events_from_latest_blocks(&latest_blocks, is_reorg)
+        self.update_events_from_latest_blocks(&event_range.latest_blocks, event_range.is_reorg)
             .await?;
         Ok(())
     }
@@ -236,7 +244,7 @@ where
         let mut have_deleted_old_events = false;
         while let Some(events_chunk) = events.next().await {
             // Early return on error (through `?`) is important here so that the second
-            // !have_deleted_old_eventsS check (after the loop) is correct.
+            // !have_deleted_old_events check (after the loop) is correct.
             let unwrapped_events = events_chunk.context("failed to get next chunk of events")?;
             if !have_deleted_old_events {
                 self.store
@@ -393,7 +401,6 @@ fn detect_reorg_path<'a>(
 fn split_range(
     range: RangeInclusive<u64>,
 ) -> Result<(Option<RangeInclusive<u64>>, RangeInclusive<u64>)> {
-    ensure!(!range.is_empty(), "invalid range to split");
     ensure!(
         MAX_BLOCKS_QUERIED > 0,
         "MAX_BLOCKS_QUERIED must be greater than zero"
@@ -402,7 +409,7 @@ fn split_range(
     let start = range.start();
     let end = range.end();
 
-    Ok(if end - start > MAX_BLOCKS_QUERIED {
+    Ok(if end.saturating_sub(*start) > MAX_BLOCKS_QUERIED {
         (
             Some(RangeInclusive::new(*start, end - MAX_BLOCKS_QUERIED)),
             RangeInclusive::new(end - MAX_BLOCKS_QUERIED + 1, *end),
@@ -610,9 +617,10 @@ mod tests {
     }
 
     #[test]
-    fn split_range_test_invalid() {
+    fn split_range_test_empty_range() {
         let range = RangeInclusive::new(1, 0);
-        assert!(split_range(range).is_err());
+        let (history_range, latest_range) = split_range(range.clone()).unwrap();
+        assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
