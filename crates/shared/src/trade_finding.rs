@@ -97,7 +97,7 @@ pub fn convert_interaction_group(interactions: &[Interaction]) -> Vec<EncodedInt
     interactions.iter().map(Interaction::encode).collect()
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum TradeError {
     #[error("No liquidity")]
     NoLiquidity,
@@ -107,6 +107,16 @@ pub enum TradeError {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl Clone for TradeError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::NoLiquidity => Self::NoLiquidity,
+            Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+        }
+    }
 }
 
 #[cfg(test)]
