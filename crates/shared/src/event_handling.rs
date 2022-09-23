@@ -19,6 +19,16 @@ const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
 
 pub type BlockNumberHash = (u64, H256);
 
+/// General idea behind the algorithm:
+/// 1. Use `last_handled_blocks` as an indicator of the begining of the block range that needs to be updated
+/// in current iteration. If it is empty, means we need to check the storage, and if there are events in the storage,
+/// continue from the last event block, if no events, do a full reindexing from block 0.
+///
+/// 2. Define range of blocks that make sure no gaps or missed blocks exist.
+/// 3. If this range is too big, split it into two subranges, one to update the deep history blocks, second one
+/// to update the latest blocks (last X canonical blocks)
+/// 4. Do the history update, and if successful, update `last_handled_blocks` to make sure the data is consistent.
+/// 5. If history update is successful, procceed with latest update, and if successful update `last_handled_blocks`.  
 pub struct EventHandler<B, C, S>
 where
     B: BlockRetrieving,
@@ -214,6 +224,16 @@ where
     }
 
     async fn update_events_from_old_blocks(&mut self, range: RangeInclusive<u64>) -> Result<()> {
+        // first get the blocks needed to update `last_handled_blocks` because if it fails,
+        // it's safer to fail at the beginning of the function before we update Storage
+        let blocks = self
+            .block_retriever
+            .blocks(RangeInclusive::new(
+                range.end().saturating_sub(MAX_REORG_BLOCK_COUNT),
+                *range.end(),
+            ))
+            .await?;
+
         let events = self
             .past_events_by_block_number_range(&range)
             .await
@@ -263,14 +283,6 @@ where
         if !have_deleted_old_events {
             self.store.replace_events(Vec::new(), range.clone()).await?;
         }
-
-        let blocks = self
-            .block_retriever
-            .blocks(RangeInclusive::new(
-                range.end().saturating_sub(MAX_REORG_BLOCK_COUNT),
-                *range.end(),
-            ))
-            .await?;
 
         self.update_last_handled_blocks(&blocks);
         Ok(())
