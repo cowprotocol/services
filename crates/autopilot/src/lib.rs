@@ -518,7 +518,7 @@ pub async fn main(args: arguments::Arguments) {
         db.clone(),
         Box::new(quoter),
         Box::new(custom_ethflow_order_parser),
-        DomainSeparator([0u8; 32]),
+        DomainSeparator::new(chain_id, settlement_contract.address()),
         settlement_contract.address(),
     );
     let broadcaster_event_updater = Arc::new(EventUpdater::new(
