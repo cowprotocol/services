@@ -62,8 +62,11 @@ pub trait EventRetrieving {
 }
 
 struct EventRange {
+    /// Optional block number range for fetching reorg safe history
     history_range: Option<RangeInclusive<u64>>,
+    /// List of block numbers with hashes for fetching reorg unsafe blocks
     latest_blocks: Vec<BlockNumberHash>,
+    /// Defines if reorg happened for reorg unsafe blocks
     is_reorg: bool,
 }
 
@@ -101,10 +104,6 @@ where
     }
 
     /// Defines block range, for which events should be fetched
-    /// Returns 3 parameters:
-    /// 1. Optional block number range for fetching reorg safe history (if it's needed)
-    /// 2. List of block numbers with hashes for fetching reorg unsafe blocks
-    /// 3. Bool indicator if reorg happened for reorg unsafe blocks
     async fn event_block_range(&self) -> Result<EventRange> {
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
