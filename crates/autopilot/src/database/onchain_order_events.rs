@@ -20,6 +20,7 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use shared::{
+    current_block::RangeInclusive,
     db_order_conversions::{
         buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
     },
@@ -121,7 +122,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
-        range: std::ops::RangeInclusive<u64>,
+        range: RangeInclusive<u64>,
     ) -> Result<()> {
         let (custom_onchain_data, broadcasted_order_data, orders) =
             self.extract_custom_and_general_order_data(events).await?;

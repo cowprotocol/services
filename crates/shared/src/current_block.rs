@@ -19,7 +19,7 @@ use web3::{
 pub type Block = web3::types::Block<H256>;
 pub type BlockNumberHash = (u64, H256);
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RangeInclusive<T: Ord> {
     start: T,
     end: T,

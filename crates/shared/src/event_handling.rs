@@ -17,6 +17,8 @@ const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // of avoiding the need for history fetch of block events, since history fetch is less
 // efficient than latest block fetch
 const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
+// Max number of rpc calls that can be sent at the same time to the node.
+const MAX_PARALLEL_RPC_CALLS: usize = 128;
 
 /// General idea behind the algorithm:
 /// 1. Use `last_handled_blocks` as an indicator of the begining of the block range that needs to be updated
@@ -313,21 +315,23 @@ where
         blocks: &[BlockNumberHash],
     ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
-        for (i, result) in future::join_all(
-            blocks
-                .iter()
-                .map(|block| self.contract.get_events().block_hash(block.1).query()),
-        )
-        .await
-        .into_iter()
-        .enumerate()
-        {
-            match result {
-                Ok(e) => {
-                    blocks_filtered.push(blocks[i]);
-                    events.extend(e.into_iter());
+        for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
+            for (i, result) in future::join_all(
+                chunk
+                    .iter()
+                    .map(|block| self.contract.get_events().block_hash(block.1).query()),
+            )
+            .await
+            .into_iter()
+            .enumerate()
+            {
+                match result {
+                    Ok(e) => {
+                        blocks_filtered.push(blocks[i]);
+                        events.extend(e.into_iter());
+                    }
+                    Err(_) => return (blocks_filtered, events),
                 }
-                Err(_) => return (blocks_filtered, events),
             }
         }
 
