@@ -1,6 +1,8 @@
 //! A module for abstracting a component that can produce a quote with calldata
 //! for a specified token pair and amount.
 
+pub mod oneinch;
+pub mod paraswap;
 pub mod zeroex;
 
 use crate::price_estimation::Query;
@@ -15,7 +17,15 @@ use thiserror::Error;
 #[mockall::automock]
 #[async_trait::async_trait]
 pub trait TradeFinding: Send + Sync + 'static {
+    async fn get_quote(&self, query: &Query) -> Result<Quote, TradeError>;
     async fn get_trade(&self, query: &Query) -> Result<Trade, TradeError>;
+}
+
+/// A quote.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Quote {
+    pub out_amount: U256,
+    pub gas_estimate: u64,
 }
 
 /// A trade.
@@ -87,7 +97,7 @@ pub fn convert_interaction_group(interactions: &[Interaction]) -> Vec<EncodedInt
     interactions.iter().map(Interaction::encode).collect()
 }
 
-#[derive(Error, Debug)]
+#[derive(Debug, Error)]
 pub enum TradeError {
     #[error("No liquidity")]
     NoLiquidity,
@@ -97,6 +107,16 @@ pub enum TradeError {
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
+}
+
+impl Clone for TradeError {
+    fn clone(&self) -> Self {
+        match self {
+            Self::NoLiquidity => Self::NoLiquidity,
+            Self::UnsupportedOrderType => Self::UnsupportedOrderType,
+            Self::Other(err) => Self::Other(crate::clone_anyhow_error(err)),
+        }
+    }
 }
 
 #[cfg(test)]

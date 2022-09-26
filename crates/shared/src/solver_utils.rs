@@ -13,6 +13,8 @@ use std::{
 pub struct Slippage(pub f64);
 
 impl Slippage {
+    pub const ONE_PERCENT: Self = Self(1.);
+
     /// Creates a slippage amount from the specified percentage.
     pub fn percentage(amount: f64) -> Result<Self> {
         // 1Inch API only accepts a slippage from 0 to 50.

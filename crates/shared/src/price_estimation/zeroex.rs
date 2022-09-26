@@ -35,6 +35,7 @@ mod tests {
         price_estimation::single_estimate,
         zeroex_api::{DefaultZeroExApi, MockZeroExApi, PriceResponse, SwapResponse},
     };
+    use ethcontract::futures::FutureExt as _;
     use model::order::OrderKind;
     use reqwest::Client;
 
@@ -61,16 +62,19 @@ mod tests {
         //     slippagePercentage=0&\
         //     sellAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 100000000000000000u64.into(),
-                    buy_amount: 1110165823572443613u64.into(),
-                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    price: 11.101_658_235_724_436,
-                    estimated_gas: 111000,
-                },
-                ..Default::default()
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 100000000000000000u64.into(),
+                        buy_amount: 1110165823572443613u64.into(),
+                        allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 11.101_658_235_724_436,
+                        estimated_gas: 111000,
+                    },
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         let weth = testlib::tokens::WETH;
@@ -107,16 +111,19 @@ mod tests {
         //     slippagePercentage=0&\
         //     buyAmount=100000000000000000"
         zeroex_api.expect_get_swap().return_once(|_| {
-            Ok(SwapResponse {
-                price: PriceResponse {
-                    sell_amount: 8986186353137488u64.into(),
-                    buy_amount: 100000000000000000u64.into(),
-                    allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
-                    price: 0.089_861_863_531_374_87,
-                    estimated_gas: 111000,
-                },
-                ..Default::default()
-            })
+            async move {
+                Ok(SwapResponse {
+                    price: PriceResponse {
+                        sell_amount: 8986186353137488u64.into(),
+                        buy_amount: 100000000000000000u64.into(),
+                        allowance_target: addr!("def1c0ded9bec7f1a1670819833240f027b25eff"),
+                        price: 0.089_861_863_531_374_87,
+                        estimated_gas: 111000,
+                    },
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         let weth = testlib::tokens::WETH;

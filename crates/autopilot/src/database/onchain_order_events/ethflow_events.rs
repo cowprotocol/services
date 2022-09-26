@@ -84,8 +84,8 @@ fn convert_to_quote_id_and_user_valid_to(
 ) -> Result<(i64, u32)> {
     let data = order_placement.data.0.as_slice();
     anyhow::ensure!(data.len() == 12, "invalid data length");
-    let user_valid_to = u32::from_be_bytes(data[0..4].try_into().unwrap());
-    let quote_id = i64::from_be_bytes(data[4..12].try_into().unwrap());
+    let quote_id = i64::from_be_bytes(data[0..8].try_into().unwrap());
+    let user_valid_to = u32::from_be_bytes(data[8..12].try_into().unwrap());
     Ok((quote_id, user_valid_to))
 }
 
@@ -100,12 +100,12 @@ mod test {
     pub fn test_convert_to_quote_id_and_user_valid_to() {
         let event_data = ContractOrderPlacement {
             data: ethcontract::Bytes(vec![
-                0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
+                0u8, 0u8, 3u8, 2u8, 0u8, 0u8, 1u8, 2u8, 0u8, 0u8, 1u8, 2u8,
             ]),
             ..Default::default()
         };
         let expected_user_valid_to = 0x00_00_01_02;
-        let expected_quote_id = 0x00_00_01_02_00_00_01_02;
+        let expected_quote_id = 0x00_00_03_02_00_00_01_02;
         let result = convert_to_quote_id_and_user_valid_to(&event_data).unwrap();
         assert_eq!(result.1, expected_user_valid_to);
         assert_eq!(result.0, expected_quote_id);

@@ -17,9 +17,9 @@ use thiserror::Error;
 const BASE_URL: &str = "https://apiv5.paraswap.io";
 
 /// Mockable implementation of the API for unit test
-#[mockall::automock]
 #[async_trait::async_trait]
-pub trait ParaswapApi: Send + Sync {
+#[mockall::automock]
+pub trait ParaswapApi: Send + Sync + 'static {
     async fn price(&self, query: PriceQuery) -> Result<PriceResponse, ParaswapResponseError>;
     async fn transaction(
         &self,
@@ -150,9 +150,9 @@ pub struct PriceQuery {
     /// destination token address
     pub dest_token: H160,
     /// decimals of from token (according to API needed  to trade any token)
-    pub src_decimals: usize,
+    pub src_decimals: u8,
     /// decimals of to token (according to API needed to trade any token)
-    pub dest_decimals: usize,
+    pub dest_decimals: u8,
     /// amount of source token (in the smallest denomination, e.g. for ETH - 10**18)
     pub amount: U256,
     /// Type of order
@@ -261,9 +261,9 @@ pub struct TransactionBuilderQuery {
     /// The maximum slippage in BPS.
     pub slippage: u32,
     /// The decimals of the source token
-    pub src_decimals: usize,
+    pub src_decimals: u8,
     /// The decimals of the destination token
-    pub dest_decimals: usize,
+    pub dest_decimals: u8,
     /// priceRoute part from /prices endpoint response (without any change)
     pub price_route: Value,
     /// The address of the signer

@@ -1,86 +1,28 @@
+use super::{trade_finder::TradeEstimator, PriceEstimateResult, PriceEstimating, Query};
 use crate::{
-    oneinch_api::{
-        OneInchClient, ProtocolCache, RestResponse, SellOrderQuote, SellOrderQuoteQuery,
-    },
-    price_estimation::{
-        gas, rate_limited, Estimate, PriceEstimateResult, PriceEstimating, PriceEstimationError,
-        Query,
-    },
-    rate_limiter::RateLimiter,
-    request_sharing::RequestSharing,
+    oneinch_api::OneInchClient, rate_limiter::RateLimiter,
+    trade_finding::oneinch::OneInchTradeFinder,
 };
-use futures::{future::BoxFuture, FutureExt, StreamExt};
-use model::order::OrderKind;
 use primitive_types::H160;
 use std::sync::Arc;
 
-pub struct OneInchPriceEstimator {
-    api: Arc<dyn OneInchClient>,
-    sharing: RequestSharing<
-        Query,
-        BoxFuture<'static, Result<RestResponse<SellOrderQuote>, PriceEstimationError>>,
-    >,
-    disabled_protocols: Vec<String>,
-    protocol_cache: ProtocolCache,
-    rate_limiter: Arc<RateLimiter>,
-    referrer_address: Option<H160>,
-}
+pub struct OneInchPriceEstimator(TradeEstimator);
 
 impl OneInchPriceEstimator {
-    async fn estimate(&self, query: &Query) -> PriceEstimateResult {
-        if query.kind == OrderKind::Buy {
-            return Err(PriceEstimationError::UnsupportedOrderType);
-        }
-
-        let allowed_protocols = self
-            .protocol_cache
-            .get_allowed_protocols(&self.disabled_protocols, self.api.as_ref())
-            .await?;
-
-        let api = self.api.clone();
-        let oneinch_query = SellOrderQuoteQuery::with_default_options(
-            query.sell_token,
-            query.buy_token,
-            allowed_protocols,
-            query.in_amount,
-            self.referrer_address,
-        );
-        let quote_future = async move {
-            api.get_sell_order_quote(oneinch_query)
-                .await
-                .map_err(PriceEstimationError::Other)
-        };
-        let quote_future = rate_limited(self.rate_limiter.clone(), quote_future);
-        let quote = self.sharing.shared(*query, quote_future.boxed()).await?;
-
-        match quote {
-            RestResponse::Ok(quote) => Ok(Estimate {
-                out_amount: quote.to_token_amount,
-                gas: gas::SETTLEMENT_OVERHEAD + quote.estimated_gas,
-            }),
-            RestResponse::Err(e) => {
-                if e.description == "insufficient liquidity" {
-                    return Err(PriceEstimationError::NoLiquidity);
-                }
-                Err(PriceEstimationError::Other(anyhow::anyhow!(e.description)))
-            }
-        }
-    }
-
     pub fn new(
         api: Arc<dyn OneInchClient>,
         disabled_protocols: Vec<String>,
         rate_limiter: Arc<RateLimiter>,
         referrer_address: Option<H160>,
     ) -> Self {
-        Self {
-            api,
-            disabled_protocols,
-            protocol_cache: ProtocolCache::default(),
-            sharing: Default::default(),
+        Self(TradeEstimator::new(
+            Arc::new(OneInchTradeFinder::new(
+                api,
+                disabled_protocols,
+                referrer_address,
+            )),
             rate_limiter,
-            referrer_address,
-        }
+        ))
     }
 }
 
@@ -89,42 +31,36 @@ impl PriceEstimating for OneInchPriceEstimator {
         &'a self,
         queries: &'a [Query],
     ) -> futures::stream::BoxStream<'_, (usize, PriceEstimateResult)> {
-        debug_assert!(
-            queries.iter().all(|query| {
-                query.buy_token != model::order::BUY_ETH_ADDRESS
-                    && query.sell_token != model::order::BUY_ETH_ADDRESS
-                    && query.sell_token != query.buy_token
-            }),
-            "the hierarchy of price estimators should be set up \
-            such that OneInchPriceEstimator is a descendant of \
-            a SanitizedPriceEstimator"
-        );
-
-        futures::stream::iter(queries)
-            .then(|query| self.estimate(query))
-            .enumerate()
-            .boxed()
+        self.0.estimates(queries)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oneinch_api::{
-        MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token,
+    use crate::{
+        oneinch_api::{MockOneInchClient, OneInchClientImpl, RestError, SellOrderQuote, Token},
+        price_estimation::{single_estimate, PriceEstimationError},
     };
+    use model::order::OrderKind;
     use reqwest::Client;
 
-    fn create_estimator<T: OneInchClient + 'static>(api: T) -> OneInchPriceEstimator {
-        OneInchPriceEstimator::new(
-            Arc::new(api),
-            Vec::default(),
-            Arc::new(RateLimiter::from_strategy(
-                Default::default(),
-                "test".into(),
-            )),
-            None,
-        )
+    impl OneInchPriceEstimator {
+        fn test(api: impl OneInchClient) -> Self {
+            Self::new(
+                Arc::new(api),
+                Vec::default(),
+                Arc::new(RateLimiter::from_strategy(
+                    Default::default(),
+                    "test".into(),
+                )),
+                None,
+            )
+        }
+
+        async fn estimate(&self, query: &Query) -> PriceEstimateResult {
+            single_estimate(self, query).await
+        }
     }
 
     #[tokio::test]
@@ -139,7 +75,7 @@ mod tests {
         //     toTokenAddress=0x6810e776880c02933d47db1b9fc05908e5386b96&\
         //     amount=100000000000000000'
         one_inch.expect_get_sell_order_quote().return_once(|_| {
-            Ok(RestResponse::<_>::Ok(SellOrderQuote {
+            Ok(SellOrderQuote {
                 from_token: Token {
                     address: testlib::tokens::WETH,
                 },
@@ -150,10 +86,10 @@ mod tests {
                 from_token_amount: 100_000_000_000_000_000u128.into(),
                 protocols: Vec::default(),
                 estimated_gas: 189_386,
-            }))
+            })
         });
 
-        let estimator = create_estimator(one_inch);
+        let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -176,7 +112,7 @@ mod tests {
 
         one_inch.expect_get_sell_order_quote().times(0);
 
-        let estimator = create_estimator(one_inch);
+        let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -201,13 +137,14 @@ mod tests {
             .expect_get_sell_order_quote()
             .times(1)
             .return_once(|_| {
-                Ok(RestResponse::<SellOrderQuote>::Err(RestError {
+                Err(RestError {
                     status_code: 500,
                     description: "Internal Server Error".to_string(),
-                }))
+                }
+                .into())
             });
 
-        let estimator = create_estimator(one_inch);
+        let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -221,7 +158,7 @@ mod tests {
 
         assert!(matches!(
             est,
-            Err(PriceEstimationError::Other(e)) if e.to_string() == "Internal Server Error"
+            Err(PriceEstimationError::Other(e)) if e.to_string().contains("Internal Server Error")
         ));
     }
 
@@ -231,9 +168,9 @@ mod tests {
         one_inch
             .expect_get_sell_order_quote()
             .times(1)
-            .return_once(|_| Err(anyhow::anyhow!("malformed JSON")));
+            .return_once(|_| Err(anyhow::anyhow!("malformed JSON").into()));
 
-        let estimator = create_estimator(one_inch);
+        let estimator = OneInchPriceEstimator::test(one_inch);
 
         let est = estimator
             .estimate(&Query {
@@ -259,7 +196,7 @@ mod tests {
 
         let one_inch =
             OneInchClientImpl::new(OneInchClientImpl::DEFAULT_URL, Client::new(), 1).unwrap();
-        let estimator = create_estimator(one_inch);
+        let estimator = OneInchPriceEstimator::test(one_inch);
 
         let result = estimator
             .estimate(&Query {
