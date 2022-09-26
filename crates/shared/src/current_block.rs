@@ -1,7 +1,6 @@
 use crate::Web3;
 use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
-use std::ops::RangeInclusive;
 use std::{
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -19,6 +18,28 @@ use web3::{
 
 pub type Block = web3::types::Block<H256>;
 pub type BlockNumberHash = (u64, H256);
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RangeInclusive<T: Ord> {
+    start: T,
+    end: T,
+}
+
+impl<T: Ord> RangeInclusive<T> {
+    pub fn try_new(start: T, end: T) -> Result<Self> {
+        ensure!(end >= start, "end has to be bigger or equal to start");
+        Ok(Self { start, end })
+    }
+    pub fn start(&self) -> &T {
+        &self.start
+    }
+    pub fn end(&self) -> &T {
+        &self.end
+    }
+    pub fn into_inner(self) -> (T, T) {
+        (self.start, self.end)
+    }
+}
 
 /// Creates a cloneable stream that yields the current block whenever it changes.
 ///
@@ -142,11 +163,10 @@ impl BlockRetrieving for Web3 {
     /// get blocks defined by the range (inclusive)
     /// if successful, function guarantees full range of blocks in Result (does not return partial results)
     async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
-        ensure!(!range.is_empty(), "invalid range: {:?}", range);
-
         let include_txs = helpers::serialize(&false);
-        let mut batch_request = Vec::with_capacity((range.end() - range.start() + 1) as usize);
-        for i in range {
+        let (start, end) = range.into_inner();
+        let mut batch_request = Vec::with_capacity((end - start + 1) as usize);
+        for i in start..=end {
             let num = helpers::serialize(&BlockNumber::Number(i.into()));
             let request = self
                 .transport()
@@ -230,19 +250,14 @@ mod tests {
         let transport = create_env_test_transport();
         let web3 = Web3::new(transport);
 
-        // check invalid input
-        let range = RangeInclusive::new(6, 5);
-        let blocks = web3.blocks(range).await;
-        assert!(blocks.is_err());
-
         // single block
-        let range = RangeInclusive::new(5, 5);
+        let range = RangeInclusive::try_new(5, 5).unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 1);
         assert_eq!(blocks.last().unwrap().0, 5);
 
         // multiple blocks
-        let range = RangeInclusive::new(5, 8);
+        let range = RangeInclusive::try_new(5, 8).unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 4);
         assert_eq!(blocks.last().unwrap().0, 8);
@@ -251,10 +266,11 @@ mod tests {
         // shortened blocks
         let current_block_number = 5;
         let length = 25;
-        let range = RangeInclusive::new(
+        let range = RangeInclusive::try_new(
             current_block_number.saturating_sub(length),
             current_block_number,
-        );
+        )
+        .unwrap();
         let blocks = web3.blocks(range).await.unwrap();
         assert_eq!(blocks.len(), 6);
         assert_eq!(blocks.last().unwrap().0, 5);

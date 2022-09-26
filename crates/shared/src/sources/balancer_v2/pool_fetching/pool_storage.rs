@@ -17,6 +17,7 @@
 //!     on token pairs.
 
 use crate::{
+    current_block::RangeInclusive,
     event_handling::EventStoring,
     sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
 };
@@ -29,7 +30,6 @@ use model::TokenPair;
 use std::{
     cmp,
     collections::{HashMap, HashSet},
-    ops::RangeInclusive,
     sync::Arc,
 };
 

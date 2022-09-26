@@ -1,13 +1,12 @@
 use crate::{
-    current_block::{BlockNumberHash, BlockRetrieving},
+    current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     maintenance::Maintaining,
 };
-use anyhow::{ensure, Context, Error, Result};
+use anyhow::{Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
 use futures::{future, Stream, StreamExt, TryStreamExt};
-use std::ops::RangeInclusive;
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
@@ -121,7 +120,10 @@ where
         let handled_blocks = if self.last_handled_blocks.is_empty() {
             let last_handled_block = self.store.last_event_block().await?;
             self.block_retriever
-                .blocks(RangeInclusive::new(last_handled_block, last_handled_block))
+                .blocks(RangeInclusive::try_new(
+                    last_handled_block,
+                    last_handled_block,
+                )?)
                 .await?
         } else {
             self.last_handled_blocks.clone()
@@ -159,18 +161,10 @@ where
         }
 
         // full range of blocks which are considered for event update
-        let block_range = RangeInclusive::new(
+        let block_range = RangeInclusive::try_new(
             last_handled_block_number.saturating_sub(MAX_REORG_BLOCK_COUNT),
             current_block_number,
-        );
-        ensure!(
-            !block_range.is_empty(),
-            "current block number according to node is {} which is more than {} blocks in the \
-                 past compared to last handled block {}",
-            block_range.end(),
-            MAX_REORG_BLOCK_COUNT,
-            block_range.start()
-        );
+        )?;
 
         let (history_range, latest_range) = split_range(block_range);
         tracing::debug!(
@@ -228,10 +222,10 @@ where
         // it's safer to fail at the beginning of the function before we update Storage
         let blocks = self
             .block_retriever
-            .blocks(RangeInclusive::new(
+            .blocks(RangeInclusive::try_new(
                 range.end().saturating_sub(MAX_REORG_BLOCK_COUNT),
                 *range.end(),
-            ))
+            )?)
             .await?;
 
         let events = self
@@ -303,7 +297,7 @@ where
         if blocks.is_empty() {
             return Ok(());
         }
-        let range = RangeInclusive::new(blocks.first().unwrap().0, blocks.last().unwrap().0);
+        let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
             self.store.replace_events(events, range.clone()).await?;
         } else {
@@ -413,13 +407,12 @@ fn detect_reorg_path<'a>(
 /// Splits range into two disjuctive consecutive ranges, second one containing last (up to)
 /// MAX_BLOCKS_QUERIED elements, first one containing the rest (if any)
 fn split_range(range: RangeInclusive<u64>) -> (Option<RangeInclusive<u64>>, RangeInclusive<u64>) {
-    let start = range.start();
-    let end = range.end();
+    let (start, end) = range.clone().into_inner();
 
-    if end.saturating_sub(*start) > MAX_BLOCKS_QUERIED {
+    if end.saturating_sub(start) > MAX_BLOCKS_QUERIED {
         (
-            Some(RangeInclusive::new(*start, end - MAX_BLOCKS_QUERIED)),
-            RangeInclusive::new(end - MAX_BLOCKS_QUERIED + 1, *end),
+            Some(RangeInclusive::try_new(start, end - MAX_BLOCKS_QUERIED).unwrap()),
+            RangeInclusive::try_new(end - MAX_BLOCKS_QUERIED + 1, end).unwrap(),
         )
     } else {
         (None, range)
@@ -624,39 +617,32 @@ mod tests {
     }
 
     #[test]
-    fn split_range_test_empty_range() {
-        let range = RangeInclusive::new(1, 0);
-        let (history_range, latest_range) = split_range(range.clone());
-        assert!(history_range.is_none() && latest_range == range);
-    }
-
-    #[test]
     fn split_range_test_equal() {
-        let range = RangeInclusive::new(0, 0);
+        let range = RangeInclusive::try_new(0, 0).unwrap();
         let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries() {
-        let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED);
+        let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED).unwrap();
         let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries_minus_one() {
-        let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED - 1);
+        let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED - 1).unwrap();
         let (history_range, latest_range) = split_range(range.clone());
         assert!(history_range.is_none() && latest_range == range);
     }
 
     #[test]
     fn split_range_test_max_queries_plus_one() {
-        let range = RangeInclusive::new(0, MAX_BLOCKS_QUERIED + 1);
+        let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED + 1).unwrap();
         let (history_range, latest_range) = split_range(range);
-        assert_eq!(history_range, Some(RangeInclusive::new(0, 1)));
-        assert_eq!(latest_range, RangeInclusive::new(2, 51));
+        assert_eq!(history_range, Some(RangeInclusive::try_new(0, 1).unwrap()));
+        assert_eq!(latest_range, RangeInclusive::try_new(2, 51).unwrap());
     }
 
     #[tokio::test]
