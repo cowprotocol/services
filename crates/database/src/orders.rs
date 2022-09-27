@@ -603,7 +603,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn postgres_solvable_ethflow_orders() {
+    async fn postgres_reading_ethflow_orders() {
         let mut db = PgConnection::connect("postgresql://").await.unwrap();
         let mut db = db.begin().await.unwrap();
         crate::clear_DANGER_(&mut db).await.unwrap();
