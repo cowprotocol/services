@@ -161,6 +161,8 @@ pub struct Quote {
     pub buy_amount: U256,
     /// The final minimum subsidized fee amount for any order created for this
     /// quote.
+    ///
+    /// TODO: This is where the `verification_gas_limit` should be considered.
     pub fee_amount: U256,
 }
 
@@ -177,7 +179,9 @@ impl Quote {
     }
 
     /// Applies a subsidy to the quote.
-    pub fn with_subsidy(mut self, subsidy: &Subsidy) -> Self {
+    pub fn with_subsidy_and_signing_scheme(mut self, subsidy: &Subsidy, scheme: &QuoteSigningScheme) -> Self {
+        // TODO: compute final subsidized fee amount with signing scheme additional costs included.
+        // THIS CANNOT MODIFY `quote.data`.
         self.fee_amount = self.data.fee_parameters.subsidized(subsidy);
         self
     }
@@ -226,6 +230,7 @@ pub struct QuoteData {
     /// `SellAmount::AfterFee` variant, this will be the expected sell amount if
     /// exactly `sell_amount` were traded.
     pub quoted_buy_amount: U256,
+    // TODO: The additional `verification_gas_limit` SHOULD NOT BE reflected here.
     pub fee_parameters: FeeParameters,
     pub kind: OrderKind,
     pub expiration: DateTime<Utc>,
@@ -539,7 +544,8 @@ impl OrderQuoting for OrderQuoter {
                 .map_err(From::from),
         )?;
 
-        let mut quote = Quote::new(Default::default(), data).with_subsidy(&subsidy);
+        let mut quote = Quote::new(Default::default(), data)
+            .with_subsidy_and_signing_scheme(&subsidy, &parameters.signing_scheme);
 
         // Make sure to scale the sell and buy amounts for quotes for sell
         // amounts before fees.

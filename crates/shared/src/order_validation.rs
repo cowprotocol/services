@@ -337,22 +337,24 @@ impl OrderValidating for OrderValidator {
         let owner = order.verify_owner(domain_separator)?;
         let signing_scheme = order.signature.scheme();
 
-        if let Signature::Eip1271(signature) = &order.signature {
+        let additional_gas = if let Signature::Eip1271(signature) = &order.signature {
             if self
                 .signature_configuration
                 .eip1271_skip_creation_validation
             {
                 tracing::debug!(?signature, "skipping EIP-1271 signature validation");
+                // We don't care! Because we are skipping validation anyway
+                0 // TODO: make this ocnfigurable
             } else {
                 self.signature_validator
-                    .validate_signature(SignatureCheck {
+                    .validate_signature_and_get_additional_gas(SignatureCheck {
                         signer: owner,
                         hash: hashed_eip712_message(domain_separator, &order.data.hash_struct()),
                         signature: signature.to_owned(),
                     })
-                    .await?;
+                    .await?
             }
-        }
+        };
 
         if order.data.buy_amount.is_zero() || order.data.sell_amount.is_zero() {
             return Err(ValidationError::ZeroAmount);
@@ -389,6 +391,7 @@ impl OrderValidating for OrderValidator {
                     convert_signing_scheme_into_quote_signing_scheme(
                         order.signature.scheme(),
                         true,
+                        additional_gas,
                     )?,
                 )
                 .await?,
@@ -613,6 +616,7 @@ pub fn is_order_outside_market_price(sell_amount: &U256, buy_amount: &U256, quot
 fn convert_signing_scheme_into_quote_signing_scheme(
     scheme: SigningScheme,
     order_placement_via_api: bool,
+    verification_gas_limit: U256,
 ) -> Result<QuoteSigningScheme, ValidationError> {
     match (order_placement_via_api, scheme) {
         (true, SigningScheme::Eip712) => Ok(QuoteSigningScheme::Eip712),
@@ -624,6 +628,7 @@ fn convert_signing_scheme_into_quote_signing_scheme(
         }),
         (order_placement_via_api, SigningScheme::Eip1271) => Ok(QuoteSigningScheme::Eip1271 {
             onchain_order: !order_placement_via_api,
+            verification_gas_limit,
         }),
     }
 }

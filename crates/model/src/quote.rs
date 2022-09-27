@@ -30,6 +30,8 @@ pub enum QuoteSigningScheme {
     Eip1271 {
         #[serde(rename = "onchainOrder")]
         onchain_order: bool,
+        #[serde(rename = "verificationGasLimit", default = "default_verification_gas_limit")]
+        verification_gas_limit: U256,
     },
     PreSign {
         #[serde(rename = "onchainOrder")]
@@ -44,6 +46,10 @@ struct QuoteSigningDeserializationData {
     signing_scheme: SigningScheme,
     #[serde(default)]
     onchain_order: bool,
+}
+
+fn default_verification_gas_limit() -> U256 {
+    10_000_u128.into()
 }
 
 impl TryFrom<QuoteSigningDeserializationData> for QuoteSigningScheme {
