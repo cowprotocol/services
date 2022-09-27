@@ -2,6 +2,7 @@ use anyhow::Result;
 use contracts::{cowswap_onchain_orders, gpv2_settlement};
 use ethcontract::dyns::DynWeb3;
 use shared::{
+    current_block::BlockNumberHash,
     event_handling::{EventHandler, EventRetrieving, EventStoring},
     impl_event_retrieving,
     maintenance::Maintaining,
@@ -27,7 +28,12 @@ where
     Database: EventStoring<<W as EventRetrieving>::Event>,
     W: EventRetrieving + Send + Sync,
 {
-    pub fn new(contract: W, db: Database, web3: Web3, start_sync_at_block: Option<u64>) -> Self {
+    pub fn new(
+        contract: W,
+        db: Database,
+        web3: Web3,
+        start_sync_at_block: Option<BlockNumberHash>,
+    ) -> Self {
         Self(Mutex::new(EventHandler::new(
             web3,
             contract,
