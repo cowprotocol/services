@@ -620,7 +620,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.is_ethflow_order, false);
+        assert!(!order.is_ethflow_order);
 
         let eth_order_placement = EthOrderPlacement {
             uid: order.uid,
@@ -633,7 +633,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(order.is_ethflow_order, true);
+        assert!(order.is_ethflow_order);
     }
 
     #[tokio::test]
