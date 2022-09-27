@@ -1,10 +1,13 @@
 use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
 use crate::{
+    encoding::EncodedInteraction,
     encoding::{EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
     settlement::trade_surplus_in_native_token,
 };
 use anyhow::{bail, ensure, Context as _, Result};
+use ethcontract::Bytes;
+use hex_literal::hex;
 use model::order::{Order, OrderKind};
 use num::{BigRational, One};
 use number_conversions::big_rational_to_u256;
@@ -374,6 +377,7 @@ impl SettlementEncoder {
             .collect();
         tokens.append(&mut liquidity_order_buy_tokens);
         clearing_prices.append(&mut liquidity_order_prices);
+        let pre_interactions = self.build_ethflow_pre_interactions();
         let mut trades: Vec<EncodedTrade> = self
             .order_trades
             .into_iter()
@@ -390,7 +394,7 @@ impl SettlementEncoder {
             clearing_prices,
             trades,
             interactions: [
-                Vec::new(),
+                pre_interactions,
                 iter::empty()
                     .chain(
                         self.execution_plan
@@ -402,6 +406,44 @@ impl SettlementEncoder {
                 Vec::new(),
             ],
         }
+    }
+
+    // In case there are ethflow orders, we need a pre_interaction that calls
+    // the wrapAll() funcitonality to wrap all the ether used for ethflow orders
+    // to WETH
+    fn build_ethflow_pre_interactions(&self) -> Vec<EncodedInteraction> {
+        let mut ethflow_orders_owners: Vec<H160> = self
+            .liquidity_order_trades
+            .iter()
+            .filter_map(|order_trade| {
+                if order_trade.trade.order.metadata.is_ethflow_order {
+                    Some(order_trade.trade.order.metadata.owner)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        ethflow_orders_owners.append(
+            &mut self
+                .order_trades
+                .iter()
+                .filter_map(|order_trade| {
+                    if order_trade.trade.order.metadata.is_ethflow_order {
+                        Some(order_trade.trade.order.metadata.owner)
+                    } else {
+                        None
+                    }
+                })
+                .collect(),
+        );
+        // Note that all ethflow_orders have the same owner:
+        // the ethflow_contract
+        if let Some(owner) = ethflow_orders_owners.get(0) {
+            // 4c84c1c8 is the identifier of the following function:
+            // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
+            return vec![(*owner, U256::zero(), Bytes(hex!("4c84c1c8").to_vec()))];
+        }
+        Vec::new()
     }
 
     // Merge other into self so that the result contains both settlements.
