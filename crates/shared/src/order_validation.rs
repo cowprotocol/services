@@ -79,7 +79,7 @@ pub enum PartialValidationError {
 #[derive(Debug)]
 pub enum ValidationError {
     Partial(PartialValidationError),
-    /// The quote ID specifed with the order could not be found.
+    /// The quote ID specified with the order could not be found.
     QuoteNotFound,
     /// The quote specified by ID is invalid. Either it doesn't match the order
     /// or it has already expired.
@@ -136,6 +136,8 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
+            // TODO: Replace this Other error with Signature specific one
+            CalculateQuoteError::Signature(err) => ValidationError::Other(anyhow::Error::new(err)),
 
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not

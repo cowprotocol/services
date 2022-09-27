@@ -9,7 +9,7 @@ pub mod native_price_cache;
 pub mod oneinch;
 pub mod paraswap;
 pub mod sanitized;
-pub mod trade_finder;
+pub mod signature;
 pub mod zeroex;
 
 use crate::{

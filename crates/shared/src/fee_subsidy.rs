@@ -118,6 +118,10 @@ pub struct FeeParameters {
     pub gas_amount: f64,
     /// The estimated gas price at the time of quoting.
     pub gas_price: f64,
+    /// The on-chain signature gas estimate.
+    ///
+    /// Only applicable if on-chain signature is used like EIP-1271.
+    // pub signature_gas: Option<U256>,
     /// The Ether-denominated price of token at the time of quoting.
     ///
     /// The Ether value of `x` sell tokens is `x * sell_token_price`.

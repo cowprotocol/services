@@ -1,3 +1,4 @@
+
 use super::price_estimation::{
     self,
     native::{native_single_estimate, NativePriceEstimating},
@@ -6,7 +7,7 @@ use super::price_estimation::{
 use crate::{
     db_order_conversions::order_kind_from,
     fee_subsidy::{FeeParameters, FeeSubsidizing, Subsidy, SubsidyParameters},
-    order_validation::{OrderValidating, PartialValidationError, PreOrderData},
+    order_validation::{OrderValidating, PartialValidationError, PreOrderData}, price_estimation::signature::{signature_gas_estimate, SignatureEstimationError},
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, TimeZone as _, Utc};
@@ -295,6 +296,9 @@ pub enum CalculateQuoteError {
 
     #[error("failed to estimate price")]
     Price(#[from] PriceEstimationError),
+    
+    #[error("failed to estimate signature gas amount")]
+    Signature(#[from] SignatureEstimationError),
 
     #[error(transparent)]
     Other(#[from] anyhow::Error),
@@ -475,6 +479,7 @@ impl OrderQuoter {
             // we make the native buy_token price a requirement here as well.
             native_single_estimate(self.native_price_estimator.as_ref(), &parameters.buy_token),
         )?;
+        let signature_estimate = signature_gas_estimate().await?.unwrap_or_default();
 
         let (quoted_sell_amount, quoted_buy_amount) = match &parameters.side {
             OrderQuoteSide::Sell {
@@ -488,7 +493,7 @@ impl OrderQuoter {
             } => (trade_estimate.out_amount, *buy_amount),
         };
         let fee_parameters = FeeParameters {
-            gas_amount: trade_estimate.gas as _,
+            gas_amount: trade_estimate.gas as f64 + signature_estimate,
             gas_price: gas_estimate.effective_gas_price(),
             sell_token_price,
         };
