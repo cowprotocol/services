@@ -1,7 +1,6 @@
 use super::{ExternalPrices, Interaction, LiquidityOrderTrade, OrderTrade, Trade, TradeExecution};
 use crate::{
-    encoding::EncodedInteraction,
-    encoding::{EncodedSettlement, EncodedTrade},
+    encoding::{EncodedInteraction, EncodedSettlement, EncodedTrade},
     interactions::UnwrapWethInteraction,
     settlement::trade_surplus_in_native_token,
 };
