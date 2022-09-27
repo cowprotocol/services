@@ -181,8 +181,8 @@ pub async fn read_order(
     id: &OrderUid,
 ) -> Result<Option<Order>, sqlx::Error> {
     const QUERY: &str = r#"
-SELECT * FROM ORDERS
-WHERE uid = $1
+        SELECT * FROM ORDERS
+        WHERE uid = $1
     "#;
     sqlx::query_as(QUERY).bind(id).fetch_optional(ex).await
 }
@@ -336,7 +336,7 @@ o.is_liquidity_order,
 ), true)) AS presignature_pending
 "#;
 
-const ORDERS_FROM: &str = "orders o";
+const ORDERS_FROM: &str = "orders o LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid";
 
 pub async fn single_full_order(
     ex: &mut PgConnection,
