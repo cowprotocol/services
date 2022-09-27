@@ -221,7 +221,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shares_quotes() {
+    async fn shares_quote_api_request() {
         let mut zeroex_api = MockZeroExApi::new();
         zeroex_api.expect_get_swap().return_once(|_| {
             async move {

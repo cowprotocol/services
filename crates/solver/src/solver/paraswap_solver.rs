@@ -209,6 +209,7 @@ mod tests {
     };
     use contracts::WETH9;
     use ethcontract::U256;
+    use futures::FutureExt as _;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
     use reqwest::Client;
@@ -257,17 +258,20 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         client.expect_price().returning(|_| {
-            Ok(PriceResponse {
-                price_route_raw: Default::default(),
-                src_amount: 100.into(),
-                dest_amount: 99.into(),
-                token_transfer_proxy: H160([0x42; 20]),
-                gas_cost: 0,
-            })
+            async {
+                Ok(PriceResponse {
+                    price_route_raw: Default::default(),
+                    src_amount: 100.into(),
+                    dest_amount: 99.into(),
+                    token_transfer_proxy: H160([0x42; 20]),
+                    gas_cost: 0,
+                })
+            }
+            .boxed()
         });
         client
             .expect_transaction()
-            .returning(|_| Ok(Default::default()));
+            .returning(|_| async { Ok(Default::default()) }.boxed());
 
         allowance_fetcher
             .expect_get_approval()
@@ -338,17 +342,20 @@ mod tests {
         let token_transfer_proxy = H160([0x42; 20]);
 
         client.expect_price().returning(move |_| {
-            Ok(PriceResponse {
-                price_route_raw: Default::default(),
-                src_amount: 100.into(),
-                dest_amount: 99.into(),
-                token_transfer_proxy,
-                gas_cost: 0,
-            })
+            async move {
+                Ok(PriceResponse {
+                    price_route_raw: Default::default(),
+                    src_amount: 100.into(),
+                    dest_amount: 99.into(),
+                    token_transfer_proxy,
+                    gas_cost: 0,
+                })
+            }
+            .boxed()
         });
         client
             .expect_transaction()
-            .returning(|_| Ok(Default::default()));
+            .returning(|_| async { Ok(Default::default()) }.boxed());
 
         // On first invocation no prior allowance, then max allowance set.
         let mut seq = Sequence::new();
@@ -430,13 +437,16 @@ mod tests {
         let buy_token = H160::from_low_u64_be(2);
 
         client.expect_price().returning(|_| {
-            Ok(PriceResponse {
-                price_route_raw: Default::default(),
-                src_amount: 100.into(),
-                dest_amount: 99.into(),
-                token_transfer_proxy: H160([0x42; 20]),
-                gas_cost: 0,
-            })
+            async {
+                Ok(PriceResponse {
+                    price_route_raw: Default::default(),
+                    src_amount: 100.into(),
+                    dest_amount: 99.into(),
+                    token_transfer_proxy: H160([0x42; 20]),
+                    gas_cost: 0,
+                })
+            }
+            .boxed()
         });
 
         // Check slippage is applied to PriceResponse
@@ -452,7 +462,7 @@ mod tests {
                     }
                 );
                 assert_eq!(transaction.slippage, 1000);
-                Ok(Default::default())
+                async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);
         client
@@ -466,7 +476,7 @@ mod tests {
                     }
                 );
                 assert_eq!(transaction.slippage, 1000);
-                Ok(Default::default())
+                async { Ok(Default::default()) }.boxed()
             })
             .in_sequence(&mut seq);
 
