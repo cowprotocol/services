@@ -681,6 +681,7 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
+            "isEthflowOrder": false,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
