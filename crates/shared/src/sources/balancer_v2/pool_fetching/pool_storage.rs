@@ -17,7 +17,8 @@
 //!     on token pairs.
 
 use crate::{
-    event_handling::{BlockNumber, EventStoring},
+    current_block::RangeInclusive,
+    event_handling::EventStoring,
     sources::balancer_v2::pools::{common, FactoryIndexing, PoolIndexing},
 };
 use anyhow::{anyhow, Result};
@@ -29,7 +30,6 @@ use model::TokenPair;
 use std::{
     cmp,
     collections::{HashMap, HashSet},
-    ops::RangeInclusive,
     sync::Arc,
 };
 
@@ -184,11 +184,11 @@ where
     async fn replace_events(
         &mut self,
         events: Vec<Event<BasePoolFactoryEvent>>,
-        range: RangeInclusive<BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()> {
         tracing::debug!("replacing {} events for block {:?}", events.len(), range);
 
-        self.remove_pools_newer_than_block(range.start().to_u64());
+        self.remove_pools_newer_than_block(*range.start());
         self.append_events(events).await
     }
 
