@@ -267,8 +267,6 @@ impl OrderbookServices {
             contracts.gp_settlement.address(),
             api_db.as_ref().clone(),
             order_validator.clone(),
-            100,
-            current_block_stream.clone(),
         ));
         let maintenance = ServiceMaintenance {
             maintainers: vec![Arc::new(autopilot_db.clone()), event_updater],
