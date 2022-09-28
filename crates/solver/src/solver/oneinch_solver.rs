@@ -328,10 +328,7 @@ mod tests {
             &U256::exp10(17),                  // max slippage in wei
         )
         .unwrap();
-        assert_eq!(
-            slippage,
-            Slippage::from_basis_points(10).unwrap()
-        );
+        assert_eq!(slippage, Slippage::from_basis_points(10).unwrap());
     }
 
     #[test]
