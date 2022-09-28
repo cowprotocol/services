@@ -177,22 +177,31 @@ mod tests {
     fn limits_max_slippage() {
         let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
 
-        for (price, amount, expected_slippage) in [
-            (U256::exp10(9).to_big_rational(), U256::exp10(12), 1),
-            (BigRational::new(2.into(), 1000.into()), U256::exp10(23), 5),
-            (U256::exp10(9).to_big_rational(), U256::exp10(8), 10),
-            (U256::exp10(9).to_big_rational(), U256::exp10(17), 0),
+        let price = U256::exp10(9).to_big_rational();
+        for (amount, expected_slippage) in [
+            (U256::exp10(12), 1),
+            (U256::exp10(8), 10),
+            (U256::exp10(17), 0),
         ] {
-            let slippage = calculator
-                .compute(
-                    &externalprices! { native_token: WETH, USDC => price },
-                    USDC,
-                    amount,
-                )
-                .unwrap();
-
+            let slippage = calculator.compute_with_price(&price, amount).unwrap();
             assert_eq!(slippage.as_bps(), expected_slippage);
         }
+    }
+
+    #[test]
+    fn uses_token_external_price() {
+        let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
+        let slippage = calculator
+            .compute(
+                &externalprices! {
+                    native_token: WETH,
+                    USDC => BigRational::new(2.into(), 1000.into()),
+                },
+                USDC,
+                U256::exp10(23),
+            )
+            .unwrap();
+        assert_eq!(slippage.as_bps(), 5);
     }
 
     #[test]
