@@ -92,11 +92,6 @@ pub struct Arguments {
     #[clap(long, env)]
     pub enable_presign_orders: bool,
 
-    /// If solvable orders haven't been successfully updated in this many blocks attempting
-    /// to get them errors and our liveness check fails.
-    #[clap(long, default_value = "24")]
-    pub solvable_orders_max_update_age_blocks: u64,
-
     /// The API endpoint to call the mip v2 solver for price estimation
     #[clap(long, env)]
     pub quasimodo_solver_url: Option<Url>,
@@ -196,11 +191,6 @@ impl std::fmt::Display for Arguments {
             self.eip1271_skip_creation_validation
         )?;
         writeln!(f, "enable_presign_orders: {}", self.enable_presign_orders)?;
-        writeln!(
-            f,
-            "solvable_orders_max_update_age_blocks: {}",
-            self.solvable_orders_max_update_age_blocks,
-        )?;
         display_option(f, "quasimodo_solver_url", &self.quasimodo_solver_url)?;
         display_option(f, "yearn_solver_url", &self.yearn_solver_url)?;
         writeln!(
