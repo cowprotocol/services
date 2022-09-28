@@ -163,16 +163,11 @@ impl SingleOrderSolving for OneInchSolver {
             .protocol_cache
             .get_allowed_protocols(&self.disabled_protocols, self.client.as_ref())
             .await?;
-
-        // Note that we use a rounded slippage percentage. This is because the
-        // 1Inch API will repsond with server errors if the slippage paramter
-        // has too much precision.
         let slippage = Slippage::percentage(
             self.slippage_calculator
                 .compute(&auction.external_prices, order.buy_token, order.buy_amount)?
-                .as_rounded_percentage(),
+                .as_percentage(),
         )?;
-
         self.settle_order_with_protocols_and_slippage(order, protocols, slippage)
             .await
     }

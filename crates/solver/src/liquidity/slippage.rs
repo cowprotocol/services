@@ -126,22 +126,19 @@ impl SlippageAmount {
         amount.saturating_add(self.absolute)
     }
 
-    /// Returns the relative slippage as basis points rounded down.
-    pub fn as_bps(&self) -> u32 {
-        (self.relative * 10000.) as _
-    }
-
-    /// As a percentage rounderd to the closest 0.01.
-    ///
-    /// This is useful for protocols that don't accept high precision slippage
-    /// values.
-    pub fn as_rounded_percentage(&self) -> f64 {
-        (self.as_bps() as f64) / 100.
-    }
-
     /// Returns the relative slippage as a factor.
     pub fn as_factor(&self) -> f64 {
         self.relative
+    }
+
+    /// Returns the relative slippage as a percentage.
+    pub fn as_percentage(&self) -> f64 {
+        self.relative * 100.
+    }
+
+    /// Returns the relative slippage as basis points rounded down.
+    pub fn as_bps(&self) -> u32 {
+        (self.relative * 10000.) as _
     }
 }
 
@@ -173,7 +170,6 @@ pub fn amount_plus_max_slippage(amount: U256) -> U256 {
 mod tests {
     use super::*;
     use crate::settlement::external_prices::externalprices;
-    use assert_approx_eq::assert_approx_eq;
     use shared::conversions::U256Ext as _;
     use testlib::tokens::{USDC, WETH};
 
@@ -182,14 +178,10 @@ mod tests {
         let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
 
         for (price, amount, expected_slippage) in [
-            (U256::exp10(9).to_big_rational(), U256::exp10(12), 0.01),
-            (
-                BigRational::new(2.into(), 1000.into()),
-                U256::exp10(23),
-                0.05,
-            ),
-            (U256::exp10(9).to_big_rational(), U256::exp10(8), 0.1),
-            (U256::exp10(9).to_big_rational(), U256::exp10(17), 0.),
+            (U256::exp10(9).to_big_rational(), U256::exp10(12), 1),
+            (BigRational::new(2.into(), 1000.into()), U256::exp10(23), 5),
+            (U256::exp10(9).to_big_rational(), U256::exp10(8), 10),
+            (U256::exp10(9).to_big_rational(), U256::exp10(17), 0),
         ] {
             let slippage = calculator
                 .compute(
@@ -199,7 +191,7 @@ mod tests {
                 )
                 .unwrap();
 
-            assert_approx_eq!(slippage.as_rounded_percentage(), expected_slippage);
+            assert_eq!(slippage.as_bps(), expected_slippage);
         }
     }
 

@@ -224,13 +224,17 @@ impl Slippage {
             (0. ..=50.).contains(&amount),
             "slippage outside of [0%, 50%] range"
         );
+
         Ok(Slippage(amount))
     }
 }
 
 impl Display for Slippage {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        // Note that we use a rounded slippage percentage. This is because the
+        // 1Inch API will repsond with server errors if the slippage paramter
+        // has too much precision.
+        write!(f, "{:.2}", self.0)
     }
 }
 
@@ -621,6 +625,11 @@ mod tests {
     use crate::addr;
 
     #[test]
+    fn slippage_rounds_percentage() {
+        assert_eq!(Slippage(1.2345678).to_string(), "1.23");
+    }
+
+    #[test]
     fn slippage_out_of_range() {
         assert!(Slippage::percentage(-1.).is_err());
         assert!(Slippage::percentage(1337.).is_err());
@@ -669,7 +678,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5",
+                &slippage=0.50",
         );
     }
 
@@ -711,7 +720,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5\
+                &slippage=0.50\
                 &protocols=WETH%2CUNISWAP_V3\
                 &disableEstimate=true\
                 &complexityLevel=2\
