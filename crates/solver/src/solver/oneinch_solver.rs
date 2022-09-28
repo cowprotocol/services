@@ -21,12 +21,14 @@ use maplit::hashmap;
 use model::order::OrderKind;
 use num::{BigRational, FromPrimitive, ToPrimitive};
 use primitive_types::{H160, U256};
-use reqwest::Client;
-use reqwest::Url;
-use shared::oneinch_api::{OneInchClient, OneInchClientImpl, ProtocolCache, Swap, SwapQuery};
-use shared::solver_utils::Slippage;
-use shared::Web3;
-use shared::{conversions::U256Ext, oneinch_api::OneInchError};
+use reqwest::{Client, Url};
+use shared::{
+    conversions::U256Ext,
+    oneinch_api::{
+        OneInchClient, OneInchClientImpl, OneInchError, ProtocolCache, Slippage, Swap, SwapQuery,
+    },
+    Web3,
+};
 use std::fmt::{self, Display, Formatter};
 
 /// A GPv2 solver that matches GP **sell** orders to direct 1Inch swaps.
@@ -115,7 +117,7 @@ impl OneInchSolver {
             );
         }
 
-        Slippage::percentage_from_basis_points(final_slippage_bps)
+        Slippage::from_basis_points(final_slippage_bps)
     }
 
     /// Settles a single sell order against a 1Inch swap using the specified protocols and
@@ -213,7 +215,7 @@ impl SingleOrderSolving for OneInchSolver {
                 self.oneinch_slippage_bps,
                 &wei,
             )?,
-            None => Slippage::percentage_from_basis_points(self.oneinch_slippage_bps).unwrap(),
+            None => Slippage::from_basis_points(self.oneinch_slippage_bps).unwrap(),
         };
         self.settle_order_with_protocols_and_slippage(order, protocols, slippage)
             .await
@@ -302,7 +304,7 @@ mod tests {
             &U256::exp10(17),                  // max slippage in wei
         )
         .unwrap();
-        assert_eq!(slippage, Slippage::percentage_from_basis_points(1).unwrap());
+        assert_eq!(slippage, Slippage::from_basis_points(1).unwrap());
     }
 
     #[test]
@@ -314,7 +316,7 @@ mod tests {
             &U256::exp10(17),                         // max slippage in wei
         )
         .unwrap();
-        assert_eq!(slippage, Slippage::percentage_from_basis_points(5).unwrap());
+        assert_eq!(slippage, Slippage::from_basis_points(5).unwrap());
     }
 
     #[test]
@@ -328,7 +330,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             slippage,
-            Slippage::percentage_from_basis_points(10).unwrap()
+            Slippage::from_basis_points(10).unwrap()
         );
     }
 
@@ -341,7 +343,7 @@ mod tests {
             &U256::exp10(17),                  // max slippage in wei
         )
         .unwrap();
-        assert_eq!(slippage, Slippage::percentage_from_basis_points(0).unwrap());
+        assert_eq!(slippage, Slippage::from_basis_points(0).unwrap());
     }
 
     #[tokio::test]
@@ -583,7 +585,7 @@ mod tests {
             None,
         )
         .unwrap();
-        let slippage = Slippage::percentage_from_basis_points(solver.oneinch_slippage_bps).unwrap();
+        let slippage = Slippage::from_basis_points(solver.oneinch_slippage_bps).unwrap();
         let settlement = solver
             .settle_order_with_protocols_and_slippage(
                 Order {

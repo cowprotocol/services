@@ -4,11 +4,7 @@
 //! <https://0x.org/docs/api#request-1>
 //! <https://api.0x.org/>
 
-use crate::{
-    debug_bytes,
-    http_client::HttpClientFactory,
-    solver_utils::{deserialize_decimal_f64, Slippage},
-};
+use crate::{debug_bytes, http_client::HttpClientFactory};
 use anyhow::{Context, Result};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use derivative::Derivative;
@@ -19,7 +15,10 @@ use reqwest::{
     Client, IntoUrl, Url,
 };
 use serde::Deserialize;
-use std::collections::HashSet;
+use std::{
+    collections::HashSet,
+    fmt::{self, Display, Formatter},
+};
 use thiserror::Error;
 
 const ORDERS_MAX_PAGE_SIZE: usize = 1_000;
@@ -50,7 +49,7 @@ pub struct SwapQuery {
     /// Amount of a token to sell, set in atoms.
     pub buy_amount: Option<U256>,
     /// Limit of price slippage you are willing to accept.
-    pub slippage_percentage: Slippage,
+    pub slippage_percentage: Option<Slippage>,
     /// List of sources to exclude.
     pub excluded_sources: Vec<String>,
     /// Requests trade routes which aim to protect against high slippage and MEV attacks.
@@ -68,7 +67,6 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("sellToken", &addr2str(self.sell_token))
             .append_pair("buyToken", &addr2str(self.buy_token))
-            .append_pair("slippagePercentage", &self.slippage_percentage.to_string())
             .append_pair(
                 "enableSlippageProtection",
                 &self.enable_slippage_protection.to_string(),
@@ -80,6 +78,10 @@ impl SwapQuery {
         if let Some(amount) = self.buy_amount {
             url.query_pairs_mut()
                 .append_pair("buyAmount", &amount.to_string());
+        }
+        if let Some(slippage_percentage) = self.slippage_percentage {
+            url.query_pairs_mut()
+                .append_pair("slippagePercentage", &slippage_percentage.to_string());
         }
         if !self.excluded_sources.is_empty() {
             url.query_pairs_mut()
@@ -93,6 +95,26 @@ impl SwapQuery {
         url.query_pairs_mut()
             .append_pair("intentOnFilling", "false");
         url
+    }
+}
+
+/// A 0x slippage amount.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub struct Slippage(f64);
+
+impl Slippage {
+    pub const ONE_PERCENT: Self = Self(0.01);
+
+    /// Creates a slippage amount from the specified basis points.
+    pub fn from_basis_points(basis_points: u32) -> Self {
+        let factor = (basis_points as f64) / 10000.;
+        Slippage(factor)
+    }
+}
+
+impl Display for Slippage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
 
@@ -264,7 +286,7 @@ pub struct PriceResponse {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub allowance_target: H160,
-    #[serde(deserialize_with = "deserialize_decimal_f64")]
+    #[serde(with = "serde_with::rust::display_fromstr")]
     pub price: f64,
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub estimated_gas: u64,
@@ -509,7 +531,7 @@ mod tests {
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::ONE_PERCENT),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
@@ -531,7 +553,7 @@ mod tests {
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::ONE_PERCENT),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
@@ -553,7 +575,7 @@ mod tests {
             buy_token: addr!("c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f"), // SNX
             sell_amount: Some(U256::from_f64_lossy(1000e18)),
             buy_amount: None,
-            slippage_percentage: Slippage(0.1_f64),
+            slippage_percentage: Some(Slippage::ONE_PERCENT),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };
