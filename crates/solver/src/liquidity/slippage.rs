@@ -82,6 +82,7 @@ impl SlippageCalculator {
         };
         let absolute = {
             let ratio = &*relative * amount;
+            // Perform a ceil division so that we round up with slippage amount
             ratio.numer().div_ceil(ratio.denom())
         };
 
@@ -117,12 +118,12 @@ impl SlippageAmount {
     }
 
     /// Reduce the specified amount by the constant slippage.
-    pub fn amount_minus(&self, amount: U256) -> U256 {
+    pub fn sub_from_amount(&self, amount: U256) -> U256 {
         amount.saturating_sub(self.absolute)
     }
 
     /// Increase the specified amount by the constant slippage.
-    pub fn amount_plus(&self, amount: U256) -> U256 {
+    pub fn add_to_amount(&self, amount: U256) -> U256 {
         amount.saturating_add(self.absolute)
     }
 
@@ -158,12 +159,12 @@ fn slippage_for_amount(amount: U256) -> SlippageAmount {
 
 /// Reduce the specified amount by the constant slippage.
 pub fn amount_minus_max_slippage(amount: U256) -> U256 {
-    slippage_for_amount(amount).amount_minus(amount)
+    slippage_for_amount(amount).sub_from_amount(amount)
 }
 
 /// Increase the specified amount by the constant slippage.
 pub fn amount_plus_max_slippage(amount: U256) -> U256 {
-    slippage_for_amount(amount).amount_plus(amount)
+    slippage_for_amount(amount).add_to_amount(amount)
 }
 
 #[cfg(test)]

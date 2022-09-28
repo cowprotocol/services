@@ -490,7 +490,6 @@ mod tests {
             None,
         )
         .unwrap();
-        let slippage = Slippage::percentage(1.).unwrap();
         let settlement = solver
             .settle_order_with_protocols_and_slippage(
                 Order {
@@ -506,7 +505,7 @@ mod tests {
                 }
                 .into(),
                 None,
-                slippage,
+                Slippage::ONE_PERCENT,
             )
             .await
             .unwrap()
