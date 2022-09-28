@@ -248,6 +248,13 @@ async fn main() {
     )
     .expect("failure creating solvers");
 
+    metrics.initialize_solver_metrics(
+        &solver
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
+
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
         Some(ZeroExLiquidity::new(
             web3.clone(),

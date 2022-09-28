@@ -477,6 +477,12 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
     let metrics = Arc::new(Metrics::new().unwrap());
+    metrics.initialize_solver_metrics(
+        &solvers
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
 
     let settlement_ranker = Arc::new(SettlementRanker {
         metrics: metrics.clone(),

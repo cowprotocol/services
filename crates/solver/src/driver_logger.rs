@@ -1,7 +1,7 @@
 use crate::{
     analytics,
     driver::solver_settlements::RatedSettlement,
-    metrics::SolverMetrics,
+    metrics::{SolverMetrics, SolverSimulationOutcome},
     settlement::Settlement,
     settlement_simulation::{
         simulate_and_error_with_tenderly_link, simulate_before_after_access_list,
@@ -164,7 +164,8 @@ impl DriverLogger {
             .await;
 
             for ((solver, settlement, _, _), result) in errors.iter().zip(simulations) {
-                metrics.settlement_simulation_failed_on_latest(solver.name());
+                metrics
+                    .settlement_simulation(solver.name(), SolverSimulationOutcome::FailureOnLatest);
                 if let Err(error_at_earlier_block) = result {
                     tracing::warn!(
                         "{} settlement simulation failed at submission and block {}:\n{:?}",
@@ -179,7 +180,7 @@ impl DriverLogger {
                         settlement,
                     );
 
-                    metrics.settlement_simulation_failed(solver.name());
+                    metrics.settlement_simulation(solver.name(), SolverSimulationOutcome::Failure);
                 }
             }
         };
