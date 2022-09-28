@@ -285,6 +285,13 @@ fn solvable_orders(mut orders: Vec<Order>, balances: &Balances) -> Vec<Order> {
             None => continue,
         };
         for order in orders {
+            // For ethflow orders, the smart contract ensures that sufficient balance is there,
+            // AFTER the wrapAll pre_interaction has been executed. Beforehand, there is no
+            // guarantee.
+            if order.metadata.is_ethflow_order {
+                result.push(order);
+                continue;
+            }
             // TODO: This is overly pessimistic for partially filled orders where the needed balance
             // is lower. For partially fillable orders that cannot be fully filled because of the
             // balance we could also give them as much balance as possible instead of skipping. For
@@ -506,6 +513,29 @@ mod tests {
         price_estimation::{native::MockNativePriceEstimating, PriceEstimationError},
         signature_validator::{MockSignatureValidating, SignatureValidationError},
     };
+
+    #[test]
+    fn does_not_filter_insufficient_balances_for_ethflow_orders() {
+        let orders = vec![Order {
+            data: OrderData {
+                sell_amount: 3.into(),
+                fee_amount: 3.into(),
+                ..Default::default()
+            },
+            metadata: OrderMetadata {
+                creation_date: DateTime::from_utc(NaiveDateTime::from_timestamp(2, 0), Utc),
+                is_ethflow_order: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        }];
+
+        let balances = hashmap! {Query::from_order(&orders[0]) => U256::from(0)};
+        let orders_ = solvable_orders(orders.clone(), &balances);
+        // ethflow order is still included, although the balance would not
+        // be sufficient
+        assert_eq!(orders_, orders);
+    }
 
     #[tokio::test]
     async fn filters_insufficient_balances() {
