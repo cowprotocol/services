@@ -467,6 +467,7 @@ mod tests {
                 Default::default(),
                 current_block_stream.clone(),
                 client.clone(),
+                web3.clone(),
                 &contracts,
                 Default::default(),
             )

@@ -9,6 +9,6 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.20.0", default-features = false }
-ethcontract-mock = { version = "0.20.0" }
+ethcontract = { version = "0.21.0", default-features = false }
+ethcontract-mock = { version = "0.21.0" }
 hex-literal = "0.3"

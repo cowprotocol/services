@@ -246,6 +246,7 @@ async fn main() {
                 cache_config,
                 current_block_stream.clone(),
                 http_factory.create(),
+                web3.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )
@@ -522,8 +523,6 @@ async fn main() {
         settlement_contract.address(),
         database.as_ref().clone(),
         order_validator.clone(),
-        args.solvable_orders_max_update_age_blocks,
-        current_block_stream.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![pool_fetcher],
