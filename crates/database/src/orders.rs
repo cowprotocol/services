@@ -426,7 +426,9 @@ pub fn solvable_orders(
 "SELECT * FROM ( ",
     "SELECT ", ORDERS_SELECT,
     " FROM ", ORDERS_FROM,
-    " WHERE o.valid_to >= $1 ",
+    " LEFT OUTER JOIN ethflow_orders eth_o on eth_o.uid = o.uid ",
+    " WHERE o.valid_to >= $1",
+    " AND CASE WHEN eth_o.valid_to IS NULL THEN true ELSE eth_o.valid_to >= $1 END",
 r#") AS unfiltered
 WHERE
     CASE kind
@@ -803,6 +805,17 @@ mod tests {
         .await
         .unwrap();
         assert!(get_order(&mut db, 3).await.is_some());
+
+        //no longer solvable, if it is a ethflow-order
+        //with shorter user_valid_to from the ethflow
+        let ethflow_order = EthOrderPlacement {
+            uid: order.uid,
+            valid_to: 2,
+        };
+        insert_ethflow_order(&mut db, &ethflow_order).await.unwrap();
+
+        assert!(get_order(&mut db, 3).await.is_none());
+        assert!(get_order(&mut db, 2).await.is_some());
     }
 
     #[tokio::test]
