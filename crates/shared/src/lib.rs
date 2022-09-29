@@ -34,7 +34,6 @@ pub mod recent_block_cache;
 pub mod remaining_amounts;
 pub mod request_sharing;
 pub mod signature_validator;
-pub mod solver_utils;
 pub mod sources;
 pub mod subgraph;
 pub mod tenderly_api;
