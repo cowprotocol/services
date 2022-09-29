@@ -1,8 +1,10 @@
+use std::time::Duration;
+
 use crate::{
-    current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
+    current_block::{self, BlockNumberHash, BlockRetrieving, RangeInclusive},
     maintenance::Maintaining,
 };
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
@@ -10,7 +12,7 @@ use futures::{future, Stream, StreamExt, TryStreamExt};
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
-pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
+pub const MAX_REORG_BLOCK_COUNT: u64 = 64;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // MAX_BLOCKS_QUERIED is bigger than MAX_REORG_BLOCK_COUNT to increase the chances
@@ -19,6 +21,10 @@ const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 const MAX_BLOCKS_QUERIED: u64 = 2 * MAX_REORG_BLOCK_COUNT;
 // Max number of rpc calls that can be sent at the same time to the node.
 const MAX_PARALLEL_RPC_CALLS: usize = 128;
+// Options for retrying to get the newest block from node in cases when node does not
+// see the newest block
+const MAX_NODE_RETRIES: usize = 5;
+const SLEEP_BETWEEN_RETRIES: Duration = Duration::from_secs(1);
 
 /// General idea behind the algorithm:
 /// 1. Use `last_handled_blocks` as an indicator of the begining of the block range that needs to be updated
@@ -86,9 +92,10 @@ struct EventRange {
 
 impl<B, C, S> EventHandler<B, C, S>
 where
-    B: BlockRetrieving,
-    C: EventRetrieving,
-    S: EventStoring<C::Event>,
+    B: BlockRetrieving + Send + Sync,
+    C: EventRetrieving + Send + Sync,
+    C::Event: Send,
+    S: EventStoring<C::Event> + Send + Sync,
 {
     pub fn new(
         block_retriever: B,
@@ -113,28 +120,30 @@ where
         &self.store
     }
 
-    pub fn last_handled_block(&self) -> Option<BlockNumberHash> {
-        self.last_handled_blocks.last().cloned()
+    /// Returns last handled blocks vector containing at least one value
+    async fn last_handled_blocks(&self) -> Result<Vec<BlockNumberHash>> {
+        if self.last_handled_blocks.is_empty() {
+            let last_handled_block = self.store.last_event_block().await?;
+            self.blocks(RangeInclusive::try_new(
+                last_handled_block,
+                last_handled_block,
+            )?)
+            .await
+        } else {
+            Ok(self.last_handled_blocks.clone())
+        }
     }
 
     /// Defines block range, for which events should be fetched
     async fn event_block_range(&self) -> Result<EventRange> {
-        let handled_blocks = if self.last_handled_blocks.is_empty() {
-            let last_handled_block = self.store.last_event_block().await?;
-            self.block_retriever
-                .blocks(RangeInclusive::try_new(
-                    last_handled_block,
-                    last_handled_block,
-                )?)
-                .await?
-        } else {
-            self.last_handled_blocks.clone()
-        };
+        let handled_blocks = self.last_handled_blocks().await?;
+        let (last_handled_block_number, last_handled_block_hash) =
+            *handled_blocks.last().context("no last handled block")?;
 
-        let current_block = self.block_retriever.current_block().await?;
+        let current_block = self.current_block().await?;
         let current_block_number = current_block.number.context("missing number")?.as_u64();
         let current_block_hash = current_block.hash.context("missing hash")?;
-        let (last_handled_block_number, last_handled_block_hash) = *handled_blocks.last().unwrap();
+
         tracing::debug!(
             "current block: {} - {:?}, handled_blocks: {:?}",
             current_block_number,
@@ -175,7 +184,7 @@ where
             latest_range
         );
 
-        let latest_blocks = self.block_retriever.blocks(latest_range).await?;
+        let latest_blocks = self.blocks(latest_range).await?;
         tracing::debug!(
             "latest blocks: {:?} - {:?}",
             latest_blocks.first(),
@@ -223,7 +232,6 @@ where
         // first get the blocks needed to update `last_handled_blocks` because if it fails,
         // it's safer to fail at the beginning of the function before we update Storage
         let blocks = self
-            .block_retriever
             .blocks(RangeInclusive::try_new(
                 range.end().saturating_sub(MAX_REORG_BLOCK_COUNT),
                 *range.end(),
@@ -316,21 +324,29 @@ where
     ) -> (Vec<BlockNumberHash>, Vec<EthcontractEvent<C::Event>>) {
         let (mut blocks_filtered, mut events) = (vec![], vec![]);
         for chunk in blocks.chunks(MAX_PARALLEL_RPC_CALLS) {
-            for (i, result) in future::join_all(
-                chunk
+            let mut chunk_index = 0;
+            for _ in 0..MAX_NODE_RETRIES {
+                let futures = chunk[chunk_index..]
                     .iter()
-                    .map(|block| self.contract.get_events().block_hash(block.1).query()),
-            )
-            .await
-            .into_iter()
-            .enumerate()
-            {
-                match result {
-                    Ok(e) => {
-                        blocks_filtered.push(blocks[i]);
-                        events.extend(e.into_iter());
+                    .map(|block| self.contract.get_events().block_hash(block.1).query())
+                    .collect::<Vec<_>>();
+                for result in future::join_all(futures).await.into_iter() {
+                    match result {
+                        Ok(e) => {
+                            blocks_filtered.push(chunk[chunk_index]);
+                            events.extend(e.into_iter());
+                            chunk_index += 1;
+                        }
+                        Err(err) => {
+                            tracing::debug!("failed to get events from chunk, error: {}", err);
+                            println!("failed: {:?}", err);
+                            tokio::time::sleep(SLEEP_BETWEEN_RETRIES).await;
+                            break;
+                        }
                     }
-                    Err(_) => return (blocks_filtered, events),
+                }
+                if chunk_index == chunk.len() {
+                    break;
                 }
             }
         }
@@ -380,6 +396,55 @@ where
             self.last_handled_blocks.first(),
             self.last_handled_blocks.last(),
         );
+    }
+}
+
+#[async_trait::async_trait]
+impl<B, C, S> BlockRetrieving for EventHandler<B, C, S>
+where
+    B: BlockRetrieving + Send + Sync,
+    C: EventRetrieving + Send + Sync,
+    C::Event: Send,
+    S: EventStoring<C::Event> + Send + Sync,
+{
+    // Sometimes nodes see the same latest block as the block in previous `update_events` because of the
+    // node block propagation delay when the node has been load balanced. As a
+    // workaround we repeat the request up to N times while sleeping in between.
+    //
+    // If successful, returns block different from last handled block
+    async fn current_block(&self) -> Result<current_block::Block> {
+        let last_handled_block = *self
+            .last_handled_blocks()
+            .await?
+            .last()
+            .context("no last handled block")?;
+
+        for _ in 0..MAX_NODE_RETRIES {
+            let current_block = self.block_retriever.current_block().await?;
+            let current_block_number = current_block.number.context("missing number")?.as_u64();
+            let current_block_hash = current_block.hash.context("missing hash")?;
+            if (current_block_number, current_block_hash) != last_handled_block {
+                return Ok(current_block);
+            }
+            tracing::debug!("retry current block",);
+            tokio::time::sleep(SLEEP_BETWEEN_RETRIES).await;
+        }
+        Err(anyhow!("current block already handled"))
+    }
+    // Sometimes nodes see the same latest block as the block in previous `update_events` because of the
+    // node block propagation delay when the node has been load balanced. As a
+    // workaround we repeat the request up to N times while sleeping in between.
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
+        for _ in 0..MAX_NODE_RETRIES {
+            match self.block_retriever.blocks(range.clone()).await {
+                Ok(result) => return Ok(result),
+                Err(err) => {
+                    tracing::debug!("retry blocks because of error {}", err);
+                    tokio::time::sleep(SLEEP_BETWEEN_RETRIES).await;
+                }
+            }
+        }
+        Err(anyhow!("failed to get blocks numbers and hashes"))
     }
 }
 
