@@ -299,6 +299,7 @@ fn full_order_into_model_order(order: FullOrder) -> Result<Order> {
         full_fee_amount: big_decimal_to_u256(&order.full_fee_amount)
             .ok_or_else(|| anyhow!("full_fee_amount is not U256"))?,
         is_liquidity_order: order.is_liquidity_order,
+        is_ethflow_order: order.is_ethflow_order,
     };
     let data = OrderData {
         sell_token: H160(order.sell_token.0),
@@ -387,6 +388,7 @@ mod tests {
             buy_token_balance: DbBuyTokenDestination::Internal,
             presignature_pending: false,
             is_liquidity_order: true,
+            is_ethflow_order: false,
         };
 
         // Open - sell (filled - 0%)

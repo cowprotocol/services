@@ -1,6 +1,6 @@
 use crate::{
     driver::solver_settlements::{self, retain_mature_settlements},
-    metrics::{SolverMetrics, SolverRunOutcome},
+    metrics::{SolverMetrics, SolverRunOutcome, SolverSimulationOutcome},
     settlement::{external_prices::ExternalPrices, PriceCheckTokens, Settlement},
     settlement_rater::{RatedSolverSettlement, SettlementRating},
     solver::{SettlementWithError, Solver, SolverRunError},
@@ -144,7 +144,8 @@ impl SettlementRanker {
             errors.len(),
         );
         for (solver, _, _) in &rated_settlements {
-            self.metrics.settlement_simulation_succeeded(solver.name());
+            self.metrics
+                .settlement_simulation(solver.name(), SolverSimulationOutcome::Success);
         }
 
         Ok((rated_settlements, errors))
