@@ -10,7 +10,7 @@ use futures::{future, Stream, StreamExt, TryStreamExt};
 use tokio::sync::Mutex;
 
 // We expect that there is never a reorg that changes more than the last n blocks.
-pub const MAX_REORG_BLOCK_COUNT: u64 = 25;
+pub const MAX_REORG_BLOCK_COUNT: u64 = 64;
 // Saving events, we process at most this many at a time.
 const INSERT_EVENT_BATCH_SIZE: usize = 10_000;
 // MAX_BLOCKS_QUERIED is bigger than MAX_REORG_BLOCK_COUNT to increase the chances
@@ -646,7 +646,10 @@ mod tests {
         let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED + 1).unwrap();
         let (history_range, latest_range) = split_range(range);
         assert_eq!(history_range, Some(RangeInclusive::try_new(0, 1).unwrap()));
-        assert_eq!(latest_range, RangeInclusive::try_new(2, 51).unwrap());
+        assert_eq!(
+            latest_range,
+            RangeInclusive::try_new(2, MAX_BLOCKS_QUERIED + 1).unwrap()
+        );
     }
 
     #[tokio::test]
