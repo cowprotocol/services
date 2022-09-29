@@ -33,8 +33,7 @@ use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
 use shared::{
-    solver_utils::Slippage,
-    zeroex_api::{SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
+    zeroex_api::{Slippage, SwapQuery, SwapResponse, ZeroExApi, ZeroExResponseError},
     Web3,
 };
 use std::{
@@ -95,8 +94,7 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            slippage_percentage: Slippage::number_from_basis_points(self.zeroex_slippage_bps)
-                .unwrap(),
+            slippage_percentage: Some(Slippage::from_basis_points(self.zeroex_slippage_bps)),
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
         };

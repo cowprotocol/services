@@ -55,7 +55,7 @@ impl Inner {
                 buy_token: query.buy_token,
                 sell_amount,
                 buy_amount,
-                slippage_percentage: Default::default(),
+                slippage_percentage: None,
                 excluded_sources: self.excluded_sources.clone(),
                 enable_slippage_protection: false,
             })

@@ -2,9 +2,10 @@
 
 use super::{Interaction, Query, Quote, Trade, TradeError, TradeFinding};
 use crate::{
-    oneinch_api::{OneInchClient, OneInchError, ProtocolCache, SellOrderQuoteQuery, SwapQuery},
+    oneinch_api::{
+        OneInchClient, OneInchError, ProtocolCache, SellOrderQuoteQuery, Slippage, SwapQuery,
+    },
     price_estimation::gas,
-    solver_utils::Slippage,
 };
 use model::order::OrderKind;
 use primitive_types::H160;
