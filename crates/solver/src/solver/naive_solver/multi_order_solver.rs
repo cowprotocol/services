@@ -349,7 +349,7 @@ mod tests {
         static CONTEXT: OnceCell<(ExternalPrices, SlippageCalculator)> = OnceCell::new();
         let (prices, calculator) =
             CONTEXT.get_or_init(|| (Default::default(), SlippageCalculator::from_bps(0, None)));
-        SlippageContext::new(prices, calculator)
+        calculator.context(prices)
     }
 
     #[test]

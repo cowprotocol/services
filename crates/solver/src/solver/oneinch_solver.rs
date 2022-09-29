@@ -165,7 +165,8 @@ impl SingleOrderSolving for OneInchSolver {
             .await?;
         let slippage = Slippage::percentage(
             self.slippage_calculator
-                .compute(&auction.external_prices, order.buy_token, order.buy_amount)?
+                .auction_context(auction)
+                .relative_for_order(&order)?
                 .as_percentage(),
         )?;
         self.settle_order_with_protocols_and_slippage(order, protocols, slippage)

@@ -21,11 +21,14 @@ use super::{
     single_order_solver::{execution_respects_order, SettlementError, SingleOrderSolving},
     Auction,
 };
-use crate::interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest};
 use crate::{
     encoding::EncodedInteraction,
     liquidity::LimitOrder,
     settlement::{Interaction, Settlement},
+};
+use crate::{
+    interactions::allowances::{AllowanceManager, AllowanceManaging, ApprovalRequest},
+    liquidity::slippage::SlippageCalculator,
 };
 use anyhow::{anyhow, ensure, Result};
 use contracts::GPv2Settlement;
@@ -46,8 +49,8 @@ pub struct ZeroExSolver {
     account: Account,
     api: Arc<dyn ZeroExApi>,
     allowance_fetcher: Box<dyn AllowanceManaging>,
-    zeroex_slippage_bps: u32,
     excluded_sources: Vec<String>,
+    slippage_calculator: SlippageCalculator,
 }
 
 /// Chain ID for Mainnet.
@@ -72,8 +75,8 @@ impl ZeroExSolver {
             account,
             allowance_fetcher: Box::new(allowance_fetcher),
             api,
-            zeroex_slippage_bps,
             excluded_sources,
+            slippage_calculator: SlippageCalculator::from_bps(zeroex_slippage_bps, None),
         })
     }
 }
@@ -83,7 +86,7 @@ impl SingleOrderSolving for ZeroExSolver {
     async fn try_settle_order(
         &self,
         order: LimitOrder,
-        _: &Auction,
+        auction: &Auction,
     ) -> Result<Option<Settlement>, SettlementError> {
         let (buy_amount, sell_amount) = match order.kind {
             OrderKind::Buy => (Some(order.buy_amount), None),
@@ -94,7 +97,12 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            slippage_percentage: Some(Slippage::from_basis_points(self.zeroex_slippage_bps)),
+            slippage_percentage: Some(Slippage::from_basis_points(
+                self.slippage_calculator
+                    .auction_context(auction)
+                    .relative_for_order(&order)?
+                    .as_bps(),
+            )),
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
         };
@@ -302,8 +310,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let buy_order_passing_limit = LimitOrder {
@@ -453,8 +461,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder {
@@ -515,8 +523,8 @@ mod tests {
             account: account(),
             api: Arc::new(client),
             allowance_fetcher,
-            zeroex_slippage_bps: 10u32,
             excluded_sources: Default::default(),
+            slippage_calculator: Default::default(),
         };
 
         let order = LimitOrder {

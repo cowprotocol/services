@@ -1,8 +1,10 @@
 //! Module defining slippage computation for AMM liquidiy.
 
+use super::LimitOrder;
 use crate::{settlement::external_prices::ExternalPrices, solver::Auction};
 use anyhow::{Context as _, Result};
 use ethcontract::{H160, U256};
+use model::order::OrderKind;
 use num::{BigInt, BigRational, Integer as _, ToPrimitive as _};
 use once_cell::sync::OnceCell;
 use std::{borrow::Cow, cmp};
@@ -20,17 +22,6 @@ pub struct SlippageContext<'a> {
 }
 
 impl<'a> SlippageContext<'a> {
-    /// Creates a new slippage context.
-    pub fn new(prices: &'a ExternalPrices, calculator: &'a SlippageCalculator) -> Self {
-        Self { prices, calculator }
-    }
-
-    /// Create a new solving context for the specified auction and slippage
-    /// calculator.
-    pub fn for_auction(auction: &'a Auction, calculator: &'a SlippageCalculator) -> Self {
-        Self::new(&auction.external_prices, calculator)
-    }
-
     /// Computes the AMM execution maximum input amount.
     pub fn execution_input_max(&self, input: (H160, U256)) -> Result<(H160, U256)> {
         let (token, amount) = input;
@@ -52,6 +43,28 @@ impl<'a> SlippageContext<'a> {
             .calculator
             .compute(self.prices, token, amount)?
             .sub_from_amount(amount))
+    }
+
+    /// Computes the relative slippage for a limit order.
+    pub fn relative_for_order(&self, order: &LimitOrder) -> Result<RelativeSlippage> {
+        // We use the fixed token and amount for computing relative slippage.
+        // This is because the variable token amount may not be representative
+        // of the actual trade value. For example, a "pure" market sell order
+        // would have almost 0 limit buy amount, which would cause a potentially
+        // large order to not get capped on the absolute slippage value.
+        let (token, amount) = match order.kind {
+            OrderKind::Sell => (order.sell_token, order.sell_amount),
+            OrderKind::Buy => (order.buy_token, order.buy_amount),
+        };
+        self.relative(token, amount)
+    }
+
+    /// Computes the relative slippage for a token and amount.
+    pub fn relative(&self, token: H160, amount: U256) -> Result<RelativeSlippage> {
+        Ok(self
+            .calculator
+            .compute(self.prices, token, amount)?
+            .relative())
     }
 }
 
@@ -78,6 +91,17 @@ impl SlippageCalculator {
             relative: BigRational::new(relative_bps.into(), BPS_BASE.into()),
             absolute: absolute.map(|value| number_conversions::u256_to_big_int(&value)),
         }
+    }
+
+    pub fn context<'a>(&'a self, prices: &'a ExternalPrices) -> SlippageContext<'a> {
+        SlippageContext {
+            prices,
+            calculator: self,
+        }
+    }
+
+    pub fn auction_context<'a>(&'a self, auction: &'a Auction) -> SlippageContext<'a> {
+        self.context(&auction.external_prices)
     }
 
     pub fn compute(
@@ -171,19 +195,29 @@ impl SlippageAmount {
         amount.saturating_add(self.absolute)
     }
 
+    /// Returns the relative slippage value.
+    pub fn relative(&self) -> RelativeSlippage {
+        RelativeSlippage(self.relative)
+    }
+}
+
+/// A relative slippage value.
+pub struct RelativeSlippage(f64);
+
+impl RelativeSlippage {
     /// Returns the relative slippage as a factor.
     pub fn as_factor(&self) -> f64 {
-        self.relative
+        self.0
     }
 
     /// Returns the relative slippage as a percentage.
     pub fn as_percentage(&self) -> f64 {
-        self.relative * 100.
+        self.0 * 100.
     }
 
     /// Returns the relative slippage as basis points rounded down.
     pub fn as_bps(&self) -> u32 {
-        (self.relative * 10000.) as _
+        (self.0 * 10000.) as _
     }
 }
 
@@ -203,14 +237,15 @@ mod tests {
             USDC => BigRational::new(2.into(), 1000.into()),
         };
 
+        let slippage = calculator.context(&prices);
         for (token, amount, expected_slippage) in [
             (GNO, U256::exp10(12), 1),
             (USDC, U256::exp10(23), 5),
             (GNO, U256::exp10(8), 10),
             (GNO, U256::exp10(17), 0),
         ] {
-            let slippage = calculator.compute(&prices, token, amount).unwrap();
-            assert_eq!(slippage.as_bps(), expected_slippage);
+            let relative = slippage.relative(token, amount).unwrap();
+            assert_eq!(relative.as_bps(), expected_slippage);
         }
     }
 

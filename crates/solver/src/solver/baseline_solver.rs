@@ -34,7 +34,7 @@ impl Solver for BaselineSolver {
             ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
-        let slippage = SlippageContext::new(&external_prices, &self.slippage_calculator);
+        let slippage = self.slippage_calculator.context(&external_prices);
         Ok(self.solve_(orders, liquidity, slippage))
     }
 
