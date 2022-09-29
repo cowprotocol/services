@@ -17,7 +17,7 @@ pub async fn append(
     Ok(())
 }
 
-pub async fn insert_ethflow_order(
+async fn insert_ethflow_order(
     ex: &mut PgConnection,
     event: &EthOrderPlacement,
 ) -> Result<(), sqlx::Error> {
