@@ -1,5 +1,6 @@
 use crate::{
     liquidity::{
+        slippage::{SlippageCalculator, SlippageContext},
         token_pairs, AmmOrderExecution, ConstantProductOrder, LimitOrder, Liquidity,
         WeightedProductOrder,
     },
@@ -19,6 +20,7 @@ use std::{collections::HashMap, sync::Arc};
 pub struct BaselineSolver {
     account: Account,
     base_tokens: Arc<BaseTokens>,
+    slippage_calculator: Arc<SlippageCalculator>,
 }
 
 #[async_trait::async_trait]
@@ -26,10 +28,14 @@ impl Solver for BaselineSolver {
     async fn solve(
         &self,
         Auction {
-            orders, liquidity, ..
+            orders,
+            liquidity,
+            external_prices,
+            ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
-        Ok(self.solve_(orders, liquidity))
+        let slippage = SlippageContext::new(&external_prices, &self.slippage_calculator);
+        Ok(self.solve_(orders, liquidity, slippage))
     }
 
     fn account(&self) -> &Account {
@@ -111,6 +117,7 @@ impl BaselineSolver {
         Self {
             account,
             base_tokens,
+            slippage_calculator: Default::default(),
         }
     }
 
@@ -118,6 +125,7 @@ impl BaselineSolver {
         &self,
         mut limit_orders: Vec<LimitOrder>,
         liquidity: Vec<Liquidity>,
+        slippage: SlippageContext,
     ) -> Vec<Settlement> {
         limit_orders.retain(|order| !order.is_liquidity_order);
         let user_orders = limit_orders;
@@ -162,7 +170,7 @@ impl BaselineSolver {
                 None => continue,
             };
 
-            match solution.into_settlement(&order) {
+            match solution.into_settlement(&order, &slippage) {
                 Ok(settlement) => settlements.push(settlement),
                 Err(err) => {
                     tracing::error!("baseline_solver failed to create settlement: {:?}", err)
@@ -222,7 +230,10 @@ impl BaselineSolver {
 
     #[cfg(test)]
     fn must_solve(&self, orders: Vec<LimitOrder>, liquidity: Vec<Liquidity>) -> Settlement {
-        self.solve_(orders, liquidity).into_iter().next().unwrap()
+        self.solve_(orders, liquidity, SlippageContext::default())
+            .into_iter()
+            .next()
+            .unwrap()
     }
 }
 
@@ -248,7 +259,7 @@ struct Solution {
 }
 
 impl Solution {
-    fn into_settlement(self, order: &LimitOrder) -> Result<Settlement> {
+    fn into_settlement(self, order: &LimitOrder, slippage: &SlippageContext) -> Result<Settlement> {
         let mut settlement = Settlement::new(hashmap! {
             order.sell_token => self.executed_buy_amount,
             order.buy_token => self.executed_sell_amount,
@@ -263,7 +274,7 @@ impl Solution {
                 .get_amount_out(buy_token, (sell_amount, sell_token))
                 .expect("Path was found, so amount must be calculable");
             let execution = AmmOrderExecution {
-                input: (sell_token, sell_amount),
+                input_max: slippage.execution_input_max((sell_token, sell_amount))?,
                 output: (buy_token, buy_amount),
             };
             match &amm.order {
@@ -392,19 +403,24 @@ mod tests {
         assert_eq!(order_handler[0].clone().calls().len(), 0);
         assert_eq!(order_handler[1].clone().calls()[0], 100_000.into());
 
-        // Second & Third AMM are matched
+        // Second & Third AMM are matched with slippage applied
+        let slippage = SlippageContext::default();
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
             AmmOrderExecution {
-                input: (sell_token, 100_000.into()),
+                input_max: slippage
+                    .execution_input_max((sell_token, 100_000.into()))
+                    .unwrap(),
                 output: (native_token, 98_715.into()),
             }
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
             AmmOrderExecution {
-                input: (native_token, 98_715.into()),
+                input_max: slippage
+                    .execution_input_max((native_token, 98_715.into()))
+                    .unwrap(),
                 output: (buy_token, 97_459.into()),
             }
         );
@@ -494,19 +510,24 @@ mod tests {
         assert_eq!(order_handler[0].clone().calls().len(), 0);
         assert_eq!(order_handler[1].clone().calls()[0], 100_000.into());
 
-        // Second & Third AMM are matched
+        // Second & Third AMM are matched with slippage applied
+        let slippage = SlippageContext::default();
         assert_eq!(amm_handler[0].clone().calls().len(), 0);
         assert_eq!(
             amm_handler[1].clone().calls()[0],
             AmmOrderExecution {
-                input: (sell_token, 102_660.into()),
+                input_max: slippage
+                    .execution_input_max((sell_token, 102_660.into()))
+                    .unwrap(),
                 output: (native_token, 101_315.into()),
             }
         );
         assert_eq!(
             amm_handler[2].clone().calls()[0],
             AmmOrderExecution {
-                input: (native_token, 101_315.into()),
+                input_max: slippage
+                    .execution_input_max((native_token, 101_315.into()))
+                    .unwrap(),
                 output: (buy_token, 100_000.into()),
             }
         );
@@ -547,7 +568,12 @@ mod tests {
 
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
         let solver = BaselineSolver::new(account(), base_tokens);
-        assert_eq!(solver.solve_(orders, liquidity).len(), 1);
+        assert_eq!(
+            solver
+                .solve_(orders, liquidity, SlippageContext::default())
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -600,7 +626,12 @@ mod tests {
             &[],
         ));
         let solver = BaselineSolver::new(account(), base_tokens);
-        assert_eq!(solver.solve_(vec![order], liquidity).len(), 0);
+        assert_eq!(
+            solver
+                .solve_(vec![order], liquidity, SlippageContext::default())
+                .len(),
+            0
+        );
     }
 
     #[test]
@@ -676,7 +707,7 @@ mod tests {
         ];
         let base_tokens = Arc::new(BaseTokens::new(tokens[0], &tokens));
         let solver = BaselineSolver::new(account(), base_tokens);
-        let settlements = solver.solve_(vec![order], liquidity);
+        let settlements = solver.solve_(vec![order], liquidity, Default::default());
         assert!(settlements.is_empty());
     }
 }

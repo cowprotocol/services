@@ -7,12 +7,12 @@ use super::{
 use crate::{
     encoding::EncodedInteraction,
     interactions::{allowances::ApprovalRequest, balancer_v2::SwapKind},
-    liquidity::LimitOrder,
+    liquidity::{slippage::SlippageCalculator, LimitOrder},
     settlement::{Interaction, Settlement},
 };
 use crate::{
     interactions::{allowances::AllowanceManaging, balancer_v2},
-    liquidity::slippage,
+    liquidity::slippage::SlippageContext,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
@@ -29,6 +29,7 @@ pub struct BalancerSorSolver {
     settlement: GPv2Settlement,
     api: Arc<dyn BalancerSorApi>,
     allowance_fetcher: Arc<dyn AllowanceManaging>,
+    slippage_calculator: Arc<SlippageCalculator>,
 }
 
 impl BalancerSorSolver {
@@ -45,7 +46,13 @@ impl BalancerSorSolver {
             settlement,
             api,
             allowance_fetcher,
+            slippage_calculator: Arc::new(SlippageCalculator::default()),
         }
+    }
+
+    pub fn with_slippage(mut self, calculator: Arc<SlippageCalculator>) -> Self {
+        self.slippage_calculator = calculator;
+        self
     }
 }
 
@@ -86,13 +93,14 @@ impl SingleOrderSolving for BalancerSorSolver {
             return Ok(None);
         }
 
+        let slippage = SlippageContext::for_auction(auction, &self.slippage_calculator);
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
                 quoted_sell_amount,
-                slippage::amount_minus_max_slippage(quoted_buy_amount),
+                slippage.apply_to_amount_out(order.buy_token, quoted_buy_amount)?,
             ),
             OrderKind::Buy => (
-                slippage::amount_plus_max_slippage(quoted_sell_amount),
+                slippage.apply_to_amount_in(order.sell_token, quoted_sell_amount)?,
                 quoted_buy_amount,
             ),
         };

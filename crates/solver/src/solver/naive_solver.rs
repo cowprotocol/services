@@ -1,22 +1,29 @@
 mod multi_order_solver;
 
 use crate::{
-    liquidity::{ConstantProductOrder, LimitOrder, Liquidity},
+    liquidity::{
+        slippage::{SlippageCalculator, SlippageContext},
+        ConstantProductOrder, LimitOrder, Liquidity,
+    },
     settlement::Settlement,
     solver::{Auction, Solver},
 };
 use anyhow::Result;
 use ethcontract::Account;
 use model::TokenPair;
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 pub struct NaiveSolver {
     account: Account,
+    slippage_calculator: Arc<SlippageCalculator>,
 }
 
 impl NaiveSolver {
     pub fn new(account: Account) -> Self {
-        Self { account }
+        Self {
+            account,
+            slippage_calculator: Default::default(),
+        }
     }
 }
 
@@ -25,11 +32,15 @@ impl Solver for NaiveSolver {
     async fn solve(
         &self,
         Auction {
-            orders, liquidity, ..
+            orders,
+            liquidity,
+            external_prices,
+            ..
         }: Auction,
     ) -> Result<Vec<Settlement>> {
+        let slippage = SlippageContext::new(&external_prices, &self.slippage_calculator);
         let uniswaps = extract_deepest_amm_liquidity(&liquidity);
-        Ok(settle(orders, uniswaps))
+        Ok(settle(slippage, orders, uniswaps))
     }
 
     fn account(&self) -> &Account {
@@ -42,6 +53,7 @@ impl Solver for NaiveSolver {
 }
 
 fn settle(
+    slippage: SlippageContext,
     orders: Vec<LimitOrder>,
     uniswaps: HashMap<TokenPair, ConstantProductOrder>,
 ) -> Vec<Settlement> {
@@ -49,11 +61,12 @@ fn settle(
     // Settlements between different token pairs are thus independent.
     organize_orders_by_token_pair(orders)
         .into_iter()
-        .filter_map(|(pair, orders)| settle_pair(pair, orders, &uniswaps))
+        .filter_map(|(pair, orders)| settle_pair(&slippage, pair, orders, &uniswaps))
         .collect()
 }
 
 fn settle_pair(
+    slippage: &SlippageContext,
     pair: TokenPair,
     orders: Vec<LimitOrder>,
     uniswaps: &HashMap<TokenPair, ConstantProductOrder>,
@@ -69,7 +82,7 @@ fn settle_pair(
             return None;
         }
     };
-    multi_order_solver::solve(orders.into_iter(), uniswap)
+    multi_order_solver::solve(slippage, orders.into_iter(), uniswap)
 }
 
 fn organize_orders_by_token_pair(orders: Vec<LimitOrder>) -> HashMap<TokenPair, Vec<LimitOrder>> {
@@ -211,7 +224,7 @@ mod tests {
             },
         };
 
-        assert!(settle(orders, liquidity).is_empty());
+        assert!(settle(SlippageContext::default(), orders, liquidity).is_empty());
     }
 
     #[test]
@@ -259,7 +272,7 @@ mod tests {
             },
         };
 
-        assert!(settle(orders, liquidity).is_empty());
+        assert!(settle(SlippageContext::default(), orders, liquidity).is_empty());
     }
 
     #[test]
@@ -310,6 +323,9 @@ mod tests {
             },
         };
 
-        assert_eq!(settle(orders, liquidity).len(), 1);
+        assert_eq!(
+            settle(SlippageContext::default(), orders, liquidity).len(),
+            1
+        );
     }
 }
