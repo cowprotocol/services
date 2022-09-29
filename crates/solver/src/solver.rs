@@ -154,7 +154,7 @@ pub type SettlementWithError = (
     ExecutionError,
 );
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {
     Naive,
@@ -210,7 +210,7 @@ impl FromStr for SolverAccountArg {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct ExternalSolverArg {
     pub name: String,
     pub url: Url,

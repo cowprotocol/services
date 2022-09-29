@@ -46,16 +46,16 @@ pub trait TokenOwnerFinding: Send + Sync {
 #[derive(clap::Parser)]
 pub struct Arguments {
     /// The token owner finding strategies to use.
-    #[clap(long, env, use_value_delimiter = true, arg_enum)]
+    #[clap(long, env, use_value_delimiter = true, value_enum)]
     pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
 
     /// The fee value strategy to use for locating Uniswap V3 pools as token holders for bad token
     /// detection.
-    #[clap(long, env, default_value = "static", arg_enum)]
+    #[clap(long, env, default_value = "static", value_enum)]
     pub token_owner_finder_uniswap_v3_fee_values: FeeValues,
 
     /// Override the Blockscout token owner finder-specific timeout configuration.
-    #[clap(long, parse(try_from_str = duration_from_seconds), default_value = "45")]
+    #[clap(long, value_parser = duration_from_seconds, default_value = "45")]
     pub blockscout_http_timeout: Duration,
 
     /// The Ethplorer token holder API key.
@@ -68,7 +68,7 @@ pub struct Arguments {
 }
 
 /// Support token owner finding strategies.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ArgEnum)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, clap::ValueEnum)]
 pub enum TokenOwnerFindingStrategy {
     /// Using baseline liquidity pools as token owners.
     ///

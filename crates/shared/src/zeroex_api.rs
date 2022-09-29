@@ -15,6 +15,7 @@ use reqwest::{
     Client, IntoUrl, Url,
 };
 use serde::Deserialize;
+use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::HashSet,
     fmt::{self, Display, Formatter},
@@ -170,6 +171,7 @@ impl Default for OrdersQuery {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
@@ -178,7 +180,7 @@ pub struct OrderMetadata {
     pub created_at: DateTime<Utc>,
     #[serde(with = "model::bytes_hex")]
     pub order_hash: Vec<u8>,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub remaining_fillable_taker_amount: u128,
 }
 
@@ -191,6 +193,7 @@ pub struct ZeroExSignature {
     pub signature_type: u8,
 }
 
+#[serde_as]
 #[derive(Debug, Derivative, Clone, Deserialize, Eq, PartialEq)]
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
@@ -199,7 +202,7 @@ pub struct Order {
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
     #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the order.
     /// This is typically used to incentivize off-chain order relay.
@@ -208,7 +211,7 @@ pub struct Order {
     /// two parties that will be involved in the trade if the order gets filled.
     pub maker: H160,
     /// The amount of `maker_token` being sold by the maker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub maker_amount: u128,
     /// The address of the ERC20 token the maker is selling to the taker.
     pub maker_token: H160,
@@ -229,12 +232,12 @@ pub struct Order {
     /// anyone can fill the order.
     pub taker: H160,
     /// The amount of `taker_token` being sold by the taker.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_amount: u128,
     /// The address of the ERC20 token the taker is selling to the maker.
     pub taker_token: H160,
     /// Amount of takerToken paid by the taker to the feeRecipient.
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub taker_token_fee_amount: u128,
     /// Address of the contract where the transaction should be sent, usually this is
     /// the 0x exchange proxy contract.
@@ -277,6 +280,7 @@ pub struct OrdersResponse {
 }
 
 /// A Ox API `price` response.
+#[serde_as]
 #[derive(Clone, Default, Derivative, Deserialize, PartialEq)]
 #[derivative(Debug)]
 #[serde(rename_all = "camelCase")]
@@ -286,9 +290,9 @@ pub struct PriceResponse {
     #[serde(with = "u256_decimal")]
     pub buy_amount: U256,
     pub allowance_target: H160,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub price: f64,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub estimated_gas: u64,
 }
 

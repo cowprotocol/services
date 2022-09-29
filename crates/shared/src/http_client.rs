@@ -59,7 +59,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "10",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub http_timeout: Duration,
 }

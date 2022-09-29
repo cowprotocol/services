@@ -31,7 +31,7 @@ use std::{
 };
 use thiserror::Error;
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum, Hash, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum PriceEstimatorType {
     Baseline,

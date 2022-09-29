@@ -49,7 +49,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub target_confirm_time: Duration,
 
@@ -63,7 +63,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "1",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub settle_interval: Duration,
 
@@ -72,7 +72,7 @@ pub struct Arguments {
         long,
         env,
         default_values = &["Naive", "Baseline"],
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -100,7 +100,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub min_order_age: Duration,
 
@@ -117,7 +117,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub solver_time_limit: Duration,
 
@@ -135,7 +135,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "1500",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub gas_price_cap: f64,
 
@@ -163,7 +163,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "PublicMempool",
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -173,7 +173,7 @@ pub struct Arguments {
     /// fails. Individual estimators might support different networks.
     /// `Tenderly`: supports every network.
     /// `Web3`: supports every network.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
     /// The Tenderly user associated with the API key.
@@ -207,7 +207,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_eden_tip: f64,
 
@@ -216,7 +216,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "120",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_submission_seconds: Duration,
 
@@ -225,7 +225,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_flashbot_tip: f64,
 
@@ -233,7 +233,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "2",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub submission_retry_interval_seconds: Duration,
 
@@ -242,7 +242,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "0.05",
-        parse(try_from_str = shared::arguments::parse_percentage_factor)
+        value_parser = shared::arguments::parse_percentage_factor
     )]
     pub additional_tip_percentage: f64,
 
@@ -260,7 +260,7 @@ pub struct Arguments {
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
     /// The maximum number of settlements the driver considers per solver.
@@ -272,7 +272,7 @@ pub struct Arguments {
     /// Unwrapping a bigger amount will cause fewer unwraps to happen and thereby reduce the cost
     /// of unwraps per settled batch.
     /// Only values in the range [0.0, 1.0] make sense.
-    #[clap(long, env, default_value = "0.6", parse(try_from_str = shared::arguments::parse_percentage_factor))]
+    #[clap(long, env, default_value = "0.6", value_parser = shared::arguments::parse_percentage_factor)]
     pub weth_unwrap_factor: f64,
 
     /// Gas limit for simulations. This parameter is important to set correctly, such that
@@ -409,7 +409,7 @@ impl std::fmt::Display for Arguments {
     }
 }
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum TransactionStrategyArg {
     PublicMempool,

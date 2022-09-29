@@ -12,6 +12,7 @@ use serde::{
     Deserialize, Deserializer, Serialize,
 };
 use serde_json::Value;
+use serde_with::{serde_as, DisplayFromStr};
 use thiserror::Error;
 
 const BASE_URL: &str = "https://apiv5.paraswap.io";
@@ -217,6 +218,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             price_route: Value,
         }
 
+        #[serde_as]
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct PriceRoute {
@@ -225,7 +227,7 @@ impl<'de> Deserialize<'de> for PriceResponse {
             #[serde(with = "u256_decimal")]
             dest_amount: U256,
             token_transfer_proxy: H160,
-            #[serde(with = "serde_with::rust::display_fromstr")]
+            #[serde_as(as = "DisplayFromStr")]
             gas_cost: u64,
         }
 

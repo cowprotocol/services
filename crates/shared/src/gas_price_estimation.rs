@@ -9,7 +9,7 @@ use reqwest::header::{self, HeaderMap, HeaderValue};
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
 
-#[derive(Copy, Clone, Debug, clap::ArgEnum)]
+#[derive(Copy, Clone, Debug, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum GasEstimatorType {
     EthGasStation,
