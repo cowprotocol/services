@@ -1,5 +1,5 @@
 use crate::database::orders::{InsertionError, OrderStoring};
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
 use ethcontract::H256;
 use model::{
@@ -9,7 +9,6 @@ use model::{
 };
 use primitive_types::H160;
 use shared::{
-    current_block::CurrentBlockStream,
     metrics::LivenessChecking,
     order_validation::{OrderValidating, ValidationError},
 };
@@ -121,8 +120,6 @@ pub struct Orderbook {
     settlement_contract: H160,
     database: crate::database::Postgres,
     order_validator: Arc<dyn OrderValidating>,
-    solvable_orders_max_update_age_blocks: u64,
-    current_block: CurrentBlockStream,
 }
 
 impl Orderbook {
@@ -132,16 +129,12 @@ impl Orderbook {
         settlement_contract: H160,
         database: crate::database::Postgres,
         order_validator: Arc<dyn OrderValidating>,
-        solvable_orders_max_update_age_blocks: u64,
-        current_block: CurrentBlockStream,
     ) -> Self {
         Self {
             domain_separator,
             settlement_contract,
             database,
             order_validator,
-            solvable_orders_max_update_age_blocks,
-            current_block,
         }
     }
 
@@ -272,18 +265,6 @@ impl Orderbook {
                 return Ok(None);
             }
         };
-        let current_block = self
-            .current_block
-            .borrow()
-            .number
-            .ok_or_else(|| anyhow!("no block number"))?
-            .as_u64();
-        let auction_block = auction.auction.block;
-        let age_in_blocks = current_block.saturating_sub(auction_block);
-        if age_in_blocks > self.solvable_orders_max_update_age_blocks {
-            tracing::warn!(%current_block, %auction_block, "current auction is out of date");
-            return Ok(None);
-        }
         Ok(Some(auction))
     }
 
@@ -377,8 +358,6 @@ mod tests {
             order_validator: Arc::new(order_validator),
             domain_separator: Default::default(),
             settlement_contract: H160([0xba; 20]),
-            solvable_orders_max_update_age_blocks: Default::default(),
-            current_block: shared::current_block::mock_single_block(Default::default()),
         };
 
         // App data does not encode cancellation.
