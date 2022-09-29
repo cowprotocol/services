@@ -7,8 +7,8 @@ use shared::{
     sources::{balancer_v2::BalancerFactoryKind, BaselineSource},
 };
 use solver::{
-    arguments::TransactionStrategyArg, settlement_access_list::AccessListEstimatorType,
-    solver::ExternalSolverArg,
+    arguments::TransactionStrategyArg, liquidity::slippage,
+    settlement_access_list::AccessListEstimatorType, solver::ExternalSolverArg,
 };
 use std::{net::SocketAddr, num::NonZeroU64, time::Duration};
 use tracing::level_filters::LevelFilter;
@@ -17,6 +17,9 @@ use tracing::level_filters::LevelFilter;
 pub struct Arguments {
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub slippage: slippage::Arguments,
 
     #[clap(long, env, default_value = "0.0.0.0:8080")]
     pub bind_address: SocketAddr,
@@ -261,6 +264,7 @@ pub struct Arguments {
 impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.slippage)?;
         writeln!(f, "bind_address: {}", self.bind_address)?;
         writeln!(f, "log_filter: {}", self.log_filter)?;
         writeln!(f, "log_stderr_threshold: {}", self.log_stderr_threshold)?;

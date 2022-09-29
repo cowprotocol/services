@@ -64,7 +64,7 @@ pub struct HttpSolver {
     order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
-    slippage_calculator: Arc<SlippageCalculator>,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl HttpSolver {
@@ -79,6 +79,7 @@ impl HttpSolver {
         order_converter: Arc<OrderConverter>,
         instance_cache: InstanceCache,
         filter_non_fee_connected_orders: bool,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         Self {
             solver,
@@ -90,7 +91,7 @@ impl HttpSolver {
             order_converter,
             instance_cache,
             filter_non_fee_connected_orders,
-            slippage_calculator: Default::default(),
+            slippage_calculator,
         }
     }
 
@@ -575,6 +576,7 @@ mod tests {
             Arc::new(OrderConverter::test(H160([0x42; 20]))),
             Default::default(),
             true,
+            SlippageCalculator::default(),
         );
         let base = |x: u128| x * 10u128.pow(18);
         let limit_orders = vec![LimitOrder {

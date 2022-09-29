@@ -19,7 +19,7 @@ use derivative::Derivative;
 use ethcontract::{Account, Bytes};
 use maplit::hashmap;
 use model::order::OrderKind;
-use primitive_types::{H160, U256};
+use primitive_types::H160;
 use reqwest::{Client, Url};
 use shared::{
     oneinch_api::{
@@ -56,8 +56,7 @@ impl OneInchSolver {
         disabled_protocols: impl IntoIterator<Item = String>,
         client: Client,
         one_inch_url: Url,
-        oneinch_slippage_bps: u32,
-        max_slippage_in_wei: Option<U256>,
+        slippage_calculator: SlippageCalculator,
         referrer_address: Option<H160>,
     ) -> Result<Self> {
         let settlement_address = settlement_contract.address();
@@ -68,10 +67,7 @@ impl OneInchSolver {
             client: Box::new(OneInchClientImpl::new(one_inch_url, client, chain_id)?),
             allowance_fetcher: Box::new(AllowanceManager::new(web3, settlement_address)),
             protocol_cache: ProtocolCache::default(),
-            slippage_calculator: SlippageCalculator::from_bps(
-                oneinch_slippage_bps,
-                max_slippage_in_wei,
-            ),
+            slippage_calculator,
             referrer_address,
         })
     }
@@ -505,8 +501,7 @@ mod tests {
             vec!["PMM1".to_string()],
             Client::new(),
             OneInchClientImpl::DEFAULT_URL.try_into().unwrap(),
-            10u32,
-            None,
+            SlippageCalculator::default(),
             None,
         )
         .unwrap();
