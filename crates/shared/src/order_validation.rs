@@ -136,9 +136,6 @@ impl From<CalculateQuoteError> for ValidationError {
                 ValidationError::Other(err)
             }
             CalculateQuoteError::Price(err) => ValidationError::PriceForQuote(err),
-            // TODO: Replace this Other error with Signature specific one
-            CalculateQuoteError::Signature(err) => ValidationError::Other(anyhow::Error::new(err)),
-
             // This should never happen because we only calculate quotes with
             // `SellAmount::AfterFee`, meaning that the sell amount does not
             // need to be higher than the computed fee amount. Don't bubble up

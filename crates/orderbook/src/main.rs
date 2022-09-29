@@ -480,6 +480,14 @@ async fn main() {
         None => fee_subsidy_config,
     };
 
+    let signature_configuration = SignatureConfiguration {
+        eip1271: args.enable_eip1271_orders,
+        eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
+        presign: args.enable_presign_orders,
+        // TODO: Should it be in CLI arguments?
+        flat_gas_fee: 0.into(),
+    };
+
     let create_quoter = |price_estimator: Arc<dyn PriceEstimating>,
                          storage: Arc<dyn QuoteStoring>| {
         Arc::new(OrderQuoter::new(
@@ -492,6 +500,7 @@ async fn main() {
                 .unwrap(),
             chrono::Duration::from_std(args.order_quoting.presign_onchain_quote_validity_seconds)
                 .unwrap(),
+            signature_configuration.flat_gas_fee,
         ))
     };
     let optimal_quoter = create_quoter(price_estimator.clone(), database.clone());
@@ -508,13 +517,7 @@ async fn main() {
             .collect(),
         args.min_order_validity_period,
         args.max_order_validity_period,
-        SignatureConfiguration {
-            eip1271: args.enable_eip1271_orders,
-            eip1271_skip_creation_validation: args.eip1271_skip_creation_validation,
-            presign: args.enable_presign_orders,
-            // TODO: Should it be in CLI arguments?
-            flat_gas_fee: 0.into(),
-        },
+        signature_configuration,
         bad_token_detector.clone(),
         optimal_quoter.clone(),
         balance_fetcher,
