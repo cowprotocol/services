@@ -14,7 +14,7 @@ anyhow = { workspace = true }
 autopilot = { path = "../autopilot" }
 chrono = { workspace = true }
 contracts = { path = "../contracts" }
-criterion = "0.3"
+criterion = "0.4"
 database = { path = "../database" }
 ethcontract = { workspace = true }
 hex-literal = { workspace = true }

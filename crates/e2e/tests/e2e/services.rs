@@ -188,6 +188,7 @@ impl OrderbookServices {
         let pool_fetcher = PoolCache::new(
             CacheConfig {
                 number_of_blocks_to_cache: NonZeroU64::new(10).unwrap(),
+                number_of_entries_to_auto_update: NonZeroUsize::new(20).unwrap(),
                 maximum_recent_block_age: 4,
                 ..Default::default()
             },
