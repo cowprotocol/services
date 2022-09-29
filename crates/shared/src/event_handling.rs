@@ -2,7 +2,7 @@ use crate::{
     current_block::{BlockNumberHash, BlockRetrieving, RangeInclusive},
     maintenance::Maintaining,
 };
-use anyhow::{Context, Error, Result};
+use anyhow::{anyhow, ensure, Context, Error, Result};
 use ethcontract::contract::{AllEventsBuilder, ParseLog};
 use ethcontract::errors::ExecutionError;
 use ethcontract::{dyns::DynTransport, Event as EthcontractEvent, EventMetadata};
@@ -152,14 +152,12 @@ where
         }
 
         // handle special case when no new block is added
+        // this case would be caught later in algorithm by `detect_reorg_path`,
+        // but we skip some node calls by returning early
         if (current_block_number, current_block_hash)
             == (last_handled_block_number, last_handled_block_hash)
         {
-            return Ok(EventRange {
-                history_range: None,
-                latest_blocks: vec![],
-                is_reorg: false,
-            });
+            return Err(anyhow!("update entered with already handled block"));
         }
 
         // full range of blocks which are considered for event update
@@ -188,7 +186,7 @@ where
         let (latest_blocks, is_reorg) = match history_range {
             Some(_) => (latest_blocks, true),
             None => {
-                let (latest_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+                let (latest_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks)?;
                 (latest_blocks.to_vec(), is_reorg)
             }
         };
@@ -286,27 +284,34 @@ where
 
     async fn update_events_from_latest_blocks(
         &mut self,
-        blocks: &[BlockNumberHash],
+        latest_blocks: &[BlockNumberHash],
         is_reorg: bool,
     ) -> Result<()> {
-        let (blocks, events) = self.past_events_by_block_hashes(blocks).await;
-        track_block_range(&format!("range_{}", blocks.len()));
-        tracing::debug!(
-            "final blocks for updating: {:?} - {:?}",
-            blocks.first(),
-            blocks.last()
+        ensure!(
+            !latest_blocks.is_empty(),
+            "entered update events with empty block list"
         );
+        let (blocks, events) = self.past_events_by_block_hashes(latest_blocks).await;
+        track_block_range(&format!("range_{}", blocks.len()));
         if blocks.is_empty() {
-            return Ok(());
+            return Err(anyhow!("no blocks to be updated - all filtered out"));
         }
+
+        // update storage regardless if it's a full update or partial update
         let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
             self.store.replace_events(events, range.clone()).await?;
         } else {
             self.store.append_events(events).await?;
         }
-
         self.update_last_handled_blocks(&blocks);
+
+        // in case of partial update return error as an indicator that update did not finish as expected
+        // either way we update partially to have the most latest state in the storage in every moment
+        if latest_blocks != blocks {
+            tracing::debug!("partial update: {:?} - {:?}", blocks.first(), blocks.last());
+            return Err(anyhow!("update done partially"));
+        }
         Ok(())
     }
 
@@ -389,7 +394,17 @@ where
 fn detect_reorg_path<'a>(
     handled_blocks: &[BlockNumberHash],
     latest_blocks: &'a [BlockNumberHash],
-) -> (&'a [BlockNumberHash], bool) {
+) -> Result<(&'a [BlockNumberHash], bool)> {
+    // explicitly forbid empty collections so the algorithm is more clear
+    ensure!(
+        !handled_blocks.is_empty(),
+        "handled_blocks not allowed to be empty"
+    );
+    ensure!(
+        !latest_blocks.is_empty(),
+        "latest_blocks not allowed to be empty"
+    );
+
     // in most cases, latest_blocks = handled_blocks + 1 newest block
     // therefore, is it more efficient to put the handled_blocks in outer loop,
     // so everything finishes in only two iterations.
@@ -397,15 +412,24 @@ fn detect_reorg_path<'a>(
         for (i, latest_block) in latest_blocks.iter().enumerate().rev() {
             if latest_block == handled_block {
                 // found the same block in both lists, now we know the common ancestor, don't include the ancestor
+
+                if latest_block == latest_blocks.last().unwrap() {
+                    // latest_block is just falling behind the handled_blocks,
+                    // which means there is no reorg, it's just delay in block propagation
+                    // on the client node we are communicating with at this moment
+                    return Err(anyhow!(
+                        "going back in history is not reorg but node propagation delay"
+                    ));
+                }
                 let is_reorg = handled_block != handled_blocks.last().unwrap();
-                return (&latest_blocks[i + 1..], is_reorg);
+                return Ok((&latest_blocks[i + 1..], is_reorg));
             }
         }
     }
 
     // reorg deeper than the EventHandler history (`handled_blocks`), return full list
-    let is_reorg = !handled_blocks.is_empty();
-    (latest_blocks, is_reorg)
+    let is_reorg = true;
+    Ok((latest_blocks, is_reorg))
 }
 
 /// Splits range into two disjuctive consecutive ranges, second one containing last (up to)
@@ -549,31 +573,39 @@ mod tests {
     }
 
     #[test]
-    fn detect_reorg_path_test_both_empty() {
+    fn detect_reorg_path_test_emptiness() {
         let handled_blocks = vec![];
         let latest_blocks = vec![];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
-        assert!(replacement_blocks.is_empty());
-        assert!(!is_reorg);
-    }
+        let result = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(result.is_err());
 
-    #[test]
-    fn detect_reorg_path_test_handled_blocks_empty() {
+        let handled_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let latest_blocks = vec![];
+        let result = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(result.is_err());
+
         let handled_blocks = vec![];
         let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
-        assert_eq!(replacement_blocks, latest_blocks);
-        assert!(!is_reorg);
+        let result = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(result.is_err());
     }
 
     #[test]
     fn detect_reorg_path_test_both_same() {
-        // if the list are same, we return the common ancestor
+        // if the lists are same, there is nothing to update
         let handled_blocks = vec![(1, H256::from_low_u64_be(1))];
         let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
-        assert!(replacement_blocks.is_empty());
-        assert!(!is_reorg);
+        let result = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn detect_reorg_path_test_going_back_in_history() {
+        // if `latest_blocks` goes back into history, this is no reorg but delayed client node
+        let handled_blocks = vec![(1, H256::from_low_u64_be(1)), (2, H256::from_low_u64_be(2))];
+        let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
+        let result = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(result.is_err());
     }
 
     #[test]
@@ -585,25 +617,19 @@ mod tests {
             (3, H256::from_low_u64_be(3)),
             (4, H256::from_low_u64_be(4)),
         ];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+        let (replacement_blocks, is_reorg) =
+            detect_reorg_path(&handled_blocks, &latest_blocks).unwrap();
         assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
         assert!(!is_reorg);
     }
 
     #[test]
     fn detect_reorg_path_test_reorg_1() {
-        let handled_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(3)),
-        ];
-        let latest_blocks = vec![
-            (1, H256::from_low_u64_be(1)),
-            (2, H256::from_low_u64_be(2)),
-            (3, H256::from_low_u64_be(4)),
-        ];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
-        assert_eq!(replacement_blocks, latest_blocks[2..].to_vec());
+        let handled_blocks = vec![(1, H256::from_low_u64_be(1)), (2, H256::from_low_u64_be(2))];
+        let latest_blocks = vec![(1, H256::from_low_u64_be(1)), (2, H256::from_low_u64_be(3))];
+        let (replacement_blocks, is_reorg) =
+            detect_reorg_path(&handled_blocks, &latest_blocks).unwrap();
+        assert_eq!(replacement_blocks, latest_blocks[1..].to_vec());
         assert!(is_reorg);
     }
 
@@ -615,7 +641,8 @@ mod tests {
             (2, H256::from_low_u64_be(21)),
             (3, H256::from_low_u64_be(31)),
         ];
-        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+        let (replacement_blocks, is_reorg) =
+            detect_reorg_path(&handled_blocks, &latest_blocks).unwrap();
         assert_eq!(replacement_blocks, latest_blocks);
         assert!(is_reorg);
     }
