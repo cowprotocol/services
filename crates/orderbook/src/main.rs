@@ -523,8 +523,6 @@ async fn main() {
         settlement_contract.address(),
         database.as_ref().clone(),
         order_validator.clone(),
-        args.solvable_orders_max_update_age_blocks,
-        current_block_stream.clone(),
     ));
     let mut service_maintainer = ServiceMaintenance {
         maintainers: vec![pool_fetcher],
