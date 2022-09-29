@@ -9,54 +9,51 @@ license = "MIT OR Apache-2.0"
 doctest = false
 
 [dependencies]
-anyhow = "1.0"
-assert_approx_eq = "1.1"
+anyhow = { workspace = true }
 async-stream = "0.3"
-async-trait = "0.1"
+async-trait = { workspace = true }
 atty = "0.2"
-cached = { version = "0.34", default-features = false }
+cached = { workspace = true }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "3.1", features = ["derive", "env"] }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-derivative = "2.2"
-ethcontract = { version = "0.21.0", default-features = false }
-ethcontract-mock = { version = "0.21.0", default-features = false }
-futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_", "tokio_"] }
+derivative = { workspace = true }
+ethcontract = { workspace = true }
+ethcontract-mock = { workspace = true }
+futures = { workspace = true }
+gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
-hex = { version = "0.4", default-features = false }
-hex-literal = "0.3"
-http = "0.2.6"
-itertools = "0.10"
-lazy_static = "1.4.0"
+hex = { workspace = true }
+hex-literal = { workspace = true }
+itertools = { workspace = true }
+lazy_static = { workspace = true }
 lru = "0.7"
-maplit = "1.0"
-mockall = "0.11"
+maplit = { workspace = true }
+mockall = { workspace = true }
 model = { path = "../model" }
-num = { version = "0.4", features = ["serde"] }
+num = { workspace = true, features = ["serde"] }
 number-conversions = { path = "../number-conversions" }
-primitive-types = "0.10"
-prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-reqwest = { version = "0.11", features = ["cookies", "gzip", "json"] }
-scopeguard = "1.1.0"
-serde = "1.0"
-serde_json = "1.0"
-serde_with = { version = "1.11", default-features = false }
-secp256k1 = "0.21"
-thiserror = "1.0"
+primitive-types = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+reqwest = { workspace = true, features = ["cookies", "gzip", "json"] }
+scopeguard = "1"
+secp256k1 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+thiserror = { workspace = true }
 time = { version = "0.3", features = ["macros"] }
-tokio = { version = "1.15", features = ["macros", "time"] }
+tokio = { workspace = true, features = ["macros", "time"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "time"] }
-url = "2.2"
-warp = { version = "0.3", default-features = false }
-web3 = { version = "0.18", default-features = false }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "time"] }
+url = { workspace = true }
+warp = { workspace = true }
+web3 = { workspace = true }
 
 [dev-dependencies]
-flate2 = "1.0"
-regex = "1.5"
-sqlx = { version = "0.6", default-features = false, features = ["runtime-tokio-native-tls"] }
+flate2 = "1"
+regex = "1"
 testlib = { path = "../testlib" }

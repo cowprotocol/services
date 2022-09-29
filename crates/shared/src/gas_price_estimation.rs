@@ -5,6 +5,7 @@ use gas_estimation::{
     GasNowGasStation, GasPrice1559, GasPriceEstimating, GnosisSafeGasStation,
     PriorityGasPriceEstimating, Transport,
 };
+use reqwest::header::{self, HeaderMap, HeaderValue};
 use serde::de::DeserializeOwned;
 use std::sync::{Arc, Mutex};
 
@@ -24,11 +25,7 @@ pub struct Client(pub reqwest::Client);
 
 #[async_trait::async_trait]
 impl Transport for Client {
-    async fn get_json<T: DeserializeOwned>(
-        &self,
-        url: &str,
-        header: http::header::HeaderMap,
-    ) -> Result<T> {
+    async fn get_json<T: DeserializeOwned>(&self, url: &str, header: HeaderMap) -> Result<T> {
         self.0
             .get(url)
             .headers(header)
@@ -62,15 +59,14 @@ pub async fn create_priority_estimator(
                     blocknative_api_key.is_some(),
                     "BlockNative api key is empty"
                 );
-                let api_key =
-                    http::header::HeaderValue::from_str(&blocknative_api_key.clone().unwrap());
+                let api_key = HeaderValue::from_str(&blocknative_api_key.clone().unwrap());
                 let headers = if let Ok(mut api_key) = api_key {
-                    let mut headers = http::header::HeaderMap::new();
+                    let mut headers = HeaderMap::new();
                     api_key.set_sensitive(true);
-                    headers.insert(http::header::AUTHORIZATION, api_key);
+                    headers.insert(header::AUTHORIZATION, api_key);
                     headers
                 } else {
-                    http::header::HeaderMap::new()
+                    HeaderMap::new()
                 };
                 match BlockNative::new(client(), headers).await {
                     Ok(estimator) => estimators.push(Box::new(estimator)),

@@ -174,7 +174,7 @@ impl Default for OrdersQuery {
 #[derivative(Default)]
 #[serde(rename_all = "camelCase")]
 pub struct OrderMetadata {
-    #[derivative(Default(value = "chrono::MIN_DATETIME"))]
+    #[derivative(Default(value = "DateTime::<Utc>::MIN_UTC"))]
     pub created_at: DateTime<Utc>,
     #[serde(with = "model::bytes_hex")]
     pub order_hash: Vec<u8>,
@@ -198,7 +198,7 @@ pub struct Order {
     /// The ID of the Ethereum chain where the `verifying_contract` is located.
     pub chain_id: u64,
     /// Timestamp in seconds of when the order expires. Expired orders cannot be filled.
-    #[derivative(Default(value = "chrono::naive::MAX_DATETIME.timestamp() as u64"))]
+    #[derivative(Default(value = "NaiveDateTime::MAX.timestamp() as u64"))]
     #[serde(with = "serde_with::rust::display_fromstr")]
     pub expiry: u64,
     /// The address of the entity that will receive any fees stipulated by the order.

@@ -16,47 +16,46 @@ name = "orderbook"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-assert_approx_eq = "1.1"
-async-trait = "0.1"
-bigdecimal = "0.3"
-cached = { version = "0.34", default-features = false }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
-clap = { version = "3.1", features = ["derive", "env"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bigdecimal = { workspace = true }
+cached = { workspace = true }
+chrono = { workspace = true, features = ["clock"] }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
-ethcontract = { version = "0.21.0", default-features = false }
-futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_"] }
+ethcontract = { workspace = true }
+futures = { workspace = true }
+gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
-hex = { version = "0.4", default-features = false }
-hex-literal = "0.3"
-maplit = "1.0"
+hex = { workspace = true }
+hex-literal = { workspace = true }
+maplit = { workspace = true }
 model = { path = "../model" }
-num = "0.4"
+num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
-primitive-types = { version = "0.10", features = ["fp-conversion"] }
-prometheus = "0.13"
-prometheus-metric-storage = { git = "https://github.com/cowprotocol/prometheus-metric-storage" , tag = "v0.4.0" }
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_with = { version = "1.11", default-features = false, features = ["macros"] }
-shared= { path = "../shared" }
-sqlx = { version = "0.6", default-features = false, features = ["bigdecimal", "chrono", "macros", "runtime-tokio-native-tls", "postgres"] }
-thiserror = "1.0"
-tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "sync", "time", "signal"] }
-tracing = "0.1"
-url = "2.2"
-warp = { version = "0.3", default-features = false }
-web3 = { version = "0.18", default-features = false }
+primitive-types = { workspace = true }
+prometheus = { workspace = true }
+prometheus-metric-storage = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+shared = { path = "../shared" }
+sqlx = { workspace = true, features = ["bigdecimal", "chrono", "macros", "postgres"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "sync", "time"] }
+tracing = { workspace = true }
+url = { workspace = true }
+warp = { workspace = true }
+web3 = { workspace = true }
 
 [dev-dependencies]
-secp256k1 = "0.21"
-mockall = "0.11"
+mockall = { workspace = true }
+secp256k1 = { workspace = true }
 testlib = { path = "../testlib" }
-tokio = { version = "1.15", features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
-anyhow = "1.0"
+anyhow = { workspace = true }
 vergen = "7.4"

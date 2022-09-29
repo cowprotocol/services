@@ -4,19 +4,23 @@
 
 use anyhow::Result;
 use contracts::paths;
-use env_logger::Env;
 use ethcontract_generate::Source;
 use serde_json::{Map, Value};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+use tracing_subscriber::EnvFilter;
 
 fn main() {
-    env_logger::init_from_env(Env::default().default_filter_or("warn,vendor=info"));
+    tracing_subscriber::fmt::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_env("LOG_FILTER").unwrap_or_else(|_| "warn,vendor=info".into()),
+        )
+        .init();
 
     if let Err(err) = run() {
-        log::error!("Error vendoring contracts: {:?}", err);
+        tracing::error!("Error vendoring contracts: {:?}", err);
         std::process::exit(-1);
     }
 }
@@ -184,7 +188,7 @@ struct Vendor {
 impl Vendor {
     fn new() -> Result<Self> {
         let artifacts = paths::contract_artifacts_dir();
-        log::info!("vendoring contract artifacts to '{}'", artifacts.display());
+        tracing::info!("vendoring contract artifacts to '{}'", artifacts.display());
         fs::create_dir_all(&artifacts)?;
         Ok(Self { artifacts })
     }
@@ -240,7 +244,7 @@ impl VendorContext<'_> {
     fn manual(&self, name: &str, reason: &str) -> &Self {
         // We just keep these here to document that they are manually generated
         // and not pulled from some source.
-        log::info!("skipping {}: {}", name, reason);
+        tracing::info!("skipping {}: {}", name, reason);
         self
     }
 
@@ -253,10 +257,10 @@ impl VendorContext<'_> {
     }
 
     fn vendor_source(&self, name: &str, source: Source) -> Result<&Self> {
-        log::info!("retrieving {:?}", source);
+        tracing::info!("retrieving {:?}", source);
         let artifact_json = source.artifact_json()?;
 
-        log::debug!("pruning artifact JSON");
+        tracing::debug!("pruning artifact JSON");
         let pruned_artifact_json = {
             let json = serde_json::from_str::<Value>(&artifact_json)?;
             let mut pruned = Map::new();
@@ -273,7 +277,7 @@ impl VendorContext<'_> {
         };
 
         let path = self.artifacts.join(name).with_extension("json");
-        log::debug!("saving artifact to {}", path.display());
+        tracing::debug!("saving artifact to {}", path.display());
         fs::write(path, pruned_artifact_json)?;
 
         Ok(self)
