@@ -105,12 +105,6 @@ impl SlippageCalculator {
         Ok(slippage)
     }
 
-    pub fn compute_with_price(&self, price: &BigRational, amount: U256) -> Result<SlippageAmount> {
-        let (relative, absolute) =
-            self.compute_inner(Some(price), number_conversions::u256_to_big_int(&amount))?;
-        SlippageAmount::from_num(&relative, &absolute)
-    }
-
     fn compute_inner(
         &self,
         price: Option<&BigRational>,
@@ -198,37 +192,26 @@ mod tests {
     use super::*;
     use crate::settlement::external_prices::externalprices;
     use shared::conversions::U256Ext as _;
-    use testlib::tokens::{USDC, WETH};
+    use testlib::tokens::{GNO, USDC, WETH};
 
     #[test]
     fn limits_max_slippage() {
         let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
+        let prices = externalprices! {
+            native_token: WETH,
+            GNO => U256::exp10(9).to_big_rational(),
+            USDC => BigRational::new(2.into(), 1000.into()),
+        };
 
-        let price = U256::exp10(9).to_big_rational();
-        for (amount, expected_slippage) in [
-            (U256::exp10(12), 1),
-            (U256::exp10(8), 10),
-            (U256::exp10(17), 0),
+        for (token, amount, expected_slippage) in [
+            (GNO, U256::exp10(12), 1),
+            (USDC, U256::exp10(23), 5),
+            (GNO, U256::exp10(8), 10),
+            (GNO, U256::exp10(17), 0),
         ] {
-            let slippage = calculator.compute_with_price(&price, amount).unwrap();
+            let slippage = calculator.compute(&prices, token, amount).unwrap();
             assert_eq!(slippage.as_bps(), expected_slippage);
         }
-    }
-
-    #[test]
-    fn uses_token_external_price() {
-        let calculator = SlippageCalculator::from_bps(10, Some(U256::exp10(17)));
-        let slippage = calculator
-            .compute(
-                &externalprices! {
-                    native_token: WETH,
-                    USDC => BigRational::new(2.into(), 1000.into()),
-                },
-                USDC,
-                U256::exp10(23),
-            )
-            .unwrap();
-        assert_eq!(slippage.as_bps(), 5);
     }
 
     #[test]
@@ -245,8 +228,7 @@ mod tests {
 
     #[test]
     fn test_out_amount_with_slippage() {
-        let calculator = SlippageCalculator::default();
-        let price = num::one();
+        let slippage = SlippageContext::default();
         for (amount, expected) in [
             (0.into(), 0.into()),
             (100.into(), 99.into()),
@@ -262,15 +244,14 @@ mod tests {
                 .unwrap(),
             ),
         ] {
-            let slippage = calculator.compute_with_price(&price, amount).unwrap();
-            assert_eq!(slippage.sub_from_amount(amount), expected);
+            let amount_with_slippage = slippage.apply_to_amount_out(WETH, amount).unwrap();
+            assert_eq!(amount_with_slippage, expected);
         }
     }
 
     #[test]
     fn test_in_amount_with_slippage() {
-        let calculator = SlippageCalculator::default();
-        let price = num::one();
+        let slippage = SlippageContext::default();
         for (amount, expected) in [
             (0.into(), 0.into()),
             (100.into(), 101.into()),
@@ -279,8 +260,8 @@ mod tests {
             (10001.into(), 10012.into()),
             (U256::MAX, U256::MAX),
         ] {
-            let slippage = calculator.compute_with_price(&price, amount).unwrap();
-            assert_eq!(slippage.add_to_amount(amount), expected);
+            let amount_with_slippage = slippage.apply_to_amount_in(WETH, amount).unwrap();
+            assert_eq!(amount_with_slippage, expected);
         }
     }
 }
