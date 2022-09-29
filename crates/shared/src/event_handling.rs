@@ -646,7 +646,10 @@ mod tests {
         let range = RangeInclusive::try_new(0, MAX_BLOCKS_QUERIED + 1).unwrap();
         let (history_range, latest_range) = split_range(range);
         assert_eq!(history_range, Some(RangeInclusive::try_new(0, 1).unwrap()));
-        assert_eq!(latest_range, RangeInclusive::try_new(2, 51).unwrap());
+        assert_eq!(
+            latest_range,
+            RangeInclusive::try_new(2, MAX_BLOCKS_QUERIED + 1).unwrap()
+        );
     }
 
     #[tokio::test]
