@@ -108,9 +108,16 @@ impl Default for Order {
     }
 }
 
-pub async fn insert_orders(ex: &mut PgConnection, orders: &[Order]) -> Result<(), sqlx::Error> {
+pub async fn insert_orders_and_ignore_conflicts(
+    ex: &mut PgConnection,
+    orders: &[Order],
+) -> Result<(), sqlx::Error> {
     for order in orders {
-        insert_order(ex, order).await?;
+        match insert_order(ex, order).await {
+            Ok(_) => (),
+            Err(err) if is_duplicate_record_error(&err) => (),
+            Err(err) => return Err(err),
+        }
     }
     Ok(())
 }
@@ -475,6 +482,22 @@ mod tests {
         insert_order(&mut db, &order).await.unwrap();
         let err = insert_order(&mut db, &order).await.unwrap_err();
         assert!(is_duplicate_record_error(&err));
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn postgres_insert_orders_and_ignore_conflicts_ignores_the_conflict() {
+        let mut db = PgConnection::connect("postgresql://").await.unwrap();
+        let mut db = db.begin().await.unwrap();
+        crate::clear_DANGER_(&mut db).await.unwrap();
+
+        let order = Order::default();
+        insert_orders_and_ignore_conflicts(&mut db, vec![order.clone()].as_slice())
+            .await
+            .unwrap();
+        insert_orders_and_ignore_conflicts(&mut db, vec![order].as_slice())
+            .await
+            .unwrap();
     }
 
     #[tokio::test]

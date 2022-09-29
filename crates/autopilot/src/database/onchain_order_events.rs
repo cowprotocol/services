@@ -153,7 +153,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .await
         .context("append_onchain_orders failed")?;
 
-        database::orders::insert_orders(&mut transaction, orders.as_slice())
+        database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
         transaction.commit().await.context("commit")?;
@@ -182,7 +182,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("append_custom_onchain_orders failed")?;
 
-        database::orders::insert_orders(&mut transaction, orders.as_slice())
+        database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
 
