@@ -411,36 +411,28 @@ impl SettlementEncoder {
     // the wrapAll() funcitonality to wrap all the ether used for ethflow orders
     // to WETH
     fn build_ethflow_pre_interactions(&self) -> Vec<EncodedInteraction> {
-        let mut ethflow_orders_owners: Vec<H160> = self
+        let ethflow_owner: Option<H160> = self
             .liquidity_order_trades
             .iter()
-            .filter_map(|order_trade| {
-                if order_trade.trade.order.metadata.is_ethflow_order {
-                    Some(order_trade.trade.order.metadata.owner)
+            .map(|order_trade| &order_trade.trade)
+            .chain(
+                self.order_trades
+                    .iter()
+                    .map(|order_trade| &order_trade.trade),
+            )
+            .find_map(|trade| {
+                if trade.order.metadata.is_ethflow_order {
+                    Some(trade.order.metadata.owner)
                 } else {
                     None
                 }
-            })
-            .collect();
-        ethflow_orders_owners.append(
-            &mut self
-                .order_trades
-                .iter()
-                .filter_map(|order_trade| {
-                    if order_trade.trade.order.metadata.is_ethflow_order {
-                        Some(order_trade.trade.order.metadata.owner)
-                    } else {
-                        None
-                    }
-                })
-                .collect(),
-        );
+            });
         // Note that all ethflow_orders have the same owner:
         // the ethflow_contract
-        if let Some(owner) = ethflow_orders_owners.get(0) {
+        if let Some(owner) = ethflow_owner {
             // 4c84c1c8 is the identifier of the following function:
             // https://github.com/cowprotocol/ethflowcontract/blob/main/src/CoWSwapEthFlow.sol#L57
-            return vec![(*owner, U256::zero(), Bytes(hex!("4c84c1c8").to_vec()))];
+            return vec![(owner, U256::zero(), Bytes(hex!("4c84c1c8").to_vec()))];
         }
         Vec::new()
     }
