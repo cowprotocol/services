@@ -13,7 +13,6 @@ anyhow = { workspace = true }
 bigdecimal = { workspace = true }
 chrono = { workspace = true, features = ["serde", "clock"] }
 derivative = { workspace = true }
-enum-utils = "0.1"
 hex = { workspace = true, default-features = false }
 hex-literal = { workspace = true }
 lazy_static = { workspace = true }
@@ -23,6 +22,7 @@ primitive-types = { workspace = true }
 secp256k1 = { workspace = true }
 serde = { workspace = true }
 serde_with = { workspace = true }
+strum = { workspace = true }
 web3 = { workspace = true, features = ["signing"] }
 
 [dev-dependencies]

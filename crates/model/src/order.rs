@@ -21,6 +21,7 @@ use std::{
     fmt::{self, Debug, Display},
     str::FromStr,
 };
+use strum::EnumString;
 use web3::signing::{self, Key, SecretKeyRef};
 
 /// The flag denoting that an order is buying ETH (or the chain's native token).
@@ -538,10 +539,8 @@ impl<'de> Deserialize<'de> for OrderUid {
     }
 }
 
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "lowercase")]
 pub enum OrderKind {
     #[default]
@@ -574,10 +573,8 @@ impl OrderKind {
 }
 
 /// Source from which the sellAmount should be drawn upon order fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum SellTokenSource {
     /// Direct ERC20 allowances to the Vault relayer contract
@@ -601,10 +598,8 @@ impl SellTokenSource {
 }
 
 /// Destination for which the buyAmount should be transferred to order's receiver to upon fulfilment
-#[derive(
-    Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, enum_utils::FromStr,
-)]
-#[enumeration(case_insensitive)]
+#[derive(Eq, PartialEq, Clone, Copy, Debug, Default, Deserialize, Serialize, Hash, EnumString)]
+#[strum(ascii_case_insensitive)]
 #[serde(rename_all = "snake_case")]
 pub enum BuyTokenDestination {
     /// Pay trade proceeds as an ERC20 token transfer

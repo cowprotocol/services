@@ -58,4 +58,4 @@ tokio = { workspace = true, features = ["test-util"] }
 
 [build-dependencies]
 anyhow = { workspace = true }
-vergen = "7.4"
+vergen = "7"

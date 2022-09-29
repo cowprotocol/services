@@ -14,7 +14,7 @@ async-stream = "0.3"
 async-trait = { workspace = true }
 atty = "0.2"
 cached = { workspace = true }
-chrono = { version = "0.4", default-features = false, features = ["clock"] }
+chrono = { workspace = true, features = ["clock"] }
 clap = { workspace = true }
 contracts = { path = "../contracts" }
 database = { path = "../database" }
@@ -55,5 +55,5 @@ web3 = { workspace = true }
 
 [dev-dependencies]
 flate2 = "1"
-regex = "1"
+regex = { workspace = true }
 testlib = { path = "../testlib" }

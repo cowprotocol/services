@@ -40,6 +40,6 @@ warp = { workspace = true }
 web3 = { workspace = true }
 
 [dev-dependencies]
-maplit = "1.0"
-mockall = "0.11"
+maplit = { workspace = true }
+mockall = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
