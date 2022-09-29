@@ -6,7 +6,7 @@ use crate::{
     solver::{Auction, SolverType},
 };
 use anyhow::{anyhow, Context as _, Result};
-use clap::{ArgEnum, Parser};
+use clap::{Parser, ValueEnum as _};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::{BigInt, BigRational, Integer as _, ToPrimitive as _};
@@ -91,7 +91,7 @@ impl Display for Arguments {
 }
 
 /// A comma separated slippage value per solver.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct SlippageArgumentValues<T>(Option<T>, HashMap<SolverType, T>);
 
 impl<T> SlippageArgumentValues<T> {

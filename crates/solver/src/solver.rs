@@ -334,7 +334,13 @@ pub fn create(
                     max_settlements_per_solver,
                 )
             };
+
             let slippage_calculator = slippage_configuration.get_calculator(solver_type);
+            tracing::debug!(
+                solver = ?solver_type, slippage = ?slippage_calculator,
+                "configured slippage",
+            );
+
             let solver = match solver_type {
                 SolverType::Naive => Ok(shared(NaiveSolver::new(account, slippage_calculator))),
                 SolverType::Baseline => Ok(shared(BaselineSolver::new(
@@ -428,14 +434,6 @@ pub fn create(
                     )))))
                 }
             };
-
-            if let Ok(solver) = &solver {
-                tracing::info!(
-                    "initialized solver {} at address {:#x}",
-                    solver.name(),
-                    solver.account().address()
-                )
-            }
             solver
         })
         .collect::<Result<_>>()?;
@@ -454,6 +452,14 @@ pub fn create(
         ))
     });
     solvers.extend(external_solvers);
+
+    for solver in &solvers {
+        tracing::info!(
+            "initialized solver {} at address {:#x}",
+            solver.name(),
+            solver.account().address()
+        )
+    }
 
     Ok(solvers)
 }
