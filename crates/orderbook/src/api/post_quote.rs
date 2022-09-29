@@ -3,11 +3,11 @@ use anyhow::Result;
 use model::quote::OrderQuoteRequest;
 use reqwest::StatusCode;
 use shared::{
-    api::{self, convert_json_response, rich_error, ApiReply, IntoWarpReply, error},
+    api::{self, convert_json_response, error, rich_error, ApiReply, IntoWarpReply},
     order_quoting::{CalculateQuoteError, OrderQuoteError, QuoteHandler},
 };
 use std::{convert::Infallible, sync::Arc};
-use warp::{Filter, Rejection, reply::with_status};
+use warp::{reply::with_status, Filter, Rejection};
 
 fn post_quote_request() -> impl Filter<Extract = (OrderQuoteRequest,), Error = Rejection> + Clone {
     warp::path!("quote")
@@ -64,10 +64,12 @@ impl IntoWarpReply for CalculateQuoteErrorWrapper {
                 )
             }
             CalculateQuoteError::Signature(err) => with_status(
-                    error("SignatureEstimation", format!("Signature estimation error {}", err)),
-                    StatusCode::BAD_REQUEST,
-                )
-            ,
+                error(
+                    "SignatureEstimation",
+                    format!("Signature estimation error {}", err),
+                ),
+                StatusCode::BAD_REQUEST,
+            ),
             CalculateQuoteError::Other(err) => err.into_warp_reply(),
         }
     }
