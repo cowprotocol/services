@@ -63,8 +63,8 @@ impl ZeroExSolver {
         settlement_contract: GPv2Settlement,
         chain_id: u64,
         api: Arc<dyn ZeroExApi>,
-        zeroex_slippage_bps: u32,
         excluded_sources: Vec<String>,
+        slippage_calculator: SlippageCalculator,
     ) -> Result<Self> {
         ensure!(
             chain_id == MAINNET_CHAIN_ID,
@@ -76,7 +76,7 @@ impl ZeroExSolver {
             allowance_fetcher: Box::new(allowance_fetcher),
             api,
             excluded_sources,
-            slippage_calculator: SlippageCalculator::from_bps(zeroex_slippage_bps, None),
+            slippage_calculator,
         })
     }
 }
@@ -196,8 +196,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .unwrap();
         let settlement = solver
@@ -238,8 +238,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .unwrap();
         let settlement = solver
@@ -401,8 +401,8 @@ mod tests {
             settlement,
             chain_id,
             Arc::new(DefaultZeroExApi::default()),
-            10u32,
             Default::default(),
+            SlippageCalculator::default(),
         )
         .is_err())
     }

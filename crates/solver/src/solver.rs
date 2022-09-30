@@ -1,32 +1,36 @@
-use crate::interactions::allowances::AllowanceManager;
-use crate::liquidity::order_converter::OrderConverter;
-use crate::metrics::SolverMetrics;
-use crate::settlement::external_prices::ExternalPrices;
-use crate::solver::balancer_sor_solver::BalancerSorSolver;
+use self::{
+    baseline_solver::BaselineSolver,
+    http_solver::{buffers::BufferRetriever, HttpSolver},
+    naive_solver::NaiveSolver,
+    oneinch_solver::OneInchSolver,
+    paraswap_solver::ParaswapSolver,
+    single_order_solver::{SingleOrderSolver, SingleOrderSolving},
+    zeroex_solver::ZeroExSolver,
+};
 use crate::{
-    liquidity::{LimitOrder, Liquidity},
-    settlement::Settlement,
+    interactions::allowances::AllowanceManager,
+    liquidity::{
+        order_converter::OrderConverter,
+        slippage::{self, SlippageCalculator},
+        LimitOrder, Liquidity,
+    },
+    metrics::SolverMetrics,
+    settlement::{external_prices::ExternalPrices, Settlement},
+    solver::balancer_sor_solver::BalancerSorSolver,
 };
 use anyhow::{anyhow, Context, Result};
-use baseline_solver::BaselineSolver;
 use contracts::{BalancerV2Vault, GPv2Settlement};
-use ethcontract::errors::ExecutionError;
-use ethcontract::{Account, PrivateKey, H160, U256};
-use http_solver::{buffers::BufferRetriever, HttpSolver};
+use ethcontract::{errors::ExecutionError, Account, PrivateKey, H160, U256};
 use model::auction::AuctionId;
-use naive_solver::NaiveSolver;
 use num::BigRational;
-use oneinch_solver::OneInchSolver;
-use paraswap_solver::ParaswapSolver;
 use reqwest::Url;
-use shared::balancer_sor_api::DefaultBalancerSorApi;
-use shared::http_client::HttpClientFactory;
-use shared::http_solver::{DefaultHttpSolverApi, SolverConfig};
-use shared::zeroex_api::ZeroExApi;
 use shared::{
-    baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3,
+    balancer_sor_api::DefaultBalancerSorApi,
+    http_client::HttpClientFactory,
+    http_solver::{DefaultHttpSolverApi, SolverConfig},
+    zeroex_api::ZeroExApi,
+    {baseline_solver::BaseTokens, conversions::U256Ext, token_info::TokenInfoFetching, Web3},
 };
-use single_order_solver::{SingleOrderSolver, SingleOrderSolving};
 use std::{
     fmt::{self, Debug, Formatter},
     str::FromStr,
@@ -34,7 +38,6 @@ use std::{
     time::{Duration, Instant},
 };
 use web3::types::AccessList;
-use zeroex_solver::ZeroExSolver;
 
 pub mod balancer_sor_solver;
 mod baseline_solver;
@@ -154,7 +157,7 @@ pub type SettlementWithError = (
     ExecutionError,
 );
 
-#[derive(Copy, Clone, Debug, clap::ValueEnum)]
+#[derive(Copy, Clone, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum SolverType {
     Naive,
@@ -249,24 +252,21 @@ pub fn create(
     network_id: String,
     chain_id: u64,
     disabled_one_inch_protocols: Vec<String>,
-    paraswap_slippage_bps: u32,
     disabled_paraswap_dexs: Vec<String>,
     paraswap_partner: Option<String>,
     http_factory: &HttpClientFactory,
     solver_metrics: Arc<dyn SolverMetrics>,
     zeroex_api: Arc<dyn ZeroExApi>,
-    zeroex_slippage_bps: u32,
     disabled_zeroex_sources: Vec<String>,
-    oneinch_slippage_bps: u32,
     quasimodo_uses_internal_buffers: bool,
     mip_uses_internal_buffers: bool,
     one_inch_url: Url,
     one_inch_referrer_address: Option<H160>,
     external_solvers: Vec<ExternalSolverArg>,
-    oneinch_max_slippage_in_wei: Option<U256>,
     order_converter: Arc<OrderConverter>,
     max_settlements_per_solver: usize,
     max_merged_settlements: usize,
+    slippage_configuration: &slippage::Arguments,
 ) -> Result<Solvers> {
     // Tiny helper function to help out with type inference. Otherwise, all
     // `Box::new(...)` expressions would have to be cast `as Box<dyn Solver>`.
@@ -295,7 +295,8 @@ pub fn create(
                               url: Url,
                               name: String,
                               config: SolverConfig,
-                              filter_non_fee_connected_orders: bool|
+                              filter_non_fee_connected_orders: bool,
+                              slippage_calculator: SlippageCalculator|
      -> HttpSolver {
         HttpSolver::new(
             DefaultHttpSolverApi {
@@ -318,6 +319,7 @@ pub fn create(
                 http_instance_with_all_orders.clone()
             },
             filter_non_fee_connected_orders,
+            slippage_calculator,
         )
     };
 
@@ -332,11 +334,20 @@ pub fn create(
                     max_settlements_per_solver,
                 )
             };
+
+            let slippage_calculator = slippage_configuration.get_calculator(solver_type);
+            tracing::debug!(
+                solver = ?solver_type, slippage = ?slippage_calculator,
+                "configured slippage",
+            );
+
             let solver = match solver_type {
-                SolverType::Naive => Ok(shared(NaiveSolver::new(account))),
-                SolverType::Baseline => {
-                    Ok(shared(BaselineSolver::new(account, base_tokens.clone())))
-                }
+                SolverType::Naive => Ok(shared(NaiveSolver::new(account, slippage_calculator))),
+                SolverType::Baseline => Ok(shared(BaselineSolver::new(
+                    account,
+                    base_tokens.clone(),
+                    slippage_calculator,
+                ))),
                 SolverType::Mip => Ok(shared(create_http_solver(
                     account,
                     mip_solver_url.clone(),
@@ -346,6 +357,7 @@ pub fn create(
                         ..Default::default()
                     },
                     true,
+                    slippage_calculator,
                 ))),
                 SolverType::CowDexAg => Ok(shared(create_http_solver(
                     account,
@@ -353,6 +365,7 @@ pub fn create(
                     "CowDexAg".to_string(),
                     SolverConfig::default(),
                     false,
+                    slippage_calculator,
                 ))),
                 SolverType::Quasimodo => Ok(shared(create_http_solver(
                     account,
@@ -363,6 +376,7 @@ pub fn create(
                         ..Default::default()
                     },
                     true,
+                    slippage_calculator,
                 ))),
                 SolverType::OneInch => Ok(shared(single_order(Box::new(
                     OneInchSolver::with_disabled_protocols(
@@ -373,8 +387,7 @@ pub fn create(
                         disabled_one_inch_protocols.clone(),
                         http_factory.create(),
                         one_inch_url.clone(),
-                        oneinch_slippage_bps,
-                        oneinch_max_slippage_in_wei,
+                        slippage_calculator,
                         one_inch_referrer_address,
                     )?,
                 )))),
@@ -385,8 +398,8 @@ pub fn create(
                         settlement_contract.clone(),
                         chain_id,
                         zeroex_api.clone(),
-                        zeroex_slippage_bps,
                         disabled_zeroex_sources.clone(),
+                        slippage_calculator,
                     )
                     .unwrap();
                     Ok(shared(single_order(Box::new(zeroex_solver))))
@@ -396,11 +409,11 @@ pub fn create(
                     web3.clone(),
                     settlement_contract.clone(),
                     token_info_fetcher.clone(),
-                    paraswap_slippage_bps,
                     disabled_paraswap_dexs.clone(),
                     http_factory.create(),
                     paraswap_partner.clone(),
                     None,
+                    slippage_calculator,
                 ))))),
                 SolverType::BalancerSor => {
                     Ok(shared(single_order(Box::new(BalancerSorSolver::new(
@@ -417,17 +430,10 @@ pub fn create(
                             chain_id,
                         )?),
                         allowance_mananger.clone(),
+                        slippage_calculator,
                     )))))
                 }
             };
-
-            if let Ok(solver) = &solver {
-                tracing::info!(
-                    "initialized solver {} at address {:#x}",
-                    solver.name(),
-                    solver.account().address()
-                )
-            }
             solver
         })
         .collect::<Result<_>>()?;
@@ -442,16 +448,25 @@ pub fn create(
                 ..Default::default()
             },
             false,
+            slippage_configuration.get_global_calculator(),
         ))
     });
     solvers.extend(external_solvers);
+
+    for solver in &solvers {
+        tracing::info!(
+            "initialized solver {} at address {:#x}",
+            solver.name(),
+            solver.account().address()
+        )
+    }
 
     Ok(solvers)
 }
 
 /// Returns a naive solver to be used e.g. in e2e tests.
 pub fn naive_solver(account: Account) -> Arc<dyn Solver> {
-    Arc::new(NaiveSolver::new(account))
+    Arc::new(NaiveSolver::new(account, SlippageCalculator::default()))
 }
 
 /// A solver that remove limit order below a certain threshold and

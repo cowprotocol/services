@@ -11,18 +11,18 @@ use crate::{
 use anyhow::Result;
 use ethcontract::Account;
 use model::TokenPair;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
 pub struct NaiveSolver {
     account: Account,
-    slippage_calculator: Arc<SlippageCalculator>,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl NaiveSolver {
-    pub fn new(account: Account) -> Self {
+    pub fn new(account: Account, slippage_calculator: SlippageCalculator) -> Self {
         Self {
             account,
-            slippage_calculator: Default::default(),
+            slippage_calculator,
         }
     }
 }

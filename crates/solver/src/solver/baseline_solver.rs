@@ -20,7 +20,7 @@ use std::{collections::HashMap, sync::Arc};
 pub struct BaselineSolver {
     account: Account,
     base_tokens: Arc<BaseTokens>,
-    slippage_calculator: Arc<SlippageCalculator>,
+    slippage_calculator: SlippageCalculator,
 }
 
 #[async_trait::async_trait]
@@ -113,11 +113,15 @@ impl BaselineSolvable for Amm {
 }
 
 impl BaselineSolver {
-    pub fn new(account: Account, base_tokens: Arc<BaseTokens>) -> Self {
+    pub fn new(
+        account: Account,
+        base_tokens: Arc<BaseTokens>,
+        slippage_calculator: SlippageCalculator,
+    ) -> Self {
         Self {
             account,
             base_tokens,
-            slippage_calculator: Default::default(),
+            slippage_calculator,
         }
     }
 
@@ -389,7 +393,7 @@ mod tests {
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let base_tokens = Arc::new(BaseTokens::new(native_token, &[]));
-        let solver = BaselineSolver::new(account(), base_tokens);
+        let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -496,7 +500,7 @@ mod tests {
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let base_tokens = Arc::new(BaseTokens::new(native_token, &[]));
-        let solver = BaselineSolver::new(account(), base_tokens);
+        let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         let result = solver.must_solve(orders, liquidity);
         assert_eq!(
             result.clearing_prices(),
@@ -567,7 +571,7 @@ mod tests {
         let liquidity = amms.into_iter().map(Liquidity::ConstantProduct).collect();
 
         let base_tokens = Arc::new(BaseTokens::new(H160::zero(), &[]));
-        let solver = BaselineSolver::new(account(), base_tokens);
+        let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         assert_eq!(
             solver
                 .solve_(orders, liquidity, SlippageContext::default())
@@ -625,7 +629,7 @@ mod tests {
             addr!("c778417e063141139fce010982780140aa0cd5ab"),
             &[],
         ));
-        let solver = BaselineSolver::new(account(), base_tokens);
+        let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         assert_eq!(
             solver
                 .solve_(vec![order], liquidity, SlippageContext::default())
@@ -706,7 +710,7 @@ mod tests {
             Liquidity::BalancerWeighted(pool_1),
         ];
         let base_tokens = Arc::new(BaseTokens::new(tokens[0], &tokens));
-        let solver = BaselineSolver::new(account(), base_tokens);
+        let solver = BaselineSolver::new(account(), base_tokens, SlippageCalculator::default());
         let settlements = solver.solve_(vec![order], liquidity, Default::default());
         assert!(settlements.is_empty());
     }

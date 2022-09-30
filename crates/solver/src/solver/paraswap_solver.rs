@@ -50,11 +50,11 @@ impl ParaswapSolver {
         web3: Web3,
         settlement_contract: GPv2Settlement,
         token_info: Arc<dyn TokenInfoFetching>,
-        slippage_bps: u32,
         disabled_paraswap_dexs: Vec<String>,
         client: Client,
         partner: Option<String>,
         rate_limiter: Option<RateLimiter>,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         let allowance_fetcher = AllowanceManager::new(web3, settlement_contract.address());
 
@@ -69,7 +69,7 @@ impl ParaswapSolver {
                 rate_limiter,
             }),
             disabled_paraswap_dexs,
-            slippage_calculator: SlippageCalculator::from_bps(slippage_bps, None),
+            slippage_calculator,
         }
     }
 }
@@ -553,11 +553,11 @@ mod tests {
             web3,
             settlement,
             token_info_fetcher,
-            1,
             vec![],
             Client::new(),
             None,
             None,
+            SlippageCalculator::default(),
         );
 
         let settlement = solver

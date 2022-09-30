@@ -28,7 +28,7 @@ pub struct BalancerSorSolver {
     settlement: GPv2Settlement,
     api: Arc<dyn BalancerSorApi>,
     allowance_fetcher: Arc<dyn AllowanceManaging>,
-    slippage_calculator: Arc<SlippageCalculator>,
+    slippage_calculator: SlippageCalculator,
 }
 
 impl BalancerSorSolver {
@@ -38,6 +38,7 @@ impl BalancerSorSolver {
         settlement: GPv2Settlement,
         api: Arc<dyn BalancerSorApi>,
         allowance_fetcher: Arc<dyn AllowanceManaging>,
+        slippage_calculator: SlippageCalculator,
     ) -> Self {
         Self {
             account,
@@ -45,13 +46,8 @@ impl BalancerSorSolver {
             settlement,
             api,
             allowance_fetcher,
-            slippage_calculator: Arc::new(SlippageCalculator::default()),
+            slippage_calculator,
         }
-    }
-
-    pub fn with_slippage(mut self, calculator: Arc<SlippageCalculator>) -> Self {
-        self.slippage_calculator = calculator;
-        self
     }
 }
 
@@ -322,6 +318,7 @@ mod tests {
             settlement.clone(),
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let result = solver
@@ -444,6 +441,7 @@ mod tests {
             settlement.clone(),
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let result = solver
@@ -519,6 +517,7 @@ mod tests {
             settlement,
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         assert!(matches!(
@@ -549,6 +548,7 @@ mod tests {
             settlement,
             Arc::new(api),
             Arc::new(allowance_fetcher),
+            SlippageCalculator::default(),
         );
 
         let sell_settlement = solver

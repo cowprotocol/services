@@ -1,13 +1,163 @@
 //! Module defining slippage computation for AMM liquidiy.
 
 use super::LimitOrder;
-use crate::{settlement::external_prices::ExternalPrices, solver::Auction};
-use anyhow::{Context as _, Result};
+use crate::{
+    settlement::external_prices::ExternalPrices,
+    solver::{Auction, SolverType},
+};
+use anyhow::{anyhow, Context as _, Result};
+use clap::{Parser, ValueEnum as _};
 use ethcontract::{H160, U256};
 use model::order::OrderKind;
 use num::{BigInt, BigRational, Integer as _, ToPrimitive as _};
 use once_cell::sync::OnceCell;
-use std::{borrow::Cow, cmp};
+use std::{
+    borrow::Cow,
+    cmp,
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+};
+
+// Temporary workaround for <https://github.com/clap-rs/clap/issues/4279>
+pub type Arguments = SlippageArguments;
+
+/// Slippage configuration command line arguments.
+#[derive(Debug, Parser)]
+pub struct SlippageArguments {
+    /// The relative slippage tolerance to apply to on-chain swaps. This flag
+    /// expects a comma-separated list of relative slippage values in basis
+    /// points per solver. If a solver is not included, it will use the default
+    /// global value. For example, "10,oneinch=20,zeroex=5" will configure all
+    /// solvers to have 10 BPS of relative slippage tolerance, with 1Inch and
+    /// 0x solvers configured for 20 and 5 BPS respectively. The global value
+    /// can be specified as `~` to keep it its default. For example,
+    /// "~,paraswap=42" will configure all solvers to use the default
+    /// configuration, while overriding the ParaSwap solver to use 42 BPS.
+    #[clap(long, env, default_value = "10")]
+    pub relative_slippage_bps: SlippageArgumentValues<u32>,
+
+    /// The absolute slippage tolerance in native token units to cap relative
+    /// slippage at. This makes it so very large trades use a potentially
+    /// tighter slippage tolerance to reduce absolute losses. This parameter
+    /// uses the same format as `--relative-slippage-bps`. For example,
+    /// "~,oneinch=0.001,zeroex=0.042" will disable absolute slippage tolerance
+    /// globally for all solvers, while overriding 1Inch and 0x solvers to cap
+    /// absolute slippage at 0.001Ξ and 0.042Ξ respectively.
+    #[clap(long, env, default_value = "~")]
+    pub absolute_slippage_in_native_token: SlippageArgumentValues<f64>,
+}
+
+impl Arguments {
+    /// Returns the slippage calculator for the specified solver.
+    pub fn get_calculator(&self, solver: SolverType) -> SlippageCalculator {
+        let bps = self
+            .relative_slippage_bps
+            .get(solver)
+            .copied()
+            .unwrap_or(DEFAULT_MAX_SLIPPAGE_BPS);
+        let absolute = self
+            .absolute_slippage_in_native_token
+            .get(solver)
+            .map(|value| U256::from_f64_lossy(value * 1e18));
+
+        SlippageCalculator::from_bps(bps, absolute)
+    }
+
+    /// Returns the slippage calculator for the specified solver.
+    pub fn get_global_calculator(&self) -> SlippageCalculator {
+        let bps = self
+            .relative_slippage_bps
+            .get_global()
+            .copied()
+            .unwrap_or(DEFAULT_MAX_SLIPPAGE_BPS);
+        let absolute = self
+            .absolute_slippage_in_native_token
+            .get_global()
+            .map(|value| U256::from_f64_lossy(value * 1e18));
+
+        SlippageCalculator::from_bps(bps, absolute)
+    }
+}
+
+impl Display for Arguments {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        writeln!(f, "relative_slippage_bps: {}", self.relative_slippage_bps)?;
+        writeln!(
+            f,
+            "absolute_slippage_in_native_token: {}",
+            self.absolute_slippage_in_native_token,
+        )?;
+
+        Ok(())
+    }
+}
+
+/// A comma separated slippage value per solver.
+#[derive(Clone, Debug)]
+pub struct SlippageArgumentValues<T>(Option<T>, HashMap<SolverType, T>);
+
+impl<T> SlippageArgumentValues<T> {
+    /// Gets the slippage configuration value for the specified solver.
+    pub fn get(&self, solver: SolverType) -> Option<&T> {
+        self.1.get(&solver).or(self.0.as_ref())
+    }
+
+    /// Gets the global slippage configuration value.
+    pub fn get_global(&self) -> Option<&T> {
+        self.0.as_ref()
+    }
+}
+
+impl<T> Display for SlippageArgumentValues<T>
+where
+    T: Display,
+{
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        match &self.0 {
+            Some(global) => write!(f, "{global}")?,
+            None => f.write_str("~")?,
+        }
+        for (solver, value) in &self.1 {
+            write!(f, ",{solver:?}={value}")?;
+        }
+        Ok(())
+    }
+}
+
+impl<T> FromStr for SlippageArgumentValues<T>
+where
+    T: FromStr,
+    anyhow::Error: From<T::Err>,
+{
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut values = s.split(',');
+
+        let global_value = values
+            .next()
+            .map(|value| match value {
+                "~" => Ok(None),
+                _ => Ok(Some(value.parse()?)),
+            })
+            .transpose()?
+            .flatten();
+        let solver_values = values
+            .map(|part| {
+                let (solver, value) = part
+                    .split_once('=')
+                    .context("malformed solver slippage value")?;
+                Ok((
+                    SolverType::from_str(solver, true).map_err(|message| anyhow!(message))?,
+                    value.parse()?,
+                ))
+            })
+            .collect::<Result<HashMap<_, _>>>()?;
+
+        Ok(Self(global_value, solver_values))
+    }
+}
 
 /// Constant maximum slippage of 10 BPS (0.1%) to use for on-chain liquidity.
 pub const DEFAULT_MAX_SLIPPAGE_BPS: u32 = 10;

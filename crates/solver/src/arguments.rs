@@ -1,4 +1,5 @@
 use crate::{
+    liquidity::slippage,
     settlement_access_list::AccessListEstimatorType,
     solver::{ExternalSolverArg, SolverAccountArg, SolverType},
 };
@@ -17,6 +18,9 @@ pub struct Arguments {
 
     #[clap(flatten)]
     pub http_client: http_client::Arguments,
+
+    #[clap(flatten)]
+    pub slippage: slippage::Arguments,
 
     /// The API endpoint to fetch the orderbook
     #[clap(long, env, default_value = "http://localhost:8080")]
@@ -138,22 +142,6 @@ pub struct Arguments {
         value_parser = shared::arguments::wei_from_gwei
     )]
     pub gas_price_cap: f64,
-
-    /// The slippage tolerance we apply to the price quoted by Paraswap
-    #[clap(long, env, default_value = "10")]
-    pub paraswap_slippage_bps: u32,
-
-    /// The slippage tolerance we apply to the price quoted by zeroEx
-    #[clap(long, env, default_value = "10")]
-    pub zeroex_slippage_bps: u32,
-
-    /// The default slippage tolerance we apply to the price quoted by OneInchSolver
-    #[clap(long, env, default_value = "10")]
-    pub oneinch_slippage_bps: u32,
-
-    /// The maximum slippage in ETH we are willing to incur per trade on 1Inch
-    #[clap(long, env)]
-    pub oneinch_max_slippage_in_eth: Option<f64>,
 
     /// How to to submit settlement transactions.
     /// Expected to contain either:
@@ -299,6 +287,7 @@ impl std::fmt::Display for Arguments {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.shared)?;
         write!(f, "{}", self.http_client)?;
+        write!(f, "{}", self.slippage)?;
         writeln!(f, "orderbook_url: {}", self.orderbook_url)?;
         writeln!(f, "mip_solver_url: {}", self.mip_solver_url)?;
         writeln!(f, "quasimodo_solver_url: {}", self.quasimodo_solver_url)?;
@@ -334,9 +323,6 @@ impl std::fmt::Display for Arguments {
             self.market_makable_token_list
         )?;
         writeln!(f, "gas_price_cap: {}", self.gas_price_cap)?;
-        writeln!(f, "paraswap_slippage_bps: {}", self.paraswap_slippage_bps)?;
-        writeln!(f, "zeroex_slippage_bps: {}", self.zeroex_slippage_bps)?;
-        writeln!(f, "oneinch_slippage_bps: {}", self.oneinch_slippage_bps)?;
         writeln!(f, "transaction_strategy: {:?}", self.transaction_strategy)?;
         writeln!(
             f,
