@@ -293,31 +293,33 @@ where
         latest_blocks: &[BlockNumberHash],
         is_reorg: bool,
     ) -> Result<()> {
-        anyhow::ensure!(
+        debug_assert!(
             !latest_blocks.is_empty(),
             "entered update events with empty block list"
         );
         let (blocks, events) = self.past_events_by_block_hashes(latest_blocks).await;
         track_block_range(&format!("range_{}", blocks.len()));
-        if blocks != latest_blocks {
-            tracing::debug!(
-                "some of the blocks filtered out, partial update: {:?} - {:?}",
-                blocks.first(),
-                blocks.last()
-            );
-            if blocks.is_empty() {
-                return Ok(());
-            }
+        if blocks.is_empty() {
+            return Err(anyhow::anyhow!(
+                "no blocks to be updated - all filtered out"
+            ));
         }
 
+        // update storage regardless if it's a full update or partial update
         let range = RangeInclusive::try_new(blocks.first().unwrap().0, blocks.last().unwrap().0)?;
         if is_reorg {
             self.store.replace_events(events, range.clone()).await?;
         } else {
             self.store.append_events(events).await?;
         }
-
         self.update_last_handled_blocks(&blocks);
+
+        // in case of partial update return error as an indicator that update did not finish as expected
+        // either way we update partially to have the most latest state in the storage in every moment
+        if blocks != latest_blocks {
+            tracing::debug!("partial update: {:?} - {:?}", blocks.first(), blocks.last());
+            return Err(anyhow::anyhow!("update done partially"));
+        }
         Ok(())
     }
 
