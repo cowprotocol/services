@@ -21,6 +21,10 @@ pub struct Arguments {
     #[clap(long, env, default_value = "31172bb2b5f97e8e89cf3376495d7bc7252f5a53")]
     pub ethflow_contract: H160,
 
+    // Feature flag for ethflow
+    #[clap(long, env)]
+    pub enable_ethflow_orders: bool,
+
     /// A tracing Ethereum node URL to connect to, allowing a separate node URL
     /// to be used exclusively for tracing calls.
     #[clap(long, env)]
@@ -121,6 +125,15 @@ pub struct Arguments {
     /// List of account addresses to be denied from order creation
     #[clap(long, env, use_value_delimiter = true)]
     pub banned_users: Vec<H160>,
+
+    /// If the auction hasn't been updated in this amount of time the pod fails the liveness check.
+    #[clap(
+        long,
+        env,
+        default_value = "300",
+        parse(try_from_str = shared::arguments::duration_from_seconds),
+    )]
+    pub max_auction_age: Duration,
 }
 
 impl std::fmt::Display for Arguments {
@@ -170,6 +183,7 @@ impl std::fmt::Display for Arguments {
             self.min_order_validity_period
         )?;
         writeln!(f, "banned_users: {:?}", self.banned_users)?;
+        writeln!(f, "max_auction_age: {:?}", self.max_auction_age)?;
         Ok(())
     }
 }

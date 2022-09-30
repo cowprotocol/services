@@ -325,6 +325,7 @@ async fn build_auction_converter(
                     cache_config,
                     common.current_block_stream.clone(),
                     common.http_factory.create(),
+                    common.web3.clone(),
                     &contracts,
                     args.balancer_pool_deny_list.clone(),
                 )
@@ -476,6 +477,12 @@ async fn build_drivers(common: &CommonComponents, args: &Arguments) -> Vec<(Arc<
     });
     let auction_converter = build_auction_converter(common, args).await.unwrap();
     let metrics = Arc::new(Metrics::new().unwrap());
+    metrics.initialize_solver_metrics(
+        &solvers
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
 
     let settlement_ranker = Arc::new(SettlementRanker {
         metrics: metrics.clone(),

@@ -194,6 +194,10 @@ impl SolvableOrdersCache {
 
         Ok(())
     }
+
+    pub fn last_update_time(&self) -> Instant {
+        self.cache.lock().unwrap().orders.update_time
+    }
 }
 
 /// Filters all orders whose owners are in the set of "banned" users.

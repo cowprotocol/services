@@ -142,6 +142,7 @@ async fn main() {
                     cache_config,
                     current_block_stream.clone(),
                     http_factory.create(),
+                    web3.clone(),
                     &contracts,
                     args.shared.balancer_pool_deny_list,
                 )
@@ -246,6 +247,13 @@ async fn main() {
         args.max_merged_settlements,
     )
     .expect("failure creating solvers");
+
+    metrics.initialize_solver_metrics(
+        &solver
+            .iter()
+            .map(|solver| solver.name())
+            .collect::<Vec<_>>(),
+    );
 
     let zeroex_liquidity = if baseline_sources.contains(&BaselineSource::ZeroEx) {
         Some(ZeroExLiquidity::new(

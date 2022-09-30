@@ -20,6 +20,7 @@ use model::{
 };
 use number_conversions::u256_to_big_decimal;
 use shared::{
+    current_block::RangeInclusive,
     db_order_conversions::{
         buy_token_destination_into, order_kind_into, sell_token_source_into, signing_scheme_into,
     },
@@ -121,7 +122,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
     async fn replace_events(
         &mut self,
         events: Vec<EthContractEvent<ContractEvent>>,
-        range: std::ops::RangeInclusive<shared::event_handling::BlockNumber>,
+        range: RangeInclusive<u64>,
     ) -> Result<()> {
         let (custom_onchain_data, broadcasted_order_data, orders) =
             self.extract_custom_and_general_order_data(events).await?;
@@ -135,7 +136,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
 
         database::onchain_broadcasted_orders::mark_as_reorged(
             &mut transaction,
-            range.start().to_u64() as i64,
+            *range.start() as i64,
         )
         .await
         .context("mark_onchain_order_events failed")?;
@@ -152,7 +153,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
         .await
         .context("append_onchain_orders failed")?;
 
-        database::orders::insert_orders(&mut transaction, orders.as_slice())
+        database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
         transaction.commit().await.context("commit")?;
@@ -181,7 +182,7 @@ impl<T: Sync + Send + Clone, W: Sync + Send + Clone> EventStoring<ContractEvent>
             .await
             .context("append_custom_onchain_orders failed")?;
 
-        database::orders::insert_orders(&mut transaction, orders.as_slice())
+        database::orders::insert_orders_and_ignore_conflicts(&mut transaction, orders.as_slice())
             .await
             .context("insert_orders failed")?;
 

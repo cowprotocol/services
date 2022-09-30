@@ -1,5 +1,5 @@
 use crate::Web3;
-use anyhow::{anyhow, Context as _, Result};
+use anyhow::{anyhow, ensure, Context as _, Result};
 use primitive_types::H256;
 use std::{
     sync::{
@@ -11,11 +11,35 @@ use std::{
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use web3::{
+    helpers,
     types::{BlockId, BlockNumber},
-    Transport,
+    BatchTransport, Transport,
 };
 
 pub type Block = web3::types::Block<H256>;
+pub type BlockNumberHash = (u64, H256);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RangeInclusive<T: Ord> {
+    start: T,
+    end: T,
+}
+
+impl<T: Ord> RangeInclusive<T> {
+    pub fn try_new(start: T, end: T) -> Result<Self> {
+        ensure!(end >= start, "end has to be bigger or equal to start");
+        Ok(Self { start, end })
+    }
+    pub fn start(&self) -> &T {
+        &self.start
+    }
+    pub fn end(&self) -> &T {
+        &self.end
+    }
+    pub fn into_inner(self) -> (T, T) {
+        (self.start, self.end)
+    }
+}
 
 /// Creates a cloneable stream that yields the current block whenever it changes.
 ///
@@ -113,15 +137,11 @@ pub fn block_number(block: &Block) -> Result<u64> {
 #[async_trait::async_trait]
 pub trait BlockRetrieving {
     async fn current_block(&self) -> Result<Block>;
-    async fn current_block_number(&self) -> Result<u64>;
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>>;
 }
 
 #[async_trait::async_trait]
-impl<T> BlockRetrieving for web3::Web3<T>
-where
-    T: Transport + Send + Sync,
-    T::Out: Send,
-{
+impl BlockRetrieving for Web3 {
     async fn current_block(&self) -> Result<Block> {
         self.eth()
             .block(BlockId::Number(BlockNumber::Latest))
@@ -130,13 +150,37 @@ where
             .ok_or_else(|| anyhow!("no current block"))
     }
 
-    async fn current_block_number(&self) -> Result<u64> {
-        Ok(self
-            .eth()
-            .block_number()
-            .await
-            .context("failed to get current block number")?
-            .as_u64())
+    /// get blocks defined by the range (inclusive)
+    /// if successful, function guarantees full range of blocks in Result (does not return partial results)
+    async fn blocks(&self, range: RangeInclusive<u64>) -> Result<Vec<BlockNumberHash>> {
+        let include_txs = helpers::serialize(&false);
+        let (start, end) = range.into_inner();
+        let mut batch_request = Vec::with_capacity((end - start + 1) as usize);
+        for i in start..=end {
+            let num = helpers::serialize(&BlockNumber::Number(i.into()));
+            let request = self
+                .transport()
+                .prepare("eth_getBlockByNumber", vec![num, include_txs.clone()]);
+            batch_request.push(request);
+        }
+
+        // send_batch guarantees the size and order of the responses to match the requests
+        self.transport()
+            .send_batch(batch_request.iter().cloned())
+            .await?
+            .into_iter()
+            .map(|response| match response {
+                Ok(response) => serde_json::from_value::<web3::types::Block<H256>>(response)
+                    .context("unexpected response format")
+                    .and_then(|response| {
+                        Ok((
+                            response.number.context("missing block number")?.as_u64(),
+                            response.hash.context("missing hash")?,
+                        ))
+                    }),
+                Err(err) => Err(anyhow!("web3 error: {}", err)),
+            })
+            .collect()
     }
 }
 
@@ -170,8 +214,9 @@ fn block_number_increased(current_block: &AtomicU64, new_block: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::transport::create_test_transport;
+    use crate::transport::{create_env_test_transport, create_test_transport};
     use futures::StreamExt;
+    use num::Saturating;
 
     #[tokio::test]
     #[ignore]
@@ -187,6 +232,39 @@ mod tests {
             let block = stream.next().await.unwrap();
             println!("new block number {}", block.number.unwrap().as_u64());
         }
+    }
+
+    #[tokio::test]
+    #[ignore]
+    async fn current_blocks_test() {
+        let transport = create_env_test_transport();
+        let web3 = Web3::new(transport);
+
+        // single block
+        let range = RangeInclusive::try_new(5, 5).unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks.last().unwrap().0, 5);
+
+        // multiple blocks
+        let range = RangeInclusive::try_new(5, 8).unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 4);
+        assert_eq!(blocks.last().unwrap().0, 8);
+        assert_eq!(blocks.first().unwrap().0, 5);
+
+        // shortened blocks
+        let current_block_number = 5;
+        let length = 25;
+        let range = RangeInclusive::try_new(
+            current_block_number.saturating_sub(length),
+            current_block_number,
+        )
+        .unwrap();
+        let blocks = web3.blocks(range).await.unwrap();
+        assert_eq!(blocks.len(), 6);
+        assert_eq!(blocks.last().unwrap().0, 5);
+        assert_eq!(blocks.first().unwrap().0, 0);
     }
 
     #[test]

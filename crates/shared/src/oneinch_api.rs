@@ -4,7 +4,6 @@
 //! <https://docs.1inch.io/docs/aggregation-protocol/api/swagger>
 //! Although there is no documentation about API v4.1, it exists and is identical to v4.0 except it
 //! uses EIP 1559 gas prices.
-use crate::solver_utils::Slippage;
 use anyhow::{ensure, Result};
 use cached::{Cached, TimedCache};
 use ethcontract::{H160, U256};
@@ -209,6 +208,36 @@ pub struct SwapQuery {
     /// default: true
     pub allow_partial_fill: Option<bool>,
     pub quote: SellOrderQuoteQuery,
+}
+
+/// A slippage amount.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd, Default)]
+pub struct Slippage(f64);
+
+impl Slippage {
+    pub const ONE_PERCENT: Self = Self(1.);
+
+    /// Creates a slippage amount from the specified percentage.
+    pub fn percentage(amount: f64) -> Result<Self> {
+        // 1Inch API only accepts a slippage from 0 to 50.
+        ensure!(
+            (0. ..=50.).contains(&amount),
+            "slippage outside of [0%, 50%] range"
+        );
+        Ok(Slippage(amount))
+    }
+
+    /// Creates a slippage amount from the specified basis points.
+    pub fn from_basis_points(basis_points: u32) -> Result<Self> {
+        let percent = (basis_points as f64) / 100.;
+        Slippage::percentage(percent)
+    }
+}
+
+impl Display for Slippage {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }
 
 impl SwapQuery {
@@ -600,7 +629,7 @@ mod tests {
     #[test]
     fn slippage_from_basis_points() {
         assert_eq!(
-            Slippage::percentage_from_basis_points(50).unwrap(),
+            Slippage::from_basis_points(50).unwrap(),
             Slippage::percentage(0.5).unwrap(),
         )
     }
@@ -624,7 +653,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+            slippage: Slippage::from_basis_points(50).unwrap(),
             disable_estimate: None,
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -663,7 +692,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+            slippage: Slippage::from_basis_points(50).unwrap(),
             disable_estimate: Some(true),
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -855,7 +884,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+                slippage: Slippage::from_basis_points(50).unwrap(),
                 disable_estimate: None,
                 quote: SellOrderQuoteQuery::with_default_options(
                     addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -880,7 +909,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::percentage_from_basis_points(50).unwrap(),
+                slippage: Slippage::from_basis_points(50).unwrap(),
                 disable_estimate: Some(true),
                 quote: SellOrderQuoteQuery {
                     from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),

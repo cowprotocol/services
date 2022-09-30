@@ -14,7 +14,7 @@ use crate::{
 use contracts::{
     BalancerV2Vault, CowProtocolToken, CowProtocolVirtualToken, IUniswapV3Factory, WETH9,
 };
-use ethcontract::errors::DeployError;
+use ethcontract::{errors::DeployError, BlockId, BlockNumber};
 use model::DomainSeparator;
 use shared::{
     account_balances::Web3BalanceFetcher,
@@ -59,18 +59,21 @@ use shared::{
 };
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-struct Liveness;
+struct Liveness {
+    solvable_orders_cache: Arc<SolvableOrdersCache>,
+    max_auction_age: Duration,
+}
+
 #[async_trait::async_trait]
 impl LivenessChecking for Liveness {
     async fn is_alive(&self) -> bool {
-        true
+        let age = self.solvable_orders_cache.last_update_time().elapsed();
+        age <= self.max_auction_age
     }
 }
 
 /// Assumes tracing and metrics registry have already been set up.
 pub async fn main(args: arguments::Arguments) {
-    let serve_metrics = shared::metrics::serve_metrics(Arc::new(Liveness), args.metrics_address);
-
     let db = Postgres::new(args.db_url.as_str()).await.unwrap();
     let db_metrics = crate::database::database_metrics(db.clone());
 
@@ -236,6 +239,7 @@ pub async fn main(args: arguments::Arguments) {
                 cache_config,
                 current_block_stream.clone(),
                 http_factory.create(),
+                web3.clone(),
                 &contracts,
                 args.shared.balancer_pool_deny_list,
             )
@@ -423,10 +427,16 @@ pub async fn main(args: arguments::Arguments) {
 
     let sync_start = if args.skip_event_sync {
         web3.eth()
-            .block_number()
+            .block(BlockId::Number(BlockNumber::Latest))
             .await
-            .map(|block| block.as_u64())
             .ok()
+            .flatten()
+            .map(|block| {
+                (
+                    block.number.expect("number must exist").as_u64(),
+                    block.hash.expect("hash must exist"),
+                )
+            })
     } else {
         None
     };
@@ -531,14 +541,21 @@ pub async fn main(args: arguments::Arguments) {
         sync_start,
     ));
 
-    let mut service_maintainer = shared::maintenance::ServiceMaintenance {
-        maintainers: vec![
-            pool_fetcher,
-            event_updater,
-            broadcaster_event_updater,
-            Arc::new(db.clone()),
-        ],
+    let mut service_maintainer = if args.enable_ethflow_orders {
+        shared::maintenance::ServiceMaintenance {
+            maintainers: vec![
+                pool_fetcher,
+                event_updater,
+                broadcaster_event_updater,
+                Arc::new(db.clone()),
+            ],
+        }
+    } else {
+        shared::maintenance::ServiceMaintenance {
+            maintainers: vec![pool_fetcher, event_updater, Arc::new(db.clone())],
+        }
     };
+
     if let Some(balancer) = balancer_pool_fetcher {
         service_maintainer.maintainers.push(balancer);
     }
@@ -547,6 +564,12 @@ pub async fn main(args: arguments::Arguments) {
     }
     let maintenance_task =
         tokio::task::spawn(service_maintainer.run_maintenance_on_new_block(current_block_stream));
+
+    let liveness = Liveness {
+        max_auction_age: args.max_auction_age,
+        solvable_orders_cache,
+    };
+    let serve_metrics = shared::metrics::serve_metrics(Arc::new(liveness), args.metrics_address);
 
     tokio::select! {
         result = serve_metrics => tracing::error!(?result, "serve_metrics exited"),
