@@ -2,12 +2,13 @@ use crate::{
     app_id::AppId,
     order::{BuyTokenDestination, OrderKind, SellTokenSource},
     signature::SigningScheme,
-    time, u256_decimal,
+    time, u256_decimal::{self, DecimalU256},
 };
 use anyhow::bail;
 use chrono::{DateTime, Utc};
 use primitive_types::{H160, U256};
 use serde::{de, ser::SerializeStruct as _, Deserialize, Deserializer, Serialize, Serializer};
+use serde_with::serde_as;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "snake_case")]
@@ -32,7 +33,8 @@ pub enum QuoteSigningScheme {
         onchain_order: bool,
         #[serde(
             rename = "verificationGasLimit",
-            default = "default_verification_gas_limit"
+            default = "default_verification_gas_limit",
+            with = "u256_decimal"
         )]
         verification_gas_limit: U256,
     },
@@ -51,12 +53,14 @@ impl QuoteSigningScheme {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct QuoteSigningDeserializationData {
     #[serde(default)]
     signing_scheme: SigningScheme,
     #[serde(default)]
+    #[serde_as(as = "Option<DecimalU256>")]
     verification_gas_limit: Option<U256>,
     #[serde(default)]
     onchain_order: bool,
@@ -384,7 +388,7 @@ mod tests {
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit: 10_000_u128.into(),
+                verification_gas_limit: 1000000000000000000_u128.into(),
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
