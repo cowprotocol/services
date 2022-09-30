@@ -209,6 +209,7 @@ mod tests {
     };
     use contracts::{GPv2Settlement, WETH9};
     use ethcontract::{Web3, H160, U256};
+    use futures::FutureExt as _;
     use mockall::{predicate::*, Sequence};
     use model::order::{Order, OrderData, OrderKind};
     use shared::{
@@ -262,16 +263,22 @@ mod tests {
         let native_token = H160::from_low_u64_be(3);
 
         client.expect_get_spender().returning(|| {
-            Ok(Spender {
-                address: H160::zero(),
-            })
+            async {
+                Ok(Spender {
+                    address: H160::zero(),
+                })
+            }
+            .boxed()
         });
         client.expect_get_swap().returning(|_| {
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 99.into(),
-                ..Default::default()
-            })
+            async {
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 99.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         allowance_fetcher
@@ -342,22 +349,31 @@ mod tests {
             .returning(|_| Ok(Approval::AllowanceSufficient));
 
         client.expect_get_liquidity_sources().returning(|| {
-            Ok(Protocols {
-                protocols: vec!["GoodProtocol".into(), "BadProtocol".into()],
-            })
+            async {
+                Ok(Protocols {
+                    protocols: vec!["GoodProtocol".into(), "BadProtocol".into()],
+                })
+            }
+            .boxed()
         });
         client.expect_get_spender().returning(|| {
-            Ok(Spender {
-                address: H160::zero(),
-            })
+            async {
+                Ok(Spender {
+                    address: H160::zero(),
+                })
+            }
+            .boxed()
         });
         client.expect_get_swap().times(1).returning(|query| {
-            assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 100.into(),
-                ..Default::default()
-            })
+            async move {
+                assert_eq!(query.quote.protocols, Some(vec!["GoodProtocol".into()]));
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 100.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         let solver = OneInchSolver {
@@ -391,13 +407,16 @@ mod tests {
 
         client
             .expect_get_spender()
-            .returning(move || Ok(Spender { address: spender }));
+            .returning(move || async move { Ok(Spender { address: spender }) }.boxed());
         client.expect_get_swap().returning(|_| {
-            Ok(Swap {
-                from_token_amount: 100.into(),
-                to_token_amount: 100.into(),
-                ..Default::default()
-            })
+            async {
+                Ok(Swap {
+                    from_token_amount: 100.into(),
+                    to_token_amount: 100.into(),
+                    ..Default::default()
+                })
+            }
+            .boxed()
         });
 
         // On first invocation no prior allowance, then max allowance set.

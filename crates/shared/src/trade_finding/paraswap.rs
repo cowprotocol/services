@@ -51,7 +51,7 @@ impl ParaswapTradeFinder {
     }
 
     fn shared_quote(&self, query: &Query) -> BoxShared<Result<InternalQuote, TradeError>> {
-        self.sharing.shared_or_else(*query, || {
+        self.sharing.shared_or_else(*query, |_| {
             let inner = self.inner.clone();
             let query = *query;
             async move { inner.quote(&query).await }.boxed()
