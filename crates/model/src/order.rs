@@ -15,7 +15,7 @@ use num::BigUint;
 use primitive_types::{H160, H256, U256};
 use secp256k1::ONE_KEY;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
-use serde_with::serde_as;
+use serde_with::{serde_as, DisplayFromStr};
 use std::{
     collections::HashSet,
     fmt::{self, Debug, Display},
@@ -391,10 +391,10 @@ pub struct OrderMetadata {
     #[serde_as(as = "Option<DecimalU256>")]
     pub available_balance: Option<U256>,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_buy_amount: BigUint,
     #[derivative(Debug(format_with = "debug_biguint_to_string"))]
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub executed_sell_amount: BigUint,
     #[serde(default, with = "u256_decimal")]
     pub executed_sell_amount_before_fees: U256,

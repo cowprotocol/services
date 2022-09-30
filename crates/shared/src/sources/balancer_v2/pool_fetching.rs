@@ -29,7 +29,7 @@ use crate::{
     Web3, Web3Transport,
 };
 use anyhow::{Context, Result};
-use clap::ArgEnum;
+use clap::ValueEnum;
 use contracts::{
     BalancerV2LiquidityBootstrappingPoolFactory,
     BalancerV2NoProtocolFeeLiquidityBootstrappingPoolFactory, BalancerV2StablePoolFactory,
@@ -144,7 +144,7 @@ pub struct BalancerPoolFetcher {
 }
 
 /// An enum containing all supported Balancer factory types.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ArgEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum BalancerFactoryKind {
     Weighted,

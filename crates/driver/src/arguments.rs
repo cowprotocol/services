@@ -57,7 +57,7 @@ pub struct Arguments {
     /// factor by which order fees are multiplied with. Setting this to a value
     /// greater than 1.0 makes settlements with negative objective values less
     /// likely, promoting more aggressive merging of single order settlements.
-    #[clap(long, env, default_value = "1", parse(try_from_str = shared::arguments::parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", value_parser = shared::arguments::parse_unbounded_factor)]
     pub fee_objective_scaling_factor: f64,
 
     /// How to to submit settlement transactions.
@@ -68,7 +68,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "PublicMempool",
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -83,7 +83,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_eden_tip: f64,
 
@@ -92,7 +92,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "0.05",
-        parse(try_from_str = shared::arguments::parse_percentage_factor)
+        value_parser = shared::arguments::parse_percentage_factor
     )]
     pub additional_tip_percentage: f64,
 
@@ -111,7 +111,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "3",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub max_additional_flashbot_tip: f64,
 
@@ -119,7 +119,7 @@ pub struct Arguments {
     /// fails. Individual estimators might support different networks.
     /// `Tenderly`: supports every network.
     /// `Web3`: supports every network.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub access_list_estimators: Vec<AccessListEstimatorType>,
 
     /// The Tenderly user associated with the API key.
@@ -145,7 +145,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "30",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub target_confirm_time: Duration,
 
@@ -154,7 +154,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "120",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub max_submission_seconds: Duration,
 
@@ -162,7 +162,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "2",
-        parse(try_from_str = shared::arguments::duration_from_seconds),
+        value_parser = shared::arguments::duration_from_seconds,
     )]
     pub submission_retry_interval_seconds: Duration,
 
@@ -171,7 +171,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "1500",
-        parse(try_from_str = shared::arguments::wei_from_gwei)
+        value_parser = shared::arguments::wei_from_gwei
     )]
     pub gas_price_cap: f64,
 
@@ -186,7 +186,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "Web3",
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -202,7 +202,7 @@ pub struct Arguments {
     pub base_tokens: Vec<H160>,
 
     /// Which Liquidity sources to be used by Price Estimator.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub baseline_sources: Option<Vec<BaselineSource>>,
 
     /// The number of blocks kept in the pool cache.
@@ -218,7 +218,7 @@ pub struct Arguments {
     pub pool_cache_maximum_retries: u32,
 
     /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1", parse(try_from_str = duration_from_seconds))]
+    #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
     /// How often in seconds we poll the node to check if the current block has changed.
@@ -226,14 +226,14 @@ pub struct Arguments {
         long,
         env,
         default_value = "5",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub block_stream_poll_interval_seconds: Duration,
 
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
 
     /// Deny list of balancer pool ids.
@@ -245,7 +245,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "30",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
 

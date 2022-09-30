@@ -28,7 +28,7 @@ pub struct OrderQuotingArguments {
         long,
         env,
         default_value = "Baseline",
-        arg_enum,
+        value_enum,
         use_value_delimiter = true
     )]
     pub price_estimators: Vec<PriceEstimatorType>,
@@ -47,7 +47,7 @@ pub struct OrderQuotingArguments {
         long,
         env,
         default_value = "600",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub eip1271_onchain_quote_validity_seconds: Duration,
 
@@ -56,7 +56,7 @@ pub struct OrderQuotingArguments {
         long,
         env,
         default_value = "600",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub presign_onchain_quote_validity_seconds: Duration,
 
@@ -77,7 +77,7 @@ pub struct OrderQuotingArguments {
 
     /// Gas Fee Factor: 1.0 means cost is forwarded to users alteration, 0.9 means there is a 10%
     /// subsidy, 1.1 means users pay 10% in fees than what we estimate we pay for gas.
-    #[clap(long, env, default_value = "1", parse(try_from_str = parse_unbounded_factor))]
+    #[clap(long, env, default_value = "1", value_parser = parse_unbounded_factor)]
     pub fee_factor: f64,
 
     /// Used to specify additional fee subsidy factor based on app_ids contained in orders.
@@ -92,7 +92,7 @@ pub struct OrderQuotingArguments {
         long,
         env,
         default_value = "",
-        parse(try_from_str = parse_partner_fee_factor),
+        value_parser = parse_partner_fee_factor,
     )]
     pub partner_additional_fee_factors: HashMap<AppId, f64>,
 
@@ -114,7 +114,7 @@ pub struct Arguments {
     )]
     pub log_filter: String,
 
-    #[clap(long, env, default_value = "error", parse(try_from_str))]
+    #[clap(long, env, default_value = "error")]
     pub log_stderr_threshold: LevelFilter,
 
     /// The Ethereum node URL to connect to.
@@ -132,7 +132,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "Web3",
-        arg_enum,
+        value_enum,
         ignore_case = true,
         use_value_delimiter = true
     )]
@@ -148,7 +148,7 @@ pub struct Arguments {
     pub base_tokens: Vec<H160>,
 
     /// Which Liquidity sources to be used by Price Estimator.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub baseline_sources: Option<Vec<BaselineSource>>,
 
     /// The number of blocks kept in the pool cache.
@@ -164,7 +164,7 @@ pub struct Arguments {
     pub pool_cache_maximum_retries: u32,
 
     /// How long to sleep in seconds between retries in the pool cache.
-    #[clap(long, env, default_value = "1", parse(try_from_str = duration_from_seconds))]
+    #[clap(long, env, default_value = "1", value_parser = duration_from_seconds)]
     pub pool_cache_delay_between_retries_seconds: Duration,
 
     /// How often in seconds we poll the node to check if the current block has changed.
@@ -172,7 +172,7 @@ pub struct Arguments {
         long,
         env,
         default_value = "5",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub block_stream_poll_interval_seconds: Duration,
 
@@ -212,7 +212,7 @@ pub struct Arguments {
     /// The Balancer V2 factories to consider for indexing liquidity. Allows
     /// specific pool kinds to be disabled via configuration. Will use all
     /// supported Balancer V2 factory kinds if not specified.
-    #[clap(long, env, arg_enum, ignore_case = true, use_value_delimiter = true)]
+    #[clap(long, env, value_enum, ignore_case = true, use_value_delimiter = true)]
     pub balancer_factories: Option<Vec<BalancerFactoryKind>>,
 
     /// The list of disabled 1Inch protocols. By default, the `PMM1` protocol
@@ -246,7 +246,7 @@ pub struct Arguments {
     #[clap(
         long,
         default_value = "30",
-        parse(try_from_str = duration_from_seconds),
+        value_parser = duration_from_seconds,
     )]
     pub liquidity_fetcher_max_age_update: Duration,
 }

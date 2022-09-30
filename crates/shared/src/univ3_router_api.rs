@@ -5,6 +5,7 @@ use model::u256_decimal;
 use primitive_types::{H160, U256};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
 #[derive(Debug, Copy, Clone, Serialize)]
 pub enum Type {
@@ -25,11 +26,12 @@ pub struct Request {
     pub recipient: H160,
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Deserialize)]
 pub struct Response {
     #[serde(with = "u256_decimal")]
     pub quote: U256,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub gas: u64,
     #[serde(with = "model::bytes_hex")]
     pub call_data: Vec<u8>,

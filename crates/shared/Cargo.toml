@@ -28,11 +28,11 @@ hex = { workspace = true }
 hex-literal = { workspace = true }
 itertools = { workspace = true }
 lazy_static = { workspace = true }
-lru = "0.7"
+lru = "0.8"
 maplit = { workspace = true }
 mockall = { workspace = true }
 model = { path = "../model" }
-num = { workspace = true, features = ["serde"] }
+num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
 primitive-types = { workspace = true }
 prometheus = { workspace = true }

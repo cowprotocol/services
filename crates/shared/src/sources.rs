@@ -21,7 +21,7 @@ use std::{
     sync::Arc,
 };
 
-#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ArgEnum)]
+#[derive(Debug, Clone, Copy, Eq, Hash, PartialEq, clap::ValueEnum)]
 #[clap(rename_all = "verbatim")]
 pub enum BaselineSource {
     UniswapV2,

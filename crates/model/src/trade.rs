@@ -4,18 +4,20 @@ use crate::order::OrderUid;
 use num::BigUint;
 use primitive_types::{H160, H256};
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
+#[serde_as]
 #[derive(Eq, PartialEq, Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub block_number: u64,
     pub log_index: u64,
     pub order_uid: OrderUid,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub buy_amount: BigUint,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub sell_amount: BigUint,
-    #[serde(with = "serde_with::rust::display_fromstr")]
+    #[serde_as(as = "DisplayFromStr")]
     pub sell_amount_before_fees: BigUint,
     // ORDER DATA
     pub owner: H160,

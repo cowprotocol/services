@@ -40,7 +40,7 @@ pub struct UniswapV3Finder {
     fee_values: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Copy, clap::ArgEnum)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum FeeValues {
     /// Use hardcoded list
     Static,
