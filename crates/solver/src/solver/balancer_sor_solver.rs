@@ -6,13 +6,12 @@ use super::{
 };
 use crate::{
     encoding::EncodedInteraction,
-    interactions::{allowances::ApprovalRequest, balancer_v2::SwapKind},
+    interactions::{
+        allowances::{AllowanceManaging, ApprovalRequest},
+        balancer_v2::{self, SwapKind},
+    },
     liquidity::{slippage::SlippageCalculator, LimitOrder},
     settlement::{Interaction, Settlement},
-};
-use crate::{
-    interactions::{allowances::AllowanceManaging, balancer_v2},
-    liquidity::slippage::SlippageContext,
 };
 use anyhow::Result;
 use contracts::{BalancerV2Vault, GPv2Settlement};
@@ -93,7 +92,7 @@ impl SingleOrderSolving for BalancerSorSolver {
             return Ok(None);
         }
 
-        let slippage = SlippageContext::for_auction(auction, &self.slippage_calculator);
+        let slippage = self.slippage_calculator.auction_context(auction);
         let (quoted_sell_amount_with_slippage, quoted_buy_amount_with_slippage) = match order.kind {
             OrderKind::Sell => (
                 quoted_sell_amount,

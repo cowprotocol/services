@@ -5,9 +5,8 @@ use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
     liquidity::{
-        order_converter::OrderConverter,
-        slippage::{SlippageCalculator, SlippageContext},
-        Exchange, LimitOrder, Liquidity,
+        order_converter::OrderConverter, slippage::SlippageCalculator, Exchange, LimitOrder,
+        Liquidity,
     },
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
@@ -20,9 +19,8 @@ use maplit::{btreemap, hashset};
 use model::{auction::AuctionId, order::OrderKind};
 use num::{BigInt, BigRational};
 use primitive_types::H160;
-use shared::http_solver::{DefaultHttpSolverApi, HttpSolverApi};
 use shared::{
-    http_solver::{gas_model::GasModel, model::*},
+    http_solver::{gas_model::GasModel, model::*, DefaultHttpSolverApi, HttpSolverApi},
     sources::balancer_v2::pools::common::compute_scaling_rate,
 };
 use shared::{
@@ -477,7 +475,7 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
-        let slippage = SlippageContext::new(&external_prices, &self.slippage_calculator);
+        let slippage = self.slippage_calculator.context(&external_prices);
         match settlement::convert_settlement(
             settled.clone(),
             context,
