@@ -42,9 +42,12 @@ pub trait TokenOwnerFinding: Send + Sync {
     async fn find_owner(&self, token: H160, min_balance: U256) -> Result<Option<(H160, U256)>>;
 }
 
+// Temporary workaround for <https://github.com/clap-rs/clap/issues/4279>
+pub type Arguments = TokenOwnerFinderArguments;
+
 /// Arguments related to the token owner finder.
 #[derive(clap::Parser)]
-pub struct Arguments {
+pub struct TokenOwnerFinderArguments {
     /// The token owner finding strategies to use.
     #[clap(long, env, use_value_delimiter = true, value_enum)]
     pub token_owner_finders: Option<Vec<TokenOwnerFindingStrategy>>,
