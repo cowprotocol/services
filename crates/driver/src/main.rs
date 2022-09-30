@@ -257,6 +257,9 @@ async fn build_submitter(common: &CommonComponents, args: &Arguments) -> Arc<Sol
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
             }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato)
+            }
         }
     }
 

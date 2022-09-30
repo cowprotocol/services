@@ -43,6 +43,7 @@ include_contracts! {
     IUniswapLikeRouter;
     IUniswapV3Factory;
     IZeroEx;
+    SolverTrampoline;
     SushiSwapFactory;
     SushiSwapRouter;
     SwaprFactory;

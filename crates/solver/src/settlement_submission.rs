@@ -1,4 +1,5 @@
 mod dry_run;
+mod gelato;
 pub mod submitter;
 
 use crate::{
@@ -121,6 +122,7 @@ pub enum TransactionStrategy {
     Flashbots(StrategyArgs),
     PublicMempool(StrategyArgs),
     DryRun,
+    Gelato,
 }
 
 impl TransactionStrategy {
@@ -130,6 +132,7 @@ impl TransactionStrategy {
             TransactionStrategy::Flashbots(args) => Some(args),
             TransactionStrategy::PublicMempool(args) => Some(args),
             TransactionStrategy::DryRun => None,
+            TransactionStrategy::Gelato => None,
         }
     }
 }
@@ -206,6 +209,9 @@ impl SolutionSubmitter {
                 }
             }
             TransactionStrategy::PublicMempool(_) => {}
+            TransactionStrategy::Gelato => {
+                return gelato::relay_settlement(&self.contract, settlement, account).await;
+            }
             TransactionStrategy::DryRun => unreachable!(),
         };
 
@@ -347,6 +353,12 @@ impl From<MethodError> for SubmissionError {
                 anyhow::Error::from(err).context("settlement transaction failed"),
             ),
         }
+    }
+}
+
+impl From<ethcontract::errors::DeployError> for SubmissionError {
+    fn from(err: ethcontract::errors::DeployError) -> Self {
+        Self::Other(err.into())
     }
 }
 

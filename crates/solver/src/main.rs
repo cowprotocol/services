@@ -370,6 +370,9 @@ async fn main() {
             TransactionStrategyArg::DryRun => {
                 transaction_strategies.push(TransactionStrategy::DryRun)
             }
+            TransactionStrategyArg::Gelato => {
+                transaction_strategies.push(TransactionStrategy::Gelato)
+            }
         }
     }
     let tenderly_api = Some(()).and_then(|_| {

@@ -350,13 +350,17 @@ fn main() {
     generate_contract_with_config("CowProtocolVirtualToken", |builder| {
         builder
             .add_network_str("1", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
-            .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048 ")
+            .add_network_str("5", "0xD057B63f5E69CF1B929b356b579Cba08D7688048")
             .add_network_str("100", "0xc20C9C13E853fc64d054b73fF21d3636B2d97eaB")
     });
 
     generate_contract("AnyoneAuthenticator");
     generate_contract("PhonyERC20");
     generate_contract("Trader");
+
+    generate_contract_with_config("SolverTrampoline", |builder| {
+        builder.add_network_str("5", "0xd29ae121ad58479c9eb8c4f235c618fcf42ecba0")
+    });
 }
 
 fn generate_contract(name: &str) {

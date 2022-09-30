@@ -402,4 +402,5 @@ pub enum TransactionStrategyArg {
     Eden,
     Flashbots,
     DryRun,
+    Gelato,
 }
