@@ -560,6 +560,15 @@ mod tests {
     }
 
     #[test]
+    fn detect_reorg_path_test_both_empty() {
+        let handled_blocks = vec![];
+        let latest_blocks = vec![];
+        let (replacement_blocks, is_reorg) = detect_reorg_path(&handled_blocks, &latest_blocks);
+        assert!(replacement_blocks.is_empty());
+        assert!(!is_reorg);
+    }
+
+    #[test]
     fn detect_reorg_path_test_handled_blocks_empty() {
         let handled_blocks = vec![];
         let latest_blocks = vec![(1, H256::from_low_u64_be(1))];
