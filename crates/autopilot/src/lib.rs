@@ -92,8 +92,6 @@ pub async fn main(args: arguments::Arguments) {
         .expect("Couldn't load deployed settlement");
     // The events from the ethflow contract are read with the more generic contract
     // interface called CoWSwapOnchainOrders.
-    // Todo: Once we depend on the EThflow contract, we can switch the initializaiton
-    // to a better variant: contracts::EthflowContract::deployed(&web3)
     let cowswap_onchain_order_contract_for_eth_flow =
         contracts::CoWSwapOnchainOrders::at(&web3, args.ethflow_contract);
     let vault_relayer = settlement_contract
