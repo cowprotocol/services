@@ -705,6 +705,11 @@ mod test {
             ]),
         };
 
+        let signing_scheme = QuoteSigningScheme::Eip1271 {
+            onchain_order: true,
+            verification_gas_limit: default_verification_gas_limit()
+        };
+        
         let event_data_1 = EthContractEvent {
             data: ContractEvent::OrderPlacement(order_placement.clone()),
             meta: Some(EventMetadata {
@@ -728,12 +733,12 @@ mod test {
             .with(
                 eq(Some(quote_id_1)),
                 always(),
-                eq(&QuoteSigningScheme::Eip712),
+                eq(signing_scheme),
             )
             .with(
                 eq(Some(quote_id_1)),
                 always(),
-                eq(&QuoteSigningScheme::Eip712),
+                eq(signing_scheme),
             )
             .returning(move |_, _, _| Ok(Quote::default()));
         let quote_id_2 = 6i64;
@@ -742,7 +747,7 @@ mod test {
             .with(
                 eq(Some(quote_id_2)),
                 always(),
-                eq(&QuoteSigningScheme::Eip712),
+                eq(signing_scheme),
             )
             .returning(move |_, _, _| Err(FindQuoteError::NotFound(None)));
         let result_vec = parse_general_onchain_order_placement_data(
