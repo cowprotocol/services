@@ -4,7 +4,11 @@ pub mod settlement;
 use self::settlement::SettlementContext;
 use crate::{
     interactions::allowances::AllowanceManaging,
-    liquidity::{order_converter::OrderConverter, Exchange, LimitOrder, Liquidity},
+    liquidity::{
+        order_converter::OrderConverter,
+        slippage::{SlippageCalculator, SlippageContext},
+        Exchange, LimitOrder, Liquidity,
+    },
     settlement::{external_prices::ExternalPrices, Settlement},
     solver::{Auction, Solver},
 };
@@ -62,6 +66,7 @@ pub struct HttpSolver {
     order_converter: Arc<OrderConverter>,
     instance_cache: InstanceCache,
     filter_non_fee_connected_orders: bool,
+    slippage_calculator: Arc<SlippageCalculator>,
 }
 
 impl HttpSolver {
@@ -87,6 +92,7 @@ impl HttpSolver {
             order_converter,
             instance_cache,
             filter_non_fee_connected_orders,
+            slippage_calculator: Default::default(),
         }
     }
 
@@ -429,7 +435,14 @@ impl Solver for HttpSolver {
                 Some(data) if data.run_id == run => (data.model.clone(), data.context.clone()),
                 _ => {
                     let (model, context) = self
-                        .prepare_model(id, run, orders, liquidity, gas_price, external_prices)
+                        .prepare_model(
+                            id,
+                            run,
+                            orders,
+                            liquidity,
+                            gas_price,
+                            external_prices.clone(),
+                        )
                         .await?;
                     tracing::debug!(
                         "Problem sent to http solvers (json):\n{}",
@@ -464,11 +477,13 @@ impl Solver for HttpSolver {
             serde_json::to_string_pretty(&settled).unwrap()
         );
 
+        let slippage = SlippageContext::new(&external_prices, &self.slippage_calculator);
         match settlement::convert_settlement(
             settled.clone(),
             context,
             self.allowance_manager.clone(),
             self.order_converter.clone(),
+            slippage,
         )
         .await
         {

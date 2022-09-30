@@ -2945,6 +2945,7 @@ dependencies = [
  "model",
  "num",
  "number-conversions",
+ "once_cell",
  "primitive-types",
  "prometheus",
  "prometheus-metric-storage",
