@@ -406,7 +406,6 @@ pub struct OrderMetadata {
     #[serde(default, with = "u256_decimal")]
     pub full_fee_amount: U256,
     pub is_liquidity_order: bool,
-    pub is_ethflow_order: bool,
 }
 
 impl Default for OrderMetadata {
@@ -425,7 +424,6 @@ impl Default for OrderMetadata {
             settlement_contract: H160::default(),
             full_fee_amount: U256::default(),
             is_liquidity_order: false,
-            is_ethflow_order: false,
         }
     }
 }
@@ -676,7 +674,6 @@ mod tests {
             "sellTokenBalance": "external",
             "buyTokenBalance": "internal",
             "isLiquidityOrder": false,
-            "isEthflowOrder": false,
         });
         let signing_scheme = EcdsaSigningScheme::Eip712;
         let expected = Order {
@@ -694,7 +691,6 @@ mod tests {
                 settlement_contract: H160::from_low_u64_be(2),
                 full_fee_amount: U256::MAX,
                 is_liquidity_order: false,
-                is_ethflow_order: false,
             },
             data: OrderData {
                 sell_token: H160::from_low_u64_be(10),
