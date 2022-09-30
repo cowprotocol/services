@@ -454,6 +454,7 @@ mod tests {
     use super::*;
     use crate::{
         byte_array::ByteArray,
+        ethflow_orders::{insert_ethflow_order, EthOrderPlacement},
         events::{Event, EventIndex, Invalidation, PreSignature, Settlement, Trade},
         onchain_broadcasted_orders::{insert_onchain_order, OnchainOrderPlacement},
         PgTransaction,
