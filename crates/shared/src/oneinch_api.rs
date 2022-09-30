@@ -224,19 +224,17 @@ impl Slippage {
             (0. ..=50.).contains(&amount),
             "slippage outside of [0%, 50%] range"
         );
-        Ok(Slippage(amount))
-    }
 
-    /// Creates a slippage amount from the specified basis points.
-    pub fn from_basis_points(basis_points: u32) -> Result<Self> {
-        let percent = (basis_points as f64) / 100.;
-        Slippage::percentage(percent)
+        Ok(Slippage(amount))
     }
 }
 
 impl Display for Slippage {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{}", self.0)
+        // Note that we use a rounded slippage percentage. This is because the
+        // 1Inch API will repsond with server errors if the slippage paramter
+        // has too much precision.
+        write!(f, "{:.2}", self.0)
     }
 }
 
@@ -627,11 +625,8 @@ mod tests {
     use crate::addr;
 
     #[test]
-    fn slippage_from_basis_points() {
-        assert_eq!(
-            Slippage::from_basis_points(50).unwrap(),
-            Slippage::percentage(0.5).unwrap(),
-        )
+    fn slippage_rounds_percentage() {
+        assert_eq!(Slippage(1.2345678).to_string(), "1.23");
     }
 
     #[test]
@@ -653,7 +648,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::from_basis_points(50).unwrap(),
+            slippage: Slippage::percentage(0.5).unwrap(),
             disable_estimate: None,
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -683,7 +678,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5",
+                &slippage=0.50",
         );
     }
 
@@ -692,7 +687,7 @@ mod tests {
         let base_url = Url::parse("https://api.1inch.exchange/").unwrap();
         let url = SwapQuery {
             from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-            slippage: Slippage::from_basis_points(50).unwrap(),
+            slippage: Slippage::percentage(0.5).unwrap(),
             disable_estimate: Some(true),
             quote: SellOrderQuoteQuery {
                 from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -725,7 +720,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.5\
+                &slippage=0.50\
                 &protocols=WETH%2CUNISWAP_V3\
                 &disableEstimate=true\
                 &complexityLevel=2\
@@ -884,7 +879,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::from_basis_points(50).unwrap(),
+                slippage: Slippage::percentage(0.5).unwrap(),
                 disable_estimate: None,
                 quote: SellOrderQuoteQuery::with_default_options(
                     addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -909,7 +904,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::from_basis_points(50).unwrap(),
+                slippage: Slippage::percentage(0.5).unwrap(),
                 disable_estimate: Some(true),
                 quote: SellOrderQuoteQuery {
                     from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
