@@ -27,7 +27,12 @@ use shared::{
 };
 use solver::{liquidity::order_converter::OrderConverter, orderbook::OrderBookApi};
 use std::{
-    collections::HashSet, future::pending, num::NonZeroU64, str::FromStr, sync::Arc, time::Duration,
+    collections::HashSet,
+    future::pending,
+    num::{NonZeroU64, NonZeroUsize},
+    str::FromStr,
+    sync::Arc,
+    time::Duration,
 };
 use web3::signing::{Key as _, SecretKeyRef};
 
