@@ -292,7 +292,6 @@ pub struct FullOrder {
     pub buy_token_balance: BuyTokenDestination,
     pub presignature_pending: bool,
     pub is_liquidity_order: bool,
-    pub is_ethflow_order: bool,
 }
 
 // When querying orders we have several specialized use cases working with their own filtering,
@@ -320,7 +319,6 @@ o.uid, o.owner, o.creation_timestamp, o.sell_token, o.buy_token, o.sell_amount, 
 o.valid_to, o.app_data, o.fee_amount, o.full_fee_amount, o.kind, o.partially_fillable, o.signature,
 o.receiver, o.signing_scheme, o.settlement_contract, o.sell_token_balance, o.buy_token_balance,
 o.is_liquidity_order,
-(SELECT EXISTS(SELECT 1 FROM ethflow_orders eo WHERE eo.uid = o.uid)) as is_ethflow_order,
 (SELECT COALESCE(SUM(t.buy_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_buy,
 (SELECT COALESCE(SUM(t.sell_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_sell,
 (SELECT COALESCE(SUM(t.fee_amount), 0) FROM trades t WHERE t.order_uid = o.uid) AS sum_fee,
@@ -627,41 +625,6 @@ mod tests {
         );
         assert_eq!(order.sum_buy.to_bigint().unwrap(), expected_buy_amount);
         assert_eq!(order.sum_fee.to_bigint().unwrap(), expected_fee_amount);
-    }
-
-    #[tokio::test]
-    #[ignore]
-    async fn postgres_reading_ethflow_orders() {
-        let mut db = PgConnection::connect("postgresql://").await.unwrap();
-        let mut db = db.begin().await.unwrap();
-        crate::clear_DANGER_(&mut db).await.unwrap();
-
-        let order = Order {
-            sell_amount: 1.into(),
-            buy_amount: 1.into(),
-            signing_scheme: SigningScheme::Eip1271,
-            ..Default::default()
-        };
-        insert_order(&mut db, &order).await.unwrap();
-
-        let order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(!order.is_ethflow_order);
-
-        let eth_order_placement = EthOrderPlacement {
-            uid: order.uid,
-            valid_to: 0i64,
-        };
-        insert_ethflow_order(&mut db, &eth_order_placement)
-            .await
-            .unwrap();
-        let order = single_full_order(&mut db, &order.uid)
-            .await
-            .unwrap()
-            .unwrap();
-        assert!(order.is_ethflow_order);
     }
 
     #[tokio::test]
