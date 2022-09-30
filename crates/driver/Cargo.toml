@@ -15,30 +15,31 @@ name = "driver"
 path = "src/main.rs"
 
 [dependencies]
-anyhow = "1.0"
-async-trait = "0.1"
-clap = { version = "3.1", features = ["derive", "env"] }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+clap = { workspace = true }
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.21.0", default-features = false }
-futures = "0.3"
-gas-estimation = { git = "https://github.com/cowprotocol/gas-estimation", tag = "v0.7.1", features = ["web3_"] }
+ethcontract = { workspace = true }
+futures = { workspace = true }
+gas-estimation = { workspace = true }
 global-metrics = { path = "../global-metrics" }
 model = { path = "../model" }
-num = "0.4"
+num = { workspace = true }
 number-conversions = { path = "../number-conversions" }
-primitive-types = { version = "0.10" }
-reqwest = { version = "0.11", features = ["json"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-serde_with = { version = "1.11", default-features = false }
+primitive-types = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
 shared = { path = "../shared" }
 solver = { path = "../solver" }
-thiserror = "1.0"
-tokio = { version = "1.15", features = ["macros", "rt-multi-thread", "time", "test-util", "signal"] }
-tracing = "0.1"
-warp = { version = "0.3", default-features = false }
-web3 = { version = "0.18", default-features = false }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "signal", "time"] }
+tracing = { workspace = true }
+warp = { workspace = true }
+web3 = { workspace = true }
 
 [dev-dependencies]
-maplit = "1.0"
-mockall = "0.11"
+maplit = { workspace = true }
+mockall = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }

@@ -5,10 +5,8 @@ authors = ["Gnosis Developers <developers@gnosis.io>", "Cow Protocol Developers 
 edition = "2021"
 license = "MIT OR Apache-2.0"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
 contracts = { path = "../contracts" }
-ethcontract = { version = "0.21.0", default-features = false }
-ethcontract-mock = { version = "0.21.0" }
-hex-literal = "0.3"
+ethcontract = { workspace = true }
+ethcontract-mock = { workspace = true }
+hex-literal = { workspace = true }

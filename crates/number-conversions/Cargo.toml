@@ -6,7 +6,7 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-anyhow = "1.0"
-bigdecimal = "0.3"
-num = "0.4"
-primitive-types = { version = "0.10" }
+anyhow = { workspace = true }
+bigdecimal = { workspace = true }
+num = { workspace = true }
+primitive-types = { workspace = true }
