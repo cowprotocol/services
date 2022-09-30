@@ -384,7 +384,7 @@ mod tests {
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: true,
-                verification_gas_limit: 1000000000000000000_u64.into(),
+                verification_gas_limit: 10_000_u128.into(),
             }),
             modify_signing_scheme(QuoteSigningScheme::Eip1271 {
                 onchain_order: false,
