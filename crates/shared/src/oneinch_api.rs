@@ -234,7 +234,7 @@ impl Display for Slippage {
         // Note that we use a rounded slippage percentage. This is because the
         // 1Inch API will repsond with server errors if the slippage paramter
         // has too much precision.
-        write!(f, "{:.2}", self.0)
+        write!(f, "{:.4}", self.0)
     }
 }
 
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn slippage_rounds_percentage() {
-        assert_eq!(Slippage(1.2345678).to_string(), "1.23");
+        assert_eq!(Slippage(1.2345678).to_string(), "1.2346");
     }
 
     #[test]
@@ -679,7 +679,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.50",
+                &slippage=0.5000",
         );
     }
 
@@ -721,7 +721,7 @@ mod tests {
                 &toTokenAddress=0x111111111117dc0aa78b770fa6a738034120c302\
                 &amount=1000000000000000000\
                 &fromAddress=0x00000000219ab540356cbb839cbe05303d7705fa\
-                &slippage=0.50\
+                &slippage=0.5000\
                 &protocols=WETH%2CUNISWAP_V3\
                 &disableEstimate=true\
                 &complexityLevel=2\
@@ -880,7 +880,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("00000000219ab540356cBB839Cbe05303d7705Fa"),
-                slippage: Slippage::percentage(0.5).unwrap(),
+                slippage: Slippage::ONE_PERCENT,
                 disable_estimate: None,
                 quote: SellOrderQuoteQuery::with_default_options(
                     addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),
@@ -905,7 +905,7 @@ mod tests {
             .unwrap()
             .get_swap(SwapQuery {
                 from_address: addr!("4e608b7da83f8e9213f554bdaa77c72e125529d0"),
-                slippage: Slippage::percentage(0.5).unwrap(),
+                slippage: Slippage::percentage(1.2345678).unwrap(),
                 disable_estimate: Some(true),
                 quote: SellOrderQuoteQuery {
                     from_token_address: addr!("EeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"),

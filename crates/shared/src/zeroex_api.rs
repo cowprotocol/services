@@ -106,9 +106,8 @@ pub struct Slippage(f64);
 impl Slippage {
     pub const ONE_PERCENT: Self = Self(0.01);
 
-    /// Creates a slippage amount from the specified basis points.
-    pub fn from_basis_points(basis_points: u32) -> Self {
-        let factor = (basis_points as f64) / 10000.;
+    /// Creates a slippage amount from the specified slippage factor.
+    pub fn new(factor: f64) -> Self {
         Slippage(factor)
     }
 }
@@ -528,14 +527,14 @@ mod tests {
 
     #[tokio::test]
     #[ignore]
-    async fn test_api_e2e() {
+    async fn zeroex_swap() {
         let zeroex_client = DefaultZeroExApi::default();
         let swap_query = SwapQuery {
             sell_token: testlib::tokens::WETH,
             buy_token: testlib::tokens::USDC,
             sell_amount: Some(U256::from_f64_lossy(1e18)),
             buy_amount: None,
-            slippage_percentage: Some(Slippage::ONE_PERCENT),
+            slippage_percentage: Some(Slippage::new(0.012345678)),
             excluded_sources: Vec::new(),
             enable_slippage_protection: false,
         };

@@ -97,11 +97,11 @@ impl SingleOrderSolving for ZeroExSolver {
             buy_token: order.buy_token,
             sell_amount,
             buy_amount,
-            slippage_percentage: Some(Slippage::from_basis_points(
+            slippage_percentage: Some(Slippage::new(
                 self.slippage_calculator
                     .auction_context(auction)
                     .relative_for_order(&order)?
-                    .as_bps(),
+                    .as_factor(),
             )),
             excluded_sources: self.excluded_sources.clone(),
             enable_slippage_protection: false,
