@@ -259,6 +259,11 @@ pub struct Arguments {
     /// ZeroEx API key.
     #[clap(long, env)]
     pub zeroex_api_key: Option<String>,
+
+    /// The number of decimal places considered when comparing the = objective value of different solutions.
+    /// E.g. if this value is set to 1 two solutions with objective 12.12 and 12.18 will be considered equal.
+    #[clap(long, env, default_value = "18")]
+    pub solution_comparison_decimal_precision: i32,
 }
 
 impl std::fmt::Display for Arguments {

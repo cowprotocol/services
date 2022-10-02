@@ -433,6 +433,7 @@ async fn main() {
             .map(|max_price_deviation| Ratio::from_float(max_price_deviation).unwrap()),
         args.token_list_restriction_for_price_checks.into(),
         tenderly_api,
+        args.solution_comparison_decimal_precision,
     );
 
     let maintainer = ServiceMaintenance {

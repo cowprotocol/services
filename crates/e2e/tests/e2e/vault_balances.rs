@@ -199,6 +199,7 @@ async fn vault_balances(web3: Web3) {
         None,
         None.into(),
         None,
+        18,
     );
     driver.single_run().await.unwrap();
 
