@@ -184,11 +184,11 @@ mod tests {
 
     #[test]
     fn compare_solutions_precise() {
-        let better = RatedSettlement::with_objective(0.2);
-        let worse = RatedSettlement::with_objective(0.1);
-        assert_eq!(compare_solutions(&better, &worse, 18), Ordering::Greater);
-        assert_eq!(compare_solutions(&worse, &better, 18), Ordering::Less);
-        assert_eq!(compare_solutions(&better, &better, 18), Ordering::Equal);
+        let better = RatedSettlement::with_objective(77495164315950.95);
+        let worse = RatedSettlement::with_objective(77278255312878.95);
+        assert_eq!(compare_solutions(&better, &worse, 0), Ordering::Greater);
+        assert_eq!(compare_solutions(&worse, &better, 0), Ordering::Less);
+        assert_eq!(compare_solutions(&better, &better, 0), Ordering::Equal);
     }
 
     #[test]
@@ -197,9 +197,14 @@ mod tests {
         let worse = RatedSettlement::with_objective(0.12);
         assert_eq!(compare_solutions(&better, &worse, 2), Ordering::Greater);
         assert_eq!(compare_solutions(&worse, &better, 2), Ordering::Less);
-        assert_eq!(compare_solutions(&better, &better, 1), Ordering::Equal);
+        assert_eq!(compare_solutions(&better, &worse, 1), Ordering::Equal);
 
         let worst = RatedSettlement::with_objective(0.09);
         assert_eq!(compare_solutions(&worse, &worst, 1), Ordering::Greater);
+
+        let better = RatedSettlement::with_objective(77495164315950.95);
+        let worse = RatedSettlement::with_objective(77278255312878.95);
+        assert_eq!(compare_solutions(&better, &worse, -12), Ordering::Equal);
+        assert_eq!(compare_solutions(&better, &worse, -11), Ordering::Greater);
     }
 }
