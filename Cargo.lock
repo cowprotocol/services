@@ -44,7 +44,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "chrono",
- "clap 4.0.4",
+ "clap 4.0.8",
  "global-metrics",
  "model",
  "primitive-types",
@@ -173,7 +173,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "clap 4.0.4",
+ "clap 4.0.8",
  "contracts",
  "database",
  "ethcontract",
@@ -368,9 +368,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.0.4"
+version = "4.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f78ad8e84aa8e8aa3e821857be40eb4b925ff232de430d4dd2ae6aa058cbd92"
+checksum = "5840cd9093aabeabf7fd932754c435b7674520fc3ddc935c397837050f0f1e4b"
 dependencies = [
  "atty",
  "bitflags",
@@ -383,9 +383,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.0.1"
+version = "4.0.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca689d7434ce44517a12a89456b2be4d1ea1cafcd8f581978c03d45f5a5c12a7"
+checksum = "92289ffc6fb4a85d85c246ddb874c05a87a2e540fb6ad52f7ca07c8c1e1840b1"
 dependencies = [
  "heck",
  "proc-macro-error",
@@ -822,7 +822,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "clap 4.0.4",
+ "clap 4.0.8",
  "contracts",
  "ethcontract",
  "futures",
@@ -1705,9 +1705,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.8.0"
+version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "936d98d2ddd79c18641c6709e7bb09981449694e402d1a0f0f657ea8d61f4a51"
+checksum = "b6e8aaa3f231bb4bd57b84b2d5dc3ae7f350265df8aa96492e0bc394a1571909"
 dependencies = [
  "hashbrown",
 ]
@@ -2069,7 +2069,7 @@ dependencies = [
  "bigdecimal",
  "cached",
  "chrono",
- "clap 4.0.4",
+ "clap 4.0.8",
  "contracts",
  "database",
  "ethcontract",
@@ -2844,7 +2844,7 @@ dependencies = [
  "atty",
  "cached",
  "chrono",
- "clap 4.0.4",
+ "clap 4.0.8",
  "contracts",
  "database",
  "derivative",
@@ -2906,9 +2906,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.9.0"
+version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2fd0db749597d91ff862fd1d55ea87f7855a744a8425a64695b6fca237d1dad1"
+checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
 
 [[package]]
 name = "socket2"
@@ -2927,7 +2927,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "chrono",
- "clap 4.0.4",
+ "clap 4.0.8",
  "contracts",
  "derivative",
  "ethcontract",

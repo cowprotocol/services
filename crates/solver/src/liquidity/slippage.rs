@@ -19,12 +19,10 @@ use std::{
     str::FromStr,
 };
 
-// Temporary workaround for <https://github.com/clap-rs/clap/issues/4279>
-pub type Arguments = SlippageArguments;
-
 /// Slippage configuration command line arguments.
 #[derive(Debug, Parser)]
-pub struct SlippageArguments {
+#[group(skip)]
+pub struct Arguments {
     /// The relative slippage tolerance to apply to on-chain swaps. This flag
     /// expects a comma-separated list of relative slippage values in basis
     /// points per solver. If a solver is not included, it will use the default
